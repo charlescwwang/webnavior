@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["DOM", "ESNext", "DOM.Iterable", "DOM.AsyncIterable"],
+    "paths": {
+      "@proj-airi/stage-ui/*": ["../../packages/stage-ui/src/*"],
+      "@proj-airi/stage-layouts/*": ["../../packages/stage-layouts/src/*"]
+    },
+    "types": ["vite/client", "unplugin-info/client", "@webgpu/types"],
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "vueCompilerOptions": {}
+}
