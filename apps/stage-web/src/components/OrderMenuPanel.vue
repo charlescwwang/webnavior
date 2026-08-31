@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { useChatDiagnosticsStore } from '@proj-airi/stage-ui/stores/chat/diagnostics'
 import { onMounted, onUnmounted, shallowRef, useTemplateRef } from 'vue'
+
+import ChatDiagnosticsOverlay from './ChatDiagnosticsOverlay.vue'
 
 import { orderMenuBridge } from '../services/order-menu-bridge'
 
 const visible = shallowRef(true)
 const menuFrame = useTemplateRef<HTMLIFrameElement>('menuFrame')
+const chatDiagnostics = useChatDiagnosticsStore()
 
 function openPanel() {
   visible.value = true
@@ -27,10 +31,14 @@ onUnmounted(() => window.removeEventListener('airi:order-menu-open', openPanel))
 <template>
   <section v-if="visible" class="order-menu-panel" aria-label="AIRI 點餐面板">
     <header>
-      <div><span>由 AIRI 協作</span><strong>菜單與點餐</strong></div>
-      <button type="button" title="隱藏菜單" @click="visible = false">
-        <div class="i-solar:close-circle-linear" />
-      </button>
+      <div class="panel-actions">
+        <button type="button" :title="chatDiagnostics.enabled ? '關閉對話診斷' : '開啟對話診斷'" @click="chatDiagnostics.enabled = !chatDiagnostics.enabled">
+          <div :class="chatDiagnostics.enabled ? 'i-solar:chart-2-bold-duotone' : 'i-solar:chart-2-line-duotone'" />
+        </button>
+        <button type="button" title="隱藏菜單" @click="visible = false">
+          <div class="i-solar:close-circle-linear" />
+        </button>
+      </div>
     </header>
     <iframe
       ref="menuFrame"
@@ -39,11 +47,12 @@ onUnmounted(() => window.removeEventListener('airi:order-menu-open', openPanel))
       title="AIRI 點餐菜單"
       @load="attachFrame"
     />
+    <ChatDiagnosticsOverlay />
   </section>
 </template>
 
 <style scoped>
 .order-menu-panel { position: absolute; z-index: 20; top: 1rem; left: 1rem; width: min(54vw, 42rem); height: min(72vh, 48rem); overflow: hidden; border: 1px solid rgb(255 255 255 / .55); border-radius: 1.25rem; background: rgb(255 255 255 / .88); box-shadow: 0 1.25rem 3.5rem rgb(20 8 0 / .25); backdrop-filter: blur(1rem); }
-header { display: flex; align-items: center; justify-content: space-between; height: 3.25rem; padding: 0 .75rem 0 1rem; color: #5b2b15; } header div:first-child { display: grid; gap: .1rem; } header span { color: #a9562e; font-size: .7rem; font-weight: 800; letter-spacing: .08em; } header strong { font-size: .95rem; } button { display: grid; width: 2rem; height: 2rem; place-items: center; border: 0; border-radius: 999px; background: transparent; color: #8e492d; cursor: pointer; font-size: 1.25rem; } button:hover { background: rgb(142 73 45 / .12); } iframe { width: 100%; height: calc(100% - 3.25rem); border: 0; background: #fff8ee; }
+header { display: flex; align-items: center; justify-content: flex-end; height: 3.25rem; padding: 0 .75rem; color: #5b2b15; } .panel-actions { display: flex; gap: .25rem; } button { display: grid; width: 2rem; height: 2rem; place-items: center; border: 0; border-radius: 999px; background: transparent; color: #8e492d; cursor: pointer; font-size: 1.25rem; } button:hover { background: rgb(142 73 45 / .12); } iframe { width: 100%; height: calc(100% - 3.25rem); border: 0; background: #fff8ee; }
 @media (max-width: 768px) { .order-menu-panel { top: .5rem; left: .5rem; width: calc(100vw - 1rem); height: 58vh; } }
 </style>

@@ -21,4 +21,4 @@ export async function createOrderMenuTools(): Promise<Tool[]> {
   ])
 }
 
-export const orderMenuToolsetPrompt = `點餐時先使用 menu_get 取得可用 itemId，再依序呼叫 menu_select_item、menu_set_item_option、menu_set_quantity、cart_add_item。每個餐點都必須先完成 cart_add_item 才能選擇下一項。完成所有餐點後，呼叫 cart_get 並以文字或語音向使用者展示購物車摘要和詢問是否送出訂單。呼叫 order_confirm 前，必須取得明確同意。`
+export const orderMenuToolsetPrompt = `點餐時先使用 menu_get 取得可用 itemId，再依序呼叫 menu_select_item、menu_set_item_option、menu_set_quantity、cart_add_item。每個餐點都必須先完成 cart_add_item 才能選擇下一項。每次 cart_add_item 成功後，必須立刻以面向顧客的自然繁體中文確認已加入的餐點與規格；若還有下一項，再繼續處理。完成所有餐點後，呼叫 cart_get 並以文字或語音向使用者展示購物車摘要和詢問是否送出訂單。呼叫 order_confirm 前，必須取得明確同意。工具成功後不得只停止在工具結果，必須繼續回覆顧客。`
