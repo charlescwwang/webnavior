@@ -20,6 +20,7 @@ import {
 import { extractMessageText, isCloudSyncableMessage } from '../libs/chat-sync'
 import { createMinecraftContext } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
+import { useChatDiagnosticsStore } from './chat/diagnostics'
 import { useChatSessionStore } from './chat/session-store'
 import { useChatStreamStore } from './chat/stream-store'
 import { useContextObservabilityStore } from './devtools/context-observability'
@@ -78,6 +79,7 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
   } = useAnalytics()
 
   const chatSession = useChatSessionStore()
+  const chatDiagnostics = useChatDiagnosticsStore()
   const chatStream = useChatStreamStore()
   const chatContext = useChatContextStore()
   const cardStore = useAiriCardStore()
@@ -96,6 +98,7 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
     options?: StreamOptions,
   ) {
     let llmTextLength = 0
+    chatDiagnostics.startRound()
     const headers = { ...options?.headers }
     if (providerMode(activeProvider.value) === 'official' && options?.requestCorrelation) {
       headers[AIRI_CHAT_SESSION_ID_HEADER] = options.requestCorrelation.conversationId
@@ -121,7 +124,12 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
       await llmStore.stream(model, chatProvider, messages, {
         ...options,
         headers,
+        onUsage: (usage) => {
+          chatDiagnostics.recordUsage(usage)
+          options?.onUsage?.(usage)
+        },
         onStreamEvent: async (event: StreamEvent) => {
+          chatDiagnostics.recordEvent(event)
           if (isTextDelta(event)) {
             if (!llmFirstTokenEmitted) {
               llmFirstTokenEmitted = true
@@ -137,6 +145,11 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
       })
 
       llmSpan.setAttribute(IOAttributes.LLMTextLength, llmTextLength)
+      chatDiagnostics.completeRound()
+    }
+    catch (error) {
+      chatDiagnostics.failRound(error)
+      throw error
     }
     finally {
       llmSpan.end()
