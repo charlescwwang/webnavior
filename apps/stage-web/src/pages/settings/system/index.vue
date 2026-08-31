@@ -26,6 +26,12 @@ const settings = computed(() => [
     icon: 'i-solar:code-bold-duotone',
     to: '/settings/system/developer',
   },
+  {
+    title: '主動互動',
+    description: '安裝與設定 kiosk 主動互動 POC 模組',
+    icon: 'i-solar:eye-bold-duotone',
+    to: '/settings/system/kiosk-proactive',
+  },
 ])
 </script>
 
