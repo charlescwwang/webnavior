@@ -1,3 +1,5 @@
+import cuttlefishBallImageUrl from '../assets/cuttlefish-ball.svg'
+
 export interface MenuOptionValue {
   id: string
   label: string
@@ -251,7 +253,7 @@ export const menu: MenuItem[] = [
     name: '花枝丸',
     description: '手工製作，保留花枝鮮甜口感',
     category: '炸物小點',
-    imageUrl: 'https://images.unsplash.com/photo-1625944228741-9c22b39c7004?auto=format&fit=crop&w=720&q=80',
+    imageUrl: cuttlefishBallImageUrl,
     price: 65,
     optionGroups: [
       {
@@ -365,7 +367,13 @@ export const menu: MenuItem[] = [
   },
 ]
 
-function defaultsFor(item: MenuItem): Record<string, string> {
+/**
+ * Returns the initial option selection for a menu item.
+ *
+ * Each option group defaults to its first declared value so a customer can add
+ * an item immediately while still changing any available customization first.
+ */
+export function defaultOptionsFor(item: MenuItem): Record<string, string> {
   return Object.fromEntries(item.optionGroups.flatMap((group) => {
     const firstValue = group.values[0]
     return firstValue ? [[group.id, firstValue.id]] : []
@@ -402,7 +410,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
 
   function selectMenuItem(itemId: string) {
     const item = itemOrThrow(itemId)
-    selection = { itemId, quantity: 1, options: defaultsFor(item) }
+    selection = { itemId, quantity: 1, options: defaultOptionsFor(item) }
     return { ...selection, options: { ...selection.options } }
   }
 

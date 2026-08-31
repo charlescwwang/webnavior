@@ -5,22 +5,27 @@ import type { CartSnapshot } from './domain/order-machine'
 import type { AgentAction, MenuBridgeCall, MenuBridgeResult, MenuToolName } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
-import { computed, nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef } from 'vue'
 
-import { menu } from './domain/order-machine'
+import MenuItemCard from './components/menuItemCard.vue'
+
+import { defaultOptionsFor, menu } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
 const expectedAiriOrigin = import.meta.env.VITE_AIRI_ORIGIN ?? 'http://localhost:5173'
-const selectedItemId = shallowRef<string>()
 const action = shallowRef<AgentAction>({ label: '等待 AIRI 或使用者選擇餐點' })
 const cart = shallowRef<CartSnapshot>({ lines: [], total: 0, itemCount: 0 })
-const activeSelection = shallowRef<Record<string, string>>({})
 const cursorTargetId = shallowRef<string>()
 const cursorPosition = shallowRef({ x: 44, y: 14 })
 const orderStatus = shallowRef<string>()
+const addingItemId = shallowRef<string>()
 const cardElements = new Map<string, HTMLElement>()
+const quantities = reactive<Record<string, number>>(Object.fromEntries(menu.map(item => [item.id, 1])))
+const expandedCustomizations = reactive<Record<string, boolean>>(Object.fromEntries(menu.map(item => [item.id, false])))
+const selectedOptionsByItem = reactive<Record<string, Record<string, string>>>(Object.fromEntries(
+  menu.map(item => [item.id, defaultOptionsFor(item)]),
+))
 
-const selectedItem = computed(() => menu.find(item => item.id === selectedItemId.value))
 const menuSections = computed(() => [...new Set(menu.map(item => item.category))].map(category => ({
   category,
   items: menu.filter(item => item.category === category),
@@ -33,11 +38,17 @@ function currency(amount: number) {
 function setCardElement(id: string, element: Element | ComponentPublicInstance | null) {
   if (element instanceof HTMLElement)
     cardElements.set(id, element)
+  else
+    cardElements.delete(id)
 }
 
 async function animateAction(nextAction: AgentAction) {
   action.value = nextAction
   cursorTargetId.value = nextAction.targetId
+
+  if (nextAction.expandCustomization && nextAction.targetId)
+    expandedCustomizations[nextAction.targetId] = true
+
   await nextTick()
   const target = nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined
   if (!target)
@@ -56,34 +67,53 @@ async function animateAction(nextAction: AgentAction) {
 const runtime = createMenuToolRuntime({
   onAction: animateAction,
   onCartChange: nextCart => cart.value = nextCart,
-  onMenuSelection: (itemId) => {
-    selectedItemId.value = itemId
-    activeSelection.value = {}
-  },
+  onMenuSelection: () => {},
 })
 
 async function invoke(name: MenuToolName, args: Record<string, unknown> = {}) {
   const result = await runtime.invoke(name, args)
-  if (name === 'menu_select_item' || name === 'menu_set_item_option' || name === 'menu_set_quantity') {
-    const selection = (result as { selection?: { options: Record<string, string> } }).selection
-    if (selection)
-      activeSelection.value = selection.options
-  }
   if (name === 'order_confirm')
     orderStatus.value = '模擬訂單已建立，尚未送往 POS。'
   return result
 }
 
-async function chooseItem(itemId: string) {
-  await invoke('menu_select_item', { itemId })
+function updateQuantity(itemId: string, quantity: number) {
+  quantities[itemId] = quantity
 }
 
-async function chooseOption(groupId: string, valueId: string) {
-  await invoke('menu_set_item_option', { groupId, valueId })
+function updateOption(itemId: string, groupId: string, valueId: string) {
+  selectedOptionsByItem[itemId] = {
+    ...selectedOptionsByItem[itemId],
+    [groupId]: valueId,
+  }
 }
 
-async function addSelection() {
-  await invoke('cart_add_item')
+function updateCustomizationExpanded(itemId: string, expanded: boolean) {
+  expandedCustomizations[itemId] = expanded
+}
+
+async function addItem(itemId: string) {
+  const item = menu.find(candidate => candidate.id === itemId)
+  if (!item || addingItemId.value)
+    return
+
+  addingItemId.value = itemId
+  orderStatus.value = undefined
+  try {
+    await invoke('menu_select_item', { itemId })
+    const initialOptions = defaultOptionsFor(item)
+    for (const [groupId, valueId] of Object.entries(selectedOptionsByItem[itemId] ?? {})) {
+      if (valueId === initialOptions[groupId])
+        continue
+
+      await invoke('menu_set_item_option', { groupId, valueId })
+    }
+    await invoke('menu_set_quantity', { quantity: quantities[itemId] ?? 1 })
+    await invoke('cart_add_item')
+  }
+  finally {
+    addingItemId.value = undefined
+  }
 }
 
 function optionLabel(line: CartSnapshot['lines'][number]) {
@@ -124,13 +154,7 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
   <main class="menu-app">
     <header class="menu-header">
       <div>
-        <p class="eyebrow">
-          AIRI ORDERING DEMO · 周氏蝦捲風味模擬
-        </p>
-        <h1>府城小吃菜單</h1>
-        <p class="menu-note">
-          品項參考公開資料；價格與份量為 WebMCP 示範設定。
-        </p>
+        <h1>周氏蝦捲菜單</h1>
       </div>
       <div class="cart-pill">
         購物車 {{ cart.itemCount }} 項 · {{ currency(cart.total) }}
@@ -145,51 +169,22 @@ onUnmounted(() => window.removeEventListener('message', onBridgeMessage))
     <section v-for="section in menuSections" :key="section.category" class="menu-section">
       <h2>{{ section.category }}</h2>
       <div class="menu-grid">
-        <article
+        <MenuItemCard
           v-for="item in section.items"
           :key="item.id"
-          :ref="element => setCardElement(item.id, element)"
-          :class="['menu-card', { 'is-selected': selectedItemId === item.id, 'is-targeted': cursorTargetId === item.id }]"
-        >
-          <img :src="item.imageUrl" :alt="item.name">
-          <div class="menu-card-body">
-            <div>
-              <h3>{{ item.name }}</h3>
-              <p>{{ item.description }}</p>
-            </div>
-            <strong>{{ currency(item.price) }}</strong>
-          </div>
-          <button type="button" @click="chooseItem(item.id)">
-            選擇餐點
-          </button>
-        </article>
+          :adding="addingItemId === item.id"
+          :customization-expanded="expandedCustomizations[item.id]"
+          :is-targeted="cursorTargetId === item.id"
+          :item="item"
+          :quantity="quantities[item.id] ?? 1"
+          :selected-options="selectedOptionsByItem[item.id] ?? {}"
+          @add="addItem"
+          @register-card="setCardElement"
+          @update-customization-expanded="updateCustomizationExpanded"
+          @update-option="updateOption"
+          @update-quantity="updateQuantity"
+        />
       </div>
-    </section>
-
-    <section v-if="selectedItem" :ref="element => setCardElement('selection', element)" class="selection-panel">
-      <div>
-        <p class="eyebrow">
-          正在設定
-        </p>
-        <h2>{{ selectedItem.name }}</h2>
-      </div>
-      <div v-for="group in selectedItem.optionGroups" :key="group.id" class="option-group">
-        <span>{{ group.label }}</span>
-        <div class="option-list">
-          <button
-            v-for="option in group.values"
-            :key="option.id"
-            type="button"
-            :class="{ selected: activeSelection[group.id] === option.id }"
-            @click="chooseOption(group.id, option.id)"
-          >
-            {{ option.label }}
-          </button>
-        </div>
-      </div>
-      <button class="add-button" type="button" @click="addSelection">
-        加入購物車
-      </button>
     </section>
 
     <aside :ref="element => setCardElement('cart', element)" class="cart-panel">

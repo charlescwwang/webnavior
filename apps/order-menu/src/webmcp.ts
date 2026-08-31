@@ -13,6 +13,7 @@ export type MenuToolName
     | 'order_confirm'
 
 export interface AgentAction {
+  expandCustomization?: boolean
   label: string
   targetId?: string
 }
@@ -71,8 +72,12 @@ export function createMenuToolRuntime(options: {
 }) {
   const machine = createOrderMachine()
 
-  async function announce(label: string, targetId?: string) {
-    await options.onAction({ label, targetId })
+  async function announce(label: string, targetId?: string, expandCustomization = false) {
+    await options.onAction({
+      label,
+      targetId,
+      ...(expandCustomization ? { expandCustomization: true } : {}),
+    })
   }
 
   async function invoke(name: MenuToolName, input: Record<string, unknown> = {}) {
@@ -95,12 +100,12 @@ export function createMenuToolRuntime(options: {
         const selection = machine.getSelection()
         const item = selection && machine.getMenu().find(candidate => candidate.id === selection.itemId)
         const value = item?.optionGroups.find(group => group.id === groupId)?.values.find(candidate => candidate.id === valueId)
-        await announce(`設定為${value?.label ?? '指定選項'}`, 'selection')
+        await announce(`設定為${value?.label ?? '指定選項'}`, item?.id, true)
         return { selection: machine.setItemOption(groupId, valueId) }
       }
       case 'menu_set_quantity': {
         const quantity = requiredNumber(input, 'quantity')
-        await announce(`設定數量為 ${quantity}`, 'selection')
+        await announce(`設定數量為 ${quantity}`, machine.getSelection()?.itemId)
         return { selection: machine.setQuantity(quantity) }
       }
       case 'cart_add_item': {
