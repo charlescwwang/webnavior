@@ -58,6 +58,7 @@
     "@xsai/shared-chat": "catalog:",
     "@xsai/stream-text": "catalog:",
     "@xsai/stream-transcription": "catalog:",
+    "@xsai/tool": "catalog:",
     "@xsai/utils-chat": "catalog:",
     "animejs": "catalog:",
     "better-auth": "catalog:",

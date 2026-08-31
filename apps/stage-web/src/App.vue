@@ -7,6 +7,8 @@ import { isPosthogAvailableInBuild, useSharedAnalyticsStore } from '@proj-airi/s
 import { useCharacterOrchestratorStore } from '@proj-airi/stage-ui/stores/character'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
+import { useLlmToolsStore } from '@proj-airi/stage-ui/stores/llm-tools'
+import { useLlmToolsetPromptsStore } from '@proj-airi/stage-ui/stores/llm-toolset-prompts'
 import { useModsServerChannelStore } from '@proj-airi/stage-ui/stores/mods/api/channel-server'
 import { useContextBridgeStore } from '@proj-airi/stage-ui/stores/mods/api/context-bridge'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
@@ -23,6 +25,7 @@ import { toast, Toaster } from 'vue-sonner'
 import PerformanceOverlay from './components/Devtools/PerformanceOverlay.vue'
 
 import { usePWAStore } from './stores/pwa'
+import { createOrderMenuTools, orderMenuToolsetPrompt } from './tools/order-menu'
 
 if (isAccountFeaturesEnabled())
   useAuthProviderSync()
@@ -43,6 +46,8 @@ const { isDark } = useTheme()
 const cardStore = useAiriCardStore()
 const analyticsStore = useSharedAnalyticsStore()
 const inferencePreload = useInferencePreload()
+const llmToolsStore = useLlmToolsStore()
+const llmToolsetPromptsStore = useLlmToolsetPromptsStore()
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -86,6 +91,12 @@ watch(settings.themeColorsHueDynamic, () => {
 
 // Initialize first-time setup check when app mounts
 onMounted(async () => {
+  await llmToolsStore.registerTools('order-menu', await createOrderMenuTools())
+  llmToolsetPromptsStore.registerToolsetPrompts('order-menu', [{
+    id: 'order-menu',
+    content: orderMenuToolsetPrompt,
+  }])
+
   analyticsStore.initialize()
   await displayModelsStore.initialize()
   cardStore.initialize()
@@ -108,6 +119,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  llmToolsStore.clearTools('order-menu')
+  llmToolsetPromptsStore.clearToolsetPrompts('order-menu')
   contextBridgeStore.dispose()
 })
 

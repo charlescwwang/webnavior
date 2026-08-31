@@ -1,0 +1,23 @@
+{
+  "name": "@proj-airi/order-menu",
+  "type": "module",
+  "private": true,
+  "description": "Independent menu and ordering web service for AIRI demonstrations.",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host --port 5174",
+    "preview": "vite preview",
+    "test:run": "vitest run",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@moeru/std": "catalog:",
+    "vue": "catalog:"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:vitest",
+    "vue-tsc": "catalog:"
+  }
+}
