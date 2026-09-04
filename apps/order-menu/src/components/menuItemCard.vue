@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+
 import type { MenuItem } from '../domain/order-machine'
+import type { AgentAction } from '../webmcp'
 
 import { onMounted, onUnmounted, useTemplateRef } from 'vue'
 
+import { optionControlId, quantityControlId } from '../webmcp'
+
 const props = defineProps<{
   adding: boolean
+  agentAction: AgentAction
   customizationExpanded: boolean
   isTargeted: boolean
   item: MenuItem
@@ -15,12 +21,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   add: [itemId: string]
   registerCard: [itemId: string, element: HTMLElement | null]
+  registerControl: [controlId: string, element: HTMLElement | null]
   updateCustomizationExpanded: [itemId: string, expanded: boolean]
   updateOption: [itemId: string, groupId: string, valueId: string]
   updateQuantity: [itemId: string, quantity: number]
 }>()
 
 const card = useTemplateRef<HTMLElement>('card')
+const quantityControl = quantityControlId(props.item.id)
 
 function currency(amount: number) {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
@@ -39,6 +47,14 @@ function updateCustomizationExpanded(event: Event) {
     return
 
   emit('updateCustomizationExpanded', props.item.id, event.currentTarget.open)
+}
+
+function setControlElement(controlId: string, element: Element | ComponentPublicInstance | null) {
+  emit('registerControl', controlId, element instanceof HTMLElement ? element : null)
+}
+
+function isAgentControl(controlId: string) {
+  return props.agentAction.controlId === controlId
 }
 
 onMounted(() => emit('registerCard', props.item.id, card.value))
@@ -68,9 +84,10 @@ onUnmounted(() => emit('registerCard', props.item.id, null))
           <button
             v-for="option in group.values"
             :key="option.id"
+            :ref="element => setControlElement(optionControlId(item.id, group.id, option.id), element)"
             type="button"
             :aria-pressed="selectedOptions[group.id] === option.id"
-            :class="['option-button', { 'is-selected': selectedOptions[group.id] === option.id }]"
+            :class="['option-button', { 'is-agent-target': isAgentControl(optionControlId(item.id, group.id, option.id)), 'is-selected': selectedOptions[group.id] === option.id }]"
             @click="emit('updateOption', item.id, group.id, option.id)"
           >
             {{ option.label }}
@@ -79,7 +96,11 @@ onUnmounted(() => emit('registerCard', props.item.id, null))
       </div>
     </details>
     <div class="card-actions">
-      <div class="quantity-control" :aria-label="`${item.name} 數量`">
+      <div
+        :ref="element => setControlElement(quantityControl, element)"
+        :class="['quantity-control', { 'is-agent-target': isAgentControl(quantityControl) }]"
+        :aria-label="`${item.name} 數量`"
+      >
         <button type="button" :disabled="quantity === 1 || adding" aria-label="減少一份" @click="decreaseQuantity">
           −
         </button>

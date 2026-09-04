@@ -32,6 +32,12 @@ const settings = computed(() => [
     icon: 'i-solar:eye-bold-duotone',
     to: '/settings/system/kiosk-proactive',
   },
+  {
+    title: '點餐服務',
+    description: '設定嵌入式 WebMCP 點餐頁面的網址',
+    icon: 'i-solar:shop-2-bold-duotone',
+    to: '/settings/system/ordering-service',
+  },
 ])
 </script>
 

@@ -1,22 +1,26 @@
 <script setup lang="ts">
 import { useChatDiagnosticsStore } from '@proj-airi/stage-ui/stores/chat/diagnostics'
-import { onMounted, onUnmounted, shallowRef, useTemplateRef } from 'vue'
+import { onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 
 import ChatDiagnosticsOverlay from './ChatDiagnosticsOverlay.vue'
 
+import { activeInteractiveService } from '../services/interactive-services'
 import { orderMenuBridge } from '../services/order-menu-bridge'
 
 const visible = shallowRef(true)
 const menuFrame = useTemplateRef<HTMLIFrameElement>('menuFrame')
 const chatDiagnostics = useChatDiagnosticsStore()
+const activeService = activeInteractiveService
 
 function openPanel() {
   visible.value = true
 }
 
 function attachFrame() {
-  orderMenuBridge.attach(menuFrame.value?.contentWindow ?? null)
+  orderMenuBridge.attach(activeService.value?.id === 'restaurant-ordering' ? menuFrame.value?.contentWindow ?? null : null)
 }
+
+watch(activeService, attachFrame)
 
 onMounted(() => {
   // The embedded page can post `order:ready` before the iframe `load` event
@@ -24,8 +28,12 @@ onMounted(() => {
   // ready signal and made the first tool call time out.
   orderMenuBridge.resetForIframeReload()
   window.addEventListener('airi:order-menu-open', openPanel)
+  window.addEventListener('airi:interactive-service-open', openPanel)
 })
-onUnmounted(() => window.removeEventListener('airi:order-menu-open', openPanel))
+onUnmounted(() => {
+  window.removeEventListener('airi:order-menu-open', openPanel)
+  window.removeEventListener('airi:interactive-service-open', openPanel)
+})
 </script>
 
 <template>
@@ -42,9 +50,10 @@ onUnmounted(() => window.removeEventListener('airi:order-menu-open', openPanel))
     </header>
     <iframe
       ref="menuFrame"
-      :src="orderMenuBridge.menuUrl"
+      :key="activeService?.id"
+      :src="activeService?.serviceUrl"
       allow="tools"
-      title="AIRI 點餐菜單"
+      :title="activeService?.title ?? 'AIRI 互動服務'"
       @load="attachFrame"
     />
     <ChatDiagnosticsOverlay />

@@ -6,6 +6,8 @@ import Vue from '@vitejs/plugin-vue'
 import Unocss from 'unocss/vite'
 import Info from 'unplugin-info/vite'
 import Yaml from 'unplugin-yaml/vite'
+import Layouts from 'vite-plugin-vue-layouts'
+import VueRouter from 'vue-router/vite'
 
 import { DownloadLive2DSDK } from '@proj-airi/unplugin-live2d-sdk/vite'
 import { defineConfig } from 'vite'
@@ -24,15 +26,36 @@ export default defineConfig({
     alias: {
       '@proj-airi/i18n': resolve(join(import.meta.dirname, '..', '..', 'packages', 'i18n', 'src')),
       '@proj-airi/stage-layouts': resolve(join(import.meta.dirname, '..', '..', 'packages', 'stage-layouts', 'src')),
+      '@proj-airi/stage-pages': resolve(join(import.meta.dirname, '..', '..', 'packages', 'stage-pages', 'src')),
       '@proj-airi/stage-shared': resolve(join(import.meta.dirname, '..', '..', 'packages', 'stage-shared', 'src')),
       '@proj-airi/stage-ui': resolve(join(import.meta.dirname, '..', '..', 'packages', 'stage-ui', 'src')),
     },
   },
-  server: { fs: { strict: false } },
+  server: {
+    fs: { strict: false },
+    allowedHosts: true,
+  },
   plugins: [
     Info(),
     Yaml(),
     Vue({ ...templateCompilerOptions }),
+    VueRouter({
+      dts: resolve(import.meta.dirname, 'src', 'typed-router.d.ts'),
+      routesFolder: [
+        resolve(import.meta.dirname, 'src', 'pages'),
+        {
+          src: resolve(import.meta.dirname, '..', '..', 'packages', 'stage-pages', 'src', 'pages'),
+          exclude: base => [
+            ...base,
+            '**/settings/account/index.vue',
+          ],
+        },
+      ],
+      exclude: ['**/components/**'],
+    }),
+    Layouts({
+      layoutsDirs: [resolve(import.meta.dirname, '..', '..', 'packages', 'stage-layouts', 'src', 'layouts')],
+    }),
     Unocss(),
     VueI18n({ runtimeOnly: true, compositionOnly: true, fullInstall: true }),
     DownloadLive2DSDK(),

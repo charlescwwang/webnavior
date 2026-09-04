@@ -1,6 +1,8 @@
 chat:
   actions:
     retry: Retry
+  status:
+    responding: AIRIが応答中です
   message:
     character-name:
       airi: AIRI

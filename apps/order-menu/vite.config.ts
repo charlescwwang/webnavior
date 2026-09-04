@@ -8,6 +8,7 @@ export default defineConfig({
   plugins: [Vue()],
   server: {
     port: 5174,
+    allowedHosts: true,
   },
   resolve: {
     alias: {

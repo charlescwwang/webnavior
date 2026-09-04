@@ -13,6 +13,9 @@ export interface MenuOptionGroup {
   values: MenuOptionValue[]
 }
 
+/** Describes the customer needs that the demo catalog can verify for recommendations. */
+export type RecommendationTag = 'fried' | 'pork-free' | 'rice'
+
 export interface MenuItem {
   id: string
   name: string
@@ -20,6 +23,7 @@ export interface MenuItem {
   category: string
   imageUrl: string
   price: number
+  recommendationTags: RecommendationTag[]
   optionGroups: MenuOptionGroup[]
 }
 
@@ -66,8 +70,69 @@ export const catalogInfo = {
  * Sources:
  * - https://www.chous.com.tw/chous/products.html
  * - https://www.chous.com.tw/shoppingcool/m_mall_list.php?ps_ctid=01000000
+ * - https://www.ubereats.com/tw/store/%E5%91%A8%E6%B0%8F%E8%9D%A6%E6%8D%B2%E5%AE%89%E5%B9%B3%E7%B8%BD%E5%BA%97/DAYskMw4VRe-vPy29-EfNQ
  */
 export const menu: MenuItem[] = [
+  {
+    id: 'fish-floss-minced-pork-rice-set',
+    name: '魚鬆肉燥飯套餐',
+    description: '周氏蝦捲、魚鬆肉燥飯、燙青菜與綜合湯的單人組合',
+    category: '超值套餐',
+    imageUrl: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=720&q=80',
+    price: 380,
+    recommendationTags: ['rice'],
+    optionGroups: [
+      {
+        id: 'set-ginger',
+        label: '蝦捲嫩薑',
+        required: false,
+        values: [
+          { id: 'with-ginger', label: '附甜漬嫩薑', priceDelta: 0 },
+          { id: 'without-ginger', label: '不附嫩薑', priceDelta: 0 },
+        ],
+      },
+      {
+        id: 'set-soup-cilantro',
+        label: '綜合湯香菜',
+        required: false,
+        values: [
+          { id: 'with-cilantro', label: '加香菜', priceDelta: 0 },
+          { id: 'without-cilantro', label: '不要香菜', priceDelta: 0 },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'braised-pork-set',
+    name: '東坡肉套餐',
+    description: '東坡肉搭配白飯、燙青菜及紅茶的飽足組合',
+    category: '超值套餐',
+    imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
+    price: 250,
+    recommendationTags: [],
+    optionGroups: [
+      {
+        id: 'set-tea-sugar',
+        label: '紅茶甜度',
+        required: true,
+        values: [
+          { id: 'no-sugar', label: '無糖', priceDelta: 0 },
+          { id: 'half-sugar', label: '半糖', priceDelta: 0 },
+          { id: 'full-sugar', label: '全糖', priceDelta: 0 },
+        ],
+      },
+      {
+        id: 'set-tea-ice',
+        label: '紅茶冰量',
+        required: true,
+        values: [
+          { id: 'normal-ice', label: '正常冰', priceDelta: 0 },
+          { id: 'less-ice', label: '少冰', priceDelta: 0 },
+          { id: 'no-ice', label: '去冰', priceDelta: 0 },
+        ],
+      },
+    ],
+  },
   {
     id: 'chous-shrimp-roll',
     name: '周氏蝦捲',
@@ -75,6 +140,7 @@ export const menu: MenuItem[] = [
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=720&q=80',
     price: 75,
+    recommendationTags: ['fried', 'pork-free'],
     optionGroups: [
       {
         id: 'ginger',
@@ -94,6 +160,7 @@ export const menu: MenuItem[] = [
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 80,
+    recommendationTags: ['fried', 'pork-free'],
     optionGroups: [
       {
         id: 'sauce',
@@ -113,6 +180,7 @@ export const menu: MenuItem[] = [
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 70,
+    recommendationTags: ['fried', 'pork-free'],
     optionGroups: [
       {
         id: 'sauce',
@@ -132,6 +200,7 @@ export const menu: MenuItem[] = [
     category: '麵飯主食',
     imageUrl: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=720&q=80',
     price: 65,
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'cilantro',
@@ -151,6 +220,7 @@ export const menu: MenuItem[] = [
     category: '麵飯主食',
     imageUrl: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=720&q=80',
     price: 45,
+    recommendationTags: ['rice'],
     optionGroups: [
       {
         id: 'rice-size',
@@ -170,6 +240,7 @@ export const menu: MenuItem[] = [
     category: '麵飯主食',
     imageUrl: 'https://images.unsplash.com/photo-1496116218417-1a781b1c416c?auto=format&fit=crop&w=720&q=80',
     price: 70,
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'dumpling-count',
@@ -189,6 +260,7 @@ export const menu: MenuItem[] = [
     category: '麵飯主食',
     imageUrl: 'https://images.unsplash.com/photo-1496116218417-1a781b1c416c?auto=format&fit=crop&w=720&q=80',
     price: 70,
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'dumpling-count',
@@ -208,6 +280,7 @@ export const menu: MenuItem[] = [
     category: '湯品',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 50,
+    recommendationTags: ['pork-free'],
     optionGroups: [
       {
         id: 'cilantro',
@@ -227,6 +300,7 @@ export const menu: MenuItem[] = [
     category: '湯品',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 55,
+    recommendationTags: ['pork-free'],
     optionGroups: [],
   },
   {
@@ -236,6 +310,7 @@ export const menu: MenuItem[] = [
     category: '湯品',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 60,
+    recommendationTags: ['pork-free'],
     optionGroups: [
       {
         id: 'cilantro',
@@ -255,6 +330,7 @@ export const menu: MenuItem[] = [
     category: '炸物小點',
     imageUrl: cuttlefishBallImageUrl,
     price: 65,
+    recommendationTags: ['fried', 'pork-free'],
     optionGroups: [
       {
         id: 'spice',
@@ -275,6 +351,7 @@ export const menu: MenuItem[] = [
     category: '炸物小點',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 75,
+    recommendationTags: ['fried', 'pork-free'],
     optionGroups: [
       {
         id: 'sauce',
@@ -294,6 +371,7 @@ export const menu: MenuItem[] = [
     category: '炸物小點',
     imageUrl: 'https://images.unsplash.com/photo-1585032226651-759b368d7246?auto=format&fit=crop&w=720&q=80',
     price: 60,
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'sauce',
@@ -313,6 +391,7 @@ export const menu: MenuItem[] = [
     category: '甜品',
     imageUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=720&q=80',
     price: 55,
+    recommendationTags: ['pork-free'],
     optionGroups: [],
   },
   {
@@ -322,6 +401,7 @@ export const menu: MenuItem[] = [
     category: '飲品',
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=720&q=80',
     price: 40,
+    recommendationTags: ['pork-free'],
     optionGroups: [
       {
         id: 'sugar',
@@ -352,6 +432,7 @@ export const menu: MenuItem[] = [
     category: '飲品',
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=720&q=80',
     price: 35,
+    recommendationTags: ['pork-free'],
     optionGroups: [
       {
         id: 'ice',
@@ -393,6 +474,12 @@ function resolveUnitPrice(item: MenuItem, options: Record<string, string>): numb
     const selected = group.values.find(value => value.id === options[group.id])
     return sum + (selected?.priceDelta ?? 0)
   }, 0)
+}
+
+function hasSameOptions(left: Record<string, string>, right: Record<string, string>) {
+  const leftEntries = Object.entries(left)
+  return leftEntries.length === Object.keys(right).length
+    && leftEntries.every(([groupId, valueId]) => right[groupId] === valueId)
 }
 
 /** Owns order validation and offers a replaceable seam for a real POS gateway. */
@@ -441,6 +528,13 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   function addToCart() {
     const current = selectedOrThrow()
     const item = itemOrThrow(current.itemId)
+    const matchingLine = cart.find(line => line.itemId === item.id && hasSameOptions(line.options, current.options))
+    if (matchingLine) {
+      matchingLine.quantity += current.quantity
+      selection = undefined
+      return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart) }
+    }
+
     const line: CartLine = {
       id: `line-${crypto.randomUUID()}`,
       itemId: item.id,
@@ -462,6 +556,17 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     return cloneCart(cart)
   }
 
+  function setCartLineQuantity(lineId: string, quantity: number) {
+    if (!Number.isInteger(quantity) || quantity < 1)
+      throw new Error('Cart line quantity must be a positive integer.')
+
+    const line = cart.find(candidate => candidate.id === lineId)
+    if (!line)
+      throw new Error(`Unknown cart line: ${lineId}`)
+    line.quantity = quantity
+    return cloneCart(cart)
+  }
+
   async function confirmOrder() {
     const snapshot = cloneCart(cart)
     if (snapshot.lines.length === 0)
@@ -473,6 +578,13 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     }))
   }
 
+  /** Clears only the in-progress order so the host can begin a new customer session. */
+  function reset() {
+    cart.splice(0)
+    selection = undefined
+    return cloneCart(cart)
+  }
+
   return {
     addToCart,
     confirmOrder,
@@ -480,7 +592,9 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     getMenu: (category?: string) => category ? catalog.filter(item => item.category === category) : [...catalog],
     getSelection: () => selection ? { ...selection, options: { ...selection.options } } : undefined,
     removeFromCart,
+    reset,
     selectMenuItem,
+    setCartLineQuantity,
     setItemOption,
     setQuantity,
   }

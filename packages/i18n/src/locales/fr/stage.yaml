@@ -1,6 +1,8 @@
 chat:
   actions:
     retry: Réessayer
+  status:
+    responding: AIRI répond
   message:
     character-name:
       airi: AIRI

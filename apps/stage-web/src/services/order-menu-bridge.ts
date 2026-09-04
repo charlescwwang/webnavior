@@ -1,3 +1,5 @@
+import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
+
 export type OrderMenuToolName
   = | 'menu_get'
     | 'menu_select_item'
@@ -18,12 +20,12 @@ interface OrderMenuResult {
   error?: string
   requestId: string
   result?: unknown
-  source: 'airi-order-bridge'
-  type: 'order:result'
+  source: 'airi-scenario-bridge'
+  type: 'scenario:result'
 }
 
-const defaultMenuUrl = import.meta.env.VITE_ORDER_MENU_URL ?? 'http://localhost:5174'
-const menuOrigin = new URL(defaultMenuUrl).origin
+export const defaultOrderMenuUrl = import.meta.env.VITE_ORDER_MENU_URL ?? 'http://localhost:5174'
+const menuUrl = useLocalStorageManualReset('order-menu/service-url', defaultOrderMenuUrl)
 const pendingCalls = new Map<string, PendingCall>()
 const menuCallTimeoutMs = 12_000
 let frameWindow: Window | null = null
@@ -42,17 +44,33 @@ function rejectPendingCalls(reason: Error) {
   }
 }
 
+/**
+ * Validates an administrator-provided embedded menu URL.
+ *
+ * Before:
+ * - " https://menu.example.com/order "
+ *
+ * After:
+ * - "https://menu.example.com/order"
+ */
+export function normalizeOrderMenuUrl(value: string) {
+  const url = new URL(value.trim())
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    throw new Error('點餐服務網址必須使用 HTTP 或 HTTPS。')
+  return url.toString()
+}
+
 function onMessage(event: MessageEvent<OrderMenuResult | { source: string, type: string }>) {
-  if (event.origin !== menuOrigin || event.data?.source !== 'airi-order-bridge')
+  if (event.origin !== new URL(menuUrl.value).origin || event.data?.source !== 'airi-scenario-bridge')
     return
 
-  if (event.data.type === 'order:ready') {
+  if (event.data.type === 'scenario:ready') {
     ready = true
     readyResolver?.()
     return
   }
 
-  if (event.data.type !== 'order:result')
+  if (event.data.type !== 'scenario:result')
     return
 
   const result = event.data as OrderMenuResult
@@ -81,6 +99,7 @@ async function callRemoteMenu(name: OrderMenuToolName, args: Record<string, unkn
   if (!frameWindow)
     throw new Error('Menu service iframe is not available.')
 
+  const serviceOrigin = new URL(menuUrl.value).origin
   const requestId = crypto.randomUUID()
   return await new Promise<unknown>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
@@ -89,18 +108,18 @@ async function callRemoteMenu(name: OrderMenuToolName, args: Record<string, unkn
     }, menuCallTimeoutMs)
     pendingCalls.set(requestId, { resolve, reject, timeoutId })
     frameWindow?.postMessage({
-      source: 'airi-order-bridge',
-      type: 'order:call',
+      source: 'airi-scenario-bridge',
+      type: 'scenario:call',
       requestId,
       name,
       args,
-    }, menuOrigin)
+    }, serviceOrigin)
   })
 }
 
 /** Semantic iframe adapter for the independent menu service when native WebMCP is unavailable. */
 export const orderMenuBridge = {
-  menuUrl: defaultMenuUrl,
+  menuUrl,
   attach(windowRef: Window | null) {
     frameWindow = windowRef
   },
@@ -120,5 +139,17 @@ export const orderMenuBridge = {
     readyPromise = new Promise<void>((resolve) => {
       readyResolver = resolve
     })
+  },
+  setMenuUrl(value: string) {
+    const nextUrl = normalizeOrderMenuUrl(value)
+    if (nextUrl === menuUrl.value)
+      return
+
+    // A URL switch invalidates the iframe window, origin, and any stateful
+    // ordering calls that were waiting for the previous service.
+    rejectPendingCalls(new Error('Menu service URL changed before completing the tool call.'))
+    frameWindow = null
+    menuUrl.value = nextUrl
+    this.resetForIframeReload()
   },
 }

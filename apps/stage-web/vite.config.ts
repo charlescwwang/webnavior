@@ -89,6 +89,7 @@ export default defineConfig({
         `${resolve(join(import.meta.dirname, '..', '..', 'packages', 'stage-pages', 'src'))}/*.vue`,
       ],
     },
+    allowedHosts: true,
   },
   build: {
     sourcemap: true,

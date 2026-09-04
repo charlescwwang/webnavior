@@ -8,11 +8,11 @@ import { useLlmToolsetPromptsStore } from '@proj-airi/stage-ui/stores/llm-toolse
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { ErrorBoundary } from '@proj-airi/ui'
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
+import { RouterView } from 'vue-router'
 
-import KioskScene from './components/KioskScene.vue'
-
-import { createOrderMenuTools, orderMenuToolsetPrompt } from './tools/order-menu'
+import { scenarioRegistry } from './services/scenario-registry'
+import { createScenarioNavigationPrompt, createScenarioNavigationTools, createScenarioTools } from './tools/scenario'
 
 const cardStore = useAiriCardStore()
 const characterOrchestratorStore = useCharacterOrchestratorStore()
@@ -24,10 +24,39 @@ const llmToolsetPromptsStore = useLlmToolsetPromptsStore()
 const settingsAudioDeviceStore = useSettingsAudioDevice()
 const settingsStore = useSettings()
 
-onMounted(async () => {
-  await llmToolsStore.registerTools('order-menu', await createOrderMenuTools())
-  llmToolsetPromptsStore.registerToolsetPrompts('order-menu', [{ id: 'order-menu', content: orderMenuToolsetPrompt }])
+let scenarioSyncGeneration = 0
 
+async function syncActiveScenarioTools() {
+  const generation = ++scenarioSyncGeneration
+  llmToolsStore.clearTools('scenario')
+  llmToolsetPromptsStore.clearToolsetPrompts('scenario')
+  const registeredScenarios = scenarioRegistry.registeredScenarios.value
+  if (registeredScenarios.length === 0)
+    return
+
+  await llmToolsStore.registerTools('scenario-navigation', createScenarioNavigationTools(registeredScenarios))
+  llmToolsetPromptsStore.registerToolsetPrompts('scenario-navigation', [{
+    id: 'registered-kiosk-pages',
+    content: createScenarioNavigationPrompt(registeredScenarios),
+  }])
+
+  try {
+    const bridge = scenarioRegistry.activeBridge.value
+    const manifest = await bridge?.waitForManifest()
+    if (!manifest || generation !== scenarioSyncGeneration)
+      return
+    await llmToolsStore.registerTools('scenario', createScenarioTools(manifest))
+    llmToolsetPromptsStore.registerToolsetPrompts('scenario', [{ id: manifest.id, content: manifest.agentPrompt }])
+  }
+  catch (error) {
+    if (generation === scenarioSyncGeneration)
+      console.error('[stage-kiosk] active registered scenario is unavailable:', error)
+  }
+}
+
+watch(scenarioRegistry.revision, () => void syncActiveScenarioTools(), { immediate: true })
+
+onMounted(async () => {
   await displayModelsStore.initialize()
   cardStore.initialize()
   await chatSessionStore.initialize()
@@ -39,8 +68,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  llmToolsStore.clearTools('order-menu')
-  llmToolsetPromptsStore.clearToolsetPrompts('order-menu')
+  llmToolsStore.clearTools('scenario')
+  llmToolsetPromptsStore.clearToolsetPrompts('scenario')
+  llmToolsStore.clearTools('scenario-navigation')
+  llmToolsetPromptsStore.clearToolsetPrompts('scenario-navigation')
 })
 </script>
 
@@ -49,6 +80,6 @@ onUnmounted(() => {
     title="Kiosk 畫面無法啟動。"
     @error="(error, _, info) => console.error('[stage-kiosk] render failed:', info, error)"
   >
-    <KioskScene />
+    <RouterView />
   </ErrorBoundary>
 </template>
