@@ -202,7 +202,6 @@ describe('isToolRelatedError', () => {
 
     const firstCallTools = streamTextMock.mock.calls[0]?.[0]?.tools
     expect(Array.isArray(firstCallTools)).toBe(true)
-    expect(mcpMock).toHaveBeenCalledTimes(1)
     expect(debugMock).toHaveBeenCalledTimes(1)
     expect(firstCallTools).toContain(customTool)
     expect(firstCallTools?.map(toolNameFrom)).toContain('runtime_play_chess_match')
@@ -259,6 +258,21 @@ describe('isToolRelatedError', () => {
     expect(mergedTools).toEqual(expect.arrayContaining([runtimeMcpStatusTool, playChessTool]))
   })
 
+  it('does not expose an unavailable MCP fallback by default', async () => {
+    const store = useLLM()
+
+    streamTextMock.mockImplementationOnce((options: { onEvent: (event: unknown) => Promise<void> }) => {
+      queueMicrotask(async () => {
+        await options.onEvent({ type: 'finish', finishReason: 'stop' })
+      })
+      return createMockStreamResult()
+    })
+
+    await store.stream('model-a', provider, [{ role: 'user', content: '點餐' }] as Message[])
+
+    expect(mcpMock).not.toHaveBeenCalled()
+  })
+
   it('prefers runtime-registered tools when duplicate tool names collide with builtin tools', async () => {
     const store = useLLM()
     const llmToolsStore = useLlmToolsStore()
@@ -279,7 +293,6 @@ describe('isToolRelatedError', () => {
       execute: vi.fn(),
     }
 
-    mcpMock.mockResolvedValueOnce([builtinTool] as Tool[])
     llmToolsStore.registerTools('plugin-tools', [runtimeTool as any])
 
     streamTextMock.mockImplementationOnce((options: { onEvent: (event: unknown) => Promise<void>, tools?: unknown[] }) => {
@@ -289,7 +302,9 @@ describe('isToolRelatedError', () => {
       return createMockStreamResult()
     })
 
-    await store.stream('model-a', provider, [{ role: 'user', content: 'play chess' }] as Message[])
+    await store.stream('model-a', provider, [{ role: 'user', content: 'play chess' }] as Message[], {
+      tools: [builtinTool],
+    })
 
     const mergedTools = streamTextMock.mock.calls[0]?.[0]?.tools as Array<{ function?: { name?: string } }>
     const duplicateNameTools = mergedTools.filter(tool => tool.function?.name === 'duplicate_runtime_tool')

@@ -1,6 +1,7 @@
 export { ChatActionMenu } from './components/action-menu'
 export { default as ChatAssistantItem } from './components/assistant-item.vue'
 export { default as ChatErrorItem } from './components/error-item.vue'
+export { default as ChatExecutionStatus } from './components/execution-status.vue'
 export { default as ChatHistory } from './components/history.vue'
 export { default as ChatSessionsDrawer } from './components/sessions-drawer.vue'
 export { createToolResultError, normalizeToolResultText } from './components/tool-call-display'

@@ -3,7 +3,7 @@ import type { ChatProvider } from '@xsai-ext/providers/utils'
 
 import { errorMessageFrom } from '@moeru/std'
 import { isStageTamagotchi } from '@proj-airi/stage-shared'
-import { ChatSessionsDrawer } from '@proj-airi/stage-ui/components/scenarios/chat'
+import { ChatExecutionStatus, ChatSessionsDrawer } from '@proj-airi/stage-ui/components/scenarios/chat'
 import { HearingConfig } from '@proj-airi/stage-ui/components/scenarios/dialogs/audio-input/index'
 import { useAudioAnalyzer } from '@proj-airi/stage-ui/composables'
 import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
@@ -44,6 +44,7 @@ const { enabled, stream } = storeToRefs(useSettingsAudioDevice())
 const chatOrchestrator = useChatOrchestratorStore()
 const chatSession = useChatSessionStore()
 const { ingest, onAfterMessageComposed } = chatOrchestrator
+const { sending } = storeToRefs(chatOrchestrator)
 const { messages } = storeToRefs(chatSession)
 const { audioContext } = useAudioContext()
 const { t } = useI18n()
@@ -188,6 +189,10 @@ watch(sendMode, () => {
         'bg-primary-200/20 dark:bg-primary-400/20',
       ]"
     >
+      <ChatExecutionStatus
+        :active="sending"
+        class="absolute left-4 top-3 z-10"
+      />
       <BasicTextarea
         v-model="messageInput"
         :submit-on-enter="false"
@@ -195,11 +200,12 @@ watch(sendMode, () => {
         text="primary-600 dark:primary-100  placeholder:primary-500 dark:placeholder:primary-200"
         bg="transparent"
         min-h="[100px]" max-h="[300px]" w-full
-        rounded-t-xl p-4 font-medium pb="[60px]"
+        rounded-t-xl px-4 pb="[60px]" pt-4 font-medium
         outline-none transition="all duration-250 ease-in-out placeholder:all placeholder:duration-250 placeholder:ease-in-out"
-        :class="{
-          'transition-colors-none placeholder:transition-colors-none': themeColorsHueDynamic,
-        }"
+        :class="[
+          themeColorsHueDynamic ? 'transition-colors-none placeholder:transition-colors-none' : '',
+          sending ? 'pt-10' : '',
+        ]"
         @keydown="handleMessageInputKeydown"
         @compositionstart="isComposing = true"
         @compositionend="isComposing = false"

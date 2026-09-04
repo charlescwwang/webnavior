@@ -4,7 +4,7 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import { errorMessageFrom } from '@moeru/std'
 import { useStopSpeakingButton } from '@proj-airi/stage-layouts/composables/useStopSpeakingButton'
-import { ChatHistory, JournalPreviewModal } from '@proj-airi/stage-ui/components'
+import { ChatExecutionStatus, ChatHistory, JournalPreviewModal } from '@proj-airi/stage-ui/components'
 import { useAnalytics } from '@proj-airi/stage-ui/composables/use-analytics'
 import { useBackgroundStore } from '@proj-airi/stage-ui/stores/background'
 import { useChatOrchestratorStore } from '@proj-airi/stage-ui/stores/chat'
@@ -456,6 +456,10 @@ async function handleCleanupMessages() {
         @change="handleFileSelect"
       >
     </div>
+    <ChatExecutionStatus
+      :active="sending"
+      class="px-2 pt-1"
+    />
     <BasicTextarea
       v-model="messageInput"
       :submit-on-enter="false"

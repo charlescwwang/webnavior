@@ -4,7 +4,7 @@ import type { ChatProvider } from '@xsai-ext/providers/utils'
 
 import { isStageTamagotchi } from '@proj-airi/stage-shared'
 import { useThreeViewControl } from '@proj-airi/stage-ui-three'
-import { ChatHistory, HearingConfigDialog } from '@proj-airi/stage-ui/components'
+import { ChatExecutionStatus, ChatHistory, HearingConfigDialog } from '@proj-airi/stage-ui/components'
 import { ChatSessionsDrawer } from '@proj-airi/stage-ui/components/scenarios/chat'
 import { useAnalytics, useAudioAnalyzer } from '@proj-airi/stage-ui/composables'
 import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
@@ -191,6 +191,10 @@ onMounted(() => {
       </Transition>
     </KeepAlive>
     <div relative w-full self-end>
+      <ChatExecutionStatus
+        :active="sending"
+        class="absolute bottom-full left-3 pb-3"
+      />
       <div translate-y="[-100%]" absolute left-0 px-3 pb-3 font-sans>
         <div flex="~ col" gap-1>
           <slot name="status" />

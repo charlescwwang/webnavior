@@ -4,7 +4,7 @@ import type { Tool } from '@xsai/shared-chat'
 
 import { uniqBy } from 'es-toolkit'
 
-import { createSparkCommandTool, createWebSearchTools, debug, mcp } from '../tools'
+import { createSparkCommandTool, createWebSearchTools, debug } from '../tools'
 import { useLlmToolsStore } from './llm-tools'
 import { useModsServerChannelStore } from './mods/api/channel-server'
 import { useWebSearchStore } from './modules/web-search'
@@ -19,9 +19,14 @@ type ToolSource = Tool[] | (() => Promise<Tool[]>)
  */
 export interface ResolveLlmToolsOptions {
   /**
-   * MCP-backed built-in tools.
+   * Runtime-backed MCP proxy tools.
    *
-   * @default mcp()
+   * MCP tools are intentionally absent until a concrete runtime registers a
+   * live transport in `useLlmToolsStore`. Offering an unavailable proxy makes
+   * models call `builtIn_mcpCallTool` even when the customer has not enabled
+   * MCP, which can only fail.
+   *
+   * @default []
    */
   builtInTools?: ToolSource
   /**
@@ -147,7 +152,7 @@ export async function resolveLlmTools(options: ResolveLlmToolsOptions = {}): Pro
     webSearchTools,
     customTools,
   ] = await Promise.all([
-    resolveToolSource(options.builtInTools ?? mcp),
+    options.builtInTools == null ? [] : resolveToolSource(options.builtInTools),
     resolveToolSource(options.debugTools ?? debug),
     resolveSparkCommandTools(options.sparkCommandTools),
     resolveWebSearchTools(options.webSearchTools),
