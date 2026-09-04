@@ -49,6 +49,7 @@ import { useSpeechRuntimeStore } from '../../stores/speech-runtime'
 
 const props = withDefaults(defineProps<{
   cursorPosition?: { x: number, y: number }
+  personPosition?: { x: number, y: number }
   enableOrbitControls?: boolean
   paused?: boolean
 }>(), {
@@ -995,6 +996,7 @@ defineExpose({
         :model-src="stageModelSelectedUrl"
         :model-id="stageModelSelected"
         :cursor-position="cursorPosition"
+        :person-position="personPosition"
         :mouth-open-size="mouthOpenSize"
         :now-speaking="nowSpeaking"
         :paused="paused"
@@ -1011,6 +1013,7 @@ defineExpose({
         min-w="50% <lg:full" min-h="100 sm:100" h-full w-full flex-1
         :model-src="stageModelSelectedUrl"
         :cursor-position="cursorPosition"
+        :person-position="personPosition"
         :idle-animation="animations.idleLoop.toString()"
         :paused="paused"
         :show-axes="stageViewControlsEnabled"

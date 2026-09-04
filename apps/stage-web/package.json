@@ -22,6 +22,7 @@
     "@fontsource-variable/nunito": "catalog:",
     "@formkit/auto-animate": "catalog:",
     "@huggingface/transformers": "catalog:",
+    "@mediapipe/tasks-vision": "catalog:",
     "@moeru/eventa": "catalog:",
     "@moeru/std": "catalog:",
     "@pinia/colada": "catalog:",

@@ -22,7 +22,7 @@ export interface SceneBootstrap {
   modelOrigin: Vec3
   modelSize: Vec3
 }
-export type TrackingMode = 'camera' | 'mouse' | 'none'
+export type TrackingMode = 'camera' | 'mouse' | 'none' | 'person'
 export type ScenePhase = 'pending' | 'loading' | 'binding' | 'mounted' | 'no-model' | 'error'
 export type HexColor = string & { __hex?: true }
 

@@ -18,7 +18,7 @@ export interface VRMEyeFocusSource {
 }
 
 /**
- * Maps cursor and camera tracking modes into a VRM world-space eye focus target.
+ * Maps cursor, camera, and detected-person tracking modes into a VRM world-space eye focus target.
  *
  * Use when:
  * - A VRM model needs a look-at target derived from scene-local cursor coordinates.
@@ -34,6 +34,7 @@ export interface VRMEyeFocusSource {
 export function useVRMEyeFocusFor(options: {
   cameraPosition: MaybeRefOrGetter<Vec3>
   context: MaybeRefOrGetter<VRMWorldContext>
+  personSource?: MaybeRefOrGetter<VRMEyeFocusSource | null | undefined>
   screenBoundingBox: MaybeRefOrGetter<{ top: number, left: number, height: number, width: number }>
   source: MaybeRefOrGetter<VRMEyeFocusSource | null | undefined>
   trackingMode: MaybeRefOrGetter<TrackingMode>
@@ -46,11 +47,19 @@ export function useVRMEyeFocusFor(options: {
     }
 
     const ctx = toValue(options.context)
-    const trackingSource = toValue(options.source)
+    const screen = toValue(options.screenBoundingBox)
+    const personSource = toValue(options.personSource)
+    const trackingSource = trackingMode === 'person'
+      ? personSource && {
+        // The webcam preview is mirrored so movement feels natural to the
+        // person in front of it. Mirror its horizontal landmark here too.
+        x: screen.left + (1 - personSource.x) * screen.width,
+        y: screen.top + personSource.y * screen.height,
+      }
+      : toValue(options.source)
     if (trackingMode === 'none' || !trackingSource)
       return ctx.defaultLookAt
-    const screen = toValue(options.screenBoundingBox)
-    if (trackingMode === 'mouse') {
+    if (trackingMode === 'mouse' || trackingMode === 'person') {
       const castedPos = castScreenToCam(
         ctx,
         new Vector2(

@@ -10,6 +10,7 @@ import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&u
 import { BackgroundProvider } from '@proj-airi/stage-layouts/components/Backgrounds'
 import { useBackgroundThemeColor } from '@proj-airi/stage-layouts/composables/theme-color'
 import { useBackgroundStore } from '@proj-airi/stage-layouts/stores/background'
+import { useModelStore } from '@proj-airi/stage-ui-three'
 import { HoloCoupon } from '@proj-airi/stage-ui/components'
 import { ViewControlSlider, WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
@@ -25,6 +26,8 @@ import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vu
 
 import OrderMenuPanel from '../components/OrderMenuPanel.vue'
 
+import { usePersonEyeFocus } from '../composables/usePersonEyeFocus'
+
 const paused = ref(false)
 
 function handleSettingsOpen(open: boolean) {
@@ -38,6 +41,16 @@ const backgroundStore = useBackgroundStore()
 const { selectedOption, sampledColor } = storeToRefs(backgroundStore)
 const backgroundSurface = useTemplateRef<InstanceType<typeof BackgroundProvider>>('backgroundSurface')
 const { stageModelRenderer } = storeToRefs(useSettings())
+const { trackingMode } = storeToRefs(useModelStore())
+const personFocusVideo = useTemplateRef<HTMLVideoElement>('personFocusVideo')
+const { error: personFocusError, position: personPosition, stream: personStream } = usePersonEyeFocus({
+  enabled: () => stageModelRenderer.value === 'vrm' && trackingMode.value === 'person',
+})
+
+watch([personFocusVideo, personStream], ([video, stream]) => {
+  if (video)
+    video.srcObject = stream ?? null
+})
 
 const { syncBackgroundTheme } = useBackgroundThemeColor({ backgroundSurface, selectedOption, sampledColor })
 onMounted(() => syncBackgroundTheme())
@@ -184,9 +197,19 @@ const cursorPosition = computed(() => ({
           <WidgetStage
             h-full w-full
             :cursor-position="cursorPosition"
+            :person-position="personPosition"
             :enable-orbit-controls="!isMobile"
             :paused="paused"
           />
+          <div
+            v-if="stageModelRenderer === 'vrm' && trackingMode === 'person'"
+            :class="['absolute', 'bottom-3', 'left-3', 'z-10', 'w-40', 'overflow-hidden', 'rounded-xl', 'bg-black/70', 'p-1', 'text-xs', 'text-white', 'shadow-lg']"
+          >
+            <video ref="personFocusVideo" autoplay muted playsinline :class="['block', 'aspect-4/3', 'w-full', 'rounded-lg', 'object-cover', '-scale-x-100']" />
+            <div :class="['px-1', 'pt-1']">
+              {{ personFocusError || (personPosition ? 'Tracking person' : 'Looking for a person…') }}
+            </div>
+          </div>
           <OrderMenuPanel />
         </div>
         <InteractiveArea v-if="!isMobile" h="85dvh" absolute right-4 flex flex-1 flex-col max-w="500px" min-w="30%" />

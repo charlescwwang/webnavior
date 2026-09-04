@@ -4,7 +4,7 @@ import type { AnimationClip } from 'three'
 import type { Ref } from 'vue'
 
 import { createVRMAnimationClip } from '@pixiv/three-vrm-animation'
-import { Object3D, Vector3, VectorKeyframeTrack } from 'three'
+import { MathUtils, Object3D, Vector3, VectorKeyframeTrack } from 'three'
 import { randFloat } from 'three/src/math/MathUtils.js'
 import { ref } from 'vue'
 
@@ -143,13 +143,23 @@ export function useBlink() {
 export function useIdleEyeSaccades() {
   let nextSaccadeAfter = -1
   const fixationTarget = new Vector3()
+  const headPosition = new Vector3()
   let timeSinceLastSaccade = 0
 
-  // Just a naive vector generator - Simulating random content on a 27in monitor at 65cm distance
-  function updateFixationTarget(lookAtTarget: Ref<{ x: number, y: number, z: number }>) {
+  function updateFixationTarget(vrm: VRMCore, lookAtTarget: Ref<{ x: number, y: number, z: number }>) {
+    const head = vrm.humanoid?.getNormalizedBoneNode('head')
+    if (!head)
+      return
+
+    head.getWorldPosition(headPosition)
+
+    // A fixed world-space offset is invisible for far camera targets and
+    // excessive for near mouse targets. Scale it by distance to preserve a
+    // subtle 1.5° gaze shift in either tracking mode.
+    const offset = Math.tan(MathUtils.degToRad(1.5)) * headPosition.distanceTo(lookAtTarget.value)
     fixationTarget.set(
-      lookAtTarget.value.x + randFloat(-0.25, 0.25),
-      lookAtTarget.value.y + randFloat(-0.25, 0.25),
+      lookAtTarget.value.x + randFloat(-offset, offset),
+      lookAtTarget.value.y + randFloat(-offset, offset),
       lookAtTarget.value.z,
     )
   }
@@ -160,12 +170,12 @@ export function useIdleEyeSaccades() {
       return
 
     if (timeSinceLastSaccade >= nextSaccadeAfter) {
-      updateFixationTarget(lookAtTarget)
+      updateFixationTarget(vrm, lookAtTarget)
       timeSinceLastSaccade = 0
       nextSaccadeAfter = randomSaccadeInterval() / 1000
     }
     else if (!fixationTarget) {
-      updateFixationTarget(lookAtTarget)
+      updateFixationTarget(vrm, lookAtTarget)
     }
 
     if (!vrm.lookAt.target) {

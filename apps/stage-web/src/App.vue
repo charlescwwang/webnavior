@@ -24,7 +24,9 @@ import { toast, Toaster } from 'vue-sonner'
 
 import PerformanceOverlay from './components/Devtools/PerformanceOverlay.vue'
 
+import { availableInteractiveServices } from './services/interactive-services'
 import { usePWAStore } from './stores/pwa'
+import { createInteractiveServicePrompt, createInteractiveServiceTools } from './tools/interactive-services'
 import { createOrderMenuTools, orderMenuToolsetPrompt } from './tools/order-menu'
 
 if (isAccountFeaturesEnabled())
@@ -48,6 +50,23 @@ const analyticsStore = useSharedAnalyticsStore()
 const inferencePreload = useInferencePreload()
 const llmToolsStore = useLlmToolsStore()
 const llmToolsetPromptsStore = useLlmToolsetPromptsStore()
+
+watch(availableInteractiveServices, async (services) => {
+  await llmToolsStore.registerTools('interactive-services', createInteractiveServiceTools())
+  llmToolsetPromptsStore.registerToolsetPrompts('interactive-services', [{
+    id: 'registered-interactive-services',
+    content: createInteractiveServicePrompt(),
+  }])
+
+  if (services.some(service => service.id === 'restaurant-ordering')) {
+    await llmToolsStore.registerTools('order-menu', await createOrderMenuTools())
+    llmToolsetPromptsStore.registerToolsetPrompts('order-menu', [{ id: 'order-menu', content: orderMenuToolsetPrompt }])
+    return
+  }
+
+  llmToolsStore.clearTools('order-menu')
+  llmToolsetPromptsStore.clearToolsetPrompts('order-menu')
+}, { deep: true, immediate: true })
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -91,12 +110,6 @@ watch(settings.themeColorsHueDynamic, () => {
 
 // Initialize first-time setup check when app mounts
 onMounted(async () => {
-  await llmToolsStore.registerTools('order-menu', await createOrderMenuTools())
-  llmToolsetPromptsStore.registerToolsetPrompts('order-menu', [{
-    id: 'order-menu',
-    content: orderMenuToolsetPrompt,
-  }])
-
   analyticsStore.initialize()
   await displayModelsStore.initialize()
   cardStore.initialize()
@@ -121,6 +134,8 @@ onMounted(async () => {
 onUnmounted(() => {
   llmToolsStore.clearTools('order-menu')
   llmToolsetPromptsStore.clearToolsetPrompts('order-menu')
+  llmToolsStore.clearTools('interactive-services')
+  llmToolsetPromptsStore.clearToolsetPrompts('interactive-services')
   contextBridgeStore.dispose()
 })
 

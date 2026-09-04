@@ -90,4 +90,69 @@ describe('useVRMEyeFocusFor', () => {
     expect(focus.value).toEqual(new Vector3(0, 0, -0.8))
     expect(raycaster.setFromCamera).toHaveBeenCalled()
   })
+
+  it('uses the detected person position when person tracking is active', async () => {
+    const { useVRMEyeFocusFor } = await import('./eye-tracking')
+    const raycaster = {
+      ray: {
+        direction: new Vector3(0, 0, -1),
+        origin: new Vector3(0, 0, 0),
+      },
+      setFromCamera: vi.fn(),
+    }
+    const focus = useVRMEyeFocusFor({
+      cameraPosition: () => ({ x: 0, y: 0, z: -1 }),
+      context: () => ({
+        raycaster: raycaster as unknown as Raycaster,
+        camera: { near: 0.1 } as any,
+        defaultLookAt: new Vector3(1, 2, 3),
+      }),
+      personSource: () => ({ x: 0.5, y: 0.5 }),
+      screenBoundingBox: () => ({ top: 0, left: 0, width: 100, height: 100 }),
+      source: () => null,
+      trackingMode: () => 'person',
+    })
+
+    expect(focus.value).toEqual(new Vector3(0, 0, -0.8))
+    expect(raycaster.setFromCamera).toHaveBeenCalled()
+  })
+
+  it('mirrors the horizontal camera coordinate for person tracking', async () => {
+    const { useVRMEyeFocusFor } = await import('./eye-tracking')
+    const raycaster = {
+      ray: { direction: new Vector3(0, 0, -1), origin: new Vector3() },
+      setFromCamera: vi.fn(),
+    }
+    const focus = useVRMEyeFocusFor({
+      cameraPosition: () => ({ x: 0, y: 0, z: -1 }),
+      context: () => ({ camera: { near: 0.1 } as any, defaultLookAt: new Vector3(), raycaster: raycaster as unknown as Raycaster }),
+      personSource: () => ({ x: 0.25, y: 0.5 }),
+      screenBoundingBox: () => ({ top: 0, left: 0, width: 100, height: 100 }),
+      source: () => null,
+      trackingMode: () => 'person',
+    })
+
+    void focus.value
+    expect(raycaster.setFromCamera).toHaveBeenCalledWith(expect.objectContaining({ x: 0.5, y: 0 }), expect.anything())
+  })
+
+  it('does not fall back to mouse tracking when no person is detected', async () => {
+    const { useVRMEyeFocusFor } = await import('./eye-tracking')
+    const raycaster = {
+      ray: { direction: new Vector3(0, 0, -1), origin: new Vector3() },
+      setFromCamera: vi.fn(),
+    }
+    const defaultLookAt = new Vector3(1, 2, 3)
+    const focus = useVRMEyeFocusFor({
+      cameraPosition: () => ({ x: 0, y: 0, z: -1 }),
+      context: () => ({ camera: { near: 0.1 } as any, defaultLookAt, raycaster: raycaster as unknown as Raycaster }),
+      personSource: () => undefined,
+      screenBoundingBox: () => ({ top: 0, left: 0, width: 100, height: 100 }),
+      source: () => ({ x: 100, y: 100 }),
+      trackingMode: () => 'person',
+    })
+
+    expect(focus.value).toBe(defaultLookAt)
+    expect(raycaster.setFromCamera).not.toHaveBeenCalled()
+  })
 })

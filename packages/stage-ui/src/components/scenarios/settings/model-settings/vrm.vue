@@ -50,13 +50,13 @@ const {
 const controlsLocked = computed(() => props.runtimeSnapshot.controlsLocked)
 const canExtractColors = computed(() => props.runtimeSnapshot.canCapturePreview)
 const trackingOptions = computed<{
-  value: 'camera' | 'mouse' | 'none'
+  value: 'camera' | 'mouse' | 'none' | 'person'
   label: string
-  class: string
 }[]>(() => [
-  { value: 'camera', label: t('settings.vrm.scale-and-position.eye-tracking-mode.options.option.camera'), class: 'col-start-3' },
-  { value: 'mouse', label: t('settings.vrm.scale-and-position.eye-tracking-mode.options.option.mouse'), class: 'col-start-4' },
-  { value: 'none', label: t('settings.vrm.scale-and-position.eye-tracking-mode.options.option.disabled'), class: 'col-start-5' },
+  { value: 'camera', label: t('settings.vrm.scale-and-position.eye-tracking-mode.options.option.camera') },
+  { value: 'mouse', label: t('settings.vrm.scale-and-position.eye-tracking-mode.options.option.mouse') },
+  { value: 'none', label: t('settings.vrm.scale-and-position.eye-tracking-mode.options.option.disabled') },
+  { value: 'person', label: 'Person' },
 ])
 
 // switch between hemisphere light and sky box
@@ -126,21 +126,20 @@ const envOptions = computed(() => [
         :label="t('settings.vrm.scale-and-position.rotation-y')"
       />
 
-      <!-- Set eye tracking mode -->
-      <div class="text-xs">
-        {{ t('settings.vrm.scale-and-position.eye-tracking-mode.title') }}:
-      </div>
-      <div />
-      <template v-for="option in trackingOptions" :key="option.value">
+      <div :class="['col-span-5', 'flex', 'flex-wrap', 'items-center', 'gap-1']">
+        <span :class="['mr-2', 'text-xs']">
+          {{ t('settings.vrm.scale-and-position.eye-tracking-mode.title') }}:
+        </span>
         <Button
-          :class="[option.class, 'w-auto']"
+          v-for="option in trackingOptions"
+          :key="option.value"
           :disabled="controlsLocked"
           size="sm"
           :variant="trackingMode === option.value ? 'primary' : 'secondary'"
           :label="option.label"
           @click="trackingMode = option.value"
         />
-      </template>
+      </div>
 
       <PropertyNumber
         v-model="directionalLightRotation.x"

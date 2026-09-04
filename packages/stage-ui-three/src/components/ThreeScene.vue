@@ -50,6 +50,7 @@ import { VRMModel } from './Model'
 const props = withDefaults(defineProps<{
   currentAudioSource?: AudioBufferSourceNode
   cursorPosition?: { x: number, y: number }
+  personPosition?: { x: number, y: number }
   modelSrc?: string
   skyBoxSrc?: string
   /**
@@ -779,6 +780,7 @@ defineExpose({
         ref="modelRef"
         :current-audio-source="props.currentAudioSource"
         :cursor-position="props.cursorPosition"
+        :person-position="props.personPosition"
         :last-committed-model-src="lastCommittedModelSrc"
         :model-src="props.modelSrc"
         :idle-animation="props.idleAnimation"

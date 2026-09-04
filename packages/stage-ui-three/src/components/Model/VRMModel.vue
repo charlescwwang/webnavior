@@ -108,6 +108,7 @@ import {
 const props = withDefaults(defineProps<{
   currentAudioSource?: AudioBufferSourceNode
   cursorPosition?: { x: number, y: number }
+  personPosition?: { x: number, y: number }
   lastCommittedModelSrc?: string
   modelSrc?: string
   idleAnimation: string
@@ -180,6 +181,7 @@ const { onBeforeRender, stop, start } = useLoop()
 const vrmHooks: readonly VrmHook[] = resolveInternalVrmHooks()
 type VrmFrameRuntimeHook = (vrm: VRM, delta: number) => void
 const vrmFrameRuntimeHook = shallowRef<VrmFrameRuntimeHook>()
+const idleEyeFocusTarget = shallowRef(new Vector3())
 let disposeBeforeRenderLoop: (() => void | undefined) | undefined
 
 // material type with optional update function for per-frame update, used for three-vrm's MToon material and custom shader materials with IBL injection
@@ -444,6 +446,11 @@ function bindManagedVrmInstanceRenderLoop() {
     })
     const blinkAndSaccadeMs = measureFrameStep(tracingEnabled, () => {
       blink.update(activeVrm, delta)
+
+      // Keep the gaze alive between pointer or camera updates. Without this
+      // per-frame update, useIdleEyeSaccades only receives its initial target
+      // and the model never performs its intended idle eye movement.
+      idleEyeSaccades.update(activeVrm, idleEyeFocusTarget, delta)
     })
     const emoteMs = measureFrameStep(tracingEnabled, () => {
       vrmEmote.value?.update(delta)
@@ -904,6 +911,7 @@ const focusPos = useVRMEyeFocusFor({
     defaultLookAt: defaultTookAt.value,
   }),
   screenBoundingBox: props.screenBoundingBox,
+  personSource: () => props.personPosition,
   source: () => props.cursorPosition,
   trackingMode: () => props.trackingMode,
 })
@@ -992,6 +1000,7 @@ onMounted(async () => {
     airiIblProbe?.update(mode, skyBoxIntensity.value, nprIrrSH.value ?? null)
   }, { immediate: true })
   watch(focusPos, (newPos) => {
+    idleEyeFocusTarget.value = newPos
     idleEyeSaccades.instantUpdate(vrm.value, newPos)
   }, { immediate: true })
 })
