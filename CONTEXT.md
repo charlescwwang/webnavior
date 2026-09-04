@@ -125,6 +125,47 @@ period with no touch, voice, or attention activity. Ending the conversation
 does not allow another greeting while the same Anonymous Visitor Session
 remains observed.
 
+## Kiosk Customer Session
+
+A short-lived, customer-facing interaction owned by the Kiosk Runtime. It
+contains the current conversation and order state, starts when a customer
+interacts, and ends after order completion, explicit staff action, or inactivity.
+The first version always has an anonymous identity; a future membership identity
+may be attached to the same session without changing its lifecycle.
+
+## Anonymous Kiosk Customer
+
+The identity mode used by the first Kiosk Customer Session version. It stores no
+membership identifier or personally identifying customer data, and its
+conversation and cart are discarded when the session ends.
+
+## Kiosk Session Activity
+
+A customer-originated touch, typed message, voice transcription, or menu action
+that keeps a Kiosk Customer Session active. It is distinct from passive camera
+observation, which belongs to the Anonymous Visitor Session.
+
+## Kiosk Assistance Reminder
+
+A bounded, customer-facing offer of help emitted during an active Kiosk
+Customer Session when anonymous observation still indicates presence but no
+Kiosk Session Activity has occurred for the configured delay. It is distinct
+from a Kiosk Session Reset: a reminder keeps the current session alive.
+
+## Kiosk Assistance Reminder Candidate
+
+An anonymous, rate-limited record produced by the built-in reminder policy.
+It includes presence count, inactive duration, and reminder sequence number.
+A future Agent may choose whether and how to realize the candidate, but cannot
+override the policy's presence, delay, or per-session maximum-reminder limits.
+
+## Kiosk Session Reset
+
+The transition that ends a Kiosk Customer Session, clears its menu draft and
+cart, discards its customer conversation, and returns the Kiosk Runtime to an
+idle anonymous state. It preserves kiosk configuration, administrator settings,
+and the separate Anonymous Visitor Session observation.
+
 ## Kiosk Language Policy
 
 Each kiosk has a default greeting language and a visible language selector. The
