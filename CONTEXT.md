@@ -145,6 +145,13 @@ A customer-originated touch, typed message, voice transcription, or menu action
 that keeps a Kiosk Customer Session active. It is distinct from passive camera
 observation, which belongs to the Anonymous Visitor Session.
 
+## Kiosk Session Pending Work
+
+System work performed for a Kiosk Customer Session after a customer request,
+such as waiting for a conversation provider, Agent, or approved tool. Pending
+Work pauses automatic session expiry and assistance-reminder timing; it is not
+Kiosk Session Activity and does not represent a visitor action.
+
 ## Kiosk Assistance Reminder
 
 A bounded, customer-facing offer of help emitted during an active Kiosk
@@ -357,3 +364,24 @@ The default Proactive Interaction Implementation. It evaluates local Vision
 signals and AIRI-owned rules, then asks the existing conversation and output
 capabilities to realize an interaction. It does not require a Proactive
 Interaction Provider.
+
+## AIRI Interaction Host
+
+### AIRI Interaction Host (AIH)
+
+The AIRI architecture that composes AIRI Core, a Kiosk Host, and one trusted
+WebMCP-enabled Interactive Service. AIH owns the shared interaction experience
+without owning an Interactive Service's domain model.
+_Avoid_: Ordering platform, scenario-specific AIRI
+
+### Interactive Service
+
+An independently owned web application embedded by AIH for one customer task.
+It owns its UI, domain rules, external integrations, and WebMCP tools.
+_Avoid_: AIRI module, built-in workflow
+
+### WebMCP Adapter
+
+The AIH-wide integration that discovers a trusted Interactive Service's native
+WebMCP tools and exposes them to the active LLM runtime. It is shared host
+infrastructure, not an Interactive Service-specific tool protocol.

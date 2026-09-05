@@ -1,5 +1,9 @@
 # Embedded Scenario Bridge v1
 
+> **Deprecated.** AIH now uses native WebMCP for tool discovery and execution.
+> This document remains only as historical context for the MVP; do not use it
+> for new Interactive Services. See `docs/plans/2026-09-05-airi-interaction-host-baseline.md`.
+
 This protocol lets AIRI Kiosk host independently developed interactive web
 applications without adding a domain-specific integration to AIRI. A restaurant
 menu, patient registration flow, or exhibition guide can use the same contract.
