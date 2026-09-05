@@ -1,9 +1,6 @@
 import type { KioskInteractiveService } from '../composables/useKioskInteractiveServices'
-import type { ScenarioBridgeEvent } from './scenario-bridge'
 
-import { computed, markRaw, nextTick, readonly, shallowRef } from 'vue'
-
-import { createScenarioBridge } from './scenario-bridge'
+import { computed, nextTick, readonly, shallowRef } from 'vue'
 
 /** A customer-facing web application explicitly approved for one kiosk deployment. */
 export interface RegisteredScenario {
@@ -15,6 +12,13 @@ export interface RegisteredScenario {
   description: string
   /** HTTPS production URL or a local development URL owned by the deployment. */
   serviceUrl: string
+}
+
+export type InteractiveServiceEvent = 'activity' | 'completed'
+
+interface InteractiveServiceEventMessage {
+  source: 'airi-interaction-lifecycle'
+  type: InteractiveServiceEvent
 }
 
 function isRegisteredScenario(scenario: RegisteredScenario): boolean {
@@ -38,23 +42,22 @@ function isRegisteredScenario(scenario: RegisteredScenario): boolean {
  */
 export function createScenarioRegistry() {
   const registeredScenarios = shallowRef<readonly RegisteredScenario[]>([])
-  const bridgesById = new Map<string, ReturnType<typeof createScenarioBridge>>()
-  const eventListeners = new Set<(event: ScenarioBridgeEvent) => void>()
+  const eventListeners = new Set<(event: InteractiveServiceEvent) => void>()
   const activeScenarioId = shallowRef<string>()
   const revision = shallowRef(0)
+  const iframeRevision = shallowRef(0)
   let scenariosById = new Map<string, RegisteredScenario>()
+  let activeFrameWindow: Window | null = null
   const activeScenario = computed(() => activeScenarioId.value ? scenariosById.get(activeScenarioId.value) : undefined)
-  const activeBridge = computed(() => activeScenarioId.value ? bridgesById.get(activeScenarioId.value) : undefined)
 
-  function createBridge(serviceUrl: string) {
-    // Bridges expose nested refs such as `manifest`. Keep the bridge itself
-    // outside Vue's deep proxying so consumers can safely read `manifest.value`
-    // while an iframe has not announced its manifest yet.
-    const bridge = markRaw(createScenarioBridge({ serviceUrl }))
-    bridge.on('activity', () => eventListeners.forEach(listener => listener('activity')))
-    bridge.on('completed', () => eventListeners.forEach(listener => listener('completed')))
-    return bridge
-  }
+  window.addEventListener('message', (event: MessageEvent<InteractiveServiceEventMessage>) => {
+    const scenario = activeScenario.value
+    if (!scenario || event.source !== activeFrameWindow || event.origin !== new URL(scenario.serviceUrl).origin)
+      return
+    if (event.data?.source !== 'airi-interaction-lifecycle' || (event.data.type !== 'activity' && event.data.type !== 'completed'))
+      return
+    eventListeners.forEach(listener => listener(event.data.type))
+  })
 
   function setServices(services: readonly KioskInteractiveService[]) {
     const registeredIds = new Set<string>()
@@ -66,23 +69,11 @@ export function createScenarioRegistry() {
     })
     const nextById = new Map(nextScenarios.map(scenario => [scenario.id, scenario]))
 
-    for (const [id, bridge] of bridgesById) {
-      const previous = scenariosById.get(id)
-      const next = nextById.get(id)
-      if (!next || next.serviceUrl !== previous?.serviceUrl) {
-        bridge.attach(null)
-        bridgesById.delete(id)
-      }
-    }
-    for (const scenario of nextScenarios) {
-      if (!bridgesById.has(scenario.id))
-        bridgesById.set(scenario.id, createBridge(scenario.serviceUrl))
-    }
-
     scenariosById = nextById
     registeredScenarios.value = nextScenarios
     if (!activeScenarioId.value || !nextById.has(activeScenarioId.value))
       activeScenarioId.value = nextScenarios[0]?.id
+    iframeRevision.value++
     revision.value++
   }
 
@@ -92,20 +83,26 @@ export function createScenarioRegistry() {
       throw new Error(`Kiosk scenario "${id}" is not registered.`)
 
     if (activeScenarioId.value !== id)
-      activeBridge.value?.attach(null)
+      activeFrameWindow = null
     activeScenarioId.value = id
-    // Let ScenarioSurface create the selected iframe before awaiting its
-    // manifest. This keeps navigation independent from page URLs.
+    // Let ScenarioSurface create the selected iframe before returning. Opening
+    // an approved page must not depend on that page implementing WebMCP: its
+    // manifest only controls optional follow-up tools.
     await nextTick()
-    return await activeBridge.value?.waitForManifest()
+    return scenario
   }
 
-  async function resetActive() {
-    await activeBridge.value?.reset()
+  function reloadActive() {
+    activeFrameWindow = null
+    iframeRevision.value++
   }
 
-  function on(event: ScenarioBridgeEvent, listener: () => void) {
-    const wrappedListener = (received: ScenarioBridgeEvent) => {
+  function attachActiveFrame(windowRef: Window | null) {
+    activeFrameWindow = windowRef
+  }
+
+  function on(event: InteractiveServiceEvent, listener: () => void) {
+    const wrappedListener = (received: InteractiveServiceEvent) => {
       if (received === event)
         listener()
     }
@@ -114,14 +111,15 @@ export function createScenarioRegistry() {
   }
 
   return {
-    activeBridge: readonly(activeBridge),
     activeScenario: readonly(activeScenario),
     activeScenarioId: readonly(activeScenarioId),
     activate,
+    attachActiveFrame,
+    iframeRevision: readonly(iframeRevision),
     on,
     registeredScenarios: readonly(registeredScenarios),
     revision: readonly(revision),
-    resetActive,
+    reloadActive,
     setServices,
   }
 }

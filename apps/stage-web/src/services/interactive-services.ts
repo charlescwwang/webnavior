@@ -22,6 +22,11 @@ export const interactiveServices = useLocalStorageManualReset<InteractiveService
     title: '餐點點餐',
   }],
 )
+/** Administrator-authored operational guidance appended after web navigation safety rules. */
+export const interactiveServiceAgentInstructions = useLocalStorageManualReset(
+  'interactive-services/agent-instructions',
+  '',
+)
 
 const activeServiceId = shallowRef<string>()
 

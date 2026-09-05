@@ -5,12 +5,12 @@ import { effectScope, shallowRef } from 'vue'
 
 import { useKioskCustomerSession } from './useKioskCustomerSession'
 
-const { resetScenario } = vi.hoisted(() => ({
-  resetScenario: vi.fn(),
+const { reloadScenario } = vi.hoisted(() => ({
+  reloadScenario: vi.fn(),
 }))
 
 vi.mock('../services/scenario-registry', () => ({
-  scenarioRegistry: { resetActive: resetScenario },
+  scenarioRegistry: { reloadActive: reloadScenario },
 }))
 
 describe('useKioskCustomerSession', () => {
@@ -19,18 +19,16 @@ describe('useKioskCustomerSession', () => {
   afterEach(() => {
     scopes.splice(0).forEach(scope => scope.stop())
     vi.clearAllMocks()
+    vi.useRealTimers()
   })
 
-  it('clears the customer conversation before waiting for the independent menu service', async () => {
+  it('clears the customer conversation and reloads the independent interactive service', async () => {
     const chatSession = {
       createSession: vi.fn().mockResolvedValueOnce('customer-chat').mockResolvedValueOnce('standby-chat'),
       deleteSession: vi.fn().mockResolvedValue(undefined),
       initialize: vi.fn().mockResolvedValue(undefined),
       setActiveSession: vi.fn(),
     } as unknown as ReturnType<typeof useChatSessionStore>
-    let resolveMenuReset: (value: unknown) => void = () => {}
-    resetScenario.mockReturnValue(new Promise(resolve => resolveMenuReset = resolve))
-
     const scope = effectScope()
     scopes.push(scope)
     const session = scope.run(() => useKioskCustomerSession({
@@ -42,14 +40,44 @@ describe('useKioskCustomerSession', () => {
 
     await session.recordActivity()
     const ending = session.end('staff')
-    await Promise.resolve()
-
-    expect(resetScenario).toHaveBeenCalledWith()
+    expect(reloadScenario).toHaveBeenCalledWith()
     expect(chatSession.createSession).toHaveBeenCalledTimes(2)
     expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
-    resolveMenuReset({ cart: { itemCount: 0, lines: [], total: 0 } })
     await ending
     expect(session.customer.value).toBeUndefined()
     expect(session.state.value).toBe('standby')
+  })
+
+  it('keeps a session active while AIRI is waiting for a provider response', async () => {
+    // ROOT CAUSE:
+    //
+    // The session used one unconditional 60-second inactivity timer. A slow
+    // provider response did not form part of the session lifecycle, so its
+    // timer could reset the customer conversation while AIRI was still busy.
+    //
+    // We fix this by suspending that timer for pending system work and only
+    // starting a fresh inactivity interval after the final pending task ends.
+    vi.useFakeTimers()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({
+      activeCardId: shallowRef('default'),
+      chatSession,
+    }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    const releasePendingWork = session.beginPendingWork()
+    await vi.advanceTimersByTimeAsync(61_000)
+
+    expect(session.state.value).toBe('active')
+    releasePendingWork()
   })
 })

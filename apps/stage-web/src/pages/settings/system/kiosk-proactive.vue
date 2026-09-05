@@ -187,7 +187,7 @@ function sanitizeDuration(value: number | undefined, fallback: number) {
             觸發條件
           </h3>
           <p :class="['mb-0 mt-1 text-sm text-neutral-600 dark:text-neutral-300']">
-            可選擇看向 kiosk、經過偵測區，或混合式；混合式會依觸發訊號套用不同招呼 Prompt。
+            可選擇看向 kiosk、經過偵測區，或混合式；設定內容會作為 LLM 的場域參考提示，同時符合時會一併提供。
           </p>
         </div>
         <SelectTab v-model="triggerMode" :options="triggerModeOptions" :disabled="!enabled" size="sm" />

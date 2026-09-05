@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router'
 
 import { beginKioskAdminSession } from '../services/admin-session'
 
+defineOptions({ inheritAttrs: false })
+
 const router = useRouter()
 
 const configuredPin = import.meta.env.VITE_KIOSK_ADMIN_PIN?.trim()
@@ -59,6 +61,7 @@ onUnmounted(clearHoldTimer)
 
 <template>
   <button
+    v-bind="$attrs"
     type="button"
     class="admin-trigger"
     data-kiosk-admin-control

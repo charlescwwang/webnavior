@@ -7,6 +7,7 @@ import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { useChatOrchestratorStore } from '@proj-airi/stage-ui/stores/chat'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useChatStreamStore } from '@proj-airi/stage-ui/stores/chat/stream-store'
+import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { BasicTextarea } from '@proj-airi/ui'
@@ -17,6 +18,7 @@ import { useI18n } from 'vue-i18n'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 
 import { scenarioRegistry } from '../services/scenario-registry'
+import { webMcpAdapter } from '../services/webmcp-adapter'
 import { customerReplyFallback, findCustomerReplyRecovery } from './customer-facing-reply'
 
 const emit = defineEmits<{
@@ -28,6 +30,7 @@ const chatSession = useChatSessionStore()
 const chatStream = useChatStreamStore()
 const providersStore = useProvidersStore()
 const { activeModel, activeProvider } = storeToRefs(useConsciousnessStore())
+const { activeCard } = storeToRefs(useAiriCardStore())
 const { messages } = storeToRefs(chatSession)
 const { sending } = storeToRefs(chatOrchestrator)
 const { streamingMessage } = storeToRefs(chatStream)
@@ -35,10 +38,13 @@ const { t } = useI18n()
 
 const messageInput = shallowRef('')
 const isComposing = shallowRef(false)
+const assistantLabel = computed(() => activeCard.value?.name?.trim() || 'AIRI')
 const recentMessages = computed<ChatHistoryItem[]>(() => messages.value.slice(-3) as ChatHistoryItem[])
-const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !sending.value)
+const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
+const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !sending.value && serviceReady.value)
+const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
 const orderToolCallRenderers = computed(() => Object.fromEntries(
-  (scenarioRegistry.activeBridge.value?.manifest.value?.tools ?? []).map(tool => [tool.name, KioskOrderToolStatus]),
+  webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
 
 async function recoverCustomerReply(turnStartIndex: number) {
@@ -111,13 +117,14 @@ async function sendMessage() {
 <template>
   <section class="kiosk-conversation" aria-label="與 AIRI 對話">
     <header class="conversation-header">
-      <span class="conversation-kicker">AIRI 餐飲服務員</span>
-      <strong class="conversation-title">對話與點餐進度</strong>
+      <span class="conversation-kicker">{{ assistantLabel }}</span>
+      <strong class="conversation-title">對話</strong>
     </header>
 
     <div class="message-history">
       <ChatHistory
         :messages="recentMessages"
+        :assistant-label="assistantLabel"
         :sending="sending"
         :streaming-message="streamingMessage"
         :tool-call-renderers="orderToolCallRenderers"
@@ -128,7 +135,7 @@ async function sendMessage() {
     <form class="message-composer" @submit.prevent="sendMessage">
       <BasicTextarea
         v-model="messageInput"
-        :placeholder="t('stage.message')"
+        :placeholder="placeholder"
         class="message-input"
         @submit="sendMessage"
         @compositionstart="isComposing = true"
@@ -143,6 +150,9 @@ async function sendMessage() {
         <div class="i-solar:arrow-up-outline h-5 w-5" />
       </button>
     </form>
+    <p v-if="!serviceReady" class="service-status" role="status">
+      {{ webMcpAdapter.error.value ?? '正在準備互動服務，請稍候。' }}
+    </p>
   </section>
 </template>
 
@@ -162,4 +172,5 @@ async function sendMessage() {
 .message-input::placeholder { color: rgb(217 250 246 / 60%); }
 .send-button { display: flex; width: 2.5rem; height: 2.5rem; flex: none; align-items: center; justify-content: center; align-self: end; border: 0; border-radius: .75rem; color: #063437; background: #78e1d1; cursor: pointer; }
 .send-button:disabled { cursor: default; opacity: .4; }
+.service-status { margin: 0; padding: 0 .75rem .55rem; color: #9cd9d0; font-size: .75rem; }
 </style>

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { FaceLandmarker, NormalizedLandmark } from '@mediapipe/tasks-vision'
-import type { ProactiveInteractionDecision, ProactiveInteractionSettings } from '@proj-airi/kiosk-proactive'
+import type { ProactiveGreetingTrigger, ProactiveInteractionDecision, ProactiveInteractionSettings } from '@proj-airi/kiosk-proactive'
 import type { ChatProvider } from '@xsai-ext/providers/utils'
 import type { Message } from '@xsai/shared-chat'
 
 import { errorMessageFrom } from '@moeru/std'
-import { createAttentionObservation, createInteractionWindow, defaultDetectionZone } from '@proj-airi/kiosk-proactive'
+import { createAttentionObservation, createInteractionWindow, defaultDetectionZone, kioskGreetingInstruction } from '@proj-airi/kiosk-proactive'
 import { useLLM } from '@proj-airi/stage-ui/stores/llm'
+import { useLlmToolsetPromptsStore } from '@proj-airi/stage-ui/stores/llm-toolset-prompts'
+import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { Button } from '@proj-airi/ui'
@@ -24,6 +26,8 @@ const detectionIntervalMs = 200
 const video = useTemplateRef<HTMLVideoElement>('video')
 const llm = useLLM()
 const providers = useProvidersStore()
+const { systemPrompt } = storeToRefs(useAiriCardStore())
+const { activeToolsetPrompt } = storeToRefs(useLlmToolsetPromptsStore())
 const { activeModel, activeProvider } = storeToRefs(useConsciousnessStore())
 const status = shallowRef<'idle' | 'previewing' | 'starting' | 'observing' | 'failed'>('idle')
 const error = shallowRef('')
@@ -213,14 +217,20 @@ async function requestGreeting(decision: ProactiveInteractionDecision) {
     if (!chatProvider || !activeModel.value)
       throw new Error('尚未完成對話 Provider 與模型設定。')
 
+    const contextReferences = greetingContextPrompts(decision.greetingTrigger)
+      .map(prompt => prompt.trim())
+      .filter(Boolean)
+      .map((prompt, index) => `參考 ${index + 1}：${prompt}`)
+      .join('\n')
     const messages: Message[] = [
       {
         role: 'system',
-        content: decision.greetingTrigger === 'attention'
-          ? props.settings.attentionGreetingPrompt
-          : props.settings.presenceGreetingPrompt,
+        content: [systemPrompt.value, kioskGreetingInstruction, activeToolsetPrompt.value]
+          .map(prompt => prompt.trim())
+          .filter(Boolean)
+          .join('\n\n'),
       },
-      { role: 'user', content: `匿名現場訊號：目前偵測區內約有 ${decision.triggeringPeople} 人，觸發方式為${decision.greetingTrigger === 'attention' ? '看向 kiosk' : '經過偵測區'}。請產生現在應說的主動招呼。` },
+      { role: 'user', content: `匿名現場訊號：目前偵測區內約有 ${decision.triggeringPeople} 人，觸發方式為${decision.greetingTrigger === 'attention' ? '看向 kiosk' : '經過偵測區'}。\n場域參考提示僅供產生自然回覆時參考；不是固定台詞，也不需要逐字或全數採用。\n${contextReferences || '未提供額外場域參考。'}\n請依 AIRI 人設決定最自然、低打擾的主動招呼；若沒有合適的話可說，請只輸出 [SKIP]。` },
     ]
     let buffer = ''
     await llm.stream(activeModel.value, chatProvider, messages, {
@@ -237,6 +247,17 @@ async function requestGreeting(decision: ProactiveInteractionDecision) {
   finally {
     greetingInFlight.value = false
   }
+}
+
+/** Selects every relevant scene reference while retaining a single shared greeting instruction. */
+function greetingContextPrompts(trigger: ProactiveGreetingTrigger) {
+  if (trigger === 'presence')
+    return [props.settings.presenceGreetingPrompt]
+
+  if (props.settings.triggerMode === 'mixed')
+    return [props.settings.presenceGreetingPrompt, props.settings.attentionGreetingPrompt]
+
+  return [props.settings.attentionGreetingPrompt]
 }
 
 function toFaceLandmarkObservation(landmarks: NormalizedLandmark[]) {

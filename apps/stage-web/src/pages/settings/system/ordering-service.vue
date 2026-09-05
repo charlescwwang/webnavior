@@ -2,7 +2,7 @@
 import { Button, Checkbox, Input } from '@proj-airi/ui'
 import { shallowRef } from 'vue'
 
-import { interactiveServices } from '../../../services/interactive-services'
+import { interactiveServiceAgentInstructions, interactiveServices } from '../../../services/interactive-services'
 
 const nextServiceNumber = shallowRef(1)
 
@@ -52,6 +52,11 @@ function removeService(id: string) {
           新增服務
         </Button>
       </div>
+
+      <label :class="['flex flex-col gap-2 text-sm font-medium']">
+        給 AIRI 的互動服務指示
+        <Input v-model="interactiveServiceAgentInstructions" placeholder="補充何時建議服務、品牌語氣或現場流程。" />
+      </label>
     </section>
   </div>
 </template>

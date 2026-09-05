@@ -38,11 +38,11 @@ const reminderText = defineModel<string>('reminderText', { required: true })
       </div>
 
       <label :class="['flex flex-col gap-2 text-sm font-medium']">
-        提醒內容
+        LLM 場域參考提示
         <Textarea v-model="reminderText" :disabled="props.disabled" :rows="3" />
       </label>
       <p :class="['m-0 text-xs text-neutral-500 dark:text-neutral-400']">
-        第一階段會原樣使用這段內容；未來 Agent 僅能在系統的在場、等待與次數限制內決定略過或調整提醒。
+        LLM 會依 AIRI 人設與目前對話脈絡決定是否提醒及如何表達；系統仍強制在場、等待與次數限制。
       </p>
     </template>
   </section>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ProactiveGreetingTrigger } from '@proj-airi/kiosk-proactive'
 import type { ChatProvider } from '@xsai-ext/providers/utils'
 
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
@@ -29,6 +30,7 @@ import { useKioskProactiveGreeting } from '../composables/useKioskProactiveGreet
 import { useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { scenarioRegistry } from '../services/scenario-registry'
+import { webMcpAdapter } from '../services/webmcp-adapter'
 
 type KioskOrientation = 'landscape' | 'portrait'
 
@@ -56,6 +58,7 @@ const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
 const proactiveCamera = useTemplateRef<HTMLVideoElement>('proactiveCamera')
 const proactiveGreeting = useKioskProactiveGreeting()
+let releaseChatPendingWork: (() => void) | undefined
 let proactiveWindow = createInteractionWindow(proactiveSettings.value)
 let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value)
 const proactiveVision = useKioskProactiveVision({
@@ -91,9 +94,15 @@ async function startAudioInteraction() {
       return
 
     await recordCustomerActivity()
-    const provider = await providersStore.getProviderInstance(activeProvider.value)
-    if (provider && activeModel.value)
-      await chatStore.ingest(text, { model: activeModel.value, chatProvider: provider as ChatProvider })
+    try {
+      await webMcpAdapter.waitUntilReady()
+      const provider = await providersStore.getProviderInstance(activeProvider.value)
+      if (provider && activeModel.value)
+        await chatStore.ingest(text, { model: activeModel.value, chatProvider: provider as ChatProvider })
+    }
+    catch (error) {
+      console.warn('[stage-kiosk] ignored voice input while interactive service is unavailable:', error)
+    }
   })
 }
 
@@ -135,8 +144,25 @@ async function syncProactiveVision() {
 watch(() => proactiveSettings.value.enabled, () => void syncProactiveVision())
 
 watch(customerSessionState, (state) => {
+  if (state !== 'active') {
+    releaseChatPendingWork?.()
+    releaseChatPendingWork = undefined
+  }
   if (state === 'standby')
     assistanceReminderWindow.reset()
+})
+
+watch([() => chatStore.sending, customerSessionState], ([sending, sessionState]) => {
+  if (sending && sessionState === 'active') {
+    releaseChatPendingWork ??= customerSession.beginPendingWork()
+    return
+  }
+
+  const wasWaitingForChat = releaseChatPendingWork !== undefined
+  releaseChatPendingWork?.()
+  releaseChatPendingWork = undefined
+  if (wasWaitingForChat && sessionState === 'active')
+    assistanceReminderWindow.restartWait(performance.now())
 })
 
 onUnmounted(() => {
@@ -153,10 +179,16 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     if (!reminderCandidate)
       return
 
-    // This built-in adapter realizes the policy candidate verbatim. A future
-    // Agent adapter belongs at this seam: it may suppress or tailor a candidate,
-    // but the reminder policy has already enforced presence and rate limits.
-    proactiveGreeting.remind(proactiveSettings.value.reminderText)
+    // The local policy enforces presence and rate limits before the selected
+    // provider decides whether and how to realize this candidate.
+    const releasePendingWork = customerSession.beginPendingWork()
+    try {
+      await proactiveGreeting.remind(reminderCandidate, proactiveSettings.value.reminderText)
+    }
+    finally {
+      releasePendingWork()
+      assistanceReminderWindow.restartWait(performance.now())
+    }
     return
   }
 
@@ -166,20 +198,36 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   const decision = proactiveWindow.decide(observation)
   if (!decision.shouldGreet)
     return
+  if (!decision.greetingTrigger)
+    return
 
   try {
     // Begin before asking the LLM so another camera frame cannot create a
     // second greeting while the selected provider is still streaming.
     await customerSession.begin()
-    const greetingPrompt = decision.greetingTrigger === 'attention'
-      ? proactiveSettings.value.attentionGreetingPrompt
-      : proactiveSettings.value.presenceGreetingPrompt
-    await proactiveGreeting.greet(decision, greetingPrompt)
-    assistanceReminderWindow.start(performance.now())
+    const releasePendingWork = customerSession.beginPendingWork()
+    try {
+      await proactiveGreeting.greet(decision, greetingContextPrompts(decision.greetingTrigger))
+      assistanceReminderWindow.start(performance.now())
+    }
+    finally {
+      releasePendingWork()
+    }
   }
   catch (error) {
     console.error('[stage-kiosk] failed to create proactive greeting:', error)
   }
+}
+
+/** Selects context references without allowing either administrator prompt to replace the shared greeting policy. */
+function greetingContextPrompts(trigger: ProactiveGreetingTrigger) {
+  if (trigger === 'presence')
+    return [proactiveSettings.value.presenceGreetingPrompt]
+
+  if (proactiveSettings.value.triggerMode === 'mixed')
+    return [proactiveSettings.value.presenceGreetingPrompt, proactiveSettings.value.attentionGreetingPrompt]
+
+  return [proactiveSettings.value.attentionGreetingPrompt]
 }
 
 async function recordCustomerActivity() {
@@ -205,6 +253,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  releaseChatPendingWork?.()
   stopMenuActivityListener?.()
   stopMenuCompletionListener?.()
 })
@@ -212,12 +261,12 @@ onUnmounted(() => {
 
 <template>
   <main :class="['kiosk-scene', `is-${orientation}`]" @pointerdown.capture="recordPointerActivity" @wheel.capture="recordPointerActivity">
+    <KioskAdminAccess class="kiosk-admin-access">
+      <span class="i-solar:settings-outline h-4 w-4" aria-hidden="true" />
+      <span>設定</span>
+    </KioskAdminAccess>
+
     <section class="stage-region" aria-label="AIRI 虛擬服務員">
-      <KioskAdminAccess
-        class="stage-label"
-      >
-        <span class="stage-dot" /> AIRI 互動服務員
-      </KioskAdminAccess>
       <WidgetStage
         class="stage-model"
         :cursor-position="cursorPosition"
@@ -240,8 +289,9 @@ onUnmounted(() => {
 .kiosk-scene.is-portrait { grid-template-columns: minmax(10rem, .3fr) minmax(0, .7fr); grid-template-rows: minmax(0, .35fr) minmax(0, .65fr); }
 .stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.5rem; background: rgb(4 19 22 / 74%); grid-column: 1; grid-row: 1; }
 .stage-model { width: 100%; height: 100%; }
-.stage-label { position: absolute; z-index: 2; top: 1rem; left: 1rem; display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem; border-radius: 99rem; background: rgb(1 17 20 / 58%); color: #d9faf6; font-size: .85rem; font-weight: 800; }
-.stage-dot { width: .5rem; height: .5rem; border-radius: 999px; background: #56dec5; box-shadow: 0 0 0 .32rem rgb(86 222 197 / 20%); }
+/* Keep the administrator hold target available without exposing controls in the customer-facing composition. */
+:global(.kiosk-admin-access) { position: fixed; z-index: 100; top: 1.75rem; left: 1.75rem; display: inline-flex; height: 2.25rem; align-items: center; gap: .35rem; border: 1px solid rgb(217 250 246 / 28%); border-radius: .7rem; padding: 0 .7rem; color: #d9faf6; background: rgb(1 17 20 / 92%); box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); opacity: 0; transition: opacity .16s ease, background .16s ease; }
+:global(.kiosk-admin-access:hover), :global(.kiosk-admin-access:focus-visible) { background: #153f43; opacity: 1; }
 .conversation-region { grid-column: 2; grid-row: 1; }
 .menu-region { min-width: 0; min-height: 0; grid-column: 1 / span 2; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
@@ -249,6 +299,5 @@ onUnmounted(() => {
 @media (max-width: 700px) {
   .kiosk-scene { padding: .6rem; gap: .6rem; }
   .kiosk-scene.is-landscape { grid-template-columns: minmax(7rem, .25fr) minmax(0, .75fr); }
-  .stage-label { top: .55rem; left: .55rem; font-size: .72rem; }
 }
 </style>

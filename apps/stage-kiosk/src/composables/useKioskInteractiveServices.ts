@@ -20,10 +20,21 @@ export const defaultKioskInteractiveServices: KioskInteractiveService[] = [
   },
 ]
 
+const kioskInteractiveServices = useLocalStorage<KioskInteractiveService[]>(
+  'kiosk/interactive-services',
+  structuredClone(defaultKioskInteractiveServices),
+)
+const kioskInteractiveServiceAgentInstructions = useLocalStorage<string>(
+  'kiosk/interactive-services/agent-instructions',
+  '',
+)
+
 /** Persists this kiosk's administrator-approved iframe services on the local device. */
 export function useKioskInteractiveServices() {
-  return useLocalStorage<KioskInteractiveService[]>(
-    'kiosk/interactive-services',
-    structuredClone(defaultKioskInteractiveServices),
-  )
+  return kioskInteractiveServices
+}
+
+/** Local operational guidance appended after kiosk navigation safety rules. */
+export function useKioskInteractiveServiceAgentInstructions() {
+  return kioskInteractiveServiceAgentInstructions
 }

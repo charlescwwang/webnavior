@@ -23,7 +23,7 @@ const completionResetMs = 10_000
 
 /**
  * Owns the customer-facing lifecycle around AIRI's reusable chat store and
- * the separate menu service. A Kiosk session is deliberately narrower than
+ * the separate interactive service. A Kiosk session is deliberately narrower than
  * AIRI's persisted chat history: it is disposable and anonymous by default.
  */
 export function useKioskCustomerSession(options: Options) {
@@ -32,6 +32,7 @@ export function useKioskCustomerSession(options: Options) {
   const standbyChatSessionId = shallowRef<string>()
   let endTimer: ReturnType<typeof setTimeout> | undefined
   let resetTask: Promise<void> | undefined
+  const pendingWorkTokens = new Set<symbol>()
 
   const notice = computed(() => {
     if (state.value === 'completing')
@@ -61,6 +62,9 @@ export function useKioskCustomerSession(options: Options) {
 
   function scheduleIdleTimeout() {
     clearTimers()
+    if (pendingWorkTokens.size > 0)
+      return
+
     endTimer = setTimeout(() => void end('idle'), idleTimeoutMs)
   }
 
@@ -87,6 +91,28 @@ export function useKioskCustomerSession(options: Options) {
     await begin()
   }
 
+  /**
+   * Suspends automatic session expiry while AIRI performs work on behalf of
+   * the customer. The returned release function is idempotent so overlapping
+   * model or tool calls cannot resume the timer prematurely.
+   */
+  function beginPendingWork() {
+    if (state.value !== 'active')
+      return () => {}
+
+    const token = Symbol('kiosk-pending-work')
+    pendingWorkTokens.add(token)
+    clearTimers()
+
+    return () => {
+      if (!pendingWorkTokens.delete(token))
+        return
+
+      if (pendingWorkTokens.size === 0 && state.value === 'active')
+        scheduleIdleTimeout()
+    }
+  }
+
   function completeOrder() {
     if (!customer.value)
       return
@@ -102,17 +128,13 @@ export function useKioskCustomerSession(options: Options) {
 
     resetTask = (async () => {
       clearTimers()
+      pendingWorkTokens.clear()
       state.value = 'resetting'
       const completedChatSessionId = standbyChatSessionId.value
 
-      // The iframe is an independent service and may still be loading. Start
-      // its reset now, but never make the next customer wait to stop seeing
-      // the previous customer's conversation.
-      const scenarioResetTask = scenarioRegistry.resetActive().catch((error) => {
-        // A later iframe load starts with an empty menu machine, so this does
-        // not prevent the customer-facing conversation reset from completing.
-        console.warn('[stage-kiosk] could not reset scenario customer state:', error)
-      })
+      // Reloading is the generic session reset boundary. It keeps AIH from
+      // requiring every independent WebMCP service to expose a reset tool.
+      scenarioRegistry.reloadActive()
 
       standbyChatSessionId.value = await options.chatSession.createSession(
         options.activeCardId.value || 'default',
@@ -123,7 +145,6 @@ export function useKioskCustomerSession(options: Options) {
 
       customer.value = undefined
       state.value = 'standby'
-      await scenarioResetTask
     })().finally(() => {
       resetTask = undefined
     })
@@ -135,6 +156,7 @@ export function useKioskCustomerSession(options: Options) {
 
   return {
     begin,
+    beginPendingWork,
     customer,
     end,
     notice,

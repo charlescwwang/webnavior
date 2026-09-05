@@ -5,6 +5,7 @@ import { Checkbox, FieldInput } from '@proj-airi/ui'
 import { shallowRef } from 'vue'
 
 const services = defineModel<KioskInteractiveService[]>({ required: true })
+const agentInstructions = defineModel<string>('agentInstructions', { required: true })
 const newServiceId = shallowRef(1)
 
 function addService() {
@@ -50,6 +51,14 @@ function removeService(id: string) {
         移除此服務
       </button>
     </article>
+
+    <FieldInput
+      v-model="agentInstructions"
+      label="給 AIRI 的互動服務指示"
+      description="可補充切換時機、品牌語氣與現場流程；無法覆蓋網址 allow-list 與單一 iframe 的安全規則。"
+      placeholder="例如：只有顧客明確詢問客製貼圖時才建議貼圖服務。"
+      :single-line="false"
+    />
   </section>
 </template>
 

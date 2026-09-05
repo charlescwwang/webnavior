@@ -24,7 +24,7 @@ import { toast, Toaster } from 'vue-sonner'
 
 import PerformanceOverlay from './components/Devtools/PerformanceOverlay.vue'
 
-import { availableInteractiveServices } from './services/interactive-services'
+import { availableInteractiveServices, interactiveServiceAgentInstructions } from './services/interactive-services'
 import { usePWAStore } from './stores/pwa'
 import { createInteractiveServicePrompt, createInteractiveServiceTools } from './tools/interactive-services'
 import { createOrderMenuTools, orderMenuToolsetPrompt } from './tools/order-menu'
@@ -51,7 +51,7 @@ const inferencePreload = useInferencePreload()
 const llmToolsStore = useLlmToolsStore()
 const llmToolsetPromptsStore = useLlmToolsetPromptsStore()
 
-watch(availableInteractiveServices, async (services) => {
+watch([availableInteractiveServices, interactiveServiceAgentInstructions], async ([services]) => {
   await llmToolsStore.registerTools('interactive-services', createInteractiveServiceTools())
   llmToolsetPromptsStore.registerToolsetPrompts('interactive-services', [{
     id: 'registered-interactive-services',

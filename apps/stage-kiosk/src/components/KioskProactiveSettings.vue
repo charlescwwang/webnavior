@@ -87,15 +87,15 @@ function updateGreetingPrompt(key: 'attentionGreetingPrompt' | 'presenceGreeting
       <div v-if="settings.triggerMode === 'mixed'" class="settings-grid">
         <FieldTextArea
           :model-value="settings.attentionGreetingPrompt"
-          label="看向 kiosk 時的 Prompt"
-          description="同時符合注視與經過時，優先使用此 Prompt。"
+          label="看向 kiosk 時的 LLM 參考提示"
+          description="提供訪客正注視 kiosk 的場域線索；不會覆蓋 AIRI 的共通招呼規則。"
           :rows="5"
           @update:model-value="updateGreetingPrompt('attentionGreetingPrompt', $event)"
         />
         <FieldTextArea
           :model-value="settings.presenceGreetingPrompt"
-          label="經過偵測區時的 Prompt"
-          description="僅符合經過偵測區時，使用此 Prompt。"
+          label="經過偵測區時的 LLM 參考提示"
+          description="提供訪客進入偵測區的場域線索；混合式同時符合時會與注視線索一併提供。"
           :rows="5"
           @update:model-value="updateGreetingPrompt('presenceGreetingPrompt', $event)"
         />

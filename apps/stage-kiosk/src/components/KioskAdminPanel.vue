@@ -3,13 +3,6 @@ import type { KioskInteractiveService } from '../composables/useKioskInteractive
 import type { KioskProactiveSettings as KioskProactiveSettingsValue } from '../composables/useKioskProactiveSettings'
 import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiveVision'
 
-import { HearingConfig } from '@proj-airi/stage-ui/components/scenarios/dialogs/audio-input'
-import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
-import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
-import { FieldCombobox, FieldInput } from '@proj-airi/ui'
-import { storeToRefs } from 'pinia'
-import { computed } from 'vue'
-
 import KioskAssistanceReminderSettings from './KioskAssistanceReminderSettings.vue'
 import KioskInteractiveServicesSettings from './KioskInteractiveServicesSettings.vue'
 import KioskProactiveSettings from './KioskProactiveSettings.vue'
@@ -28,24 +21,7 @@ const emit = defineEmits<{
 const paused = defineModel<boolean>('paused', { required: true })
 const proactiveSettings = defineModel<KioskProactiveSettingsValue>('proactiveSettings', { required: true })
 const interactiveServices = defineModel<KioskInteractiveService[]>('interactiveServices', { required: true })
-const consciousnessStore = useConsciousnessStore()
-const providersStore = useProvidersStore()
-const { activeModel, activeProvider, providerModels } = storeToRefs(consciousnessStore)
-const { configuredChatProvidersMetadata } = storeToRefs(providersStore)
-
-const providerOptions = computed(() => configuredChatProvidersMetadata.value.map(provider => ({
-  label: provider.localizedName ?? provider.name,
-  value: provider.id,
-})))
-const modelOptions = computed(() => providerModels.value.map(model => ({
-  label: model.name,
-  value: model.id,
-})))
-
-async function loadProviderModels() {
-  if (activeProvider.value)
-    await consciousnessStore.loadModelsForProvider(activeProvider.value)
-}
+const interactiveServiceAgentInstructions = defineModel<string>('interactiveServiceAgentInstructions', { required: true })
 </script>
 
 <template>
@@ -63,40 +39,6 @@ async function loadProviderModels() {
     </header>
 
     <div class="admin-content">
-      <section class="admin-section">
-        <h3>對話模型</h3>
-        <FieldCombobox
-          v-model="activeProvider"
-          label="Provider"
-          description="僅顯示已完成設定的對話 Provider。"
-          :options="providerOptions"
-          placeholder="選擇 Provider"
-          layout="vertical"
-          @update:model-value="loadProviderModels"
-        />
-        <FieldCombobox
-          v-if="modelOptions.length > 0"
-          v-model="activeModel"
-          label="可用模型"
-          description="切換後會立即用於新的對話。"
-          :options="modelOptions"
-          placeholder="選擇模型"
-          layout="vertical"
-        />
-        <FieldInput
-          v-else
-          v-model="activeModel"
-          label="模型名稱"
-          description="此 Provider 未提供模型清單時，可手動輸入模型 ID。"
-          placeholder="輸入模型 ID"
-        />
-      </section>
-
-      <section class="admin-section">
-        <h3>語音輸入</h3>
-        <HearingConfig :granted="true" />
-      </section>
-
       <KioskProactiveSettings
         v-model="proactiveSettings"
         :status="props.proactiveStatus"
@@ -105,7 +47,10 @@ async function loadProviderModels() {
 
       <KioskAssistanceReminderSettings v-model="proactiveSettings" />
 
-      <KioskInteractiveServicesSettings v-model="interactiveServices" />
+      <KioskInteractiveServicesSettings
+        v-model="interactiveServices"
+        v-model:agent-instructions="interactiveServiceAgentInstructions"
+      />
 
       <section class="admin-section">
         <h3>舞台</h3>
@@ -126,7 +71,7 @@ async function loadProviderModels() {
       </section>
 
       <p class="admin-note">
-        Provider 的 API Key 與進階連線設定不在公開 Kiosk 調整；請透過受保護的 AIRI 管理環境進行變更。
+        對話模型與語音輸入請在一般設定中調整；此頁只保留 Kiosk 現場行為與互動服務設定。
       </p>
     </div>
   </section>

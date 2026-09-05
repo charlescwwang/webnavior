@@ -11,8 +11,11 @@ import { ErrorBoundary } from '@proj-airi/ui'
 import { onMounted, onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
 
+import { useKioskInteractiveServiceAgentInstructions } from './composables/useKioskInteractiveServices'
 import { scenarioRegistry } from './services/scenario-registry'
-import { createScenarioNavigationPrompt, createScenarioNavigationTools, createScenarioTools } from './tools/scenario'
+import { webMcpAdapter } from './services/webmcp-adapter'
+import { createScenarioNavigationPrompt, createScenarioNavigationTools } from './tools/scenario'
+import { createWebMcpTools } from './tools/webmcp'
 
 const cardStore = useAiriCardStore()
 const characterOrchestratorStore = useCharacterOrchestratorStore()
@@ -23,38 +26,30 @@ const llmToolsStore = useLlmToolsStore()
 const llmToolsetPromptsStore = useLlmToolsetPromptsStore()
 const settingsAudioDeviceStore = useSettingsAudioDevice()
 const settingsStore = useSettings()
+const interactiveServiceAgentInstructions = useKioskInteractiveServiceAgentInstructions()
 
 let scenarioSyncGeneration = 0
 
 async function syncActiveScenarioTools() {
   const generation = ++scenarioSyncGeneration
-  llmToolsStore.clearTools('scenario')
-  llmToolsetPromptsStore.clearToolsetPrompts('scenario')
+  llmToolsStore.clearTools('webmcp')
   const registeredScenarios = scenarioRegistry.registeredScenarios.value
   if (registeredScenarios.length === 0)
     return
 
-  await llmToolsStore.registerTools('scenario-navigation', createScenarioNavigationTools(registeredScenarios))
+  const activeScenarioId = scenarioRegistry.activeScenarioId.value
+  await llmToolsStore.registerTools('scenario-navigation', createScenarioNavigationTools(registeredScenarios, activeScenarioId))
   llmToolsetPromptsStore.registerToolsetPrompts('scenario-navigation', [{
     id: 'registered-kiosk-pages',
-    content: createScenarioNavigationPrompt(registeredScenarios),
+    content: createScenarioNavigationPrompt(registeredScenarios, activeScenarioId, interactiveServiceAgentInstructions.value),
   }])
 
-  try {
-    const bridge = scenarioRegistry.activeBridge.value
-    const manifest = await bridge?.waitForManifest()
-    if (!manifest || generation !== scenarioSyncGeneration)
-      return
-    await llmToolsStore.registerTools('scenario', createScenarioTools(manifest))
-    llmToolsetPromptsStore.registerToolsetPrompts('scenario', [{ id: manifest.id, content: manifest.agentPrompt }])
-  }
-  catch (error) {
-    if (generation === scenarioSyncGeneration)
-      console.error('[stage-kiosk] active registered scenario is unavailable:', error)
-  }
+  if (generation !== scenarioSyncGeneration)
+    return
+  await llmToolsStore.registerTools('webmcp', createWebMcpTools())
 }
 
-watch(scenarioRegistry.revision, () => void syncActiveScenarioTools(), { immediate: true })
+watch([scenarioRegistry.revision, scenarioRegistry.activeScenarioId, interactiveServiceAgentInstructions, webMcpAdapter.tools], () => void syncActiveScenarioTools(), { immediate: true })
 
 onMounted(async () => {
   await displayModelsStore.initialize()
@@ -68,8 +63,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  llmToolsStore.clearTools('scenario')
-  llmToolsetPromptsStore.clearToolsetPrompts('scenario')
+  llmToolsStore.clearTools('webmcp')
   llmToolsStore.clearTools('scenario-navigation')
   llmToolsetPromptsStore.clearToolsetPrompts('scenario-navigation')
 })

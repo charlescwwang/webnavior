@@ -62,8 +62,8 @@ function updateText(value: string | undefined) {
       </div>
       <FieldTextArea
         :model-value="settings.reminderText"
-        label="提醒內容"
-        description="第一階段會由 AIRI 原樣說出這段內容。未來 Agent 可在安全限制內改為動態決定是否提醒與內容。"
+        label="LLM 場域參考提示"
+        description="提供無操作時的現場線索；LLM 會依 AIRI 人設與對話脈絡決定是否提醒及如何表達。"
         :rows="3"
         @update:model-value="updateText($event)"
       />
