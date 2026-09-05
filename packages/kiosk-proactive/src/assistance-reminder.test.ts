@@ -37,4 +37,14 @@ describe('createAssistanceReminderWindow', () => {
     expect(window.decide({ observedAtMs: 2_000, attendingPeople: 0, presencePeople: 0 })).toBeUndefined()
     expect(window.decide({ observedAtMs: 2_001, attendingPeople: 0, presencePeople: 1 })).toMatchObject({ reminderNumber: 1 })
   })
+
+  it('restarts its wait after AIRI finishes system work without resetting reminder count', () => {
+    const window = createAssistanceReminderWindow({ ...defaultKioskAssistanceReminderSettings, waitMs: 1_000 })
+    window.start(0)
+    expect(window.decide({ observedAtMs: 1_000, attendingPeople: 0, presencePeople: 1 })).toMatchObject({ reminderNumber: 1 })
+
+    window.restartWait(1_500)
+    expect(window.decide({ observedAtMs: 2_499, attendingPeople: 0, presencePeople: 1 })).toBeUndefined()
+    expect(window.decide({ observedAtMs: 2_500, attendingPeople: 0, presencePeople: 1 })).toMatchObject({ reminderNumber: 2 })
+  })
 })

@@ -5,7 +5,7 @@ export const defaultKioskAssistanceReminderSettings: KioskAssistanceReminderSett
   enabled: true,
   waitMs: 20_000,
   maxRemindersPerSession: 2,
-  reminderText: '需要我協助您瀏覽菜單、點餐或介紹餐點嗎？',
+  reminderText: '現場參考：訪客仍停留在 kiosk 前，但暫時沒有操作。可視目前對話與頁面情境，低打擾地提供協助。',
 }
 
 /**
@@ -29,6 +29,18 @@ export function createAssistanceReminderWindow(settings: KioskAssistanceReminder
     validateTimestamp(observedAtMs, lastObservedAtMs)
     lastObservedAtMs = observedAtMs
     lastActivityAtMs = observedAtMs
+  }
+
+  /**
+   * Restarts the reminder delay after AIRI finishes work for the customer.
+   * Unlike {@link recordActivity}, this preserves the session's reminder count
+   * because it is a system lifecycle transition rather than visitor activity.
+   */
+  function restartWait(observedAtMs: number) {
+    validateTimestamp(observedAtMs, lastObservedAtMs)
+    lastObservedAtMs = observedAtMs
+    if (lastActivityAtMs !== undefined)
+      lastActivityAtMs = observedAtMs
   }
 
   function decide(observation: AttentionObservation): KioskAssistanceReminderCandidate | undefined {
@@ -60,7 +72,7 @@ export function createAssistanceReminderWindow(settings: KioskAssistanceReminder
     reminderCount = 0
   }
 
-  return { decide, recordActivity, reset, start }
+  return { decide, recordActivity, reset, restartWait, start }
 }
 
 function validateTimestamp(observedAtMs: number, lastObservedAtMs: number) {

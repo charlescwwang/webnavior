@@ -46,9 +46,9 @@ export interface ProactiveInteractionSettings {
   minAttendingPeople: number
   /** Whether attention to the screen or simply entering the detection area triggers the window. @default 'attention' */
   triggerMode: ProactiveTriggerMode
-  /** System prompt sent to the selected chat provider when attention earns a greeting. */
+  /** Administrator-authored, non-authoritative context reference sent to the LLM when attention earns a greeting. */
   attentionGreetingPrompt: string
-  /** System prompt sent to the selected chat provider when presence earns a greeting. */
+  /** Administrator-authored, non-authoritative context reference sent to the LLM when presence earns a greeting. */
   presenceGreetingPrompt: string
 }
 
@@ -76,7 +76,7 @@ export interface KioskAssistanceReminderSettings {
   waitMs: number
   /** Maximum reminders allowed before the current Kiosk Customer Session ends. @default 2 */
   maxRemindersPerSession: number
-  /** Administrator-authored text delivered by the built-in reminder adapter. */
+  /** Administrator-authored, non-authoritative context reference sent to the LLM for an inactivity reminder candidate. */
   reminderText: string
 }
 

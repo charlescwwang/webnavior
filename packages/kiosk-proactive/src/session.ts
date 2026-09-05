@@ -1,7 +1,13 @@
 import type { AttentionObservation, InteractionPhase, ProactiveGreetingTrigger, ProactiveInteractionDecision, ProactiveInteractionSettings } from './types'
 
-export const defaultAttentionGreetingPrompt = '你是餐飲 kiosk 的 AIRI 服務員。請以繁體中文自然、中性地招呼正在看向 kiosk 的可能是一組訪客。不要推測或稱呼年齡、性別、種族或外貌，也不要提到相機、偵測或辨識。限兩句內，表示可協助瀏覽菜單、點餐或介紹兒童餐等需求。'
-export const defaultPresenceGreetingPrompt = '你是餐飲 kiosk 的 AIRI 服務員。請以繁體中文自然、中性地向剛進入 kiosk 互動區的可能是一組訪客主動招呼。不要假設對方已注意到 kiosk，不要推測或稱呼年齡、性別、種族或外貌，也不要提到相機、偵測或辨識。限兩句內，表示如有需要可協助瀏覽菜單、點餐或介紹兒童餐。'
+/** Stable safety and tone policy for every provider-generated proactive greeting. */
+export const kioskGreetingInstruction = '你是餐飲 kiosk 的 AIRI 服務員。請以繁體中文自然、中性地主動招呼可能是一組訪客。不要推測或稱呼年齡、性別、種族或外貌，也不要提到相機、偵測或辨識。限兩句內，表示可協助瀏覽菜單、點餐或介紹餐點。'
+
+/** Default non-authoritative context reference for an attentive visitor. */
+export const defaultAttentionGreetingPrompt = '現場參考：訪客正注視 kiosk，可能正在等候引導或準備開始互動。可自然、低打擾地提供瀏覽菜單、點餐或餐點介紹的協助。'
+
+/** Default non-authoritative context reference for a visitor entering the kiosk area. */
+export const defaultPresenceGreetingPrompt = '現場參考：訪客已進入 kiosk 互動區，但不一定已注意到螢幕。可自然地表示如有需要能協助瀏覽菜單、點餐或介紹餐點。'
 
 /** Default conservative settings for the CPU kiosk proof of concept. */
 export const defaultProactiveInteractionSettings: ProactiveInteractionSettings = {
@@ -103,8 +109,8 @@ export function createInteractionWindow(settings: ProactiveInteractionSettings) 
     if (settings.triggerMode === 'presence')
       return presenceMatches ? { kind: 'presence' as const, people: observation.presencePeople } : undefined
 
-    // When both conditions are true, an explicit look at the kiosk is the
-    // stronger social signal and therefore selects the attention greeting.
+    // An explicit look ends the dwell interval in mixed mode. Its context is
+    // still sent together with the presence context by the LLM adapter.
     if (attentionMatches)
       return { kind: 'attention' as const, people: observation.attendingPeople }
 
