@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { createMenuToolRuntime, menuScenarioManifest } from '../webmcp'
+import { createMenuToolRuntime } from '../webmcp'
 import { catalogInfo, createOrderMachine, defaultOptionsFor, menu } from './order-machine'
 
 describe('createOrderMachine', () => {
@@ -65,10 +65,13 @@ describe('createOrderMachine', () => {
 describe('createMenuToolRuntime', () => {
   it('keeps direct user-interface mutations separate from AI visual actions', async () => {
     const actions: string[] = []
+    const operationEvents: string[] = []
     const runtime = createMenuToolRuntime({
       onAction: (action) => {
         actions.push(action.label)
       },
+      onAgentOperationStart: () => operationEvents.push('start'),
+      onAgentOperationEnd: () => operationEvents.push('end'),
       onCartChange: () => {},
       onMenuSelection: () => {},
     })
@@ -79,18 +82,16 @@ describe('createMenuToolRuntime', () => {
     await runtime.invoke('cart_add_item', {}, withoutVisualAction)
 
     expect(actions).toEqual([])
+    expect(operationEvents).toEqual([])
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({
       cart: { itemCount: 2, lines: [{ itemId: 'chous-shrimp-roll', quantity: 2 }] },
     })
+    expect(operationEvents).toEqual(['start', 'end'])
   })
 
-  it('declares its tools, prompt, and session reset through the generic scenario manifest', () => {
-    expect(menuScenarioManifest).toMatchObject({
-      id: 'restaurant-ordering',
-      session: { reset: { name: 'scenario_reset' } },
-      title: '菜單與目前訂單',
-    })
-    expect(menuScenarioManifest.tools.map(tool => tool.name)).toEqual([
+  it('declares native WebMCP tools from the same runtime used by the menu UI', () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
       'menu_get',
       'menu_recommend',
       'menu_select_item',
@@ -102,7 +103,90 @@ describe('createMenuToolRuntime', () => {
       'cart_get',
       'order_confirm',
     ])
-    expect(menuScenarioManifest.agentPrompt).toContain('不可朗讀、列出或介紹完整菜單')
+  })
+
+  it('requires the selected item ID returned by menu_get', () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const selectItem = runtime.toolDefinitions.find(tool => tool.name === 'menu_select_item')
+    const itemId = selectItem?.inputSchema.properties as Record<string, { description?: string }> | undefined
+
+    expect(itemId?.itemId?.description).toContain('menu_get')
+  })
+
+  it('releases an earlier native registration before registering the same tool names again', async () => {
+    const registeredNames = new Set<string>()
+    const registerTool = vi.fn(async (
+      tool: { name: string },
+      registration: { signal?: AbortSignal },
+    ) => {
+      if (registeredNames.has(tool.name))
+        throw new DOMException('Duplicate tool name', 'InvalidStateError')
+
+      registeredNames.add(tool.name)
+      registration.signal?.addEventListener('abort', () => registeredNames.delete(tool.name), { once: true })
+    })
+    vi.stubGlobal('document', { modelContext: { registerTool } })
+
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.registerNativeWebMcp()
+      await expect(runtime.registerNativeWebMcp()).resolves.toBeTypeOf('function')
+      expect(registeredNames.size).toBe(runtime.toolDefinitions.length)
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('accepts a native WebMCP invocation that omits callback options', async () => {
+    const registeredTools: Array<{
+      name: string
+      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
+    }> = []
+    const registerTool = vi.fn(async (tool: typeof registeredTools[number]) => {
+      registeredTools.push(tool)
+    })
+    vi.stubGlobal('document', { modelContext: { registerTool } })
+
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.registerNativeWebMcp()
+      const recommend = registeredTools.find(tool => tool.name === 'menu_recommend')
+      if (!recommend)
+        throw new Error('Expected menu_recommend to be registered.')
+
+      await expect(recommend.execute({ needs: ['fried'] })).resolves.toMatchObject({ needs: ['fried'] })
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('returns an actionable result when an agent omits a selected item ID', async () => {
+    const registeredTools: Array<{
+      name: string
+      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
+    }> = []
+    const registerTool = vi.fn(async (tool: typeof registeredTools[number]) => {
+      registeredTools.push(tool)
+    })
+    vi.stubGlobal('document', { modelContext: { registerTool } })
+
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.registerNativeWebMcp()
+      const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
+      if (!selectItem)
+        throw new Error('Expected menu_select_item to be registered.')
+
+      await expect(selectItem.execute({})).resolves.toMatchObject({
+        ok: false,
+        recovery: expect.stringContaining('menu_get'),
+      })
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('drives the same visible action sequence and cart state used by WebMCP', async () => {

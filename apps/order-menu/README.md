@@ -17,21 +17,19 @@ provides a fully usable menu and cart without AIRI running.
 
 ## AIRI integration
 
-When embedded by AIRI, the service exposes the same domain operations through:
-
-1. Native WebMCP, when the browser provides `document.modelContext`.
-2. The generic `airi-scenario-bridge` `postMessage` protocol as the compatibility path.
-
-On startup the service sends a scenario manifest containing its title, Agent
-prompt, structured tool definitions, lifecycle events, and optional host-only
-reset command. AIRI registers those tools dynamically, so this service is one
-scenario among many rather than an AIRI built-in feature. See
-[`docs/standards/embedded-scenario-bridge-v1.md`](../../docs/standards/embedded-scenario-bridge-v1.md)
-for the portable contract.
+When embedded by AIRI, the service exposes its domain operations through native
+WebMCP. AIRI discovers the tools dynamically, so this service is one interactive
+service among many rather than an AIRI built-in feature.
 
 Set `VITE_AIRI_ORIGIN` to the exact AIRI web origin when deploying separately.
 It defaults to `http://localhost:5173` for local development. The embedding page
 must set `allow="tools"` on its iframe for native WebMCP support.
+
+For an AIRI Kiosk customer session, the service may additionally send the small
+host lifecycle events in
+[`interactive-service-lifecycle-v1.md`](../../docs/standards/interactive-service-lifecycle-v1.md):
+`activity` refreshes the anonymous-session idle timer and `completed` starts the
+next-customer flow. These events do not expose or execute tools.
 
 ## Extending for a real ordering system
 
