@@ -19,7 +19,6 @@ interface Options {
 }
 
 const idleTimeoutMs = 60_000
-const completionResetMs = 10_000
 
 /**
  * Owns the customer-facing lifecycle around AIRI's reusable chat store and
@@ -36,7 +35,7 @@ export function useKioskCustomerSession(options: Options) {
 
   const notice = computed(() => {
     if (state.value === 'completing')
-      return '模擬訂單已完成，準備迎接下一位顧客。'
+      return '模擬訂單已完成，正在顯示完成後訊息。'
     if (state.value === 'resetting')
       return '正在清除本次接待內容…'
     return undefined
@@ -88,6 +87,11 @@ export function useKioskCustomerSession(options: Options) {
   }
 
   async function recordActivity() {
+    // A completed interaction is now waiting for the host-owned feedback
+    // invitation. Do not let iframe events or background voice activity turn
+    // that finished customer session back into an active one.
+    if (state.value === 'completing')
+      return
     await begin()
   }
 
@@ -114,12 +118,12 @@ export function useKioskCustomerSession(options: Options) {
   }
 
   function completeOrder() {
-    if (!customer.value)
-      return
+    if (!customer.value || state.value === 'completing' || state.value === 'resetting')
+      return false
 
     clearTimers()
     state.value = 'completing'
-    endTimer = setTimeout(() => void end('completed'), completionResetMs)
+    return true
   }
 
   async function end(_reason: 'completed' | 'idle' | 'staff') {

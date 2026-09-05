@@ -330,6 +330,7 @@ catalog:
   prismarine-viewer: ^1.33.0
   prismarine-windows: ^2.10.0
   publint: ^0.3.18
+  qrcode: ^1.5.4
   rehype-katex: ^7.0.1
   rehype-parse: ^9.0.1
   rehype-stringify: ^10.0.1

@@ -134,6 +134,7 @@
     "ofetch": "catalog:",
     "pinia": "catalog:",
     "posthog-js": "catalog:",
+    "qrcode": "catalog:",
     "rehype-katex": "catalog:",
     "rehype-parse": "catalog:",
     "rehype-stringify": "catalog:",

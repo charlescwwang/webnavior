@@ -7,26 +7,30 @@ import MobileHeader from '@proj-airi/stage-layouts/components/Layouts/MobileHead
 import MobileInteractiveArea from '@proj-airi/stage-layouts/components/Layouts/MobileInteractiveArea.vue'
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
+import { errorMessageFrom } from '@moeru/std'
 import { BackgroundProvider } from '@proj-airi/stage-layouts/components/Backgrounds'
 import { useBackgroundThemeColor } from '@proj-airi/stage-layouts/composables/theme-color'
 import { useBackgroundStore } from '@proj-airi/stage-layouts/stores/background'
 import { useModelStore } from '@proj-airi/stage-ui-three'
-import { HoloCoupon } from '@proj-airi/stage-ui/components'
+import { canShowFeedbackInvitation, FeedbackInvitation, HoloCoupon } from '@proj-airi/stage-ui/components'
 import { ViewControlSlider, WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
 import { useChatOrchestratorStore } from '@proj-airi/stage-ui/stores/chat'
+import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
+import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useHearingSpeechInputPipeline } from '@proj-airi/stage-ui/stores/modules/hearing'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { breakpointsTailwind, useBreakpoints, useMouse } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, useTemplateRef, watch } from 'vue'
 
 import OrderMenuPanel from '../components/OrderMenuPanel.vue'
 
 import { usePersonEyeFocus } from '../composables/usePersonEyeFocus'
+import { feedbackInvitationSettings } from '../services/feedback-invitation'
 
 const paused = ref(false)
 
@@ -66,6 +70,55 @@ const providersStore = useProvidersStore()
 const consciousnessStore = useConsciousnessStore()
 const { activeProvider: activeChatProvider, activeModel: activeChatModel } = storeToRefs(consciousnessStore)
 const chatStore = useChatOrchestratorStore()
+const chatSessionStore = useChatSessionStore()
+const { activeCardId } = storeToRefs(useAiriCardStore())
+const feedbackInvitationOpen = shallowRef(false)
+const interactiveServiceResetRevision = shallowRef(0)
+const canShowCompletionInvitation = computed(() => canShowFeedbackInvitation(feedbackInvitationSettings.value))
+let resettingInteractiveSession = false
+
+function handleInteractiveServiceCompleted() {
+  if (feedbackInvitationOpen.value || resettingInteractiveSession)
+    return
+
+  if (canShowCompletionInvitation.value) {
+    feedbackInvitationOpen.value = true
+    return
+  }
+
+  void resetCompletedInteractiveSession()
+}
+
+async function resetCompletedInteractiveSession() {
+  if (resettingInteractiveSession)
+    return
+
+  resettingInteractiveSession = true
+  feedbackInvitationOpen.value = false
+  try {
+    await chatSessionStore.initialize()
+    const completedChatSessionId = chatSessionStore.activeSessionId
+    await chatSessionStore.createSession(activeCardId.value || 'default', {
+      setActive: true,
+      title: '互動服務接待',
+    })
+    if (completedChatSessionId)
+      await chatSessionStore.deleteSession(completedChatSessionId)
+  }
+  catch (error) {
+    console.error('[stage-web] failed to reset the completed interactive session:', errorMessageFrom(error))
+  }
+  finally {
+    // Reloading the isolated iframe clears its own cart without giving AIRI
+    // a scenario-specific reset tool or coupling the service to this host.
+    interactiveServiceResetRevision.value += 1
+    resettingInteractiveSession = false
+  }
+}
+
+function finishFeedbackInvitation() {
+  void resetCompletedInteractiveSession()
+}
 
 const shouldUseStreamInput = computed(() => supportsStreamInput.value && !!stream.value)
 
@@ -210,12 +263,17 @@ const cursorPosition = computed(() => ({
               {{ personFocusError || (personPosition ? 'Tracking person' : 'Looking for a person…') }}
             </div>
           </div>
-          <OrderMenuPanel />
+          <OrderMenuPanel :reset-revision="interactiveServiceResetRevision" @completed="handleInteractiveServiceCompleted" />
         </div>
         <InteractiveArea v-if="!isMobile" h="85dvh" absolute right-4 flex flex-1 flex-col max-w="500px" min-w="30%" />
         <MobileInteractiveArea v-if="isMobile" @settings-open="handleSettingsOpen" />
       </div>
       <HoloCoupon />
+      <FeedbackInvitation
+        v-if="feedbackInvitationOpen && canShowCompletionInvitation"
+        :settings="feedbackInvitationSettings"
+        @finish="finishFeedbackInvitation"
+      />
     </div>
   </BackgroundProvider>
 </template>

@@ -37,8 +37,9 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 | 第一個互動服務 | `apps/order-menu` 是獨立點餐 Web 服務，含菜單、客製化、購物車、模擬訂單與未來 POS adapter 邊界。 |
 | WebMCP | 點餐服務已以 `document.modelContext.registerTool()` 註冊工具；工具呼叫會更新同一份 UI／領域狀態。原生 callback 同時相容有／沒有傳入 callback options 的目前 Chrome 行為。 |
 | Native WebMCP adapter | Stage Kiosk 會從目前 allow-listed iframe 以 `getTools({ fromOrigins })` 探索原生 tools，轉為 LLM runtime tools，並以 `executeTool()` 執行。跨來源原始 `RegisteredTool` 與 Vue-safe descriptor 分離保存，避免 iframe 的 `window` handle 進入 Vue reactivity。 |
-| Tool readiness | iframe 載入後會追蹤 `toolchange`，呈現 `loading`、`ready` 或 `unavailable`；文字與語音輸入會等候服務就緒。 |
+| Tool readiness | iframe 載入後會追蹤 `toolchange`，呈現 `loading`、`ready` 或 `unavailable`；文字送出會在未就緒時禁用，語音輸入則等候服務就緒。 |
 | Service lifecycle | 互動服務只以 `activity`／`completed` 回報顧客流程；結束接待時由 Host reload iframe，產生乾淨的新匿名服務狀態。 |
+| 完成後問卷邀請 | AIH Host 可在服務回報 `completed` 後顯示本機產生的 QR Code 問卷邀請。Stage Kiosk 與 Stage Web 使用相同的完成、略過／倒數、重置流程；服務本身不知道問卷存在。 |
 | 工具可視化 | 點餐服務會顯示 Agent 選取、高亮、虛擬游標、規格／數量與購物車更新。 |
 | 診斷 | 既有工具執行狀態與可選的 token usage diagnostics；WebMCP 執行失敗會在 Console 輸出工具名稱、來源 origin 與原始錯誤。 |
 
@@ -54,11 +55,17 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 
 原生 WebMCP adapter 已取代 **Stage Kiosk／AIH 路徑**先前 MVP 的 `Scenario manifest + postMessage` Tool bridge。舊 bridge 文件僅保留作歷史參考，不得擴充。
 
-`apps/stage-web` 仍保有舊的 `order-menu-bridge` 實作，尚未納入本次遷移；它不是顧客 Kiosk 的主流程。是否讓 Stage Web 也使用同一個 adapter，必須另行決定與遷移，不能把它誤認為已完成的 AIH 能力。
+`apps/stage-web` 仍保有舊的 `order-menu-bridge` 實作，尚未納入本次遷移；它不是顧客 Kiosk 的主流程。Stage Web 已針對目前 iframe 補上受來源／window 驗證的 `completed` lifecycle 接收，以維持完成後問卷與重置行為一致；這不代表 Stage Web 已完成 WebMCP adapter 遷移。
 
 ### 領域服務獨立
 
 每個 Interactive Service 自行擁有 UI、領域資料、領域 Prompt、WebMCP tool schema、外部 API／POS adapter 與資料驗證。AIRI 共用層不可加入餐飲或其他特定領域的流程判斷。
+
+### Host-owned 完成後問卷邀請
+
+完成後問卷是 AIH Host 的可選顧客接待能力，不是 Interactive Service、角色卡或 WebMCP tool。服務只回報 `completed`；Host 依本機「問卷邀請設定」決定是否顯示浮窗。啟用時 QR Code 由瀏覽器以固定 HTTP(S) 問卷網址本機產生，第一版不得附加訂單、對話、會員、顧客識別或 token。
+
+Stage Kiosk 和 Stage Web 的設定欄位與顧客行為相同，但因各自 origin 的 localStorage 而獨立儲存。多 Kiosk／店別設定服務是未來替換持久化來源的議題，不影響這個 Host 模組與 service lifecycle 邊界。
 
 ### 不採用座標自動化
 
@@ -99,6 +106,8 @@ Agent 的主要操作面是 WebMCP，而非 OS 滑鼠座標、螢幕辨識或 DO
 
 已定義極小 lifecycle signal：服務以 `activity`／`completed` 通知 Host；Host 以 iframe reload 重置下一位顧客的服務狀態。詳見 `docs/standards/interactive-service-lifecycle-v1.md`。仍需以其他 Interactive Service 驗證此事件模型是否足夠。
 
+Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 UI（目前為問卷 QR Code）。此 UI 不會回傳 lifecycle event 至服務，且略過或倒數只會觸發一次 Host 重置。
+
 ### 第二個非餐飲互動服務驗證
 
 第一個服務已驗證點餐 UI 與 tool 視覺化，但尚未以另一個領域驗證 AIH 不含餐飲假設。下一個服務應是小範圍、可獨立啟動的 WebMCP 網頁，用來檢驗 tool discovery、lifecycle event、iframe reset 與通用 Prompt 策略；領域尚未指定。
@@ -124,6 +133,14 @@ Agent 的主要操作面是 WebMCP，而非 OS 滑鼠座標、螢幕辨識或 DO
 - 已驗證：實際 Chrome 環境中的 `localhost:5173` Kiosk → `localhost:5174` iframe 工具探索與執行；`@proj-airi/stage-kiosk` typecheck 與 lint、`@proj-airi/order-menu` typecheck 與 14 個 domain tests、`git diff --check`。
 - 尚未完成：第二個獨立服務驗證、Stage Web 舊 bridge 的遷移決策、角色卡完整欄位投影、多 Kiosk／店別設定與正式設備安全模型。
 - 測試限制：Stage Kiosk 的 Vitest 在目前開發環境啟動時遇到 `EMFILE: too many open files, watch`，尚未能執行測試；這是檔案監看資源限制，非測試 assertion 失敗。
+
+## 2026-09-06 問卷邀請實作快照
+
+- 已完成：`packages/stage-ui` 的共用 `FeedbackInvitation` 浮窗、問卷邀請設定格式與 HTTP(S) URL 驗證；QR Code 使用 MIT 授權的 `qrcode` 套件在瀏覽器本機產生。
+- 已完成：Stage Kiosk 的管理設定與 `completed → 問卷 → 略過／倒數 → 匿名會話與 iframe 重置` 流程。Kiosk 不再以獨立的 10 秒完成計時器搶先重置。
+- 已完成：Stage Web 的相同問卷設定頁、目前 iframe 的來源／window 驗證 completion receiver，以及 `completed → 問卷 → 略過／倒數 → 本輪 chat session 與 iframe 重置` 流程。
+- 已驗證：`@proj-airi/stage-ui`、`@proj-airi/stage-kiosk`、`@proj-airi/stage-web` typecheck；問卷設定規則的 Vitest 測試與相關檔案 ESLint。
+- 尚待人工驗證：實際掃碼裝置、問卷網址可達性，以及各瀏覽器上的完整訂單完成流程。Stage Kiosk 的 Vitest 仍受目前環境 `EMFILE` 監看限制影響。
 
 ## 相關現況文件
 

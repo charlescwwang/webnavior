@@ -5,6 +5,7 @@ import type { ChatProvider } from '@xsai-ext/providers/utils'
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
 import { createAssistanceReminderWindow, createInteractionWindow } from '@proj-airi/kiosk-proactive'
+import { canShowFeedbackInvitation, FeedbackInvitation } from '@proj-airi/stage-ui/components'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
@@ -24,6 +25,7 @@ import KioskConversation from './KioskConversation.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
+import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskProactiveGreeting } from '../composables/useKioskProactiveGreeting'
@@ -53,6 +55,8 @@ const chatSessionStore = useChatSessionStore()
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const customerSession = useKioskCustomerSession({ activeCardId, chatSession: chatSessionStore })
 const { notice, state: customerSessionState } = customerSession
+const feedbackInvitationSettings = useFeedbackInvitationSettings()
+const canShowCompletionInvitation = computed(() => canShowFeedbackInvitation(feedbackInvitationSettings.value))
 const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
@@ -243,12 +247,24 @@ function recordPointerActivity(event: PointerEvent | WheelEvent) {
   void recordCustomerActivity()
 }
 
+function handleScenarioCompleted() {
+  if (!customerSession.completeOrder())
+    return
+
+  if (!canShowCompletionInvitation.value)
+    void customerSession.end('completed')
+}
+
+function finishFeedbackInvitation() {
+  void customerSession.end('completed')
+}
+
 let stopMenuActivityListener: (() => void) | undefined
 let stopMenuCompletionListener: (() => void) | undefined
 
 onMounted(() => {
   stopMenuActivityListener = scenarioRegistry.on('activity', () => void recordCustomerActivity())
-  stopMenuCompletionListener = scenarioRegistry.on('completed', () => customerSession.completeOrder())
+  stopMenuCompletionListener = scenarioRegistry.on('completed', handleScenarioCompleted)
   void syncProactiveVision()
 })
 
@@ -279,6 +295,11 @@ onUnmounted(() => {
 
     <KioskConversation class="conversation-region" @activity="recordCustomerActivity" />
     <KioskSessionNotice :message="notice" />
+    <FeedbackInvitation
+      v-if="customerSessionState === 'completing' && canShowCompletionInvitation"
+      :settings="feedbackInvitationSettings"
+      @finish="finishFeedbackInvitation"
+    />
     <video ref="proactiveCamera" class="proactive-camera" muted playsinline aria-hidden="true" />
   </main>
 </template>

@@ -3,6 +3,7 @@ import { shallowRef } from 'vue'
 
 import KioskAdminPanel from '../../components/KioskAdminPanel.vue'
 
+import { useFeedbackInvitationSettings } from '../../composables/useFeedbackInvitationSettings'
 import { useKioskInteractiveServiceAgentInstructions, useKioskInteractiveServices } from '../../composables/useKioskInteractiveServices'
 import { useKioskProactiveSettings } from '../../composables/useKioskProactiveSettings'
 
@@ -10,6 +11,7 @@ const paused = shallowRef(false)
 const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
 const interactiveServiceAgentInstructions = useKioskInteractiveServiceAgentInstructions()
+const feedbackInvitationSettings = useFeedbackInvitationSettings()
 </script>
 
 <template>
@@ -18,6 +20,7 @@ const interactiveServiceAgentInstructions = useKioskInteractiveServiceAgentInstr
     v-model:proactive-settings="proactiveSettings"
     v-model:interactive-services="interactiveServices"
     v-model:interactive-service-agent-instructions="interactiveServiceAgentInstructions"
+    v-model:feedback-invitation-settings="feedbackInvitationSettings"
     :session-ending="false"
     proactive-status="idle"
     @close="$router.push('/')"

@@ -7,6 +7,14 @@ import ChatDiagnosticsOverlay from './ChatDiagnosticsOverlay.vue'
 import { activeInteractiveService } from '../services/interactive-services'
 import { orderMenuBridge } from '../services/order-menu-bridge'
 
+const props = defineProps<{
+  resetRevision: number
+}>()
+
+const emit = defineEmits<{
+  completed: []
+}>()
+
 const visible = shallowRef(true)
 const menuFrame = useTemplateRef<HTMLIFrameElement>('menuFrame')
 const chatDiagnostics = useChatDiagnosticsStore()
@@ -20,7 +28,21 @@ function attachFrame() {
   orderMenuBridge.attach(activeService.value?.id === 'restaurant-ordering' ? menuFrame.value?.contentWindow ?? null : null)
 }
 
+function onInteractionLifecycleMessage(event: MessageEvent<{ source?: string, type?: string }>) {
+  const service = activeService.value
+  const frameWindow = menuFrame.value?.contentWindow
+  if (!service || !frameWindow || event.source !== frameWindow)
+    return
+  if (event.origin !== new URL(service.serviceUrl).origin)
+    return
+  if (event.data?.source !== 'airi-interaction-lifecycle' || event.data.type !== 'completed')
+    return
+
+  emit('completed')
+}
+
 watch(activeService, attachFrame)
+watch(() => props.resetRevision, () => orderMenuBridge.resetForIframeReload())
 
 onMounted(() => {
   // The embedded page can post `order:ready` before the iframe `load` event
@@ -29,10 +51,12 @@ onMounted(() => {
   orderMenuBridge.resetForIframeReload()
   window.addEventListener('airi:order-menu-open', openPanel)
   window.addEventListener('airi:interactive-service-open', openPanel)
+  window.addEventListener('message', onInteractionLifecycleMessage)
 })
 onUnmounted(() => {
   window.removeEventListener('airi:order-menu-open', openPanel)
   window.removeEventListener('airi:interactive-service-open', openPanel)
+  window.removeEventListener('message', onInteractionLifecycleMessage)
 })
 </script>
 
@@ -50,7 +74,7 @@ onUnmounted(() => {
     </header>
     <iframe
       ref="menuFrame"
-      :key="activeService?.id"
+      :key="`${activeService?.id ?? 'none'}:${resetRevision}`"
       :src="activeService?.serviceUrl"
       allow="tools"
       :title="activeService?.title ?? 'AIRI 互動服務'"

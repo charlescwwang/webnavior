@@ -33,10 +33,16 @@ Each customer starts an anonymous Kiosk session when they touch the screen, type
 
 - After 45 seconds without customer activity, the kiosk asks whether help is still needed.
 - After 60 seconds without activity, it clears the conversation and menu, then returns to standby.
-- After a simulated order is confirmed, it displays completion for 10 seconds before starting a clean standby session.
+- After a simulated order is confirmed, an enabled completion survey displays a QR Code until the visitor skips it or the configured countdown ends; then the kiosk starts a clean standby session.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 
 This is intentionally separate from AIRI's general chat history. The current version has no membership identity; a later member lookup can attach an identity to the same Kiosk session lifecycle without retaining anonymous conversations.
+
+## Completion survey invitation
+
+In administrator mode, open **完成後問卷邀請** to enable the optional survey, set a fixed HTTP(S) survey URL, and adjust its customer-facing copy and duration. AIRI generates the QR Code in the browser; it does not send the URL to a QR Code provider or append order, conversation, member, or customer data to the link.
+
+The setting is stored locally for this Kiosk origin. Configure each device separately until a future device-management service provides central settings.
 
 ## Administrator mode
 

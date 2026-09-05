@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import type { FeedbackInvitationSettings } from '@proj-airi/stage-ui/components'
+
 import type { KioskInteractiveService } from '../composables/useKioskInteractiveServices'
 import type { KioskProactiveSettings as KioskProactiveSettingsValue } from '../composables/useKioskProactiveSettings'
 import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiveVision'
 
 import KioskAssistanceReminderSettings from './KioskAssistanceReminderSettings.vue'
+import KioskFeedbackInvitationSettings from './KioskFeedbackInvitationSettings.vue'
 import KioskInteractiveServicesSettings from './KioskInteractiveServicesSettings.vue'
 import KioskProactiveSettings from './KioskProactiveSettings.vue'
 
@@ -22,6 +25,7 @@ const paused = defineModel<boolean>('paused', { required: true })
 const proactiveSettings = defineModel<KioskProactiveSettingsValue>('proactiveSettings', { required: true })
 const interactiveServices = defineModel<KioskInteractiveService[]>('interactiveServices', { required: true })
 const interactiveServiceAgentInstructions = defineModel<string>('interactiveServiceAgentInstructions', { required: true })
+const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feedbackInvitationSettings', { required: true })
 </script>
 
 <template>
@@ -51,6 +55,8 @@ const interactiveServiceAgentInstructions = defineModel<string>('interactiveServ
         v-model="interactiveServices"
         v-model:agent-instructions="interactiveServiceAgentInstructions"
       />
+
+      <KioskFeedbackInvitationSettings v-model="feedbackInvitationSettings" />
 
       <section class="admin-section">
         <h3>舞台</h3>

@@ -2,6 +2,12 @@
 
 Shared core for stage
 
+## Shared interaction feedback
+
+`components/scenarios/feedback-invitation` provides the host-owned completion survey overlay used by customer-facing Stage surfaces. It generates a QR Code locally from a validated static HTTP(S) URL and emits one `finish` event when the visitor skips or the countdown expires.
+
+Use it in an AIRI Interaction Host after an embedded interactive service emits `completed`. Do not use it inside a domain service, as a WebMCP tool, or to encode customer data into the survey URL.
+
 ## Histoire (UI storyboard)
 
 https://histoire.dev/

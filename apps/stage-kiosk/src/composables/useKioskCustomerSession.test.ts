@@ -80,4 +80,30 @@ describe('useKioskCustomerSession', () => {
     expect(session.state.value).toBe('active')
     releasePendingWork()
   })
+
+  it('waits for the host to finish a completed order instead of using an independent reset timer', async () => {
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({
+      activeCardId: shallowRef('default'),
+      chatSession,
+    }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    expect(session.completeOrder()).toBe(true)
+    expect(session.state.value).toBe('completing')
+    expect(reloadScenario).not.toHaveBeenCalled()
+
+    await session.end('completed')
+    expect(reloadScenario).toHaveBeenCalledOnce()
+    expect(session.state.value).toBe('standby')
+  })
 })

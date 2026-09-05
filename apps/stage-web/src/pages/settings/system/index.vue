@@ -38,6 +38,12 @@ const settings = computed(() => [
     icon: 'i-solar:shop-2-bold-duotone',
     to: '/settings/system/ordering-service',
   },
+  {
+    title: '完成後問卷',
+    description: '設定互動完成後顯示的 QR Code 問卷邀請',
+    icon: 'i-solar:qr-code-bold-duotone',
+    to: '/settings/system/feedback-invitation',
+  },
 ])
 </script>
 
