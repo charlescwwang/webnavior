@@ -7,7 +7,6 @@ import MobileHeader from '@proj-airi/stage-layouts/components/Layouts/MobileHead
 import MobileInteractiveArea from '@proj-airi/stage-layouts/components/Layouts/MobileInteractiveArea.vue'
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
-import { errorMessageFrom } from '@moeru/std'
 import { BackgroundProvider } from '@proj-airi/stage-layouts/components/Backgrounds'
 import { useBackgroundThemeColor } from '@proj-airi/stage-layouts/composables/theme-color'
 import { useBackgroundStore } from '@proj-airi/stage-layouts/stores/background'
@@ -15,6 +14,7 @@ import { useModelStore } from '@proj-airi/stage-ui-three'
 import { canShowFeedbackInvitation, FeedbackInvitation, HoloCoupon } from '@proj-airi/stage-ui/components'
 import { ViewControlSlider, WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
+import { useKioskCustomerSession } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
 import { useChatOrchestratorStore } from '@proj-airi/stage-ui/stores/chat'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
@@ -72,53 +72,57 @@ const { activeProvider: activeChatProvider, activeModel: activeChatModel } = sto
 const chatStore = useChatOrchestratorStore()
 const chatSessionStore = useChatSessionStore()
 const { activeCardId } = storeToRefs(useAiriCardStore())
-const feedbackInvitationOpen = shallowRef(false)
 const interactiveServiceResetRevision = shallowRef(0)
 const canShowCompletionInvitation = computed(() => canShowFeedbackInvitation(feedbackInvitationSettings.value))
-let resettingInteractiveSession = false
+const customerSession = useKioskCustomerSession({
+  activeCardId,
+  chatSession: chatSessionStore,
+  resetInteractiveSurface: () => {
+    interactiveServiceResetRevision.value += 1
+  },
+})
+const { state: customerSessionState } = customerSession
+let releaseChatPendingWork: (() => void) | undefined
 
 function handleInteractiveServiceCompleted() {
-  if (feedbackInvitationOpen.value || resettingInteractiveSession)
-    return
-
-  if (canShowCompletionInvitation.value) {
-    feedbackInvitationOpen.value = true
-    return
-  }
-
-  void resetCompletedInteractiveSession()
-}
-
-async function resetCompletedInteractiveSession() {
-  if (resettingInteractiveSession)
-    return
-
-  resettingInteractiveSession = true
-  feedbackInvitationOpen.value = false
-  try {
-    await chatSessionStore.initialize()
-    const completedChatSessionId = chatSessionStore.activeSessionId
-    await chatSessionStore.createSession(activeCardId.value || 'default', {
-      setActive: true,
-      title: '互動服務接待',
+  if (import.meta.env.DEV) {
+    console.info('[DEBUG-feedback-lifecycle] Stage Web handling completion', {
+      feedbackEnabled: feedbackInvitationSettings.value.enabled,
+      hasValidSurveyUrl: canShowCompletionInvitation.value,
     })
-    if (completedChatSessionId)
-      await chatSessionStore.deleteSession(completedChatSessionId)
   }
-  catch (error) {
-    console.error('[stage-web] failed to reset the completed interactive session:', errorMessageFrom(error))
-  }
-  finally {
-    // Reloading the isolated iframe clears its own cart without giving AIRI
-    // a scenario-specific reset tool or coupling the service to this host.
-    interactiveServiceResetRevision.value += 1
-    resettingInteractiveSession = false
-  }
+  if (!customerSession.completeOrder())
+    return
+
+  if (!canShowCompletionInvitation.value)
+    void customerSession.end('completed')
 }
 
 function finishFeedbackInvitation() {
-  void resetCompletedInteractiveSession()
+  void customerSession.end('completed')
 }
+
+async function recordCustomerActivity() {
+  await customerSession.recordActivity()
+}
+
+watch(() => chatSessionStore.messages.at(-1), (message) => {
+  if (message?.role === 'user')
+    void recordCustomerActivity()
+})
+
+watch([() => chatStore.sending, customerSessionState], ([sending, sessionState]) => {
+  if (sending && sessionState === 'active') {
+    releaseChatPendingWork ??= customerSession.beginPendingWork()
+    return
+  }
+
+  const wasWaitingForChat = releaseChatPendingWork !== undefined
+  releaseChatPendingWork?.()
+  releaseChatPendingWork = undefined
+  if (wasWaitingForChat && sessionState === 'active')
+    void recordCustomerActivity()
+})
 
 const shouldUseStreamInput = computed(() => supportsStreamInput.value && !!stream.value)
 
@@ -148,6 +152,7 @@ async function startAudioInteraction() {
         return
 
       try {
+        await recordCustomerActivity()
         const provider = await providersStore.getProviderInstance(activeChatProvider.value)
         if (!provider || !activeChatModel.value)
           return
@@ -202,6 +207,7 @@ watch(enabled, async (val) => {
 }, { immediate: true })
 
 onUnmounted(() => {
+  releaseChatPendingWork?.()
   stopAudioInteraction()
 })
 
@@ -230,7 +236,7 @@ const cursorPosition = computed(() => ({
     :background="selectedOption"
     :top-color="sampledColor"
   >
-    <div relative flex="~ col" z-2 h-100dvh w-100vw of-hidden>
+    <div relative flex="~ col" z-2 h-100dvh w-100vw of-hidden @pointerdown.capture="recordCustomerActivity">
       <!-- header -->
       <div class="px-0 py-1 md:px-3 md:py-3" w-full gap-2>
         <Header class="hidden md:flex" />
@@ -263,14 +269,18 @@ const cursorPosition = computed(() => ({
               {{ personFocusError || (personPosition ? 'Tracking person' : 'Looking for a person…') }}
             </div>
           </div>
-          <OrderMenuPanel :reset-revision="interactiveServiceResetRevision" @completed="handleInteractiveServiceCompleted" />
+          <OrderMenuPanel
+            :reset-revision="interactiveServiceResetRevision"
+            @activity="recordCustomerActivity"
+            @completed="handleInteractiveServiceCompleted"
+          />
         </div>
         <InteractiveArea v-if="!isMobile" h="85dvh" absolute right-4 flex flex-1 flex-col max-w="500px" min-w="30%" />
         <MobileInteractiveArea v-if="isMobile" @settings-open="handleSettingsOpen" />
       </div>
       <HoloCoupon />
       <FeedbackInvitation
-        v-if="feedbackInvitationOpen && canShowCompletionInvitation"
+        v-if="customerSessionState === 'completing' && canShowCompletionInvitation"
         :settings="feedbackInvitationSettings"
         @finish="finishFeedbackInvitation"
       />

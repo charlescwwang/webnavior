@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { KioskProactiveSettings } from '../composables/useKioskProactiveSettings'
+import type { KioskAssistanceReminderSettings } from '@proj-airi/kiosk-proactive'
 
 import { Checkbox, FieldInput, FieldTextArea } from '@proj-airi/ui'
 
-const settings = defineModel<KioskProactiveSettings>({ required: true })
+const settings = defineModel<KioskAssistanceReminderSettings>({ required: true })
 
 function updateDuration(value: string | number | undefined) {
   if (value === undefined)
@@ -38,7 +38,7 @@ function updateText(value: string | undefined) {
     <div class="section-heading">
       <div>
         <h3>無操作協助提醒</h3>
-        <p>使用者仍在偵測區、但暫時沒有有效操作時，AIRI 會主動詢問是否需要協助。</p>
+        <p>已開始接待的使用者仍在偵測區、但暫時沒有有效操作時，AIRI 會主動詢問是否需要協助；需同時啟用「現場觀測」。</p>
       </div>
       <Checkbox v-model="settings.enabled" aria-label="啟用無操作協助提醒" />
     </div>

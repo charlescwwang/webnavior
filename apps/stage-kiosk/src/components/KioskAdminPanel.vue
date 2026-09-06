@@ -8,6 +8,7 @@ import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiv
 import KioskAssistanceReminderSettings from './KioskAssistanceReminderSettings.vue'
 import KioskFeedbackInvitationSettings from './KioskFeedbackInvitationSettings.vue'
 import KioskInteractiveServicesSettings from './KioskInteractiveServicesSettings.vue'
+import KioskObservationSettings from './KioskObservationSettings.vue'
 import KioskProactiveSettings from './KioskProactiveSettings.vue'
 
 const props = defineProps<{
@@ -43,13 +44,15 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
     </header>
 
     <div class="admin-content">
+      <KioskObservationSettings v-model="proactiveSettings.observation" />
+
       <KioskProactiveSettings
-        v-model="proactiveSettings"
+        v-model="proactiveSettings.proactiveGreeting"
         :status="props.proactiveStatus"
         :error="props.proactiveError"
       />
 
-      <KioskAssistanceReminderSettings v-model="proactiveSettings" />
+      <KioskAssistanceReminderSettings v-model="proactiveSettings.assistanceReminder" />
 
       <KioskInteractiveServicesSettings
         v-model="interactiveServices"

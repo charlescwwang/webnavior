@@ -34,15 +34,22 @@ async function syncActiveScenarioTools() {
   const generation = ++scenarioSyncGeneration
   llmToolsStore.clearTools('webmcp')
   const registeredScenarios = scenarioRegistry.registeredScenarios.value
+  if (registeredScenarios.length < 2) {
+    llmToolsStore.clearTools('scenario-navigation')
+    llmToolsetPromptsStore.clearToolsetPrompts('scenario-navigation')
+  }
+
   if (registeredScenarios.length === 0)
     return
 
-  const activeScenarioId = scenarioRegistry.activeScenarioId.value
-  await llmToolsStore.registerTools('scenario-navigation', createScenarioNavigationTools(registeredScenarios, activeScenarioId))
-  llmToolsetPromptsStore.registerToolsetPrompts('scenario-navigation', [{
-    id: 'registered-kiosk-pages',
-    content: createScenarioNavigationPrompt(registeredScenarios, activeScenarioId, interactiveServiceAgentInstructions.value),
-  }])
+  if (registeredScenarios.length > 1) {
+    const activeScenarioId = scenarioRegistry.activeScenarioId.value
+    await llmToolsStore.registerTools('scenario-navigation', createScenarioNavigationTools(registeredScenarios, activeScenarioId))
+    llmToolsetPromptsStore.registerToolsetPrompts('scenario-navigation', [{
+      id: 'registered-kiosk-pages',
+      content: createScenarioNavigationPrompt(registeredScenarios, activeScenarioId, interactiveServiceAgentInstructions.value),
+    }])
+  }
 
   if (generation !== scenarioSyncGeneration)
     return

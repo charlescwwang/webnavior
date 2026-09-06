@@ -1,7 +1,9 @@
+import type { Plugin } from 'vue'
 import type { RouteRecordRaw } from 'vue-router'
 
 import Tres from '@tresjs/core'
 
+import { autoAnimatePlugin } from '@formkit/auto-animate/vue'
 import { PiniaColada } from '@pinia/colada'
 import { createPinia } from 'pinia'
 import { setupLayouts } from 'virtual:generated-layouts'
@@ -32,6 +34,10 @@ router.beforeEach((to) => {
 })
 
 createApp(App)
+  // NOTICE: Shared chat components use v-auto-animate for message transitions.
+  // The directive must be registered by every application entrypoint that
+  // renders them; Stage Web and the desktop renderer use the same plugin.
+  .use(autoAnimatePlugin as unknown as Plugin)
   .use(createPinia())
   .use(router)
   .use(PiniaColada)

@@ -11,7 +11,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** Creates the only tool which can navigate stage-web's single interactive iframe. */
 export function createInteractiveServiceTools(): Tool[] {
   const services = availableInteractiveServices.value
-  if (services.length === 0)
+  // The only configured page is already embedded as the default. Exposing a
+  // navigation tool in that state gives the model a no-op action which can end
+  // a turn before it reaches the page's actual WebMCP tools.
+  if (services.length < 2)
     return []
 
   return [rawTool({

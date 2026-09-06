@@ -40,10 +40,13 @@ describe('useKioskCustomerSession', () => {
 
     await session.recordActivity()
     const ending = session.end('staff')
+    await ending
+
+    // The shared lifecycle awaits the host's iframe reset because a host may
+    // need to finish an asynchronous reload before creating the next session.
     expect(reloadScenario).toHaveBeenCalledWith()
     expect(chatSession.createSession).toHaveBeenCalledTimes(2)
     expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
-    await ending
     expect(session.customer.value).toBeUndefined()
     expect(session.state.value).toBe('standby')
   })
@@ -74,11 +77,16 @@ describe('useKioskCustomerSession', () => {
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 60_000)
     const releasePendingWork = session.beginPendingWork()
+    expect(session.hasPendingWork.value).toBe(true)
+    expect(session.idleDeadlineAt.value).toBeUndefined()
     await vi.advanceTimersByTimeAsync(61_000)
 
     expect(session.state.value).toBe('active')
     releasePendingWork()
+    expect(session.hasPendingWork.value).toBe(false)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 60_000)
   })
 
   it('waits for the host to finish a completed order instead of using an independent reset timer', async () => {

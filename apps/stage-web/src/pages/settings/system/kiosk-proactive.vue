@@ -256,7 +256,6 @@ function sanitizeDuration(value: number | undefined, fallback: number) {
         v-model:max-reminders-per-session="assistanceReminderMax"
         v-model:reminder-text="assistanceReminderText"
         v-model:wait-ms="assistanceReminderWaitMs"
-        :disabled="!enabled"
       />
     </template>
   </div>

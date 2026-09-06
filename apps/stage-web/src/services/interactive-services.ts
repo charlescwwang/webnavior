@@ -1,7 +1,7 @@
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
 import { computed, shallowRef } from 'vue'
 
-import { defaultOrderMenuUrl, orderMenuBridge } from './order-menu-bridge'
+const defaultRestaurantOrderingUrl = import.meta.env.VITE_ORDER_MENU_URL ?? 'http://localhost:5174'
 
 /** An administrator-approved page that may occupy stage-web's single interactive iframe. */
 export interface InteractiveService {
@@ -18,7 +18,7 @@ export const interactiveServices = useLocalStorageManualReset<InteractiveService
     description: '協助顧客瀏覽菜單、客製餐點、管理購物車與確認訂單。',
     enabled: true,
     id: 'restaurant-ordering',
-    serviceUrl: defaultOrderMenuUrl,
+    serviceUrl: defaultRestaurantOrderingUrl,
     title: '餐點點餐',
   }],
 )
@@ -62,8 +62,6 @@ export function openInteractiveService(id: string) {
   const service = availableInteractiveServices.value.find(candidate => candidate.id === id)
   if (!service)
     throw new Error(`Interactive service "${id}" is not enabled or is incomplete.`)
-  if (service.id === 'restaurant-ordering')
-    orderMenuBridge.setMenuUrl(service.serviceUrl)
   activeServiceId.value = service.id
   window.dispatchEvent(new CustomEvent('airi:interactive-service-open'))
   return service

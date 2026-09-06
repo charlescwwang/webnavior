@@ -19,7 +19,7 @@ const reminderText = defineModel<string>('reminderText', { required: true })
           無操作協助提醒
         </h3>
         <p :class="['mb-0 mt-1 text-sm text-neutral-600 dark:text-neutral-300']">
-          使用者仍在偵測區、但沒有有效操作時，AIRI 會主動提供協助。操作後會重新計時。
+          已開始接待的使用者仍在偵測區、但沒有有效操作時，AIRI 會主動提供協助。操作後會重新計時；此開關不會啟用主動招呼。
         </p>
       </div>
       <Checkbox v-model="enabled" :disabled="props.disabled" aria-label="啟用無操作協助提醒" />

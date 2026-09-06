@@ -1588,6 +1588,9 @@ importers:
 
   apps/stage-kiosk:
     dependencies:
+      '@formkit/auto-animate':
+        specifier: 'catalog:'
+        version: 0.9.0(vue@3.5.32(typescript@5.9.3))
       '@mediapipe/tasks-vision':
         specifier: 'catalog:'
         version: 0.10.34(patch_hash=2014bd232d13f4bfac27f27d61105894bf54aca350379b2816fe05b6d3e27d66)

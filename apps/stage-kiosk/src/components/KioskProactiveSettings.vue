@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import type { ProactiveTriggerMode } from '@proj-airi/kiosk-proactive'
+import type { ProactiveInteractionSettings, ProactiveTriggerMode } from '@proj-airi/kiosk-proactive'
 
-import type { KioskProactiveSettings } from '../composables/useKioskProactiveSettings'
 import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiveVision'
 
 import { Checkbox, FieldInput, FieldTextArea, SelectTab } from '@proj-airi/ui'
@@ -12,7 +11,7 @@ const props = defineProps<{
   error?: string
 }>()
 
-const settings = defineModel<KioskProactiveSettings>({ required: true })
+const settings = defineModel<ProactiveInteractionSettings>({ required: true })
 
 const triggerOptions = [
   { label: '看向 kiosk', value: 'attention' as const, icon: 'i-solar:eye-bold-duotone' },
@@ -55,10 +54,10 @@ function updateGreetingPrompt(key: 'attentionGreetingPrompt' | 'presenceGreeting
   <section class="admin-section">
     <div class="section-heading">
       <div>
-        <h3>主動互動</h3>
-        <p>啟用後才會開啟 kiosk 本機相機並載入 MediaPipe；偵測影像不會傳送或保存。</p>
+        <h3>主動招呼</h3>
+        <p>針對尚未開始接待的訪客主動開場；需同時啟用「現場觀測」。偵測影像不會傳送或保存。</p>
       </div>
-      <Checkbox v-model="settings.enabled" aria-label="啟用主動互動" />
+      <Checkbox v-model="settings.enabled" aria-label="啟用主動招呼" />
     </div>
 
     <template v-if="settings.enabled">

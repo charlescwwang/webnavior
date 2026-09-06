@@ -22,6 +22,7 @@ import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } f
 
 import KioskAdminAccess from './KioskAdminAccess.vue'
 import KioskConversation from './KioskConversation.vue'
+import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
@@ -29,7 +30,7 @@ import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitat
 import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskProactiveGreeting } from '../composables/useKioskProactiveGreeting'
-import { useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
+import { needsKioskObservation, useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
@@ -54,21 +55,33 @@ const chatStore = useChatOrchestratorStore()
 const chatSessionStore = useChatSessionStore()
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const customerSession = useKioskCustomerSession({ activeCardId, chatSession: chatSessionStore })
-const { notice, state: customerSessionState } = customerSession
+const { hasPendingWork, idleDeadlineAt, notice, state: customerSessionState } = customerSession
+const showIdleDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
 const canShowCompletionInvitation = computed(() => canShowFeedbackInvitation(feedbackInvitationSettings.value))
 const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
+// Agent-originated completion travels in the native WebMCP tool result. Direct
+// customer interaction continues to use the iframe lifecycle event registered
+// below, so both routes converge on the same session transition.
+watch(webMcpAdapter.completionRevision, (revision, previousRevision) => {
+  if (revision > previousRevision)
+    handleScenarioCompleted()
+})
 const proactiveCamera = useTemplateRef<HTMLVideoElement>('proactiveCamera')
 const proactiveGreeting = useKioskProactiveGreeting()
 let releaseChatPendingWork: (() => void) | undefined
-let proactiveWindow = createInteractionWindow(proactiveSettings.value)
-let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value)
+let proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
+let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
 const proactiveVision = useKioskProactiveVision({
-  settings: () => proactiveSettings.value,
+  detectionZone: () => proactiveSettings.value.observation.detectionZone,
   onObservation: observation => void handleProactiveObservation(observation),
 })
+const localObservationRequired = computed(() => needsKioskObservation(
+  proactiveSettings.value,
+  customerSessionState.value === 'active',
+))
 const shouldUseStreamInput = computed(() => supportsStreamInput.value && !!stream.value)
 const { x, y } = useMouse()
 const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
@@ -129,14 +142,14 @@ watch([stream, loaded], async ([audioStream, vadLoaded]) => {
 })
 
 watch(proactiveSettings, () => {
-  proactiveWindow = createInteractionWindow(proactiveSettings.value)
-  assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value)
+  proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
+  assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
   if (customerSessionState.value === 'active')
     assistanceReminderWindow.start(performance.now())
 }, { deep: true })
 
 async function syncProactiveVision() {
-  if (!proactiveSettings.value.enabled) {
+  if (!localObservationRequired.value) {
     proactiveVision.stop()
     return
   }
@@ -145,7 +158,7 @@ async function syncProactiveVision() {
     await proactiveVision.start(proactiveCamera.value)
 }
 
-watch(() => proactiveSettings.value.enabled, () => void syncProactiveVision())
+watch(localObservationRequired, () => void syncProactiveVision())
 
 watch(customerSessionState, (state) => {
   if (state !== 'active') {
@@ -187,7 +200,7 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     // provider decides whether and how to realize this candidate.
     const releasePendingWork = customerSession.beginPendingWork()
     try {
-      await proactiveGreeting.remind(reminderCandidate, proactiveSettings.value.reminderText)
+      await proactiveGreeting.remind(reminderCandidate, proactiveSettings.value.assistanceReminder.reminderText)
     }
     finally {
       releasePendingWork()
@@ -226,12 +239,12 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
 /** Selects context references without allowing either administrator prompt to replace the shared greeting policy. */
 function greetingContextPrompts(trigger: ProactiveGreetingTrigger) {
   if (trigger === 'presence')
-    return [proactiveSettings.value.presenceGreetingPrompt]
+    return [proactiveSettings.value.proactiveGreeting.presenceGreetingPrompt]
 
-  if (proactiveSettings.value.triggerMode === 'mixed')
-    return [proactiveSettings.value.presenceGreetingPrompt, proactiveSettings.value.attentionGreetingPrompt]
+  if (proactiveSettings.value.proactiveGreeting.triggerMode === 'mixed')
+    return [proactiveSettings.value.proactiveGreeting.presenceGreetingPrompt, proactiveSettings.value.proactiveGreeting.attentionGreetingPrompt]
 
-  return [proactiveSettings.value.attentionGreetingPrompt]
+  return [proactiveSettings.value.proactiveGreeting.attentionGreetingPrompt]
 }
 
 async function recordCustomerActivity() {
@@ -294,6 +307,12 @@ onUnmounted(() => {
     <ScenarioSurface class="menu-region" />
 
     <KioskConversation class="conversation-region" @activity="recordCustomerActivity" />
+    <KioskIdleDiagnostics
+      v-if="showIdleDiagnostics"
+      :idle-deadline-at="idleDeadlineAt"
+      :pending-work="hasPendingWork"
+      :state="customerSessionState"
+    />
     <KioskSessionNotice :message="notice" />
     <FeedbackInvitation
       v-if="customerSessionState === 'completing' && canShowCompletionInvitation"

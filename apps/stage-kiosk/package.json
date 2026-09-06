@@ -12,6 +12,7 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@formkit/auto-animate": "catalog:",
     "@mediapipe/tasks-vision": "catalog:",
     "@moeru/std": "catalog:",
     "@pinia/colada": "catalog:",

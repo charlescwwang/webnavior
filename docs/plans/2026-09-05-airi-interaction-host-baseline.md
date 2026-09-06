@@ -4,7 +4,7 @@
 
 ## 用途與狀態
 
-本文件記錄目前已完成的能力、已確認的架構方向，以及尚未決定的議題。它是產品與架構基線，不是固定的實作規格，也不預先承諾特定產業情境。
+本文件記錄目前已完成的能力、已確認的架構方向，以及尚未決定的議題。它是產品與架構基線，不是固定的實作規格，也不預先承諾特定產業情境。最後一次程式碼核對：2026-09-07。
 
 目前第一個互動服務是餐飲點餐；其他互動服務尚未指定。餐飲、掛號、導覽或其他例子都不應被寫入 AIRI 共用層的領域邏輯。
 
@@ -30,18 +30,50 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 | 範圍 | 現況 |
 | --- | --- |
 | AIRI Core | 文字對話、ASR、TTS、角色卡、Prompt、LLM Provider 與模型設定。 |
-| Stage Web | 一般 AIRI 網頁、開發與設定入口。 |
-| Stage Kiosk | 橫式／直式顧客畫面、人物、互動網頁與對話區共存；具匿名會話、結束接待與管理入口。 |
-| Kiosk lifecycle | 顧客活動、Agent Pending Work、閒置協助提醒、待機與會話清除。 |
-| Proactive interaction | 本機人員存在／視線訊號可觸發招呼與提醒，並有校正與設定 UI。 |
+| Stage Web | 一般 AIRI 網頁、開發與設定入口；已接入 AIH 的 WebMCP adapter、匿名會話、完成後問卷與 iframe 重置。 |
+| Stage Kiosk | 橫式／直式顧客畫面、人物、互動網頁與對話區共存；已接入匿名會話、結束接待、管理入口與本機觀測 POC。 |
+| 顧客會話生命週期 | 兩端共用：顧客活動、LLM／工具執行中的閒置保護、待機、完成、問卷後重置與匿名會話清除。 |
+| 主動互動 POC | 僅 Kiosk：本機 MediaPipe 人員存在／朝向訊號可觸發招呼與無操作提醒；不使用 VLM、不保存畫面。 |
 | 第一個互動服務 | `apps/order-menu` 是獨立點餐 Web 服務，含菜單、客製化、購物車、模擬訂單與未來 POS adapter 邊界。 |
 | WebMCP | 點餐服務已以 `document.modelContext.registerTool()` 註冊工具；工具呼叫會更新同一份 UI／領域狀態。原生 callback 同時相容有／沒有傳入 callback options 的目前 Chrome 行為。 |
-| Native WebMCP adapter | Stage Kiosk 會從目前 allow-listed iframe 以 `getTools({ fromOrigins })` 探索原生 tools，轉為 LLM runtime tools，並以 `executeTool()` 執行。跨來源原始 `RegisteredTool` 與 Vue-safe descriptor 分離保存，避免 iframe 的 `window` handle 進入 Vue reactivity。 |
-| Tool readiness | iframe 載入後會追蹤 `toolchange`，呈現 `loading`、`ready` 或 `unavailable`；文字送出會在未就緒時禁用，語音輸入則等候服務就緒。 |
+| Native WebMCP adapter | Stage Kiosk 與 Stage Web 共用 adapter，會從目前 allow-listed iframe 以 `getTools({ fromOrigins })` 探索原生 tools，轉為 LLM runtime tools，並以 `executeTool()` 執行。跨來源原始 `RegisteredTool` 與 Vue-safe descriptor 分離保存，避免 iframe 的 `window` handle 進入 Vue reactivity。 |
+| Tool readiness | iframe 載入後會追蹤 `toolchange`，呈現 `loading`、`ready` 或 `unavailable`。Kiosk 會在未就緒時禁用顧客輸入；Stage Web 則只在工具探索成功後才將工具註冊給 LLM，並在 iframe 面板顯示不可用原因。 |
 | Service lifecycle | 互動服務只以 `activity`／`completed` 回報顧客流程；結束接待時由 Host reload iframe，產生乾淨的新匿名服務狀態。 |
 | 完成後問卷邀請 | AIH Host 可在服務回報 `completed` 後顯示本機產生的 QR Code 問卷邀請。Stage Kiosk 與 Stage Web 使用相同的完成、略過／倒數、重置流程；服務本身不知道問卷存在。 |
 | 工具可視化 | 點餐服務會顯示 Agent 選取、高亮、虛擬游標、規格／數量與購物車更新。 |
 | 診斷 | 既有工具執行狀態與可選的 token usage diagnostics；WebMCP 執行失敗會在 Console 輸出工具名稱、來源 origin 與原始錯誤。 |
+
+## 2026-09-07 已核對狀態
+
+### 已完成並已有程式路徑
+
+| 能力 | 現況與邊界 |
+| --- | --- |
+| 通用嵌入互動服務 | Stage Web 與 Stage Kiosk 都以 allow-listed iframe 嵌入服務；Host 不含餐飲領域資料或工具 schema。 |
+| 原生 WebMCP | 兩端共用 `packages/stage-ui/src/services/webmcp-adapter.ts` 做跨來源 tool discovery、JSON invocation、ready/loading/unavailable 與 completion 回報。沒有舊 Tool bridge fallback。 |
+| 匿名顧客接待 | `packages/stage-ui/src/composables/use-kiosk-customer-session.ts` 是共用生命週期；各 Host 只注入自己重置互動頁面的方式。 |
+| 完成後問卷 | 服務發出 `completed` 後，Host 可依本機設定顯示 QR Code；略過或倒數結束只重置 Host 與 iframe，不把問卷耦合到服務。 |
+| 第一個獨立服務 | `apps/order-menu` 具菜單、客製化、購物車、模擬確認、WebMCP tools 與 Agent 操作可視化；POS／支付未串接。 |
+| 本機主動互動 | Kiosk 的 MediaPipe loop 只在設定開啟且當前政策需要時取得相機串流。landmark 與 observation 僅留在記憶體。 |
+| 共用策略契約 | `packages/kiosk-proactive` 的 `KioskInteractionSettings` 已分開觀測、招呼、提醒、視覺輔助與媒體留存策略；預設全部安全關閉。 |
+| Kiosk 單元測試 | `apps/stage-kiosk/vitest.config.ts` 避開開發期 Vite 外掛的廣泛檔案監看；目前 4 個檔案、11 個測試可直接執行並通過。 |
+
+### 已實作但仍需人工驗證
+
+- 正式 HTTPS 網域下的跨來源 WebMCP、iframe reload 與多服務切換。
+- Stage Web 與 Stage Kiosk 實際走完「工具完成 → 問卷 → 重置 → 下一位顧客」的瀏覽器測試。
+- 不同 LLM 的多步工具遵循、錯誤恢復、工具後自然語言收尾與 context 壓力表現。
+- 實際問卷 QR Code 的掃碼可達性與行動裝置問卷流程。
+
+### 已保留契約、尚未啟用功能
+
+| 能力 | 目前狀態 |
+| --- | --- |
+| 事件式 VLM 視覺輔助 | 已有設定模型，尚未擷取單張相機畫面、呼叫 Vision Provider 或將結果給招呼／提醒。 |
+| 視覺結果的短暫上下文 | 尚未實作；預定只對單一事件有效，下一位顧客或下一次事件不得沿用。 |
+| 影像／影片保存 | 僅有 `disabled`／未來模式的策略欄位；尚未建立儲存、保留、存取或刪除機制。 |
+| 資料告知與同意介面 | 尚未實作；目前不應以「匿名」名義收集可識別人物影像。 |
+| 生產 Vision Provider 限制 | 產品方向已確認為僅 self-hosted Ollama 或 OpenAI-compatible server；尚未寫成部署期強制驗證。 |
 
 ## 已確認決策
 
@@ -53,9 +85,7 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 
 未來接入 AIH 的互動網頁預設皆支援 WebMCP。AIH 不再以 `postMessage` Tool bridge 作為相容方案。AIRI 需要一次性的通用 WebMCP adapter，將瀏覽器發現的 tools 接到既有 LLM runtime；每個互動服務不需要為 AIRI 寫另一套工具協議。
 
-原生 WebMCP adapter 已取代 **Stage Kiosk／AIH 路徑**先前 MVP 的 `Scenario manifest + postMessage` Tool bridge。舊 bridge 文件僅保留作歷史參考，不得擴充。
-
-`apps/stage-web` 仍保有舊的 `order-menu-bridge` 實作，尚未納入本次遷移；它不是顧客 Kiosk 的主流程。Stage Web 已針對目前 iframe 補上受來源／window 驗證的 `completed` lifecycle 接收，以維持完成後問卷與重置行為一致；這不代表 Stage Web 已完成 WebMCP adapter 遷移。
+原生 WebMCP adapter 已取代 AIH 的 `Scenario manifest + postMessage` Tool bridge。Stage Kiosk 與 Stage Web 都使用 `packages/stage-ui/src/services/webmcp-adapter.ts`；舊 bridge 文件僅保留作歷史參考，不得擴充。Stage Web 仍針對目前 iframe 以來源／window 驗證接收 `completed` lifecycle，以維持完成後問卷與重置行為一致。
 
 ### 領域服務獨立
 
@@ -75,6 +105,18 @@ Agent 的主要操作面是 WebMCP，而非 OS 滑鼠座標、螢幕辨識或 DO
 
 現階段優先完成單機 Kiosk。多店、多 Kiosk、中央店別設定、設備憑證與遠端控制平面尚未決定，不應提前將資料庫、會員或雲端架構綁入目前 MVP。
 
+### 事件式視覺輔助，不建立第二套 Vision Provider
+
+未來主動招呼與無操作協助可使用既有 Vision Provider，但必須由 AIH 的事件閘門觸發；不建立第二套 Vision 設定、Provider 或背景輪詢。第一版視覺流程固定為：合格事件 → Host 從相機擷取一張畫面 → 在事件時間預算內呼叫 Vision → 只將結果提供給該次招呼／提醒 → 丟棄。
+
+目前影像來源只規劃相機。螢幕、iframe 或其他來源未納入此階段。若 VLM 逾時、失敗、未設定或回覆沒有可用內容，該事件必須靜默放棄；不得以延遲的通用招呼或舊畫面補送。
+
+生產部署只允許自架 Ollama 或自架 OpenAI-compatible Vision server；雲端 Provider 僅可用於測試。影像分析結果不可預設寫入跨顧客對話、長期角色記憶或媒體儲存。
+
+### 不以人數推斷訂單
+
+本機觀測的人數只可作為事件資格或低打擾協助的參考。AIRI 不得宣稱偵測到幾人，也不得假設一人一份餐。只有顧客自己提及同行人數時，才可自然詢問是否還需要加點或調整。
+
 ## 明確邊界
 
 | AIH 負責 | Interactive Service 負責 |
@@ -88,9 +130,8 @@ Agent 的主要操作面是 WebMCP，而非 OS 滑鼠座標、螢幕辨識或 DO
 
 ### 通用 WebMCP adapter
 
-- Stage Kiosk 的 adapter 已在 Chrome 以本機跨來源 iframe 驗證 `allow="tools"`、`exposedTo` 與 `fromOrigins`。正式 HTTPS 網域、重新載入與多服務切換仍需驗證。
+- Stage Kiosk 的 adapter 已在 Chrome 以本機跨來源 iframe 驗證 `allow="tools"`、`exposedTo` 與 `fromOrigins`。Stage Web 已遷移至同一 adapter；正式 HTTPS 網域、重新載入與多服務切換仍需驗證。
 - 情境網站 URL、標題與啟用狀態的最小設定模型仍待定義。
-- Stage Web 是否遷移其既有 `order-menu-bridge` 至同一 adapter，仍未決定。
 
 ### 情境工具就緒生命週期
 
@@ -126,13 +167,31 @@ Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 U
 
 不同模型在 Prompt 遵循、多步工具呼叫、讀取 `ok: false` 後重試、工具後自然語言回覆與 context 壓力下的表現仍需評估。可選 token diagnostics 已存在，但尚未提供完整的每步工具 token 拆分。
 
+### 視覺輔助與資料治理
+
+下一個實作階段的順序：
+
+1. 抽出兩個 Host 都可提供的「單張相機畫面擷取」邊界；不接螢幕或 iframe。
+2. 建立事件閘門執行器，使用既有 Vision Provider，確保每次只跑一次，並套用設定的逾時時間。
+3. 將短暫結果傳給該次招呼／提醒的 LLM 呼叫；不寫入 chat history、角色記憶或 server context。
+4. 在兩端接入相同的事件流程，再以人工瀏覽器測試確認關閉設定時完全不要求相機權限。
+5. 另行設計資料告知／同意、儲存位置、保留期限、存取權限與刪除流程後，才可實作事件截圖或短影片保存。
+
+此項不是單純前端開關：相機啟用與互動行為可由設備前端設定；Provider allow-list、媒體保存與存取規則應由正式部署的後端／設備管理設定控制。
+
+### 多 Kiosk、店別設定與部署
+
+- 單機設定目前保存在各瀏覽器 origin 的 localStorage；因此 Stage Web、Stage Kiosk 與不同裝置不會自動同步。
+- 未來需要店別設定模型、設備識別／憑證、中央設定同步、管理權限、密鑰持有位置與離線策略；尚未選擇後端或資料庫。
+- 現階段不要把會員、POS、支付或中央雲端管理加入 AIH 共用層。它們應留在各領域服務或未來管理平面。
+
 ## 2026-09-05 實作與驗證快照
 
 - 已完成：Stage Kiosk 的原生 WebMCP adapter、工具就緒狀態、通用互動服務 lifecycle，以及 order-menu 對舊 Tool bridge 的移除。
 - 已完成：跨來源 WebMCP 的原始工具 handle 隔離、JSON tool invocation、工具註冊／卸載生命週期、callback options 相容處理，以及可重試的輸入驗證結果。
 - 已驗證：實際 Chrome 環境中的 `localhost:5173` Kiosk → `localhost:5174` iframe 工具探索與執行；`@proj-airi/stage-kiosk` typecheck 與 lint、`@proj-airi/order-menu` typecheck 與 14 個 domain tests、`git diff --check`。
-- 尚未完成：第二個獨立服務驗證、Stage Web 舊 bridge 的遷移決策、角色卡完整欄位投影、多 Kiosk／店別設定與正式設備安全模型。
-- 測試限制：Stage Kiosk 的 Vitest 在目前開發環境啟動時遇到 `EMFILE: too many open files, watch`，尚未能執行測試；這是檔案監看資源限制，非測試 assertion 失敗。
+- 尚未完成：第二個獨立服務驗證、角色卡完整欄位投影、多 Kiosk／店別設定與正式設備安全模型。
+- 歷史註記：當時 Stage Kiosk 的 Vitest 曾因 `EMFILE: too many open files, watch` 無法啟動；已於 2026-09-07 以 Kiosk 專用 Vitest 設定解決，現可執行 11 個 Kiosk 單元測試。
 
 ## 2026-09-06 問卷邀請實作快照
 
@@ -140,7 +199,22 @@ Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 U
 - 已完成：Stage Kiosk 的管理設定與 `completed → 問卷 → 略過／倒數 → 匿名會話與 iframe 重置` 流程。Kiosk 不再以獨立的 10 秒完成計時器搶先重置。
 - 已完成：Stage Web 的相同問卷設定頁、目前 iframe 的來源／window 驗證 completion receiver，以及 `completed → 問卷 → 略過／倒數 → 本輪 chat session 與 iframe 重置` 流程。
 - 已驗證：`@proj-airi/stage-ui`、`@proj-airi/stage-kiosk`、`@proj-airi/stage-web` typecheck；問卷設定規則的 Vitest 測試與相關檔案 ESLint。
-- 尚待人工驗證：實際掃碼裝置、問卷網址可達性，以及各瀏覽器上的完整訂單完成流程。Stage Kiosk 的 Vitest 仍受目前環境 `EMFILE` 監看限制影響。
+- 尚待人工驗證：實際掃碼裝置、問卷網址可達性，以及各瀏覽器上的完整訂單完成流程。Kiosk 的 Vitest 監看限制已於 2026-09-07 解決。
+
+## 2026-09-06 Stage Web 原生 WebMCP 遷移快照
+
+- 已完成：Stage Web 移除已淘汰的 `order-menu-bridge` 與餐飲專屬的 host tool schema，改由共享 adapter 從 active iframe 探索並註冊原生 WebMCP tools。
+- 已完成：Kiosk 的 adapter 實作移至 `packages/stage-ui`，兩個 Host 使用相同的來源限制、Vue-safe tool descriptor、JSON invocation 與 tool readiness 行為。
+- 行為：瀏覽器或互動服務不支援 WebMCP 時，Host 不提供該服務的工具；不再顯示錯誤的「請啟動 order-menu」訊息，也不退回 `postMessage` Tool bridge。
+- 已驗證：共享 adapter 的 native discovery／JSON execution 回歸測試，以及 `stage-ui`、`stage-web`、`stage-kiosk` typecheck 與相關 ESLint。
+
+## 2026-09-07 共用顧客生命週期與視覺策略基礎
+
+- 已完成：匿名顧客會話的狀態、閒置計時、AI 執行中的逾時保護、完成與清理流程移至 `packages/stage-ui`。Stage Kiosk 只保留其 iframe reload adapter；Stage Web 以自己的 iframe reset revision 接入同一流程。因此兩端現在共用「活動 → 等候工作 → 完成 → 問卷（若啟用）→ 重置」的核心語意。
+- 已完成：`packages/kiosk-proactive` 定義 `KioskInteractionSettings`，將本機觀測、主動招呼、協助提醒、單次視覺輔助與未來影像留存拆為獨立策略。所有視覺相關預設皆為關閉。
+- 保證：目前新增的視覺策略不會自行開相機、不會呼叫 Vision provider、不會把畫面放入 LLM context，也不會保存截圖或影片。它只是為下一階段的「事件觸發、單次、逾時即捨棄」執行器保留統一契約。
+- 尚未完成：將既有 Vision provider 以事件閘門接入兩個 Host、由 Host 擷取相機單幀、正式環境的 self-hosted provider 驗證、資料告知／同意 UI，以及部署端的影像／影片保存政策。
+- 已驗證：`kiosk-proactive` 的 14 個 Vitest 測試、Kiosk 的 4 個測試檔／11 個單元測試、`kiosk-proactive`／`stage-ui`／`stage-kiosk`／`stage-web` typecheck，以及 `stage-kiosk`／`stage-web` lint。Kiosk 的 Vitest 已以專用設定避免開發期檔案監看上限。
 
 ## 相關現況文件
 

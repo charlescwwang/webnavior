@@ -25,9 +25,10 @@ import { toast, Toaster } from 'vue-sonner'
 import PerformanceOverlay from './components/Devtools/PerformanceOverlay.vue'
 
 import { availableInteractiveServices, interactiveServiceAgentInstructions } from './services/interactive-services'
+import { webMcpAdapter } from './services/webmcp-adapter'
 import { usePWAStore } from './stores/pwa'
 import { createInteractiveServicePrompt, createInteractiveServiceTools } from './tools/interactive-services'
-import { createOrderMenuTools, orderMenuToolsetPrompt } from './tools/order-menu'
+import { createWebMcpTools } from './tools/webmcp'
 
 if (isAccountFeaturesEnabled())
   useAuthProviderSync()
@@ -51,22 +52,35 @@ const inferencePreload = useInferencePreload()
 const llmToolsStore = useLlmToolsStore()
 const llmToolsetPromptsStore = useLlmToolsetPromptsStore()
 
-watch([availableInteractiveServices, interactiveServiceAgentInstructions], async ([services]) => {
-  await llmToolsStore.registerTools('interactive-services', createInteractiveServiceTools())
-  llmToolsetPromptsStore.registerToolsetPrompts('interactive-services', [{
-    id: 'registered-interactive-services',
-    content: createInteractiveServicePrompt(),
-  }])
+let interactiveServiceSyncGeneration = 0
 
-  if (services.some(service => service.id === 'restaurant-ordering')) {
-    await llmToolsStore.registerTools('order-menu', await createOrderMenuTools())
-    llmToolsetPromptsStore.registerToolsetPrompts('order-menu', [{ id: 'order-menu', content: orderMenuToolsetPrompt }])
-    return
+async function syncInteractiveServiceTools() {
+  const generation = ++interactiveServiceSyncGeneration
+  const services = availableInteractiveServices.value
+  llmToolsStore.clearTools('webmcp')
+
+  if (services.length < 2) {
+    llmToolsStore.clearTools('interactive-services')
+    llmToolsetPromptsStore.clearToolsetPrompts('interactive-services')
+  }
+  else {
+    await llmToolsStore.registerTools('interactive-services', createInteractiveServiceTools())
+    llmToolsetPromptsStore.registerToolsetPrompts('interactive-services', [{
+      id: 'registered-interactive-services',
+      content: createInteractiveServicePrompt(),
+    }])
   }
 
-  llmToolsStore.clearTools('order-menu')
-  llmToolsetPromptsStore.clearToolsetPrompts('order-menu')
-}, { deep: true, immediate: true })
+  if (services.length === 0)
+    return
+
+  if (generation !== interactiveServiceSyncGeneration)
+    return
+
+  await llmToolsStore.registerTools('webmcp', createWebMcpTools())
+}
+
+watch([availableInteractiveServices, interactiveServiceAgentInstructions, webMcpAdapter.tools], () => void syncInteractiveServiceTools(), { deep: true, immediate: true })
 
 const primaryColor = computed(() => {
   return isDark.value
@@ -132,8 +146,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  llmToolsStore.clearTools('order-menu')
-  llmToolsetPromptsStore.clearToolsetPrompts('order-menu')
+  llmToolsStore.clearTools('webmcp')
   llmToolsStore.clearTools('interactive-services')
   llmToolsetPromptsStore.clearToolsetPrompts('interactive-services')
   contextBridgeStore.dispose()

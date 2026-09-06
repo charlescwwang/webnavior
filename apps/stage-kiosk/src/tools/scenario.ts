@@ -17,6 +17,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * URL, navigate a frame, or activate a page that has not been registered.
  */
 export function createScenarioNavigationTools(scenarios: readonly RegisteredScenario[], activeScenarioId?: string): Tool[] {
+  // One approved scenario is already rendered as the kiosk default. Leaving a
+  // no-op navigation tool visible competes with that scenario's WebMCP tools.
+  if (scenarios.length < 2)
+    return []
+
   const activeScenario = scenarios.find(scenario => scenario.id === activeScenarioId)
   return [rawTool({
     name: 'kiosk_open_registered_scenario',

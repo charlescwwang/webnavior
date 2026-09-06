@@ -1,6 +1,5 @@
 import type { FaceLandmarker, NormalizedLandmark } from '@mediapipe/tasks-vision'
-
-import type { KioskProactiveSettings } from './useKioskProactiveSettings'
+import type { DetectionZone } from '@proj-airi/kiosk-proactive'
 
 import { errorMessageFrom } from '@moeru/std'
 import { createAttentionObservation } from '@proj-airi/kiosk-proactive'
@@ -13,7 +12,7 @@ const detectionIntervalMs = 200
 export type KioskProactiveVisionStatus = 'idle' | 'starting' | 'observing' | 'unsupported' | 'failed'
 
 interface Options {
-  settings: () => KioskProactiveSettings
+  detectionZone: () => DetectionZone
   onObservation: (observation: ReturnType<typeof createAttentionObservation>) => void
 }
 
@@ -113,7 +112,7 @@ export function useKioskProactiveVision(options: Options) {
       options.onObservation(createAttentionObservation(
         nowMs,
         result.faceLandmarks.map(toFaceLandmarkObservation),
-        options.settings().detectionZone,
+        options.detectionZone(),
       ))
     }
 
