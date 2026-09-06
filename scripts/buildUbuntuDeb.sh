@@ -17,7 +17,7 @@ requireCommand() {
 resolveGodotBinary() {
   local userHome bundledGodot systemGodot
   userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
-  bundledGodot="$userHome/.local/opt/airi-tools/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux_x86_64"
+  bundledGodot="$userHome/.local/opt/airi-tools/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux.x86_64"
   if [[ -x "$bundledGodot" ]]; then
     printf '%s\n' "$bundledGodot"
     return
@@ -74,7 +74,7 @@ installBuildToolchain() {
     sudo apt-get install --yes dotnet-sdk-8.0
   fi
 
-  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux_x86_64"
+  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux.x86_64"
   if [[ -x "$godotBinary" ]] && "$godotBinary" --version | grep --quiet '^4\.6\.2'; then
     return
   fi
