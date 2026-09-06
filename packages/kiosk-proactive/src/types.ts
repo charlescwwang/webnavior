@@ -91,3 +91,42 @@ export interface KioskAssistanceReminderCandidate {
   /** Time without an effective customer action before this candidate was emitted. */
   inactiveForMs: number
 }
+
+/** Local, anonymous camera-observation controls for one kiosk installation. */
+export interface KioskObservationSettings {
+  /** Whether the kiosk may open its local camera and derive anonymous presence observations. @default false */
+  enabled: boolean
+  /** Camera area that approximates the physical interaction distance for this installation. */
+  detectionZone: DetectionZone
+}
+
+/** Restricts visual assistance to explicitly eligible kiosk events. */
+export interface KioskVisualAssistanceSettings {
+  /** Enables single-frame Vision analysis only after an eligible interaction event. @default false */
+  enabled: boolean
+  /** The current product policy never carries visual context into another customer session. @default 'event' */
+  contextScope: 'event'
+  /** Production deployments may only send camera frames to a self-hosted provider. @default 'local-only' */
+  providerPolicy: 'local-only'
+  /** Maximum time an event may wait for Vision before it is silently discarded. @default 3000 */
+  eventTimeoutMs: number
+}
+
+/**
+ * Declares a future media-retention capability without enabling capture or
+ * defining storage. A host must receive a deployment policy before it may save
+ * any frame or clip.
+ */
+export interface KioskMediaRetentionSettings {
+  /** No visual media is saved until a deployment policy explicitly enables a mode. @default 'disabled' */
+  mode: 'disabled' | 'event-snapshot' | 'event-clip'
+}
+
+/** Independent policies that govern one kiosk's interaction behavior. */
+export interface KioskInteractionSettings {
+  observation: KioskObservationSettings
+  proactiveGreeting: ProactiveInteractionSettings
+  assistanceReminder: KioskAssistanceReminderSettings
+  visualAssistance: KioskVisualAssistanceSettings
+  mediaRetention: KioskMediaRetentionSettings
+}
