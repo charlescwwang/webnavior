@@ -14,6 +14,20 @@ requireCommand() {
   command -v "$1" >/dev/null || error "Missing required command: $1"
 }
 
+resolveGodotBinary() {
+  local userHome bundledGodot systemGodot
+  userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
+  bundledGodot="$userHome/.local/opt/airi-tools/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux_x86_64"
+  if [[ -x "$bundledGodot" ]]; then
+    printf '%s\n' "$bundledGodot"
+    return
+  fi
+
+  systemGodot="$(command -v godot || true)"
+  [[ -n "$systemGodot" ]] || return 1
+  printf '%s\n' "$systemGodot"
+}
+
 installBuildToolchain() {
   local temporaryDirectory userHome toolDirectory godotArchive godotBinary nodeArchive nodeChecksums nodeDirectory
 
@@ -60,36 +74,33 @@ installBuildToolchain() {
     sudo apt-get install --yes dotnet-sdk-8.0
   fi
 
-  if command -v godot >/dev/null && godot --version | grep --quiet '^4\.6\.2'; then
+  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux_x86_64"
+  if [[ -x "$godotBinary" ]] && "$godotBinary" --version | grep --quiet '^4\.6\.2'; then
     return
   fi
 
   godotArchive="$toolDirectory/godot.zip"
-  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux_x86_64"
   mkdir -p "$toolDirectory" "$userHome/.local/bin"
   curl --fail --location --output "$godotArchive" \
     https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_linux_x86_64.zip
   unzip -o "$godotArchive" -d "$toolDirectory"
   rm -f "$godotArchive"
-  # Godot's .NET assemblies live beside its executable. Keep a symlink rather
-  # than copying the binary into ~/.local/bin, so Godot resolves GodotSharp from
-  # the extracted distribution directory.
-  ln -sf "$godotBinary" "$userHome/.local/bin/godot"
-  export PATH="$userHome/.local/bin:$PATH"
 }
 
 needsBuildToolchain() {
+  local godotBinary
   if ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
     return 0
   fi
-  if ! command -v corepack >/dev/null || ! command -v dotnet >/dev/null || ! command -v godot >/dev/null; then
+  if ! command -v corepack >/dev/null || ! command -v dotnet >/dev/null; then
     return 0
   fi
-  ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.' || ! godot --version | grep --quiet '^4\.6\.2'
+  godotBinary="$(resolveGodotBinary || true)"
+  [[ -z "$godotBinary" ]] || ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.' || ! "$godotBinary" --version | grep --quiet '^4\.6\.2'
 }
 
 main() {
-  local setupRequested=false
+  local setupRequested=false godotBinary
   if [[ "${1:-}" == '--setup' ]]; then
     setupRequested=true
     shift
@@ -110,8 +121,9 @@ main() {
   requireCommand node
   requireCommand corepack
   requireCommand dotnet
-  requireCommand godot
   [[ "$(node --version)" == v24.* ]] || error 'Node.js 24 is required.'
+  godotBinary="$(resolveGodotBinary)" || error 'Godot 4.6.2 is required.'
+  "$godotBinary" --version | grep --quiet '^4\.6\.2' || error 'Godot 4.6.2 is required.'
 
   cd "$(git rev-parse --show-toplevel)"
   corepack pnpm install --frozen-lockfile
@@ -120,7 +132,7 @@ main() {
   mkdir -p engines/stage-tamagotchi-godot/build/linux
   (
     cd engines/stage-tamagotchi-godot
-    godot --headless --export-release 'Linux x64' build/linux/godot-stage
+    "$godotBinary" --headless --export-release 'Linux x64' build/linux/godot-stage
   )
 
   corepack pnpm -F @proj-airi/stage-tamagotchi run build
