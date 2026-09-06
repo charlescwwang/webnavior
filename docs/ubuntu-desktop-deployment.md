@@ -2,6 +2,8 @@
 
 Target: Ubuntu 24.04 x86_64.
 
+`--setup` installs Node 24 and Godot only under `~/.local/opt/airi-tools`; it does not replace the system Node.js.
+
 ## Build
 
 ```bash

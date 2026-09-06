@@ -15,7 +15,7 @@ requireCommand() {
 }
 
 installBuildToolchain() {
-  local temporaryDirectory userHome toolDirectory godotArchive godotBinary
+  local temporaryDirectory userHome toolDirectory godotArchive godotBinary nodeArchive nodeChecksums nodeDirectory
 
   sudo apt-get update
   sudo apt-get install --yes \
@@ -29,11 +29,25 @@ installBuildToolchain() {
     python3 \
     unzip
 
-  if ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
-    curl --fail --show-error --silent https://deb.nodesource.com/setup_24.x | sudo -E bash -
-    sudo apt-get install --yes nodejs
+  userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
+  toolDirectory="$userHome/.local/opt/airi-tools"
+  nodeDirectory="$toolDirectory/node-v24.13.0-linux-x64"
+  if [[ -x "$nodeDirectory/bin/node" ]]; then
+    export PATH="$nodeDirectory/bin:$PATH"
+  elif ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
+    mkdir -p "$toolDirectory"
+    nodeArchive="$toolDirectory/node-v24.13.0-linux-x64.tar.xz"
+    nodeChecksums="$toolDirectory/SHASUMS256.txt"
+    curl --fail --location --output "$nodeArchive" https://nodejs.org/dist/v24.13.0/node-v24.13.0-linux-x64.tar.xz
+    curl --fail --location --output "$nodeChecksums" https://nodejs.org/dist/v24.13.0/SHASUMS256.txt
+    (
+      cd "$toolDirectory"
+      grep ' node-v24.13.0-linux-x64.tar.xz$' "$nodeChecksums" | sha256sum --check
+    )
+    tar --extract --xz --file "$nodeArchive" --directory "$toolDirectory"
+    rm -f "$nodeArchive" "$nodeChecksums"
+    export PATH="$nodeDirectory/bin:$PATH"
   fi
-  sudo corepack enable
   corepack prepare pnpm@10.33.0 --activate
 
   if ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.'; then
@@ -50,8 +64,6 @@ installBuildToolchain() {
     return
   fi
 
-  userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
-  toolDirectory="$userHome/.local/opt/airi-tools"
   godotArchive="$toolDirectory/godot.zip"
   godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64"
   mkdir -p "$toolDirectory" "$userHome/.local/bin"
