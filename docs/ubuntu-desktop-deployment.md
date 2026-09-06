@@ -2,17 +2,15 @@
 
 Target: Ubuntu 24.04 x86_64.
 
-`--setup` installs Node 24 and Godot only under `~/.local/opt/airi-tools`; it does not replace the system Node.js.
+The build script installs missing Node 24 and Godot only under `~/.local/opt/airi-tools`; it does not replace the system Node.js.
 
 ## Build
 
 ```bash
 git clone https://github.com/charlescwwang/webnavior.git
 cd webnavior
-bash scripts/buildUbuntuDeb.sh --setup
+bash scripts/buildUbuntuDeb.sh
 ```
-
-Later builds do not need `--setup`:
 
 ```bash
 git pull

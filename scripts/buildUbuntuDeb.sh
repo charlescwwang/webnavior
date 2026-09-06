@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Builds an Ubuntu x86_64 AIRI Debian package from the checked-out repository.
-# Pass --setup once to install the required build toolchain.
+# Missing build tools are installed automatically. Pass --setup to re-check them.
 
 set -Eeuo pipefail
 
@@ -34,7 +34,7 @@ installBuildToolchain() {
   nodeDirectory="$toolDirectory/node-v24.13.0-linux-x64"
   if [[ -x "$nodeDirectory/bin/node" ]]; then
     export PATH="$nodeDirectory/bin:$PATH"
-  elif ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
+  elif ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]] || ! command -v corepack >/dev/null; then
     mkdir -p "$toolDirectory"
     nodeArchive="$toolDirectory/node-v24.13.0-linux-x64.tar.xz"
     nodeChecksums="$toolDirectory/SHASUMS256.txt"
@@ -75,6 +75,16 @@ installBuildToolchain() {
   export PATH="$userHome/.local/bin:$PATH"
 }
 
+needsBuildToolchain() {
+  if ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
+    return 0
+  fi
+  if ! command -v corepack >/dev/null || ! command -v dotnet >/dev/null || ! command -v godot >/dev/null; then
+    return 0
+  fi
+  ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.' || ! godot --version | grep --quiet '^4\.6\.2'
+}
+
 main() {
   local setupRequested=false
   if [[ "${1:-}" == '--setup' ]]; then
@@ -89,7 +99,7 @@ main() {
   [[ "${ID:-}" == 'ubuntu' && "${VERSION_ID:-}" == '24.04' ]] || error 'Run this script on Ubuntu 24.04.'
   [[ "$(dpkg --print-architecture)" == 'amd64' ]] || error 'Run this script on an amd64 machine.'
 
-  if "$setupRequested"; then
+  if [[ "$setupRequested" == true ]] || needsBuildToolchain; then
     installBuildToolchain
   fi
 
