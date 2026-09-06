@@ -29,7 +29,7 @@ resolveGodotBinary() {
 }
 
 installBuildToolchain() {
-  local temporaryDirectory userHome toolDirectory godotArchive godotBinary nodeArchive nodeChecksums nodeDirectory
+  local temporaryDirectory userHome toolDirectory godotArchive godotBinary templateArchive templateDirectory nodeArchive nodeChecksums nodeDirectory
 
   sudo apt-get update
   sudo apt-get install --yes \
@@ -75,20 +75,30 @@ installBuildToolchain() {
   fi
 
   godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux.x86_64"
-  if [[ -x "$godotBinary" ]] && "$godotBinary" --version | grep --quiet '^4\.6\.2'; then
-    return
+  if [[ ! -x "$godotBinary" ]] || ! "$godotBinary" --version | grep --quiet '^4\.6\.2'; then
+    godotArchive="$toolDirectory/godot.zip"
+    mkdir -p "$toolDirectory" "$userHome/.local/bin"
+    curl --fail --location --output "$godotArchive" \
+      https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_linux_x86_64.zip
+    unzip -o "$godotArchive" -d "$toolDirectory"
+    rm -f "$godotArchive"
   fi
 
-  godotArchive="$toolDirectory/godot.zip"
-  mkdir -p "$toolDirectory" "$userHome/.local/bin"
-  curl --fail --location --output "$godotArchive" \
-    https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_linux_x86_64.zip
-  unzip -o "$godotArchive" -d "$toolDirectory"
-  rm -f "$godotArchive"
+  templateDirectory="$userHome/.local/share/godot/export_templates/4.6.2.stable.mono"
+  if [[ ! -f "$templateDirectory/linux_debug.x86_64" || ! -f "$templateDirectory/linux_release.x86_64" ]]; then
+    temporaryDirectory="$(mktemp -d)"
+    trap 'rm -rf "$temporaryDirectory"' RETURN
+    templateArchive="$temporaryDirectory/export-templates.tpz"
+    curl --fail --location --output "$templateArchive" \
+      https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_export_templates.tpz
+    unzip -o "$templateArchive" -d "$temporaryDirectory"
+    mkdir -p "$templateDirectory"
+    cp -a "$temporaryDirectory/templates/." "$templateDirectory"
+  fi
 }
 
 needsBuildToolchain() {
-  local godotBinary
+  local godotBinary userHome templateDirectory
   if ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
     return 0
   fi
@@ -96,7 +106,13 @@ needsBuildToolchain() {
     return 0
   fi
   godotBinary="$(resolveGodotBinary || true)"
-  [[ -z "$godotBinary" ]] || ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.' || ! "$godotBinary" --version | grep --quiet '^4\.6\.2'
+  if [[ -z "$godotBinary" ]] || ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.' || ! "$godotBinary" --version | grep --quiet '^4\.6\.2'; then
+    return 0
+  fi
+
+  userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
+  templateDirectory="$userHome/.local/share/godot/export_templates/4.6.2.stable.mono"
+  [[ ! -f "$templateDirectory/linux_debug.x86_64" || ! -f "$templateDirectory/linux_release.x86_64" ]]
 }
 
 main() {
