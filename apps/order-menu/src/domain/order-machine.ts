@@ -487,6 +487,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   const catalog = options.menu ?? menu
   const cart: CartLine[] = []
   let selection: Selection | undefined
+  let submittedOrder: SubmittedOrder | undefined
+  let pendingSubmission: Promise<SubmittedOrder> | undefined
 
   function itemOrThrow(itemId: string) {
     const item = catalog.find(candidate => candidate.id === itemId)
@@ -568,20 +570,35 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   }
 
   async function confirmOrder() {
+    if (submittedOrder)
+      return submittedOrder
+    if (pendingSubmission)
+      return await pendingSubmission
+
     const snapshot = cloneCart(cart)
     if (snapshot.lines.length === 0)
       throw new Error('Cart is empty.')
-    return await (options.gateway?.submit(snapshot) ?? Promise.resolve({
+
+    pendingSubmission = options.gateway?.submit(snapshot) ?? Promise.resolve({
       id: `demo-${crypto.randomUUID()}`,
       cart: snapshot,
       status: 'simulated' as const,
-    }))
+    })
+    try {
+      submittedOrder = await pendingSubmission
+      return submittedOrder
+    }
+    finally {
+      pendingSubmission = undefined
+    }
   }
 
   /** Clears only the in-progress order so the host can begin a new customer session. */
   function reset() {
     cart.splice(0)
     selection = undefined
+    submittedOrder = undefined
+    pendingSubmission = undefined
     return cloneCart(cart)
   }
 

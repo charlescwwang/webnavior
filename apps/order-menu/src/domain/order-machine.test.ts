@@ -20,6 +20,18 @@ describe('createOrderMachine', () => {
     await expect(machine.confirmOrder()).resolves.toMatchObject({ status: 'simulated' })
   })
 
+  it('returns one submitted order when confirmation is retried', async () => {
+    const submit = vi.fn(async cart => ({ id: 'pos-1', cart, status: 'simulated' as const }))
+    const machine = createOrderMachine({ gateway: { submit } })
+
+    machine.selectMenuItem('chous-shrimp-roll')
+    machine.addToCart()
+
+    const [firstOrder, retryOrder] = await Promise.all([machine.confirmOrder(), machine.confirmOrder()])
+    expect(submit).toHaveBeenCalledOnce()
+    expect(retryOrder).toEqual(firstOrder)
+  })
+
   it('clears a completed anonymous customer cart without changing the catalog', () => {
     const machine = createOrderMachine()
 
@@ -162,6 +174,43 @@ describe('createMenuToolRuntime', () => {
     }
   })
 
+  it('notifies the embedding host after a native WebMCP order confirmation', async () => {
+    const registeredTools: Array<{
+      name: string
+      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
+    }> = []
+    vi.stubGlobal('document', {
+      modelContext: {
+        registerTool: async (tool: typeof registeredTools[number]) => registeredTools.push(tool),
+      },
+    })
+
+    try {
+      const completedOrders: string[] = []
+      const runtime = createMenuToolRuntime({
+        onAction: () => {},
+        onCartChange: () => {},
+        onMenuSelection: () => {},
+        onOrderConfirmed: order => completedOrders.push(order.id),
+      })
+      await runtime.registerNativeWebMcp()
+      const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
+      const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
+      const confirmOrder = registeredTools.find(tool => tool.name === 'order_confirm')
+      if (!selectItem || !addItem || !confirmOrder)
+        throw new Error('Expected order tools to be registered.')
+
+      await selectItem.execute({ itemId: 'chous-shrimp-roll' })
+      await addItem.execute({})
+      await confirmOrder.execute({ confirmedByUser: true })
+
+      expect(completedOrders).toHaveLength(1)
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('returns an actionable result when an agent omits a selected item ID', async () => {
     const registeredTools: Array<{
       name: string
@@ -222,6 +271,33 @@ describe('createMenuToolRuntime', () => {
       { label: '加入購物車', targetId: 'cart' },
     ])
     expect(carts).toEqual([150])
+  })
+
+  it('synchronizes WebMCP item options into the visible menu selection and emits one completion', async () => {
+    const selections: Array<{ itemId: string, options: Record<string, string>, quantity: number }> = []
+    const completedOrders: string[] = []
+    const runtime = createMenuToolRuntime({
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onSelectionChange: selection => selections.push(selection),
+      onOrderConfirmed: order => completedOrders.push(order.id),
+    })
+
+    await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('menu_set_item_option', { groupId: 'ginger', valueId: 'without-ginger' })
+    await runtime.invoke('cart_add_item')
+    const [firstConfirmation, retryConfirmation] = await Promise.all([
+      runtime.invoke('order_confirm', { confirmedByUser: true }),
+      runtime.invoke('order_confirm', { confirmedByUser: true }),
+    ])
+
+    expect(selections).toEqual([
+      { itemId: 'chous-shrimp-roll', options: { ginger: 'with-ginger' }, quantity: 1 },
+      { itemId: 'chous-shrimp-roll', options: { ginger: 'without-ginger' }, quantity: 1 },
+    ])
+    expect(completedOrders).toHaveLength(1)
+    expect(retryConfirmation).toMatchObject(firstConfirmation)
   })
 
   it('merges matching cart lines while retaining separate customer choices', () => {

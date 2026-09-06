@@ -1,4 +1,4 @@
-import type { CartSnapshot, MenuItem, RecommendationTag } from './domain/order-machine'
+import type { CartSnapshot, MenuItem, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
 
 import { errorMessageFrom } from '@moeru/std'
 
@@ -48,6 +48,10 @@ interface MenuToolRuntimeOptions {
   onAction: (action: AgentAction) => Promise<void> | void
   onCartChange: (cart: CartSnapshot) => void
   onMenuSelection: (itemId: string | undefined) => void
+  /** Mirrors the active tool selection into the menu UI. */
+  onSelectionChange?: (selection: Selection) => void
+  /** Notifies the embedding host after the first successfully confirmed order. */
+  onOrderConfirmed?: (order: SubmittedOrder) => void
 }
 
 interface ModelContextLike {
@@ -141,6 +145,7 @@ function nativeInvocationFailure(name: MenuToolName, error: unknown) {
 export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   const machine = createOrderMachine()
   let nativeRegistration: AbortController | undefined
+  let completedOrderId: string | undefined
 
   async function announce(
     label: string,
@@ -200,9 +205,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const item = machine.getMenu().find(candidate => candidate.id === itemId) as MenuItem | undefined
           await announce(`正在選擇${item?.name ?? '餐點'}`, itemId, {}, onAction)
           options.onMenuSelection(itemId)
+          const selection = machine.selectMenuItem(itemId)
+          options.onSelectionChange?.(selection)
           return {
             item: item ? menuItemForAgent(item) : undefined,
-            selection: machine.selectMenuItem(itemId),
+            selection,
           }
         }
         case 'menu_set_item_option': {
@@ -215,7 +222,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             controlId: item ? optionControlId(item.id, groupId, valueId) : undefined,
             expandCustomization: true,
           }, onAction)
-          return { selection: machine.setItemOption(groupId, valueId) }
+          const nextSelection = machine.setItemOption(groupId, valueId)
+          options.onSelectionChange?.(nextSelection)
+          return { selection: nextSelection }
         }
         case 'menu_set_quantity': {
           const quantity = requiredNumber(input, 'quantity')
@@ -223,7 +232,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           await announce(`設定數量為 ${quantity}`, itemId, {
             controlId: itemId ? quantityControlId(itemId) : undefined,
           }, onAction)
-          return { selection: machine.setQuantity(quantity) }
+          const nextSelection = machine.setQuantity(quantity)
+          options.onSelectionChange?.(nextSelection)
+          return { selection: nextSelection }
         }
         case 'cart_add_item': {
           await announce('加入購物車', 'cart', {}, onAction)
@@ -252,7 +263,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (input.confirmedByUser !== true)
             throw new Error('Order confirmation requires confirmedByUser: true.')
           await announce('確認模擬訂單', 'cart', {}, onAction)
-          return { order: await machine.confirmOrder() }
+          const order = await machine.confirmOrder()
+          if (completedOrderId !== order.id) {
+            completedOrderId = order.id
+            options.onOrderConfirmed?.(order)
+          }
+          return {
+            interaction: { status: 'completed' },
+            order,
+            nextStep: '訂單已確認，請勿再次呼叫 order_confirm。',
+          }
         }
       }
     }
@@ -264,6 +284,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
 
   function reset() {
     const cart = machine.reset()
+    completedOrderId = undefined
     options.onCartChange(cart)
     options.onMenuSelection(undefined)
     return { cart }

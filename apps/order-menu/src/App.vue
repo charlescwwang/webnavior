@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
 
-import type { CartSnapshot } from './domain/order-machine'
+import type { CartSnapshot, Selection, SubmittedOrder } from './domain/order-machine'
 import type { AgentAction, MenuToolName } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -12,7 +12,23 @@ import MenuItemCard from './components/menuItemCard.vue'
 import { defaultOptionsFor, menu } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
-const expectedAiriOrigin = import.meta.env.VITE_AIRI_ORIGIN ?? 'http://localhost:5173'
+function embeddingHostOrigin() {
+  if (window.parent === window || !document.referrer)
+    return undefined
+
+  try {
+    const origin = new URL(document.referrer)
+    return origin.protocol === 'http:' || origin.protocol === 'https:' ? origin.origin : undefined
+  }
+  catch {
+    return undefined
+  }
+}
+
+// A deployment can lock the service to one approved host. Otherwise, a page
+// embedded by AIRI reads the browser-provided parent referrer origin, so local
+// ports and kiosk domains work without a separate startup command.
+const expectedAiriOrigin = import.meta.env.VITE_AIRI_ORIGIN ?? embeddingHostOrigin()
 const action = shallowRef<AgentAction>({ label: '等待下一步操作' })
 const agentOperationCount = shallowRef(0)
 const cart = shallowRef<CartSnapshot>({ lines: [], total: 0, itemCount: 0 })
@@ -21,6 +37,7 @@ const cursorPosition = shallowRef({ x: 44, y: 14 })
 const showAgentCursor = shallowRef(false)
 const cartUpdated = shallowRef(false)
 const orderStatus = shallowRef<string>()
+const completedOrderId = shallowRef<string>()
 const addingItemId = shallowRef<string>()
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
@@ -97,19 +114,39 @@ const runtime = createMenuToolRuntime({
     })
   },
   onMenuSelection: () => {},
+  onSelectionChange: syncSelection,
+  onOrderConfirmed: handleOrderConfirmed,
 })
 
 async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, options: { animate?: boolean } = {}) {
-  const result = await runtime.invoke(name, args, options.animate === false ? () => {} : undefined)
-  if (name === 'order_confirm') {
-    orderStatus.value = '模擬訂單已建立，尚未送往 POS。'
-    notifyHost('completed')
-  }
-  return result
+  return await runtime.invoke(name, args, options.animate === false ? () => {} : undefined)
+}
+
+function syncSelection(selection: Selection) {
+  quantities[selection.itemId] = selection.quantity
+  selectedOptionsByItem[selection.itemId] = { ...selection.options }
+}
+
+function handleOrderConfirmed(order: SubmittedOrder) {
+  if (completedOrderId.value === order.id)
+    return
+
+  completedOrderId.value = order.id
+  orderStatus.value = '模擬訂單已建立，尚未送往 POS。'
+  notifyHost('completed')
 }
 
 function notifyHost(type: 'activity' | 'completed') {
-  window.parent.postMessage({ source: 'airi-interaction-lifecycle', type }, { targetOrigin: expectedAiriOrigin })
+  if (window.parent === window)
+    return
+
+  // This lifecycle signal deliberately carries no order or customer data. The
+  // Host validates both the current iframe Window and this service's origin
+  // before accepting it, so it can safely receive the signal regardless of
+  // local ports, LAN addresses, or an older deployment origin override.
+  if (import.meta.env.DEV)
+    console.info('[DEBUG-feedback-lifecycle] menu sent lifecycle event', { type })
+  window.parent.postMessage({ source: 'airi-interaction-lifecycle', type }, { targetOrigin: '*' })
 }
 
 function notifyActivity() {
@@ -179,6 +216,9 @@ function optionLabel(line: CartSnapshot['lines'][number]) {
 
 onMounted(() => {
   nativeWebMcpUnmounted = false
+  if (!expectedAiriOrigin)
+    return
+
   void runtime.registerNativeWebMcp({ exposedTo: [expectedAiriOrigin] })
     .then((unregister) => {
       if (!unregister)
@@ -276,12 +316,20 @@ onUnmounted(() => {
       <div class="cart-total">
         <span>總計</span><strong>{{ currency(cart.total) }}</strong>
       </div>
-      <button class="confirm-button" type="button" :disabled="cart.lines.length === 0" @click="confirmOrder">
-        確認模擬訂單
+      <button class="confirm-button" type="button" :disabled="cart.lines.length === 0 || !!completedOrderId" @click="confirmOrder">
+        {{ completedOrderId ? '模擬訂單已確認' : '確認模擬訂單' }}
       </button>
       <p v-if="orderStatus" class="order-status">
         {{ orderStatus }}
       </p>
+      <section v-if="completedOrderId" class="order-completion" role="status" aria-live="polite">
+        <div class="i-solar:check-circle-bold-duotone" aria-hidden="true" />
+        <div>
+          <strong>模擬訂單已送出</strong>
+          <p>訂單編號：{{ completedOrderId }}</p>
+          <small>此訂單僅供流程測試，尚未傳送至 POS。</small>
+        </div>
+      </section>
     </aside>
 
     <div v-if="showAgentCursor" class="agent-cursor" :style="{ left: `${cursorPosition.x}px`, top: `${cursorPosition.y}px` }" aria-hidden="true">
