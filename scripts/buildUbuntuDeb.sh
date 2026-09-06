@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # Builds an Ubuntu x86_64 AIRI Debian package from the checked-out repository.
+# Pass --setup once to install the required build toolchain.
 
 set -Eeuo pipefail
 
@@ -13,12 +14,72 @@ requireCommand() {
   command -v "$1" >/dev/null || error "Missing required command: $1"
 }
 
+installBuildToolchain() {
+  local temporaryDirectory userHome toolDirectory godotArchive godotBinary
+
+  sudo apt-get update
+  sudo apt-get install --yes \
+    build-essential \
+    ca-certificates \
+    curl \
+    git \
+    libssl-dev \
+    libudev-dev \
+    pkg-config \
+    python3 \
+    unzip
+
+  if ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]]; then
+    curl --fail --show-error --silent https://deb.nodesource.com/setup_24.x | sudo -E bash -
+    sudo apt-get install --yes nodejs
+  fi
+  sudo corepack enable
+  corepack prepare pnpm@10.33.0 --activate
+
+  if ! dotnet --list-sdks 2>/dev/null | grep --quiet '^8\.0\.'; then
+    temporaryDirectory="$(mktemp -d)"
+    trap 'rm -rf "$temporaryDirectory"' RETURN
+    curl --fail --location --output "$temporaryDirectory/packages-microsoft-prod.deb" \
+      https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb
+    sudo dpkg --install "$temporaryDirectory/packages-microsoft-prod.deb"
+    sudo apt-get update
+    sudo apt-get install --yes dotnet-sdk-8.0
+  fi
+
+  if command -v godot >/dev/null && godot --version | grep --quiet '^4\.6\.2'; then
+    return
+  fi
+
+  userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
+  toolDirectory="$userHome/.local/opt/airi-tools"
+  godotArchive="$toolDirectory/godot.zip"
+  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64"
+  mkdir -p "$toolDirectory" "$userHome/.local/bin"
+  curl --fail --location --output "$godotArchive" \
+    https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_linux_x86_64.zip
+  unzip -o "$godotArchive" -d "$toolDirectory"
+  rm -f "$godotArchive"
+  install -m 0755 "$godotBinary" "$userHome/.local/bin/godot"
+  export PATH="$userHome/.local/bin:$PATH"
+}
+
 main() {
+  local setupRequested=false
+  if [[ "${1:-}" == '--setup' ]]; then
+    setupRequested=true
+    shift
+  fi
+  [[ "$#" -eq 0 ]] || error 'Usage: bash scripts/buildUbuntuDeb.sh [--setup]'
+
   [[ -r /etc/os-release ]] || error 'Run this script on Ubuntu 24.04.'
   # shellcheck disable=SC1091
   source /etc/os-release
   [[ "${ID:-}" == 'ubuntu' && "${VERSION_ID:-}" == '24.04' ]] || error 'Run this script on Ubuntu 24.04.'
   [[ "$(dpkg --print-architecture)" == 'amd64' ]] || error 'Run this script on an amd64 machine.'
+
+  if "$setupRequested"; then
+    installBuildToolchain
+  fi
 
   requireCommand git
   requireCommand node
