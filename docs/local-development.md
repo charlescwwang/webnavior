@@ -81,6 +81,8 @@ CDP 僅應在本機開發時使用，且不要暴露到網路。
 
 基本 AIRI UI/Avatar 的主要相容性前提是 Chromium WebGL，而非 CUDA 或 ROCm。Linux 上 AIRI Electron main process 會為 WebGPU/Vulkan 加入 Chromium flags；故 AMD Linux 的實際風險在於 Chromium/Electron 版本、Mesa/AMD Vulkan driver、瀏覽器 WebGPU 啟用狀態與顯卡測試矩陣，而不是 AIRI 應用程式有 NVIDIA-only code。
 
+若是 Ubuntu 24.04 LTS 的 x86_64 機器（包括 Ryzen AI Max+ 395），可用 `bash scripts/installUbuntuAmd.sh` 安裝官方最新 Linux `.deb`、Mesa/RADV 與 Electron 執行期依賴。也可傳入本機產生的 `.deb` 路徑，以相同流程驗證尚未發布的套件。此安裝程式不安裝 AMDGPU-PRO、DKMS 或 ROCm，以免取代 Ubuntu 內建 amdgpu driver；完成後會印出 Vulkan/RADV 診斷結果。
+
 ROCm 只有在未來餐飲 Agent 自己承擔本機模型推論時才需評估。建議讓該 Agent 的模型 runtime 與 AIRI UI 分離，按 Linux/AMD 部署另行選擇 ROCm 相容的模型服務，而不要把 GPU runtime 綁進 AIRI renderer 或 Electron main process。
 
 ### Windows → Linux 遷移檢查表
