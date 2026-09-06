@@ -65,7 +65,7 @@ installBuildToolchain() {
   fi
 
   godotArchive="$toolDirectory/godot.zip"
-  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64"
+  godotBinary="$toolDirectory/Godot_v4.6.2-stable_mono_linux_x86_64/Godot_v4.6.2-stable_mono_linux_x86_64"
   mkdir -p "$toolDirectory" "$userHome/.local/bin"
   curl --fail --location --output "$godotArchive" \
     https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_linux_x86_64.zip
