@@ -771,7 +771,16 @@ defineExpose({
         :intensity="directionalLightIntensity"
         cast-shadow
       />
-      <Suspense>
+      <!--
+        NOTICE:
+        `@tresjs/post-processing` creates its EffectComposer in an immediate
+        watchEffect and dereferences renderer.instance. Before TresCanvas emits
+        `ready`, that instance is null, which crashes during initial mounting.
+        Keep the post-processing subtree out of the canvas until this component
+        has received the ready context. See node_modules
+        `@tresjs/post-processing/dist/tres-post-processing.js:2404-2408`.
+      -->
+      <Suspense v-if="canvasReady">
         <EffectComposerPmndrs :multisampling="multisampling">
           <HueSaturationPmndrs v-bind="effectProps" />
         </EffectComposerPmndrs>
