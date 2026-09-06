@@ -71,7 +71,10 @@ installBuildToolchain() {
     https://github.com/godotengine/godot/releases/download/4.6.2-stable/Godot_v4.6.2-stable_mono_linux_x86_64.zip
   unzip -o "$godotArchive" -d "$toolDirectory"
   rm -f "$godotArchive"
-  install -m 0755 "$godotBinary" "$userHome/.local/bin/godot"
+  # Godot's .NET assemblies live beside its executable. Keep a symlink rather
+  # than copying the binary into ~/.local/bin, so Godot resolves GodotSharp from
+  # the extracted distribution directory.
+  ln -sf "$godotBinary" "$userHome/.local/bin/godot"
   export PATH="$userHome/.local/bin:$PATH"
 }
 
