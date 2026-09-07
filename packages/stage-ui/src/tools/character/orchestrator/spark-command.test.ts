@@ -302,6 +302,28 @@ describe('tools/character/orchestrator/spark-command', () => {
     expect(result).toContain(command.commandId)
   })
 
+  it('ignores malformed optional guidance and contexts from a provider tool call', async () => {
+    const sendSparkCommand = vi.fn()
+    const tools = await createSparkCommandTool({ sendSparkCommand })
+
+    await expect(tools[0].execute({
+      ack: '正在為您查詢點餐內容...',
+      contexts: {},
+      destinations: ['menu_agent'],
+      guidance: 'Search for the item "腐皮鮮蝦捲" in the menu to find its ID and available options.',
+      intent: 'action',
+      interrupt: false,
+      parentEventId: 'initial_request',
+      priority: 'high',
+    }, { messages: [], toolCallId: 'tool-call-id' })).resolves.toContain('spark:command sent')
+
+    expect(sendSparkCommand).toHaveBeenCalledWith(expect.objectContaining({
+      contexts: undefined,
+      destinations: ['menu_agent'],
+      guidance: undefined,
+    }))
+  })
+
   it('reports a broadcast without crashing when the channel sender clears destinations', async () => {
     // The real sendSparkCommand (stores/llm.ts) deletes command.destinations to broadcast to every
     // authenticated peer; the success message must not then call .join on undefined.
