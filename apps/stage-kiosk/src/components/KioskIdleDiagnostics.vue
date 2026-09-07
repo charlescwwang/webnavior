@@ -21,6 +21,8 @@ const label = computed(() => {
     return '待命中'
   if (props.state === 'completing')
     return '訂單完成中'
+  if (props.state === 'awaiting-idle-confirmation')
+    return `等待顧客確認：${secondsUntilReset.value ?? '—'} 秒`
   if (props.state === 'resetting')
     return '重置中'
   if (props.pendingWork)

@@ -11,3 +11,10 @@ export const i18n = createI18n({
   fallbackLocale: 'en',
   messages,
 })
+
+/** Applies the shared UI-language setting without requiring a Kiosk reload. */
+export function setKioskLocale(language: string) {
+  const locale = resolveSupportedLocale(language, Object.keys(messages!))
+  if (locale === 'en' || locale === 'es' || locale === 'fr' || locale === 'ja' || locale === 'ko' || locale === 'ru' || locale === 'vi' || locale === 'zh-Hans' || locale === 'zh-Hant')
+    i18n.global.locale.value = locale
+}

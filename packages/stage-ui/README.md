@@ -19,8 +19,9 @@ Use it in an AIRI Interaction Host after an embedded interactive service emits `
 ## Anonymous customer lifecycle
 
 `composables/use-kiosk-customer-session` owns the disposable customer session
-used by both Stage Web and Stage Kiosk: session start, pending AI work, idle
-expiry, completion, chat replacement, and cleanup. A host supplies only its
+used by both Stage Web and Stage Kiosk: session start, pending AI work, an idle
+confirmation before anonymous data is reset, expiry, completion, chat
+replacement, and cleanup. A host supplies only its
 own `resetInteractiveSurface` action, such as reloading an embedded WebMCP
 service. Use this composable for customer-facing interactive hosts; do not put
 the lifecycle into a domain service such as a restaurant menu.

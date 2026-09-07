@@ -18,6 +18,7 @@ import {
   AIRI_CHAT_SESSION_ID_HEADER,
 } from '../libs/analytics-headers'
 import { extractMessageText, isCloudSyncableMessage } from '../libs/chat-sync'
+import { customerReplyFallback, findCustomerReplyRecovery } from '../libs/customer-facing-reply'
 import { normalizeAssistantMessageForTaiwanTraditional } from '../libs/taiwan-traditional-chinese'
 import { createMinecraftContext } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
@@ -31,6 +32,7 @@ import { useAiriCardStore } from './modules/airi-card'
 import { useAutonomousArtistryStore } from './modules/artistry-autonomous'
 import { useConsciousnessStore } from './modules/consciousness'
 import { useWebSearchStore } from './modules/web-search'
+import { useSettingsGeneral } from './settings/general'
 
 interface ForkOptions {
   fromSessionId?: string
@@ -84,6 +86,7 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
   const chatStream = useChatStreamStore()
   const chatContext = useChatContextStore()
   const cardStore = useAiriCardStore()
+  const settingsGeneral = useSettingsGeneral()
   const contextObservability = useContextObservabilityStore()
   const { activeSessionId } = storeToRefs(chatSession)
   const { streamingMessage } = storeToRefs(chatStream)
@@ -396,7 +399,33 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
     options: ChatOrchestratorSendOptions,
     targetSessionId?: string,
   ) {
-    return runtime.ingest(sendingMessage, options, targetSessionId)
+    const sessionId = targetSessionId ?? activeSessionId.value
+    const turnStartIndex = chatSession.getSessionMessages(sessionId).length
+    await runtime.ingest(sendingMessage, options, targetSessionId)
+
+    const recovery = findCustomerReplyRecovery(chatSession.getSessionMessages(sessionId), turnStartIndex)
+    if (!recovery)
+      return
+
+    const content = customerReplyFallback(settingsGeneral.language)
+    const messages = chatSession.getSessionMessages(sessionId)
+    if (recovery.kind === 'replace' && recovery.messageIndex != null) {
+      const original = messages[recovery.messageIndex]
+      if (original?.role !== 'assistant')
+        return
+
+      chatSession.setSessionMessages(sessionId, messages.map((message, index) => index === recovery.messageIndex
+        ? { ...original, content, slices: [{ type: 'text', text: content }] }
+        : message))
+      return
+    }
+
+    chatSession.appendSessionMessage(sessionId, {
+      role: 'assistant',
+      content,
+      slices: [{ type: 'text', text: content }],
+      tool_results: [],
+    })
   }
 
   async function ingestOnFork(

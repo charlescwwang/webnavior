@@ -91,6 +91,14 @@ interface ChatHistoryScrollOptions<TMessage> {
     isFollowingTail: boolean
     isInspectingHistory: boolean
   }) => boolean
+  /**
+   * Keep a customer-facing transcript pinned to its newest message. This is
+   * appropriate for assisted interactions where the visible conversation is
+   * status feedback, rather than a surface for reviewing older messages.
+   *
+   * @default false
+   */
+  followLatest?: boolean
 }
 
 /**
@@ -128,6 +136,7 @@ export function useChatHistoryScroll<TMessage extends { role?: string }>({
   messages,
   getKey,
   shouldScroll,
+  followLatest = false,
 }: ChatHistoryScrollOptions<TMessage>) {
   const isFollowingTail = shallowRef(true)
   const isFollowingConversation = shallowRef(true)
@@ -362,7 +371,7 @@ export function useChatHistoryScroll<TMessage extends { role?: string }>({
       return
     }
 
-    if (!isFollowingConversation.value || isInspectingOlderMessage.value || isSelectionInspectingHistory.value) {
+    if (!followLatest && (!isFollowingConversation.value || isInspectingOlderMessage.value || isSelectionInspectingHistory.value)) {
       pendingScrollKey.value = null
       pendingStreamingFollow.value = false
       return
@@ -378,6 +387,12 @@ export function useChatHistoryScroll<TMessage extends { role?: string }>({
     if (shouldScrollResult === false) {
       pendingScrollKey.value = null
       pendingStreamingFollow.value = false
+      return
+    }
+
+    if (followLatest) {
+      pendingScrollKey.value = null
+      pendingStreamingFollow.value = true
       return
     }
 

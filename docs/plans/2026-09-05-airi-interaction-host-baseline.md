@@ -32,12 +32,14 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 | AIRI Core | 文字對話、ASR、TTS、角色卡、Prompt、LLM Provider 與模型設定。 |
 | Stage Web | 一般 AIRI 網頁、開發與設定入口；已接入 AIH 的 WebMCP adapter、匿名會話、完成後問卷與 iframe 重置。 |
 | Stage Kiosk | 橫式／直式顧客畫面、人物、互動網頁與對話區共存；已接入匿名會話、結束接待、管理入口與本機觀測 POC。 |
-| 顧客會話生命週期 | 兩端共用：顧客活動、LLM／工具執行中的閒置保護、待機、完成、問卷後重置與匿名會話清除。 |
+| 顧客會話生命週期 | 兩端共用：顧客活動、LLM／工具執行中的閒置保護、45 秒後的繼續／新顧客確認、待機、完成、問卷後重置與匿名會話清除。 |
 | 主動互動 POC | 僅 Kiosk：本機 MediaPipe 人員存在／朝向訊號可觸發招呼與無操作提醒；不使用 VLM、不保存畫面。 |
 | 第一個互動服務 | `apps/order-menu` 是獨立點餐 Web 服務，含菜單、客製化、購物車、模擬訂單與未來 POS adapter 邊界。 |
 | WebMCP | 點餐服務已以 `document.modelContext.registerTool()` 註冊工具；工具呼叫會更新同一份 UI／領域狀態。原生 callback 同時相容有／沒有傳入 callback options 的目前 Chrome 行為。 |
 | Native WebMCP adapter | Stage Kiosk 與 Stage Web 共用 adapter，會從目前 allow-listed iframe 以 `getTools({ fromOrigins })` 探索原生 tools，轉為 LLM runtime tools，並以 `executeTool()` 執行。跨來源原始 `RegisteredTool` 與 Vue-safe descriptor 分離保存，避免 iframe 的 `window` handle 進入 Vue reactivity。 |
 | Tool readiness | iframe 載入後會追蹤 `toolchange`，呈現 `loading`、`ready` 或 `unavailable`。Kiosk 會在未就緒時禁用顧客輸入；Stage Web 則只在工具探索成功後才將工具註冊給 LLM，並在 iframe 面板顯示不可用原因。 |
+| 顧客對話可讀性 | 工具步驟在執行時可見，完成後預設收束但可展開；若模型在工具後未提供客戶可讀回覆，共用 runtime 會補上不含領域假設的下一步提問。兩端的客戶對話固定追隨最新訊息。 |
+| 雙語介面基礎 | 既有 `settings/language` 是兩端共同的 UI 語系來源；Stage Web 與 Kiosk 都會即時套用其變動。日後由語音語言建議切換時，必須先取得顧客確認，不能僅依一次辨識結果自動切換。 |
 | Service lifecycle | 互動服務只以 `activity`／`completed` 回報顧客流程；結束接待時由 Host reload iframe，產生乾淨的新匿名服務狀態。 |
 | 完成後問卷邀請 | AIH Host 可在服務回報 `completed` 後顯示本機產生的 QR Code 問卷邀請。Stage Kiosk 與 Stage Web 使用相同的完成、略過／倒數、重置流程；服務本身不知道問卷存在。 |
 | 工具可視化 | 點餐服務會顯示 Agent 選取、高亮、虛擬游標、規格／數量與購物車更新。 |
@@ -96,6 +98,10 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 完成後問卷是 AIH Host 的可選顧客接待能力，不是 Interactive Service、角色卡或 WebMCP tool。服務只回報 `completed`；Host 依本機「問卷邀請設定」決定是否顯示浮窗。啟用時 QR Code 由瀏覽器以固定 HTTP(S) 問卷網址本機產生，第一版不得附加訂單、對話、會員、顧客識別或 token。
 
 Stage Kiosk 和 Stage Web 的互動服務、Agent 指示與完成後問卷設定，使用同 origin 的 `airi/interaction-profile/v1` localStorage Profile；Profile 以乾淨預設值建立，不遷移舊的 host-specific key。既有通用模型、角色與語音設定也會在相同 browser origin 下共用。不同 origin、不同裝置與多 Kiosk／店別的中央設定服務仍是未來替換持久化來源的議題，不影響這個 Host 模組與 service lifecycle 邊界。
+
+#### iframe URL 的設定優先順序
+
+Host 以 Interaction Profile 中已啟用服務的 `serviceUrl` 原樣作為 iframe 的 `src`，並以該 URL 的 origin 驗證 lifecycle 事件及限制 WebMCP adapter。管理者在 **互動服務** 修改並儲存的 URL 永遠優先；`VITE_ORDER_MENU_URL` 與 `VITE_ORDERING_SCENARIO_URL` 只在該 browser origin 首次建立空白 Profile 時提供預設值，不能覆寫既有設定。`VITE_AIRI_ORIGIN` 則只由 Interactive Service 用於 WebMCP 的 allowed embedding origin，絕不會修改 iframe `src`。
 
 ### 不採用座標自動化
 
@@ -212,7 +218,7 @@ Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 U
 
 ## 2026-09-07 共用顧客生命週期與視覺策略基礎
 
-- 已完成：匿名顧客會話的狀態、閒置計時、AI 執行中的逾時保護、完成與清理流程移至 `packages/stage-ui`。Stage Kiosk 只保留其 iframe reload adapter；Stage Web 以自己的 iframe reset revision 接入同一流程。因此兩端現在共用「活動 → 等候工作 → 完成 → 問卷（若啟用）→ 重置」的核心語意。
+- 已完成：匿名顧客會話的狀態、閒置計時、AI 執行中的逾時保護、完成與清理流程移至 `packages/stage-ui`。Stage Kiosk 只保留其 iframe reload adapter；Stage Web 以自己的 iframe reset revision 接入同一流程。因此兩端現在共用「活動 → 等候工作 → 閒置確認 → 完成 → 問卷（若啟用）→ 重置」的核心語意。閒置 45 秒會先顯示保留目前接待或開始新接待的選擇，未選擇才在 15 秒後重置。
 - 已完成：`packages/kiosk-proactive` 定義 `KioskInteractionSettings`，將本機觀測、主動招呼、協助提醒、單次視覺輔助與未來影像留存拆為獨立策略。所有視覺相關預設皆為關閉。
 - 保證：目前新增的視覺策略不會自行開相機、不會呼叫 Vision provider、不會把畫面放入 LLM context，也不會保存截圖或影片。它只是為下一階段的「事件觸發、單次、逾時即捨棄」執行器保留統一契約。
 - 尚未完成：將既有 Vision provider 以事件閘門接入兩個 Host、由 Host 擷取相機單幀、正式環境的 self-hosted provider 驗證、資料告知／同意 UI，以及部署端的影像／影片保存政策。

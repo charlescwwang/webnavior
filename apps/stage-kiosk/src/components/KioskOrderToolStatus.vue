@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   toolName: string
   state?: 'executing' | 'done' | 'error'
 }>()
+const { t } = useI18n()
 
 const label = computed(() => {
   if (props.state === 'error')
-    return '這個服務步驟暫時無法完成'
+    return t('stage.chat.tool-activity.failed')
 
-  return props.state === 'done' ? '已完成服務步驟' : '正在處理您的需求'
+  return props.state === 'done' ? t('stage.chat.tool-activity.step-complete') : t('stage.chat.tool-activity.processing-step')
 })
 
 const iconClass = computed(() => {

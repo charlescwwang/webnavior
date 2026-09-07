@@ -11,7 +11,7 @@ import { BackgroundProvider } from '@proj-airi/stage-layouts/components/Backgrou
 import { useBackgroundThemeColor } from '@proj-airi/stage-layouts/composables/theme-color'
 import { useBackgroundStore } from '@proj-airi/stage-layouts/stores/background'
 import { useModelStore } from '@proj-airi/stage-ui-three'
-import { canShowFeedbackInvitation, FeedbackInvitation, HoloCoupon } from '@proj-airi/stage-ui/components'
+import { CustomerSessionCompletion, CustomerSessionIdleConfirmation, HoloCoupon } from '@proj-airi/stage-ui/components'
 import { ViewControlSlider, WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
 import { useKioskCustomerSession } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
@@ -73,7 +73,6 @@ const chatStore = useChatOrchestratorStore()
 const chatSessionStore = useChatSessionStore()
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const interactiveServiceResetRevision = shallowRef(0)
-const canShowCompletionInvitation = computed(() => canShowFeedbackInvitation(feedbackInvitationSettings.value))
 const customerSession = useKioskCustomerSession({
   activeCardId,
   chatSession: chatSessionStore,
@@ -81,24 +80,23 @@ const customerSession = useKioskCustomerSession({
     interactiveServiceResetRevision.value += 1
   },
 })
-const { state: customerSessionState } = customerSession
+const {
+  continueCurrentSession,
+  idleDeadlineAt,
+  startNewCustomerSession,
+  state: customerSessionState,
+} = customerSession
 let releaseChatPendingWork: (() => void) | undefined
 
-function handleInteractiveServiceCompleted() {
-  if (import.meta.env.DEV) {
-    console.info('[DEBUG-feedback-lifecycle] Stage Web handling completion', {
-      feedbackEnabled: feedbackInvitationSettings.value.enabled,
-      hasValidSurveyUrl: canShowCompletionInvitation.value,
-    })
-  }
-  if (!customerSession.completeOrder())
-    return
-
-  if (!canShowCompletionInvitation.value)
-    void customerSession.end('completed')
+async function handleInteractiveServiceCompleted() {
+  // A direct iframe click may emit `activity` and `completed` back-to-back.
+  // Establish the anonymous session here as well so completion cannot outrun
+  // the asynchronous activity handler and disappear without a customer screen.
+  await recordCustomerActivity()
+  customerSession.completeOrder()
 }
 
-function finishFeedbackInvitation() {
+function finishCustomerSessionCompletion() {
   void customerSession.end('completed')
 }
 
@@ -279,10 +277,16 @@ const cursorPosition = computed(() => ({
         <MobileInteractiveArea v-if="isMobile" @settings-open="handleSettingsOpen" />
       </div>
       <HoloCoupon />
-      <FeedbackInvitation
-        v-if="customerSessionState === 'completing' && canShowCompletionInvitation"
+      <CustomerSessionCompletion
+        v-if="customerSessionState === 'completing'"
         :settings="feedbackInvitationSettings"
-        @finish="finishFeedbackInvitation"
+        @finish="finishCustomerSessionCompletion"
+      />
+      <CustomerSessionIdleConfirmation
+        v-if="customerSessionState === 'awaiting-idle-confirmation'"
+        :deadline-at="idleDeadlineAt"
+        @continue="continueCurrentSession"
+        @new-customer="startNewCustomerSession"
       />
     </div>
   </BackgroundProvider>

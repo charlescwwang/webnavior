@@ -4,7 +4,7 @@ import type { useChatSessionStore } from '../stores/chat/session-store'
 
 import { computed, onScopeDispose, readonly, shallowRef } from 'vue'
 
-export type KioskCustomerSessionState = 'standby' | 'active' | 'completing' | 'resetting'
+export type KioskCustomerSessionState = 'standby' | 'active' | 'awaiting-idle-confirmation' | 'completing' | 'resetting'
 
 /** The identity seam for a future member lookup; v1 intentionally stores no customer data. */
 export interface AnonymousKioskCustomer {
@@ -25,7 +25,8 @@ export interface KioskCustomerSessionOptions {
   resetInteractiveSurface: () => void | Promise<void>
 }
 
-const idleTimeoutMs = 60_000
+const idleTimeoutMs = 45_000
+const idleConfirmationTimeoutMs = 15_000
 
 /**
  * Owns the anonymous customer lifecycle shared by stage-web and stage-kiosk.
@@ -78,7 +79,17 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
       return
 
     idleDeadlineAt.value = Date.now() + idleTimeoutMs
-    endTimer = setTimeout(() => void end('idle'), idleTimeoutMs)
+    endTimer = setTimeout(requestIdleConfirmation, idleTimeoutMs)
+  }
+
+  function requestIdleConfirmation() {
+    if (state.value !== 'active' || pendingWorkTokens.size > 0)
+      return
+
+    clearTimers()
+    state.value = 'awaiting-idle-confirmation'
+    idleDeadlineAt.value = Date.now() + idleConfirmationTimeoutMs
+    endTimer = setTimeout(end, idleConfirmationTimeoutMs, 'idle')
   }
 
   async function begin() {
@@ -101,8 +112,24 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
   }
 
   async function recordActivity() {
-    if (state.value === 'completing')
+    if (state.value === 'completing' || state.value === 'awaiting-idle-confirmation')
       return
+    await begin()
+  }
+
+  function continueCurrentSession() {
+    if (state.value !== 'awaiting-idle-confirmation')
+      return
+
+    state.value = 'active'
+    scheduleIdleTimeout()
+  }
+
+  async function startNewCustomerSession() {
+    if (state.value !== 'awaiting-idle-confirmation')
+      return
+
+    await end('staff')
     await begin()
   }
 
@@ -125,7 +152,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
   }
 
   function completeOrder() {
-    if (!customer.value || state.value === 'completing' || state.value === 'resetting')
+    if (!customer.value || state.value === 'awaiting-idle-confirmation' || state.value === 'completing' || state.value === 'resetting')
       return false
     clearTimers()
     state.value = 'completing'
@@ -165,6 +192,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
   return {
     begin,
     beginPendingWork,
+    continueCurrentSession,
     customer,
     end,
     hasPendingWork: readonly(hasPendingWork),
@@ -172,6 +200,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     notice,
     recordActivity,
     completeOrder,
+    startNewCustomerSession,
     state,
   }
 }

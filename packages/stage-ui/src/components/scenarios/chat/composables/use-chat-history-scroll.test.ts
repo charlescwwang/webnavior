@@ -220,6 +220,42 @@ describe('useChatHistoryScroll', () => {
     scope.stop()
   })
 
+  it('pins a customer-facing transcript to the newest message', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    defineScrollMetrics(container, {
+      clientHeight: 240,
+      scrollHeight: 480,
+      scrollTop: 0,
+    })
+
+    const messageList = ref<ChatHistoryItem[]>([
+      createUserMessage('user-1', 'hello', 1),
+      createAssistantMessage('assistant-1', 'hi', 2),
+    ])
+    renderMessages(container, messageList.value)
+    const scrollTo = vi.fn()
+    setContainerScrollTo(container, scrollTo)
+    HTMLElement.prototype.scrollIntoView = vi.fn()
+
+    const scope = effectScope()
+    scope.run(() => useChatHistoryScroll({
+      containerRef: ref(container),
+      messages: messageList,
+      getKey: message => message.id!,
+      followLatest: true,
+    }))
+    await flushDom()
+    scrollTo.mockClear()
+
+    messageList.value = [...messageList.value, createAssistantMessage('assistant-2', 'next', 3)]
+    renderMessages(container, messageList.value)
+    await flushDom()
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 480 })
+    scope.stop()
+  })
+
   it('blocks auto-scroll while the user is inspecting a non-tail message', async () => {
     const container = document.createElement('div')
     document.body.appendChild(container)

@@ -1,4 +1,4 @@
-import type { ChatAssistantMessage, ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
+import type { ChatAssistantMessage, ChatHistoryItem } from '../types/chat'
 
 export interface CustomerReplyRecovery {
   kind: 'append' | 'replace'
@@ -15,17 +15,13 @@ function assistantText(message: ChatAssistantMessage) {
   if (sliceText)
     return sliceText
 
-  if (typeof message.content === 'string')
-    return message.content.trim()
-
-  return ''
+  return typeof message.content === 'string' ? message.content.trim() : ''
 }
 
 /**
- * Identifies a model turn that ended without a customer-facing continuation.
- *
- * The kiosk must never expose model self-talk about restarting or reorganizing
- * its own system: customers need the next ordering question instead.
+ * Finds an Agent turn that completed tool work without giving the customer a
+ * usable next step. This is domain-neutral so every Interaction Host can keep
+ * a customer conversation moving even when a model ends immediately after tools.
  */
 export function findCustomerReplyRecovery(messages: ChatHistoryItem[], turnStartIndex: number): CustomerReplyRecovery | undefined {
   for (let index = messages.length - 1; index >= turnStartIndex; index--) {
@@ -43,7 +39,10 @@ export function findCustomerReplyRecovery(messages: ChatHistoryItem[], turnStart
   return { kind: 'append' }
 }
 
-/** Returns a short, actionable fallback after a completed tool-only turn. */
-export function customerReplyFallback() {
+/** A neutral customer-facing continuation for a completed tool-only turn. */
+export function customerReplyFallback(locale = 'zh-Hant') {
+  if (locale.startsWith('en'))
+    return 'The requested step is complete. Would you like to continue, or is there another step I can help with?'
+
   return '目前操作已更新。請問要繼續進行，還是需要我協助下一步？'
 }

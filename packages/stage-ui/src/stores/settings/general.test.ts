@@ -64,5 +64,4 @@ describe('store settings-general', () => {
     // Should respect the persisted language, not fallback to navigator.language
     expect(resolvedLanguage).toBe('zh-Hant')
   })
-
 })

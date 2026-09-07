@@ -4,6 +4,7 @@ import type { ChatToolCallRendererRegistry } from './tool-call-renderer'
 
 import { isStageCapacitor, isStageWeb } from '@proj-airi/stage-shared'
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import ChatResponsePart from './response-part.vue'
 import ChatToolCallBlock from './tool-call-block.vue'
@@ -52,6 +53,12 @@ const resolvedSlices = computed<ChatSlices[]>(() => {
 const toolResultById = computed(() => {
   return createToolCallResultLookup(resolvedSlices.value, props.message.tool_results)
 })
+const { t } = useI18n()
+const toolCallSlices = computed(() => resolvedSlices.value.filter(slice => slice.type === 'tool-call'))
+const hasExecutingToolCall = computed(() => toolCallSlices.value.some(slice => getToolCallState(slice) === 'executing'))
+const toolActivityLabel = computed(() => hasExecutingToolCall.value
+  ? t('stage.chat.tool-activity.processing', { count: toolCallSlices.value.length })
+  : t('stage.chat.tool-activity.complete', { count: toolCallSlices.value.length }))
 
 function getToolCallResult(slice: ChatSlices): ChatSlicesToolCallResult | undefined {
   if (slice.type !== 'tool-call') {
@@ -108,21 +115,27 @@ const copyText = computed(() => getChatHistoryItemCopyText(props.message as Chat
             <span text-sm text="black/60 dark:white/65" font-normal>{{ label }}</span>
           </div>
           <div v-if="resolvedSlices.length > 0" class="flex flex-col gap-2 break-words" text="primary-700 dark:primary-100">
+            <details v-if="toolCallSlices.length > 0" class="tool-activity" :open="hasExecutingToolCall">
+              <summary class="tool-activity-summary">
+                <span :class="[hasExecutingToolCall ? 'i-eos-icons:loading' : 'i-solar:check-circle-bold-duotone', 'h-4 w-4 flex-none']" />
+                {{ toolActivityLabel }}
+              </summary>
+              <div class="tool-activity-list">
+                <template v-for="(slice, sliceIndex) in toolCallSlices" :key="sliceIndex">
+                  <component
+                    :is="getToolCallRenderer(slice)"
+                    :tool-call-id="slice.toolCall.toolCallId"
+                    :tool-name="slice.toolCall.toolName"
+                    :args="slice.toolCall.args"
+                    :state="getToolCallState(slice)"
+                    :result="getToolCallResult(slice)?.result"
+                    @tool-call-rerun="emit('toolCallRerun', $event)"
+                  />
+                </template>
+              </div>
+            </details>
             <template v-for="(slice, sliceIndex) in resolvedSlices" :key="sliceIndex">
-              <component
-                :is="getToolCallRenderer(slice)"
-                v-if="slice.type === 'tool-call'"
-                :tool-call-id="slice.toolCall.toolCallId"
-                :tool-name="slice.toolCall.toolName"
-                :args="slice.toolCall.args"
-                :state="getToolCallState(slice)"
-                :result="getToolCallResult(slice)?.result"
-                @tool-call-rerun="emit('toolCallRerun', $event)"
-              />
-              <template v-else-if="slice.type === 'tool-call-result'" />
-              <template v-else-if="slice.type === 'text'">
-                <MarkdownRenderer :content="slice.text" />
-              </template>
+              <MarkdownRenderer v-if="slice.type === 'text'" :content="slice.text" />
             </template>
           </div>
           <div v-else-if="showLoader" i-eos-icons:three-dots-loading />
@@ -131,3 +144,9 @@ const copyText = computed(() => getChatHistoryItemCopyText(props.message as Chat
     </ChatActionMenu>
   </div>
 </template>
+
+<style scoped>
+.tool-activity { border: 1px solid rgb(93 155 146 / 28%); border-radius: .65rem; background: rgb(93 155 146 / 8%); }
+.tool-activity-summary { display: flex; align-items: center; gap: .4rem; padding: .45rem .6rem; color: rgb(35 109 101); font-size: .78rem; font-weight: 700; cursor: pointer; }
+.tool-activity-list { display: grid; gap: .35rem; border-top: 1px solid rgb(93 155 146 / 18%); padding: .45rem .6rem .6rem; }
+</style>

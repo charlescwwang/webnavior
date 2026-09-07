@@ -53,6 +53,7 @@ function handleDeleteMessage(index: number) {
             :messages="historyMessages"
             :sending="sending"
             :streaming-message="streamingMessage"
+            auto-scroll="follow-latest"
             h-full
             variant="desktop"
             @delete-message="handleDeleteMessage($event.index)"

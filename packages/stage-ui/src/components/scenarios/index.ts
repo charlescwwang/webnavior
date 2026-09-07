@@ -1,6 +1,7 @@
 export * from './about'
 export * from './chat'
 export * from './connection'
+export * from './customer-session'
 export * from './dialogs'
 export * from './feedback-invitation'
 export * from './hologram'

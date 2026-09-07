@@ -77,7 +77,7 @@ describe('useKioskCustomerSession', () => {
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 60_000)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
     const releasePendingWork = session.beginPendingWork()
     expect(session.hasPendingWork.value).toBe(true)
     expect(session.idleDeadlineAt.value).toBeUndefined()
@@ -86,7 +86,38 @@ describe('useKioskCustomerSession', () => {
     expect(session.state.value).toBe('active')
     releasePendingWork()
     expect(session.hasPendingWork.value).toBe(false)
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 60_000)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
+  })
+
+  it('asks before clearing an inactive customer and keeps their conversation after continuing', async () => {
+    vi.useFakeTimers()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({
+      activeCardId: shallowRef('default'),
+      chatSession,
+    }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    await vi.advanceTimersByTimeAsync(45_000)
+
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    expect(session.customer.value?.sessionId).toBeTruthy()
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 15_000)
+
+    session.continueCurrentSession()
+
+    expect(session.state.value).toBe('active')
+    expect(chatSession.deleteSession).not.toHaveBeenCalled()
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
   })
 
   it('waits for the host to finish a completed order instead of using an independent reset timer', async () => {

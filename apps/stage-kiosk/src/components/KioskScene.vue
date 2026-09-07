@@ -5,7 +5,7 @@ import type { ChatProvider } from '@xsai-ext/providers/utils'
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
 import { createAssistanceReminderWindow, createInteractionWindow } from '@proj-airi/kiosk-proactive'
-import { canShowFeedbackInvitation, FeedbackInvitation } from '@proj-airi/stage-ui/components'
+import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
@@ -15,7 +15,7 @@ import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useHearingSpeechInputPipeline } from '@proj-airi/stage-ui/stores/modules/hearing'
 import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
-import { useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
+import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { useMouse, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
@@ -32,6 +32,7 @@ import { useKioskInteractiveServices } from '../composables/useKioskInteractiveS
 import { useKioskProactiveGreeting } from '../composables/useKioskProactiveGreeting'
 import { needsKioskObservation, useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
+import { setKioskLocale } from '../modules/i18n'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
@@ -43,6 +44,7 @@ const orientation = computed<KioskOrientation>(() => configuredOrientation ?? (w
 const paused = shallowRef(false)
 
 const settingsAudioDeviceStore = useSettingsAudioDevice()
+const { language } = storeToRefs(useSettings())
 const { enabled, stream } = storeToRefs(settingsAudioDeviceStore)
 const { startRecord, stopRecord, onStopRecord } = useAudioRecorder(stream)
 const hearingPipeline = useHearingSpeechInputPipeline()
@@ -55,10 +57,16 @@ const chatStore = useChatOrchestratorStore()
 const chatSessionStore = useChatSessionStore()
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const customerSession = useKioskCustomerSession({ activeCardId, chatSession: chatSessionStore })
-const { hasPendingWork, idleDeadlineAt, notice, state: customerSessionState } = customerSession
+const {
+  continueCurrentSession,
+  hasPendingWork,
+  idleDeadlineAt,
+  notice,
+  startNewCustomerSession,
+  state: customerSessionState,
+} = customerSession
 const showIdleDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
-const canShowCompletionInvitation = computed(() => canShowFeedbackInvitation(feedbackInvitationSettings.value))
 const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
@@ -135,6 +143,8 @@ watch(enabled, async (isEnabled) => {
   else
     stopAudioInteraction()
 }, { immediate: true })
+
+watch(language, locale => setKioskLocale(locale), { immediate: true })
 
 watch([stream, loaded], async ([audioStream, vadLoaded]) => {
   if (enabled.value && vadLoaded && audioStream)
@@ -260,15 +270,15 @@ function recordPointerActivity(event: PointerEvent | WheelEvent) {
   void recordCustomerActivity()
 }
 
-function handleScenarioCompleted() {
-  if (!customerSession.completeOrder())
-    return
-
-  if (!canShowCompletionInvitation.value)
-    void customerSession.end('completed')
+async function handleScenarioCompleted() {
+  // A direct iframe click may emit `activity` and `completed` back-to-back.
+  // Establish the anonymous session here as well so completion cannot outrun
+  // the asynchronous activity handler and disappear without a customer screen.
+  await recordCustomerActivity()
+  customerSession.completeOrder()
 }
 
-function finishFeedbackInvitation() {
+function finishCustomerSessionCompletion() {
   void customerSession.end('completed')
 }
 
@@ -314,10 +324,16 @@ onUnmounted(() => {
       :state="customerSessionState"
     />
     <KioskSessionNotice :message="notice" />
-    <FeedbackInvitation
-      v-if="customerSessionState === 'completing' && canShowCompletionInvitation"
+    <CustomerSessionIdleConfirmation
+      v-if="customerSessionState === 'awaiting-idle-confirmation'"
+      :deadline-at="idleDeadlineAt"
+      @continue="continueCurrentSession"
+      @new-customer="startNewCustomerSession"
+    />
+    <CustomerSessionCompletion
+      v-if="customerSessionState === 'completing'"
       :settings="feedbackInvitationSettings"
-      @finish="finishFeedbackInvitation"
+      @finish="finishCustomerSessionCompletion"
     />
     <video ref="proactiveCamera" class="proactive-camera" muted playsinline aria-hidden="true" />
   </main>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ChatAssistantMessage, ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
+import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 import type { ChatProvider } from '@xsai-ext/providers/utils'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -19,7 +19,6 @@ import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
-import { customerReplyFallback, findCustomerReplyRecovery } from './customer-facing-reply'
 
 const emit = defineEmits<{
   activity: []
@@ -39,7 +38,7 @@ const { t } = useI18n()
 const messageInput = shallowRef('')
 const isComposing = shallowRef(false)
 const assistantLabel = computed(() => activeCard.value?.name?.trim() || 'AIRI')
-const recentMessages = computed<ChatHistoryItem[]>(() => messages.value.slice(-3) as ChatHistoryItem[])
+const historyMessages = computed<ChatHistoryItem[]>(() => messages.value as ChatHistoryItem[])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
 const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !sending.value && serviceReady.value)
 const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
@@ -47,43 +46,11 @@ const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
 
-async function recoverCustomerReply(turnStartIndex: number) {
-  const recovery = findCustomerReplyRecovery(messages.value, turnStartIndex)
-  if (!recovery)
-    return
-
-  const content = customerReplyFallback()
-  if (recovery.kind === 'replace' && recovery.messageIndex != null) {
-    const original = messages.value[recovery.messageIndex]
-    if (original?.role !== 'assistant')
-      return
-
-    const replacement: ChatAssistantMessage = {
-      ...original,
-      content,
-      slices: [{ type: 'text', text: content }],
-    }
-    chatSession.setSessionMessages(chatSession.activeSessionId, messages.value.map((message, index) => index === recovery.messageIndex ? replacement : message))
-    return
-  }
-
-  chatSession.setSessionMessages(chatSession.activeSessionId, [
-    ...messages.value,
-    {
-      role: 'assistant',
-      content,
-      slices: [{ type: 'text', text: content }],
-      tool_results: [],
-    },
-  ])
-}
-
 async function sendMessage() {
   if (!canSend.value)
     return
 
   const text = messageInput.value.trim()
-  const turnStartIndex = messages.value.length
   messageInput.value = ''
   emit('activity')
 
@@ -98,7 +65,6 @@ async function sendMessage() {
       model: activeModel.value,
       providerConfig,
     })
-    await recoverCustomerReply(turnStartIndex)
   }
   catch (error) {
     console.error('[stage-kiosk] failed to send customer message:', errorMessageFrom(error))
@@ -123,11 +89,12 @@ async function sendMessage() {
 
     <div class="message-history">
       <ChatHistory
-        :messages="recentMessages"
+        :messages="historyMessages"
         :assistant-label="assistantLabel"
         :sending="sending"
         :streaming-message="streamingMessage"
         :tool-call-renderers="orderToolCallRenderers"
+        auto-scroll="follow-latest"
         variant="mobile"
       />
     </div>

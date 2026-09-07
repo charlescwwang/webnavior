@@ -25,14 +25,17 @@ open that page. Disabled or incomplete entries are not embedded and are never
 made available to the Agent, so a customer message cannot open an arbitrary URL.
 
 `restaurant-ordering` is the initial page. Use `VITE_ORDERING_SCENARIO_URL` to
-configure its deployed URL; it defaults to `http://localhost:5174` locally.
+configure its deployed URL only for a fresh browser Profile; it defaults to
+`http://localhost:5174` locally. Once an administrator saves a URL in **互動服務**,
+that `serviceUrl` is the exact iframe URL and takes precedence over this variable.
+`VITE_AIRI_ORIGIN` belongs to the embedded service's WebMCP allowlist; it never
+changes the iframe URL.
 
 ## Anonymous customer sessions
 
 Each customer starts an anonymous Kiosk session when they touch the screen, type a message, speak, or operate the menu. The session owns only that customer's conversation and cart:
 
-- After 45 seconds without customer activity, the kiosk asks whether help is still needed.
-- After 60 seconds without activity, it clears the conversation and menu, then returns to standby.
+- After 45 seconds without activity, it asks whether to continue. The customer can retain the current conversation and cart, or start a clean reception for the next customer. If there is no choice after a further 15 seconds, it clears the conversation and menu, then returns to standby.
 - After a simulated order is confirmed, an enabled completion survey displays a QR Code until the visitor skips it or the configured countdown ends; then the kiosk starts a clean standby session.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 

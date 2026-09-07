@@ -179,6 +179,7 @@ onMounted(() => {
           :messages="historyMessages"
           :sending="sending"
           :streaming-message="streamingMessage"
+          auto-scroll="follow-latest"
           max-w="[calc(100%-3.5rem)]"
           w-full self-start pb-3 pl-3
           class="chat-history"

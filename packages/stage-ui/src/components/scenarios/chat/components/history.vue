@@ -22,10 +22,13 @@ const props = withDefaults(defineProps<{
   errorLabel?: string
   retryLabel?: string
   variant?: 'desktop' | 'mobile'
+  /** Customer-facing hosts can pin the transcript to the latest status. */
+  autoScroll?: 'preserve-reading-position' | 'follow-latest'
   toolCallRenderers?: ChatToolCallRendererRegistry
 }>(), {
   sending: false,
   variant: 'desktop',
+  autoScroll: 'preserve-reading-position',
   toolCallRenderers: () => ({}),
 })
 
@@ -76,6 +79,7 @@ useChatHistoryScroll({
   containerRef: chatHistoryRef,
   messages: renderMessages,
   getKey: getChatHistoryItemKey,
+  followLatest: props.autoScroll === 'follow-latest',
 })
 
 function emitCopyMessage(message: ChatHistoryItem, index: number) {

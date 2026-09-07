@@ -16,6 +16,28 @@ chat:
     cloud-badge: Synced to cloud
     new-chat-fallback: New chat
     delete: Delete conversation
+  tool-activity:
+    processing: 正在處理 {count} 個服務步驟
+    complete: 已完成 {count} 個服務步驟
+    processing-step: 正在處理您的需求
+    step-complete: 已完成服務步驟
+    failed: 這個服務步驟暫時無法完成
+customer-session:
+  completion:
+    title: 訂單已送出
+    description: 感謝您的點餐，我們已完成本次訂單流程。
+    simulated-notice: 此為模擬訂單，尚未傳送至 POS 系統。
+    countdown: 此畫面將在 {seconds} 秒後自動結束。
+    finish: 完成，開始新的接待
+    qr-alt: 問卷 QR Code
+    qr-loading: 正在準備問卷 QR Code…
+    qr-error: 問卷 QR Code 暫時無法產生。
+  idle-confirmation:
+    title: 要繼續目前的接待嗎？
+    description: 目前的對話與選擇都會保留。您可以繼續操作，或為下一位顧客開始新的對話。
+    countdown: 此次接待將在 {seconds} 秒後自動清除。
+    continue: 繼續目前接待
+    new-customer: 開始新的接待
 message: 說點什麼...
 send-mode:
   title: 傳送按鍵
