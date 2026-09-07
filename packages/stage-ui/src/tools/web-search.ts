@@ -210,15 +210,14 @@ export async function createWebSearchTools(options: { apiKey: string, timeoutMs?
   // normalized before strictJsonSchema finalizes it. normalizeNullableAnyOf
   // collapses scalar `x | null` unions to `type: ['x', 'null']`, the form strict
   // OpenAI-compatible providers (e.g. Azure) accept — the anyOf-with-null shape
-  // tool() would emit is rejected. Mirrors createSparkCommandTool. The collapse
+  // tool() would emit is rejected. The collapse
   // drops the scalar min/max bound on max_results, so it is clamped at runtime.
   const parameters = normalizeNullableAnyOf(await toJsonSchema(webSearchParameters))
 
   return [
     rawTool({
       // NOTICE: intentionally snake_case with no `builtIn_` prefix — `web_search`
-      // is the model-recognized name for this user-facing capability, unlike the
-      // always-on `builtIn_` infra tools (mcp/debug/spark).
+      // is the model-recognized name for this user-facing capability.
       name: 'web_search',
       description: 'Search the web for current or unfamiliar information and return a list of results with source URLs. Prefer what you already know; use this when the user asks or when the answer needs up-to-date facts.',
       parameters,

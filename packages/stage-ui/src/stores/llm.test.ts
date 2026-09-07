@@ -9,19 +9,8 @@ import { useLlmToolsStore } from './llm-tools'
 
 const {
   streamTextMock,
-  mcpMock,
-  debugMock,
-  createSparkCommandToolMock,
 } = vi.hoisted(() => ({
   streamTextMock: vi.fn(),
-  mcpMock: vi.fn(async (): Promise<Tool[]> => []),
-  debugMock: vi.fn(async (): Promise<Tool[]> => []),
-  createSparkCommandToolMock: vi.fn(async (): Promise<unknown> => [{
-    name: 'spark',
-    description: '',
-    parameters: {},
-    execute: vi.fn(),
-  }]),
 }))
 
 vi.mock('@xsai/model', () => ({
@@ -37,9 +26,6 @@ vi.mock('@xsai/shared-chat', () => ({
 }))
 
 vi.mock('../tools', () => ({
-  mcp: mcpMock,
-  debug: debugMock,
-  createSparkCommandTool: createSparkCommandToolMock,
   // NOTICE: the resolver imports `createWebSearchTools` from the tools barrel, so
   // the mock must expose it or module loading fails with a missing-export error.
   createWebSearchTools: vi.fn(async (): Promise<Tool[]> => []),
@@ -77,9 +63,6 @@ function toolNameFrom(tool: unknown) {
 describe('isToolRelatedError', () => {
   beforeEach(() => {
     streamTextMock.mockReset()
-    mcpMock.mockClear()
-    debugMock.mockClear()
-    createSparkCommandToolMock.mockClear()
     setActivePinia(createPinia())
   })
 
@@ -202,7 +185,6 @@ describe('isToolRelatedError', () => {
 
     const firstCallTools = streamTextMock.mock.calls[0]?.[0]?.tools
     expect(Array.isArray(firstCallTools)).toBe(true)
-    expect(debugMock).toHaveBeenCalledTimes(1)
     expect(firstCallTools).toContain(customTool)
     expect(firstCallTools?.map(toolNameFrom)).toContain('runtime_play_chess_match')
 
@@ -256,21 +238,6 @@ describe('isToolRelatedError', () => {
 
     const mergedTools = streamTextMock.mock.calls[0]?.[0]?.tools
     expect(mergedTools).toEqual(expect.arrayContaining([runtimeMcpStatusTool, playChessTool]))
-  })
-
-  it('does not expose an unavailable MCP fallback by default', async () => {
-    const store = useLLM()
-
-    streamTextMock.mockImplementationOnce((options: { onEvent: (event: unknown) => Promise<void> }) => {
-      queueMicrotask(async () => {
-        await options.onEvent({ type: 'finish', finishReason: 'stop' })
-      })
-      return createMockStreamResult()
-    })
-
-    await store.stream('model-a', provider, [{ role: 'user', content: '點餐' }] as Message[])
-
-    expect(mcpMock).not.toHaveBeenCalled()
   })
 
   it('prefers runtime-registered tools when duplicate tool names collide with builtin tools', async () => {

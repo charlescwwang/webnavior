@@ -89,6 +89,10 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 
 原生 WebMCP adapter 已取代 AIH 的 `Scenario manifest + postMessage` Tool bridge。Stage Kiosk 與 Stage Web 都使用 `packages/stage-ui/src/services/webmcp-adapter.ts`；舊 bridge 文件僅保留作歷史參考，不得擴充。Stage Web 仍針對目前 iframe 以來源／window 驗證接收 `completed` lifecycle，以維持完成後問卷與重置行為一致。
 
+#### 一般對話的工具清單
+
+Stage Web／Kiosk 的一般 LLM 請求只合併目前 runtime 註冊的 WebMCP tools、request-scoped custom tools，以及已設定 API Key 時的 Web Search。`builtIn_debugRandomNumber` 與 `builtIn_emitSparkCommand` 已移除，不得作為全域工具重新註冊。MCP 的 list／call proxy 屬於明確啟用的 runtime 整合，Web／Kiosk 不應因未設定的 MCP 而提供該 proxy。未來需要跨模組協作時，應依當時協定與權限模型建立新的情境工具，不回復舊 Spark command 的全域暴露方式。
+
 ### 領域服務獨立
 
 每個 Interactive Service 自行擁有 UI、領域資料、領域 Prompt、WebMCP tool schema、外部 API／POS adapter 與資料驗證。AIRI 共用層不可加入餐飲或其他特定領域的流程判斷。

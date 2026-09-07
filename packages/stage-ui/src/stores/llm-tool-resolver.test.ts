@@ -14,7 +14,10 @@ const { createWebSearchToolsMock, useWebSearchStoreMock } = vi.hoisted(() => ({
 
 vi.mock('../tools', async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>
-  return { ...actual, createWebSearchTools: createWebSearchToolsMock }
+  return {
+    ...actual,
+    createWebSearchTools: createWebSearchToolsMock,
+  }
 })
 
 vi.mock('./modules/web-search', () => ({
@@ -45,14 +48,18 @@ describe('toolNameFrom', () => {
 })
 
 describe('resolveLlmTools', () => {
+  it('does not expose retired debug or Spark-command tools to an ordinary LLM request', async () => {
+    const tools = await resolveLlmTools({ activeTools: [], webSearchTools: [] })
+
+    expect(tools).toEqual([])
+  })
+
   it('prefers a later runtime tool with the same name over an earlier built-in tool', async () => {
     const builtInTool = createTool('duplicate_tool', 'Built-in version.')
     const runtimeTool = createTool('duplicate_tool', 'Runtime version.')
 
     const tools = await resolveLlmTools({
       builtInTools: [builtInTool],
-      debugTools: [],
-      sparkCommandTools: [],
       webSearchTools: [],
       activeTools: [runtimeTool],
     })
@@ -68,8 +75,6 @@ describe('resolveLlmTools', () => {
 
     const tools = await resolveLlmTools({
       builtInTools: [builtInTool],
-      debugTools: [],
-      sparkCommandTools: [],
       webSearchTools: [],
       customTools: [customTool],
       activeTools: [runtimeTool],
@@ -84,8 +89,6 @@ describe('resolveLlmTools', () => {
 
     const tools = await resolveLlmTools({
       builtInTools: [builtInTool],
-      debugTools: [],
-      sparkCommandTools: [],
       webSearchTools: [webSearchTool],
       activeTools: [],
     })
@@ -107,8 +110,6 @@ describe('resolveLlmTools', () => {
       // through to the module store instead of the injected source.
       const tools = await resolveLlmTools({
         builtInTools: [builtInTool],
-        debugTools: [],
-        sparkCommandTools: [],
         activeTools: [],
       })
 
@@ -126,8 +127,6 @@ describe('resolveLlmTools', () => {
 
       const tools = await resolveLlmTools({
         builtInTools: [builtInTool],
-        debugTools: [],
-        sparkCommandTools: [],
         activeTools: [],
       })
 
