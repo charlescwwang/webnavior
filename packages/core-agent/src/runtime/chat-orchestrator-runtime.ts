@@ -194,6 +194,11 @@ export interface ChatOrchestratorRuntimeDeps {
   createId?: () => string
   /** Optional adapter for removing framework proxies before provider composition. */
   unwrapMessage?: <T>(message: T) => T
+  /**
+   * Applies a host-owned display normalization after streaming is complete and
+   * before the assistant message becomes durable session history.
+   */
+  transformAssistantMessage?: (message: StreamingAssistantMessage) => void
   /** Called whenever writable runtime state changes. */
   onStateChange?: (state: ChatOrchestratorRuntimeState) => void
   /** Called after a runtime-owned send completes or fails and `sending` has been cleared. */
@@ -785,6 +790,11 @@ export function createChatOrchestratorRuntime(deps: ChatOrchestratorRuntimeDeps)
       })
 
       await parser.end()
+      // Host presentation transforms run once after marker parsing. Applying
+      // them to individual deltas would split phrase-based transformations and
+      // could corrupt the customer-visible sentence.
+      deps.transformAssistantMessage?.(buildingMessage)
+      patchForegroundStream(sessionId, buildingMessage)
       deps.onAssistantResponseRendered?.({
         ...correlation,
         model: options.model,

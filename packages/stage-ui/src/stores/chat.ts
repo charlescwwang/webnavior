@@ -18,6 +18,7 @@ import {
   AIRI_CHAT_SESSION_ID_HEADER,
 } from '../libs/analytics-headers'
 import { extractMessageText, isCloudSyncableMessage } from '../libs/chat-sync'
+import { normalizeAssistantMessageForTaiwanTraditional } from '../libs/taiwan-traditional-chinese'
 import { createMinecraftContext } from './chat/context-providers'
 import { useChatContextStore } from './chat/context-store'
 import { useChatDiagnosticsStore } from './chat/diagnostics'
@@ -206,6 +207,7 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
     },
     getActiveSessionId: () => activeSessionId.value,
     getActiveProvider: () => activeProvider.value,
+    transformAssistantMessage: normalizeAssistantMessageForTaiwanTraditional,
     getSystemPromptSupplement: () => llmToolsetPromptsStore.activeToolsetPrompt,
     runtimeContextProviders: [
       createMinecraftContext,

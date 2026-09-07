@@ -263,6 +263,24 @@ describe('chat orchestrator contract', () => {
     expect(chatAnalyticsMocks.trackChatActivationSucceeded).toHaveBeenCalledWith(expect.objectContaining(correlation))
   })
 
+  it('normalizes only the finished assistant reply to Taiwan Traditional Chinese', async () => {
+    llmStreamMock.mockImplementation(async (_model: string, _chatProvider: ChatProvider, _messages: Message[], options: any) => {
+      await options.onStreamEvent({ type: 'text-delta', text: '请使用自行车软件菜单。' })
+      await options.onStreamEvent({ type: 'finish', finishReason: 'stop' })
+    })
+
+    const store = useChatOrchestratorStore()
+    await store.ingest('請介紹一下功能', {
+      model: 'gpt-test',
+      chatProvider: provider,
+    })
+
+    const assistant = sessionMessages['session-1']?.at(-1)
+    expect(assistant?.content).toBe('請使用腳踏車軟體選單。')
+    expect(assistant?.slices).toEqual([{ type: 'text', text: '請使用腳踏車軟體選單。' }])
+    expect(sessionMessages['session-1']?.[1]?.content).toBe('請介紹一下功能')
+  })
+
   it('captures custom-provider usage once and leaves official generation capture to the server', async () => {
     llmStreamMock.mockImplementation(async (_model: string, _chatProvider: ChatProvider, _messages: Message[], options: any) => {
       await options.onStreamEvent({ type: 'text-delta', text: 'ok' })

@@ -307,6 +307,7 @@ catalog:
   nprogress: ^0.2.0
   ofetch: ^1.5.1
   onnxruntime-web: ^1.24.3
+  opencc-js: 1.4.2
   opusscript: ^0.1.1
   oxc-minify: ^0.126.0
   oxlint: ^1.60.0
