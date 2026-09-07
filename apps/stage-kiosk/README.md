@@ -42,7 +42,7 @@ This is intentionally separate from AIRI's general chat history. The current ver
 
 In administrator mode, open **完成後問卷邀請** to enable the optional survey, set a fixed HTTP(S) survey URL, and adjust its customer-facing copy and duration. AIRI generates the QR Code in the browser; it does not send the URL to a QR Code provider or append order, conversation, member, or customer data to the link.
 
-The setting is stored locally for this Kiosk origin. Configure each device separately until a future device-management service provides central settings.
+The invitation, approved interactive services, and their AIRI instructions are stored in the same-origin Interaction Profile shared with Stage Web. Other browser origins and devices remain independent until a future device-management service provides central settings.
 
 ## Administrator mode
 

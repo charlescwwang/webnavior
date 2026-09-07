@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button, Checkbox, Input, Textarea } from '@proj-airi/ui'
 
-import { feedbackInvitationSettings } from '../../../services/feedback-invitation'
+import { feedbackInvitationSettings, resetFeedbackInvitationSettings } from '../../../services/feedback-invitation'
 
 function updateDuration(value: string | number | undefined) {
   if (value === undefined)
@@ -18,7 +18,7 @@ function updateDuration(value: string | number | undefined) {
 }
 
 function reset() {
-  feedbackInvitationSettings.reset()
+  resetFeedbackInvitationSettings()
 }
 </script>
 
@@ -31,7 +31,7 @@ function reset() {
             完成後問卷邀請
           </h2>
           <p :class="['mb-0 mt-2 text-sm text-neutral-600 dark:text-neutral-300']">
-            互動服務回報完成後，以此網址在瀏覽器本機產生 QR Code。第一版不將訂單、對話或顧客資料放入問卷網址。
+            互動服務回報完成後，以此網址在瀏覽器本機產生 QR Code。此設定會與同 origin 的 Stage Kiosk 共用；第一版不將訂單、對話或顧客資料放入問卷網址。
           </p>
         </div>
         <Checkbox v-model="feedbackInvitationSettings.enabled" aria-label="啟用完成後問卷邀請" />

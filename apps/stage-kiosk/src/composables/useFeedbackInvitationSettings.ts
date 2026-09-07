@@ -1,12 +1,6 @@
-import type { FeedbackInvitationSettings } from '@proj-airi/stage-ui/components'
+import { kioskInteractionProfile } from './useKioskInteractiveServices'
 
-import { defaultFeedbackInvitationSettings } from '@proj-airi/stage-ui/components'
-import { useLocalStorage } from '@vueuse/core'
-
-/** Loads this kiosk's local post-completion feedback invitation settings. */
+/** Loads invitation settings from the shared same-origin interaction profile. */
 export function useFeedbackInvitationSettings() {
-  return useLocalStorage<FeedbackInvitationSettings>(
-    'kiosk/feedback-invitation/settings',
-    structuredClone(defaultFeedbackInvitationSettings),
-  )
+  return kioskInteractionProfile.feedbackInvitation
 }

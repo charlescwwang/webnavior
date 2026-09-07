@@ -62,6 +62,9 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
       <KioskFeedbackInvitationSettings v-model="feedbackInvitationSettings" />
 
       <section class="admin-section">
+        <p class="session-description">
+          互動服務與完成後問卷使用同 origin 的互動設定 Profile，Stage Web 與此 Kiosk 會讀取相同設定。
+        </p>
         <h3>舞台</h3>
         <label class="toggle-row">
           <input v-model="paused" type="checkbox">

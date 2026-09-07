@@ -1,40 +1,23 @@
-import type { RegisteredScenario } from '../services/scenario-registry'
+import type { InteractionProfileService } from '@proj-airi/stage-ui/composables/use-interaction-profile'
 
-import { useLocalStorage } from '@vueuse/core'
+import { createDefaultInteractionProfile, useInteractionProfile } from '@proj-airi/stage-ui/composables/use-interaction-profile'
 
 /** A locally configured interactive page which an administrator may enable for this kiosk. */
-export interface KioskInteractiveService extends RegisteredScenario {
-  /** Disabled services are neither embedded nor exposed to the Agent. */
-  enabled: boolean
-}
+export type KioskInteractiveService = InteractionProfileService
 
 const configuredOrderingUrl = import.meta.env.VITE_ORDERING_SCENARIO_URL ?? 'http://localhost:5174'
 
-export const defaultKioskInteractiveServices: KioskInteractiveService[] = [
-  {
-    enabled: true,
-    id: 'restaurant-ordering',
-    title: '餐點點餐',
-    description: '協助顧客瀏覽菜單、客製餐點、管理購物車與確認訂單。',
-    serviceUrl: configuredOrderingUrl,
-  },
-]
+export const defaultKioskInteractiveServices = createDefaultInteractionProfile(configuredOrderingUrl).services
 
-const kioskInteractiveServices = useLocalStorage<KioskInteractiveService[]>(
-  'kiosk/interactive-services',
-  structuredClone(defaultKioskInteractiveServices),
-)
-const kioskInteractiveServiceAgentInstructions = useLocalStorage<string>(
-  'kiosk/interactive-services/agent-instructions',
-  '',
-)
+/** The one local interaction profile used by every Kiosk feature. */
+export const kioskInteractionProfile = useInteractionProfile({ defaultServiceUrl: configuredOrderingUrl })
 
-/** Persists this kiosk's administrator-approved iframe services on the local device. */
+/** Reads the profile-approved services shared by AIRI hosts on this browser origin. */
 export function useKioskInteractiveServices() {
-  return kioskInteractiveServices
+  return kioskInteractionProfile.services
 }
 
-/** Local operational guidance appended after kiosk navigation safety rules. */
+/** Reads profile guidance appended after kiosk navigation safety rules. */
 export function useKioskInteractiveServiceAgentInstructions() {
-  return kioskInteractiveServiceAgentInstructions
+  return kioskInteractionProfile.agentInstructions
 }

@@ -1,32 +1,20 @@
-import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
+import { useInteractionProfile } from '@proj-airi/stage-ui/composables/use-interaction-profile'
 import { computed, shallowRef } from 'vue'
 
 const defaultRestaurantOrderingUrl = import.meta.env.VITE_ORDER_MENU_URL ?? 'http://localhost:5174'
 
-/** An administrator-approved page that may occupy stage-web's single interactive iframe. */
-export interface InteractiveService {
-  description: string
-  enabled: boolean
-  id: string
-  serviceUrl: string
-  title: string
-}
+const interactionProfile = useInteractionProfile({ defaultServiceUrl: defaultRestaurantOrderingUrl })
 
-export const interactiveServices = useLocalStorageManualReset<InteractiveService[]>(
-  'interactive-services/services',
-  [{
-    description: '協助顧客瀏覽菜單、客製餐點、管理購物車與確認訂單。',
-    enabled: true,
-    id: 'restaurant-ordering',
-    serviceUrl: defaultRestaurantOrderingUrl,
-    title: '餐點點餐',
-  }],
-)
+/** An administrator-approved page that may occupy stage-web's single interactive iframe. */
+export type InteractiveService = typeof interactionProfile.services.value[number]
+
+/** Shared interaction profile state for every AIRI host on this browser origin. */
+export const interactiveServices = interactionProfile.services
 /** Administrator-authored operational guidance appended after web navigation safety rules. */
-export const interactiveServiceAgentInstructions = useLocalStorageManualReset(
-  'interactive-services/agent-instructions',
-  '',
-)
+export const interactiveServiceAgentInstructions = interactionProfile.agentInstructions
+/** Host-owned invitation settings shared with the Kiosk host on this browser origin. */
+export const feedbackInvitationSettings = interactionProfile.feedbackInvitation
+export const resetFeedbackInvitationSettings = interactionProfile.resetFeedbackInvitation
 
 const activeServiceId = shallowRef<string>()
 

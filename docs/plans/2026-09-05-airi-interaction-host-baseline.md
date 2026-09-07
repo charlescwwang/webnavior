@@ -95,7 +95,7 @@ AIH 不理解互動服務的領域名詞、流程或資料模型。互動服務�
 
 完成後問卷是 AIH Host 的可選顧客接待能力，不是 Interactive Service、角色卡或 WebMCP tool。服務只回報 `completed`；Host 依本機「問卷邀請設定」決定是否顯示浮窗。啟用時 QR Code 由瀏覽器以固定 HTTP(S) 問卷網址本機產生，第一版不得附加訂單、對話、會員、顧客識別或 token。
 
-Stage Kiosk 和 Stage Web 的設定欄位與顧客行為相同，但因各自 origin 的 localStorage 而獨立儲存。多 Kiosk／店別設定服務是未來替換持久化來源的議題，不影響這個 Host 模組與 service lifecycle 邊界。
+Stage Kiosk 和 Stage Web 的互動服務、Agent 指示與完成後問卷設定，使用同 origin 的 `airi/interaction-profile/v1` localStorage Profile；Profile 以乾淨預設值建立，不遷移舊的 host-specific key。既有通用模型、角色與語音設定也會在相同 browser origin 下共用。不同 origin、不同裝置與多 Kiosk／店別的中央設定服務仍是未來替換持久化來源的議題，不影響這個 Host 模組與 service lifecycle 邊界。
 
 ### 不採用座標自動化
 
@@ -181,7 +181,7 @@ Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 U
 
 ### 多 Kiosk、店別設定與部署
 
-- 單機設定目前保存在各瀏覽器 origin 的 localStorage；因此 Stage Web、Stage Kiosk 與不同裝置不會自動同步。
+- 第一版 Interaction Profile 保存在各瀏覽器 origin 的 localStorage；同 origin 的 Stage Web 與 Stage Kiosk 會同步互動服務、Agent 指示與問卷設定。不同 origin、不同裝置不會自動同步。
 - 現有 `apps/server` 已提供可延伸的 HTTP／WebSocket 後端，並以 Postgres 保存帳號、設定、聊天與計費帳本；Redis 是其必要相依，用於快取、設定 KV、短暫用量累積與跨 instance Pub/Sub，而非正式資料的真相來源。
 - 多 kiosk 正式部署應由中央 Ubuntu 主機提供同一個 Nginx origin：Web、kiosk、點餐互動頁維持靜態網站，Nginx 未來再將 `/api` 與 WebSocket 反向代理給 `apps/server`。各 kiosk 僅以瀏覽器 kiosk mode 開啟固定網址，不應安裝專案、Node 或保存共用 AI 金鑰。
 - 未來需要店別設定模型、設備識別／憑證、中央設定同步、管理權限、密鑰持有位置、離線策略，以及將目前瀏覽器本機設定遷移至後端的方案；這些尚未實作或選定。

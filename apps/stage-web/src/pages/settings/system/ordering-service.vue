@@ -29,7 +29,7 @@ function removeService(id: string) {
           可開啟互動服務
         </h2>
         <p :class="['mb-0 mt-2 text-sm text-neutral-600 dark:text-neutral-300']">
-          stage-web 只使用一個 iframe。僅啟用且填妥的服務可由 AIRI 依用途描述切換開啟；Agent 不能開啟清單外網址。
+          此設定儲存在同 origin 的互動設定 Profile，Stage Kiosk 會讀取相同內容。僅啟用且填妥的服務可由 AIRI 依用途描述切換開啟；Agent 不能開啟清單外網址。
         </p>
       </div>
 
