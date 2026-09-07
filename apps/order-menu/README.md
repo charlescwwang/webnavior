@@ -21,9 +21,13 @@ When embedded by AIRI, the service exposes its domain operations through native
 WebMCP. AIRI discovers the tools dynamically, so this service is one interactive
 service among many rather than an AIRI built-in feature.
 
-Set `VITE_AIRI_ORIGIN` to the exact AIRI web origin when deploying separately.
-It defaults to `http://localhost:5173` for local development. The embedding page
-must set `allow="tools"` on its iframe for native WebMCP support.
+Set `VITE_AIRI_ORIGIN` to the exact AIRI browser-visible origin when deploying
+separately. The embedded menu otherwise uses its referrer origin, including a
+port when that port is genuinely part of the page URL. The Ubuntu deployment
+script supplies `VITE_AIRI_ORIGIN` from its `--origin` value, so a public domain
+such as `https://airi.example.com` remains port-free even when Nginx proxies
+internally to another port. The embedding page must set `allow="tools"` on its
+iframe for native WebMCP support.
 
 For an AIRI Kiosk customer session, the service may additionally send the small
 host lifecycle events in
@@ -34,8 +38,11 @@ next-customer flow. These events do not expose or execute tools.
 ## Extending for a real ordering system
 
 The order state lives in `src/domain/order-machine.ts`; it owns menu selection,
-options, cart updates, and order submission. A real POS or kiosk integration
-implements the `PosOrderGateway` boundary passed to `createOrderMachine`.
+options, cart updates, the order-level dine-in/take-out choice, and order
+submission. The WebMCP `order_set_fulfillment` tool and the visible menu buttons
+use the same state, so an order cannot be confirmed before the customer chooses
+how it will be served. A real POS or kiosk integration implements the
+`PosOrderGateway` boundary passed to `createOrderMachine`.
 The current default gateway returns a simulated submitted order and does not send
 anything to an external system.
 

@@ -39,7 +39,12 @@ export interface CartLine extends Selection {
   unitPrice: number
 }
 
+/** Order-level service choice required before a simulated or POS submission. */
+export type FulfillmentMode = 'dine-in' | 'takeout'
+
 export interface CartSnapshot {
+  /** Undefined until the customer explicitly chooses where the order is served. */
+  fulfillmentMode: FulfillmentMode | undefined
   lines: CartLine[]
   total: number
   itemCount: number
@@ -461,8 +466,9 @@ export function defaultOptionsFor(item: MenuItem): Record<string, string> {
   }))
 }
 
-function cloneCart(cart: CartLine[]): CartSnapshot {
+function cloneCart(cart: CartLine[], fulfillmentMode: FulfillmentMode | undefined): CartSnapshot {
   return {
+    fulfillmentMode,
     lines: cart.map(line => ({ ...line, options: { ...line.options } })),
     total: cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0),
     itemCount: cart.reduce((sum, line) => sum + line.quantity, 0),
@@ -487,6 +493,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   const catalog = options.menu ?? menu
   const cart: CartLine[] = []
   let selection: Selection | undefined
+  let fulfillmentMode: FulfillmentMode | undefined
   let submittedOrder: SubmittedOrder | undefined
   let pendingSubmission: Promise<SubmittedOrder> | undefined
 
@@ -534,7 +541,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (matchingLine) {
       matchingLine.quantity += current.quantity
       selection = undefined
-      return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart) }
+      return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart, fulfillmentMode) }
     }
 
     const line: CartLine = {
@@ -547,7 +554,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     }
     cart.push(line)
     selection = undefined
-    return { line: { ...line, options: { ...line.options } }, cart: cloneCart(cart) }
+    return { line: { ...line, options: { ...line.options } }, cart: cloneCart(cart, fulfillmentMode) }
   }
 
   function removeFromCart(lineId: string) {
@@ -555,7 +562,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (index < 0)
       throw new Error(`Unknown cart line: ${lineId}`)
     cart.splice(index, 1)
-    return cloneCart(cart)
+    return cloneCart(cart, fulfillmentMode)
   }
 
   function setCartLineQuantity(lineId: string, quantity: number) {
@@ -566,7 +573,12 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (!line)
       throw new Error(`Unknown cart line: ${lineId}`)
     line.quantity = quantity
-    return cloneCart(cart)
+    return cloneCart(cart, fulfillmentMode)
+  }
+
+  function setFulfillmentMode(mode: FulfillmentMode) {
+    fulfillmentMode = mode
+    return cloneCart(cart, fulfillmentMode)
   }
 
   async function confirmOrder() {
@@ -575,9 +587,11 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (pendingSubmission)
       return await pendingSubmission
 
-    const snapshot = cloneCart(cart)
+    const snapshot = cloneCart(cart, fulfillmentMode)
     if (snapshot.lines.length === 0)
       throw new Error('Cart is empty.')
+    if (!snapshot.fulfillmentMode)
+      throw new Error('Choose dine-in or take-out before confirming the order.')
 
     pendingSubmission = options.gateway?.submit(snapshot) ?? Promise.resolve({
       id: `demo-${crypto.randomUUID()}`,
@@ -599,19 +613,21 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     selection = undefined
     submittedOrder = undefined
     pendingSubmission = undefined
-    return cloneCart(cart)
+    fulfillmentMode = undefined
+    return cloneCart(cart, fulfillmentMode)
   }
 
   return {
     addToCart,
     confirmOrder,
-    getCart: () => cloneCart(cart),
+    getCart: () => cloneCart(cart, fulfillmentMode),
     getMenu: (category?: string) => category ? catalog.filter(item => item.category === category) : [...catalog],
     getSelection: () => selection ? { ...selection, options: { ...selection.options } } : undefined,
     removeFromCart,
     reset,
     selectMenuItem,
     setCartLineQuantity,
+    setFulfillmentMode,
     setItemOption,
     setQuantity,
   }

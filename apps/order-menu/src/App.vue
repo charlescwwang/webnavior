@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ComponentPublicInstance } from 'vue'
 
-import type { CartSnapshot, Selection, SubmittedOrder } from './domain/order-machine'
+import type { CartSnapshot, FulfillmentMode, Selection, SubmittedOrder } from './domain/order-machine'
 import type { AgentAction, MenuToolName } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -10,34 +10,27 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef } from
 import MenuItemCard from './components/menuItemCard.vue'
 
 import { defaultOptionsFor, menu } from './domain/order-machine'
-import { createMenuToolRuntime } from './webmcp'
-
-function embeddingHostOrigin() {
-  if (window.parent === window || !document.referrer)
-    return undefined
-
-  try {
-    const origin = new URL(document.referrer)
-    return origin.protocol === 'http:' || origin.protocol === 'https:' ? origin.origin : undefined
-  }
-  catch {
-    return undefined
-  }
-}
+import { resolveExpectedHostOrigin } from './embedding-origin'
+import { createMenuToolRuntime, fulfillmentControlId } from './webmcp'
 
 // A deployment can lock the service to one approved host. Otherwise, a page
 // embedded by AIRI reads the browser-provided parent referrer origin, so local
 // ports and kiosk domains work without a separate startup command.
-const expectedAiriOrigin = import.meta.env.VITE_AIRI_ORIGIN ?? embeddingHostOrigin()
+const expectedAiriOrigin = resolveExpectedHostOrigin({
+  configuredOrigin: import.meta.env.VITE_AIRI_ORIGIN,
+  isEmbedded: window.parent !== window,
+  referrer: document.referrer,
+})
 const action = shallowRef<AgentAction>({ label: '等待下一步操作' })
 const agentOperationCount = shallowRef(0)
-const cart = shallowRef<CartSnapshot>({ lines: [], total: 0, itemCount: 0 })
+const cart = shallowRef<CartSnapshot>({ fulfillmentMode: undefined, lines: [], total: 0, itemCount: 0 })
 const cursorTargetId = shallowRef<string>()
 const cursorPosition = shallowRef({ x: 44, y: 14 })
 const showAgentCursor = shallowRef(false)
 const cartUpdated = shallowRef(false)
 const orderStatus = shallowRef<string>()
 const completedOrderId = shallowRef<string>()
+const fulfillmentMode = shallowRef<FulfillmentMode>()
 const addingItemId = shallowRef<string>()
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
@@ -67,8 +60,8 @@ function setCardElement(id: string, element: Element | ComponentPublicInstance |
     cardElements.delete(id)
 }
 
-function setControlElement(id: string, element: HTMLElement | null) {
-  if (element)
+function setControlElement(id: string, element: Element | ComponentPublicInstance | null) {
+  if (element instanceof HTMLElement)
     controlElements.set(id, element)
   else
     controlElements.delete(id)
@@ -114,6 +107,7 @@ const runtime = createMenuToolRuntime({
     })
   },
   onMenuSelection: () => {},
+  onFulfillmentChange: mode => fulfillmentMode.value = mode,
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
 })
@@ -180,6 +174,11 @@ async function removeCartLine(lineId: string) {
 
 async function confirmOrder() {
   await invoke('order_confirm', { confirmedByUser: true }, { animate: false })
+}
+
+async function setFulfillmentMode(mode: FulfillmentMode) {
+  orderStatus.value = undefined
+  await invoke('order_set_fulfillment', { mode }, { animate: false })
 }
 
 async function addItem(itemId: string) {
@@ -316,7 +315,33 @@ onUnmounted(() => {
       <div class="cart-total">
         <span>總計</span><strong>{{ currency(cart.total) }}</strong>
       </div>
-      <button class="confirm-button" type="button" :disabled="cart.lines.length === 0 || !!completedOrderId" @click="confirmOrder">
+      <section class="fulfillment-panel" aria-labelledby="fulfillment-heading">
+        <h3 id="fulfillment-heading">
+          用餐方式
+        </h3>
+        <p>請選擇內用或外帶</p>
+        <div class="fulfillment-actions">
+          <button
+            :ref="element => setControlElement(fulfillmentControlId('dine-in'), element)"
+            :class="['fulfillment-button', { 'is-selected': fulfillmentMode === 'dine-in' }]"
+            type="button"
+            :disabled="!!completedOrderId"
+            @click="setFulfillmentMode('dine-in')"
+          >
+            內用
+          </button>
+          <button
+            :ref="element => setControlElement(fulfillmentControlId('takeout'), element)"
+            :class="['fulfillment-button', { 'is-selected': fulfillmentMode === 'takeout' }]"
+            type="button"
+            :disabled="!!completedOrderId"
+            @click="setFulfillmentMode('takeout')"
+          >
+            外帶
+          </button>
+        </div>
+      </section>
+      <button class="confirm-button" type="button" :disabled="cart.lines.length === 0 || !fulfillmentMode || !!completedOrderId" @click="confirmOrder">
         {{ completedOrderId ? '模擬訂單已確認' : '確認模擬訂單' }}
       </button>
       <p v-if="orderStatus" class="order-status">

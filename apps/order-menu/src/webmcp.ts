@@ -1,4 +1,4 @@
-import type { CartSnapshot, MenuItem, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
+import type { CartSnapshot, FulfillmentMode, MenuItem, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
 
 import { errorMessageFrom } from '@moeru/std'
 
@@ -14,6 +14,7 @@ export type MenuToolName
     | 'cart_remove_item'
     | 'cart_set_line_quantity'
     | 'cart_get'
+    | 'order_set_fulfillment'
     | 'order_confirm'
 
 export interface AgentAction {
@@ -33,6 +34,11 @@ export function quantityControlId(itemId: string) {
   return `${itemId}:quantity`
 }
 
+/** Returns the DOM control identifier used to visually follow a service-mode change. */
+export function fulfillmentControlId(mode: FulfillmentMode) {
+  return `order:fulfillment:${mode}`
+}
+
 interface MenuToolDefinition {
   description: string
   inputSchema: Record<string, unknown>
@@ -48,6 +54,8 @@ interface MenuToolRuntimeOptions {
   onAction: (action: AgentAction) => Promise<void> | void
   onCartChange: (cart: CartSnapshot) => void
   onMenuSelection: (itemId: string | undefined) => void
+  /** Mirrors an order-level dine-in or take-out choice into the menu UI. */
+  onFulfillmentChange?: (mode: FulfillmentMode | undefined) => void
   /** Mirrors the active tool selection into the menu UI. */
   onSelectionChange?: (selection: Selection) => void
   /** Notifies the embedding host after the first successfully confirmed order. */
@@ -66,7 +74,7 @@ interface ModelContextLike {
 }
 
 const toolDefinitions: MenuToolDefinition[] = [
-  { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false }, readOnly: true },
+  { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。回傳合法的內用／外帶選項。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false }, readOnly: true },
   { name: 'menu_recommend', description: '依顧客需求推薦最多三項餐點。每個 needs 標籤都必須符合：rice 為飯類、fried 為炸物、pork-free 為已確認不含豬肉。', inputSchema: { type: 'object', properties: { needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried', 'pork-free'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['needs'], additionalProperties: false }, readOnly: true },
   { name: 'menu_select_item', description: '選擇一個餐點並建立可設定的選擇。呼叫前必須先使用 menu_get，並傳入其結果中完全相同的 item.id。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。先前 menu_get 回傳的其中一個 item.id；不得猜測、翻譯或自行建立。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'menu_set_item_option', description: '設定目前餐點的口味、辣度、甜度或冰量。groupId 與 valueId 必須來自 menu_select_item 回傳的 item.optionGroups。', inputSchema: { type: 'object', properties: { groupId: { type: 'string', description: '必要。已選餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['groupId', 'valueId'], additionalProperties: false } },
@@ -75,7 +83,8 @@ const toolDefinitions: MenuToolDefinition[] = [
   { name: 'cart_remove_item', description: '從購物車移除一個 cart line。', inputSchema: { type: 'object', properties: { lineId: { type: 'string' } }, required: ['lineId'], additionalProperties: false } },
   { name: 'cart_set_line_quantity', description: '設定購物車中一個餐點的數量。', inputSchema: { type: 'object', properties: { lineId: { type: 'string' }, quantity: { type: 'integer', minimum: 1 } }, required: ['lineId', 'quantity'], additionalProperties: false } },
   { name: 'cart_get', description: '取得目前購物車、品項數與總額。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, readOnly: true },
-  { name: 'order_confirm', description: '確認目前訂單。MVP 僅建立模擬訂單，不會送至 POS。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
+  { name: 'order_set_fulfillment', description: '設定整筆訂單為內用或外帶。若顧客尚未告知，先以自然語句詢問；必須在 order_confirm 前完成。', inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['dine-in', 'takeout'], description: '必要。dine-in 為內用；takeout 為外帶。' } }, required: ['mode'], additionalProperties: false } },
+  { name: 'order_confirm', description: '僅在顧客明確同意送出，且已使用 order_set_fulfillment 設定內用或外帶後，確認目前訂單。MVP 僅建立模擬訂單，不會送至 POS。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
 ]
 
 function requiredString(input: Record<string, unknown>, key: string) {
@@ -90,6 +99,13 @@ function requiredNumber(input: Record<string, unknown>, key: string) {
   if (typeof value !== 'number')
     throw new Error(`${key} is required.`)
   return value
+}
+
+function requiredFulfillmentMode(input: Record<string, unknown>): FulfillmentMode {
+  const mode = requiredString(input, 'mode')
+  if (mode === 'dine-in' || mode === 'takeout')
+    return mode
+  throw new Error('mode must be dine-in or takeout.')
 }
 
 /**
@@ -133,7 +149,9 @@ function nativeInvocationFailure(name: MenuToolName, error: unknown) {
   const message = errorMessageFrom(error) ?? 'The requested menu operation could not be completed.'
   const recovery = name === 'menu_select_item' && message === 'itemId is required.'
     ? 'First call menu_get. Then call menu_select_item again with itemId set to exactly one item.id returned by menu_get.'
-    : 'Check this tool\'s required arguments and the latest menu or cart result, then retry only with valid values.'
+    : name === 'order_confirm' && message === 'Choose dine-in or take-out before confirming the order.'
+      ? 'Ask the customer whether this order is dine-in or take-out. Then call order_set_fulfillment with the customer\'s choice before retrying order_confirm.'
+      : 'Check this tool\'s required arguments and the latest menu or cart result, then retry only with valid values.'
 
   return { ok: false, error: message, recovery }
 }
@@ -183,6 +201,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           return {
             catalog: catalogInfo,
             categories,
+            fulfillmentModes: [
+              { id: 'dine-in', label: '內用' },
+              { id: 'takeout', label: '外帶' },
+            ],
             items,
           }
         }
@@ -257,8 +279,26 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           options.onCartChange(cart)
           return { cart }
         }
-        case 'cart_get':
-          return { cart: machine.getCart() }
+        case 'cart_get': {
+          const cart = machine.getCart()
+          return {
+            cart,
+            nextStep: cart.fulfillmentMode
+              ? 'Confirm the cart with the customer. Call order_confirm only after explicit customer consent.'
+              : 'Ask the customer whether this order is dine-in or take-out. Then call order_set_fulfillment before order_confirm.',
+          }
+        }
+        case 'order_set_fulfillment': {
+          const mode = requiredFulfillmentMode(input)
+          const label = mode === 'dine-in' ? '內用' : '外帶'
+          await announce(`設定為${label}`, 'cart', {
+            controlId: fulfillmentControlId(mode),
+          }, onAction)
+          const cart = machine.setFulfillmentMode(mode)
+          options.onFulfillmentChange?.(mode)
+          options.onCartChange(cart)
+          return { cart, fulfillmentMode: mode }
+        }
         case 'order_confirm': {
           if (input.confirmedByUser !== true)
             throw new Error('Order confirmation requires confirmedByUser: true.')
@@ -287,6 +327,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     completedOrderId = undefined
     options.onCartChange(cart)
     options.onMenuSelection(undefined)
+    options.onFulfillmentChange?.(undefined)
     return { cart }
   }
 

@@ -17,7 +17,13 @@ describe('createOrderMachine', () => {
       total: 150,
       lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }],
     })
-    await expect(machine.confirmOrder()).resolves.toMatchObject({ status: 'simulated' })
+    await expect(machine.confirmOrder()).rejects.toThrow('Choose dine-in or take-out before confirming the order.')
+
+    machine.setFulfillmentMode('dine-in')
+    await expect(machine.confirmOrder()).resolves.toMatchObject({
+      status: 'simulated',
+      cart: { fulfillmentMode: 'dine-in' },
+    })
   })
 
   it('returns one submitted order when confirmation is retried', async () => {
@@ -26,6 +32,7 @@ describe('createOrderMachine', () => {
 
     machine.selectMenuItem('chous-shrimp-roll')
     machine.addToCart()
+    machine.setFulfillmentMode('takeout')
 
     const [firstOrder, retryOrder] = await Promise.all([machine.confirmOrder(), machine.confirmOrder()])
     expect(submit).toHaveBeenCalledOnce()
@@ -113,6 +120,7 @@ describe('createMenuToolRuntime', () => {
       'cart_remove_item',
       'cart_set_line_quantity',
       'cart_get',
+      'order_set_fulfillment',
       'order_confirm',
     ])
   })
@@ -196,12 +204,14 @@ describe('createMenuToolRuntime', () => {
       await runtime.registerNativeWebMcp()
       const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
       const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
+      const setFulfillment = registeredTools.find(tool => tool.name === 'order_set_fulfillment')
       const confirmOrder = registeredTools.find(tool => tool.name === 'order_confirm')
-      if (!selectItem || !addItem || !confirmOrder)
+      if (!selectItem || !addItem || !setFulfillment || !confirmOrder)
         throw new Error('Expected order tools to be registered.')
 
       await selectItem.execute({ itemId: 'chous-shrimp-roll' })
       await addItem.execute({})
+      await setFulfillment.execute({ mode: 'dine-in' })
       await confirmOrder.execute({ confirmedByUser: true })
 
       expect(completedOrders).toHaveLength(1)
@@ -238,6 +248,38 @@ describe('createMenuToolRuntime', () => {
     }
   })
 
+  it('tells an agent to ask for dine-in or take-out before retrying confirmation', async () => {
+    const registeredTools: Array<{
+      name: string
+      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
+    }> = []
+    vi.stubGlobal('document', {
+      modelContext: {
+        registerTool: async (tool: typeof registeredTools[number]) => registeredTools.push(tool),
+      },
+    })
+
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.registerNativeWebMcp()
+      const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
+      const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
+      const confirmOrder = registeredTools.find(tool => tool.name === 'order_confirm')
+      if (!selectItem || !addItem || !confirmOrder)
+        throw new Error('Expected order tools to be registered.')
+
+      await selectItem.execute({ itemId: 'chous-shrimp-roll' })
+      await addItem.execute({})
+      await expect(confirmOrder.execute({ confirmedByUser: true })).resolves.toMatchObject({
+        ok: false,
+        recovery: expect.stringContaining('order_set_fulfillment'),
+      })
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('drives the same visible action sequence and cart state used by WebMCP', async () => {
     const actions: Array<{ expandCustomization?: boolean, label: string, targetId?: string }> = []
     const carts: number[] = []
@@ -255,9 +297,10 @@ describe('createMenuToolRuntime', () => {
     await runtime.invoke('menu_set_item_option', { groupId: 'ginger', valueId: 'without-ginger' })
     await runtime.invoke('menu_set_quantity', { quantity: 2 })
     await runtime.invoke('cart_add_item')
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
 
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({
-      cart: { itemCount: 2, total: 150, lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }] },
+      cart: { fulfillmentMode: 'takeout', itemCount: 2, total: 150, lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }] },
     })
     expect(actions).toEqual([
       { label: '正在選擇周氏蝦捲', targetId: 'chous-shrimp-roll' },
@@ -269,8 +312,9 @@ describe('createMenuToolRuntime', () => {
       },
       { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
       { label: '加入購物車', targetId: 'cart' },
+      { controlId: 'order:fulfillment:takeout', label: '設定為外帶', targetId: 'cart' },
     ])
-    expect(carts).toEqual([150])
+    expect(carts).toEqual([150, 150])
   })
 
   it('synchronizes WebMCP item options into the visible menu selection and emits one completion', async () => {
@@ -287,6 +331,7 @@ describe('createMenuToolRuntime', () => {
     await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
     await runtime.invoke('menu_set_item_option', { groupId: 'ginger', valueId: 'without-ginger' })
     await runtime.invoke('cart_add_item')
+    await runtime.invoke('order_set_fulfillment', { mode: 'dine-in' })
     const [firstConfirmation, retryConfirmation] = await Promise.all([
       runtime.invoke('order_confirm', { confirmedByUser: true }),
       runtime.invoke('order_confirm', { confirmedByUser: true }),
