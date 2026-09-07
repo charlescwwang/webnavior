@@ -407,25 +407,15 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
     if (!recovery)
       return
 
-    const content = customerReplyFallback(settingsGeneral.language)
+    const content = customerReplyFallback(settingsGeneral.language, recovery.kind)
     const messages = chatSession.getSessionMessages(sessionId)
-    if (recovery.kind === 'replace' && recovery.messageIndex != null) {
-      const original = messages[recovery.messageIndex]
-      if (original?.role !== 'assistant')
-        return
-
-      chatSession.setSessionMessages(sessionId, messages.map((message, index) => index === recovery.messageIndex
-        ? { ...original, content, slices: [{ type: 'text', text: content }] }
-        : message))
+    const original = messages[recovery.messageIndex]
+    if (original?.role !== 'assistant')
       return
-    }
 
-    chatSession.appendSessionMessage(sessionId, {
-      role: 'assistant',
-      content,
-      slices: [{ type: 'text', text: content }],
-      tool_results: [],
-    })
+    chatSession.setSessionMessages(sessionId, messages.map((message, index) => index === recovery.messageIndex
+      ? { ...original, content, slices: [{ type: 'text', text: content }] }
+      : message))
   }
 
   async function ingestOnFork(

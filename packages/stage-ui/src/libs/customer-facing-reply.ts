@@ -1,8 +1,8 @@
 import type { ChatAssistantMessage, ChatHistoryItem } from '../types/chat'
 
 export interface CustomerReplyRecovery {
-  kind: 'append' | 'replace'
-  messageIndex?: number
+  kind: 'success' | 'failure'
+  messageIndex: number
 }
 
 function assistantText(message: ChatAssistantMessage) {
@@ -18,6 +18,37 @@ function assistantText(message: ChatAssistantMessage) {
   return typeof message.content === 'string' ? message.content.trim() : ''
 }
 
+function isCompletedInteractionResult(result: unknown) {
+  if (typeof result !== 'string')
+    return false
+
+  try {
+    const parsed = JSON.parse(result) as unknown
+    if (!parsed || typeof parsed !== 'object')
+      return false
+
+    const interaction = (parsed as Record<string, unknown>).interaction
+    return !!interaction
+      && typeof interaction === 'object'
+      && (interaction as Record<string, unknown>).status === 'completed'
+  }
+  catch {
+    return false
+  }
+}
+
+function recoveryForToolResults(message: ChatAssistantMessage, messageIndex: number): CustomerReplyRecovery | undefined {
+  if (message.tool_results.some(tool => isCompletedInteractionResult(tool.result)))
+    return undefined
+  if (!message.tool_results.length)
+    return undefined
+
+  return {
+    kind: message.tool_results.some(tool => tool.isError) ? 'failure' : 'success',
+    messageIndex,
+  }
+}
+
 /**
  * Finds an Agent turn that completed tool work without giving the customer a
  * usable next step. This is domain-neutral so every Interaction Host can keep
@@ -30,17 +61,27 @@ export function findCustomerReplyRecovery(messages: ChatHistoryItem[], turnStart
       continue
 
     const text = assistantText(message)
-    if (!text || /(?:重新整理|重整|重置|重啟).{0,8}(?:系統|服務|設定)|(?:系統|服務|設定).{0,8}(?:重新整理|重整|重置|重啟)/u.test(text))
-      return { kind: 'replace', messageIndex: index }
+    if (!text)
+      return recoveryForToolResults(message, index)
+
+    if (/(?:重新整理|重整|重置|重啟).{0,8}(?:系統|服務|設定)|(?:系統|服務|設定).{0,8}(?:重新整理|重整|重置|重啟)/u.test(text))
+      return { kind: 'failure', messageIndex: index }
 
     return undefined
   }
 
-  return { kind: 'append' }
+  return undefined
 }
 
-/** A neutral customer-facing continuation for a completed tool-only turn. */
-export function customerReplyFallback(locale = 'zh-Hant') {
+/** A neutral customer-facing continuation derived from the final tool outcome. */
+export function customerReplyFallback(locale = 'zh-Hant', outcome: CustomerReplyRecovery['kind'] = 'success') {
+  if (outcome === 'failure') {
+    if (locale.startsWith('en'))
+      return 'This service step could not be completed right now. Please try again, or tell me how you would like to continue.'
+
+    return '這個服務步驟暫時無法完成。請稍後再試，或告訴我接下來想怎麼處理。'
+  }
+
   if (locale.startsWith('en'))
     return 'The requested step is complete. Would you like to continue, or is there another step I can help with?'
 
