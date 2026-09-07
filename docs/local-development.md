@@ -85,6 +85,8 @@ CDP 僅應在本機開發時使用，且不要暴露到網路。
 
 從 source 在 Ubuntu 建置自訂版 `.deb` 的完整命令，見 [`docs/ubuntu-desktop-deployment.md`](./ubuntu-desktop-deployment.md)。
 
+若目前要部署瀏覽器版 Stage Web、Stage Kiosk 與點餐頁，而非桌面 `.deb`，見 [`docs/ubuntu-web-deployment.md`](./ubuntu-web-deployment.md)。
+
 ROCm 只有在未來餐飲 Agent 自己承擔本機模型推論時才需評估。建議讓該 Agent 的模型 runtime 與 AIRI UI 分離，按 Linux/AMD 部署另行選擇 ROCm 相容的模型服務，而不要把 GPU runtime 綁進 AIRI renderer 或 Electron main process。
 
 ### Windows → Linux 遷移檢查表

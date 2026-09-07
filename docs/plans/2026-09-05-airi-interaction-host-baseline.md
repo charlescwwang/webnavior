@@ -182,7 +182,9 @@ Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 U
 ### 多 Kiosk、店別設定與部署
 
 - 單機設定目前保存在各瀏覽器 origin 的 localStorage；因此 Stage Web、Stage Kiosk 與不同裝置不會自動同步。
-- 未來需要店別設定模型、設備識別／憑證、中央設定同步、管理權限、密鑰持有位置與離線策略；尚未選擇後端或資料庫。
+- 現有 `apps/server` 已提供可延伸的 HTTP／WebSocket 後端，並以 Postgres 保存帳號、設定、聊天與計費帳本；Redis 是其必要相依，用於快取、設定 KV、短暫用量累積與跨 instance Pub/Sub，而非正式資料的真相來源。
+- 多 kiosk 正式部署應由中央 Ubuntu 主機提供同一個 Nginx origin：Web、kiosk、點餐互動頁維持靜態網站，Nginx 未來再將 `/api` 與 WebSocket 反向代理給 `apps/server`。各 kiosk 僅以瀏覽器 kiosk mode 開啟固定網址，不應安裝專案、Node 或保存共用 AI 金鑰。
+- 未來需要店別設定模型、設備識別／憑證、中央設定同步、管理權限、密鑰持有位置、離線策略，以及將目前瀏覽器本機設定遷移至後端的方案；這些尚未實作或選定。
 - 現階段不要把會員、POS、支付或中央雲端管理加入 AIH 共用層。它們應留在各領域服務或未來管理平面。
 
 ## 2026-09-05 實作與驗證快照
