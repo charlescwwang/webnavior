@@ -14,8 +14,9 @@ In Kiosk administrator mode, register each scenario under **互動服務**. Ever
 entry needs a stable ID, customer-facing title, URL, description, and enabled
 state. The Kiosk exposes only enabled, complete IDs to the Agent; it never
 accepts a URL as a model tool argument. `restaurant-ordering` is the default
-registration and its local URL can be overridden with
-`VITE_ORDERING_SCENARIO_URL`.
+registration. In current hosts, `VITE_ORDERING_SCENARIO_URL` supplies that URL
+only when the same browser origin has not yet created its Interaction Profile;
+a saved service URL takes precedence.
 
 The scenario application must allow the Kiosk origin through its own deployment
 configuration. AIRI accepts bridge messages only from the URL's origin.
