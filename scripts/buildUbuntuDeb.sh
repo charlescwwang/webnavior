@@ -152,7 +152,7 @@ main() {
   )
 
   corepack pnpm -F @proj-airi/stage-tamagotchi run build
-  corepack pnpm -F @proj-airi/stage-tamagotchi exec electron-builder build --linux --x64 --publish=never
+  corepack pnpm -F @proj-airi/stage-tamagotchi exec electron-builder --linux deb --x64 --publish=never
 
   local packagePath
   packagePath="$(find apps/stage-tamagotchi/dist -maxdepth 1 -type f -name '*.deb' -print -quit)"
