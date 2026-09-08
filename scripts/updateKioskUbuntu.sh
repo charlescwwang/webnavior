@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 
-# Updates the Nginx-served kiosk build on Ubuntu without persisting a GitHub token.
+# Updates every Nginx-served AIRI web build on Ubuntu without persisting a GitHub token.
 set -Eeuo pipefail
 
-readonly remote_name='github'
-readonly deploy_dir='/var/www/airi/kiosk'
+readonly stage_web_deploy_dir='/var/www/airi/web'
+readonly kiosk_deploy_dir='/var/www/airi/kiosk'
+readonly order_menu_deploy_dir='/var/www/airi/menu'
 readonly pin_file='apps/stage-kiosk/.env.production.local'
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 askpass_file=''
+remote_name=''
 
 cleanup() {
   if [[ -n "$askpass_file" ]]; then
@@ -21,8 +23,12 @@ trap cleanup EXIT
 
 cd "$repo_root"
 
-if ! git remote get-url "$remote_name" >/dev/null 2>&1; then
-  echo "Error: Git remote '$remote_name' is not configured in $repo_root." >&2
+if git remote get-url github >/dev/null 2>&1; then
+  remote_name='github'
+elif git remote get-url origin >/dev/null 2>&1; then
+  remote_name='origin'
+else
+  echo "Error: No 'github' or 'origin' Git remote is configured in $repo_root." >&2
   exit 1
 fi
 
@@ -80,9 +86,15 @@ if ! GIT_TERMINAL_PROMPT=0 git pull --ff-only "$remote_name" "$branch_name"; the
 fi
 
 corepack pnpm install --frozen-lockfile
+corepack pnpm -F @proj-airi/stage-web exec vite build --base=/web/
 corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
+corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
-sudo install -d -m 0755 "$deploy_dir"
-sudo rsync -a --delete apps/stage-kiosk/dist/ "$deploy_dir/"
+sudo install -d -m 0755 "$stage_web_deploy_dir" "$kiosk_deploy_dir" "$order_menu_deploy_dir"
+sudo rsync -a --delete apps/stage-web/dist/ "$stage_web_deploy_dir/"
+sudo rsync -a --delete apps/stage-kiosk/dist/ "$kiosk_deploy_dir/"
+sudo rsync -a --delete apps/order-menu/dist/ "$order_menu_deploy_dir/"
 
-echo 'Kiosk updated: http://YOUR-UBUNTU-IP:5169/kiosk/'
+echo 'Stage Web updated:  http://YOUR-UBUNTU-IP:5169/web/'
+echo 'Kiosk updated:     http://YOUR-UBUNTU-IP:5169/kiosk/'
+echo 'Order menu updated: http://YOUR-UBUNTU-IP:5169/menu/'
