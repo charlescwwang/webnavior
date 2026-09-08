@@ -125,7 +125,7 @@ export const useSettingsStageModel = defineStore('settings-stage-model', () => {
     await updateStageModel()
   }
 
-  useEventListener('unload', () => {
+  useEventListener('pagehide', () => {
     revokeStageModelUrl(stageModelSelectedUrl.value)
   })
 
