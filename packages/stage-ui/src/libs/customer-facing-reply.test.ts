@@ -19,6 +19,26 @@ describe('findCustomerReplyRecovery', () => {
     expect(findCustomerReplyRecovery(messages, 0)).toEqual({ kind: 'success', messageIndex: 1 })
   })
 
+  it('uses the service-provided customer message when a tool-only turn succeeds', () => {
+    const messages: ChatHistoryItem[] = [
+      { role: 'user', content: '請移除肉燥飯' },
+      {
+        role: 'assistant',
+        content: '',
+        slices: [],
+        tool_results: [{ id: 'tool-1', result: '{"customerMessage":"已從購物車移除古早味肉燥飯。"}' }],
+      },
+    ]
+
+    const recovery = findCustomerReplyRecovery(messages, 0)
+    expect(recovery).toMatchObject({
+      customerMessage: '已從購物車移除古早味肉燥飯。',
+      kind: 'success',
+      messageIndex: 1,
+    })
+    expect(customerReplyFallback('zh-Hant', recovery?.kind, recovery?.customerMessage)).toBe('已從購物車移除古早味肉燥飯。')
+  })
+
   it('does not report a completed order as a generic continuation', () => {
     const messages: ChatHistoryItem[] = [
       { role: 'user', content: '幫我繼續' },

@@ -361,6 +361,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             item: menuItemForAgent(item),
             line,
             cart,
+            customerMessage: `已將${line.name}加入購物車，共 ${line.quantity} 份。`,
             pendingCustomerChoice: pendingCustomerChoice(cart),
             nextStep: cartNextStep(cart),
           }
@@ -371,17 +372,20 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           options.onCartChange(result.cart)
           return {
             ...result,
+            customerMessage: `已將${result.line.name}加入購物車，共 ${result.line.quantity} 份。`,
             pendingCustomerChoice: pendingCustomerChoice(result.cart),
             nextStep: cartNextStep(result.cart),
           }
         }
         case 'cart_remove_item': {
           const lineId = requiredString(input, 'lineId')
+          const line = machine.getCart().lines.find(candidate => candidate.id === lineId)
           await announce('從購物車移除餐點', 'cart', {}, onAction)
           const cart = machine.removeFromCart(lineId)
           options.onCartChange(cart)
           return {
             cart,
+            customerMessage: line ? `已從購物車移除${line.name}。` : '已從購物車移除餐點。',
             pendingCustomerChoice: pendingCustomerChoice(cart),
             nextStep: cartNextStep(cart),
           }
@@ -389,11 +393,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'cart_set_line_quantity': {
           const lineId = requiredString(input, 'lineId')
           const quantity = requiredNumber(input, 'quantity')
+          const line = machine.getCart().lines.find(candidate => candidate.id === lineId)
           await announce(`設定購物車數量為 ${quantity}`, 'cart', {}, onAction)
           const cart = machine.setCartLineQuantity(lineId, quantity)
           options.onCartChange(cart)
           return {
             cart,
+            customerMessage: line ? `已將${line.name}調整為 ${quantity} 份。` : '已更新餐點數量。',
             pendingCustomerChoice: pendingCustomerChoice(cart),
             nextStep: cartNextStep(cart),
           }
@@ -417,6 +423,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           options.onCartChange(cart)
           return {
             cart,
+            customerMessage: `已設為${label}。`,
             fulfillmentMode: mode,
             nextStep: cartNextStep(cart),
           }

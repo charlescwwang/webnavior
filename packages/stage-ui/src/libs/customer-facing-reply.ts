@@ -1,6 +1,8 @@
 import type { ChatAssistantMessage, ChatHistoryItem } from '../types/chat'
 
 export interface CustomerReplyRecovery {
+  /** Optional customer-safe result text supplied by the service that performed the operation. */
+  customerMessage?: string
   kind: 'success' | 'failure'
   messageIndex: number
 }
@@ -37,14 +39,38 @@ function isCompletedInteractionResult(result: unknown) {
   }
 }
 
+function customerMessageFromToolResults(message: ChatAssistantMessage) {
+  for (let index = message.tool_results.length - 1; index >= 0; index--) {
+    const tool = message.tool_results[index]
+    if (!tool)
+      continue
+    if (tool.isError || typeof tool.result !== 'string')
+      continue
+
+    try {
+      const parsed = JSON.parse(tool.result) as unknown
+      if (!parsed || typeof parsed !== 'object')
+        continue
+      const customerMessage = (parsed as Record<string, unknown>).customerMessage
+      if (typeof customerMessage === 'string' && customerMessage.trim())
+        return customerMessage.trim()
+    }
+    catch {
+      continue
+    }
+  }
+}
+
 function recoveryForToolResults(message: ChatAssistantMessage, messageIndex: number): CustomerReplyRecovery | undefined {
   if (message.tool_results.some(tool => isCompletedInteractionResult(tool.result)))
     return undefined
   if (!message.tool_results.length)
     return undefined
 
+  const kind = message.tool_results.some(tool => tool.isError) ? 'failure' : 'success'
   return {
-    kind: message.tool_results.some(tool => tool.isError) ? 'failure' : 'success',
+    customerMessage: kind === 'success' ? customerMessageFromToolResults(message) : undefined,
+    kind,
     messageIndex,
   }
 }
@@ -74,7 +100,14 @@ export function findCustomerReplyRecovery(messages: ChatHistoryItem[], turnStart
 }
 
 /** A neutral customer-facing continuation derived from the final tool outcome. */
-export function customerReplyFallback(locale = 'zh-Hant', outcome: CustomerReplyRecovery['kind'] = 'success') {
+export function customerReplyFallback(
+  locale = 'zh-Hant',
+  outcome: CustomerReplyRecovery['kind'] = 'success',
+  customerMessage?: string,
+) {
+  if (outcome === 'success' && customerMessage)
+    return customerMessage
+
   if (outcome === 'failure') {
     if (locale.startsWith('en'))
       return 'This service step could not be completed right now. Please try again, or tell me how you would like to continue.'

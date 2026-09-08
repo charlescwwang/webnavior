@@ -407,7 +407,7 @@ export const useChatOrchestratorStore = defineStore('chat-orchestrator', () => {
     if (!recovery)
       return
 
-    const content = customerReplyFallback(settingsGeneral.language, recovery.kind)
+    const content = customerReplyFallback(settingsGeneral.language, recovery.kind, recovery.customerMessage)
     const messages = chatSession.getSessionMessages(sessionId)
     const original = messages[recovery.messageIndex]
     if (original?.role !== 'assistant')
