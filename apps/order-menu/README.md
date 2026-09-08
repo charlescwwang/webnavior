@@ -39,10 +39,14 @@ next-customer flow. These events do not expose or execute tools.
 
 The order state lives in `src/domain/order-machine.ts`; it owns menu selection,
 options, cart updates, the order-level dine-in/take-out choice, and order
-submission. The WebMCP `order_set_fulfillment` tool and the visible menu buttons
-use the same state, so an order cannot be confirmed before the customer chooses
-how it will be served. A real POS or kiosk integration implements the
-`PosOrderGateway` boundary passed to `createOrderMachine`.
+submission. When a customer has already specified an item, its options, and its
+quantity, the WebMCP `order_add_item` tool performs that whole operation in one
+Agent call while the menu still visibly steps through each change. The
+`order_set_fulfillment` tool and the visible menu buttons use the same state, so
+an order cannot be confirmed before the customer chooses how it will be served.
+Until then, the cart reports the choice as deferrable and customers may continue
+adding items. A real POS or kiosk integration implements the `PosOrderGateway`
+boundary passed to `createOrderMachine`.
 The current default gateway returns a simulated submitted order and does not send
 anything to an external system.
 

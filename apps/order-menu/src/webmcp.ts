@@ -10,6 +10,7 @@ export type MenuToolName
     | 'menu_select_item'
     | 'menu_set_item_option'
     | 'menu_set_quantity'
+    | 'order_add_item'
     | 'cart_add_item'
     | 'cart_remove_item'
     | 'cart_set_line_quantity'
@@ -74,13 +75,14 @@ interface ModelContextLike {
 }
 
 const toolDefinitions: MenuToolDefinition[] = [
-  { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。回傳合法的內用／外帶選項。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false }, readOnly: true },
+  { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。回傳合法的內用／外帶選項。顧客問某個分類有哪些品項時，先查詢後直接列出本次回傳、符合該分類的品項，不可只說「有幾種」後反問。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false }, readOnly: true },
   { name: 'menu_recommend', description: '依顧客需求推薦最多三項餐點。每個 needs 標籤都必須符合：rice 為飯類、fried 為炸物、pork-free 為已確認不含豬肉。', inputSchema: { type: 'object', properties: { needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried', 'pork-free'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['needs'], additionalProperties: false }, readOnly: true },
   { name: 'menu_select_item', description: '選擇一個餐點並建立可設定的選擇。呼叫前必須先使用 menu_get，並傳入其結果中完全相同的 item.id。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。先前 menu_get 回傳的其中一個 item.id；不得猜測、翻譯或自行建立。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'menu_set_item_option', description: '設定目前餐點的口味、辣度、甜度或冰量。groupId 與 valueId 必須來自 menu_select_item 回傳的 item.optionGroups。', inputSchema: { type: 'object', properties: { groupId: { type: 'string', description: '必要。已選餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['groupId', 'valueId'], additionalProperties: false } },
   { name: 'menu_set_quantity', description: '設定目前餐點的數量。只可在 menu_select_item 後、cart_add_item 前使用。', inputSchema: { type: 'object', properties: { quantity: { type: 'integer', minimum: 1, maximum: 20, description: '必要。顧客指定的整數數量；未指定時使用 1。' } }, required: ['quantity'], additionalProperties: false } },
+  { name: 'order_add_item', description: '一次完成一個已確認餐點的選擇、已知客製化、數量與加入購物車。顧客指定品項與所有必要客製化後，優先使用此工具，避免逐步呼叫 menu_select_item、menu_set_item_option、menu_set_quantity、cart_add_item。itemId、options 的 groupId 與 valueId 必須來自 menu_get 的結果。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。menu_get 回傳的其中一個 item.id。' }, options: { type: 'array', description: '顧客明確指定的客製化；未指定的選項保留該品項預設值。', items: { type: 'object', properties: { groupId: { type: 'string' }, valueId: { type: 'string' } }, required: ['groupId', 'valueId'], additionalProperties: false } }, quantity: { type: 'integer', minimum: 1, maximum: 20, description: '顧客指定的數量；省略時為 1。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'cart_add_item', description: '將目前已設定的餐點加入購物車。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'cart_remove_item', description: '從購物車移除一個 cart line。', inputSchema: { type: 'object', properties: { lineId: { type: 'string' } }, required: ['lineId'], additionalProperties: false } },
+  { name: 'cart_remove_item', description: '從購物車移除一個 cart line。先用 cart_get 取得正確的 lineId。顧客要求移除時，必須先執行本工具並確認成功，才能告知顧客已移除；不得只說會移除。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' } }, required: ['lineId'], additionalProperties: false } },
   { name: 'cart_set_line_quantity', description: '設定購物車中一個餐點的數量。', inputSchema: { type: 'object', properties: { lineId: { type: 'string' }, quantity: { type: 'integer', minimum: 1 } }, required: ['lineId', 'quantity'], additionalProperties: false } },
   { name: 'cart_get', description: '取得目前購物車、品項數與總額。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, readOnly: true },
   { name: 'order_set_fulfillment', description: '設定整筆訂單為內用或外帶。若顧客尚未告知，先以自然語句詢問；必須在 order_confirm 前完成。', inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['dine-in', 'takeout'], description: '必要。dine-in 為內用；takeout 為外帶。' } }, required: ['mode'], additionalProperties: false } },
@@ -106,6 +108,53 @@ function requiredFulfillmentMode(input: Record<string, unknown>): FulfillmentMod
   if (mode === 'dine-in' || mode === 'takeout')
     return mode
   throw new Error('mode must be dine-in or takeout.')
+}
+
+interface ItemOptionInput {
+  groupId: string
+  valueId: string
+}
+
+function itemOptionInputs(input: Record<string, unknown>): ItemOptionInput[] {
+  if (input.options === undefined)
+    return []
+  if (!Array.isArray(input.options))
+    throw new Error('options must be an array.')
+
+  const seenGroupIds = new Set<string>()
+  return input.options.map((option) => {
+    if (!option || typeof option !== 'object' || Array.isArray(option))
+      throw new Error('Each option must include groupId and valueId.')
+
+    const optionInput = option as Record<string, unknown>
+    const groupId = requiredString(optionInput, 'groupId')
+    const valueId = requiredString(optionInput, 'valueId')
+    if (seenGroupIds.has(groupId))
+      throw new Error(`options must not repeat groupId ${groupId}.`)
+    seenGroupIds.add(groupId)
+    return { groupId, valueId }
+  })
+}
+
+function pendingCustomerChoice(cart: CartSnapshot) {
+  if (cart.fulfillmentMode)
+    return undefined
+
+  return {
+    id: 'fulfillment-mode',
+    question: '請問要內用還是外帶？',
+    canBeDeferred: true,
+    options: [
+      { id: 'dine-in', label: '內用' },
+      { id: 'takeout', label: '外帶' },
+    ],
+  }
+}
+
+function cartNextStep(cart: CartSnapshot) {
+  return cart.fulfillmentMode
+    ? 'Confirm the cart with the customer. Call order_confirm only after explicit customer consent.'
+    : 'The customer still needs to choose dine-in or take-out before order confirmation. Ask when appropriate, but continue adding requested items first.'
 }
 
 /**
@@ -258,18 +307,84 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           options.onSelectionChange?.(nextSelection)
           return { selection: nextSelection }
         }
+        case 'order_add_item': {
+          const itemId = requiredString(input, 'itemId')
+          const item = machine.getMenu().find(candidate => candidate.id === itemId)
+          if (!item)
+            throw new Error(`Menu item ${itemId} was not found.`)
+
+          const itemOptions = itemOptionInputs(input)
+          const optionGroupIds = new Set(itemOptions.map(option => option.groupId))
+          const missingRequiredGroup = item.optionGroups.find(group => group.required && !optionGroupIds.has(group.id))
+          if (missingRequiredGroup)
+            throw new Error(`A required option for ${missingRequiredGroup.label} is missing.`)
+
+          for (const option of itemOptions) {
+            const group = item.optionGroups.find(candidate => candidate.id === option.groupId)
+            if (!group)
+              throw new Error(`Option group ${option.groupId} is not available for ${item.name}.`)
+            if (!group.values.some(value => value.id === option.valueId))
+              throw new Error(`Option ${option.valueId} is not available for ${group.label}.`)
+          }
+
+          const quantity = input.quantity === undefined ? undefined : requiredNumber(input, 'quantity')
+          if (quantity !== undefined && (!Number.isInteger(quantity) || quantity < 1 || quantity > 20))
+            throw new Error('quantity must be an integer from 1 to 20.')
+
+          await announce(`正在選擇${item.name}`, item.id, {}, onAction)
+          options.onMenuSelection(item.id)
+          let selection = machine.selectMenuItem(item.id)
+          options.onSelectionChange?.(selection)
+
+          for (const option of itemOptions) {
+            const value = item.optionGroups.find(group => group.id === option.groupId)?.values.find(candidate => candidate.id === option.valueId)
+            await announce(`設定為${value?.label ?? '指定選項'}`, item.id, {
+              controlId: optionControlId(item.id, option.groupId, option.valueId),
+              expandCustomization: true,
+            }, onAction)
+            selection = machine.setItemOption(option.groupId, option.valueId)
+            options.onSelectionChange?.(selection)
+          }
+
+          if (quantity !== undefined) {
+            await announce(`設定數量為 ${quantity}`, item.id, {
+              controlId: quantityControlId(item.id),
+            }, onAction)
+            selection = machine.setQuantity(quantity)
+            options.onSelectionChange?.(selection)
+          }
+
+          await announce('加入購物車', 'cart', {}, onAction)
+          const { cart, line } = machine.addToCart()
+          options.onCartChange(cart)
+          return {
+            item: menuItemForAgent(item),
+            line,
+            cart,
+            pendingCustomerChoice: pendingCustomerChoice(cart),
+            nextStep: cartNextStep(cart),
+          }
+        }
         case 'cart_add_item': {
           await announce('加入購物車', 'cart', {}, onAction)
           const result = machine.addToCart()
           options.onCartChange(result.cart)
-          return result
+          return {
+            ...result,
+            pendingCustomerChoice: pendingCustomerChoice(result.cart),
+            nextStep: cartNextStep(result.cart),
+          }
         }
         case 'cart_remove_item': {
           const lineId = requiredString(input, 'lineId')
           await announce('從購物車移除餐點', 'cart', {}, onAction)
           const cart = machine.removeFromCart(lineId)
           options.onCartChange(cart)
-          return { cart }
+          return {
+            cart,
+            pendingCustomerChoice: pendingCustomerChoice(cart),
+            nextStep: cartNextStep(cart),
+          }
         }
         case 'cart_set_line_quantity': {
           const lineId = requiredString(input, 'lineId')
@@ -277,15 +392,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           await announce(`設定購物車數量為 ${quantity}`, 'cart', {}, onAction)
           const cart = machine.setCartLineQuantity(lineId, quantity)
           options.onCartChange(cart)
-          return { cart }
+          return {
+            cart,
+            pendingCustomerChoice: pendingCustomerChoice(cart),
+            nextStep: cartNextStep(cart),
+          }
         }
         case 'cart_get': {
           const cart = machine.getCart()
           return {
             cart,
-            nextStep: cart.fulfillmentMode
-              ? 'Confirm the cart with the customer. Call order_confirm only after explicit customer consent.'
-              : 'Ask the customer whether this order is dine-in or take-out. Then call order_set_fulfillment before order_confirm.',
+            pendingCustomerChoice: pendingCustomerChoice(cart),
+            nextStep: cartNextStep(cart),
           }
         }
         case 'order_set_fulfillment': {
@@ -297,7 +415,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const cart = machine.setFulfillmentMode(mode)
           options.onFulfillmentChange?.(mode)
           options.onCartChange(cart)
-          return { cart, fulfillmentMode: mode }
+          return {
+            cart,
+            fulfillmentMode: mode,
+            nextStep: cartNextStep(cart),
+          }
         }
         case 'order_confirm': {
           if (input.confirmedByUser !== true)

@@ -116,6 +116,7 @@ describe('createMenuToolRuntime', () => {
       'menu_select_item',
       'menu_set_item_option',
       'menu_set_quantity',
+      'order_add_item',
       'cart_add_item',
       'cart_remove_item',
       'cart_set_line_quantity',
@@ -125,12 +126,70 @@ describe('createMenuToolRuntime', () => {
     ])
   })
 
+  it('adds one configured item through one agent call while preserving each visible step', async () => {
+    const actions: Array<{ controlId?: string, expandCustomization?: boolean, label: string, targetId?: string }> = []
+    const runtime = createMenuToolRuntime({
+      onAction: (action) => {
+        actions.push(action)
+      },
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+    })
+
+    await expect(runtime.invoke('order_add_item', {
+      itemId: 'chous-shrimp-roll',
+      options: [{ groupId: 'ginger', valueId: 'without-ginger' }],
+      quantity: 2,
+    })).resolves.toMatchObject({
+      cart: {
+        fulfillmentMode: undefined,
+        itemCount: 2,
+        total: 150,
+        lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }],
+      },
+      pendingCustomerChoice: {
+        id: 'fulfillment-mode',
+        canBeDeferred: true,
+      },
+    })
+
+    expect(actions).toEqual([
+      { label: '正在選擇周氏蝦捲', targetId: 'chous-shrimp-roll' },
+      {
+        controlId: 'chous-shrimp-roll:option:ginger:without-ginger',
+        expandCustomization: true,
+        label: '設定為不附嫩薑',
+        targetId: 'chous-shrimp-roll',
+      },
+      { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
+      { label: '加入購物車', targetId: 'cart' },
+    ])
+  })
+
+  it('requires an explicit answer for every required customization before the high-level add', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+
+    await expect(runtime.invoke('order_add_item', {
+      itemId: 'braised-pork-set',
+    })).rejects.toThrow('required option')
+  })
+
   it('requires the selected item ID returned by menu_get', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const selectItem = runtime.toolDefinitions.find(tool => tool.name === 'menu_select_item')
     const itemId = selectItem?.inputSchema.properties as Record<string, { description?: string }> | undefined
 
     expect(itemId?.itemId?.description).toContain('menu_get')
+  })
+
+  it('makes menu listing and cart removal execution requirements explicit to the Agent', () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const menuGet = runtime.toolDefinitions.find(tool => tool.name === 'menu_get')
+    const removeItem = runtime.toolDefinitions.find(tool => tool.name === 'cart_remove_item')
+
+    expect(menuGet?.description).toContain('直接列出')
+    expect(removeItem?.description).toContain('先執行')
+    expect(removeItem?.description).toContain('cart_get')
   })
 
   it('releases an earlier native registration before registering the same tool names again', async () => {

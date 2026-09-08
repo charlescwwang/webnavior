@@ -33,6 +33,7 @@ compatibility.
 | `menu_select_item` | `itemId` | Current selection. |
 | `menu_set_item_option` | `groupId`, `valueId` | Updated current selection. |
 | `menu_set_quantity` | `quantity` | Updated current selection. |
+| `order_add_item` | `itemId`, optional known `options` and `quantity` | Adds one fully specified item and returns the updated cart. |
 | `cart_add_item` | None | Added cart line and updated cart. |
 | `cart_remove_item` | `lineId` | Updated cart. |
 | `cart_set_line_quantity` | `lineId`, `quantity` | Updated cart. |
@@ -58,12 +59,13 @@ receives and must not invent them.
 
 ## Agent rules
 
-1. Call `menu_get` before selecting an item.
-2. Finish one selection with `cart_add_item` before beginning the next item.
-3. Call `cart_get` and state the order summary before asking to confirm it.
-4. Call `order_confirm` only after the customer explicitly agrees.
-5. Set the customer-confirmed dine-in or take-out mode before confirming.
-6. Never invent unavailable menu items, option values, prices, or totals.
+1. Call `menu_get` before selecting or adding an item.
+2. When the item, required options, and quantity are already known, prefer the single `order_add_item` call. The menu service still visibly presents its selection, customization, quantity, and cart updates.
+3. Use the lower-level `menu_select_item` through `cart_add_item` sequence only when the customer needs to decide a required option in a separate turn.
+4. Call `cart_get` and state the order summary before asking to confirm it.
+5. Call `order_confirm` only after the customer explicitly agrees.
+6. Set the customer-confirmed dine-in or take-out mode before confirming. A missing service mode is a deferrable pending choice: it must not prevent adding further requested items.
+7. Never invent unavailable menu items, option values, prices, or totals.
 
 ## Visible-operation requirement
 
