@@ -90,6 +90,10 @@ const serverSdkMocks = vi.hoisted(() => {
   }
 })
 
+const localStorageMocks = vi.hoisted(() => ({
+  websocketUrl: 'ws://localhost:6121/ws',
+}))
+
 vi.mock('@proj-airi/server-sdk', () => ({
   Client: serverSdkMocks.MockClient,
   WebSocketEventSource: {
@@ -107,7 +111,7 @@ vi.mock('@vueuse/core', async () => {
   const { ref } = await import('vue')
 
   return {
-    useLocalStorage: (_key: string, initialValue: string) => ref(initialValue),
+    useLocalStorage: (key: string, initialValue: string) => ref(key === 'settings/connection/websocket-url' ? localStorageMocks.websocketUrl : initialValue),
   }
 })
 
@@ -123,6 +127,7 @@ describe('channel-server store reconnect', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     serverSdkMocks.MockClient.instances.length = 0
+    localStorageMocks.websocketUrl = 'ws://localhost:6121/ws'
   })
 
   afterEach(() => {
@@ -189,6 +194,16 @@ describe('channel-server store reconnect', () => {
       readTimeout: 60_000,
       pingInterval: 20_000,
     })
+  })
+
+  it('does not create a channel client until an administrator configures a websocket URL', async () => {
+    localStorageMocks.websocketUrl = ''
+    setActivePinia(createPinia())
+    const store = useModsServerChannelStore()
+
+    await store.initialize()
+
+    expect(serverSdkMocks.MockClient.instances).toHaveLength(0)
   })
 
   it('notifies onReconnected callbacks when the websocket becomes ready again', async () => {

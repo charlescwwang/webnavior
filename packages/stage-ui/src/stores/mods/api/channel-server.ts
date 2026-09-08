@@ -41,6 +41,10 @@ function hasReconnectableWebSocketScheme(url: string | undefined) {
   }
 }
 
+function isLoopbackHost(hostname: string) {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+}
+
 const REPLAYABLE_EVENT_TYPES = new Set<keyof WebSocketEvents>([
   'module:announced',
   'module:de-announced',
@@ -59,11 +63,23 @@ export const useModsServerChannelStore = defineStore('mods:channels:proj-airi:se
   const pendingSendCount = computed(() => pendingSend.value.length)
   const reconnectedCallbacks = new Set<() => void>()
 
-  const defaultWebSocketUrl = import.meta.env.VITE_AIRI_WS_URL || 'ws://localhost:6121/ws'
+  // A public browser must never interpret localhost as the deployment server.
+  // Channel Server is therefore opt-in: administrators configure a public wss://
+  // endpoint, while local development can explicitly supply VITE_AIRI_WS_URL.
+  const defaultWebSocketUrl = import.meta.env.VITE_AIRI_WS_URL ?? ''
   const websocketUrl = useLocalStorage('settings/connection/websocket-url', defaultWebSocketUrl)
   const websocketAuthToken = useLocalStorage('settings/connection/websocket-auth-token', '')
   const registeredListeners: ChannelListenerEntry[] = []
   const replayableEvents = new Map<keyof WebSocketEvents, WebSocketBaseEvent<any, any>>()
+
+  function hasConfiguredEndpoint() {
+    if (!hasReconnectableWebSocketScheme(websocketUrl.value))
+      return false
+    if (typeof window === 'undefined' || isLoopbackHost(window.location.hostname))
+      return true
+
+    return !isLoopbackHost(new URL(websocketUrl.value).hostname)
+  }
 
   const basePossibleEvents: Array<keyof WebSocketEvents> = [
     'context:update',
@@ -102,6 +118,9 @@ export const useModsServerChannelStore = defineStore('mods:channels:proj-airi:se
     if (options?.connector) {
       textConnectorFactory.value = options.connector
     }
+
+    if (!hasConfiguredEndpoint())
+      return Promise.resolve()
 
     const possibleEvents = Array.from(new Set<keyof WebSocketEvents>([
       ...basePossibleEvents,
@@ -209,6 +228,8 @@ export const useModsServerChannelStore = defineStore('mods:channels:proj-airi:se
 
   async function ensureConnected() {
     await initializing.value
+    if (!hasConfiguredEndpoint())
+      return
     if (!connected.value) {
       return await initialize()
     }
@@ -241,7 +262,7 @@ export const useModsServerChannelStore = defineStore('mods:channels:proj-airi:se
     type: E,
     callback: (event: WebSocketBaseEvent<E, WebSocketEvents[E]>) => void | Promise<void>,
   ) {
-    if (!client.value && !initializing.value)
+    if (hasConfiguredEndpoint() && !client.value && !initializing.value)
       void initialize()
 
     const entry: ChannelListenerEntry = {
@@ -266,6 +287,9 @@ export const useModsServerChannelStore = defineStore('mods:channels:proj-airi:se
   }
 
   function send<C = undefined>(data: WebSocketEventOptionalSource<C>) {
+    if (!hasConfiguredEndpoint())
+      return
+
     if (!client.value && !initializing.value)
       void initialize()
 
@@ -332,13 +356,12 @@ export const useModsServerChannelStore = defineStore('mods:channels:proj-airi:se
     if (newUrl === oldUrl && newToken === oldToken)
       return
 
-    if (!hasReconnectableWebSocketScheme(newUrl))
-      return
-
     if (client.value || initializing.value) {
       dispose()
-      void initialize()
     }
+
+    if (hasConfiguredEndpoint())
+      void initialize()
   })
 
   return {
