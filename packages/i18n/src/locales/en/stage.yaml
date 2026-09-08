@@ -28,16 +28,16 @@ customer-session:
     description: Thank you for your order. This order flow is complete.
     simulated-notice: This is a simulated order and has not been sent to the POS system.
     countdown: This screen will close in {seconds} seconds.
-    finish: Finish and start a new session
+    finish: Finish and start over
     qr-alt: Survey QR code
     qr-loading: Preparing the survey QR code…
     qr-error: The survey QR code could not be generated right now.
   idle-confirmation:
     title: Would you like to continue?
-    description: Your current conversation and selections are still here. Choose continue to keep going, or start a fresh conversation for the next customer.
-    countdown: This session will reset in {seconds} seconds.
+    description: Your current conversation and selections are still here. Choose continue to keep going, or clear the current content and start over.
+    countdown: The current content will clear in {seconds} seconds.
     continue: Continue
-    new-customer: New customer
+    new-customer: Clear and start over
 message: Say something...
 send-mode:
   title: Send key

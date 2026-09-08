@@ -28,16 +28,16 @@ customer-session:
     description: 感謝您的點餐，我們已完成本次訂單流程。
     simulated-notice: 此為模擬訂單，尚未傳送至 POS 系統。
     countdown: 此畫面將在 {seconds} 秒後自動結束。
-    finish: 完成，開始新的接待
+    finish: 完成，重新開始
     qr-alt: 問卷 QR Code
     qr-loading: 正在準備問卷 QR Code…
     qr-error: 問卷 QR Code 暫時無法產生。
   idle-confirmation:
-    title: 要繼續目前的接待嗎？
-    description: 目前的對話與選擇都會保留。您可以繼續操作，或為下一位顧客開始新的對話。
-    countdown: 此次接待將在 {seconds} 秒後自動清除。
-    continue: 繼續目前接待
-    new-customer: 開始新的接待
+    title: 要繼續目前操作嗎？
+    description: 目前的對話與選擇都會保留。您可以繼續操作，或清除內容後重新開始。
+    countdown: 目前內容將在 {seconds} 秒後自動清除。
+    continue: 繼續操作
+    new-customer: 清除內容並重新開始
 message: 說點什麼...
 send-mode:
   title: 傳送按鍵
