@@ -23,6 +23,8 @@ describe('createWebMcpAdapter', () => {
       },
     })
     const adapter = createWebMcpAdapter()
+    const executions = vi.fn()
+    adapter.onExecution(executions)
     adapter.activate('https://menu.example/ordering')
     await adapter.refresh()
     const [tool] = adapter.tools.value
@@ -32,6 +34,17 @@ describe('createWebMcpAdapter', () => {
     await expect(adapter.execute(tool, { quantity: 1 })).resolves.toEqual({ cart: { itemCount: 1 } })
     expect(tool).not.toBe(registeredTool)
     expect(executeTool).toHaveBeenCalledWith(registeredTool, '{"quantity":1}')
+    expect(executions).toHaveBeenNthCalledWith(1, {
+      input: { quantity: 1 },
+      phase: 'called',
+      tool,
+    })
+    expect(executions).toHaveBeenNthCalledWith(2, {
+      input: { quantity: 1 },
+      phase: 'resolved',
+      result: { cart: { itemCount: 1 } },
+      tool,
+    })
   })
 
   it('keeps Stage Web mountable when the browser omits the optional toolchange event', async () => {

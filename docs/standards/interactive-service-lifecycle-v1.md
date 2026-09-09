@@ -13,6 +13,8 @@ An embedded service may send either event to its parent:
 window.parent.postMessage({
   source: 'airi-interaction-lifecycle',
   type: 'activity' | 'completed',
+  // Present only for a completed order and limited to non-personal POC data.
+  orderResult: { id, fulfillmentMode, itemCount, total, simulated },
 }, { targetOrigin: hostOrigin })
 ```
 
@@ -26,7 +28,9 @@ available.
 - `activity` means a customer manually interacted with the service UI. The host
   refreshes its anonymous-session idle timer.
 - `completed` means the service completed its customer flow. The host enters
-  its existing completion and next-customer lifecycle.
+  its existing completion and next-customer lifecycle. A menu service may
+  attach the listed non-personal `orderResult`; the host validates its shape
+  only after validating the current iframe source and approved origin.
 
 The host accepts a message only when both the event's service origin and
 `event.source` match the currently embedded, allow-listed service iframe.
@@ -41,5 +45,5 @@ state on page load.
 ## Boundaries
 
 This protocol deliberately excludes tool schemas, tool execution, prompts,
-URLs, customer identifiers, cart data, and arbitrary payloads. It is not a
-fallback for WebMCP.
+URLs, customer identifiers, full cart lines, and arbitrary payloads. It is not
+a fallback for WebMCP.

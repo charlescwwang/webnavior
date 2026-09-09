@@ -1,17 +1,8 @@
 <script setup lang="ts">
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
-import type { ChatProvider } from '@xsai-ext/providers/utils'
 
-import { errorMessageFrom } from '@moeru/std'
 import { ChatHistory } from '@proj-airi/stage-ui/components'
-import { useChatOrchestratorStore } from '@proj-airi/stage-ui/stores/chat'
-import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
-import { useChatStreamStore } from '@proj-airi/stage-ui/stores/chat/stream-store'
-import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
-import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
-import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { BasicTextarea } from '@proj-airi/ui'
-import { storeToRefs } from 'pinia'
 import { computed, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -20,27 +11,24 @@ import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
-const emit = defineEmits<{
-  activity: []
+const props = defineProps<{
+  messages: readonly ChatHistoryItem[]
+  sending: boolean
 }>()
 
-const chatOrchestrator = useChatOrchestratorStore()
-const chatSession = useChatSessionStore()
-const chatStream = useChatStreamStore()
-const providersStore = useProvidersStore()
-const { activeModel, activeProvider } = storeToRefs(useConsciousnessStore())
-const { activeCard } = storeToRefs(useAiriCardStore())
-const { messages } = storeToRefs(chatSession)
-const { sending } = storeToRefs(chatOrchestrator)
-const { streamingMessage } = storeToRefs(chatStream)
+const emit = defineEmits<{
+  activity: []
+  sendMessage: [text: string]
+}>()
+
 const { t } = useI18n()
 
 const messageInput = shallowRef('')
 const isComposing = shallowRef(false)
-const assistantLabel = computed(() => activeCard.value?.name?.trim() || 'AIRI')
-const historyMessages = computed<ChatHistoryItem[]>(() => messages.value as ChatHistoryItem[])
+const assistantLabel = 'AIRI'
+const historyMessages = computed<ChatHistoryItem[]>(() => [...props.messages])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
-const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !sending.value && serviceReady.value)
+const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !props.sending && serviceReady.value)
 const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
 const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
@@ -53,30 +41,7 @@ async function sendMessage() {
   const text = messageInput.value.trim()
   messageInput.value = ''
   emit('activity')
-
-  try {
-    const providerConfig = providersStore.getProviderConfig(activeProvider.value)
-    const chatProvider = await providersStore.getProviderInstance(activeProvider.value)
-    if (!chatProvider || !activeModel.value)
-      throw new Error('尚未完成對話模型設定')
-
-    await chatOrchestrator.ingest(text, {
-      chatProvider: chatProvider as ChatProvider,
-      model: activeModel.value,
-      providerConfig,
-    })
-  }
-  catch (error) {
-    console.error('[stage-kiosk] failed to send customer message:', errorMessageFrom(error))
-    messageInput.value = text
-    chatSession.setSessionMessages(chatSession.activeSessionId, [
-      ...messages.value.slice(0, -1),
-      {
-        role: 'error',
-        content: '暫時無法回覆，請稍後再試。',
-      },
-    ])
-  }
+  emit('sendMessage', text)
 }
 </script>
 
@@ -91,8 +56,7 @@ async function sendMessage() {
       <ChatHistory
         :messages="historyMessages"
         :assistant-label="assistantLabel"
-        :sending="sending"
-        :streaming-message="streamingMessage"
+        :sending="props.sending"
         :tool-call-renderers="orderToolCallRenderers"
         auto-scroll="follow-latest"
         variant="mobile"

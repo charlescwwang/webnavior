@@ -15,6 +15,22 @@ pnpm --filter @proj-airi/stage-kiosk dev
 
 The layout follows the display orientation by default. Set `VITE_KIOSK_ORIENTATION=landscape` or `portrait` to lock a deployment to one orientation.
 
+## Development kiosk enrollment
+
+Before a Profile is available, the kiosk opens an enrollment screen. In a local
+POC, it creates a six-digit number and asks the Server to create a `DEV-`
+device. The Server returns an HttpOnly device cookie; the kiosk never stores or
+reads the credential itself.
+
+```sh
+KIOSK_DEVELOPMENT_REGISTRATION_ENABLED=true pnpm --filter @proj-airi/server dev
+VITE_API_SERVER_URL=http://localhost:3000 pnpm --filter @proj-airi/stage-kiosk dev
+```
+
+The Server omits this endpoint unless the flag is exactly `true`, and always
+omits it when `NODE_ENV=production`. A production kiosk will replace this
+screen with the QR-code enrollment flow.
+
 ## Registered interactive pages
 
 The Kiosk can host multiple customer interaction pages while keeping ordering as

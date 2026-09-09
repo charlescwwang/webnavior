@@ -127,20 +127,31 @@ function handleOrderConfirmed(order: SubmittedOrder) {
 
   completedOrderId.value = order.id
   orderStatus.value = '模擬訂單已建立，尚未送往 POS。'
-  notifyHost('completed')
+  notifyHost('completed', {
+    fulfillmentMode: order.cart.fulfillmentMode!,
+    id: order.id,
+    itemCount: order.cart.itemCount,
+    simulated: order.status === 'simulated',
+    total: order.cart.total,
+  })
 }
 
-function notifyHost(type: 'activity' | 'completed') {
+function notifyHost(type: 'activity' | 'completed', orderResult?: {
+  fulfillmentMode: FulfillmentMode
+  id: string
+  itemCount: number
+  simulated: boolean
+  total: number
+}) {
   if (window.parent === window)
     return
 
-  // This lifecycle signal deliberately carries no order or customer data. The
-  // Host validates both the current iframe Window and this service's origin
-  // before accepting it, so it can safely receive the signal regardless of
-  // local ports, LAN addresses, or an older deployment origin override.
+  // The host validates both the active iframe Window and this service origin.
+  // The completion payload is intentionally limited to non-personal simulated
+  // order data so the kiosk can evaluate its ordering conversation.
   if (import.meta.env.DEV)
     console.info('[DEBUG-feedback-lifecycle] menu sent lifecycle event', { type })
-  window.parent.postMessage({ source: 'airi-interaction-lifecycle', type }, { targetOrigin: '*' })
+  window.parent.postMessage({ source: 'airi-interaction-lifecycle', type, orderResult }, { targetOrigin: '*' })
 }
 
 function notifyActivity() {

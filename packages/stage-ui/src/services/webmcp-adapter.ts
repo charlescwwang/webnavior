@@ -13,6 +13,15 @@ export interface WebMcpTool {
   title?: string
 }
 
+/** One native WebMCP execution observed by the host after origin validation. */
+export interface WebMcpToolExecution {
+  error?: string
+  input: Record<string, unknown>
+  phase: 'called' | 'failed' | 'resolved'
+  result?: unknown
+  tool: WebMcpTool
+}
+
 /** A browser-issued tool handle. Its `window` belongs to an iframe and must never enter Vue reactivity. */
 interface RegisteredWebMcpTool extends WebMcpTool {
   window: Window
@@ -81,6 +90,7 @@ export function createWebMcpAdapter() {
   const error = shallowRef<string>()
   const tools = shallowRef<readonly WebMcpTool[]>([])
   const registeredTools = new Map<string, RegisteredWebMcpTool>()
+  const executionListeners = new Set<(execution: WebMcpToolExecution) => void>()
   let allowedOrigin: string | undefined
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   let generation = 0
@@ -157,12 +167,14 @@ export function createWebMcpAdapter() {
     const registeredTool = registeredTools.get(toolKey(tool))
     if (!registeredTool)
       throw new Error(`WebMCP tool "${tool.name}" is no longer available from ${tool.origin}.`)
+    publishExecution({ input, phase: 'called', tool })
     try {
       // Chrome's native API accepts JSON text even though the registered page
       // callback receives a structured object.
       const result = resultFromWebMcp(await context.executeTool(registeredTool, JSON.stringify(input)))
       if (isCompletionResult(result))
         completionRevision.value += 1
+      publishExecution({ input, phase: 'resolved', result, tool })
       return result
     }
     catch (caught) {
@@ -171,8 +183,18 @@ export function createWebMcpAdapter() {
         origin: tool.origin,
         tool: tool.name,
       })
+      publishExecution({ error: errorMessageFrom(caught) ?? 'WebMCP tool execution failed.', input, phase: 'failed', tool })
       throw caught
     }
+  }
+
+  function onExecution(listener: (execution: WebMcpToolExecution) => void) {
+    executionListeners.add(listener)
+    return () => executionListeners.delete(listener)
+  }
+
+  function publishExecution(execution: WebMcpToolExecution) {
+    executionListeners.forEach(listener => listener(execution))
   }
 
   async function waitUntilReady() {
@@ -206,6 +228,7 @@ export function createWebMcpAdapter() {
     completionRevision: readonly(completionRevision),
     error: readonly(error),
     execute,
+    onExecution,
     refresh,
     tools: readonly(tools),
     waitUntilReady,

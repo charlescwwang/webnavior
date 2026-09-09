@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { ProactiveGreetingTrigger } from '@proj-airi/kiosk-proactive'
-import type { ChatProvider } from '@xsai-ext/providers/utils'
+import type { WebMcpToolExecution } from '@proj-airi/stage-ui/services/webmcp-adapter'
+import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
@@ -9,12 +9,9 @@ import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@pro
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
-import { useChatOrchestratorStore } from '@proj-airi/stage-ui/stores/chat'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
-import { useConsciousnessStore } from '@proj-airi/stage-ui/stores/modules/consciousness'
 import { useHearingSpeechInputPipeline } from '@proj-airi/stage-ui/stores/modules/hearing'
-import { useProvidersStore } from '@proj-airi/stage-ui/stores/providers'
 import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { useMouse, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
@@ -28,8 +25,8 @@ import ScenarioSurface from './ScenarioSurface.vue'
 
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
+import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
-import { useKioskProactiveGreeting } from '../composables/useKioskProactiveGreeting'
 import { needsKioskObservation, useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { setKioskLocale } from '../modules/i18n'
@@ -50,19 +47,18 @@ const { startRecord, stopRecord, onStopRecord } = useAudioRecorder(stream)
 const hearingPipeline = useHearingSpeechInputPipeline()
 const { transcribeForRecording } = hearingPipeline
 const { supportsStreamInput } = storeToRefs(hearingPipeline)
-const providersStore = useProvidersStore()
-const consciousnessStore = useConsciousnessStore()
-const { activeModel, activeProvider } = storeToRefs(consciousnessStore)
-const chatStore = useChatOrchestratorStore()
 const chatSessionStore = useChatSessionStore()
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const customerSession = useKioskCustomerSession({ activeCardId, chatSession: chatSessionStore })
+const interactionRecording = useKioskInteractionRecording()
+const conversationMessages = shallowRef<ChatHistoryItem[]>([])
+const conversationSending = shallowRef(false)
 const {
   continueCurrentSession,
   hasPendingWork,
   idleDeadlineAt,
   notice,
-  startNewCustomerSession,
+  startNewCustomerSession: resetForNewCustomer,
   state: customerSessionState,
 } = customerSession
 const showIdleDiagnostics = import.meta.env.DEV
@@ -78,7 +74,6 @@ watch(webMcpAdapter.completionRevision, (revision, previousRevision) => {
     handleScenarioCompleted()
 })
 const proactiveCamera = useTemplateRef<HTMLVideoElement>('proactiveCamera')
-const proactiveGreeting = useKioskProactiveGreeting()
 let releaseChatPendingWork: (() => void) | undefined
 let proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
 let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
@@ -119,15 +114,8 @@ async function startAudioInteraction() {
       return
 
     await recordCustomerActivity()
-    try {
-      await webMcpAdapter.waitUntilReady()
-      const provider = await providersStore.getProviderInstance(activeProvider.value)
-      if (provider && activeModel.value)
-        await chatStore.ingest(text, { model: activeModel.value, chatProvider: provider as ChatProvider })
-    }
-    catch (error) {
-      console.warn('[stage-kiosk] ignored voice input while interactive service is unavailable:', error)
-    }
+    await interactionRecording.append('asr_transcript', text)
+    await sendConversationMessage(text)
   })
 }
 
@@ -179,7 +167,7 @@ watch(customerSessionState, (state) => {
     assistanceReminderWindow.reset()
 })
 
-watch([() => chatStore.sending, customerSessionState], ([sending, sessionState]) => {
+watch([conversationSending, customerSessionState], ([sending, sessionState]) => {
   if (sending && sessionState === 'active') {
     releaseChatPendingWork ??= customerSession.beginPendingWork()
     return
@@ -195,22 +183,23 @@ watch([() => chatStore.sending, customerSessionState], ([sending, sessionState])
 onUnmounted(() => {
   stopAudioInteraction()
   proactiveVision.stop()
+  void interactionRecording.end('cancelled')
 })
 
 async function handleProactiveObservation(observation: Parameters<typeof proactiveWindow.decide>[0]) {
   if (customerSessionState.value === 'active') {
-    if (chatStore.sending || proactiveGreeting.sending.value)
+    if (conversationSending.value)
       return
 
     const reminderCandidate = assistanceReminderWindow.decide(observation)
     if (!reminderCandidate)
       return
 
-    // The local policy enforces presence and rate limits before the selected
-    // provider decides whether and how to realize this candidate.
+    // Local policy enforces presence and rate limits. The Server owns the
+    // Profile prompt, model selection, Provider credentials, and transcript.
     const releasePendingWork = customerSession.beginPendingWork()
     try {
-      await proactiveGreeting.remind(reminderCandidate, proactiveSettings.value.assistanceReminder.reminderText)
+      await sendAssistantAction('reminder')
     }
     finally {
       releasePendingWork()
@@ -219,7 +208,7 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     return
   }
 
-  if (customerSessionState.value !== 'standby' || chatStore.sending || proactiveGreeting.sending.value)
+  if (customerSessionState.value !== 'standby' || conversationSending.value)
     return
 
   const decision = proactiveWindow.decide(observation)
@@ -232,9 +221,10 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     // Begin before asking the LLM so another camera frame cannot create a
     // second greeting while the selected provider is still streaming.
     await customerSession.begin()
+    await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
     const releasePendingWork = customerSession.beginPendingWork()
     try {
-      await proactiveGreeting.greet(decision, greetingContextPrompts(decision.greetingTrigger))
+      await sendAssistantAction('greeting')
       assistanceReminderWindow.start(performance.now())
     }
     finally {
@@ -246,20 +236,45 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   }
 }
 
-/** Selects context references without allowing either administrator prompt to replace the shared greeting policy. */
-function greetingContextPrompts(trigger: ProactiveGreetingTrigger) {
-  if (trigger === 'presence')
-    return [proactiveSettings.value.proactiveGreeting.presenceGreetingPrompt]
-
-  if (proactiveSettings.value.proactiveGreeting.triggerMode === 'mixed')
-    return [proactiveSettings.value.proactiveGreeting.presenceGreetingPrompt, proactiveSettings.value.proactiveGreeting.attentionGreetingPrompt]
-
-  return [proactiveSettings.value.proactiveGreeting.attentionGreetingPrompt]
-}
-
 async function recordCustomerActivity() {
   await customerSession.recordActivity()
+  await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+  await interactionRecording.append('service_event', 'activity')
   assistanceReminderWindow.recordActivity(performance.now())
+}
+
+async function sendAssistantAction(kind: 'greeting' | 'reminder') {
+  const serviceId = scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction'
+  conversationSending.value = true
+  try {
+    const answer = await interactionRecording.runAssistantAction(serviceId, kind)
+    if (answer) {
+      conversationMessages.value = [
+        ...conversationMessages.value,
+        { role: 'assistant', content: answer, slices: [], tool_results: [] },
+      ]
+    }
+  }
+  finally {
+    conversationSending.value = false
+  }
+}
+
+async function sendConversationMessage(text: string) {
+  conversationSending.value = true
+  try {
+    const answer = await interactionRecording.send(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction', text)
+    conversationMessages.value = [
+      ...conversationMessages.value,
+      { role: 'user', content: text },
+      answer
+        ? { role: 'assistant', content: answer, slices: [], tool_results: [] }
+        : { role: 'error', content: '暫時無法回覆，請稍後再試。' },
+    ]
+  }
+  finally {
+    conversationSending.value = false
+  }
 }
 
 function recordPointerActivity(event: PointerEvent | WheelEvent) {
@@ -270,24 +285,63 @@ function recordPointerActivity(event: PointerEvent | WheelEvent) {
   void recordCustomerActivity()
 }
 
-async function handleScenarioCompleted() {
+function recordWebMcpExecution(execution: WebMcpToolExecution) {
+  const serviceId = scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction'
+  const kind = execution.phase === 'called' ? 'tool_call' : 'tool_result'
+  const payload = execution.phase === 'called' ? execution.input : (execution.error ?? execution.result)
+  void interactionRecording.start(serviceId).then(async (sessionId) => {
+    if (!sessionId)
+      return
+
+    await interactionRecording.append(kind, serializeInteractionPayload(payload), {
+      origin: execution.tool.origin,
+      toolName: execution.tool.name,
+    })
+  })
+}
+
+function serializeInteractionPayload(payload: unknown) {
+  try {
+    return JSON.stringify(payload)
+  }
+  catch {
+    // WebMCP inputs and results should be structured JSON. This fallback keeps
+    // the durable audit trail usable if a browser implementation violates it.
+    return '"[unserializable WebMCP payload]"'
+  }
+}
+
+async function handleScenarioCompleted(orderResult?: Parameters<typeof interactionRecording.recordOrderResult>[0]) {
   // A direct iframe click may emit `activity` and `completed` back-to-back.
   // Establish the anonymous session here as well so completion cannot outrun
   // the asynchronous activity handler and disappear without a customer screen.
   await recordCustomerActivity()
-  customerSession.completeOrder()
+  await interactionRecording.append('service_event', 'completed')
+  if (orderResult)
+    await interactionRecording.recordOrderResult(orderResult)
+  if (customerSession.completeOrder())
+    await interactionRecording.append('service_event', 'feedback_invitation_shown')
 }
 
-function finishCustomerSessionCompletion() {
-  void customerSession.end('completed')
+async function finishCustomerSessionCompletion() {
+  await interactionRecording.append('service_event', 'feedback_invitation_dismissed')
+  await interactionRecording.end('completed')
+  await customerSession.end('completed')
+}
+
+async function startNewCustomerSession() {
+  await interactionRecording.end('idle')
+  await resetForNewCustomer()
 }
 
 let stopMenuActivityListener: (() => void) | undefined
 let stopMenuCompletionListener: (() => void) | undefined
+let stopToolExecutionListener: (() => void) | undefined
 
 onMounted(() => {
   stopMenuActivityListener = scenarioRegistry.on('activity', () => void recordCustomerActivity())
-  stopMenuCompletionListener = scenarioRegistry.on('completed', handleScenarioCompleted)
+  stopMenuCompletionListener = scenarioRegistry.on('completed', orderResult => void handleScenarioCompleted(orderResult))
+  stopToolExecutionListener = webMcpAdapter.onExecution(recordWebMcpExecution)
   void syncProactiveVision()
 })
 
@@ -295,6 +349,7 @@ onUnmounted(() => {
   releaseChatPendingWork?.()
   stopMenuActivityListener?.()
   stopMenuCompletionListener?.()
+  stopToolExecutionListener?.()
 })
 </script>
 
@@ -316,7 +371,13 @@ onUnmounted(() => {
 
     <ScenarioSurface class="menu-region" />
 
-    <KioskConversation class="conversation-region" @activity="recordCustomerActivity" />
+    <KioskConversation
+      class="conversation-region"
+      :messages="conversationMessages"
+      :sending="conversationSending"
+      @activity="recordCustomerActivity"
+      @send-message="sendConversationMessage"
+    />
     <KioskIdleDiagnostics
       v-if="showIdleDiagnostics"
       :idle-deadline-at="idleDeadlineAt"
