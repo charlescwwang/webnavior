@@ -15,6 +15,7 @@ import type { CharacterService } from './services/domain/characters'
 import type { ChatService } from './services/domain/chats'
 import type { FluxService } from './services/domain/flux'
 import type { FluxTransactionService } from './services/domain/flux-transaction'
+import type { KioskService } from './services/domain/kiosk'
 import type { LlmRouterService } from './services/domain/llm-router'
 import type { ProductEventService } from './services/domain/product-events'
 import type { ProviderCatalogService } from './services/domain/provider-catalog'
@@ -59,6 +60,7 @@ import { createAdminUiRoutes } from './routes/admin-ui'
 import { createAdminCapabilityAliasRoutes } from './routes/admin/capability-aliases'
 import { createAdminRouterConfigRoutes } from './routes/admin/config/router'
 import { createAdminFluxGrantsRoutes } from './routes/admin/flux-grants'
+import { createAdminKioskRoutes } from './routes/admin/kiosk'
 import { createAdminProviderCatalogRoutes } from './routes/admin/provider-catalog'
 import { createAdminUsersRoutes } from './routes/admin/users'
 import { createAdminVoicePackRoutes } from './routes/admin/voice-packs'
@@ -69,6 +71,7 @@ import { createCharacterRoutes } from './routes/characters'
 import { createChatWsHandlers } from './routes/chat-ws'
 import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
+import { createKioskRoutes } from './routes/kiosk'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -85,6 +88,8 @@ import { createCharacterService } from './services/domain/characters'
 import { createChatService } from './services/domain/chats'
 import { createFluxService } from './services/domain/flux'
 import { createFluxTransactionService } from './services/domain/flux-transaction'
+import { createKioskService } from './services/domain/kiosk'
+import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
 import { createProductEventService } from './services/domain/product-events'
 import { createProviderCatalogService } from './services/domain/provider-catalog'
@@ -123,6 +128,7 @@ interface AppDeps {
   userDeletionService: UserDeletionService
   llmRouter: LlmRouterService
   providerCatalogService: ProviderCatalogService
+  kioskService: KioskService
 }
 
 export async function buildApp(deps: AppDeps) {
@@ -362,6 +368,21 @@ export async function buildApp(deps: AppDeps) {
     .route('/', createAdminUiRoutes(deps.env))
 
     /**
+     * Kiosk device enrollment and bootstrap. The development enrollment route
+     * is omitted in production even if the configuration flag is mistakenly
+     * set, while a real device always authenticates with its opaque cookie.
+     */
+    .route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: deps.env.KIOSK_DEVELOPMENT_REGISTRATION_ENABLED === 'true' && process.env.NODE_ENV !== 'production',
+      kioskService: deps.kioskService,
+      llmGateway: {
+        getDefaultModel: () => deps.configKV.getOrThrow('DEFAULT_CHAT_MODEL'),
+        complete: input => deps.llmRouter.route({ modelName: input.modelName, body: input.body }),
+      },
+      secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
+    }))
+
+    /**
      * Character routes are handled by the character service.
      */
     .route('/api/v1/characters', createCharacterRoutes(deps.characterService))
@@ -406,6 +427,11 @@ export async function buildApp(deps: AppDeps) {
      * flux grants.
      */
     .route('/api/admin/flux-grants', createAdminFluxGrantsRoutes(deps.adminFluxGrantsService))
+
+    /**
+     * Admin kiosk Profile draft and release management.
+     */
+    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService))
 
     /**
      * Admin per-user balance override (set balance, incl. 0 for testing).
@@ -632,6 +658,22 @@ export async function createApp() {
     build: ({ dependsOn }) => createChatService(dependsOn.db, dependsOn.otel?.engagement, dependsOn.productEventService),
   })
 
+  const kioskService = injeca.provide('services:kiosk', {
+    dependsOn: { db },
+    build: ({ dependsOn }) => createKioskService(dependsOn.db),
+  })
+
+  const kioskRetentionSweep = injeca.provide('services:kioskRetentionSweep', {
+    dependsOn: { kioskService, lifecycle },
+    build: ({ dependsOn }) => {
+      const sweep = startKioskRetentionSweep(dependsOn.kioskService, {
+        onError: error => logger.withError(error).error('Kiosk retention sweep failed'),
+      })
+      dependsOn.lifecycle.appHooks.onStop(() => sweep.dispose())
+      return sweep
+    },
+  })
+
   const stripeService = injeca.provide('services:stripe', {
     dependsOn: { db, env: parsedEnv },
     build: ({ dependsOn }) => {
@@ -800,6 +842,7 @@ export async function createApp() {
     auth,
     characterService,
     chatService,
+    kioskService,
     providerService,
     fluxService,
     fluxTransactionService,
@@ -821,6 +864,7 @@ export async function createApp() {
     llmRouter,
     providerCatalogService,
     ttsConcurrencyLedger,
+    kioskRetentionSweep,
   })
   // Register the cluster-wide ObservableGauges for sessions / users. Each
   // replica polls the same DB (cached inside each gauge, in-flight coalesced);
@@ -845,6 +889,7 @@ export async function createApp() {
     db: resolved.db,
     characterService: resolved.characterService,
     chatService: resolved.chatService,
+    kioskService: resolved.kioskService,
     providerService: resolved.providerService,
     fluxService: resolved.fluxService,
     fluxTransactionService: resolved.fluxTransactionService,

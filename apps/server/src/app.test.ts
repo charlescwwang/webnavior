@@ -41,6 +41,9 @@ function createTestDeps() {
     db: {} as any,
     characterService: {} as any,
     chatService: {} as any,
+    kioskService: {
+      resolveDeviceCredential: vi.fn(),
+    } as any,
     providerService: {} as any,
     fluxService: {} as any,
     fluxTransactionService: {} as any,

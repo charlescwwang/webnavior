@@ -87,6 +87,10 @@ describe('parseEnv', () => {
     expect(env.TEST_AUTH_USER_ROLE).toBe('admin')
   })
 
+  it('defaults development kiosk enrollment to disabled', () => {
+    expect(parseEnv(baseEnv()).KIOSK_DEVELOPMENT_REGISTRATION_ENABLED).toBe('false')
+  })
+
   it('lLM_ROUTER_MASTER_KEY decodes a valid 32-byte base64 value into a Buffer', () => {
     const key = Buffer.alloc(32, 0xAB).toString('base64')
     const env = parseEnv({

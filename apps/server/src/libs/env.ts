@@ -129,6 +129,11 @@ const EnvSchema = object({
   TEST_AUTH_USER_NAME: optional(pipe(string(), nonEmpty('TEST_AUTH_USER_NAME must not be empty when set')), 'Test User'),
   TEST_AUTH_USER_ROLE: optional(string(), ''),
 
+  // Deliberately string-valued: only the exact literal `true` opens the
+  // unauthenticated numeric enrollment route, and app.ts additionally rejects
+  // it whenever NODE_ENV is production.
+  KIOSK_DEVELOPMENT_REGISTRATION_ENABLED: optional(string(), 'false'),
+
   // Resend transactional email. RESEND_API_KEY required when emailAndPassword
   // sign-up / forgot-password / change-email / magic-link is exercised. Service
   // boots without it but those flows will throw at send-time.

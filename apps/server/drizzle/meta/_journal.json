@@ -127,6 +127,34 @@
       "when": 1782912836523,
       "tag": "0017_nappy_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788888540673,
+      "tag": "0018_purple_lilandra",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1788890363240,
+      "tag": "0019_worthless_valkyrie",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1788916600637,
+      "tag": "0020_watery_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1788937391411,
+      "tag": "0021_mushy_donald_blake",
+      "breakpoints": true
     }
   ]
 }
