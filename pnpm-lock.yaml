@@ -450,6 +450,9 @@ catalogs:
     '@types/pg':
       specifier: ^8.20.0
       version: 8.20.0
+    '@types/qrcode':
+      specifier: ^1.5.6
+      version: 1.5.6
     '@types/semver':
       specifier: ^7.7.1
       version: 7.7.1
@@ -4544,6 +4547,9 @@ importers:
       '@types/hast':
         specifier: 'catalog:'
         version: 3.0.4
+      '@types/qrcode':
+        specifier: 'catalog:'
+        version: 1.5.6
       '@types/splitpanes':
         specifier: 'catalog:'
         version: 2.2.6
@@ -10855,6 +10861,9 @@ packages:
 
   '@types/plist@3.0.5':
     resolution: {integrity: sha512-E6OCaRmAe4WDmWNsL/9RMqdkkzDCY1etutkflWk4c+AcjDU07Pcz1fQwTX0TQz+Pxqn9i4L1TU3UFpjnrcDgxA==}
+
+  '@types/qrcode@1.5.6':
+    resolution: {integrity: sha512-te7NQcV2BOvdj2b1hCAHzAoMNuj65kNBMz0KBaxM6c3VGBOhU0dURQKOtH8CFNI/dsKkwlv32p26qYQTWoB5bw==}
 
   '@types/readable-stream@4.0.23':
     resolution: {integrity: sha512-wwXrtQvbMHxCbBgjHaMGEmImFTQxxpfMOR/ZoQnXxB1woqkUbdLGFDgauo00Py9IudiaqSeiBiulSV9i6XIPig==}
@@ -24819,6 +24828,10 @@ snapshots:
       '@types/node': 25.6.0
       xmlbuilder: 15.1.1
     optional: true
+
+  '@types/qrcode@1.5.6':
+    dependencies:
+      '@types/node': 25.6.0
 
   '@types/readable-stream@4.0.23':
     dependencies:
