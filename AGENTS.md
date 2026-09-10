@@ -237,11 +237,38 @@ Concise but detailed reference for contributors working across the `moeru-ai/air
 - Summarize changes, how tested (commands), and follow-ups.
 - Improve legacy you touch; avoid one-off patterns.
 - Keep changes scoped; use workspace filters (`pnpm -F <package> <script>`).
-- Maintain structured `README.md` documentation for each `packages/` and `apps/` entry, covering what it does, how to use it, when to use it, and when not to use it.
-- Always run `pnpm type-check` and `pnpm lint` after finishing a task.
+- Keep the structured `README.md` for each `packages/` and `apps/` entry accurate: what it does, how to use it, when to use it, and when not to use it. Update an existing document when a change affects those facts; do not create a development log or edit documentation for isolated implementation details.
+- Follow the scoped validation policy below. The before-commit checks in `.github/CONTRIBUTING.md` remain the integration/commit gate; they are not required after every small edit during a Codex task.
 - Use Conventional Commits for commit messages (e.g., `feat(<package name>): add runner reconnect backoff`).
 - For new feature requirements or requirement-related tasks involving `node:*` built-in modules, DOM operations, Vue composables, React hooks, Vite plugins, or GitHub Actions workflows, always do deep research for suitable existing libraries or open source modules first. Before choosing any library, always ask the user to choose and help judge which option is right. Never choose generalized utility libraries on your own (for example, `es-toolkit`, utilities from `github.com/unjs`, or tiny tools from `github.com/tinylib`) without explicit user confirmation. If the user is working spec-driven, list candidate choices in a clear and concise Markdown comparison table.
 - Before planning or writing new utilities/functions, always search for existing internal implementations first. If the logic could become shared utilities, proactively propose that shared approach to users and developers.
+
+## Codex Task Efficiency and Handoff
+
+### Start and exploration
+
+- At the start of a new Codex thread, read this file, then `docs/codex-handoff.md`, then only the files and formal documentation directly relevant to the request. `CONTEXT.md` is the repository domain glossary; read the relevant section when its terms apply.
+- Treat handoff file paths, module locations, and recorded decisions as the starting point. Do not rescan the repository merely to rebuild context that is already available.
+- Explore progressively: begin with the relevant implementation, callers, tests, package manifest, and design document. Widen the search only when the handoff is insufficient, an architecture change is evident, a dependency/caller cannot be found, or the task genuinely crosses modules.
+- When a file location is known, search that directory or file rather than the whole repository. Filter tool output and inspect relevant ranges; do not load generated output, lockfiles, dependency trees, build artifacts, large logs, or unrelated assets without a task-specific reason.
+
+### Scope and stopping
+
+- Keep the task to the requested behavior. Record unrelated defects, TODOs, formatting, refactor opportunities, or architectural debt, but do not fix them unless they block the task, are a regression introduced by the task, or are required for the requested behavior to work.
+- Stop once the requested behavior is complete, relevant validation has run (or has been explicitly reported as not run), no task-caused regression is known, and affected documentation/handoff has been considered. Do not continue with speculative cleanup, exploration, polish, or repeated validation without a request.
+
+### Validation
+
+- Prefer the narrowest meaningful check: a focused test, then a package-scoped test/typecheck/lint command. Inspect that package's `package.json`, workspace scripts, and local instructions before escalating validation scope.
+- Do not run root-level `pnpm typecheck`, `pnpm lint`, builds, complete test suites, or expensive browser/E2E checks after every edit. Consider them at a logical unit boundary, for shared/cross-package contracts, architecture changes, integration confirmation, before committing, or when explicitly requested.
+- If no credible scoped validation exists, report that fact rather than immediately falling back to a full-project command. When full validation reports unrelated or pre-existing failures, identify only task-related regressions and record the rest briefly; do not enter a repeated full-check/fix cycle.
+
+### Documentation and handoff
+
+- Before completing a code task, make one documentation check: update the existing source-of-truth document when architecture, public behavior, setup/configuration, API/interface, development workflow, or a package/app README's promised usage changes. Do not create duplicate documents or log every code edit.
+- `docs/` contains formal plans, standards, solutions, and public documentation. Prefer the closest existing document; `docs/solutions/` is for reusable investigation outcomes, not routine task notes.
+- Update `docs/codex-handoff.md` only when a completed feature, architecture/flow change, durable technical decision, known issue, or logical thread cut point would materially help the next thread. Keep it concise and prune superseded history.
+- Suggest a new thread only at a logical cut point: an independent unit is complete, the next task is a different module/problem, or accumulated exploration/debugging/validation context no longer pays for itself. Before suggesting it, ensure the handoff contains the required durable context and offer this short starter prompt: `Read AGENTS.md and docs/codex-handoff.md first. Then inspect only files relevant to: <task>.`
 
 ## TypeScript Coding Regulations
 
