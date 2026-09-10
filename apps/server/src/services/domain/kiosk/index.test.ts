@@ -105,6 +105,24 @@ describe('kiosk service', () => {
     expect(details.session.siteId).toBe(site.id)
   })
 
+  it('lists only the sites and devices an administrator may manage', async () => {
+    const alphaSite = await service.createSite({ name: 'Alpha Store' })
+    const betaSite = await service.createSite({ name: 'Beta Store' })
+    const hiddenSite = await service.createSite({ name: 'Hidden Store' })
+    await service.addMember({ siteId: betaSite.id, userId: 'site-admin', role: 'site_admin' })
+    const betaDevice = await service.createDevice({ siteId: betaSite.id, label: 'COUNTER-02', registrationMethod: 'development' })
+    await service.createDevice({ siteId: hiddenSite.id, label: 'HIDDEN-01', registrationMethod: 'development' })
+
+    const siteAdminSites = await service.listManagedSites('site-admin')
+    const systemAdminSites = await service.listManagedSites('system-admin')
+    const managedDevices = await service.listSiteDevices({ siteId: betaSite.id, userId: 'site-admin' })
+
+    expect(siteAdminSites.map(site => site.id)).toEqual([betaSite.id])
+    expect(systemAdminSites.map(site => site.id)).toEqual([alphaSite.id, betaSite.id, hiddenSite.id])
+    expect(managedDevices.map(device => device.id)).toEqual([betaDevice.id])
+    await expect(service.listSiteDevices({ siteId: hiddenSite.id, userId: 'site-admin' })).rejects.toThrow('Forbidden')
+  })
+
   it('keeps transcript and iframe events in their append order', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const device = await service.createDevice({ siteId: site.id, label: 'DEV-COUNTER-01', registrationMethod: 'development' })

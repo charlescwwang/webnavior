@@ -3,7 +3,7 @@ import type { KioskInteractionEntryKind, KioskMemberRole, KioskProfileSnapshot, 
 
 import { createHash, randomBytes } from 'node:crypto'
 
-import { and, asc, eq, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { literal, maxLength, minLength, object, pipe, safeParse, string, url } from 'valibot'
 
 import { createForbiddenError, createNotFoundError } from '../../../utils/error'
@@ -71,6 +71,10 @@ export interface KioskService {
   resolveDeviceCredential: (credential: string) => Promise<typeof schema.kioskDevices.$inferSelect | undefined>
   /** Retrieves the currently assigned immutable Profile release for one kiosk device. */
   getDeviceProfile: (deviceId: string) => Promise<typeof schema.kioskProfileReleases.$inferSelect | undefined>
+  /** Lists the Sites the account may administer without exposing other Site identifiers. */
+  listManagedSites: (userId: string) => Promise<(typeof schema.kioskSites.$inferSelect)[]>
+  /** Lists devices only after verifying the caller may manage their Site. */
+  listSiteDevices: (input: { siteId: string, userId: string }) => Promise<(typeof schema.kioskDevices.$inferSelect)[]>
   /** Retrieves the immutable Profile snapshot that a persisted session references. */
   getProfileRelease: (profileReleaseId: string) => Promise<typeof schema.kioskProfileReleases.$inferSelect | undefined>
   /** Returns the editable draft and currently assigned release for a Site management screen. */
@@ -268,6 +272,38 @@ export function createKioskService(db: Database): KioskService {
 
     return await db.query.kioskProfileReleases.findFirst({
       where: eq(schema.kioskProfileReleases.id, assignment.profileReleaseId),
+    })
+  }
+
+  async function listManagedSites(userId: string) {
+    const account = await db.query.user.findFirst({
+      where: eq(schema.user.id, userId),
+      columns: { role: true },
+    })
+    if (account?.role === 'admin')
+      return await db.query.kioskSites.findMany({ orderBy: [asc(schema.kioskSites.name)] })
+
+    const memberships = await db.query.kioskSiteMembers.findMany({
+      where: and(
+        eq(schema.kioskSiteMembers.userId, userId),
+        eq(schema.kioskSiteMembers.role, 'site_admin'),
+      ),
+      columns: { siteId: true },
+    })
+    if (memberships.length === 0)
+      return []
+
+    return await db.query.kioskSites.findMany({
+      where: inArray(schema.kioskSites.id, memberships.map(membership => membership.siteId)),
+      orderBy: [asc(schema.kioskSites.name)],
+    })
+  }
+
+  async function listSiteDevices(input: { siteId: string, userId: string }) {
+    await assertCanManageSite(input)
+    return await db.query.kioskDevices.findMany({
+      where: eq(schema.kioskDevices.siteId, input.siteId),
+      orderBy: [asc(schema.kioskDevices.label)],
     })
   }
 
@@ -484,6 +520,8 @@ export function createKioskService(db: Database): KioskService {
     getDeviceProfile,
     getProfileRelease,
     getSiteProfile,
+    listManagedSites,
+    listSiteDevices,
     getVisitorSessionForDevice,
     getVisitorSessionForUser,
     startVisitorSession,

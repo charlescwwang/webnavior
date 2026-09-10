@@ -28,6 +28,15 @@ const interactionRetentionSchema = object({
 export function createAdminKioskRoutes(kioskService: KioskService) {
   return new Hono<HonoEnv>()
     .use('*', authGuard)
+    .get('/sites', async (c) => {
+      return c.json(await kioskService.listManagedSites(c.get('user')!.id))
+    })
+    .get('/sites/:siteId/devices', async (c) => {
+      return c.json(await kioskService.listSiteDevices({
+        siteId: c.req.param('siteId'),
+        userId: c.get('user')!.id,
+      }))
+    })
     .get('/sites/:siteId/profile', async (c) => {
       await kioskService.assertCanManageSite({ siteId: c.req.param('siteId'), userId: c.get('user')!.id })
       return c.json(await kioskService.getSiteProfile(c.req.param('siteId')))
