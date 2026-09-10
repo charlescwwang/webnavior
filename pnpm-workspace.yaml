@@ -37,7 +37,7 @@ catalog:
   '@arethetypeswrong/core': ^0.18.2
   '@ax-llm/ax': ^19.0.43
   '@better-auth/cli': ^1.4.21
-  '@better-auth/drizzle-adapter': ^1.6.5
+  '@better-auth/drizzle-adapter': 1.5.6
   '@better-auth/oauth-provider': 1.5.6
   '@capacitor/android': ^8.3.1
   '@capacitor/app': ^8.1.0
@@ -224,7 +224,7 @@ catalog:
   async-mutex: 0.5.0
   awilix: ^13.0.3
   best-effort-json-parser: ^1.4.0
-  better-auth: ^1.6.5
+  better-auth: 1.5.6
   builder-util-runtime: ^9.5.1
   bumpp: ^11.0.1
   cac: ^7.0.0
