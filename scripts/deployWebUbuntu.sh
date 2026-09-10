@@ -2,10 +2,11 @@
 
 # Builds the three browser applications and publishes them through Ubuntu Nginx.
 #
-# Browser -> Nginx -> / (stage-web), /kiosk/ (stage-kiosk), /menu/ (order-menu)
+# Browser -> Nginx:5169 -> / (stage-web), /kiosk/ (stage-kiosk), /menu/ (order-menu)
 #
-# The API server, Postgres, Redis, Electron, Godot, and ROCm are deliberately
-# outside this static-web baseline. They can be added behind the same origin later.
+# Postgres, Redis, Electron, Godot, and ROCm are deliberately outside this
+# static-web baseline. The API server runs separately on loopback port 5168 and
+# is exposed through this Nginx site's same-origin proxy routes.
 set -Eeuo pipefail
 
 readonly NODE_VERSION='24.13.0'
@@ -108,8 +109,8 @@ cd "$repo_root"
 corepack pnpm install --frozen-lockfile
 
 # Vite's --base makes static asset URLs valid below the Nginx subpaths.
-VITE_ORDER_MENU_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-web build
-VITE_ORDERING_SCENARIO_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
+VITE_SERVER_URL="$origin" VITE_ORDER_MENU_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-web build
+VITE_API_SERVER_URL="$origin" VITE_ORDERING_SCENARIO_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
 VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
 sudo install -d -m 0755 "$site_root/web" "$site_root/kiosk" "$site_root/menu"
@@ -119,13 +120,38 @@ sudo rsync -a --delete apps/order-menu/dist/ "$site_root/menu/"
 
 sudo tee "$nginx_site" >/dev/null <<'EOF'
 server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
+    listen 5169 default_server;
+    listen [::]:5169 default_server;
     server_name _;
     root /var/www/airi;
 
     location = /kiosk { return 301 /kiosk/; }
     location = /menu { return 301 /menu/; }
+
+    # The API is loopback-only. Cloudflare Tunnel reaches it through this
+    # public Nginx listener, so browsers retain one HTTPS origin.
+    location ^~ /api/ {
+        proxy_pass http://127.0.0.1:5168;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Chat uses a WebSocket endpoint outside the /api/ namespace.
+    location = /ws/chat {
+        proxy_pass http://127.0.0.1:5168;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 
     location ^~ /kiosk/ {
         try_files $uri $uri/ /kiosk/index.html;
@@ -139,14 +165,10 @@ server {
         root /var/www/airi/web;
         try_files $uri $uri/ /index.html;
     }
-
-    # Future API baseline: proxy /api/ and WebSocket endpoints to apps/server
-    # here, keeping the browser origin unchanged.
 }
 EOF
 
 sudo ln -sfn "$nginx_site" /etc/nginx/sites-enabled/airi-web
-sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t
 sudo systemctl enable --now nginx
 sudo systemctl reload nginx
