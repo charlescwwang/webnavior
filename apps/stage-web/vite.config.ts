@@ -179,8 +179,8 @@ export default defineConfig({
           registerType: 'prompt',
           includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
           manifest: {
-            name: 'AIRI',
-            short_name: 'AIRI',
+            name: 'Webnavior',
+            short_name: 'Webnavior',
             icons: [
               {
                 src: '/web-app-manifest-192x192.png',
@@ -254,7 +254,7 @@ export default defineConfig({
     ] }),
     SpaceCard({
       root: cwd(),
-      title: 'AIRI: Virtual Companion',
+      title: 'Webnavior Control Center',
       emoji: '🧸',
       colorFrom: 'pink',
       colorTo: 'pink',

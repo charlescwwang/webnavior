@@ -47,6 +47,13 @@ router.afterEach(() => {
   NProgress.done()
 })
 
+router.beforeEach((to) => {
+  // The AIRI experience remains available to existing development routes, but
+  // Webnavior administrators should always land on the control centre.
+  if (to.path === '/')
+    return '/dashboard'
+})
+
 createApp(App)
   .use(MotionPlugin)
   // TODO: Fix autoAnimatePlugin type error
