@@ -87,7 +87,7 @@ function updateGreetingPrompt(key: 'attentionGreetingPrompt' | 'presenceGreeting
         <FieldTextArea
           :model-value="settings.attentionGreetingPrompt"
           label="看向 kiosk 時的 LLM 參考提示"
-          description="提供訪客正注視 kiosk 的場域線索；不會覆蓋 AIRI 的共通招呼規則。"
+          description="提供訪客正注視 kiosk 的場域線索；不會覆蓋服務員的共通招呼規則。"
           :rows="5"
           @update:model-value="updateGreetingPrompt('attentionGreetingPrompt', $event)"
         />

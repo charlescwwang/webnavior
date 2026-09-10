@@ -8,7 +8,7 @@ import { createDefaultInteractionProfile, useInteractionProfile } from '@proj-ai
 /** A locally configured interactive page which an administrator may enable for this kiosk. */
 export type KioskInteractiveService = InteractionProfileService
 
-const configuredOrderingUrl = import.meta.env.VITE_ORDERING_SCENARIO_URL ?? 'http://localhost:5174'
+const configuredOrderingUrl = import.meta.env.VITE_ORDERING_SCENARIO_URL ?? 'http://localhost:5166'
 
 export const defaultKioskInteractiveServices = createDefaultInteractionProfile(configuredOrderingUrl).services
 

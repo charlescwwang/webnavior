@@ -10,13 +10,7 @@ function getOriginFromUrl(url: string): string | undefined {
 }
 
 const TRUSTED_EXACT_ORIGINS = [
-  'https://airi.moeru.ai', // Production web app
   'capacitor://localhost', // Capacitor mobile (iOS)
-  'ai.moeru.airi-pocket://links', // Android deep link
-  'https://accounts.airi.build', // Standalone auth UI
-  'https://server-dev.airi-server-auth.pages.dev', // Server-dev standalone auth UI
-  'https://admin.airi.build', // Standalone admin UI
-  'https://server-dev.airi-server-admin.pages.dev', // Server-dev standalone admin UI
 ]
 
 // NOTICE:
@@ -39,8 +33,6 @@ const TRUSTED_ORIGIN_PATTERNS = [
   // Vite + mkcert (https://localhost:5273, etc.)
   /^https:\/\/localhost(:\d+)?$/,
   /^https:\/\/127\.0\.0\.1(:\d+)?$/,
-  // Cloudflare Workers subdomains
-  /^https:\/\/.*\.kwaa\.workers\.dev$/,
 ]
 
 /**

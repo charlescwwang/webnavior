@@ -76,6 +76,11 @@ export default defineConfig({
     },
   },
   server: {
+    // Keep the management console separate from the customer Kiosk and menu
+    // services. Their fixed ports make local browser origins predictable for
+    // callbacks, CORS, and WebMCP allowlists.
+    port: 5167,
+    strictPort: true,
     fs: {
       // To mute errors like:
       //   The request id ".../node_modules/@fontsource/sniglet/files/sniglet-latin-400-normal.woff" is outside of Vite serving allow list.

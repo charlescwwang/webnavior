@@ -16,6 +16,7 @@ import type { ChatService } from './services/domain/chats'
 import type { FluxService } from './services/domain/flux'
 import type { FluxTransactionService } from './services/domain/flux-transaction'
 import type { KioskService } from './services/domain/kiosk'
+import type { KioskCharacterAssetService } from './services/domain/kiosk-character-assets'
 import type { LlmRouterService } from './services/domain/llm-router'
 import type { ProductEventService } from './services/domain/product-events'
 import type { ProviderCatalogService } from './services/domain/provider-catalog'
@@ -72,6 +73,7 @@ import { createChatWsHandlers } from './routes/chat-ws'
 import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
 import { createKioskRoutes } from './routes/kiosk'
+import { createKioskCharacterAssetRoutes } from './routes/kiosk/character-assets'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -89,6 +91,7 @@ import { createChatService } from './services/domain/chats'
 import { createFluxService } from './services/domain/flux'
 import { createFluxTransactionService } from './services/domain/flux-transaction'
 import { createKioskService } from './services/domain/kiosk'
+import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
 import { createProductEventService } from './services/domain/product-events'
@@ -129,6 +132,7 @@ interface AppDeps {
   llmRouter: LlmRouterService
   providerCatalogService: ProviderCatalogService
   kioskService: KioskService
+  kioskCharacterAssetService: KioskCharacterAssetService
 }
 
 export async function buildApp(deps: AppDeps) {
@@ -137,6 +141,9 @@ export async function buildApp(deps: AppDeps) {
   const app = new Hono<HonoEnv>()
     .use('*', async (c, next) => {
       await next()
+
+      if (c.req.path.startsWith('/assets/kiosk/'))
+        return
 
       // NOTICE: All API responses should be non-cacheable. Auth responses can
       // carry session state through redirects, and stale API payloads are not
@@ -269,9 +276,17 @@ export async function buildApp(deps: AppDeps) {
     rateLimitMetrics: deps.otel?.rateLimit,
   })
 
+  const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 })
+  const characterAssetBodyLimit = bodyLimit({ maxSize: 64 * 1024 * 1024 })
+
   const builtApp = app
     .use('*', sessionMiddleware(deps.auth, deps.env))
-    .use('*', bodyLimit({ maxSize: 1024 * 1024 }))
+    // Character-card uploads are the single intentional exception to the
+    // API's 1 MB JSON limit. Keep the larger cap bound to its exact route so
+    // arbitrary admin requests cannot consume memory with large bodies.
+    .use('*', (c, next) => /^\/api\/admin\/kiosk\/sites\/[^/]+\/character-assets$/.test(c.req.path)
+      ? characterAssetBodyLimit(c, next)
+      : defaultBodyLimit(c, next))
     .onError((err, c) => {
       if (err instanceof ApiError) {
         // Surface details + cause to the server-side log only. SEC-5 keeps
@@ -342,10 +357,9 @@ export async function buildApp(deps: AppDeps) {
      * the actual product UI instead of the framework's default "404 Not Found".
      */
     .on('GET', '/', c => c.json({
-      service: 'airi-api',
-      message: 'This is the Project AIRI API server. Visit https://airi.moeru.ai to use the product, or see the docs at https://airi.moeru.ai/docs.',
-      docs: 'https://airi.moeru.ai/docs',
-      ui: 'https://airi.moeru.ai',
+      service: 'webnavior-api',
+      message: 'This is the Webnavior API server.',
+      ui: deps.env.WEB_APP_URL,
     }))
 
     /**
@@ -381,6 +395,7 @@ export async function buildApp(deps: AppDeps) {
       },
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
     }))
+    .route('/assets/kiosk', createKioskCharacterAssetRoutes(deps.kioskCharacterAssetService))
 
     /**
      * Character routes are handled by the character service.
@@ -431,7 +446,7 @@ export async function buildApp(deps: AppDeps) {
     /**
      * Admin kiosk Profile draft and release management.
      */
-    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService))
+    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService, deps.configKV, deps.kioskCharacterAssetService))
 
     /**
      * Admin per-user balance override (set balance, incl. 0 for testing).
@@ -490,8 +505,8 @@ export async function buildApp(deps: AppDeps) {
      */
     .notFound(c => c.json({
       error: 'NOT_FOUND',
-      message: `No route matched ${c.req.method} ${new URL(c.req.url).pathname}. This is the airi-api server; the product UI lives at https://airi.moeru.ai.`,
-      ui: 'https://airi.moeru.ai',
+      message: `No route matched ${c.req.method} ${new URL(c.req.url).pathname}. This is the Webnavior API server.`,
+      ui: deps.env.WEB_APP_URL,
     }, 404))
 
   return { app: builtApp, injectWebSocket }
@@ -622,9 +637,8 @@ export async function createApp() {
 
   const posthogSink = injeca.provide('services:posthogSink', {
     dependsOn: { env: parsedEnv, lifecycle },
-    // POSTHOG_PROJECT_KEY defaults to the shared project key, so the falsy
-    // branch is only reachable via the documented off-switch: setting the
-    // env var to an empty string (valibot defaults don't apply to '').
+    // Product analytics are opt-in. An empty project key keeps every event in
+    // this deployment's database and avoids any third-party network request.
     build: ({ dependsOn }) => {
       if (!dependsOn.env.POSTHOG_PROJECT_KEY)
         return null
@@ -661,6 +675,11 @@ export async function createApp() {
   const kioskService = injeca.provide('services:kiosk', {
     dependsOn: { db },
     build: ({ dependsOn }) => createKioskService(dependsOn.db),
+  })
+
+  const kioskCharacterAssetService = injeca.provide('services:kioskCharacterAssets', {
+    dependsOn: { db, env: parsedEnv },
+    build: ({ dependsOn }) => createKioskCharacterAssetService(dependsOn.db, dependsOn.env.WEBNAVIOR_KIOSK_ASSET_DIR),
   })
 
   const kioskRetentionSweep = injeca.provide('services:kioskRetentionSweep', {
@@ -864,6 +883,7 @@ export async function createApp() {
     llmRouter,
     providerCatalogService,
     ttsConcurrencyLedger,
+    kioskCharacterAssetService,
     kioskRetentionSweep,
   })
   // Register the cluster-wide ObservableGauges for sessions / users. Each
@@ -890,6 +910,7 @@ export async function createApp() {
     characterService: resolved.characterService,
     chatService: resolved.chatService,
     kioskService: resolved.kioskService,
+    kioskCharacterAssetService: resolved.kioskCharacterAssetService,
     providerService: resolved.providerService,
     fluxService: resolved.fluxService,
     fluxTransactionService: resolved.fluxTransactionService,

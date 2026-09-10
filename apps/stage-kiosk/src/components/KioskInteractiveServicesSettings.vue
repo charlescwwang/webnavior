@@ -29,7 +29,7 @@ function removeService(id: string) {
     <div class="section-heading">
       <div>
         <h3>互動服務</h3>
-        <p>只有啟用且填妥名稱、用途與網址的服務，才會顯示 iframe 並可由 AIRI 開啟。</p>
+        <p>只有啟用且填妥名稱、用途與網址的服務，才會顯示 iframe 並可由虛擬服務員開啟。</p>
       </div>
       <button type="button" class="add-button" @click="addService">
         新增服務
@@ -45,7 +45,7 @@ function removeService(id: string) {
         <FieldInput v-model="service.id" label="服務 ID" description="固定的小寫 kebab-case ID，供 Agent 安全選擇。" placeholder="line-sticker-customizer" required />
         <FieldInput v-model="service.title" label="顯示名稱" description="Kiosk 畫面顯示的服務名稱。" placeholder="客製 LINE 貼圖" required />
         <FieldInput v-model="service.serviceUrl" label="iframe 網址" description="只接受此處設定的 HTTP(S) 網址。" placeholder="https://example.com/stickers" required />
-        <FieldInput v-model="service.description" label="提供給 AIRI 的用途描述" description="說明何時可開啟此服務、它能完成什麼。" placeholder="協助顧客製作客製 LINE 貼圖。" :single-line="false" required />
+        <FieldInput v-model="service.description" label="服務用途描述" description="說明虛擬服務員何時可開啟此服務、它能完成什麼。" placeholder="協助顧客製作客製 LINE 貼圖。" :single-line="false" required />
       </div>
       <button type="button" class="remove-button" @click="removeService(service.id)">
         移除此服務
@@ -54,7 +54,7 @@ function removeService(id: string) {
 
     <FieldInput
       v-model="agentInstructions"
-      label="給 AIRI 的互動服務指示"
+      label="互動服務使用指示"
       description="可補充切換時機、品牌語氣與現場流程；無法覆蓋網址 allow-list 與單一 iframe 的安全規則。"
       placeholder="例如：只有顧客明確詢問客製貼圖時才建議貼圖服務。"
       :single-line="false"

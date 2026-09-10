@@ -1,10 +1,10 @@
 import type { Database } from '../../../libs/db'
-import type { KioskInteractionEntryKind, KioskMemberRole, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
+import type { KioskInteractionEntryKind, KioskMemberRole, KioskModelOverrides, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
 
 import { createHash, randomBytes } from 'node:crypto'
 
 import { and, asc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
-import { literal, maxLength, minLength, object, pipe, safeParse, string, url } from 'valibot'
+import { literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
 import { createForbiddenError, createNotFoundError } from '../../../utils/error'
 
@@ -16,6 +16,8 @@ export interface KioskService {
   addMember: (input: { siteId: string, userId: string, role: KioskMemberRole }) => Promise<typeof schema.kioskSiteMembers.$inferSelect>
   /** Allows only a global administrator or the named site's administrator to manage configuration. */
   assertCanManageSite: (input: { siteId: string, userId: string }) => Promise<void>
+  /** Returns the management actions the account may take for a single site. */
+  getSiteManagementCapabilities: (input: { siteId: string, userId: string }) => Promise<KioskSiteManagementCapabilities>
   /** Appends one transcript turn or interaction event with a session-local sequence. */
   appendInteractionEntry: (input: {
     visitorSessionId: string
@@ -37,6 +39,8 @@ export interface KioskService {
   createProfileRelease: (input: { siteId: string, name: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
   /** Creates the root management scope for kiosk configuration and data. */
   createSite: (input: { interactionRetentionDays?: number, name: string, slug?: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  /** Permanently removes one Site and every configuration/device record it owns. System administrators only. */
+  deleteSite: (input: { siteId: string, userId: string }) => Promise<void>
   /** Returns a complete transcript only when the caller has transcript-read permission for its site. */
   getVisitorSessionForUser: (input: {
     userId: string
@@ -69,11 +73,15 @@ export interface KioskService {
   }>
   /** Resolves an unrevoked opaque credential to the device it authenticates. */
   resolveDeviceCredential: (credential: string) => Promise<typeof schema.kioskDevices.$inferSelect | undefined>
+  /** True when a development credential already belongs to the current local test Site. */
+  isCurrentDevelopmentDevice: (deviceId: string) => Promise<boolean>
   /** Retrieves the currently assigned immutable Profile release for one kiosk device. */
   getDeviceProfile: (deviceId: string) => Promise<typeof schema.kioskProfileReleases.$inferSelect | undefined>
+  /** Returns explicit model choices; categories not present inherit system defaults. */
+  getSiteModelOverrides: (siteId: string) => Promise<KioskModelOverrides>
   /** Lists the Sites the account may administer without exposing other Site identifiers. */
   listManagedSites: (userId: string) => Promise<(typeof schema.kioskSites.$inferSelect)[]>
-  /** Lists devices only after verifying the caller may manage their Site. */
+  /** Lists devices only after verifying the caller may access their Site's management summary. */
   listSiteDevices: (input: { siteId: string, userId: string }) => Promise<(typeof schema.kioskDevices.$inferSelect)[]>
   /** Retrieves the immutable Profile snapshot that a persisted session references. */
   getProfileRelease: (profileReleaseId: string) => Promise<typeof schema.kioskProfileReleases.$inferSelect | undefined>
@@ -84,12 +92,24 @@ export interface KioskService {
   }>
   /** Replaces the site's one editable draft after validating the POC configuration shape. */
   saveProfileDraft: (input: { name: string, siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
+  /** Applies only customer-facing content from a content manager's draft submission. */
+  saveContentProfileDraft: (input: { siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
   /** Changes the policy used to calculate expiry for future visitor sessions. */
   setSiteInteractionRetentionDays: (input: { actorUserId: string, days: number, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  /** Replaces the site's choices after the caller has curated them against the approved catalog. */
+  setSiteModelOverrides: (input: { overrides: KioskModelOverrides, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Publishes the current draft as a new immutable release and assigns it to every Site device. */
   publishProfileDraft: (input: { actorUserId?: string, siteId: string }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
   /** Removes expired visitor sessions and their cascading interaction entries. */
   purgeExpiredVisitorSessions: (now: Date) => Promise<number>
+}
+
+/** The actions a signed-in person may take for one Webnavior site. */
+export interface KioskSiteManagementCapabilities {
+  canEditExperience: boolean
+  canEditTechnicalSettings: boolean
+  canManageDevices: boolean
+  canPublishExperience: boolean
 }
 
 /** Runtime contract shared by kiosk Profile draft writes and immutable releases. */
@@ -97,6 +117,19 @@ export const KioskProfileSnapshotSchema = object({
   assistanceReminderPrompt: pipe(string(), minLength(1), maxLength(2_000)),
   agentInstructions: pipe(string(), minLength(1), maxLength(8_000)),
   characterName: pipe(string(), minLength(1), maxLength(120)),
+  characterAsset: optional(object({
+    format: picklist(['live2d_zip', 'vrm']),
+    id: pipe(string(), minLength(1), maxLength(120)),
+    name: pipe(string(), minLength(1), maxLength(255)),
+    sha256: pipe(string(), minLength(64), maxLength(64)),
+  })),
+  characterCard: optional(object({
+    description: pipe(string(), maxLength(8_000)),
+    personality: pipe(string(), maxLength(8_000)),
+    postHistoryInstructions: pipe(string(), maxLength(8_000)),
+    scenario: pipe(string(), maxLength(8_000)),
+    systemPrompt: pipe(string(), maxLength(8_000)),
+  })),
   greetingPrompt: pipe(string(), minLength(1), maxLength(2_000)),
   interactiveService: object({
     description: pipe(string(), maxLength(500)),
@@ -118,7 +151,7 @@ const developmentProfile: KioskProfileSnapshot = {
     id: 'development-ordering-service',
     title: '開發中的互動點餐服務',
     description: '請在發布前換成實際的點餐服務網址。',
-    url: 'http://localhost:5174',
+    url: 'http://localhost:5166',
   },
   surveyUrl: 'https://example.com/kiosk-feedback',
 }
@@ -137,6 +170,21 @@ export function createKioskService(db: Database): KioskService {
       assertRetentionDays(input.interactionRetentionDays)
     const [site] = await db.insert(schema.kioskSites).values(input).returning()
     return site
+  }
+
+  async function deleteSite(input: { siteId: string, userId: string }) {
+    const account = await db.query.user.findFirst({
+      where: eq(schema.user.id, input.userId),
+      columns: { role: true },
+    })
+    if (account?.role !== 'admin')
+      throw createForbiddenError()
+
+    const [site] = await db.delete(schema.kioskSites)
+      .where(eq(schema.kioskSites.id, input.siteId))
+      .returning({ id: schema.kioskSites.id })
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
   }
 
   async function addMember(input: { siteId: string, userId: string, role: KioskMemberRole }) {
@@ -263,6 +311,14 @@ export function createKioskService(db: Database): KioskService {
     })
   }
 
+  async function isCurrentDevelopmentDevice(deviceId: string) {
+    const [device, site] = await Promise.all([
+      db.query.kioskDevices.findFirst({ where: eq(schema.kioskDevices.id, deviceId) }),
+      ensureDevelopmentSite(),
+    ])
+    return device?.siteId === site.id
+  }
+
   async function getDeviceProfile(deviceId: string) {
     const assignment = await db.query.kioskDeviceProfileAssignments.findFirst({
       where: eq(schema.kioskDeviceProfileAssignments.deviceId, deviceId),
@@ -273,6 +329,16 @@ export function createKioskService(db: Database): KioskService {
     return await db.query.kioskProfileReleases.findFirst({
       where: eq(schema.kioskProfileReleases.id, assignment.profileReleaseId),
     })
+  }
+
+  async function getSiteModelOverrides(siteId: string) {
+    const site = await db.query.kioskSites.findFirst({
+      where: eq(schema.kioskSites.id, siteId),
+      columns: { modelOverrides: true },
+    })
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site.modelOverrides
   }
 
   async function listManagedSites(userId: string) {
@@ -286,7 +352,7 @@ export function createKioskService(db: Database): KioskService {
     const memberships = await db.query.kioskSiteMembers.findMany({
       where: and(
         eq(schema.kioskSiteMembers.userId, userId),
-        eq(schema.kioskSiteMembers.role, 'site_admin'),
+        inArray(schema.kioskSiteMembers.role, ['site_admin', 'content_manager']),
       ),
       columns: { siteId: true },
     })
@@ -300,7 +366,9 @@ export function createKioskService(db: Database): KioskService {
   }
 
   async function listSiteDevices(input: { siteId: string, userId: string }) {
-    await assertCanManageSite(input)
+    const capabilities = await getSiteManagementCapabilities(input)
+    if (!capabilities.canManageDevices && !capabilities.canEditExperience)
+      throw createForbiddenError()
     return await db.query.kioskDevices.findMany({
       where: eq(schema.kioskDevices.siteId, input.siteId),
       orderBy: [asc(schema.kioskDevices.label)],
@@ -317,6 +385,29 @@ export function createKioskService(db: Database): KioskService {
       getDeviceProfileForSite(siteId),
     ])
     return { draft, release }
+  }
+
+  async function saveContentProfileDraft(input: { siteId: string, snapshot: KioskProfileSnapshot }) {
+    const { draft, release } = await getSiteProfile(input.siteId)
+    const source = draft ?? release
+    if (!source)
+      throw createNotFoundError('A system administrator must create the first experience draft.')
+
+    return await saveProfileDraft({
+      name: source.name,
+      siteId: input.siteId,
+      snapshot: {
+        ...source.snapshot,
+        assistanceReminderPrompt: input.snapshot.assistanceReminderPrompt,
+        characterName: input.snapshot.characterName,
+        greetingPrompt: input.snapshot.greetingPrompt,
+        interactiveService: {
+          ...source.snapshot.interactiveService,
+          description: input.snapshot.interactiveService.description,
+          title: input.snapshot.interactiveService.title,
+        },
+      },
+    })
   }
 
   async function saveProfileDraft(input: { name: string, siteId: string, snapshot: KioskProfileSnapshot }) {
@@ -383,10 +474,20 @@ export function createKioskService(db: Database): KioskService {
     return site
   }
 
+  async function setSiteModelOverrides(input: { overrides: KioskModelOverrides, siteId: string }) {
+    const [site] = await db.update(schema.kioskSites)
+      .set({ modelOverrides: input.overrides, updatedAt: new Date() })
+      .where(eq(schema.kioskSites.id, input.siteId))
+      .returning()
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site
+  }
+
   async function ensureDevelopmentSite() {
-    const slug = 'development-kiosk-poc'
+    const slug = 'webnavior-test-site'
     await db.insert(schema.kioskSites).values({
-      name: 'Development Kiosk POC',
+      name: 'Webnavior 測試店',
       slug,
     }).onConflictDoNothing({ target: schema.kioskSites.slug })
 
@@ -481,22 +582,54 @@ export function createKioskService(db: Database): KioskService {
   }
 
   async function assertCanManageSite(input: { siteId: string, userId: string }) {
+    const capabilities = await getSiteManagementCapabilities(input)
+    if (!capabilities.canManageDevices)
+      throw createForbiddenError()
+  }
+
+  async function getSiteManagementCapabilities(input: { siteId: string, userId: string }): Promise<KioskSiteManagementCapabilities> {
     const account = await db.query.user.findFirst({
       where: eq(schema.user.id, input.userId),
       columns: { role: true },
     })
-    if (account?.role === 'admin')
-      return
+    if (account?.role === 'admin') {
+      return {
+        canEditExperience: true,
+        canEditTechnicalSettings: true,
+        canManageDevices: true,
+        canPublishExperience: true,
+      }
+    }
 
     const membership = await db.query.kioskSiteMembers.findFirst({
       where: and(
         eq(schema.kioskSiteMembers.siteId, input.siteId),
         eq(schema.kioskSiteMembers.userId, input.userId),
-        eq(schema.kioskSiteMembers.role, 'site_admin'),
       ),
     })
-    if (!membership)
-      throw createForbiddenError()
+    if (membership?.role === 'site_admin') {
+      return {
+        canEditExperience: false,
+        canEditTechnicalSettings: false,
+        canManageDevices: true,
+        canPublishExperience: false,
+      }
+    }
+    if (membership?.role === 'content_manager') {
+      return {
+        canEditExperience: true,
+        canEditTechnicalSettings: false,
+        canManageDevices: false,
+        canPublishExperience: false,
+      }
+    }
+
+    return {
+      canEditExperience: false,
+      canEditTechnicalSettings: false,
+      canManageDevices: false,
+      canPublishExperience: false,
+    }
   }
 
   async function assertSystemAdministrator(userId: string) {
@@ -514,10 +647,13 @@ export function createKioskService(db: Database): KioskService {
     appendInteractionEntry,
     appendDeviceInteraction,
     createDevice,
+    deleteSite,
     createProfileRelease,
     createSite,
+    getSiteManagementCapabilities,
     endDeviceVisitorSession,
     getDeviceProfile,
+    getSiteModelOverrides,
     getProfileRelease,
     getSiteProfile,
     listManagedSites,
@@ -526,9 +662,12 @@ export function createKioskService(db: Database): KioskService {
     getVisitorSessionForUser,
     startVisitorSession,
     registerDevelopmentDevice,
+    isCurrentDevelopmentDevice,
     resolveDeviceCredential,
     saveProfileDraft,
+    saveContentProfileDraft,
     setSiteInteractionRetentionDays,
+    setSiteModelOverrides,
     publishProfileDraft,
     purgeExpiredVisitorSessions,
   }

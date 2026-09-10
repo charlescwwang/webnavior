@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { isAccountFeaturesEnabled } from '@proj-airi/stage-shared'
-import { OnboardingDialog, OnboardingStepAnalyticsNotice, ToasterRoot } from '@proj-airi/stage-ui/components'
+import { ToasterRoot } from '@proj-airi/stage-ui/components'
 import { useInferencePreload } from '@proj-airi/stage-ui/composables'
 import { useAuthProviderSync } from '@proj-airi/stage-ui/composables/use-auth-provider-sync'
-import { isPosthogAvailableInBuild, useSharedAnalyticsStore } from '@proj-airi/stage-ui/stores/analytics'
+import { useSharedAnalyticsStore } from '@proj-airi/stage-ui/stores/analytics'
 import { useCharacterOrchestratorStore } from '@proj-airi/stage-ui/stores/character'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
@@ -12,7 +12,6 @@ import { useLlmToolsetPromptsStore } from '@proj-airi/stage-ui/stores/llm-toolse
 import { useModsServerChannelStore } from '@proj-airi/stage-ui/stores/mods/api/channel-server'
 import { useContextBridgeStore } from '@proj-airi/stage-ui/stores/mods/api/context-bridge'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
-import { useOnboardingStore } from '@proj-airi/stage-ui/stores/onboarding'
 import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { ErrorBoundary, useTheme } from '@proj-airi/ui'
 import { StageTransitionGroup } from '@proj-airi/ui-transitions'
@@ -39,12 +38,10 @@ const i18n = useI18n()
 const displayModelsStore = useDisplayModelsStore()
 const settingsStore = useSettings()
 const settings = storeToRefs(settingsStore)
-const onboardingStore = useOnboardingStore()
 const chatSessionStore = useChatSessionStore()
 const serverChannelStore = useModsServerChannelStore()
 const characterOrchestratorStore = useCharacterOrchestratorStore()
 const settingsAudioDeviceStore = useSettingsAudioDevice()
-const { showingSetup } = storeToRefs(onboardingStore)
 const { isDark } = useTheme()
 const cardStore = useAiriCardStore()
 const analyticsStore = useSharedAnalyticsStore()
@@ -104,12 +101,6 @@ const colors = computed(() => {
   return [primaryColor.value, secondaryColor.value, tertiaryColor.value, isDark.value ? '#121212' : '#FFFFFF']
 })
 
-const onboardingExtraSteps = computed(() => {
-  return isPosthogAvailableInBuild()
-    ? [{ id: 'analytics-notice', component: OnboardingStepAnalyticsNotice }]
-    : []
-})
-
 watch(settings.language, () => {
   i18n.locale.value = settings.language.value
 })
@@ -127,10 +118,6 @@ onMounted(async () => {
   analyticsStore.initialize()
   await displayModelsStore.initialize()
   cardStore.initialize()
-
-  if (onboardingStore.needsOnboarding) {
-    onboardingStore.showingSetup = true
-  }
 
   await chatSessionStore.initialize()
   await serverChannelStore.initialize({ possibleEvents: ['ui:configure'] }).catch(err => console.error('Failed to initialize Mods Server Channel in App.vue:', err))
@@ -151,15 +138,6 @@ onUnmounted(() => {
   llmToolsetPromptsStore.clearToolsetPrompts('interactive-services')
   contextBridgeStore.dispose()
 })
-
-// Handle first-time setup events
-function handleSetupConfigured() {
-  onboardingStore.markSetupCompleted()
-}
-
-function handleSetupSkipped() {
-  onboardingStore.markSetupSkipped()
-}
 </script>
 
 <template>
@@ -185,14 +163,6 @@ function handleSetupSkipped() {
   <ToasterRoot @close="id => toast.dismiss(id)">
     <Toaster />
   </ToasterRoot>
-
-  <!-- First Time Setup Dialog -->
-  <OnboardingDialog
-    v-model="showingSetup"
-    :extra-steps="onboardingExtraSteps"
-    @configured="handleSetupConfigured"
-    @skipped="handleSetupSkipped"
-  />
 
   <PerformanceOverlay />
 </template>

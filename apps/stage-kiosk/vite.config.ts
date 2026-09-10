@@ -32,6 +32,10 @@ export default defineConfig({
     },
   },
   server: {
+    // The customer-facing Kiosk is a distinct process from the management UI
+    // (:5167) and the standalone menu service (:5168).
+    port: 5169,
+    strictPort: true,
     fs: { strict: false },
     allowedHosts: true,
   },

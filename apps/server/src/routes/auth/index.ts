@@ -15,6 +15,7 @@ import { createForbiddenError } from '../../utils/error'
 import { checkEmailIdentifier } from './email-identifier'
 import { createElectronCallbackRelay } from './oidc/electron-callback'
 import { createOIDCTokenAuthRoute } from './oidc/token-auth'
+import { createTestAuthenticationRoutes } from './test-auth'
 import { createAuthUiRoutes } from './ui-routes'
 
 function usesRailwayEdge(apiServerUrl: string): boolean {
@@ -54,6 +55,7 @@ export async function createAuthRoutes(deps: AuthRoutesDeps) {
 
   return new Hono<HonoEnv>()
     .route('/', createAuthUiRoutes({ env: deps.env }))
+    .route('/api/webnavior/test-auth', createTestAuthenticationRoutes({ auth: deps.auth, db: deps.db, env: deps.env }))
     /**
      * Auth routes are handled by the auth instance directly,
      * Powered by better-auth.

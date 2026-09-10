@@ -83,8 +83,7 @@ describe('seedTrustedClients', () => {
     expect(webClient.public).toBe(true)
     // Includes default URIs + derived from API_SERVER_URL (localhost:3000)
     expect(webClient.redirectUris).toEqual([
-      'https://airi.moeru.ai/auth/callback',
-      'http://localhost:5173/auth/callback',
+      'http://localhost:5167/auth/callback',
       'http://localhost:4173/auth/callback',
       'http://localhost:3000/auth/callback',
     ])
@@ -158,7 +157,7 @@ describe('ensureDynamicFirstPartyRedirectUri', () => {
         from: vi.fn(() => ({
           where: vi.fn(() => ({
             limit: vi.fn().mockResolvedValue([
-              { redirectUris: ['https://airi.moeru.ai/auth/callback'] },
+              { redirectUris: ['http://localhost:5167/auth/callback'] },
             ]),
           })),
         })),
@@ -173,14 +172,14 @@ describe('ensureDynamicFirstPartyRedirectUri', () => {
 
     await ensureDynamicFirstPartyRedirectUri(
       db as any,
-      new Request('https://api.airi.build/api/auth/oauth2/authorize?client_id=airi-stage-web&redirect_uri=https%3A%2F%2Fpreview.kwaa.workers.dev%2Fauth%2Fcallback'),
-      [],
+      new Request('https://webnavior.example/api/auth/oauth2/authorize?client_id=airi-stage-web&redirect_uri=https%3A%2F%2Fpreview.webnavior.example%2Fauth%2Fcallback'),
+      ['https://preview.webnavior.example'],
     )
 
     expect(setCalls).toHaveLength(1)
     expect(setCalls[0].redirectUris).toEqual([
-      'https://airi.moeru.ai/auth/callback',
-      'https://preview.kwaa.workers.dev/auth/callback',
+      'http://localhost:5167/auth/callback',
+      'https://preview.webnavior.example/auth/callback',
     ])
     expect(updateWhere).toHaveBeenCalledTimes(1)
   })

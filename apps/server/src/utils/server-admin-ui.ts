@@ -1,8 +1,6 @@
 export const SERVER_ADMIN_UI_BASE_PATH = '/admin'
 export const ADMIN_UI_API_SERVER_URL_QUERY_PARAM = 'api_server_url'
-export const DEFAULT_ADMIN_UI_URL = 'https://admin.airi.build'
-export const SERVER_DEV_API_SERVER_URL = 'https://airi-server-dev.up.railway.app'
-export const SERVER_DEV_ADMIN_UI_URL = 'https://server-dev.airi-server-admin.pages.dev'
+export const DEFAULT_ADMIN_UI_URL = 'http://localhost:5167'
 
 /**
  * Builds an absolute URL inside the externally hosted admin UI.
@@ -36,33 +34,17 @@ export function buildAdminUiUrl(adminUiUrl: string, path: string, search = ''): 
  *
  * Use when:
  * - The server redirects historical `/admin/*` entrypoints to the standalone UI.
- * - The server-dev Railway deployment needs the matching Cloudflare Pages
- *   branch without changing the production admin domain.
+ * - A caller needs a normalized configured admin UI base.
  *
  * Expects:
  * - `adminUiUrl` is the configured admin UI base URL.
  * - `apiServerUrl` is the configured API server URL.
  *
  * Returns:
- * - The configured admin UI URL, except for the server-dev default pairing where
- *   the matching Pages branch URL is returned.
+ * - The configured admin UI URL.
  */
 export function resolveAdminUiUrl(adminUiUrl: string, apiServerUrl: string): string {
-  try {
-    const adminUi = new URL(adminUiUrl)
-    const defaultAdminUi = new URL(DEFAULT_ADMIN_UI_URL)
-    const apiServer = new URL(apiServerUrl)
-    const adminUiBase = `${adminUi.origin}${adminUi.pathname.replace(/\/+$/, '')}`
-    const defaultAdminUiBase = `${defaultAdminUi.origin}${defaultAdminUi.pathname.replace(/\/+$/, '')}`
-
-    if (adminUiBase === defaultAdminUiBase && apiServer.origin === SERVER_DEV_API_SERVER_URL) {
-      return SERVER_DEV_ADMIN_UI_URL
-    }
-  }
-  catch {
-    return adminUiUrl
-  }
-
+  void apiServerUrl
   return adminUiUrl
 }
 

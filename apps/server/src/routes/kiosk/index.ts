@@ -4,6 +4,8 @@ import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { HonoEnv } from '../../types/hono'
 
+import { randomInt } from 'node:crypto'
+
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { boolean, integer, maxLength, minValue, number, object, picklist, pipe, regex, safeParse, string } from 'valibot'
@@ -76,9 +78,23 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!credential)
       throw createUnauthorizedError('Kiosk device registration is required')
 
-    const device = await options.kioskService.resolveDeviceCredential(credential)
+    let device = await options.kioskService.resolveDeviceCredential(credential)
     if (!device)
       throw createUnauthorizedError('Kiosk device credential is invalid or revoked')
+
+    if (options.developmentRegistrationEnabled && device.registrationMethod === 'development' && !await options.kioskService.isCurrentDevelopmentDevice(device.id)) {
+      // A previous development build bound this browser to a separate POC Site.
+      // Replace only that development credential so local testing follows the
+      // configured Webnavior test Site without touching production devices.
+      const replacement = await options.kioskService.registerDevelopmentDevice({ registrationCode: createDevelopmentRegistrationCode() })
+      setCookie(c, kioskDeviceCookieName, replacement.credential, {
+        httpOnly: true,
+        path: '/api/kiosk',
+        sameSite: 'Lax',
+        secure: options.secureCookies,
+      })
+      device = replacement.device
+    }
 
     const profile = await options.kioskService.getDeviceProfile(device.id)
     return c.json({
@@ -172,6 +188,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     })
     const answer = await completeKioskReply({
       content,
+      kioskService: options.kioskService,
       llmGateway: options.llmGateway,
       profile,
       transcript,
@@ -208,6 +225,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       : profile.snapshot.assistanceReminderPrompt
     const answer = await completeKioskReply({
       actionPrompt,
+      kioskService: options.kioskService,
       llmGateway: options.llmGateway,
       profile,
       transcript,
@@ -273,6 +291,10 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   return routes
 }
 
+function createDevelopmentRegistrationCode() {
+  return String(randomInt(1_000_000)).padStart(6, '0')
+}
+
 async function resolveAuthenticatedDevice(c: Context<HonoEnv>, kioskService: KioskService) {
   const credential = getCookie(c, kioskDeviceCookieName)
   if (!credential)
@@ -297,17 +319,19 @@ async function parseAssistantReply(response: Response) {
 async function completeKioskReply(input: {
   actionPrompt?: string
   content?: string
+  kioskService: KioskService
   llmGateway: KioskRoutesOptions['llmGateway']
-  profile: { snapshot: KioskProfileSnapshot }
+  profile: { siteId: string, snapshot: KioskProfileSnapshot }
   transcript: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>
 }) {
-  const modelName = await input.llmGateway.getDefaultModel()
+  const overrides = await input.kioskService.getSiteModelOverrides(input.profile.siteId)
+  const modelName = overrides.llm ?? await input.llmGateway.getDefaultModel()
   const response = await input.llmGateway.complete({
     modelName,
     body: {
       model: modelName,
       messages: [
-        { role: 'system', content: input.profile.snapshot.agentInstructions },
+        { role: 'system', content: createCharacterInstructions(input.profile.snapshot) },
         ...input.transcript.entries
           .filter(entry => entry.kind === 'user_text' || entry.kind === 'assistant_text')
           .map(entry => ({
@@ -320,6 +344,23 @@ async function completeKioskReply(input: {
     },
   })
   return await parseAssistantReply(response)
+}
+
+/** Combines imported Character Card v3 context with site-specific additions. */
+function createCharacterInstructions(snapshot: KioskProfileSnapshot) {
+  const card = snapshot.characterCard
+  if (!card)
+    return snapshot.agentInstructions
+
+  return [
+    `角色名稱：${snapshot.characterName}`,
+    card.description && `角色介紹：${card.description}`,
+    card.personality && `個性與語氣：${card.personality}`,
+    card.scenario && `情境：${card.scenario}`,
+    card.systemPrompt && `角色系統指示：${card.systemPrompt}`,
+    card.postHistoryInstructions && `持續互動原則：${card.postHistoryInstructions}`,
+    snapshot.agentInstructions && `店別補充指示：${snapshot.agentInstructions}`,
+  ].filter(Boolean).join('\n\n')
 }
 
 function isChatCompletion(value: unknown): value is { choices: [{ message: { content: string } }] } {

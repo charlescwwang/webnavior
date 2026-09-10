@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { computed, onMounted, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
+import KioskDraftPreview from '../components/KioskDraftPreview.vue'
 import KioskEnrollment from '../components/kioskEnrollment.vue'
 import KioskScene from '../components/KioskScene.vue'
 import KioskStandby from '../components/kioskStandby.vue'
 
+import { useKioskCharacterAsset } from '../composables/useKioskCharacterAsset'
 import { useKioskDeviceRegistration } from '../composables/useKioskDeviceRegistration'
 import { applyKioskProfile } from '../composables/useKioskInteractiveServices'
+import { waitForKioskRuntime } from '../services/kiosk-runtime-initialization'
 
 const {
   bootstrap,
@@ -16,17 +20,51 @@ const {
   registerDevelopmentDevice,
   state,
 } = useKioskDeviceRegistration()
+const route = useRoute()
+const isDraftPreview = computed(() => route.query.preview === 'webnavior')
+const kioskCharacterAsset = useKioskCharacterAsset()
+const profileReady = shallowRef(false)
+const profileSyncError = shallowRef<string>()
 
-onMounted(() => void bootstrap())
+onMounted(async () => {
+  await waitForKioskRuntime()
+  await bootstrap()
+})
 
-watch(profile, (assignedProfile) => {
-  if (assignedProfile)
+watch(profile, async (assignedProfile) => {
+  profileReady.value = false
+  profileSyncError.value = undefined
+  if (!assignedProfile)
+    return
+
+  try {
     applyKioskProfile(assignedProfile)
+    await kioskCharacterAsset.apply(assignedProfile)
+    profileReady.value = true
+  }
+  catch (error) {
+    console.error('Failed to synchronize kiosk character asset:', error)
+    profileSyncError.value = '無法套用 Server 發佈的角色設定。請確認角色資產與 Server 連線後重新整理。'
+  }
 }, { immediate: true })
 </script>
 
 <template>
-  <KioskScene v-if="state === 'registered' && device && profile" />
+  <KioskDraftPreview v-if="isDraftPreview" />
+  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" />
+  <main v-else-if="state === 'registered' && device && profileSyncError" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-200']">
+    <div :class="['max-w-xl space-y-3']">
+      <h1 :class="['text-2xl font-semibold']">
+        角色設定同步失敗
+      </h1>
+      <p :class="['text-slate-400']">
+        {{ profileSyncError }}
+      </p>
+    </div>
+  </main>
+  <main v-else-if="state === 'registered' && device && profile" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-300']">
+    正在同步 Server 發佈的角色設定…
+  </main>
   <KioskStandby v-else-if="state === 'registered' && device" :device="device" :profile="profile" />
   <KioskEnrollment
     v-else

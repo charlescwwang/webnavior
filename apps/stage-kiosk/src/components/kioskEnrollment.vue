@@ -15,7 +15,7 @@ const emit = defineEmits<{
   <main :class="['grid min-h-screen place-items-center', 'bg-[#101719] p-6 text-[#f9f6f0]']">
     <section :class="['grid w-full max-w-md gap-5', 'rounded-3xl border border-white/15 bg-white/5 p-8 shadow-2xl']">
       <p :class="['m-0 text-xs font-bold tracking-[0.18em] text-teal-200 uppercase']">
-        AIRI Kiosk POC
+        Webnavior Kiosk
       </p>
       <div :class="['grid gap-2']">
         <h1 :class="['m-0 text-3xl font-semibold']">

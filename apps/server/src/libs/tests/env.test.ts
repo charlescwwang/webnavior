@@ -41,8 +41,12 @@ describe('parseEnv', () => {
 
     expect(env.DATABASE_URL).toBe('postgres://example')
     expect(env.REDIS_URL).toBe('redis://example')
-    expect(env.AUTH_UI_URL).toBe('https://accounts.airi.build/ui')
-    expect(env.ADMIN_UI_URL).toBe('https://admin.airi.build')
+    expect(env.PORT).toBe(5168)
+    expect(env.API_SERVER_URL).toBe('http://localhost:5168')
+    expect(env.AUTH_UI_URL).toBe('http://localhost:5167')
+    expect(env.ADMIN_UI_URL).toBe('http://localhost:5167')
+    expect(env.WEB_APP_URL).toBe('http://localhost:5167')
+    expect(env.POSTHOG_PROJECT_KEY).toBe('')
     expect(env.ADDITIONAL_TRUSTED_ORIGINS).toEqual([])
   })
 
@@ -89,6 +93,10 @@ describe('parseEnv', () => {
 
   it('defaults development kiosk enrollment to disabled', () => {
     expect(parseEnv(baseEnv()).KIOSK_DEVELOPMENT_REGISTRATION_ENABLED).toBe('false')
+  })
+
+  it('defaults test account recognition to disabled', () => {
+    expect(parseEnv(baseEnv()).WEBNAVIOR_TEST_AUTH_ENABLED).toBe('false')
   })
 
   it('lLM_ROUTER_MASTER_KEY decodes a valid 32-byte base64 value into a Buffer', () => {

@@ -25,7 +25,7 @@ const { t } = useI18n()
 
 const messageInput = shallowRef('')
 const isComposing = shallowRef(false)
-const assistantLabel = 'AIRI'
+const assistantLabel = 'Webnavior'
 const historyMessages = computed<ChatHistoryItem[]>(() => [...props.messages])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
 const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !props.sending && serviceReady.value)
@@ -46,7 +46,7 @@ async function sendMessage() {
 </script>
 
 <template>
-  <section class="kiosk-conversation" aria-label="與 AIRI 對話">
+  <section class="kiosk-conversation" aria-label="與虛擬服務員對話">
     <header class="conversation-header">
       <span class="conversation-kicker">{{ assistantLabel }}</span>
       <strong class="conversation-title">對話</strong>

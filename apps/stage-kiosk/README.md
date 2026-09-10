@@ -24,7 +24,7 @@ reads the credential itself.
 
 ```sh
 KIOSK_DEVELOPMENT_REGISTRATION_ENABLED=true pnpm --filter @proj-airi/server dev
-VITE_API_SERVER_URL=http://localhost:3000 pnpm --filter @proj-airi/stage-kiosk dev
+VITE_API_SERVER_URL=http://localhost:5168 pnpm --filter @proj-airi/stage-kiosk dev
 ```
 
 The Server omits this endpoint unless the flag is exactly `true`, and always
@@ -42,7 +42,7 @@ made available to the Agent, so a customer message cannot open an arbitrary URL.
 
 `restaurant-ordering` is the initial page. Use `VITE_ORDERING_SCENARIO_URL` to
 configure its deployed URL only for a fresh browser Profile; it defaults to
-`http://localhost:5174` locally. Once an administrator saves a URL in **互動服務**,
+`http://localhost:5166` locally. Once an administrator saves a URL in **互動服務**,
 that `serviceUrl` is the exact iframe URL and takes precedence over this variable.
 `VITE_AIRI_ORIGIN` belongs to the embedded service's WebMCP allowlist; it never
 changes the iframe URL.

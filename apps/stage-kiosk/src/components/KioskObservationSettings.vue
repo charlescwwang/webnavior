@@ -11,7 +11,7 @@ const settings = defineModel<KioskObservationSettingsValue>({ required: true })
     <div class="section-heading">
       <div>
         <h3>現場觀測</h3>
-        <p>僅使用本機相機判斷偵測區內是否有人與是否面向 kiosk；不保存或傳送影像。主動招呼與無操作提醒會依需要使用這項觀測。</p>
+        <p>僅使用本機的 MediaPipe 判斷偵測區內是否有人與是否面向 kiosk；不保存或傳送影像。互動服務無法取得相機、麥克風、螢幕擷取或本機影像。</p>
       </div>
       <Checkbox v-model="settings.enabled" aria-label="啟用現場觀測" />
     </div>

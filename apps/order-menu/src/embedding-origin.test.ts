@@ -15,7 +15,7 @@ describe('resolveExpectedHostOrigin', () => {
     expect(resolveExpectedHostOrigin({
       configuredOrigin: undefined,
       isEmbedded: true,
-      referrer: 'http://localhost:5173/',
-    })).toBe('http://localhost:5173')
+      referrer: 'http://localhost:5169/',
+    })).toBe('http://localhost:5169')
   })
 })

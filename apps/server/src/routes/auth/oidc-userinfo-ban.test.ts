@@ -45,6 +45,7 @@ async function buildRoutes(currentUser: SessionUser) {
       API_SERVER_URL: 'http://localhost:3000',
       AUTH_UI_URL: 'https://accounts.airi.build/ui',
       ADDITIONAL_TRUSTED_ORIGINS: [],
+      WEB_APP_URL: 'http://localhost:5167',
     } as any,
     configKV: createConfigKV(),
     rateLimitMetrics: null,
@@ -95,7 +96,7 @@ describe('oidc /oauth2/userinfo ban guard', () => {
 })
 
 describe('auth UI routes', () => {
-  it('redirects sign-in provider shortcut to the standalone auth UI', async () => {
+  it('redirects sign-in provider shortcut to the local Webnavior login page', async () => {
     const { routes } = await buildRoutes({ id: 'uid_ok', email: 'ok@example.com', banned: false, banExpires: null })
 
     const res = await routes.request('/auth/sign-in?provider=github&client_id=stage-web&prompt=login&redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fauth%2Fcallback')
@@ -103,7 +104,7 @@ describe('auth UI routes', () => {
     expect(res.status).toBe(302)
 
     const location = res.headers.get('location')
-    expect(location).toBe('https://accounts.airi.build/ui/sign-in?provider=github&client_id=stage-web&prompt=login&redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fauth%2Fcallback&api_server_url=http%3A%2F%2Flocalhost%3A3000')
+    expect(location).toBe('http://localhost:5173/auth/login?provider=github&client_id=stage-web&prompt=login&redirect_uri=http%3A%2F%2Flocalhost%3A5173%2Fauth%2Fcallback')
   })
 
   it('redirects Electron OIDC callback queries to the standalone auth UI relay', async () => {

@@ -1,6 +1,6 @@
 # `@proj-airi/server`
 
-HTTP and WebSocket backend for AIRI. This app owns auth, billing, chat synchronization, gateway forwarding, and server-side observability export.
+HTTP and WebSocket backend for Webnavior. This app owns auth, kiosk management, gateway forwarding, and server-side observability export.
 
 ## What It Does
 
@@ -26,25 +26,13 @@ For local observability infrastructure, use:
 docker compose -f apps/server/docker-compose.otel.yml up -d
 ```
 
-## `AUTH_UI_URL`
+## Browser entrypoints
 
-`apps/ui-server-auth` is deployed separately from the server image. The API server still owns the historical `/auth/*` entrypoints and redirects them to **`AUTH_UI_URL`**.
-
-Default:
-
-`AUTH_UI_URL=https://accounts.airi.build/ui`
-
-Set this when previewing or deploying auth UI to a different Cloudflare URL.
-
-## `ADMIN_UI_URL`
-
-The admin UI is deployed from the standalone `proj-airi` repository. The API server still owns the historical `/admin/*` entrypoints and redirects them to **`ADMIN_UI_URL`**.
-
-Default:
-
-`ADMIN_UI_URL=https://admin.airi.build`
-
-Set this when previewing or deploying admin UI to a different Cloudflare URL.
+Webnavior browser sign-in and the management dashboard live in `apps/stage-web`.
+Set `WEB_APP_URL` to that browser-visible origin (for example
+`https://webnavior.example`). Server `/auth/*` and legacy `/admin/*` paths
+stay within that Webnavior origin; they do not redirect to an external AIRI
+deployment.
 
 ## `ADDITIONAL_TRUSTED_ORIGINS` (LAN / Capacitor dev)
 

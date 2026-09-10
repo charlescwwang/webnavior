@@ -1,5 +1,65 @@
 # AIRI Domain Glossary
 
+## Webnavior Control Center
+
+The management surface used to operate Webnavior sites, devices, and customer
+experiences. It is not the customer-facing Kiosk experience and does not expose
+infrastructure configuration to ordinary site staff.
+
+## Interactive Experience
+
+A named, customer-facing Kiosk experience for one Site. It combines the
+customer-visible assistant identity, conversation guidance, approved interactive
+service, and optional feedback destination. In implementation it is stored as a
+versioned Profile snapshot, but the management interface calls it an Interactive
+Experience rather than a Profile.
+
+## Experience Draft
+
+The editable, unpublished working copy of an Interactive Experience. Saving a
+draft has no effect on any live Kiosk.
+
+## Published Experience
+
+An immutable Interactive Experience version assigned to one or more Kiosk
+devices. Publishing is the explicit transition that permits a device to use the
+new experience.
+
+## Content Manager
+
+A Site-scoped role that manages customer-facing Interactive Experience content,
+but cannot alter infrastructure, provider credentials, or device enrollment.
+
+## Site Manager
+
+A Site-scoped role responsible for the operational state of its Kiosk devices
+and published customer experience. It may initiate an on-site verification but
+does not manage system-wide integrations.
+
+## System Manager
+
+A system-wide role responsible for integrations, provider and model policy,
+deployment configuration, account roles, and sandbox testing. It has access to
+every Site but should not be required for routine store operations.
+
+## Experience Preview
+
+A non-device, non-publishing representation of an Interactive Experience used
+to check customer-visible content and embedded service presentation. It does not
+prove a physical Kiosk is healthy.
+
+## Sandbox Test
+
+A controlled, non-production test of an Interactive Experience and its service
+integration. It is intended for a System Manager and must not change a live
+device assignment or create customer records.
+
+## On-site Verification
+
+A guided check performed on a designated Kiosk device after publication. It
+confirms that the assigned Published Experience works in its real browser and
+network environment without exposing system configuration to Site staff.
+
 ## Proactive Interaction
 
 A character capability that decides whether and when AIRI should initiate an

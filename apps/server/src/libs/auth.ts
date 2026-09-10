@@ -65,8 +65,7 @@ export const OIDC_CLIENT_ID_ELECTRON = 'airi-stage-electron'
 export const OIDC_CLIENT_ID_POCKET = 'airi-stage-pocket'
 
 const DEFAULT_WEB_REDIRECT_URIS = [
-  'https://airi.moeru.ai/auth/callback',
-  'http://localhost:5173/auth/callback',
+  'http://localhost:5167/auth/callback',
   'http://localhost:4173/auth/callback',
 ]
 
@@ -135,7 +134,7 @@ function buildTrustedClientSeeds(env: Env): TrustedClientSeed[] {
   const clients: TrustedClientSeed[] = []
   clients.push({
     clientId: OIDC_CLIENT_ID_WEB,
-    name: 'AIRI Stage Web',
+    name: 'Webnavior Management Web',
     type: 'web',
     public: true,
     redirectUris: buildWebRedirectUris(env),

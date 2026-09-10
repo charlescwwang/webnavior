@@ -12,8 +12,23 @@ From the repository root:
 pnpm --filter @proj-airi/order-menu dev
 ```
 
-The service runs at `http://localhost:5174` by default. Opening that URL directly
+The service runs at `http://localhost:5166` by default. Opening that URL directly
 provides a fully usable menu and cart without AIRI running.
+
+## Local service ports
+
+The restaurant installation runs four independent processes by default:
+
+| Service | Workspace | Default URL | Responsibility |
+| --- | --- | --- | --- |
+| Server API | `@proj-airi/server` | `http://localhost:5168` | API, authentication, device and experience data. |
+| Management console | `@proj-airi/stage-web` | `http://localhost:5167` | Staff and administrator configuration. |
+| Customer Kiosk | `@proj-airi/stage-kiosk` | `http://localhost:5169` | VRM character and customer conversation. |
+| Menu service | `@proj-airi/order-menu` | `http://localhost:5166` | Menu, cart, and ordering only. |
+
+The menu service intentionally has no VRM character, chat window, microphone,
+or AIRI provider configuration. It can be opened directly, or embedded by the
+Kiosk as an interactive page.
 
 ## AIRI integration
 

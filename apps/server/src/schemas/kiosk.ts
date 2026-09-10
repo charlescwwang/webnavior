@@ -7,7 +7,7 @@ import { nanoid } from '../utils/id'
 import { user } from './accounts'
 
 /** A person's authorization level within one kiosk site. */
-export type KioskMemberRole = 'site_admin' | 'viewer'
+export type KioskMemberRole = 'content_manager' | 'site_admin' | 'viewer'
 /** The enrollment flow that established a device identity. */
 export type KioskRegistrationMethod = 'development' | 'qr_code'
 /** The lifecycle state of a persisted kiosk visitor session. */
@@ -15,11 +15,40 @@ export type KioskVisitorSessionState = 'active' | 'completed' | 'cancelled' | 'i
 /** The kind of ordered customer interaction record retained by the POC. */
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
 
+/** A site's explicit runtime model choices. Missing entries inherit the system default. */
+export interface KioskModelOverrides {
+  asr?: string
+  llm?: string
+  tts?: string
+  vision?: string
+}
+
+/** A server-owned avatar file that an immutable kiosk profile may reference. */
+export interface KioskCharacterAssetReference {
+  format: 'live2d_zip' | 'vrm'
+  id: string
+  name: string
+  sha256: string
+}
+
+/** Portable Character Card v3 text retained by a Webnavior experience. */
+export interface KioskCharacterCard {
+  description: string
+  personality: string
+  postHistoryInstructions: string
+  scenario: string
+  systemPrompt: string
+}
+
 /** The complete, versioned configuration a kiosk receives at bootstrap. */
 export interface KioskProfileSnapshot {
   assistanceReminderPrompt: string
   agentInstructions: string
   characterName: string
+  /** Optional visual avatar selected for the service character. */
+  characterAsset?: KioskCharacterAssetReference
+  /** Character identity and behavioural context imported from Character Card v3. */
+  characterCard?: KioskCharacterCard
   greetingPrompt: string
   interactiveService: {
     description: string
@@ -39,6 +68,8 @@ export const kioskSites = pgTable('kiosk_sites', {
   slug: text('slug').unique(),
   /** Days to retain completed interaction data; 0 removes it on the next sweep. */
   interactionRetentionDays: integer('interaction_retention_days').notNull().default(180),
+  /** Site-specific choices from the system administrator's approved model catalog. */
+  modelOverrides: jsonb('model_overrides').$type<KioskModelOverrides>().notNull().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 })
@@ -91,6 +122,22 @@ export const kioskProfileDrafts = pgTable('kiosk_profile_drafts', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 })
+
+/** Immutable metadata for a validated character model saved on the server volume. */
+export const kioskCharacterAssets = pgTable('kiosk_character_assets', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  siteId: text('site_id').notNull().references(() => kioskSites.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  format: text('format').notNull().$type<KioskCharacterAssetReference['format']>(),
+  sha256: text('sha256').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  /** Sanitized CCv3 fields, retained for future editing without retaining AIRI runtime configuration. */
+  card: jsonb('card').$type<Record<string, string>>().notNull().default({}),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, table => [
+  index('kiosk_character_assets_site_idx').on(table.siteId),
+  uniqueIndex('kiosk_character_assets_site_hash_uidx').on(table.siteId, table.sha256),
+])
 
 /** Associates a device with its one active Profile release. */
 export const kioskDeviceProfileAssignments = pgTable('kiosk_device_profile_assignments', {
@@ -150,6 +197,7 @@ export type NewKioskSite = InferInsertModel<typeof kioskSites>
 export type KioskDevice = InferSelectModel<typeof kioskDevices>
 export type KioskProfileRelease = InferSelectModel<typeof kioskProfileReleases>
 export type KioskProfileDraft = InferSelectModel<typeof kioskProfileDrafts>
+export type KioskCharacterAsset = InferSelectModel<typeof kioskCharacterAssets>
 export type KioskVisitorSession = InferSelectModel<typeof kioskVisitorSessions>
 export type KioskInteractionEntry = InferSelectModel<typeof kioskInteractionEntries>
 

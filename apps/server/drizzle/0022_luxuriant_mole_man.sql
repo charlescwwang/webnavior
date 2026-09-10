@@ -1,0 +1,1 @@
+ALTER TABLE "kiosk_sites" ADD COLUMN "model_overrides" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -1,7 +1,7 @@
 import type { Database } from '../../libs/db'
 
 import { Hono } from 'hono'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createKioskRoutes, kioskDeviceCookieName } from '.'
 import { mockDB } from '../../libs/mock-db'
@@ -51,7 +51,7 @@ describe('kiosk routes', () => {
     const bootstrap = await app.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })
 
     expect(bootstrap.status).toBe(200)
-    await expect(bootstrap.json()).resolves.toEqual({
+    await expect(bootstrap.json()).resolves.toMatchObject({
       device: expect.objectContaining({
         label: 'DEV-483920',
         registrationMethod: 'development',
@@ -60,7 +60,7 @@ describe('kiosk routes', () => {
         name: '開發 POC 點餐助手',
         snapshot: expect.objectContaining({
           greetingPrompt: '您好，今天想吃些什麼？我可以協助您挑選。',
-          interactiveService: expect.objectContaining({ url: 'http://localhost:5174' }),
+          interactiveService: expect.objectContaining({ url: 'http://localhost:5166' }),
         }),
       }),
     })
@@ -150,5 +150,41 @@ describe('kiosk routes', () => {
     await expect(ended.json()).resolves.toEqual({
       session: expect.objectContaining({ state: 'completed' }),
     })
+  })
+
+  it('uses a site-approved LLM override instead of the system default', async () => {
+    const kioskService = createKioskService(db)
+    const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '已依店別模型回覆。' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway: { complete, getDefaultModel: async () => 'system-default' },
+      secureCookies: false,
+    }))
+
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { llm: 'restaurant-specialist' } })
+
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+
+    const reply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ content: '你好。' }),
+    })
+
+    expect(reply.status).toBe(200)
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'restaurant-specialist' }))
   })
 })

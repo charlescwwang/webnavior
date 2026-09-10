@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:push": "pnpm run apply:env -- drizzle-kit push",
+    "seed:test-accounts": "pnpm run apply:env -- tsx src/scripts/seed-webnavior-test-accounts.ts",
     "otel:dashboards": "tsx otel/grafana/dashboards/build.ts"
   },
   "dependencies": {
@@ -58,6 +59,7 @@
     "injeca": "catalog:",
     "ioredis": "catalog:",
     "jose": "catalog:",
+    "jszip": "catalog:",
     "nanoid": "catalog:",
     "ofetch": "catalog:",
     "pg": "catalog:",

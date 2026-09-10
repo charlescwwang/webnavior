@@ -38,7 +38,7 @@ function updateText(value: string | undefined) {
     <div class="section-heading">
       <div>
         <h3>無操作協助提醒</h3>
-        <p>已開始接待的使用者仍在偵測區、但暫時沒有有效操作時，AIRI 會主動詢問是否需要協助；需同時啟用「現場觀測」。</p>
+        <p>已開始接待的使用者仍在偵測區、但暫時沒有有效操作時，虛擬服務員會主動詢問是否需要協助；需同時啟用「現場觀測」。</p>
       </div>
       <Checkbox v-model="settings.enabled" aria-label="啟用無操作協助提醒" />
     </div>
@@ -63,7 +63,7 @@ function updateText(value: string | undefined) {
       <FieldTextArea
         :model-value="settings.reminderText"
         label="LLM 場域參考提示"
-        description="提供無操作時的現場線索；LLM 會依 AIRI 人設與對話脈絡決定是否提醒及如何表達。"
+        description="提供無操作時的現場線索；服務員會依角色設定與對話脈絡決定是否提醒及如何表達。"
         :rows="3"
         @update:model-value="updateText($event)"
       />

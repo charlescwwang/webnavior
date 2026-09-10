@@ -55,6 +55,22 @@ export const llmModelSchema = object({
 const ttsProviderSchema = picklist(['azure', 'dashscope-cosyvoice', 'stepfun', 'volcengine'])
 const asrProviderSchema = picklist(['aliyun-nls'])
 
+/** Webnavior-only OpenAI-compatible audio endpoints. Kept separate from AIRI's adapter router. */
+export const webnaviorAudioConfigSchema = optional(object({
+  asr: optional(object({
+    modelName: pipe(string(), nonEmpty('asr.modelName must not be empty')),
+    upstreamModel: pipe(string(), nonEmpty('asr.upstreamModel must not be empty')),
+    baseURL: pipe(string(), nonEmpty('asr.baseURL must not be empty')),
+    keyCiphertext: optional(string()),
+  })),
+  tts: optional(object({
+    modelName: pipe(string(), nonEmpty('tts.modelName must not be empty')),
+    upstreamModel: pipe(string(), nonEmpty('tts.upstreamModel must not be empty')),
+    baseURL: pipe(string(), nonEmpty('tts.baseURL must not be empty')),
+    keyCiphertext: optional(string()),
+  })),
+}), {})
+
 export const ttsUpstreamSchema = object({
   baseURL: pipe(string(), nonEmpty('tts.upstreams[].baseURL must not be empty')),
   keys: pipe(array(keyEntrySchema), check(v => v.length >= 1, 'tts.upstreams[].keys must contain at least 1 entry')),
@@ -172,6 +188,9 @@ const ConfigEntrySchemas = {
   // carry the upstream-provider API key (Volcengine X-Api-Key), not an
   // unspeech tenant token (unspeech itself is unauthenticated).
   UNSPEECH_UPSTREAM: optional(unspeechUpstreamSchema),
+  // Webnavior's direct OpenAI-compatible speech integrations deliberately do
+  // not share AIRI's unspeech adapter configuration.
+  WEBNAVIOR_AUDIO_CONFIG: webnaviorAudioConfigSchema,
 } as const
 
 type ConfigDefinitions = {
@@ -241,6 +260,11 @@ export function createConfigKVService(redis: Redis) {
     async set<K extends ConfigKey>(key: K, value: ConfigDefinitions[K]): Promise<void> {
       const serialized = serializeValue(key, value)
       await redis.set(configRedisKey(key), serialized)
+    },
+
+    /** Removes an optional setting so runtime resolution falls back to its schema default. */
+    async unset(key: ConfigKey): Promise<void> {
+      await redis.del(configRedisKey(key))
     },
   }
 }

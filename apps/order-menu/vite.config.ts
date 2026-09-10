@@ -7,7 +7,8 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [Vue()],
   server: {
-    port: 5174,
+    port: 5166,
+    strictPort: true,
     allowedHosts: true,
   },
   resolve: {

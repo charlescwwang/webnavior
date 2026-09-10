@@ -60,6 +60,9 @@ function fakeConfigKV(): FakeConfigKV {
     async set(key: string, value: unknown) {
       store.set(key, value)
     },
+    async unset(key: string) {
+      store.delete(key)
+    },
   }
   return { store, service: service as ConfigKVService, publishedChannels: [] }
 }
@@ -475,6 +478,46 @@ describe('createAdminRouterConfigService', () => {
     expect(kv.store.get('DEFAULT_CHAT_MODEL')).toBe('chat-default')
     expect(result.invalidatedKeys.sort()).toEqual(['DEFAULT_CHAT_MODEL', 'LLM_ROUTER_CONFIG'])
     expect(captured.map(p => JSON.parse(p.payload).key).sort()).toEqual(['DEFAULT_CHAT_MODEL', 'LLM_ROUTER_CONFIG'])
+  })
+
+  it('removes an inactive LLM model and publishes a router invalidation', async () => {
+    const service = createAdminRouterConfigService({ configKV: kv.service, envelope, redis })
+    await service.apply({
+      mode: 'reset',
+      dryRun: false,
+      slices: [{
+        kind: 'openrouter',
+        modelName: 'removable-model',
+        overrideModel: 'openai/gpt-4o-mini',
+        plaintextKey: 'sk',
+      }],
+    })
+
+    await service.removeLlmModel('removable-model')
+
+    const config = kv.store.get('LLM_ROUTER_CONFIG') as { llm: { models: Record<string, unknown> } }
+    expect(config.llm.models).toEqual({})
+    expect(captured.map(entry => JSON.parse(entry.payload).key)).toContain('LLM_ROUTER_CONFIG')
+  })
+
+  it('clears the system default when removing its model', async () => {
+    const service = createAdminRouterConfigService({ configKV: kv.service, envelope, redis })
+    await service.apply({
+      mode: 'reset',
+      dryRun: false,
+      slices: [{
+        kind: 'openrouter',
+        modelName: 'default-model',
+        overrideModel: 'openai/gpt-4o-mini',
+        plaintextKey: 'sk',
+      }],
+      defaults: { chatModel: 'default-model' },
+    })
+
+    await service.removeLlmModel('default-model')
+
+    expect(kv.store.has('DEFAULT_CHAT_MODEL')).toBe(false)
+    expect(captured.map(entry => JSON.parse(entry.payload).key)).toContain('DEFAULT_CHAT_MODEL')
   })
 
   it('writes DEFAULT_TTS_VOICES without requiring provider slices', async () => {

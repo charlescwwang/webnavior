@@ -76,26 +76,29 @@ function optionalNumberFromString(defaultValue: number, envKey: string, minimum:
 
 const EnvSchema = object({
   HOST: optional(string(), '0.0.0.0'),
-  PORT: optionalIntegerFromString(3000, 'PORT', 1),
+  PORT: optionalIntegerFromString(5168, 'PORT', 1),
 
-  API_SERVER_URL: optional(string(), 'http://localhost:3000'),
+  API_SERVER_URL: optional(string(), 'http://localhost:5168'),
 
-  // Standalone auth UI base URL. The server keeps `/auth/*` as the historical
-  // entrypoint and redirects those requests here after ui-server-auth moved out
-  // of the server image.
-  AUTH_UI_URL: optional(string(), 'https://accounts.airi.build/ui'),
+  // Persistent local volume for server-owned kiosk avatar binaries. Database
+  // rows retain metadata and content hashes; mount this path in Docker so an
+  // image replacement never discards uploaded character assets.
+  WEBNAVIOR_KIOSK_ASSET_DIR: optional(string(), './data/webnavior/kiosk-assets'),
 
-  // Standalone admin UI base URL. The server keeps `/admin/*` as the historical
-  // entrypoint and redirects those requests here after the admin UI moved to
-  // the standalone proj-airi repository.
-  ADMIN_UI_URL: optional(string(), 'https://admin.airi.build'),
+  // The Electron callback relay still reads this value. Browser sign-in uses
+  // WEB_APP_URL directly and never falls back to an external auth site.
+  AUTH_UI_URL: optional(string(), 'http://localhost:5167'),
+
+  // Kept for the legacy Electron admin surface. Server `/admin/*` requests
+  // redirect to the local Webnavior dashboard instead.
+  ADMIN_UI_URL: optional(string(), 'http://localhost:5167'),
 
   // Canonical user-facing web app origin. Used as the Stripe redirect base
   // (success_url / cancel_url / portal return_url) when a request has no trusted
   // browser origin — notably the Electron desktop renderer, which loads from
   // file:// and sends no usable web origin. Web/mobile requests keep returning to
   // their own origin; only origin-less clients fall back to this.
-  WEB_APP_URL: optional(string(), 'https://airi.moeru.ai'),
+  WEB_APP_URL: optional(string(), 'http://localhost:5167'),
 
   // Comma-separated exact origins (e.g. Capacitor dev server `https://10.x:5273`).
   // Prefer this over broad private-IP regex heuristics in production-like configs.
@@ -134,14 +137,19 @@ const EnvSchema = object({
   // it whenever NODE_ENV is production.
   KIOSK_DEVELOPMENT_REGISTRATION_ENABLED: optional(string(), 'false'),
 
+  // Development-only account recognition for local Webnavior testing. The
+  // corresponding route additionally refuses production requests even if this
+  // value is accidentally enabled there.
+  WEBNAVIOR_TEST_AUTH_ENABLED: optional(string(), 'false'),
+
   // Resend transactional email. RESEND_API_KEY required when emailAndPassword
   // sign-up / forgot-password / change-email / magic-link is exercised. Service
   // boots without it but those flows will throw at send-time.
   RESEND_API_KEY: optional(string(), ''),
   // From address must be a verified Resend sender (e.g. `noreply@your-domain`).
-  RESEND_FROM_EMAIL: optional(string(), 'noreply@airi.moeru.ai'),
+  RESEND_FROM_EMAIL: optional(string(), 'noreply@webnavior.local'),
   // Optional friendly name; rendered as `Name <email>` per Resend's RFC 5322 display-name format.
-  RESEND_FROM_NAME: optional(string(), 'Project AIRI'),
+  RESEND_FROM_NAME: optional(string(), 'Webnavior'),
 
   STRIPE_SECRET_KEY: optional(string()),
   STRIPE_WEBHOOK_SECRET: optional(string()),
@@ -180,13 +188,10 @@ const EnvSchema = object({
   DB_POOL_CONNECTION_TIMEOUT_MS: optionalIntegerFromString(5000, 'DB_POOL_CONNECTION_TIMEOUT_MS', 1),
   DB_POOL_KEEPALIVE_INITIAL_DELAY_MS: optionalIntegerFromString(10000, 'DB_POOL_KEEPALIVE_INITIAL_DELAY_MS', 1),
 
-  // PostHog product-event forwarding (signup / payment / subscription facts).
-  // Defaults to the shared AIRI project key (same browser-safe phc_* key the
-  // client surfaces embed in posthog.config.ts), so forwarding is on out of
-  // the box. Set to an empty string to disable; Postgres `product_events`
-  // stays the source of truth either way.
-  POSTHOG_PROJECT_KEY: optional(string(), 'phc_pzjziJjrVZpa9SqnQqq0QEKvkmuCPH7GDTA6TbRTEf9'), // cspell:disable-line
-  POSTHOG_API_HOST: optional(string(), 'https://t.airi.build'),
+  // Product-event forwarding is opt-in. Without a project key, facts remain
+  // in this deployment's Postgres database and no analytics request is sent.
+  POSTHOG_PROJECT_KEY: optional(string(), ''),
+  POSTHOG_API_HOST: optional(string(), 'https://app.posthog.com'),
 
   // OpenTelemetry
   OTEL_SERVICE_NAMESPACE: optional(string(), 'airi'),

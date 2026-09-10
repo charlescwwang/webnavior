@@ -9,18 +9,13 @@ function isEnvFlagEnabled(value: string | undefined): boolean {
   return /^(?:1|true|t|yes|y|on)$/i.test(value.trim())
 }
 
-// For Release workflows set `VITE_ENABLE_POSTHOG=true`.
-export const POSTHOG_ENABLED = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_POSTHOG)
-
-// Single PostHog project for every AIRI surface (web / desktop / mobile).
-// Platforms are told apart by the `app_surface` super property set at init, not
-// by routing to separate per-platform projects.
-export const POSTHOG_PROJECT_KEY
-  = import.meta.env.VITE_POSTHOG_PROJECT_KEY
-    ?? 'phc_pzjziJjrVZpa9SqnQqq0QEKvkmuCPH7GDTA6TbRTEf9' // cspell:disable-line
+// Analytics is opt-in: both an explicit enable flag and this deployment's
+// project key are required before the browser makes any analytics request.
+export const POSTHOG_PROJECT_KEY = import.meta.env.VITE_POSTHOG_PROJECT_KEY ?? ''
+export const POSTHOG_ENABLED = isEnvFlagEnabled(import.meta.env.VITE_ENABLE_POSTHOG) && Boolean(POSTHOG_PROJECT_KEY)
 
 export const DEFAULT_POSTHOG_CONFIG = {
-  api_host: 'https://t.airi.build',
+  api_host: 'https://app.posthog.com',
   person_profiles: 'identified_only', // or 'always' to create profiles for anonymous users as well
   // Without this, posthog-js only fires `$pageview` on the initial page load.
   // Every AIRI surface is an SPA (vue-router / VitePress client routing), so

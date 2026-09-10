@@ -21,8 +21,8 @@ onUnmounted(() => scenarioRegistry.attachActiveFrame(null))
       ref="scenarioFrame"
       :key="`${scenarioRegistry.activeScenario.value?.id ?? 'none'}:${scenarioRegistry.iframeRevision.value}`"
       :src="scenarioRegistry.activeScenario.value?.serviceUrl"
-      allow="tools"
-      :title="scenarioRegistry.activeScenario.value?.title ?? 'AIRI 互動服務'"
+      allow="tools; camera 'none'; microphone 'none'; display-capture 'none'"
+      :title="scenarioRegistry.activeScenario.value?.title ?? '互動服務'"
       @load="attachFrame"
     />
   </section>

@@ -14,6 +14,19 @@ export interface KioskProfile {
     assistanceReminderPrompt: string
     agentInstructions: string
     characterName: string
+    characterAsset?: {
+      format: 'live2d_zip' | 'vrm'
+      id: string
+      name: string
+      sha256: string
+    }
+    characterCard?: {
+      description: string
+      personality: string
+      postHistoryInstructions: string
+      scenario: string
+      systemPrompt: string
+    }
     greetingPrompt: string
     interactiveService: { description: string, id: string, title: string, url: string }
     surveyUrl: string
@@ -29,7 +42,7 @@ export interface KioskVisitorSession {
 
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
 
-const apiBaseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:3000').replace(/\/$/, '')
+const apiBaseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {

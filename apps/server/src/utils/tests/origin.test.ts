@@ -12,11 +12,9 @@ describe('origin utils', () => {
     expect(getTrustedOrigin('https://127.0.0.1:5273')).toBe('https://127.0.0.1:5273')
   })
 
-  it('allows the standalone auth and admin UI origins', () => {
-    expect(getTrustedOrigin('https://accounts.airi.build')).toBe('https://accounts.airi.build')
-    expect(getTrustedOrigin('https://server-dev.airi-server-auth.pages.dev')).toBe('https://server-dev.airi-server-auth.pages.dev')
-    expect(getTrustedOrigin('https://admin.airi.build')).toBe('https://admin.airi.build')
-    expect(getTrustedOrigin('https://server-dev.airi-server-admin.pages.dev')).toBe('https://server-dev.airi-server-admin.pages.dev')
+  it('rejects legacy external AIRI origins', () => {
+    expect(getTrustedOrigin('https://accounts.airi.build')).toBe('')
+    expect(getTrustedOrigin('https://admin.airi.build')).toBe('')
   })
 
   it('rejects private LAN Vite dev origins unless listed in ADDITIONAL_TRUSTED_ORIGINS', () => {
@@ -37,12 +35,12 @@ describe('origin utils', () => {
   it('prefers a trusted referer origin', () => {
     const request = new Request('http://localhost/api/v1/stripe/checkout', {
       headers: {
-        referer: 'https://airi.moeru.ai/settings/flux',
+        referer: 'https://webnavior.example/dashboard',
         origin: 'https://example.com',
       },
     })
 
-    expect(resolveTrustedRequestOrigin(request)).toBe('https://airi.moeru.ai')
+    expect(resolveTrustedRequestOrigin(request, ['https://webnavior.example'])).toBe('https://webnavior.example')
   })
 
   it('falls back to a trusted origin header when referer is missing', () => {
@@ -63,15 +61,10 @@ describe('origin utils', () => {
     })
 
     expect(getAuthTrustedOrigins({
-      API_SERVER_URL: 'https://api.airi.moeru.ai',
+      API_SERVER_URL: 'https://webnavior.example',
       ADDITIONAL_TRUSTED_ORIGINS: [],
     }, request)).toEqual([
-      'https://api.airi.moeru.ai',
-      'https://airi.moeru.ai',
-      'https://accounts.airi.build',
-      'https://server-dev.airi-server-auth.pages.dev',
-      'https://admin.airi.build',
-      'https://server-dev.airi-server-admin.pages.dev',
+      'https://webnavior.example',
       'http://localhost:*',
       'http://127.0.0.1:*',
       'http://localhost:5173',
@@ -79,7 +72,7 @@ describe('origin utils', () => {
   })
 
   describe('resolveCheckoutRedirectBase', () => {
-    const fallback = 'https://airi.moeru.ai'
+    const fallback = 'https://webnavior.example'
 
     it('prefers the trusted request origin over the fallback', () => {
       const request = new Request('http://localhost/api/v1/stripe/checkout', {
@@ -123,15 +116,10 @@ describe('origin utils', () => {
 
   it('includes ADDITIONAL_TRUSTED_ORIGINS in Better Auth trustedOrigins list', () => {
     expect(getAuthTrustedOrigins({
-      API_SERVER_URL: 'https://api.airi.moeru.ai',
+      API_SERVER_URL: 'https://webnavior.example',
       ADDITIONAL_TRUSTED_ORIGINS: ['https://10.0.0.129:5273'],
     })).toEqual([
-      'https://api.airi.moeru.ai',
-      'https://airi.moeru.ai',
-      'https://accounts.airi.build',
-      'https://server-dev.airi-server-auth.pages.dev',
-      'https://admin.airi.build',
-      'https://server-dev.airi-server-admin.pages.dev',
+      'https://webnavior.example',
       'https://10.0.0.129:5273',
       'http://localhost:*',
       'http://127.0.0.1:*',
@@ -140,10 +128,10 @@ describe('origin utils', () => {
 
   it('does not include native deep-link schemes in Better Auth trustedOrigins', () => {
     expect(getTrustedOrigin('capacitor://localhost')).toBe('capacitor://localhost')
-    expect(getTrustedOrigin('ai.moeru.airi-pocket://links')).toBe('ai.moeru.airi-pocket://links')
+    expect(getTrustedOrigin('ai.moeru.airi-pocket://links')).toBe('')
 
     const authOrigins = getAuthTrustedOrigins({
-      API_SERVER_URL: 'https://api.airi.build',
+      API_SERVER_URL: 'https://webnavior.example',
       ADDITIONAL_TRUSTED_ORIGINS: [],
     })
 
@@ -151,23 +139,13 @@ describe('origin utils', () => {
     expect(authOrigins).not.toContain('ai.moeru.airi-pocket://links')
   })
 
-  // ROOT CAUSE:
-  //
-  // Email verification links carry a callbackURL query parameter that Better
-  // Auth validates only against its trustedOrigins list. The standalone auth
-  // UI sends callbackURL=https://accounts.airi.build/ui/verify-email?verified=true,
-  // but getAuthTrustedOrigins previously listed only API_SERVER_URL,
-  // additional env origins, and localhost wildcards. Clicking the email from
-  // a normal inbox has no usable Origin/Referer header, so request-derived
-  // trust could not add the auth UI origin and Better Auth returned
-  // INVALID_CALLBACK_URL.
-  //
-  // Before patch: auth UI callback -> not in trustedOrigins -> 403.
-  // After patch: built-in first-party exact origins are always present.
-  it('includes built-in first-party origins for email verification callbacks without request headers', () => {
-    expect(getAuthTrustedOrigins({
-      API_SERVER_URL: 'https://api.airi.build',
+  it('does not trust legacy external callback origins', () => {
+    const authOrigins = getAuthTrustedOrigins({
+      API_SERVER_URL: 'https://webnavior.example',
       ADDITIONAL_TRUSTED_ORIGINS: [],
-    })).toContain('https://accounts.airi.build')
+    })
+
+    expect(authOrigins).not.toContain('https://accounts.airi.build')
+    expect(authOrigins).not.toContain('https://admin.airi.build')
   })
 })

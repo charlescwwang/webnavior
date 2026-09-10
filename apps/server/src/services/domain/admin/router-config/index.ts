@@ -2,7 +2,7 @@ import type Redis from 'ioredis'
 import type { InferOutput } from 'valibot'
 
 import type { EnvelopeCrypto } from '../../../../utils/envelope-crypto'
-import type { asrModelSchema, ConfigKVService, llmModelSchema, llmRouterConfigSchema, ttsModelSchema, unspeechUpstreamSchema } from '../../../adapters/config-kv'
+import type { asrModelSchema, ConfigKVService, llmModelSchema, llmRouterConfigSchema, ttsModelSchema, unspeechUpstreamSchema, webnaviorAudioConfigSchema } from '../../../adapters/config-kv'
 
 import { useLogger } from '@guiiai/logg'
 
@@ -39,6 +39,7 @@ type LlmModel = InferOutput<typeof llmModelSchema>
 type TtsModel = InferOutput<typeof ttsModelSchema>
 type AsrModel = InferOutput<typeof asrModelSchema>
 type UnspeechUpstream = InferOutput<typeof unspeechUpstreamSchema>
+type WebnaviorAudioConfig = InferOutput<typeof webnaviorAudioConfigSchema>
 type KeyEntry = LlmModel['upstreams'][number]['keys'][number]
 type LlmSliceKind = 'openrouter' | 'bedrock' | 'openai-compatible'
 
@@ -1210,7 +1211,68 @@ export function createAdminRouterConfigService(deps: AdminRouterConfigDeps) {
     return { applied, invalidatedKeys, preview }
   }
 
-  return { apply, current }
+  async function removeLlmModel(modelName: string): Promise<void> {
+    const [routerConfig, defaultChatModel] = await Promise.all([
+      deps.configKV.getOptional('LLM_ROUTER_CONFIG'),
+      deps.configKV.getOptional('DEFAULT_CHAT_MODEL'),
+    ])
+    if (!routerConfig?.llm.models[modelName])
+      throw createBadRequestError('The model does not exist', 'MODEL_NOT_FOUND')
+    const models = Object.fromEntries(Object.entries(routerConfig.llm.models).filter(([name]) => name !== modelName))
+    const nextRouterConfig = {
+      ...routerConfig,
+      llm: { ...routerConfig.llm, models },
+    }
+    await deps.configKV.set('LLM_ROUTER_CONFIG', nextRouterConfig as never)
+    const invalidatedKeys = ['LLM_ROUTER_CONFIG']
+    if (defaultChatModel === modelName) {
+      await deps.configKV.unset('DEFAULT_CHAT_MODEL')
+      invalidatedKeys.push('DEFAULT_CHAT_MODEL')
+    }
+    for (const key of invalidatedKeys)
+      await deps.redis.publish('configkv:invalidate', JSON.stringify({ key, version: Date.now(), publishedAt: Date.now() }))
+    logger.withFields({ modelName, invalidatedKeys }).log('admin-router-config LLM model removed')
+  }
+
+  async function currentWebnaviorAudioConfig(): Promise<WebnaviorAudioConfig> {
+    return await deps.configKV.getOrThrow('WEBNAVIOR_AUDIO_CONFIG')
+  }
+
+  async function saveWebnaviorAudioConfig(input: {
+    capability: 'asr' | 'tts'
+    modelName: string
+    upstreamModel: string
+    baseURL: string
+    plaintextKey?: string
+  }): Promise<WebnaviorAudioConfig> {
+    const existing = await currentWebnaviorAudioConfig()
+    const current = existing[input.capability]
+    const keyCiphertext = input.plaintextKey?.trim()
+      ? deps.envelope.encryptKey(input.plaintextKey, { modelName: `webnavior-audio:${input.capability}`, keyEntryId: 'default' })
+      : current?.keyCiphertext
+    await deps.configKV.set('WEBNAVIOR_AUDIO_CONFIG', {
+      ...existing,
+      [input.capability]: {
+        modelName: input.modelName,
+        upstreamModel: input.upstreamModel,
+        baseURL: input.baseURL,
+        ...(keyCiphertext ? { keyCiphertext } : {}),
+      },
+    })
+    await deps.redis.publish('configkv:invalidate', JSON.stringify({ key: 'WEBNAVIOR_AUDIO_CONFIG', version: Date.now(), publishedAt: Date.now() }))
+    return await currentWebnaviorAudioConfig()
+  }
+
+  async function clearWebnaviorAudioConfig(capability: 'asr' | 'tts'): Promise<WebnaviorAudioConfig> {
+    const existing = await currentWebnaviorAudioConfig()
+    const next = { ...existing }
+    delete next[capability]
+    await deps.configKV.set('WEBNAVIOR_AUDIO_CONFIG', next)
+    await deps.redis.publish('configkv:invalidate', JSON.stringify({ key: 'WEBNAVIOR_AUDIO_CONFIG', version: Date.now(), publishedAt: Date.now() }))
+    return await currentWebnaviorAudioConfig()
+  }
+
+  return { apply, current, removeLlmModel, currentWebnaviorAudioConfig, saveWebnaviorAudioConfig, clearWebnaviorAudioConfig }
 }
 
 export type AdminRouterConfigService = ReturnType<typeof createAdminRouterConfigService>

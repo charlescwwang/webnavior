@@ -116,6 +116,9 @@ web-ext.config.ts
 # Data
 .postgres
 twitter-session.json
+# Local Webnavior character-card uploads. The database stores metadata while
+# this directory holds user-provided runtime binaries.
+apps/server/data/
 
 # Symlinks created by nix build
 result*

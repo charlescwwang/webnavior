@@ -1,7 +1,7 @@
 import { useInteractionProfile } from '@proj-airi/stage-ui/composables/use-interaction-profile'
 import { computed, shallowRef } from 'vue'
 
-const defaultRestaurantOrderingUrl = import.meta.env.VITE_ORDER_MENU_URL ?? 'http://localhost:5174'
+const defaultRestaurantOrderingUrl = import.meta.env.VITE_ORDER_MENU_URL ?? 'http://localhost:5166'
 
 const interactionProfile = useInteractionProfile({ defaultServiceUrl: defaultRestaurantOrderingUrl })
 

@@ -1,8 +1,6 @@
 export const SERVER_AUTH_UI_BASE_PATH = '/auth'
 export const AUTH_UI_API_SERVER_URL_QUERY_PARAM = 'api_server_url'
-export const DEFAULT_AUTH_UI_URL = 'https://accounts.airi.build/ui'
-export const SERVER_DEV_API_SERVER_URL = 'https://airi-server-dev.up.railway.app'
-export const SERVER_DEV_AUTH_UI_URL = 'https://server-dev.airi-server-auth.pages.dev/ui'
+export const DEFAULT_AUTH_UI_URL = 'http://localhost:5167'
 
 /**
  * Builds an absolute URL inside the externally hosted auth UI.
@@ -36,33 +34,17 @@ export function buildAuthUiUrl(authUiUrl: string, path: string, search = ''): st
  *
  * Use when:
  * - The server redirects historical `/auth/*` entrypoints to the standalone UI.
- * - The server-dev Railway deployment needs the matching Cloudflare Pages
- *   branch without changing the production auth domain.
+ * - A caller needs a normalized configured auth UI base.
  *
  * Expects:
  * - `authUiUrl` is the configured auth UI base URL.
  * - `apiServerUrl` is the configured API server URL.
  *
  * Returns:
- * - The configured auth UI URL, except for the server-dev default pairing where
- *   the matching Pages branch URL is returned.
+ * - The configured auth UI URL.
  */
 export function resolveAuthUiUrl(authUiUrl: string, apiServerUrl: string): string {
-  try {
-    const authUi = new URL(authUiUrl)
-    const defaultAuthUi = new URL(DEFAULT_AUTH_UI_URL)
-    const apiServer = new URL(apiServerUrl)
-    const authUiBase = `${authUi.origin}${authUi.pathname.replace(/\/+$/, '')}`
-    const defaultAuthUiBase = `${defaultAuthUi.origin}${defaultAuthUi.pathname.replace(/\/+$/, '')}`
-
-    if (authUiBase === defaultAuthUiBase && apiServer.origin === SERVER_DEV_API_SERVER_URL) {
-      return SERVER_DEV_AUTH_UI_URL
-    }
-  }
-  catch {
-    return authUiUrl
-  }
-
+  void apiServerUrl
   return authUiUrl
 }
 

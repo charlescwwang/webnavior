@@ -35,6 +35,7 @@ describe('kiosk service', () => {
     await db.insert(schema.user).values([
       { id: 'system-admin', name: 'System Admin', email: 'system-admin@example.com', role: 'admin' },
       { id: 'site-admin', name: 'Site Admin', email: 'site-admin@example.com' },
+      { id: 'content-manager', name: 'Content Manager', email: 'content-manager@example.com' },
       { id: 'viewer', name: 'Viewer', email: 'viewer@example.com' },
       { id: 'other-site-admin', name: 'Other Site Admin', email: 'other-site-admin@example.com' },
     ])
@@ -121,6 +122,39 @@ describe('kiosk service', () => {
     expect(systemAdminSites.map(site => site.id)).toEqual([alphaSite.id, betaSite.id, hiddenSite.id])
     expect(managedDevices.map(device => device.id)).toEqual([betaDevice.id])
     await expect(service.listSiteDevices({ siteId: hiddenSite.id, userId: 'site-admin' })).rejects.toThrow('Forbidden')
+  })
+
+  it('lets a content manager edit customer-facing draft fields without publishing or changing technical settings', async () => {
+    const site = await service.createSite({ name: 'Content Store' })
+    await service.addMember({ siteId: site.id, userId: 'content-manager', role: 'content_manager' })
+    await service.saveProfileDraft({ siteId: site.id, name: 'Lunch menu', snapshot: profileSnapshot })
+
+    const capabilities = await service.getSiteManagementCapabilities({ siteId: site.id, userId: 'content-manager' })
+    const draft = await service.saveContentProfileDraft({
+      siteId: site.id,
+      snapshot: {
+        ...profileSnapshot,
+        agentInstructions: '內容管理員不可覆寫這段系統設定。',
+        characterName: '午餐助手',
+        interactiveService: {
+          ...profileSnapshot.interactiveService,
+          title: '午餐點餐服務',
+          url: 'https://attacker.example.com/should-not-apply',
+        },
+      },
+    })
+
+    expect(capabilities).toEqual({
+      canEditExperience: true,
+      canEditTechnicalSettings: false,
+      canManageDevices: false,
+      canPublishExperience: false,
+    })
+    expect(draft.name).toBe('Lunch menu')
+    expect(draft.snapshot.characterName).toBe('午餐助手')
+    expect(draft.snapshot.agentInstructions).toBe(profileSnapshot.agentInstructions)
+    expect(draft.snapshot.interactiveService.title).toBe('午餐點餐服務')
+    expect(draft.snapshot.interactiveService.url).toBe(profileSnapshot.interactiveService.url)
   })
 
   it('keeps transcript and iframe events in their append order', async () => {

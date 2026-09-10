@@ -23,6 +23,7 @@ import {
 import { adminGuard } from '../../../../middlewares/admin-guard'
 import { authGuard } from '../../../../middlewares/auth'
 import { createBadRequestError } from '../../../../utils/error'
+import { discoverModels } from './operations/discover-models'
 
 /**
  * Hard cap on slices per request. The envelope crypto is cheap (~1ms each),
@@ -39,6 +40,25 @@ const MAX_KEY_LENGTH = 8192
 
 /** AAD separator constraint mirrored from `keyEntrySchema` in config-kv. */
 const NO_PIPE = regex(/^[^|]+$/, 'must not contain "|" (reserved AAD separator)')
+
+const DiscoverModelsSchema = object({
+  baseURL: pipe(string(), url('baseURL must be a valid URL')),
+  plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
+})
+
+const DiscoverAudioSchema = object({
+  capability: picklist(['asr', 'tts']),
+  baseURL: pipe(string(), url('baseURL must be a valid URL')),
+  plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
+})
+
+const WebnaviorAudioConfigSchema = object({
+  capability: picklist(['asr', 'tts']),
+  modelName: pipe(string(), nonEmpty('modelName is required'), maxLength(200), NO_PIPE),
+  upstreamModel: pipe(string(), nonEmpty('upstreamModel is required'), maxLength(200)),
+  baseURL: pipe(string(), url('baseURL must be a valid URL')),
+  plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
+})
 
 const OpenRouterSliceSchema = object({
   kind: literal('openrouter'),
@@ -260,12 +280,98 @@ const BodySchema = object({
  */
 export function createAdminRouterConfigRoutes(
   service: AdminRouterConfigService,
+  options: { fetchImpl?: typeof fetch } = {},
 ) {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch
+
   return new Hono<HonoEnv>()
     .use('*', authGuard)
     .use('*', adminGuard)
     .get('/', async (c) => {
       return c.json(await service.current())
+    })
+    .post('/discover-models', async (c) => {
+      const raw = await c.req.json().catch(() => null)
+      if (raw == null)
+        throw createBadRequestError('Request body must be JSON', 'INVALID_BODY')
+
+      const parsed = safeParse(DiscoverModelsSchema, raw)
+      if (!parsed.success) {
+        throw createBadRequestError(
+          'Invalid model discovery request',
+          'INVALID_BODY',
+          parsed.issues.map(issue => ({
+            path: issue.path?.map(part => part.key).join('.'),
+            message: issue.message,
+          })),
+        )
+      }
+
+      return c.json({ models: await discoverModels(parsed.output, fetchImpl) })
+    })
+    .post('/discover-audio', async (c) => {
+      const raw = await c.req.json().catch(() => null)
+      const parsed = safeParse(DiscoverAudioSchema, raw)
+      if (!parsed.success)
+        throw createBadRequestError('Invalid audio discovery request', 'INVALID_BODY')
+
+      // ASR deployments often implement OpenAI's transcription request shape
+      // but deliberately omit the optional `/models` catalog. Their OpenAPI
+      // document remains a reliable capability check and exposes its default.
+      if (parsed.output.capability === 'asr') {
+        const response = await fetchImpl(new URL('/openapi.json', parsed.output.baseURL), {
+          headers: parsed.output.plaintextKey ? { authorization: `Bearer ${parsed.output.plaintextKey}` } : undefined,
+        })
+        if (!response.ok)
+          throw createBadRequestError(`ASR service discovery failed with ${response.status}`, 'DISCOVERY_FAILED')
+        const document = await response.json() as {
+          paths?: Record<string, { post?: { requestBody?: { content?: Record<string, { schema?: { $ref?: string, properties?: Record<string, { default?: unknown }> } }> } } }>
+          components?: { schemas?: Record<string, { properties?: Record<string, { default?: unknown }> }> }
+        }
+        const schema = document.paths?.['/audio/transcriptions']?.post?.requestBody?.content?.['multipart/form-data']?.schema
+        const referencedSchema = schema?.$ref?.startsWith('#/components/schemas/')
+          ? document.components?.schemas?.[schema.$ref.slice('#/components/schemas/'.length)]
+          : undefined
+        const model = schema?.properties?.model?.default ?? referencedSchema?.properties?.model?.default
+        if (typeof model !== 'string' || !model)
+          throw createBadRequestError('The ASR service does not publish a transcription model default', 'DISCOVERY_FAILED')
+        return c.json({ models: [{ id: model }], source: 'openapi' })
+      }
+
+      return c.json({ models: await discoverModels(parsed.output, fetchImpl), source: 'models' })
+    })
+    .get('/webnavior-audio', async (c) => {
+      const config = await service.currentWebnaviorAudioConfig()
+      return c.json({
+        asr: config.asr ? { ...config.asr, keyCiphertext: undefined, hasApiKey: Boolean(config.asr.keyCiphertext) } : undefined,
+        tts: config.tts ? { ...config.tts, keyCiphertext: undefined, hasApiKey: Boolean(config.tts.keyCiphertext) } : undefined,
+      })
+    })
+    .post('/webnavior-audio', async (c) => {
+      const raw = await c.req.json().catch(() => null)
+      const parsed = safeParse(WebnaviorAudioConfigSchema, raw)
+      if (!parsed.success)
+        throw createBadRequestError('Invalid Webnavior audio configuration', 'INVALID_BODY')
+      const config = await service.saveWebnaviorAudioConfig(parsed.output)
+      return c.json({
+        asr: config.asr ? { ...config.asr, keyCiphertext: undefined, hasApiKey: Boolean(config.asr.keyCiphertext) } : undefined,
+        tts: config.tts ? { ...config.tts, keyCiphertext: undefined, hasApiKey: Boolean(config.tts.keyCiphertext) } : undefined,
+      })
+    })
+    .delete('/webnavior-audio/:capability', async (c) => {
+      const capability = c.req.param('capability')
+      if (capability !== 'asr' && capability !== 'tts')
+        throw createBadRequestError('Invalid audio capability', 'INVALID_BODY')
+      await service.clearWebnaviorAudioConfig(capability)
+      return c.body(null, 204)
+    })
+    .delete('/models/:modelName', async (c) => {
+      const modelName = c.req.param('modelName').trim()
+      if (!modelName || modelName.length > 200 || modelName.includes('|'))
+        throw createBadRequestError('Invalid model name', 'INVALID_MODEL_NAME')
+
+      await service.removeLlmModel(modelName)
+      return c.body(null, 204)
     })
     .post('/', async (c) => {
       const user = c.get('user')!

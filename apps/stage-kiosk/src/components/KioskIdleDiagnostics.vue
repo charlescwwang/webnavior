@@ -26,7 +26,7 @@ const label = computed(() => {
   if (props.state === 'resetting')
     return '重置中'
   if (props.pendingWork)
-    return '閒置重置暫停：AIRI 處理中'
+    return '閒置重置暫停：服務員處理中'
   return `閒置重置：${secondsUntilReset.value ?? '—'} 秒`
 })
 </script>

@@ -4,6 +4,7 @@ import type { FeedbackInvitationSettings } from '@proj-airi/stage-ui/components'
 import type { KioskInteractiveService } from '../composables/useKioskInteractiveServices'
 import type { KioskProactiveSettings as KioskProactiveSettingsValue } from '../composables/useKioskProactiveSettings'
 import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiveVision'
+import type { KioskDevice } from '../services/kiosk-device'
 
 import KioskAssistanceReminderSettings from './KioskAssistanceReminderSettings.vue'
 import KioskFeedbackInvitationSettings from './KioskFeedbackInvitationSettings.vue'
@@ -12,6 +13,7 @@ import KioskObservationSettings from './KioskObservationSettings.vue'
 import KioskProactiveSettings from './KioskProactiveSettings.vue'
 
 const props = defineProps<{
+  device?: KioskDevice
   sessionEnding: boolean
   proactiveStatus: KioskProactiveVisionStatus
   proactiveError?: string
@@ -44,6 +46,26 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
     </header>
 
     <div class="admin-content">
+      <section v-if="props.device" class="admin-section">
+        <h3>此 Kiosk 裝置</h3>
+        <dl class="device-details">
+          <div>
+            <dt>設備名稱</dt>
+            <dd>{{ props.device.label }}</dd>
+          </div>
+          <div>
+            <dt>設備編號</dt>
+            <dd class="device-id">
+              {{ props.device.id }}
+            </dd>
+          </div>
+          <div>
+            <dt>註冊方式</dt>
+            <dd>{{ props.device.registrationMethod === 'development' ? '開發註冊' : 'QR Code 配對' }}</dd>
+          </div>
+        </dl>
+      </section>
+
       <KioskObservationSettings v-model="proactiveSettings.observation" />
 
       <KioskProactiveSettings
@@ -99,6 +121,11 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
 .admin-content { display: grid; gap: 1rem; overflow-y: auto; padding: 1.2rem; }
 .admin-section { display: grid; gap: .8rem; border: 1px solid rgb(255 255 255 / 12%); border-radius: 1rem; padding: 1rem; background: rgb(255 255 255 / 4%); }
 .admin-section h3 { margin: 0; font-size: .95rem; }
+.device-details { display: grid; gap: .7rem; margin: 0; }
+.device-details div { display: grid; gap: .15rem; }
+.device-details dt { color: rgb(217 250 246 / 62%); font-size: .78rem; }
+.device-details dd { margin: 0; color: #ecfffb; font-size: .9rem; }
+.device-id { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem !important; }
 .toggle-row { display: flex; align-items: center; gap: .7rem; cursor: pointer; }
 .session-description { margin: -.25rem 0 0; color: rgb(217 250 246 / 70%); font-size: .84rem; line-height: 1.5; }
 .end-session-button { justify-self: start; border: 1px solid rgb(255 191 125 / 46%); border-radius: .7rem; padding: .6rem .85rem; color: #ffe0b5; background: rgb(117 58 26 / 36%); cursor: pointer; }

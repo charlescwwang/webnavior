@@ -44,6 +44,7 @@ function createTestDeps() {
     kioskService: {
       resolveDeviceCredential: vi.fn(),
     } as any,
+    kioskCharacterAssetService: {} as any,
     providerService: {} as any,
     fluxService: {} as any,
     fluxTransactionService: {} as any,

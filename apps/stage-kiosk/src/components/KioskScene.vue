@@ -360,7 +360,7 @@ onUnmounted(() => {
       <span>設定</span>
     </KioskAdminAccess>
 
-    <section class="stage-region" aria-label="AIRI 虛擬服務員">
+    <section class="stage-region" aria-label="虛擬服務員">
       <WidgetStage
         class="stage-model"
         :cursor-position="cursorPosition"
