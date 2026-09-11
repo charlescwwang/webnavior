@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { KioskProfileDraft, KioskSiteManagementCapabilities } from '../../composables/useKioskManagement'
 
-import { Button, Input, Textarea } from '@proj-airi/ui'
+import { Button, FieldCheckbox, Input, Textarea } from '@proj-airi/ui'
 import { reactive, watch } from 'vue'
 
 import ExperienceEditorSection from './experienceEditorSection.vue'
@@ -59,7 +59,7 @@ function selectRoleCard(event: Event) {
   <section :class="['flex flex-col gap-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm', 'dark:border-slate-800 dark:bg-slate-900']">
     <div>
       <h2 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
-        互動體驗內容
+        Kiosk 設定
       </h2>
       <p :class="['mb-0 mt-1 text-sm text-slate-500 dark:text-slate-400']">
         {{ props.capabilities?.canEditExperience ? '儲存只會更新體驗草稿；發布後才會套用到此店別的設備。' : '你可以查看此店別目前的互動體驗，但沒有編輯權限。' }}
@@ -128,6 +128,12 @@ function selectRoleCard(event: Event) {
     </ExperienceEditorSection>
 
     <ExperienceEditorSection title="對話行為" description="設定顧客開始互動時會看到的文字。">
+      <FieldCheckbox
+        v-model="form.snapshot.voiceConversationOnly"
+        :disabled="busy || !props.capabilities?.canEditExperience"
+        label="僅允許語音對話"
+        description="啟用後，已設定 ASR 與 TTS 的 Kiosk 不會顯示文字輸入欄，顧客只能透過麥克風說話。"
+      />
       <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
         開場招呼
         <Textarea v-model="form.snapshot.greetingPrompt" :disabled="busy || !props.capabilities?.canEditExperience" :rows="3" />

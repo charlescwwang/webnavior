@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@proj-airi/ui'
 
-interface AudioService { upstreamModel: string, baseURL: string }
+interface AudioService { upstreamModel: string, baseURL: string, voice?: string }
 
 const props = defineProps<{
   asr?: AudioService
@@ -67,7 +67,7 @@ const emit = defineEmits<{
           <p :class="['m-0 text-sm font-medium text-slate-900 dark:text-white']">
             語音合成 <span :class="['ml-1 text-xs font-normal text-slate-500']">TTS</span>
           </p><p :class="['mb-0 mt-0.5 font-mono text-xs text-slate-500']">
-            {{ props.tts?.upstreamModel ?? '尚未設定' }}<span v-if="props.tts"> · {{ props.tts.baseURL }}</span>
+            {{ props.tts?.upstreamModel ?? '尚未設定' }}<span v-if="props.tts"> · {{ props.tts.voice ?? 'zh-TW-HsiaoChenNeural' }} · {{ props.tts.baseURL }}</span>
           </p>
         </div><span :class="['rounded-full px-2 py-0.5 text-xs', props.tts ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300']">{{ props.tts ? '已設定' : '未設定' }}</span><a href="#audio-services" :class="['text-sm text-cyan-700 hover:underline dark:text-cyan-300']">設定</a><button v-if="props.tts" :disabled="props.loading" :class="['text-sm text-slate-500 hover:text-red-600 disabled:opacity-50 dark:text-slate-400']" type="button" @click="emit('removeAudio', 'tts')">
           移除

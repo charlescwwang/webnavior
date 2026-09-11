@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const props = defineProps<{ loading: boolean, models: string[] }>()
+const props = defineProps<{ endpoints: Record<string, string | undefined>, loading: boolean, models: string[] }>()
 const emit = defineEmits<{ remove: [modelId: string] }>()
 </script>
 
@@ -16,7 +16,7 @@ const emit = defineEmits<{ remove: [modelId: string] }>()
     </div>
     <ul :class="['m-0 divide-y divide-slate-200 p-0 dark:divide-slate-800']">
       <li v-for="model in props.models" :key="model" :class="['flex items-center gap-3 px-5 py-3']">
-        <span :class="['i-solar:cpu-bolt-bold-duotone text-slate-400']" /><code :class="['min-w-0 flex-1 break-all text-sm text-slate-800 dark:text-slate-100']">{{ model }}</code><button :disabled="props.loading" :class="['text-sm text-slate-500 hover:text-red-600 disabled:opacity-50 dark:text-slate-400']" type="button" @click="emit('remove', model)">
+        <span :class="['i-solar:cpu-bolt-bold-duotone text-slate-400']" /><div :class="['min-w-0 flex-1']"><code :class="['block break-all text-sm text-slate-800 dark:text-slate-100']">{{ model }}</code><span :class="['mt-1 block break-all font-mono text-xs text-slate-500 dark:text-slate-400']">{{ props.endpoints[model] ?? '尚未設定連線位址' }}</span></div><button :disabled="props.loading" :class="['text-sm text-slate-500 hover:text-red-600 disabled:opacity-50 dark:text-slate-400']" type="button" @click="emit('remove', model)">
           移除
         </button>
       </li>

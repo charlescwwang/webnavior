@@ -1,9 +1,23 @@
 <script setup lang="ts">
+import { Button } from '@proj-airi/ui'
 import { onMounted } from 'vue'
 
 import { useKioskManagement } from '../../composables/useKioskManagement'
 
-const { devices, load, loading, message, selectedSite, selectedSiteId, selectSite, sites } = useKioskManagement()
+const {
+  capabilities,
+  deleteDevice,
+  devices,
+  disableDevice,
+  load,
+  loading,
+  message,
+  saving,
+  selectedSite,
+  selectedSiteId,
+  selectSite,
+  sites,
+} = useKioskManagement()
 
 onMounted(() => void load())
 </script>
@@ -55,6 +69,27 @@ onMounted(() => void load())
             <p :class="['mb-0 mt-1 text-xs text-slate-500 dark:text-slate-400']">
               註冊方式：{{ device.registrationMethod }}
             </p>
+            <p v-if="device.disabledAt" :class="['mb-0 mt-1 text-xs text-amber-700 dark:text-amber-300']">
+              已停用
+            </p>
+          </div>
+          <div v-if="capabilities?.canManageDevices" :class="['ml-auto flex items-center gap-2']">
+            <Button
+              v-if="!device.disabledAt"
+              variant="secondary"
+              :disabled="saving"
+              @click="disableDevice(device.id)"
+            >
+              停用
+            </Button>
+            <Button
+              v-else
+              variant="danger"
+              :disabled="saving"
+              @click="deleteDevice(device.id)"
+            >
+              刪除
+            </Button>
           </div>
         </li>
       </ul>

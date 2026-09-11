@@ -10,7 +10,8 @@ interface Model { id: string }
 
 const props = defineProps<{ busy: boolean }>()
 const emit = defineEmits<{ saved: [] }>()
-const form = reactive({ capability: 'asr' as Capability, baseURL: '', apiKey: '', selectedModel: '' })
+const defaultTtsVoice = 'zh-TW-HsiaoChenNeural'
+const form = reactive({ capability: 'asr' as Capability, baseURL: '', apiKey: '', selectedModel: '', voice: '' })
 const models = shallowRef<Model[]>([])
 const status = shallowRef('')
 const checking = shallowRef(false)
@@ -22,6 +23,7 @@ const selectableModels = computed(() => form.capability === 'asr'
 
 watch(() => form.capability, () => {
   form.selectedModel = ''
+  form.voice = form.capability === 'tts' ? defaultTtsVoice : ''
   models.value = []
   status.value = ''
 })
@@ -51,7 +53,7 @@ async function check() {
 async function save() {
   if (!form.selectedModel)
     return
-  const response = await authedFetch(endpoint('/webnavior-audio'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capability: form.capability, baseURL: form.baseURL, upstreamModel: form.selectedModel, modelName: `openai-compatible/${form.selectedModel}`, ...(form.apiKey ? { plaintextKey: form.apiKey } : {}) }) })
+  const response = await authedFetch(endpoint('/webnavior-audio'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ capability: form.capability, baseURL: form.baseURL, upstreamModel: form.selectedModel, modelName: `openai-compatible/${form.selectedModel}`, ...(form.capability === 'tts' ? { voice: form.voice } : {}), ...(form.apiKey ? { plaintextKey: form.apiKey } : {}) }) })
   if (response.ok) {
     status.value = `${form.capability === 'asr' ? '語音辨識' : '語音合成'}設定已加密儲存。`
     emit('saved')
@@ -74,6 +76,7 @@ async function save() {
     <label :class="['flex flex-col gap-2 text-sm font-medium']">用途<select v-model="form.capability" :class="['rounded-lg border px-3 py-2']"><option value="asr">語音辨識（ASR）</option><option value="tts">語音合成（TTS）</option></select></label>
     <label :class="['flex flex-col gap-2 text-sm font-medium']">服務位址（Base URL）<Input v-model="form.baseURL" type="url" placeholder="https://api.example.com/v1" /></label>
     <label :class="['flex flex-col gap-2 text-sm font-medium']">API Key（選填）<Input v-model="form.apiKey" type="password" autocomplete="new-password" /><span :class="['text-xs font-normal text-slate-500']">地端或內網服務可留白；若服務要求驗證才填寫。</span></label>
+    <label v-if="form.capability === 'tts'" :class="['flex flex-col gap-2 text-sm font-medium']">語音（Voice）<Input v-model="form.voice" placeholder="zh-TW-HsiaoChenNeural" /><span :class="['text-xs font-normal text-slate-500']">會原樣傳到 <code>voice</code> 欄位。預設為繁體中文曉臻語音。</span></label>
     <div :class="['flex flex-wrap items-center gap-3']">
       <Button :disabled="!canCheck" @click="check">
         {{ checking ? '正在測試…' : '測試連線並讀取模型' }}

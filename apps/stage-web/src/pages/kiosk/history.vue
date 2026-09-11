@@ -1,0 +1,95 @@
+<script setup lang="ts">
+import { computed, onMounted, shallowRef, watch } from 'vue'
+
+import KioskVisitorSessionList from '../../components/Webnavior/kioskVisitorSessionList.vue'
+import KioskVisitorSessionTranscript from '../../components/Webnavior/kioskVisitorSessionTranscript.vue'
+
+import { useKioskManagement } from '../../composables/useKioskManagement'
+
+const {
+  load,
+  deleteVisitorSessions,
+  loadVisitorSessions,
+  selectedSite,
+  selectedSiteId,
+  selectSite,
+  selectVisitorSession,
+  sites,
+  visitorHistoryError,
+  visitorHistoryLoading,
+  visitorSessionDetail,
+  visitorSessions,
+} = useKioskManagement()
+
+const selectedSession = computed(() => visitorSessions.value.find(session => session.id === visitorSessionDetail.value?.session.id))
+const selectedVisitorSessionIds = shallowRef<string[]>([])
+
+async function deleteSelectedVisitorSessions() {
+  await deleteVisitorSessions(selectedVisitorSessionIds.value)
+  selectedVisitorSessionIds.value = []
+}
+
+onMounted(() => void load())
+
+watch(selectedSiteId, () => void loadVisitorSessions())
+</script>
+
+<template>
+  <div :class="['flex flex-col gap-6']">
+    <section>
+      <p :class="['mb-2 mt-0 text-sm font-semibold tracking-wide text-cyan-700 dark:text-cyan-300']">
+        HISTORY
+      </p>
+      <h1 :class="['m-0 text-3xl font-bold tracking-tight text-slate-950 dark:text-white']">
+        Kiosk 使用歷程
+      </h1>
+      <p :class="['mb-0 mt-2 text-sm text-slate-600 dark:text-slate-300']">
+        查看保留期間內的顧客文字對話、語音轉錄、服務事件與內部 POC 原始錄音／影像。
+      </p>
+    </section>
+
+    <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
+      店別
+      <select
+        :value="selectedSiteId"
+        :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900']"
+        @change="selectSite(($event.target as HTMLSelectElement).value)"
+      >
+        <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
+      </select>
+    </label>
+
+    <p v-if="selectedSite" :class="['m-0 text-sm text-slate-500 dark:text-slate-400']">
+      {{ selectedSite.interactionRetentionDays }} 天後會依保存政策清除完成的接待紀錄。
+    </p>
+    <p v-if="visitorHistoryError" :class="['m-0 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-400/10 dark:text-amber-100']">
+      {{ visitorHistoryError }}
+    </p>
+    <p v-else-if="visitorHistoryLoading" :class="['m-0 text-sm text-slate-500 dark:text-slate-400']">
+      正在載入使用歷程…
+    </p>
+
+    <section v-else :class="['grid gap-6 xl:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)]']">
+      <div :class="['flex flex-col gap-3']">
+        <div v-if="selectedVisitorSessionIds.length" :class="['flex items-center justify-between gap-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 dark:bg-rose-400/10 dark:text-rose-100']">
+          <span>已選取 {{ selectedVisitorSessionIds.length }} 筆</span>
+          <button type="button" :class="['rounded-md bg-rose-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-800']" @click="deleteSelectedVisitorSessions">刪除選取紀錄</button>
+        </div>
+        <KioskVisitorSessionList
+          :selected-id="visitorSessionDetail?.session.id"
+          :selected-ids="selectedVisitorSessionIds"
+          :sessions="visitorSessions"
+          @select="selectVisitorSession"
+          @select-ids="selectedVisitorSessionIds = $event"
+        />
+      </div>
+      <KioskVisitorSessionTranscript :detail="visitorSessionDetail" :session="selectedSession" />
+    </section>
+  </div>
+</template>
+
+<route lang="yaml">
+meta:
+  layout: webnavior-admin
+  title: Kiosk 使用歷程
+</route>

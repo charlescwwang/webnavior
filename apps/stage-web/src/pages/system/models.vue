@@ -40,7 +40,7 @@ interface RouterConfigCurrent {
 
 interface AudioConfig {
   asr?: { modelName: string, upstreamModel: string, baseURL: string, hasApiKey: boolean }
-  tts?: { modelName: string, upstreamModel: string, baseURL: string, hasApiKey: boolean }
+  tts?: { modelName: string, upstreamModel: string, baseURL: string, hasApiKey: boolean, voice?: string }
 }
 
 const config = shallowRef<RouterConfigCurrent>()
@@ -52,6 +52,13 @@ const removalDialogOpen = shallowRef(false)
 const form = reactive({ chatModel: '' })
 
 const llmModels = computed(() => Object.keys(config.value?.preview.LLM_ROUTER_CONFIG?.llm.models ?? {}).sort())
+const llmEndpoints = computed<Record<string, string | undefined>>(() => Object.fromEntries(llmModels.value.map(modelId => {
+  const model = config.value?.preview.LLM_ROUTER_CONFIG?.llm.models[modelId]
+  const upstreams = model && typeof model === 'object' ? (model as { upstreams?: unknown }).upstreams : undefined
+  const firstUpstream = Array.isArray(upstreams) ? upstreams[0] : undefined
+  const baseURL = firstUpstream && typeof firstUpstream === 'object' ? (firstUpstream as { baseURL?: unknown }).baseURL : undefined
+  return [modelId, typeof baseURL === 'string' ? baseURL : undefined]
+})))
 const llmEndpoint = computed(() => {
   const model = config.value?.preview.LLM_ROUTER_CONFIG?.llm.models[form.chatModel]
   if (!model || typeof model !== 'object')
@@ -207,7 +214,7 @@ onMounted(load)
       @update:chat-model="form.chatModel = $event"
     />
 
-    <ConversationModelList :loading="loading" :models="llmModels" @remove="pendingRemovalModelId = $event; removalDialogOpen = true" />
+    <ConversationModelList :endpoints="llmEndpoints" :loading="loading" :models="llmModels" @remove="pendingRemovalModelId = $event; removalDialogOpen = true" />
 
     <ModelProviderConnection :busy="loading" @save="saveProvider" />
     <div id="audio-services">

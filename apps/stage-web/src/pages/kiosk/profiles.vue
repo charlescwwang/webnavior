@@ -22,12 +22,14 @@ const route = useRoute()
 const deleteDialogOpen = shallowRef(false)
 const {
   capabilities,
+  createProfileDraft,
   deleteSelectedSite,
   devices,
   load,
   loading,
   message,
   profileDraft,
+  profileDrafts,
   save,
   saveModelPolicy,
   saving,
@@ -35,6 +37,7 @@ const {
   selectedSite,
   selectedSiteId,
   selectSite,
+  selectProfileDraft,
   sites,
   uploadCharacterAsset,
 } = useKioskManagement()
@@ -117,16 +120,47 @@ watch(() => route.query.site, async (siteId) => {
 
     <section :class="['grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]']">
       <div :class="['flex flex-col gap-4']">
-        <label :class="['flex flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
-          管理店別
-          <select
-            :value="selectedSiteId"
-            :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900']"
-            @change="selectSite(($event.target as HTMLSelectElement).value)"
+        <section :class="['grid gap-2']" aria-label="選擇要設定的 Kiosk">
+          <p :class="['mb-1 mt-0 text-sm font-semibold text-slate-700 dark:text-slate-200']">選擇 Kiosk 設定</p>
+          <button
+            v-for="site in sites"
+            :key="site.id"
+            type="button"
+            :disabled="loading || saving"
+            :class="['flex items-center gap-3 rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50', selectedSiteId === site.id ? 'border-cyan-600 bg-cyan-50 text-cyan-950 shadow-sm dark:border-cyan-400 dark:bg-cyan-400/10 dark:text-cyan-50' : 'border-slate-200 bg-white hover:border-cyan-400 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-500']"
+            @click="selectSite(site.id)"
           >
-            <option v-for="site in sites" :key="site.id" :value="site.id">{{ site.name }}</option>
-          </select>
-        </label>
+            <span :class="['i-solar:monitor-smartphone-bold-duotone rounded-lg bg-slate-100 p-2 text-xl text-slate-600 dark:bg-slate-800 dark:text-slate-300', selectedSiteId === site.id && 'bg-cyan-100 text-cyan-700 dark:bg-cyan-400/20 dark:text-cyan-200']" />
+            <span :class="['min-w-0']">
+              <span :class="['block truncate text-sm font-semibold']">{{ site.name }}</span>
+              <span :class="['mt-1 block text-xs opacity-70']">{{ site.interactionRetentionDays }} 天互動資料保存</span>
+            </span>
+            <span v-if="selectedSiteId === site.id" :class="['i-solar:check-circle-bold ml-auto text-xl text-cyan-700 dark:text-cyan-300']" />
+          </button>
+        </section>
+
+        <section :class="['grid gap-2']" aria-label="選擇 Kiosk 設定方案">
+          <div :class="['flex items-center justify-between']">
+            <p :class="['mb-1 mt-0 text-sm font-semibold text-slate-700 dark:text-slate-200']">Kiosk 設定方案</p>
+            <Button v-if="capabilities?.canEditExperience" size="sm" variant="secondary" :disabled="saving || loading" @click="createProfileDraft">
+              新增方案
+            </Button>
+          </div>
+          <button
+            v-for="draft in profileDrafts"
+            :key="draft.id"
+            type="button"
+            :disabled="saving || loading"
+            :class="['rounded-xl border p-4 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50', profileDraft?.id === draft.id ? 'border-cyan-600 bg-cyan-50 shadow-sm dark:border-cyan-400 dark:bg-cyan-400/10' : 'border-slate-200 bg-white hover:border-cyan-400 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-500']"
+            @click="selectProfileDraft(draft)"
+          >
+            <span :class="['block truncate text-sm font-semibold text-slate-900 dark:text-white']">{{ draft.name }}</span>
+            <span :class="['mt-1 block truncate text-xs text-slate-500 dark:text-slate-400']">{{ draft.snapshot.characterName }} · {{ draft.snapshot.interactiveService.title }}</span>
+          </button>
+          <p v-if="profileDraft && !profileDraft.id" :class="['m-0 rounded-xl border border-dashed border-cyan-500 bg-cyan-50 p-4 text-sm text-cyan-800 dark:bg-cyan-400/10 dark:text-cyan-200']">
+            新方案尚未儲存。填好內部識別名稱後按「儲存草稿」，它會出現在這裡供日後選取。
+          </p>
+        </section>
 
         <section v-if="selectedSite" :class="['rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900']">
           <h2 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
