@@ -50,7 +50,7 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 | 1 | 以「互動體驗」取代管理端的 Profile 用語，改用結構化編輯器並移除 JSON 編輯流程。 | 已完成 |
 | 2 | 將首頁改為營運摘要，呈現設備、已發布體驗與下一個可採取的動作；技術設定移至系統管理流程。 | 已完成 |
 | 3 | 建立唯讀體驗預覽；草稿會在獨立 Kiosk iframe 呈現，不發布也不使用正式設備。 | 已完成 |
-| 4 | 建立系統管理者專屬的模型／服務整合與每店模型政策；店務與內容角色不會取得這些技術設定。 | 已完成 |
+| 4 | 建立系統管理者專屬的模型／服務整合與每店模型政策；店務與內容角色不會取得這些技術設定。OpenAI-compatible TTS 連線可設定 voice，預設 `zh-TW-HsiaoChenNeural`。 | 已完成 |
 | 5 | 建立系統管理者專屬沙盒測試與店務管理者的現場驗證流程。 | 待實作；需要設備健康、測試執行與稽核資料。 |
 | 6 | 完成內容管理者的正式帳號指派、送審／發布權限與稽核紀錄。 | 待實作；目前角色能力已在 Kiosk 管理 API 實作，開發用帳號可用來驗證介面，但尚未提供正式帳號指派與稽核流程。 |
 
@@ -58,5 +58,8 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 
 - Kiosk 體驗快照現在可引用伺服器擁有的 VRM 或 Live2D 角色資產；上傳的原始檔案是部署期資料，不納入 git。Kiosk 只會依已發布快照下載及快取角色資產。
 - 管理端保留內部 `Profile` 資料模型與 API 名稱，以維持既有版本化發布契約；面向使用者的頁面改以「互動體驗」描述。
+- 系統模型頁的 OpenAI-compatible TTS 連線保留自己的上游 model、endpoint、選填 API key 與 voice。voice 預設為 `zh-TW-HsiaoChenNeural`，由 Server 以 MP3、speed `1.0` 呼叫上游；Kiosk 不會取得這些設定或任何 Provider 憑證。
+- 體驗草稿可設定 voice-only 對話模式。已發布後，Kiosk 隱藏文字輸入並依已獲准的麥克風權限啟動 VAD；這不是一般內容管理者可見的 Provider 設定。
+- 管理端已提供 Site 範圍的訪客使用歷程與逐字稿閱讀入口。它服務營運回顧，不構成尚待實作的沙盒測試或現場驗證流程。
 - 本機開發預設連接埠固定為：管理端 `5167`、Server API `5168`、Kiosk `5169`、點餐服務 `5166`。這些固定來源也用於登入 callback、CORS 與 WebMCP allowlist。
 - 開發用 Webnavior 帳號由 `pnpm --filter @proj-airi/server seed:test-accounts` 建立。它僅可在非 production 環境使用，不取代正式帳號與角色管理功能。

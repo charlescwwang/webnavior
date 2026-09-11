@@ -21,6 +21,18 @@ accumulating history.
   dashboard, draft-only Kiosk preview, per-site model policy, and server-owned
   Kiosk character assets. The completed and remaining delivery steps are in
   [`plans/2026-09-10-webnavior-management-experience.md`](plans/2026-09-10-webnavior-management-experience.md).
+- A published Kiosk Profile now has `voiceConversationOnly`. It hides the text
+  composer and, with provisioned microphone permission, starts VAD on load;
+  the Kiosk displays green/red microphone status from its actual VAD startup
+  state, and its avatar receives the shared Stage thinking state during Server
+  replies.
+- Kiosk ASR/TTS now use device-authenticated `/api/kiosk/audio/*` routes. The
+  Server resolves Site policy and retains provider, model, voice, endpoint, and
+  credentials; kiosk bootstrap and local settings no longer carry audio models.
+- Webnavior's OpenAI-compatible TTS connection now stores its own voice instead
+  of consulting AIRI's general voice catalog. The default is
+  `zh-TW-HsiaoChenNeural`; `/audio/speech` receives that voice, MP3 format, and
+  speed `1.0` unless a System Manager changes the connection setting.
 
 ## In Progress / Known Issues
 
