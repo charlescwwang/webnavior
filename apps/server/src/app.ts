@@ -29,6 +29,7 @@ import type { HonoEnv } from './types/hono'
 import type { EnvelopeCrypto } from './utils/envelope-crypto'
 
 import process from 'node:process'
+import { join } from 'node:path'
 
 import Stripe from 'stripe'
 
@@ -74,6 +75,7 @@ import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
 import { createKioskRoutes } from './routes/kiosk'
 import { createKioskCharacterAssetRoutes } from './routes/kiosk/character-assets'
+import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -92,6 +94,7 @@ import { createFluxService } from './services/domain/flux'
 import { createFluxTransactionService } from './services/domain/flux-transaction'
 import { createKioskService } from './services/domain/kiosk'
 import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
+import { createKioskMediaService } from './services/domain/kiosk-media'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
 import { createProductEventService } from './services/domain/product-events'
@@ -137,6 +140,11 @@ interface AppDeps {
 
 export async function buildApp(deps: AppDeps) {
   const logger = useLogger('app').useGlobalConfig()
+  const kioskMediaService = createKioskMediaService(deps.db, join(deps.env.WEBNAVIOR_KIOSK_ASSET_DIR, 'visitor-media'))
+  const trustedCors = cors({
+    origin: origin => getTrustedOrigin(origin, deps.env.ADDITIONAL_TRUSTED_ORIGINS),
+    credentials: true,
+  })
 
   const app = new Hono<HonoEnv>()
     .use('*', async (c, next) => {
@@ -152,13 +160,11 @@ export async function buildApp(deps: AppDeps) {
       c.res.headers.set('Pragma', 'no-cache')
       c.res.headers.set('Expires', '0')
     })
-    .use(
-      '/api/*',
-      cors({
-        origin: origin => getTrustedOrigin(origin, deps.env.ADDITIONAL_TRUSTED_ORIGINS),
-        credentials: true,
-      }),
-    )
+    .use('/api/*', trustedCors)
+    // Kiosk downloads immutable public character bytes directly, outside the
+    // `/api` namespace. It still needs the same origin policy as its config
+    // API because the standalone runtime has a distinct development origin.
+    .use('/assets/kiosk/*', trustedCors)
     .use(honoLogger())
 
   if (deps.otel) {
@@ -278,15 +284,19 @@ export async function buildApp(deps: AppDeps) {
 
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 })
   const characterAssetBodyLimit = bodyLimit({ maxSize: 64 * 1024 * 1024 })
+  const kioskMediaBodyLimit = bodyLimit({ maxSize: 32 * 1024 * 1024 })
 
   const builtApp = app
     .use('*', sessionMiddleware(deps.auth, deps.env))
-    // Character-card uploads are the single intentional exception to the
-    // API's 1 MB JSON limit. Keep the larger cap bound to its exact route so
-    // arbitrary admin requests cannot consume memory with large bodies.
-    .use('*', (c, next) => /^\/api\/admin\/kiosk\/sites\/[^/]+\/character-assets$/.test(c.req.path)
-      ? characterAssetBodyLimit(c, next)
-      : defaultBodyLimit(c, next))
+    // Large binary uploads are exceptions to the API's 1 MB JSON limit. Bind
+    // each cap to its exact route so arbitrary requests cannot consume memory.
+    .use('*', (c, next) => {
+      if (/^\/api\/admin\/kiosk\/sites\/[^/]+\/character-assets$/.test(c.req.path))
+        return characterAssetBodyLimit(c, next)
+      if (/^\/api\/kiosk\/visitor-sessions\/[^/]+\/media$/.test(c.req.path))
+        return kioskMediaBodyLimit(c, next)
+      return defaultBodyLimit(c, next)
+    })
     .onError((err, c) => {
       if (err instanceof ApiError) {
         // Surface details + cause to the server-side log only. SEC-5 keeps
@@ -387,11 +397,16 @@ export async function buildApp(deps: AppDeps) {
      * set, while a real device always authenticates with its opaque cookie.
      */
     .route('/api/kiosk', createKioskRoutes({
+      audioGateway: createKioskAudioGateway({
+        configKV: deps.configKV,
+        envelopeCrypto: deps.envelopeCrypto,
+      }),
       developmentRegistrationEnabled: deps.env.KIOSK_DEVELOPMENT_REGISTRATION_ENABLED === 'true' && process.env.NODE_ENV !== 'production',
       kioskService: deps.kioskService,
+      mediaService: kioskMediaService,
       llmGateway: {
         getDefaultModel: () => deps.configKV.getOrThrow('DEFAULT_CHAT_MODEL'),
-        complete: input => deps.llmRouter.route({ modelName: input.modelName, body: input.body }),
+        complete: input => deps.llmRouter.route({ abortSignal: input.abortSignal, modelName: input.modelName, body: input.body }),
       },
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
     }))
@@ -446,7 +461,7 @@ export async function buildApp(deps: AppDeps) {
     /**
      * Admin kiosk Profile draft and release management.
      */
-    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService, deps.configKV, deps.kioskCharacterAssetService))
+    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService, deps.configKV, deps.kioskCharacterAssetService, kioskMediaService))
 
     /**
      * Admin per-user balance override (set balance, incl. 0 for testing).

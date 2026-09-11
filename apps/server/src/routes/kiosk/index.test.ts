@@ -79,6 +79,47 @@ describe('kiosk routes', () => {
     expect(response.status).toBe(404)
   })
 
+  it('frames a proactive reminder as customer-facing copy instead of a Character Card setup turn', async () => {
+    const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '想看看菜單嗎？我可以幫您。' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService: createKioskService(db),
+      llmGateway: { complete, getDefaultModel: async () => 'test-model' },
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+
+    const reminder = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ kind: 'reminder' }),
+    })
+
+    expect(reminder.status).toBe(200)
+    await expect(reminder.json()).resolves.toEqual({ answer: '想看看菜單嗎？我可以幫您。' })
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({
+            role: 'system',
+            content: expect.stringContaining('只輸出一則給眼前顧客看的、簡短自然的繁體中文台詞。'),
+          }),
+        ]),
+      }),
+    }))
+  })
+
   it('only lets the registered device create, append to, and end its own visitor session', async () => {
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
@@ -107,7 +148,7 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ content: '你好，想要牛肉麵。' }),
     })
     expect(reply.status).toBe(200)
-    await expect(reply.json()).resolves.toEqual({ answer: '您好，我可以協助您點餐。' })
+    await expect(reply.json()).resolves.toEqual({ answer: '您好，我可以協助您點餐。', toolCalls: [] })
 
     const proactiveReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
       method: 'POST',
@@ -115,7 +156,9 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ kind: 'greeting' }),
     })
     expect(proactiveReply.status).toBe(200)
-    await expect(proactiveReply.json()).resolves.toEqual({ answer: '您好，我可以協助您點餐。' })
+    // Character Card v3 `first_mes` and the Profile's greeting field are the
+    // customer-visible first turn. A model must not paraphrase or replace it.
+    await expect(proactiveReply.json()).resolves.toEqual({ answer: '您好，今天想吃些什麼？我可以協助您挑選。' })
 
     const orderResult = await app.request(`/api/kiosk/visitor-sessions/${session.id}/order-results`, {
       method: 'POST',
@@ -186,5 +229,137 @@ describe('kiosk routes', () => {
 
     expect(reply.status).toBe(200)
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'restaurant-specialist' }))
+  })
+
+  it('keeps Server-owned audio model policy out of the device bootstrap', async () => {
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await kioskService.setSiteModelOverrides({
+      siteId: device!.siteId,
+      overrides: { asr: 'restaurant-asr', tts: 'restaurant-tts' },
+    })
+
+    const bootstrap = await app.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })
+
+    expect(bootstrap.status).toBe(200)
+    const payload = await bootstrap.json() as { profile: Record<string, unknown> }
+
+    expect(payload.profile).not.toHaveProperty('audioModels')
+  })
+
+  it('resolves ASR and TTS from the authenticated device policy without accepting client provider settings', async () => {
+    const kioskService = createKioskService(db)
+    const transcribe = vi.fn(async () => '我要一份牛肉麵')
+    const speak = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), {
+      headers: { 'Content-Type': 'audio/mpeg' },
+    }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      audioGateway: { speak, transcribe },
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await kioskService.setSiteModelOverrides({
+      siteId: device!.siteId,
+      overrides: { asr: 'restaurant-asr', tts: 'restaurant-tts' },
+    })
+
+    const recording = new FormData()
+    recording.set('file', new File(['audio'], 'order.webm', { type: 'audio/webm' }))
+    const transcript = await app.request('/api/kiosk/audio/transcriptions', {
+      method: 'POST',
+      headers: { Cookie: cookie },
+      body: recording,
+    })
+    const audio = await app.request('/api/kiosk/audio/speech', {
+      method: 'POST',
+      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: '您好，想吃什麼？', locale: 'zh-TW', model: 'forbidden', voice: 'forbidden' }),
+    })
+
+    expect(transcript.status).toBe(200)
+    await expect(transcript.json()).resolves.toEqual({ text: '我要一份牛肉麵' })
+    expect(transcribe).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'restaurant-asr' }))
+    expect(audio.status).toBe(200)
+    expect(audio.headers.get('Content-Type')).toBe('audio/mpeg')
+    expect(speak).toHaveBeenCalledWith({ locale: 'zh-TW', modelName: 'restaurant-tts', text: '您好，想吃什麼？' })
+  })
+
+  it('keeps prior turns and browser-owned tool results in the model conversation', async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        choices: [{ message: {
+          content: null,
+          tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'find_menu_item', arguments: '{"query":"牛肉麵"}' } }],
+        } }],
+      }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: '牛肉麵目前可以點餐。' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService: createKioskService(db),
+      llmGateway: { complete, getDefaultModel: async () => 'test-model' },
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+    const tools = [{ type: 'function', function: {
+      name: 'find_menu_item',
+      description: 'Find an item on the active menu.',
+      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    } }]
+
+    const initialReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ content: '我要牛肉麵', tools }),
+    })
+    await expect(initialReply.json()).resolves.toEqual({ answer: undefined, toolCalls: expect.any(Array) })
+
+    const completedReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'find_menu_item', content: '{"available":true}' }] }),
+    })
+    await expect(completedReply.json()).resolves.toEqual({ answer: '牛肉麵目前可以點餐。', toolCalls: [] })
+    expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        tools,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: 'user', content: '我要牛肉麵' }),
+          expect.objectContaining({ role: 'assistant', tool_calls: expect.any(Array) }),
+          expect.objectContaining({ role: 'tool', tool_call_id: 'call_menu', content: '{"available":true}' }),
+        ]),
+      }),
+    }))
   })
 })

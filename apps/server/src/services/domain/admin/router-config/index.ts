@@ -6,6 +6,7 @@ import type { asrModelSchema, ConfigKVService, llmModelSchema, llmRouterConfigSc
 
 import { useLogger } from '@guiiai/logg'
 
+import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../adapters/config-kv'
 import { createBadRequestError } from '../../../../utils/error'
 
 /**
@@ -1243,6 +1244,7 @@ export function createAdminRouterConfigService(deps: AdminRouterConfigDeps) {
     modelName: string
     upstreamModel: string
     baseURL: string
+    voice?: string
     plaintextKey?: string
   }): Promise<WebnaviorAudioConfig> {
     const existing = await currentWebnaviorAudioConfig()
@@ -1256,6 +1258,7 @@ export function createAdminRouterConfigService(deps: AdminRouterConfigDeps) {
         modelName: input.modelName,
         upstreamModel: input.upstreamModel,
         baseURL: input.baseURL,
+        ...(input.capability === 'tts' ? { voice: input.voice ?? DEFAULT_WEBNAVIOR_TTS_VOICE } : {}),
         ...(keyCiphertext ? { keyCiphertext } : {}),
       },
     })

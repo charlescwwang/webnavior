@@ -90,6 +90,32 @@ describe('admin router config route', () => {
     await expect(response.json()).resolves.toEqual({ models: [{ id: 'medium.zh-v0.1' }], source: 'openapi' })
   })
 
+  it('accepts a manually configured TTS voice for OpenAI-compatible speech services', async () => {
+    const service = createServiceStub()
+    const app = createTestApp(service)
+
+    const response = await app.request('/api/admin/config/router/webnavior-audio', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        capability: 'tts',
+        baseURL: 'https://edge-tts.aikcitri.qzz.io/v1',
+        modelName: 'openai-compatible/tts-1',
+        upstreamModel: 'tts-1',
+        voice: 'zh-TW-HsiaoChenNeural',
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(service.saveWebnaviorAudioConfig).toHaveBeenCalledWith({
+      capability: 'tts',
+      baseURL: 'https://edge-tts.aikcitri.qzz.io/v1',
+      modelName: 'openai-compatible/tts-1',
+      upstreamModel: 'tts-1',
+      voice: 'zh-TW-HsiaoChenNeural',
+    })
+  })
+
   it('accepts Bedrock bearer tokens longer than ordinary provider keys', async () => {
     const service = createServiceStub({
       apply: vi.fn(async () => ({

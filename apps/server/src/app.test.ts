@@ -44,7 +44,12 @@ function createTestDeps() {
     kioskService: {
       resolveDeviceCredential: vi.fn(),
     } as any,
-    kioskCharacterAssetService: {} as any,
+    kioskCharacterAssetService: {
+      getFile: vi.fn(async () => ({
+        data: Buffer.from('asset'),
+        format: 'vrm' as const,
+      })),
+    } as any,
     providerService: {} as any,
     fluxService: {} as any,
     fluxTransactionService: {} as any,
@@ -124,5 +129,22 @@ describe('app well-known metadata routes', () => {
     expect(await res.json()).toEqual(openIdConfig)
     expect(auth.api.getOpenIdConfig).toHaveBeenCalledTimes(1)
     expect(auth.api.getOAuthServerConfig).not.toHaveBeenCalled()
+  })
+})
+
+describe('kiosk character asset routes', () => {
+  it('allows the kiosk development origin to download a published character asset', async () => {
+    const { deps } = createTestDeps()
+    const { app } = await buildApp(deps)
+
+    const res = await app.request('/assets/kiosk/asset-id', {
+      headers: {
+        Origin: 'http://localhost:5169',
+      },
+    })
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('access-control-allow-origin')).toBe('http://localhost:5169')
+    expect(res.headers.get('content-type')).toContain('model/gltf-binary')
   })
 })

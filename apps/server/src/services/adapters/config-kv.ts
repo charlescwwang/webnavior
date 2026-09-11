@@ -56,6 +56,8 @@ const ttsProviderSchema = picklist(['azure', 'dashscope-cosyvoice', 'stepfun', '
 const asrProviderSchema = picklist(['aliyun-nls'])
 
 /** Webnavior-only OpenAI-compatible audio endpoints. Kept separate from AIRI's adapter router. */
+export const DEFAULT_WEBNAVIOR_TTS_VOICE = 'zh-TW-HsiaoChenNeural'
+
 export const webnaviorAudioConfigSchema = optional(object({
   asr: optional(object({
     modelName: pipe(string(), nonEmpty('asr.modelName must not be empty')),
@@ -67,6 +69,7 @@ export const webnaviorAudioConfigSchema = optional(object({
     modelName: pipe(string(), nonEmpty('tts.modelName must not be empty')),
     upstreamModel: pipe(string(), nonEmpty('tts.upstreamModel must not be empty')),
     baseURL: pipe(string(), nonEmpty('tts.baseURL must not be empty')),
+    voice: optional(pipe(string(), nonEmpty('tts.voice must not be empty'))),
     keyCiphertext: optional(string()),
   })),
 }), {})

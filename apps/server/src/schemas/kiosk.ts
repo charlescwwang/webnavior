@@ -14,6 +14,8 @@ export type KioskRegistrationMethod = 'development' | 'qr_code'
 export type KioskVisitorSessionState = 'active' | 'completed' | 'cancelled' | 'idle'
 /** The kind of ordered customer interaction record retained by the POC. */
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
+/** Binary evidence captured during an internal kiosk POC interaction. */
+export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_video' | 'continuous_video'
 
 /** A site's explicit runtime model choices. Missing entries inherit the system default. */
 export interface KioskModelOverrides {
@@ -58,6 +60,8 @@ export interface KioskProfileSnapshot {
   }
   surveyUrl: string
   version: 1
+  /** Prevents keyboard chat when this released Profile is operated by voice. */
+  voiceConversationOnly: boolean
 }
 
 /** A site owns kiosk devices, configuration releases, and collected interaction data. */
@@ -92,6 +96,10 @@ export const kioskDevices = pgTable('kiosk_devices', {
   siteId: text('site_id').notNull().references(() => kioskSites.id, { onDelete: 'cascade' }),
   label: text('label').notNull(),
   registrationMethod: text('registration_method').notNull().$type<KioskRegistrationMethod>(),
+  /** Stops new sessions and revokes every browser credential without removing retained history. */
+  disabledAt: timestamp('disabled_at'),
+  /** Hides the decommissioned device from operations while preserving audit and visitor records. */
+  deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 }, table => [index('kiosk_devices_site_idx').on(table.siteId)])
@@ -114,14 +122,15 @@ export const kioskProfileReleases = pgTable('kiosk_profile_releases', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, table => [index('kiosk_profile_releases_site_idx').on(table.siteId)])
 
-/** The single editable configuration draft for a site's POC kiosk experience. */
+/** An editable, selectable configuration draft for one site's kiosk experience. */
 export const kioskProfileDrafts = pgTable('kiosk_profile_drafts', {
-  siteId: text('site_id').primaryKey().references(() => kioskSites.id, { onDelete: 'cascade' }),
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  siteId: text('site_id').notNull().references(() => kioskSites.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
   snapshot: jsonb('snapshot').$type<KioskProfileSnapshot>().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
-})
+}, table => [index('kiosk_profile_drafts_site_idx').on(table.siteId)])
 
 /** Immutable metadata for a validated character model saved on the server volume. */
 export const kioskCharacterAssets = pgTable('kiosk_character_assets', {
@@ -180,6 +189,23 @@ export const kioskInteractionEntries = pgTable('kiosk_interaction_entries', {
   index('kiosk_interaction_entries_session_idx').on(table.visitorSessionId),
 ])
 
+/** Private media retained beside a visitor session on the server volume. */
+export const kioskVisitorMedia = pgTable('kiosk_visitor_media', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  visitorSessionId: text('visitor_session_id').notNull().references(() => kioskVisitorSessions.id, { onDelete: 'cascade' }),
+  /** The triggering timeline event when this is an interaction evidence clip. */
+  interactionEntryId: text('interaction_entry_id').references(() => kioskInteractionEntries.id, { onDelete: 'set null' }),
+  kind: text('kind').notNull().$type<KioskVisitorMediaKind>(),
+  mimeType: text('mime_type').notNull(),
+  byteSize: integer('byte_size').notNull(),
+  startedAt: timestamp('started_at'),
+  endedAt: timestamp('ended_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, table => [
+  index('kiosk_visitor_media_session_created_idx').on(table.visitorSessionId, table.createdAt),
+  index('kiosk_visitor_media_entry_idx').on(table.interactionEntryId),
+])
+
 /** Append-only record of access and future kiosk-management actions. */
 export const kioskAuditLogs = pgTable('kiosk_audit_logs', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
@@ -200,6 +226,7 @@ export type KioskProfileDraft = InferSelectModel<typeof kioskProfileDrafts>
 export type KioskCharacterAsset = InferSelectModel<typeof kioskCharacterAssets>
 export type KioskVisitorSession = InferSelectModel<typeof kioskVisitorSessions>
 export type KioskInteractionEntry = InferSelectModel<typeof kioskInteractionEntries>
+export type KioskVisitorMedia = InferSelectModel<typeof kioskVisitorMedia>
 
 export const kioskSitesRelations = relations(kioskSites, ({ many, one }) => ({
   devices: many(kioskDevices),
@@ -222,10 +249,16 @@ export const kioskDevicesRelations = relations(kioskDevices, ({ one, many }) => 
 export const kioskVisitorSessionsRelations = relations(kioskVisitorSessions, ({ one, many }) => ({
   device: one(kioskDevices, { fields: [kioskVisitorSessions.deviceId], references: [kioskDevices.id] }),
   entries: many(kioskInteractionEntries),
+  media: many(kioskVisitorMedia),
   profileRelease: one(kioskProfileReleases, { fields: [kioskVisitorSessions.profileReleaseId], references: [kioskProfileReleases.id] }),
   site: one(kioskSites, { fields: [kioskVisitorSessions.siteId], references: [kioskSites.id] }),
 }))
 
 export const kioskInteractionEntriesRelations = relations(kioskInteractionEntries, ({ one }) => ({
   visitorSession: one(kioskVisitorSessions, { fields: [kioskInteractionEntries.visitorSessionId], references: [kioskVisitorSessions.id] }),
+}))
+
+export const kioskVisitorMediaRelations = relations(kioskVisitorMedia, ({ one }) => ({
+  interactionEntry: one(kioskInteractionEntries, { fields: [kioskVisitorMedia.interactionEntryId], references: [kioskInteractionEntries.id] }),
+  visitorSession: one(kioskVisitorSessions, { fields: [kioskVisitorMedia.visitorSessionId], references: [kioskVisitorSessions.id] }),
 }))

@@ -2,13 +2,14 @@ import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
+import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { HonoEnv } from '../../types/hono'
 
 import { randomInt } from 'node:crypto'
 
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import { boolean, integer, maxLength, minValue, number, object, picklist, pipe, regex, safeParse, string } from 'valibot'
+import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
 import { createBadRequestError, createUnauthorizedError } from '../../utils/error'
 
@@ -33,8 +34,25 @@ const endVisitorSessionSchema = object({
   state: picklist(['completed', 'cancelled', 'idle']),
 })
 
+const kioskToolSchema = object({
+  function: object({
+    description: optional(pipe(string(), maxLength(8_000))),
+    name: pipe(string(), regex(/^[\w-]+$/), maxLength(128)),
+    parameters: unknown(),
+  }),
+  type: literal('function'),
+})
+
+const kioskToolResultSchema = object({
+  content: pipe(string(), maxLength(32_000)),
+  name: pipe(string(), regex(/^[\w-]+$/), maxLength(128)),
+  toolCallId: pipe(string(), minLength(1), maxLength(256)),
+})
+
 const conversationMessageSchema = object({
-  content: pipe(string(), regex(/\S/), maxLength(8_000)),
+  content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
+  toolResults: optional(array(kioskToolResultSchema), []),
+  tools: optional(array(kioskToolSchema), []),
 })
 
 const orderResultSchema = object({
@@ -49,15 +67,27 @@ const assistantActionSchema = object({
   kind: picklist(['greeting', 'reminder']),
 })
 
+const speechSchema = object({
+  locale: optional(pipe(string(), minLength(2), maxLength(35)), 'zh-TW'),
+  text: pipe(string(), regex(/\S/), maxLength(8_000)),
+})
+
 /** Dependencies that configure the kiosk device enrollment transport. */
 export interface KioskRoutesOptions {
   /** Enables the development-only number enrollment route. Never enable in production. */
   developmentRegistrationEnabled: boolean
   kioskService: KioskService
+  /** Private media storage for internal POC recordings. */
+  mediaService?: KioskMediaService
   /** Server-owned default model selection and Provider dispatch boundary. */
   llmGateway: {
-    complete: (input: { body: Record<string, unknown>, modelName: string }) => Promise<Response>
+    complete: (input: { abortSignal?: AbortSignal, body: Record<string, unknown>, modelName: string }) => Promise<Response>
     getDefaultModel: () => Promise<string>
+  }
+  /** Device-authenticated ASR/TTS transport; its configuration stays server-side. */
+  audioGateway?: {
+    speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
+    transcribe: (input: { audio: File, modelName: string }) => Promise<string>
   }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
@@ -112,6 +142,35 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     })
   })
 
+  routes.post('/audio/transcriptions', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const audio = (await c.req.formData()).get('file')
+    if (!(audio instanceof File) || audio.size === 0)
+      throw createBadRequestError('Kiosk transcription requires a non-empty audio file', 'INVALID_REQUEST')
+
+    const modelName = await resolveKioskAudioModel(options.kioskService, device.id, 'asr')
+    if (!options.audioGateway)
+      throw createBadRequestError('Kiosk ASR gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
+    const text = await options.audioGateway.transcribe({ audio, modelName })
+    return c.json({ text })
+  })
+
+  routes.post('/audio/speech', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const result = safeParse(speechSchema, await c.req.json().catch(() => null))
+    if (!result.success)
+      throw createBadRequestError('Invalid kiosk speech request', 'INVALID_REQUEST', result.issues)
+
+    const modelName = await resolveKioskAudioModel(options.kioskService, device.id, 'tts')
+    if (!options.audioGateway)
+      throw createBadRequestError('Kiosk TTS gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
+    return await options.audioGateway.speak({
+      locale: result.output.locale,
+      modelName,
+      text: result.output.text,
+    })
+  })
+
   routes.post('/visitor-sessions', async (c) => {
     const device = await resolveAuthenticatedDevice(c, options.kioskService)
     const body = await c.req.json().catch(() => null)
@@ -144,6 +203,41 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       visitorSessionId: c.req.param('visitorSessionId'),
     })
     return c.json({ entry }, 201)
+  })
+
+  routes.post('/visitor-sessions/:visitorSessionId/media', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const visitorSessionId = c.req.param('visitorSessionId')
+    await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId })
+    if (!options.mediaService)
+      throw createBadRequestError('Kiosk media storage is unavailable', 'KIOSK_MEDIA_UNAVAILABLE')
+
+    const form = await c.req.formData()
+    const file = form.get('file')
+    const kind = form.get('kind')
+    const interactionEntryId = form.get('interactionEntryId')
+    if (!(file instanceof File) || file.size === 0 || file.size > 32 * 1024 * 1024)
+      throw createBadRequestError('Kiosk media requires a file up to 32 MiB', 'INVALID_REQUEST')
+    if (kind !== 'audio_recording' && kind !== 'triggered_video' && kind !== 'continuous_video')
+      throw createBadRequestError('Invalid kiosk media kind', 'INVALID_REQUEST')
+    if (interactionEntryId !== null && (typeof interactionEntryId !== 'string' || interactionEntryId.length === 0 || interactionEntryId.length > 120))
+      throw createBadRequestError('Invalid kiosk media interaction reference', 'INVALID_REQUEST')
+
+    const startedAt = parseOptionalMediaDate(form.get('startedAt'))
+    const endedAt = parseOptionalMediaDate(form.get('endedAt'))
+    if (startedAt === null || endedAt === null)
+      throw createBadRequestError('Invalid kiosk media timestamp', 'INVALID_REQUEST')
+
+    const media = await options.mediaService.save({
+      data: new Uint8Array(await file.arrayBuffer()),
+      ...(endedAt ? { endedAt } : {}),
+      ...(interactionEntryId ? { interactionEntryId } : {}),
+      kind,
+      mimeType: file.type || 'application/octet-stream',
+      ...(startedAt ? { startedAt } : {}),
+      visitorSessionId,
+    })
+    return c.json({ media }, 201)
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/end', async (c) => {
@@ -179,27 +273,55 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!profile)
       throw createBadRequestError('Visitor session Profile was not found', 'PROFILE_NOT_FOUND')
 
-    const content = result.output.content.trim()
-    await options.kioskService.appendDeviceInteraction({
-      content,
-      kind: 'user_text',
-      deviceId: device.id,
-      visitorSessionId: transcript.session.id,
-    })
+    const content = result.output.content?.trim()
+    if (!content && result.output.toolResults.length === 0)
+      throw createBadRequestError('A message or tool result is required', 'INVALID_REQUEST')
+
+    if (content) {
+      await options.kioskService.appendDeviceInteraction({
+        content,
+        kind: 'user_text',
+        deviceId: device.id,
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    for (const toolResult of result.output.toolResults) {
+      await options.kioskService.appendDeviceInteraction({
+        content: toolResult.content,
+        kind: 'tool_result',
+        metadata: { name: toolResult.name, toolCallId: toolResult.toolCallId },
+        deviceId: device.id,
+        visitorSessionId: transcript.session.id,
+      })
+    }
     const answer = await completeKioskReply({
       content,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
       profile,
       transcript,
+      toolResults: result.output.toolResults,
+      tools: result.output.tools,
+      abortSignal: c.req.raw.signal,
     })
-    await options.kioskService.appendDeviceInteraction({
-      content: answer,
-      kind: 'assistant_text',
-      deviceId: device.id,
-      visitorSessionId: transcript.session.id,
-    })
-    return c.json({ answer })
+    if (answer.content) {
+      await options.kioskService.appendDeviceInteraction({
+        content: answer.content,
+        kind: 'assistant_text',
+        deviceId: device.id,
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    if (answer.toolCalls.length > 0) {
+      await options.kioskService.appendDeviceInteraction({
+        content: JSON.stringify(answer.toolCalls),
+        kind: 'tool_call',
+        metadata: { toolCalls: answer.toolCalls },
+        deviceId: device.id,
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    return c.json({ answer: answer.content, toolCalls: answer.toolCalls })
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/assistant-actions', async (c) => {
@@ -220,24 +342,29 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!profile)
       throw createBadRequestError('Visitor session Profile was not found', 'PROFILE_NOT_FOUND')
 
-    const actionPrompt = result.output.kind === 'greeting'
-      ? profile.snapshot.greetingPrompt
-      : profile.snapshot.assistanceReminderPrompt
-    const answer = await completeKioskReply({
-      actionPrompt,
-      kioskService: options.kioskService,
-      llmGateway: options.llmGateway,
-      profile,
-      transcript,
-    })
+    // Character Card v3 `first_mes` becomes `greetingPrompt` when the card
+    // is imported. It is authored customer copy, not model guidance, so an
+    // LLM must not paraphrase it into a generic service opening.
+    const answer = result.output.kind === 'greeting'
+      ? { content: profile.snapshot.greetingPrompt, toolCalls: [] }
+      : await completeKioskReply({
+          actionPrompt: profile.snapshot.assistanceReminderPrompt,
+          abortSignal: c.req.raw.signal,
+          kioskService: options.kioskService,
+          llmGateway: options.llmGateway,
+          profile,
+          transcript,
+        })
+    if (!answer.content)
+      throw createBadRequestError('LLM Provider did not return a text reply', 'LLM_PROVIDER_INVALID_RESPONSE')
     await options.kioskService.appendDeviceInteraction({
-      content: answer,
+      content: answer.content,
       kind: 'assistant_text',
       metadata: { action: result.output.kind },
       deviceId: device.id,
       visitorSessionId: transcript.session.id,
     })
-    return c.json({ answer })
+    return c.json({ answer: answer.content })
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/order-results', async (c) => {
@@ -291,6 +418,15 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   return routes
 }
 
+function parseOptionalMediaDate(value: FormDataEntryValue | null): Date | undefined | null {
+  if (value === null)
+    return undefined
+  if (typeof value !== 'string')
+    return null
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 function createDevelopmentRegistrationCode() {
   return String(randomInt(1_000_000)).padStart(6, '0')
 }
@@ -306,41 +442,75 @@ async function resolveAuthenticatedDevice(c: Context<HonoEnv>, kioskService: Kio
   return device
 }
 
-async function parseAssistantReply(response: Response) {
+/** Resolves a device's Site policy only after authenticating its opaque credential. */
+async function resolveKioskAudioModel(
+  kioskService: KioskService,
+  deviceId: string,
+  capability: 'asr' | 'tts',
+) {
+  const profile = await kioskService.getDeviceProfile(deviceId)
+  if (!profile)
+    throw createBadRequestError('Kiosk device has no assigned Profile', 'PROFILE_UNASSIGNED')
+
+  const modelName = (await kioskService.getSiteModelOverrides(profile.siteId))[capability]
+  if (!modelName)
+    throw createBadRequestError(`Kiosk Site has no ${capability.toUpperCase()} model policy`, 'KIOSK_AUDIO_POLICY_NOT_CONFIGURED')
+  return modelName
+}
+
+interface KioskToolCall {
+  function: { arguments: string, name: string }
+  id: string
+  type: 'function'
+}
+
+interface KioskCompletion {
+  content?: string
+  toolCalls: KioskToolCall[]
+}
+
+async function parseAssistantReply(response: Response): Promise<KioskCompletion> {
   if (!response.ok)
     throw createBadRequestError('LLM Provider did not return a successful response', 'LLM_PROVIDER_ERROR')
 
   const payload: unknown = await response.json()
   if (!isChatCompletion(payload))
     throw createBadRequestError('LLM Provider response is invalid', 'LLM_PROVIDER_INVALID_RESPONSE')
-  return payload.choices[0].message.content
+  return {
+    content: payload.choices[0].message.content || undefined,
+    toolCalls: payload.choices[0].message.tool_calls ?? [],
+  }
 }
 
 async function completeKioskReply(input: {
   actionPrompt?: string
+  abortSignal?: AbortSignal
   content?: string
   kioskService: KioskService
   llmGateway: KioskRoutesOptions['llmGateway']
   profile: { siteId: string, snapshot: KioskProfileSnapshot }
   transcript: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>
+  toolResults?: Array<{ content: string, name: string, toolCallId: string }>
+  tools?: Array<{ function: { description?: string, name: string, parameters: unknown }, type: 'function' }>
 }) {
   const overrides = await input.kioskService.getSiteModelOverrides(input.profile.siteId)
   const modelName = overrides.llm ?? await input.llmGateway.getDefaultModel()
   const response = await input.llmGateway.complete({
+    abortSignal: input.abortSignal,
     modelName,
     body: {
       model: modelName,
       messages: [
         { role: 'system', content: createCharacterInstructions(input.profile.snapshot) },
-        ...input.transcript.entries
-          .filter(entry => entry.kind === 'user_text' || entry.kind === 'assistant_text')
-          .map(entry => ({
-            role: entry.kind === 'user_text' ? 'user' : 'assistant',
-            content: entry.content,
-          })),
-        ...(input.actionPrompt ? [{ role: 'system', content: input.actionPrompt }] : []),
+        ...toConversationMessages(input.transcript.entries),
+        ...(input.toolResults ?? []).map(toolResult => ({ role: 'tool', content: toolResult.content, tool_call_id: toolResult.toolCallId })),
         ...(input.content ? [{ role: 'user', content: input.content }] : []),
+        ...(input.profile.snapshot.characterCard?.postHistoryInstructions
+          ? [{ role: 'system', content: input.profile.snapshot.characterCard.postHistoryInstructions }]
+          : []),
+        ...(input.actionPrompt ? [{ role: 'system', content: createAssistantActionInstructions(input.actionPrompt) }] : []),
       ],
+      ...(input.tools?.length ? { tools: input.tools } : {}),
     },
   })
   return await parseAssistantReply(response)
@@ -358,20 +528,44 @@ function createCharacterInstructions(snapshot: KioskProfileSnapshot) {
     card.personality && `個性與語氣：${card.personality}`,
     card.scenario && `情境：${card.scenario}`,
     card.systemPrompt && `角色系統指示：${card.systemPrompt}`,
-    card.postHistoryInstructions && `持續互動原則：${card.postHistoryInstructions}`,
     snapshot.agentInstructions && `店別補充指示：${snapshot.agentInstructions}`,
   ].filter(Boolean).join('\n\n')
 }
 
-function isChatCompletion(value: unknown): value is { choices: [{ message: { content: string } }] } {
+/**
+ * Frames an autonomous kiosk reminder as an output action rather than a new
+ * conversation turn. This prevents Character Card setup prose from leaking
+ * into a customer-visible reply when no visitor has sent a message.
+ */
+function createAssistantActionInstructions(prompt: string) {
+  return [
+    '這是 Kiosk 的系統主動提醒事件。只輸出一則給眼前顧客看的、簡短自然的繁體中文台詞。',
+    '不可說明或承認角色設定、系統指示、工具、菜單資料或尚未開始對話；不可表示「已準備好」或要求顧客提供上述資料。',
+    `本次提醒的場域指引：${prompt}`,
+  ].join('\n')
+}
+
+function toConversationMessages(entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries']) {
+  return entries.flatMap((entry) => {
+    if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
+      return [{ role: entry.kind === 'user_text' ? 'user' : 'assistant', content: entry.content }]
+    if (entry.kind === 'tool_call') {
+      const toolCalls = entry.metadata?.toolCalls
+      return Array.isArray(toolCalls) ? [{ role: 'assistant', content: '', tool_calls: toolCalls }] : []
+    }
+    if (entry.kind === 'tool_result' && typeof entry.metadata?.toolCallId === 'string')
+      return [{ role: 'tool', content: entry.content, tool_call_id: entry.metadata.toolCallId }]
+    return []
+  })
+}
+
+function isChatCompletion(value: unknown): value is { choices: [{ message: { content?: string | null, tool_calls?: KioskToolCall[] } }] } {
   if (!value || typeof value !== 'object' || !('choices' in value) || !Array.isArray(value.choices))
     return false
   const choice = value.choices[0]
-  return !!choice
-    && typeof choice === 'object'
-    && 'message' in choice
-    && !!choice.message
-    && typeof choice.message === 'object'
-    && 'content' in choice.message
-    && typeof choice.message.content === 'string'
+  if (!choice || typeof choice !== 'object' || !('message' in choice) || !choice.message || typeof choice.message !== 'object')
+    return false
+  const message = choice.message
+  return ('content' in message && (typeof message.content === 'string' || message.content === null))
+    || ('tool_calls' in message && Array.isArray(message.tool_calls))
 }

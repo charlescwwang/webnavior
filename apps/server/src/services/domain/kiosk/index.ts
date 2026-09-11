@@ -3,10 +3,10 @@ import type { KioskInteractionEntryKind, KioskMemberRole, KioskModelOverrides, K
 
 import { createHash, randomBytes } from 'node:crypto'
 
-import { and, asc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
-import { literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
+import { boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
-import { createForbiddenError, createNotFoundError } from '../../../utils/error'
+import { createConflictError, createForbiddenError, createNotFoundError } from '../../../utils/error'
 
 import * as schema from '../../../schemas'
 
@@ -41,6 +41,12 @@ export interface KioskService {
   createSite: (input: { interactionRetentionDays?: number, name: string, slug?: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Permanently removes one Site and every configuration/device record it owns. System administrators only. */
   deleteSite: (input: { siteId: string, userId: string }) => Promise<void>
+  /** Soft-deletes a previously disabled device while retaining every visitor and audit record. */
+  deleteDevice: (input: { deviceId: string, siteId: string, userId: string }) => Promise<void>
+  /** Permanently removes selected visitor sessions and all records attached to them. */
+  deleteVisitorSessions: (input: { siteId: string, userId: string, visitorSessionIds: string[] }) => Promise<string[]>
+  /** Revokes a device's credentials so it can no longer bootstrap or start customer sessions. */
+  disableDevice: (input: { deviceId: string, siteId: string, userId: string }) => Promise<void>
   /** Returns a complete transcript only when the caller has transcript-read permission for its site. */
   getVisitorSessionForUser: (input: {
     userId: string
@@ -83,23 +89,34 @@ export interface KioskService {
   listManagedSites: (userId: string) => Promise<(typeof schema.kioskSites.$inferSelect)[]>
   /** Lists devices only after verifying the caller may access their Site's management summary. */
   listSiteDevices: (input: { siteId: string, userId: string }) => Promise<(typeof schema.kioskDevices.$inferSelect)[]>
+  /** Lists the Site's retained visitor sessions without exposing their transcript content. */
+  listSiteVisitorSessions: (input: { siteId: string, userId: string }) => Promise<Array<{
+    createdAt: Date
+    deviceId: string
+    deviceLabel: string
+    endedAt: Date | null
+    id: string
+    interactionCount: number
+    serviceId: string
+    state: KioskVisitorSessionState
+  }>>
   /** Retrieves the immutable Profile snapshot that a persisted session references. */
   getProfileRelease: (profileReleaseId: string) => Promise<typeof schema.kioskProfileReleases.$inferSelect | undefined>
-  /** Returns the editable draft and currently assigned release for a Site management screen. */
+  /** Returns selectable drafts and the currently assigned release for a Site management screen. */
   getSiteProfile: (siteId: string) => Promise<{
-    draft: typeof schema.kioskProfileDrafts.$inferSelect | undefined
+    drafts: (typeof schema.kioskProfileDrafts.$inferSelect)[]
     release: typeof schema.kioskProfileReleases.$inferSelect | undefined
   }>
-  /** Replaces the site's one editable draft after validating the POC configuration shape. */
-  saveProfileDraft: (input: { name: string, siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
+  /** Creates or updates a selectable draft after validating its POC configuration shape. */
+  saveProfileDraft: (input: { id?: string, name: string, siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
   /** Applies only customer-facing content from a content manager's draft submission. */
   saveContentProfileDraft: (input: { siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
   /** Changes the policy used to calculate expiry for future visitor sessions. */
   setSiteInteractionRetentionDays: (input: { actorUserId: string, days: number, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Replaces the site's choices after the caller has curated them against the approved catalog. */
   setSiteModelOverrides: (input: { overrides: KioskModelOverrides, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
-  /** Publishes the current draft as a new immutable release and assigns it to every Site device. */
-  publishProfileDraft: (input: { actorUserId?: string, siteId: string }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
+  /** Publishes a selected draft as a new immutable release and assigns it to every Site device. */
+  publishProfileDraft: (input: { actorUserId?: string, draftId: string, siteId: string }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
   /** Removes expired visitor sessions and their cascading interaction entries. */
   purgeExpiredVisitorSessions: (now: Date) => Promise<number>
 }
@@ -139,6 +156,7 @@ export const KioskProfileSnapshotSchema = object({
   }),
   surveyUrl: pipe(string(), url(), maxLength(2_000)),
   version: literal(1),
+  voiceConversationOnly: boolean(),
 })
 
 const developmentProfile: KioskProfileSnapshot = {
@@ -154,6 +172,7 @@ const developmentProfile: KioskProfileSnapshot = {
     url: 'http://localhost:5166',
   },
   surveyUrl: 'https://example.com/kiosk-feedback',
+  voiceConversationOnly: false,
 }
 
 /**
@@ -185,6 +204,54 @@ export function createKioskService(db: Database): KioskService {
       .returning({ id: schema.kioskSites.id })
     if (!site)
       throw createNotFoundError('Kiosk Site was not found')
+  }
+
+  async function disableDevice(input: { deviceId: string, siteId: string, userId: string }) {
+    const device = await getManagedActiveDevice(input)
+    if (device.disabledAt)
+      return
+
+    const disabledAt = new Date()
+    await db.transaction(async (tx) => {
+      await tx.update(schema.kioskDevices)
+        .set({ disabledAt, updatedAt: disabledAt })
+        .where(eq(schema.kioskDevices.id, device.id))
+      await tx.update(schema.kioskDeviceCredentials)
+        .set({ revokedAt: disabledAt })
+        .where(and(
+          eq(schema.kioskDeviceCredentials.deviceId, device.id),
+          isNull(schema.kioskDeviceCredentials.revokedAt),
+        ))
+      await tx.insert(schema.kioskAuditLogs).values({
+        siteId: device.siteId,
+        actorUserId: input.userId,
+        action: 'device.disabled',
+        targetType: 'kiosk_device',
+        targetId: device.id,
+        details: {},
+      })
+    })
+  }
+
+  async function deleteDevice(input: { deviceId: string, siteId: string, userId: string }) {
+    const device = await getManagedActiveDevice(input)
+    if (!device.disabledAt)
+      throw createConflictError('Kiosk device must be disabled before deletion')
+
+    const deletedAt = new Date()
+    await db.transaction(async (tx) => {
+      await tx.update(schema.kioskDevices)
+        .set({ deletedAt, updatedAt: deletedAt })
+        .where(eq(schema.kioskDevices.id, device.id))
+      await tx.insert(schema.kioskAuditLogs).values({
+        siteId: device.siteId,
+        actorUserId: input.userId,
+        action: 'device.deleted',
+        targetType: 'kiosk_device',
+        targetId: device.id,
+        details: {},
+      })
+    })
   }
 
   async function addMember(input: { siteId: string, userId: string, role: KioskMemberRole }) {
@@ -307,7 +374,11 @@ export function createKioskService(db: Database): KioskService {
       return undefined
 
     return await db.query.kioskDevices.findFirst({
-      where: eq(schema.kioskDevices.id, credentialRecord.deviceId),
+      where: and(
+        eq(schema.kioskDevices.id, credentialRecord.deviceId),
+        isNull(schema.kioskDevices.disabledAt),
+        isNull(schema.kioskDevices.deletedAt),
+      ),
     })
   }
 
@@ -370,9 +441,34 @@ export function createKioskService(db: Database): KioskService {
     if (!capabilities.canManageDevices && !capabilities.canEditExperience)
       throw createForbiddenError()
     return await db.query.kioskDevices.findMany({
-      where: eq(schema.kioskDevices.siteId, input.siteId),
+      where: and(
+        eq(schema.kioskDevices.siteId, input.siteId),
+        isNull(schema.kioskDevices.deletedAt),
+      ),
       orderBy: [asc(schema.kioskDevices.label)],
     })
+  }
+
+  async function listSiteVisitorSessions(input: { siteId: string, userId: string }) {
+    await assertCanReadTranscript(input.userId, input.siteId)
+    return await db.select({
+      createdAt: schema.kioskVisitorSessions.createdAt,
+      deviceId: schema.kioskVisitorSessions.deviceId,
+      deviceLabel: schema.kioskDevices.label,
+      endedAt: schema.kioskVisitorSessions.endedAt,
+      id: schema.kioskVisitorSessions.id,
+      interactionCount: sql<number>`(
+        select count(*)
+        from ${schema.kioskInteractionEntries}
+        where ${schema.kioskInteractionEntries.visitorSessionId} = ${schema.kioskVisitorSessions.id}
+      )`.mapWith(Number),
+      serviceId: schema.kioskVisitorSessions.serviceId,
+      state: schema.kioskVisitorSessions.state,
+    })
+      .from(schema.kioskVisitorSessions)
+      .innerJoin(schema.kioskDevices, eq(schema.kioskDevices.id, schema.kioskVisitorSessions.deviceId))
+      .where(eq(schema.kioskVisitorSessions.siteId, input.siteId))
+      .orderBy(desc(schema.kioskVisitorSessions.createdAt))
   }
 
   async function getProfileRelease(profileReleaseId: string) {
@@ -380,16 +476,16 @@ export function createKioskService(db: Database): KioskService {
   }
 
   async function getSiteProfile(siteId: string) {
-    const [draft, release] = await Promise.all([
-      db.query.kioskProfileDrafts.findFirst({ where: eq(schema.kioskProfileDrafts.siteId, siteId) }),
+    const [drafts, release] = await Promise.all([
+      db.query.kioskProfileDrafts.findMany({ where: eq(schema.kioskProfileDrafts.siteId, siteId), orderBy: [desc(schema.kioskProfileDrafts.updatedAt)] }),
       getDeviceProfileForSite(siteId),
     ])
-    return { draft, release }
+    return { drafts, release }
   }
 
   async function saveContentProfileDraft(input: { siteId: string, snapshot: KioskProfileSnapshot }) {
-    const { draft, release } = await getSiteProfile(input.siteId)
-    const source = draft ?? release
+    const { drafts, release } = await getSiteProfile(input.siteId)
+    const source = drafts[0] ?? release
     if (!source)
       throw createNotFoundError('A system administrator must create the first experience draft.')
 
@@ -410,18 +506,28 @@ export function createKioskService(db: Database): KioskService {
     })
   }
 
-  async function saveProfileDraft(input: { name: string, siteId: string, snapshot: KioskProfileSnapshot }) {
+  async function saveProfileDraft(input: { id?: string, name: string, siteId: string, snapshot: KioskProfileSnapshot }) {
     const snapshot = parseProfileSnapshot(input.snapshot)
-    const [draft] = await db.insert(schema.kioskProfileDrafts).values({ ...input, snapshot }).onConflictDoUpdate({
-      target: schema.kioskProfileDrafts.siteId,
-      set: { name: input.name, snapshot, updatedAt: new Date() },
+    if (input.id) {
+      const [draft] = await db.update(schema.kioskProfileDrafts)
+        .set({ name: input.name, snapshot, updatedAt: new Date() })
+        .where(and(eq(schema.kioskProfileDrafts.id, input.id), eq(schema.kioskProfileDrafts.siteId, input.siteId)))
+        .returning()
+      if (!draft)
+        throw createNotFoundError('Kiosk Profile draft was not found')
+      return draft
+    }
+    const [draft] = await db.insert(schema.kioskProfileDrafts).values({
+      name: input.name,
+      siteId: input.siteId,
+      snapshot,
     }).returning()
     return draft
   }
 
-  async function publishProfileDraft(input: { actorUserId?: string, siteId: string }) {
+  async function publishProfileDraft(input: { actorUserId?: string, draftId: string, siteId: string }) {
     return await db.transaction(async (tx) => {
-      const draft = await tx.query.kioskProfileDrafts.findFirst({ where: eq(schema.kioskProfileDrafts.siteId, input.siteId) })
+      const draft = await tx.query.kioskProfileDrafts.findFirst({ where: and(eq(schema.kioskProfileDrafts.id, input.draftId), eq(schema.kioskProfileDrafts.siteId, input.siteId)) })
       if (!draft)
         throw createNotFoundError('Kiosk Profile draft was not found')
 
@@ -430,7 +536,12 @@ export function createKioskService(db: Database): KioskService {
         name: draft.name,
         snapshot: draft.snapshot,
       }).returning()
-      const devices = await tx.query.kioskDevices.findMany({ where: eq(schema.kioskDevices.siteId, input.siteId) })
+      const devices = await tx.query.kioskDevices.findMany({
+        where: and(
+          eq(schema.kioskDevices.siteId, input.siteId),
+          isNull(schema.kioskDevices.deletedAt),
+        ),
+      })
       if (devices.length > 0) {
         await tx.insert(schema.kioskDeviceProfileAssignments).values(devices.map(device => ({
           deviceId: device.id,
@@ -460,6 +571,22 @@ export function createKioskService(db: Database): KioskService {
       ))
       .returning({ id: schema.kioskVisitorSessions.id })
     return deleted.length
+  }
+
+  async function deleteVisitorSessions(input: { siteId: string, userId: string, visitorSessionIds: string[] }) {
+    await assertCanManageSite({ siteId: input.siteId, userId: input.userId })
+    const ids = [...new Set(input.visitorSessionIds)]
+    const sessions = await db.query.kioskVisitorSessions.findMany({
+      where: and(
+        eq(schema.kioskVisitorSessions.siteId, input.siteId),
+        inArray(schema.kioskVisitorSessions.id, ids),
+      ),
+      columns: { id: true },
+    })
+    if (sessions.length !== ids.length)
+      throw createNotFoundError('One or more visitor sessions were not found')
+    await db.delete(schema.kioskVisitorSessions).where(inArray(schema.kioskVisitorSessions.id, ids))
+    return ids
   }
 
   async function setSiteInteractionRetentionDays(input: { actorUserId: string, days: number, siteId: string }) {
@@ -502,8 +629,8 @@ export function createKioskService(db: Database): KioskService {
     if (currentProfile)
       return currentProfile
 
-    await saveProfileDraft({ siteId, name: '開發 POC 點餐助手', snapshot: developmentProfile })
-    return await publishProfileDraft({ siteId })
+    const draft = await saveProfileDraft({ siteId, name: '開發 POC 點餐助手', snapshot: developmentProfile })
+    return await publishProfileDraft({ siteId, draftId: draft.id })
   }
 
   async function getDeviceProfileForSite(siteId: string) {
@@ -581,6 +708,21 @@ export function createKioskService(db: Database): KioskService {
     await assertCanManageSite({ siteId, userId })
   }
 
+  async function getManagedActiveDevice(input: { deviceId: string, siteId: string, userId: string }) {
+    const device = await db.query.kioskDevices.findFirst({
+      where: and(
+        eq(schema.kioskDevices.id, input.deviceId),
+        eq(schema.kioskDevices.siteId, input.siteId),
+        isNull(schema.kioskDevices.deletedAt),
+      ),
+    })
+    if (!device)
+      throw createNotFoundError('Kiosk device was not found')
+
+    await assertCanManageSite({ siteId: device.siteId, userId: input.userId })
+    return device
+  }
+
   async function assertCanManageSite(input: { siteId: string, userId: string }) {
     const capabilities = await getSiteManagementCapabilities(input)
     if (!capabilities.canManageDevices)
@@ -647,17 +789,21 @@ export function createKioskService(db: Database): KioskService {
     appendInteractionEntry,
     appendDeviceInteraction,
     createDevice,
+    deleteDevice,
+    deleteVisitorSessions,
     deleteSite,
     createProfileRelease,
     createSite,
     getSiteManagementCapabilities,
     endDeviceVisitorSession,
+    disableDevice,
     getDeviceProfile,
     getSiteModelOverrides,
     getProfileRelease,
     getSiteProfile,
     listManagedSites,
     listSiteDevices,
+    listSiteVisitorSessions,
     getVisitorSessionForDevice,
     getVisitorSessionForUser,
     startVisitorSession,

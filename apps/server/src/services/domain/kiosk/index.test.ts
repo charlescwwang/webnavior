@@ -22,6 +22,7 @@ const profileSnapshot: KioskProfileSnapshot = {
     url: 'https://example.com/order',
   },
   surveyUrl: 'https://example.com/survey',
+  voiceConversationOnly: false,
 }
 
 describe('kiosk service', () => {
@@ -70,6 +71,34 @@ describe('kiosk service', () => {
     ])
   })
 
+  it('lists a site administrator’s sessions with device labels and interaction counts', async () => {
+    const site = await service.createSite({ name: 'POC Store' })
+    await service.addMember({ siteId: site.id, userId: 'site-admin', role: 'site_admin' })
+    const device = await service.createDevice({ siteId: site.id, label: 'COUNTER-01', registrationMethod: 'development' })
+    const release = await service.createProfileRelease({ siteId: site.id, name: 'Lunch menu', snapshot: profileSnapshot })
+    const visitorSession = await service.startVisitorSession({ deviceId: device.id, profileReleaseId: release.id, serviceId: 'restaurant-ordering' })
+    await service.appendInteractionEntry({ visitorSessionId: visitorSession.id, kind: 'asr_transcript', content: '一杯紅茶。' })
+    await service.appendInteractionEntry({ visitorSessionId: visitorSession.id, kind: 'assistant_text', content: '好的，為您準備。' })
+
+    const sessions = await service.listSiteVisitorSessions({ siteId: site.id, userId: 'site-admin' })
+
+    expect(sessions).toEqual([
+      expect.objectContaining({
+        deviceId: device.id,
+        deviceLabel: 'COUNTER-01',
+        id: visitorSession.id,
+        interactionCount: 2,
+      }),
+    ])
+  })
+
+  it('does not let a viewer list a site’s visitor sessions', async () => {
+    const site = await service.createSite({ name: 'POC Store' })
+    await service.addMember({ siteId: site.id, userId: 'viewer', role: 'viewer' })
+
+    await expect(service.listSiteVisitorSessions({ siteId: site.id, userId: 'viewer' })).rejects.toThrow('Forbidden')
+  })
+
   it('rejects a viewer and a different site administrator before exposing a transcript', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const otherSite = await service.createSite({ name: 'Other Store' })
@@ -93,6 +122,22 @@ describe('kiosk service', () => {
       profileReleaseId: release.id,
       serviceId: 'unpublished-service',
     })).rejects.toThrow('not published')
+  })
+
+  it('preserves the published voice-only conversation policy for the assigned kiosk', async () => {
+    const site = await service.createSite({ name: 'Voice-only Store' })
+    const device = await service.createDevice({ siteId: site.id, label: 'COUNTER-VOICE-01', registrationMethod: 'development' })
+    const draft = await service.saveProfileDraft({
+      name: 'Voice-only ordering',
+      siteId: site.id,
+      snapshot: { ...profileSnapshot, voiceConversationOnly: true },
+    })
+
+    await service.publishProfileDraft({ draftId: draft.id, siteId: site.id })
+
+    await expect(service.getDeviceProfile(device.id)).resolves.toMatchObject({
+      snapshot: { voiceConversationOnly: true },
+    })
   })
 
   it('allows a global administrator to inspect a transcript from every site', async () => {
@@ -122,6 +167,29 @@ describe('kiosk service', () => {
     expect(systemAdminSites.map(site => site.id)).toEqual([alphaSite.id, betaSite.id, hiddenSite.id])
     expect(managedDevices.map(device => device.id)).toEqual([betaDevice.id])
     await expect(service.listSiteDevices({ siteId: hiddenSite.id, userId: 'site-admin' })).rejects.toThrow('Forbidden')
+  })
+
+  it('requires device deactivation before soft deletion while retaining its visitor history', async () => {
+    const site = await service.createSite({ name: 'POC Store' })
+    await service.addMember({ siteId: site.id, userId: 'site-admin', role: 'site_admin' })
+    const device = await service.createDevice({ siteId: site.id, label: 'COUNTER-01', registrationMethod: 'development' })
+    const release = await service.createProfileRelease({ siteId: site.id, name: 'Lunch menu', snapshot: profileSnapshot })
+    const session = await service.startVisitorSession({ deviceId: device.id, profileReleaseId: release.id, serviceId: 'restaurant-ordering' })
+    await service.appendInteractionEntry({ visitorSessionId: session.id, kind: 'user_text', content: '保留這筆對話。' })
+
+    await expect(service.deleteDevice({ deviceId: device.id, siteId: site.id, userId: 'site-admin' })).rejects.toThrow('disabled')
+
+    await service.disableDevice({ deviceId: device.id, siteId: site.id, userId: 'site-admin' })
+    await service.deleteDevice({ deviceId: device.id, siteId: site.id, userId: 'site-admin' })
+
+    await expect(service.listSiteDevices({ siteId: site.id, userId: 'site-admin' })).resolves.toEqual([])
+    await expect(db.query.kioskDevices.findFirst({ where: eq(schema.kioskDevices.id, device.id) })).resolves.toEqual(
+      expect.objectContaining({ disabledAt: expect.any(Date), deletedAt: expect.any(Date) }),
+    )
+    await expect(db.query.kioskVisitorSessions.findFirst({ where: eq(schema.kioskVisitorSessions.id, session.id) })).resolves.toEqual(
+      expect.objectContaining({ deviceId: device.id }),
+    )
+    await expect(db.query.kioskInteractionEntries.findMany({ where: eq(schema.kioskInteractionEntries.visitorSessionId, session.id) })).resolves.toHaveLength(1)
   })
 
   it('lets a content manager edit customer-facing draft fields without publishing or changing technical settings', async () => {
@@ -183,8 +251,8 @@ describe('kiosk service', () => {
     const firstDevice = await service.createDevice({ siteId: site.id, label: 'COUNTER-01', registrationMethod: 'development' })
     const secondDevice = await service.createDevice({ siteId: site.id, label: 'COUNTER-02', registrationMethod: 'development' })
 
-    await service.saveProfileDraft({ siteId: site.id, name: 'Lunch menu', snapshot: profileSnapshot })
-    const release = await service.publishProfileDraft({ siteId: site.id, actorUserId: 'system-admin' })
+    const lunchDraft = await service.saveProfileDraft({ siteId: site.id, name: 'Lunch menu', snapshot: profileSnapshot })
+    const release = await service.publishProfileDraft({ siteId: site.id, draftId: lunchDraft.id, actorUserId: 'system-admin' })
 
     const [firstProfile, secondProfile] = await Promise.all([
       service.getDeviceProfile(firstDevice.id),
@@ -193,12 +261,12 @@ describe('kiosk service', () => {
     expect(firstProfile).toEqual(expect.objectContaining({ id: release.id, snapshot: profileSnapshot }))
     expect(secondProfile).toEqual(expect.objectContaining({ id: release.id, snapshot: profileSnapshot }))
 
-    await service.saveProfileDraft({
+    const dinnerDraft = await service.saveProfileDraft({
       siteId: site.id,
       name: 'Dinner menu',
       snapshot: { ...profileSnapshot, greetingPrompt: '晚上好，想吃些什麼？' },
     })
-    const laterRelease = await service.publishProfileDraft({ siteId: site.id })
+    const laterRelease = await service.publishProfileDraft({ siteId: site.id, draftId: dinnerDraft.id })
 
     expect(release.snapshot.greetingPrompt).toBe('您好，想吃什麼？')
     expect(laterRelease.snapshot.greetingPrompt).toBe('晚上好，想吃些什麼？')

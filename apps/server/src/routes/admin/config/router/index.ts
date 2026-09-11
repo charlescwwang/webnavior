@@ -22,6 +22,7 @@ import {
 
 import { adminGuard } from '../../../../middlewares/admin-guard'
 import { authGuard } from '../../../../middlewares/auth'
+import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../../services/adapters/config-kv'
 import { createBadRequestError } from '../../../../utils/error'
 import { discoverModels } from './operations/discover-models'
 
@@ -57,6 +58,7 @@ const WebnaviorAudioConfigSchema = object({
   modelName: pipe(string(), nonEmpty('modelName is required'), maxLength(200), NO_PIPE),
   upstreamModel: pipe(string(), nonEmpty('upstreamModel is required'), maxLength(200)),
   baseURL: pipe(string(), url('baseURL must be a valid URL')),
+  voice: optional(pipe(string(), nonEmpty('voice must not be empty when provided'), maxLength(200)), DEFAULT_WEBNAVIOR_TTS_VOICE),
   plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
 })
 
