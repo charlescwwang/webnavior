@@ -126,7 +126,7 @@ function handleOrderConfirmed(order: SubmittedOrder) {
     return
 
   completedOrderId.value = order.id
-  orderStatus.value = '模擬訂單已建立，尚未送往 POS。'
+  orderStatus.value = '訂單已送出。'
   notifyHost('completed', {
     fulfillmentMode: order.cart.fulfillmentMode!,
     id: order.id,
@@ -353,7 +353,7 @@ onUnmounted(() => {
         </div>
       </section>
       <button class="confirm-button" type="button" :disabled="cart.lines.length === 0 || !fulfillmentMode || !!completedOrderId" @click="confirmOrder">
-        {{ completedOrderId ? '模擬訂單已確認' : '確認模擬訂單' }}
+        {{ completedOrderId ? '訂單已送出' : '送出訂單' }}
       </button>
       <p v-if="orderStatus" class="order-status">
         {{ orderStatus }}
@@ -361,9 +361,8 @@ onUnmounted(() => {
       <section v-if="completedOrderId" class="order-completion" role="status" aria-live="polite">
         <div class="i-solar:check-circle-bold-duotone" aria-hidden="true" />
         <div>
-          <strong>模擬訂單已送出</strong>
+          <strong>訂單已送出</strong>
           <p>訂單編號：{{ completedOrderId }}</p>
-          <small>此訂單僅供流程測試，尚未傳送至 POS。</small>
         </div>
       </section>
     </aside>
