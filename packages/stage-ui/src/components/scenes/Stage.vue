@@ -31,7 +31,7 @@ import { useDuckDb } from '../../composables/use-duck-db'
 import { useIOTraceBridge } from '../../composables/use-io-trace-bridge'
 import { initIOTracer } from '../../composables/use-io-tracer'
 import { useSpeechPipelineAnalytics } from '../../composables/use-speech-pipeline-analytics'
-import { Emotion, EMOTION_EmotionMotionName_value, EMOTION_VRMExpressionName_value, EmotionThinkMotionName } from '../../constants/emotions'
+import { Emotion, EMOTION_EmotionMotionName_value, EMOTION_VRMExpressionName_value, EmotionNeutralMotionName, EmotionThinkMotionName } from '../../constants/emotions'
 import { getDefaultStreamingModel, getDefinedProvider } from '../../libs/providers/providers'
 import { OFFICIAL_SPEECH_PROVIDER_ID, OFFICIAL_SPEECH_STREAMING_PROVIDER_ID } from '../../libs/providers/providers/official'
 import { bindSpeakingStateToPlaybackManager } from '../../libs/speech/playback-speaking-state'
@@ -52,9 +52,12 @@ const props = withDefaults(defineProps<{
   personPosition?: { x: number, y: number }
   enableOrbitControls?: boolean
   paused?: boolean
+  /** Makes the character use AIRI's thinking emotion while a response is pending. */
+  thinking?: boolean
 }>(), {
   enableOrbitControls: true,
   paused: false,
+  thinking: false,
 })
 
 const componentState = defineModel<'pending' | 'loading' | 'mounted'>('state', { default: 'pending' })
@@ -161,6 +164,28 @@ const backgroundStore = useBackgroundStore()
 const { activeBackgroundUrl } = storeToRefs(backgroundStore)
 
 const { currentMotion } = storeToRefs(useLive2dParams())
+
+function applyThinkingState(isThinking: boolean) {
+  if (stageModelRenderer.value === 'live2d') {
+    currentMotion.value = { group: isThinking ? EmotionThinkMotionName : EmotionNeutralMotionName }
+    return
+  }
+
+  if (stageModelRenderer.value === 'vrm') {
+    void vrmViewerRef.value?.setExpression(isThinking ? 'think' : 'neutral')
+    return
+  }
+
+  if (stageModelRenderer.value === 'spine')
+    spineSceneRef.value?.setEmotion(isThinking ? Emotion.Think : Emotion.Neutral, 1)
+}
+
+// Kiosk replies use the Server Gateway directly instead of the regular chat
+// orchestrator, so they explicitly provide the same thinking state AIRI's
+// standard chat flow emits through its before-send hook.
+watch([() => props.thinking, stageModelRenderer, componentState], ([isThinking]) => {
+  applyThinkingState(isThinking)
+}, { immediate: true })
 
 const emotionsQueue = createQueue<EmotionPayload>({
   handlers: [

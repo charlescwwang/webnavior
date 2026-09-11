@@ -75,12 +75,14 @@ const renderMessages = computed<ChatHistoryItem[]>(() => {
   return [...props.messages, streaming.value]
 })
 
-useChatHistoryScroll({
+const { scrollToBottom } = useChatHistoryScroll({
   containerRef: chatHistoryRef,
   messages: renderMessages,
   getKey: getChatHistoryItemKey,
   followLatest: props.autoScroll === 'follow-latest',
 })
+
+defineExpose({ scrollToBottom })
 
 function emitCopyMessage(message: ChatHistoryItem, index: number) {
   emit('copyMessage', {
