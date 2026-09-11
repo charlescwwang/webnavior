@@ -7,6 +7,7 @@ import { message } from '@xsai/utils-chat'
 import { ProviderValidationCheck } from '../../libs/providers'
 
 type ProviderCreator = (apiKey: string, baseUrl: string) => any
+type BaseUrlNormalizer = (value: unknown) => string
 
 // Lightweight normalization utilities and conditional logging
 function normalizeString(value: unknown): string {
@@ -18,6 +19,27 @@ function normalizeBaseUrl(value: unknown): string {
   if (base && !base.endsWith('/'))
     base += '/'
   return base
+}
+
+/**
+ * Normalizes an OpenAI-compatible API root to the versioned base xsAI expects.
+ * `generateSpeech()` appends `audio/speech`, so keeping `/v1/` here prevents
+ * both a missing version segment and a duplicated `/v1/v1/` path.
+ */
+export function normalizeOpenAICompatibleSpeechBaseUrl(value: unknown): string {
+  const baseUrl = normalizeString(value)
+  if (!baseUrl)
+    return ''
+
+  try {
+    const url = new URL(baseUrl)
+    const path = url.pathname.replace(/\/+$/, '')
+    url.pathname = path.endsWith('/v1') ? path : `${path}/v1`
+    return normalizeBaseUrl(url.toString())
+  }
+  catch {
+    return normalizeBaseUrl(baseUrl)
+  }
 }
 
 function shouldLog(): boolean {
@@ -33,6 +55,87 @@ function shouldLog(): boolean {
 function logWarn(...args: unknown[]) {
   if (shouldLog())
     console.warn(...args)
+}
+
+function logDebug(...args: unknown[]) {
+  if (shouldLog())
+    console.debug(...args)
+}
+
+function withSpeechExtraOptions(
+  provider: unknown,
+  options: { baseUrl: string, providerId: string },
+) {
+  if (!provider || typeof provider !== 'object' || !('speech' in provider))
+    return provider
+
+  const speech = (provider as { speech?: unknown }).speech
+  if (typeof speech !== 'function')
+    return provider
+
+  return {
+    ...provider,
+    speech: (model: string, extraOptions?: Record<string, unknown>) => {
+      const request = speech(model) as Record<string, unknown>
+      const apiKey = normalizeString(request.apiKey)
+      const {
+        responseFormat = 'mp3',
+        speed = 1.0,
+        ...otherOptions
+      } = extraOptions ?? {}
+
+      return {
+        ...request,
+        ...otherOptions,
+        // xsAI emits Authorization whenever apiKey is defined, including an
+        // empty string. Keep it undefined for anonymous compatible services.
+        apiKey: apiKey || undefined,
+        baseURL: options.baseUrl,
+        responseFormat,
+        speed,
+        fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+          const endpoint = input.toString()
+          let body: Record<string, unknown> | undefined
+          try {
+            body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined
+          }
+          catch {
+            // The request still proceeds; this only limits debug detail.
+          }
+
+          logDebug('[OpenAI Compatible TTS] request', {
+            authorization: init?.headers && new Headers(init.headers).has('Authorization') ? 'bearer' : 'omitted',
+            endpoint,
+            inputLength: typeof body?.input === 'string' ? body.input.length : undefined,
+            model: body?.model,
+            provider: options.providerId,
+            responseFormat: body?.response_format,
+            speed: body?.speed,
+            voice: body?.voice,
+          })
+
+          try {
+            const response = await globalThis.fetch(input, init)
+            logDebug('[OpenAI Compatible TTS] response', {
+              contentType: response.headers.get('Content-Type'),
+              endpoint,
+              provider: options.providerId,
+              status: response.status,
+            })
+            return response
+          }
+          catch (error) {
+            console.error('[OpenAI Compatible TTS] request failed', {
+              endpoint,
+              error,
+              provider: options.providerId,
+            })
+            throw error
+          }
+        },
+      }
+    },
+  }
 }
 
 /**
@@ -72,6 +175,7 @@ export function buildOpenAICompatibleProvider(
     validation?: ProviderValidationCheck[]
     additionalHeaders?: Record<string, string>
     transcriptionFeatures?: ProviderMetadata['transcriptionFeatures']
+    normalizeBaseUrl?: BaseUrlNormalizer
   },
 ): ProviderMetadata {
   const {
@@ -90,6 +194,7 @@ export function buildOpenAICompatibleProvider(
     validation,
     additionalHeaders,
     transcriptionFeatures,
+    normalizeBaseUrl: normalizeConfiguredBaseUrl,
     ...rest
   } = options
 
@@ -97,10 +202,10 @@ export function buildOpenAICompatibleProvider(
     listModels: async (config: Record<string, unknown>) => {
       // Safer casting of apiKey/baseUrl (prevents .trim() crash if not a string)
       const apiKey = normalizeString(config.apiKey)
-      const baseUrl = normalizeBaseUrl(config.baseUrl)
+      const baseUrl = (normalizeConfiguredBaseUrl ?? normalizeBaseUrl)(config.baseUrl)
 
       // If not configured yet, avoid remote calls and return empty
-      if (!apiKey || !baseUrl) {
+      if (!baseUrl) {
         return []
       }
 
@@ -112,7 +217,7 @@ export function buildOpenAICompatibleProvider(
 
       // Previously: fetch(`${baseUrl}models`)
       const models = await listModels({
-        apiKey,
+        apiKey: apiKey || undefined,
         baseURL: baseUrl,
         headers: additionalHeaders,
       })
@@ -142,10 +247,6 @@ export function buildOpenAICompatibleProvider(
       let baseUrl = normalizeString(config.baseUrl)
       const apiKey = normalizeString(config.apiKey)
 
-      if (!apiKey) {
-        errors.push(new Error('API Key is required'))
-      }
-
       if (!baseUrl) {
         errors.push(new Error('Base URL is required'))
       }
@@ -160,7 +261,7 @@ export function buildOpenAICompatibleProvider(
       }
 
       // normalize trailing slash instead of rejecting
-      baseUrl = normalizeBaseUrl(baseUrl)
+      baseUrl = (normalizeConfiguredBaseUrl ?? normalizeBaseUrl)(baseUrl)
 
       if (errors.length > 0) {
         return {
@@ -179,7 +280,7 @@ export function buildOpenAICompatibleProvider(
           return detected
         try {
           const models = await listModels({
-            apiKey,
+            apiKey: apiKey || undefined,
             baseURL: baseUrl,
             headers: additionalHeaders,
           })
@@ -219,7 +320,7 @@ export function buildOpenAICompatibleProvider(
           try {
             const model = await modelPromise
             await generateText({
-              apiKey,
+              apiKey: apiKey || undefined,
               baseURL: baseUrl,
               headers: additionalHeaders,
               model,
@@ -239,7 +340,7 @@ export function buildOpenAICompatibleProvider(
         asyncChecks.push((async () => {
           try {
             const models = await listModels({
-              apiKey,
+              apiKey: apiKey || undefined,
               baseURL: baseUrl,
               headers: additionalHeaders,
             })
@@ -289,10 +390,12 @@ export function buildOpenAICompatibleProvider(
     }),
     createProvider: async (config: { apiKey: string, baseUrl: string }) => {
       const apiKey = normalizeString(config.apiKey)
-      const baseUrl = normalizeBaseUrl(config.baseUrl)
+      const baseUrl = (normalizeConfiguredBaseUrl ?? normalizeBaseUrl)(config.baseUrl)
       const provider = await creator(apiKey, baseUrl)
       if (resolvedCategory === 'transcription')
         return withTranscriptionExtraOptions(provider)
+      if (resolvedCategory === 'speech')
+        return withSpeechExtraOptions(provider, { baseUrl, providerId: id })
 
       return provider
     },

@@ -61,7 +61,7 @@ import { createAliyunNLSProvider as createAliyunNlsStreamProvider } from './prov
 import { convertProviderDefinitionsToMetadata } from './providers/converters'
 import { models as elevenLabsModels } from './providers/elevenlabs/list-models'
 import { buildGoogleGeminiSpeechProvider } from './providers/google-gemini-speech'
-import { buildOpenAICompatibleProvider } from './providers/openai-compatible-builder'
+import { buildOpenAICompatibleProvider, normalizeOpenAICompatibleSpeechBaseUrl } from './providers/openai-compatible-builder'
 import { buildOpenRouterAudioSpeechProvider } from './providers/openrouter/audio-speech'
 import { createWebSpeechAPIProvider } from './providers/web-speech-api'
 import { useSettingsAnalytics } from './settings/analytics'
@@ -696,12 +696,9 @@ export const useProvidersStore = defineStore('providers', () => {
         listModels: async (config: Record<string, unknown>) => {
           // Filter models to only include TTS models
           const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : ''
-          let baseUrl = typeof config.baseUrl === 'string' ? config.baseUrl.trim() : ''
+          const baseUrl = normalizeOpenAICompatibleSpeechBaseUrl(config.baseUrl)
 
-          if (!baseUrl.endsWith('/'))
-            baseUrl += '/'
-
-          if (!apiKey || !baseUrl) {
+          if (!baseUrl) {
             return []
           }
 
@@ -711,7 +708,7 @@ export const useProvidersStore = defineStore('providers', () => {
           }
 
           const models = await listModels({
-            apiKey,
+            apiKey: apiKey || undefined,
             baseURL: baseUrl,
           })
 
@@ -734,6 +731,7 @@ export const useProvidersStore = defineStore('providers', () => {
             })
         },
       },
+      normalizeBaseUrl: normalizeOpenAICompatibleSpeechBaseUrl,
       creator: createOpenAI,
     }),
     'openai-audio-transcription': buildOpenAICompatibleProvider({

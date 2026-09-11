@@ -91,8 +91,9 @@ watch(
   { deep: true, immediate: true },
 )
 
-// Check if API key is configured
-const apiKeyConfigured = computed(() => !!providers.value[providerId]?.apiKey)
+// Compatible TTS endpoints may be intentionally anonymous. The base URL is
+// the only credential-independent prerequisite for a preview request.
+const apiKeyConfigured = computed(() => !!providers.value[providerId]?.baseUrl)
 
 // Ensure provider config is initialized on mount
 onMounted(() => {
