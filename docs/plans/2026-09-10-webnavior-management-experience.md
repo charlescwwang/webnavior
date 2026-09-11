@@ -60,6 +60,6 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 - 管理端保留內部 `Profile` 資料模型與 API 名稱，以維持既有版本化發布契約；面向使用者的頁面改以「互動體驗」描述。
 - 系統模型頁的 OpenAI-compatible TTS 連線保留自己的上游 model、endpoint、選填 API key 與 voice。voice 預設為 `zh-TW-HsiaoChenNeural`，由 Server 以 MP3、speed `1.0` 呼叫上游；Kiosk 不會取得這些設定或任何 Provider 憑證。
 - 體驗草稿可設定 voice-only 對話模式。已發布後，Kiosk 隱藏文字輸入並依已獲准的麥克風權限啟動 VAD；這不是一般內容管理者可見的 Provider 設定。
-- 管理端已提供 Site 範圍的訪客使用歷程與逐字稿閱讀入口。它服務營運回顧，不構成尚待實作的沙盒測試或現場驗證流程。
+- 管理端已提供 Site 範圍的訪客使用歷程：會話依日期／時段分組，閱讀頁將對話與行為摘要分開；顧客語音轉錄可播放原始 WAV，活動可播放對應觸發短片，連續影片則按需載入。管理者可單筆或批次永久刪除會話及附屬媒體。它服務內部 POC 的營運回顧，不構成尚待實作的沙盒測試或現場驗證流程。
 - 本機開發預設連接埠固定為：管理端 `5167`、Server API `5168`、Kiosk `5169`、點餐服務 `5166`。這些固定來源也用於登入 callback、CORS 與 WebMCP allowlist。
 - 開發用 Webnavior 帳號由 `pnpm --filter @proj-airi/server seed:test-accounts` 建立。它僅可在非 production 環境使用，不取代正式帳號與角色管理功能。
