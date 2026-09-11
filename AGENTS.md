@@ -259,9 +259,19 @@ Concise but detailed reference for contributors working across the `moeru-ai/air
 
 ### Validation
 
-- Prefer the narrowest meaningful check: a focused test, then a package-scoped test/typecheck/lint command. Inspect that package's `package.json`, workspace scripts, and local instructions before escalating validation scope.
-- Do not run root-level `pnpm typecheck`, `pnpm lint`, builds, complete test suites, or expensive browser/E2E checks after every edit. Consider them at a logical unit boundary, for shared/cross-package contracts, architecture changes, integration confirmation, before committing, or when explicitly requested.
-- If no credible scoped validation exists, report that fact rather than immediately falling back to a full-project command. When full validation reports unrelated or pre-existing failures, identify only task-related regressions and record the rest briefly; do not enter a repeated full-check/fix cycle.
+#### Full-project typecheck policy
+
+- **DO NOT run root-level / full-project `pnpm typecheck` automatically.** It is opt-in, not a default validation step.
+- Prefer the narrowest meaningful check: first a current-task-focused test, then package-scoped test, typecheck, or lint. If the command is unknown, inspect the affected package's `package.json`, workspace scripts, local instructions, and existing documentation.
+- Do not run full-project typecheck merely because a task or logical unit is complete, code or TypeScript files changed, targeted validation is unavailable, additional confidence is desired, or a final response is being prepared.
+- If no reasonable targeted or package-scoped validation exists, explicitly report that full-project typecheck was not run and stop there unless an allowed condition below applies. Do not run it when unsure.
+- Full-project typecheck may run only when the user explicitly requests it; the task modifies shared or cross-package types, APIs, contracts, or infrastructure and targeted validation is insufficient; or a repository release, PR, or merge policy explicitly requires it and the task is actually at that stage.
+- When allowed, run full-project typecheck at most once. Rerun only if that run finds an error caused by the current changes, the error is fixed, and rerunning is genuinely necessary to verify the fix. Do not repeatedly run it until the repository is clean.
+- When the user supplies typecheck errors, fix those errors directly and use targeted validation afterward when possible. Do not run full-project typecheck unless the user explicitly requests it or a clear cross-package dependency requires it.
+- Treat large validation output as expensive context. Do not run commands expected to produce large amounts of unrelated output merely for additional confidence; when output is large, inspect only task-relevant portions.
+- It is acceptable to finish with: “Targeted validation passed; full-project typecheck was not run.” Do not run full-project typecheck solely to claim that validation passed in the final response.
+- If full validation is otherwise warranted, keep its output in scope and identify only task-related regressions; do not repair unrelated failures or expand the task to make the repository clean.
+- Stop validation when the requested change is complete, targeted or relevant validation has passed (or its absence has been explicitly reported), and no task-caused regression is known.
 
 ### Documentation and handoff
 
