@@ -145,4 +145,32 @@ describe('useKioskCustomerSession', () => {
     expect(reloadScenario).toHaveBeenCalledOnce()
     expect(session.state.value).toBe('standby')
   })
+
+  it('clears the host conversation when the idle-confirmation countdown expires', async () => {
+    vi.useFakeTimers()
+    const resetConversation = vi.fn()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const options = {
+      activeCardId: shallowRef('default'),
+      chatSession,
+      resetConversation,
+    }
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession(options))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    await vi.advanceTimersByTimeAsync(45_000)
+    await vi.advanceTimersByTimeAsync(15_000)
+
+    expect(resetConversation).toHaveBeenCalledOnce()
+    expect(session.state.value).toBe('standby')
+  })
 })

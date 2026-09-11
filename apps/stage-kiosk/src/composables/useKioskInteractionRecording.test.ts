@@ -43,4 +43,23 @@ describe('useKioskInteractionRecording', () => {
     expect(recording.visitorSessionId.value).toBeUndefined()
     scope.stop()
   })
+
+  it('forwards cancellation when a visitor interrupts a proactive assistant action', async () => {
+    const controller = new AbortController()
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    kioskApi.sendKioskAssistantAction.mockResolvedValue({ answer: '需要協助嗎？' })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())
+    if (!recording)
+      throw new Error('Expected interaction recording to initialize.')
+
+    await expect(recording.runAssistantAction('restaurant-ordering', 'reminder', controller.signal)).resolves.toBe('需要協助嗎？')
+
+    expect(kioskApi.sendKioskAssistantAction).toHaveBeenCalledWith({
+      visitorSessionId: 'visitor-1',
+      kind: 'reminder',
+      signal: controller.signal,
+    })
+    scope.stop()
+  })
 })

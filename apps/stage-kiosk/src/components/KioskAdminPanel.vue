@@ -112,13 +112,13 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
 </template>
 
 <style scoped>
-.admin-panel { position: fixed; z-index: 30; top: 50%; left: 50%; display: grid; width: min(42rem, calc(100vw - 2rem)); max-height: min(48rem, calc(100dvh - 2rem)); overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.5rem; color: #ecfffb; background: #0d2225; box-shadow: 0 2rem 7rem rgb(0 0 0 / 52%); transform: translate(-50%, -50%); grid-template-rows: auto minmax(0, 1fr); }
+.admin-panel { display: grid; width: min(100%, 64rem); min-width: 0; margin: 0 auto; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.5rem; color: #ecfffb; background: #0d2225; box-shadow: 0 1rem 3rem rgb(0 0 0 / 28%); grid-template-rows: auto minmax(0, 1fr); }
 .admin-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgb(255 255 255 / 12%); padding: 1rem 1.2rem; }
 .admin-kicker { color: #8bd9cb; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
 .admin-title { margin: .15rem 0 0; font-size: 1.2rem; }
 .close-button { display: grid; place-items: center; border: 0; border-radius: .75rem; padding: .35rem; color: #d9faf6; background: transparent; cursor: pointer; }
 .close-button:hover { background: rgb(255 255 255 / 10%); }
-.admin-content { display: grid; gap: 1rem; overflow-y: auto; padding: 1.2rem; }
+.admin-content { display: grid; min-width: 0; gap: 1rem; padding: 1.2rem; }
 .admin-section { display: grid; gap: .8rem; border: 1px solid rgb(255 255 255 / 12%); border-radius: 1rem; padding: 1rem; background: rgb(255 255 255 / 4%); }
 .admin-section h3 { margin: 0; font-size: .95rem; }
 .device-details { display: grid; gap: .7rem; margin: 0; }
@@ -132,4 +132,9 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
 .end-session-button:disabled { cursor: wait; opacity: .65; }
 .toggle-row input { width: 1.1rem; height: 1.1rem; accent-color: #78e1d1; }
 .admin-note { margin: 0; color: rgb(217 250 246 / 70%); font-size: .8rem; line-height: 1.5; }
+@media (max-width: 520px) {
+  .admin-panel { border-radius: 1rem; }
+  .admin-header, .admin-content { padding: .9rem; }
+  .device-id { font-size: .72rem !important; }
+}
 </style>

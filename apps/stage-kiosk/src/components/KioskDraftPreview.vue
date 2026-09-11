@@ -10,7 +10,11 @@ import { applyKioskProfile } from '../composables/useKioskInteractiveServices'
 import { waitForKioskRuntime } from '../services/kiosk-runtime-initialization'
 
 const ready = shallowRef(false)
+const profile = shallowRef<KioskProfile>()
 const kioskCharacterAsset = useKioskCharacterAsset()
+// A draft iframe has no registered kiosk credential, so it cannot use the
+// Server-owned audio gateway. Keep its text composer available for preview.
+const voiceConversationOnly = false
 
 async function receiveDraft(event: MessageEvent<unknown>) {
   if (event.source !== window.parent || !event.data || typeof event.data !== 'object')
@@ -22,6 +26,7 @@ async function receiveDraft(event: MessageEvent<unknown>) {
     await waitForKioskRuntime()
     applyKioskProfile(payload.profile)
     await kioskCharacterAsset.apply(payload.profile)
+    profile.value = payload.profile
     ready.value = true
   }
   catch (error) {
@@ -34,7 +39,7 @@ onUnmounted(() => window.removeEventListener('message', receiveDraft))
 </script>
 
 <template>
-  <KioskScene v-if="ready" />
+  <KioskScene v-if="ready" :voice-conversation-only="voiceConversationOnly" />
   <main v-else :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-300']">
     正在載入草稿預覽…
   </main>

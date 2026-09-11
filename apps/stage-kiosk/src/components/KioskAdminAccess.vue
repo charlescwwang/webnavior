@@ -47,7 +47,10 @@ function unlockAdmin() {
   pinError.value = ''
   pinPromptOpen.value = false
   beginKioskAdminSession()
-  void router.push('/settings')
+  // The kiosk has one dedicated local-settings route. Going through the
+  // generic settings index first mounts its transition guard, which can
+  // interrupt this first post-PIN navigation.
+  void router.push('/settings/kiosk')
 }
 
 function closePrompt() {

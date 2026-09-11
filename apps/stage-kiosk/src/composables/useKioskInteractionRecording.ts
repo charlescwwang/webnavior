@@ -1,6 +1,9 @@
-import type { KioskInteractionEntryKind } from '../services/kiosk-device'
+import type { Tool } from '@xsai/shared-chat'
+
+import type { KioskInteractionEntryKind, KioskToolCall, KioskToolDefinition } from '../services/kiosk-device'
 import type { InteractiveServiceOrderResult } from '../services/scenario-registry'
 
+import { executeTool } from '@xsai/shared-chat'
 import { readonly, shallowRef } from 'vue'
 
 import { appendKioskInteraction, endKioskVisitorSession, recordKioskOrderResult, sendKioskAssistantAction, sendKioskConversationMessage, startKioskVisitorSession } from '../services/kiosk-device'
@@ -51,7 +54,7 @@ export function useKioskInteractionRecording() {
     const sessionId = visitorSessionId.value
     const save = async () => {
       try {
-        await appendKioskInteraction({
+        return await appendKioskInteraction({
           visitorSessionId: sessionId,
           kind,
           content,
@@ -64,7 +67,7 @@ export function useKioskInteractionRecording() {
     }
     const nextAppend = pendingAppend.then(save, save)
     pendingAppend = nextAppend.catch(() => undefined)
-    await nextAppend
+    return await nextAppend
   }
 
   async function end(state: 'completed' | 'cancelled' | 'idle') {
@@ -80,14 +83,42 @@ export function useKioskInteractionRecording() {
     }
   }
 
-  async function send(serviceId: string, content: string) {
+  async function send(
+    serviceId: string,
+    content: string,
+    tools: Tool[],
+    onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void,
+    signal?: AbortSignal,
+  ) {
     const sessionId = await start(serviceId)
     if (!sessionId)
       return undefined
 
     try {
-      const { answer } = await sendKioskConversationMessage({ visitorSessionId: sessionId, content })
-      return answer
+      const toolDefinitions: KioskToolDefinition[] = tools.map(tool => ({
+        function: tool.function,
+        type: 'function',
+      }))
+      let response = await sendKioskConversationMessage({ content, signal, tools: toolDefinitions, visitorSessionId: sessionId })
+      // A browser-owned WebMCP tool cannot execute on the Server. Keep the
+      // model credentials server-side while returning each requested call to
+      // this kiosk, then resume the same persisted conversation with its result.
+      for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
+        const toolResults = await Promise.all(response.toolCalls.map(async (toolCall: KioskToolCall) => {
+          onToolActivity?.(toolCall.function.name, 'executing')
+          const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools })
+          onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
+          return {
+            content: String(result.message.content),
+            name: toolCall.function.name,
+            toolCallId: toolCall.id,
+          }
+        }))
+        if (signal?.aborted)
+          return undefined
+        response = await sendKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId })
+      }
+      return response.answer
     }
     catch {
       error.value = '點餐助手暫時無法回覆。'
@@ -95,16 +126,18 @@ export function useKioskInteractionRecording() {
     }
   }
 
-  async function runAssistantAction(serviceId: string, kind: 'greeting' | 'reminder') {
+  async function runAssistantAction(serviceId: string, kind: 'greeting' | 'reminder', signal?: AbortSignal) {
     const sessionId = await start(serviceId)
     if (!sessionId)
       return undefined
 
     try {
-      const { answer } = await sendKioskAssistantAction({ kind, visitorSessionId: sessionId })
+      const { answer } = await sendKioskAssistantAction({ kind, signal, visitorSessionId: sessionId })
       return answer
     }
     catch {
+      if (signal?.aborted)
+        return undefined
       error.value = '點餐助手暫時無法回覆。'
       return undefined
     }

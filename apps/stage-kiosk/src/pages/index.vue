@@ -25,6 +25,9 @@ const isDraftPreview = computed(() => route.query.preview === 'webnavior')
 const kioskCharacterAsset = useKioskCharacterAsset()
 const profileReady = shallowRef(false)
 const profileSyncError = shallowRef<string>()
+const voiceConversationOnly = computed(() => Boolean(
+  profile.value?.snapshot.voiceConversationOnly,
+))
 
 onMounted(async () => {
   await waitForKioskRuntime()
@@ -51,7 +54,7 @@ watch(profile, async (assignedProfile) => {
 
 <template>
   <KioskDraftPreview v-if="isDraftPreview" />
-  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" />
+  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :voice-conversation-only="voiceConversationOnly" />
   <main v-else-if="state === 'registered' && device && profileSyncError" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-200']">
     <div :class="['max-w-xl space-y-3']">
       <h1 :class="['text-2xl font-semibold']">

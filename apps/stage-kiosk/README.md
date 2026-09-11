@@ -1,6 +1,6 @@
 # AIRI Kiosk
 
-`@proj-airi/stage-kiosk` is the full-screen, touch-first AIRI surface for a restaurant kiosk. It shares the existing AIRI stores, voice pipeline, LLM tools, and independent `@proj-airi/order-menu` service; it only owns the kiosk-specific screen composition.
+`@proj-airi/stage-kiosk` is the full-screen, touch-first AIRI surface for a restaurant kiosk. It shares AIRI's local hardware UI, LLM tools, and independent `@proj-airi/order-menu` service; the Server owns all ASR/TTS provider, model, voice, endpoint, and credential policy.
 
 Use it for customer-facing horizontal or vertical kiosk displays. Do not use it as a replacement for the normal settings-oriented `stage-web` application.
 
@@ -71,6 +71,10 @@ The visitor experience does not display settings. Long-press the `AIRI 餐飲服
 VITE_KIOSK_ADMIN_PIN='choose-a-private-pin' pnpm --filter @proj-airi/stage-kiosk run dev
 ```
 
-Administrator mode can switch an already configured chat provider and model, choose the microphone, enable or disable voice input, and pause the avatar for calibration. Provider credentials and API keys remain outside the public kiosk configuration surface.
+Administrator mode can choose the microphone, enable or disable voice input, and pause the avatar for calibration. Published Site policy resolves the chat and audio models on the Server; provider credentials and API keys never enter the kiosk bundle or settings surface.
+
+In Webnavior's published Kiosk Profile, **僅允許語音對話** hides the customer text composer and starts pre-authorized microphone capture on load. The kiosk visibly indicates whether its microphone is actively listening; it sends audio and reply text only to device-authenticated Server audio endpoints.
+
+When VAD detects a new customer utterance, the kiosk cancels its current reply request and TTS playback so a late response is never spoken over the new turn. Ordering workflows remain responsible for explicit customer confirmation before submission.
 
 `VITE_KIOSK_ADMIN_PIN` is an on-device guard against accidental customer access, not a replacement for server-side administrator authentication: Vite exposes `VITE_` values to the browser bundle. Production deployment should place provider credentials in a protected management service rather than relying on this PIN alone.

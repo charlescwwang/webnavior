@@ -13,6 +13,7 @@ export type KioskProactiveVisionStatus = 'idle' | 'starting' | 'observing' | 'un
 
 interface Options {
   detectionZone: () => DetectionZone
+  onCameraStream?: (stream: MediaStream | undefined) => void
   onObservation: (observation: ReturnType<typeof createAttentionObservation>) => void
 }
 
@@ -51,6 +52,7 @@ export function useKioskProactiveVision(options: Options) {
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       })
       video.srcObject = cameraStream
+      options.onCameraStream?.(cameraStream)
       await video.play()
 
       const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision')
@@ -89,6 +91,7 @@ export function useKioskProactiveVision(options: Options) {
     faceLandmarker = undefined
     cameraStream?.getTracks().forEach(track => track.stop())
     cameraStream = undefined
+    options.onCameraStream?.(undefined)
     if (video)
       video.srcObject = null
     video = undefined
@@ -109,8 +112,12 @@ export function useKioskProactiveVision(options: Options) {
     if (nowMs - lastDetectionAtMs >= detectionIntervalMs && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       lastDetectionAtMs = nowMs
       const result = faceLandmarker.detectForVideo(video, nowMs)
+      // `nowMs` is the frame's presentation timestamp. Customer activity can
+      // occur after that frame is queued but before this callback runs, so it
+      // must not become the policy timestamp or reminder ordering can regress.
+      const observedAtMs = performance.now()
       options.onObservation(createAttentionObservation(
-        nowMs,
+        observedAtMs,
         result.faceLandmarks.map(toFaceLandmarkObservation),
         options.detectionZone(),
       ))

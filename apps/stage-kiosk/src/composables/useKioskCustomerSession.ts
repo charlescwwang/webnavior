@@ -7,9 +7,17 @@ import { scenarioRegistry } from '../services/scenario-registry'
 export type { AnonymousKioskCustomer, KioskCustomerSessionState } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 
 /** Connects the shared kiosk customer lifecycle to this host's scenario surface. */
-export function useKioskCustomerSession(options: Omit<KioskCustomerSessionOptions, 'resetInteractiveSurface'>) {
+interface KioskCustomerSessionHostOptions extends Omit<KioskCustomerSessionOptions, 'resetInteractiveSurface'> {
+  /** Clears host-rendered customer content when the shared session transitions to standby. */
+  resetConversation?: () => void
+}
+
+export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions) {
   return useSharedKioskCustomerSession({
     ...options,
-    resetInteractiveSurface: () => scenarioRegistry.reloadActive(),
+    resetInteractiveSurface: async () => {
+      await scenarioRegistry.reloadActive()
+      options.resetConversation?.()
+    },
   })
 }
