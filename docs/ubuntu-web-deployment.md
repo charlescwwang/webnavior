@@ -3,6 +3,10 @@
 This deploys browser-based Stage Web, Stage Kiosk, and the order-menu page. It
 does not install or use Electron, Godot, Redis, Postgres, or an AIRI API server.
 
+For the complete WebNavior kiosk deployment, including the Server API, an
+existing PostgreSQL service, Docker Redis, systemd, and a safe update process,
+use [Ubuntu WebNavior Kiosk Server 部署](ubuntu-webnavior-kiosk-server-deployment.md).
+
 ## First deployment
 
 On the Ubuntu machine, clone the repository and run the following. Replace the
