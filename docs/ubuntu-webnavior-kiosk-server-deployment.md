@@ -60,6 +60,63 @@ bash scripts/deployWebUbuntu.sh --setup --origin https://kiosk.example.com
 如果此檔案已由其他人維護，先備份並人工合併；不要直接覆寫。之後 Nginx 必須保留
 `/api/` 及 `/ws/chat` 到 `127.0.0.1:5168` 的 proxy。
 
+### 已有純前端站的升級方式
+
+若這台 Ubuntu 已依前述 Web 文件運行純前端版本，**不要再次執行**
+`deployWebUbuntu.sh --setup`。前端與 Nginx 已是可用基礎；先備份目前設定，確認 proxy
+區塊已存在，再從第 2 節開始新增 Redis 與 API。
+
+```bash
+sudo cp -a /etc/nginx/sites-available/airi-web \
+  /etc/nginx/sites-available/airi-web.before-webnavior-api
+sudo nginx -T | less
+sudo nginx -t
+```
+
+如果現有 Nginx site 沒有下列 location，才人工加入到同一個 `server` 區塊，接著執行
+`sudo nginx -t && sudo systemctl reload nginx`：
+
+```nginx
+location ^~ /api/ {
+    proxy_pass http://127.0.0.1:5168;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+
+location = /ws/chat {
+    proxy_pass http://127.0.0.1:5168;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+}
+```
+
+`$http_x_forwarded_proto` 適用於 Cloudflare Tunnel 或另一層已傳遞原始 HTTPS scheme 的
+reverse proxy。若 TLS 直接在這台 Nginx 終結，請改為 `$scheme`，否則登入 callback 可能
+被判成 HTTP。
+
+### 正式網域與 HTTPS
+
+本文件的 `https://kiosk.example.com` 是正式網域範例，不是 `localhost` 或開發網址。
+在繼續前必須選擇並完成其中一種 TLS 方式：
+
+1. Cloudflare Tunnel／既有 reverse proxy 將該 HTTPS 網域轉送到 Nginx 的 `5169`；或
+2. Nginx 自己監聽 `443`，並已有可續期的 TLS 憑證與 HTTP-to-HTTPS redirect。
+
+網域 DNS、TLS 與轉送完成後，從 kiosk 實機確認 `https://<domain>/kiosk/` 可開啟；
+攝影機與麥克風在跨裝置瀏覽器上需要 HTTPS。所有 `VITE_*` 前端 API URL 與第 4 節的
+`API_SERVER_URL`、`WEB_APP_URL`、`AUTH_UI_URL`、`ADMIN_UI_URL` 必須使用同一個正式
+HTTPS origin，不能沿用開發用 IP、port 或 `localhost`。
+
 ## 2. 建立 AIRI 專用 Redis（Docker）
 
 先確認 Docker 已由既有主機管理方式安裝，且 6379 尚未被使用：
