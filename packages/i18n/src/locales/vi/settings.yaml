@@ -1262,9 +1262,6 @@ pages:
       minimax-global:
         description: minimax.io
         title: MiniMax Global
-      minimax-speech:
-        description: minimax.io
-        title: MiniMax Speech
       mimo:
         description: api.xiaomimimo.com
         title: Xiaomi MiMo

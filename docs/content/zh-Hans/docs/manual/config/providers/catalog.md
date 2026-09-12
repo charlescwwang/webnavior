@@ -38,7 +38,7 @@ description: 查看当前版本 AIRI 支持的聊天、视觉、语音合成与�
 
 当前注册的语音合成服务商包括云端服务、本地服务和浏览器内置能力。具体可用项目仍以 **设置 → 服务商 → 语音合成** 为准。
 
-* [AIRI 官方语音合成](./speech/official.md)、[阿里云百炼](./speech/alibaba-cloud-model-studio.md)、[ElevenLabs](./speech/elevenlabs.md)、[Deepgram](./speech/deepgram.md)、[Microsoft Azure Speech](./speech/azure-speech.md)、[MiniMax Speech](./speech/minimax.md)、[小米 MiMo](./speech/mimo.md)、[CometAPI](./speech/comet-api.md) 和 [火山引擎](./speech/volcengine.md)。
+* [AIRI 官方语音合成](./speech/official.md)、[阿里云百炼](./speech/alibaba-cloud-model-studio.md)、[ElevenLabs](./speech/elevenlabs.md)、[Deepgram](./speech/deepgram.md)、[Microsoft Azure Speech](./speech/azure-speech.md)、[小米 MiMo](./speech/mimo.md)、[CometAPI](./speech/comet-api.md) 和 [火山引擎](./speech/volcengine.md)。
 * [Google Gemini](./speech/google-gemini.md)、[OpenAI 与兼容 API](./speech/openai.md)、[OpenRouter](./speech/openrouter.md)。
 * [Index-TTS](./speech/index-tts.md)、[Kokoro](./speech/kokoro.md)、[Player2 Speech](./speech/player2.md)、[浏览器本地语音合成](./speech/browser-local.md) 和 [桌面端本地语音合成](./speech/desktop-local.md)。
 

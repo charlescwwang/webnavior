@@ -8,6 +8,7 @@ const props = defineProps<{
   chatModel: string
   llmEndpoint?: string
   llmModels: string[]
+  vlmModels: string[]
   loading: boolean
   tts?: AudioService
 }>()
@@ -52,6 +53,15 @@ const emit = defineEmits<{
     </div>
     <div :class="['divide-y divide-slate-200 dark:divide-slate-800']">
       <div :class="['flex flex-wrap items-center gap-3 px-5 py-3.5']">
+        <span :class="['i-solar:cpu-bolt-bold-duotone text-lg text-cyan-600']" /><div :class="['min-w-45 flex-1']">
+          <p :class="['m-0 text-sm font-medium text-slate-900 dark:text-white']">
+            視覺語言模型 <span :class="['ml-1 text-xs font-normal text-slate-500']">VLM</span>
+          </p><p :class="['mb-0 mt-0.5 text-xs text-slate-500']">
+            主動招呼與閒置提醒的 Server camera frame 理解。
+          </p>
+        </div><span :class="['rounded-full px-2 py-0.5 text-xs', props.vlmModels.length ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300']">{{ props.vlmModels.length ? `${props.vlmModels.length} 個已設定` : '未設定' }}</span><a href="#model-services" :class="['text-sm text-cyan-700 hover:underline dark:text-cyan-300']">設定 VLM</a>
+      </div>
+      <div :class="['flex flex-wrap items-center gap-3 px-5 py-3.5']">
         <span :class="['i-solar:microphone-3-bold-duotone text-lg text-cyan-600']" /><div :class="['min-w-45 flex-1']">
           <p :class="['m-0 text-sm font-medium text-slate-900 dark:text-white']">
             語音辨識 <span :class="['ml-1 text-xs font-normal text-slate-500']">ASR</span>
@@ -76,11 +86,11 @@ const emit = defineEmits<{
       <div :class="['flex flex-wrap items-center gap-3 px-5 py-3.5']">
         <span :class="['i-solar:eye-bold-duotone text-lg text-cyan-600']" /><div :class="['min-w-45 flex-1']">
           <p :class="['m-0 text-sm font-medium text-slate-900 dark:text-white']">
-            現場觀測 <span :class="['ml-1 text-xs font-normal text-slate-500']">Vision</span>
+            MediaPipe 現場觀測 <span :class="['ml-1 text-xs font-normal text-slate-500']">本機</span>
           </p><p :class="['mb-0 mt-0.5 text-xs text-slate-500']">
-            MediaPipe · 僅限裝置本機處理
+            僅負責本機人員、注視與停留觸發；不選模型、不上傳畫面。
           </p>
-        </div><span :class="['rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300']">固定設定</span><span :class="['text-sm text-slate-400']">無需設定</span>
+        </div><span :class="['rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300']">裝置設定</span><span :class="['text-sm text-slate-400']">不需要 Server 模型</span>
       </div>
     </div>
   </section>

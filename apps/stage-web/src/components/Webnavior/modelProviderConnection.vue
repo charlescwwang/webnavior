@@ -25,6 +25,7 @@ const emit = defineEmits<{ save: [slices: ModelProviderSlice[]] }>()
 const form = reactive({
   apiKey: '',
   baseURL: 'https://api.openai.com/v1',
+  capability: 'llm' as 'llm' | 'vlm',
   kind: 'openai' as ModelProviderKind,
 })
 const discoveredModels = shallowRef<DiscoveredModel[]>([])
@@ -48,7 +49,7 @@ const selectedSlices = computed<ModelProviderSlice[]>(() => selectedModelIds.val
   baseURL: form.baseURL.trim(),
   kind: form.kind === 'openrouter' ? 'openrouter' : 'openai-compatible',
   // The provider prefix prevents identically named upstream models from replacing one another.
-  modelName: `${form.kind}/${modelId}`,
+  modelName: `${form.capability}/${form.kind}/${modelId}`,
   overrideModel: modelId,
   // The current encrypted router requires a key record for every upstream.
   // Local OpenAI-compatible runtimes ignore this harmless placeholder; admins
@@ -115,16 +116,20 @@ async function discover() {
 </script>
 
 <template>
-  <section :class="['flex flex-col gap-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900']">
+  <section id="model-services" :class="['flex flex-col gap-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900']">
     <div>
       <h2 :class="['m-0 text-lg font-semibold text-slate-950 dark:text-white']">
-        連接 AI 模型服務
+        新增語言／影像模型（LLM／VLM）
       </h2>
       <p :class="['mb-0 mt-1 text-sm text-slate-600 dark:text-slate-300']">
-        填入服務位址；需要驗證的服務再提供 API Key。確認連線後即可選擇要啟用的模型。
+        新增模型後可在系統預設選為 LLM，或在店別 Kiosk 模型設定選為 VLM。Kiosk VLM 必須選擇支援圖片輸入的模型；MediaPipe 現場觀測不在此設定。
       </p>
     </div>
 
+    <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+      模型用途
+      <select v-model="form.capability" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']" :disabled="props.busy || discovering"><option value="llm">對話模型（LLM）</option><option value="vlm">視覺語言模型（VLM）</option></select>
+    </label>
     <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
       模型服務
       <select v-model="form.kind" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']" :disabled="props.busy || discovering" @change="applyProviderPreset">
@@ -161,7 +166,7 @@ async function discover() {
         <h3 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
           選擇要啟用的模型
         </h3><p :class="['mb-0 mt-1 text-sm text-slate-600 dark:text-slate-300']">
-          可以一次加入多個模型，之後再設定全系統或各店別使用哪一個。
+          可以一次加入多個模型。支援圖片輸入的模型可在店別「Kiosk 模型設定」中選為現場影像（VLM）。
         </p>
       </div>
       <div :class="['grid gap-2 sm:grid-cols-2']">

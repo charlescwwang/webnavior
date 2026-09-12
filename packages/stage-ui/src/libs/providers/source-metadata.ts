@@ -70,7 +70,6 @@ const providerSourceMetadataById = {
   'mimo-audio-transcription': paidCloud,
   'minimax': paidCloud,
   'minimax-global': paidCloud,
-  'minimax-speech': paidCloud,
   'mistral-ai': paidCloud,
   'modelscope': paidCloud,
   'moonshot-ai': paidCloud,

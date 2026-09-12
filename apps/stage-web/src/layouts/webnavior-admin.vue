@@ -7,6 +7,7 @@ import { shallowRef } from 'vue'
 import { RouterView } from 'vue-router'
 
 import AdminSidebar from '../components/Webnavior/AdminSidebar.vue'
+import WebnaviorNoticeCenter from '../components/Webnavior/WebnaviorNoticeCenter.vue'
 
 import { useKioskManagement } from '../composables/useKioskManagement'
 
@@ -34,6 +35,7 @@ async function signOutAndSwitchAccount() {
 
 <template>
   <div :class="['min-h-screen bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100', 'lg:flex']">
+    <WebnaviorNoticeCenter />
     <AdminSidebar />
     <main :class="['min-w-0 flex-1']">
       <header :class="['flex min-h-18 items-center justify-between border-b border-slate-200 bg-white px-5 py-4', 'dark:border-slate-800 dark:bg-slate-900 lg:px-8']">

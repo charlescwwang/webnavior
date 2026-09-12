@@ -22,6 +22,8 @@ import ConversationModelList from '../../components/Webnavior/ConversationModelL
 import ModelProviderConnection from '../../components/Webnavior/modelProviderConnection.vue'
 import SystemModelOverview from '../../components/Webnavior/SystemModelOverview.vue'
 
+import { useWebnaviorNotice } from '../../composables/useWebnaviorNotice'
+
 interface RouterConfigCurrent {
   preview: {
     LLM_ROUTER_CONFIG?: {
@@ -50,9 +52,11 @@ const message = shallowRef('')
 const pendingRemovalModelId = shallowRef<string>()
 const removalDialogOpen = shallowRef(false)
 const form = reactive({ chatModel: '' })
+const notice = useWebnaviorNotice()
 
 const llmModels = computed(() => Object.keys(config.value?.preview.LLM_ROUTER_CONFIG?.llm.models ?? {}).sort())
-const llmEndpoints = computed<Record<string, string | undefined>>(() => Object.fromEntries(llmModels.value.map(modelId => {
+const vlmModels = computed(() => llmModels.value.filter(model => model.startsWith('vlm/')))
+const llmEndpoints = computed<Record<string, string | undefined>>(() => Object.fromEntries(llmModels.value.map((modelId) => {
   const model = config.value?.preview.LLM_ROUTER_CONFIG?.llm.models[modelId]
   const upstreams = model && typeof model === 'object' ? (model as { upstreams?: unknown }).upstreams : undefined
   const firstUpstream = Array.isArray(upstreams) ? upstreams[0] : undefined
@@ -91,7 +95,7 @@ async function load() {
     form.chatModel = nextConfig.request.defaults.chatModel ?? ''
   }
   catch (error) {
-    message.value = errorMessageFrom(error) ?? '無法讀取系統模型設定。請以系統管理員登入。'
+    notice.error(errorMessageFrom(error) ?? '無法讀取系統模型設定。請以系統管理員登入。')
   }
   finally {
     loading.value = false
@@ -104,10 +108,10 @@ async function removeAudio(capability: 'asr' | 'tts') {
     const response = await authedFetch(endpoint(`/webnavior-audio/${capability}`), { method: 'DELETE' })
     if (!response.ok)
       throw new Error(await response.text())
-    message.value = `已移除${capability === 'asr' ? '語音辨識' : '語音合成'}設定。`
+    notice.success(`已移除${capability === 'asr' ? '語音辨識' : '語音合成'}設定。`)
     await load()
   }
-  catch (error) { message.value = errorMessageFrom(error) ?? '無法移除語音設定。' }
+  catch (error) { notice.error(errorMessageFrom(error) ?? '無法移除語音設定。') }
   finally { loading.value = false }
 }
 
@@ -129,11 +133,11 @@ async function save() {
     })
     if (!response.ok)
       throw new Error(await response.text() || `Request failed: ${response.status}`)
-    message.value = '系統預設對話模型已更新。新的 Kiosk 對話會立即使用新的 LLM 預設。'
+    notice.success('系統預設對話模型已更新。新的 Kiosk 對話會立即使用新的 LLM 預設。')
     await load()
   }
   catch (error) {
-    message.value = errorMessageFrom(error) ?? '無法儲存系統模型設定。'
+    notice.error(errorMessageFrom(error) ?? '無法儲存系統模型設定。')
   }
   finally {
     loading.value = false
@@ -151,11 +155,11 @@ async function saveProvider(slices: ModelProviderSlice[]) {
     })
     if (!response.ok)
       throw new Error(await response.text() || `Request failed: ${response.status}`)
-    message.value = `已加密儲存 ${slices.length} 個模型。現在可將它們選為系統預設或店別覆寫。`
+    notice.success(`已加密儲存 ${slices.length} 個模型。現在可將它們選為系統預設或店別覆寫。`)
     await load()
   }
   catch (error) {
-    message.value = errorMessageFrom(error) ?? '無法儲存模型連線。'
+    notice.error(errorMessageFrom(error) ?? '無法儲存模型連線。')
   }
   finally {
     loading.value = false
@@ -174,11 +178,11 @@ async function removeModel() {
     const response = await authedFetch(endpoint(`/models/${encodeURIComponent(modelId)}`), { method: 'DELETE' })
     if (!response.ok)
       throw new Error(await response.text() || `Request failed: ${response.status}`)
-    message.value = `已移除模型「${modelId}」。`
+    notice.success(`已移除模型「${modelId}」。`)
     await load()
   }
   catch (error) {
-    message.value = errorMessageFrom(error) ?? '無法移除模型。若它正被使用，請先改用其他模型。'
+    notice.error(errorMessageFrom(error) ?? '無法移除模型。若它正被使用，請先改用其他模型。')
   }
   finally {
     loading.value = false
@@ -207,6 +211,7 @@ onMounted(load)
       :chat-model="form.chatModel"
       :llm-endpoint="llmEndpoint"
       :llm-models="llmModels"
+      :vlm-models="vlmModels"
       :loading="loading"
       :tts="audioConfig.tts"
       @remove-audio="removeAudio"
