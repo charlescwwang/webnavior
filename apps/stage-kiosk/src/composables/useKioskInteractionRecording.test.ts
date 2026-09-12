@@ -29,7 +29,7 @@ describe('useKioskInteractionRecording', () => {
 
     await recording.start('restaurant-ordering')
     await recording.append('asr_transcript', '我想要一份蝦捲。')
-    await expect(recording.runAssistantAction('restaurant-ordering', 'greeting')).resolves.toBe('您好，請問需要協助嗎？')
+    await expect(recording.runAssistantAction('restaurant-ordering', 'greeting', 'data:image/jpeg;base64,ZmFrZQ==')).resolves.toBe('您好，請問需要協助嗎？')
     await recording.end('idle')
 
     expect(kioskApi.startKioskVisitorSession).toHaveBeenCalledOnce()
@@ -38,7 +38,11 @@ describe('useKioskInteractionRecording', () => {
       kind: 'asr_transcript',
       content: '我想要一份蝦捲。',
     })
-    expect(kioskApi.sendKioskAssistantAction).toHaveBeenCalledWith({ visitorSessionId: 'visitor-1', kind: 'greeting' })
+    expect(kioskApi.sendKioskAssistantAction).toHaveBeenCalledWith({
+      frame: 'data:image/jpeg;base64,ZmFrZQ==',
+      visitorSessionId: 'visitor-1',
+      kind: 'greeting',
+    })
     expect(kioskApi.endKioskVisitorSession).toHaveBeenCalledWith({ visitorSessionId: 'visitor-1', state: 'idle' })
     expect(recording.visitorSessionId.value).toBeUndefined()
     scope.stop()
@@ -53,9 +57,10 @@ describe('useKioskInteractionRecording', () => {
     if (!recording)
       throw new Error('Expected interaction recording to initialize.')
 
-    await expect(recording.runAssistantAction('restaurant-ordering', 'reminder', controller.signal)).resolves.toBe('需要協助嗎？')
+    await expect(recording.runAssistantAction('restaurant-ordering', 'reminder', 'data:image/jpeg;base64,ZmFrZQ==', controller.signal)).resolves.toBe('需要協助嗎？')
 
     expect(kioskApi.sendKioskAssistantAction).toHaveBeenCalledWith({
+      frame: 'data:image/jpeg;base64,ZmFrZQ==',
       visitorSessionId: 'visitor-1',
       kind: 'reminder',
       signal: controller.signal,

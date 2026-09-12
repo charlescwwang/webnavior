@@ -7,6 +7,7 @@ import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiv
 import type { KioskDevice } from '../services/kiosk-device'
 
 import KioskAssistanceReminderSettings from './KioskAssistanceReminderSettings.vue'
+import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import KioskFeedbackInvitationSettings from './KioskFeedbackInvitationSettings.vue'
 import KioskInteractiveServicesSettings from './KioskInteractiveServicesSettings.vue'
 import KioskObservationSettings from './KioskObservationSettings.vue'
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const paused = defineModel<boolean>('paused', { required: true })
+const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
 const proactiveSettings = defineModel<KioskProactiveSettingsValue>('proactiveSettings', { required: true })
 const interactiveServices = defineModel<KioskInteractiveService[]>('interactiveServices', { required: true })
 const interactiveServiceAgentInstructions = defineModel<string>('interactiveServiceAgentInstructions', { required: true })
@@ -67,6 +69,7 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
       </section>
 
       <KioskObservationSettings v-model="proactiveSettings.observation" />
+      <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
 
       <KioskProactiveSettings
         v-model="proactiveSettings.proactiveGreeting"

@@ -32,6 +32,8 @@ const {
   profileDrafts,
   save,
   saveModelPolicy,
+  saveProactiveVlmEnabled,
+  savePerformanceProfile,
   saving,
   siteModelPolicy,
   selectedSite,
@@ -121,7 +123,9 @@ watch(() => route.query.site, async (siteId) => {
     <section :class="['grid gap-6 xl:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]']">
       <div :class="['flex flex-col gap-4']">
         <section :class="['grid gap-2']" aria-label="選擇要設定的 Kiosk">
-          <p :class="['mb-1 mt-0 text-sm font-semibold text-slate-700 dark:text-slate-200']">選擇 Kiosk 設定</p>
+          <p :class="['mb-1 mt-0 text-sm font-semibold text-slate-700 dark:text-slate-200']">
+            選擇 Kiosk 設定
+          </p>
           <button
             v-for="site in sites"
             :key="site.id"
@@ -141,7 +145,9 @@ watch(() => route.query.site, async (siteId) => {
 
         <section :class="['grid gap-2']" aria-label="選擇 Kiosk 設定方案">
           <div :class="['flex items-center justify-between']">
-            <p :class="['mb-1 mt-0 text-sm font-semibold text-slate-700 dark:text-slate-200']">Kiosk 設定方案</p>
+            <p :class="['mb-1 mt-0 text-sm font-semibold text-slate-700 dark:text-slate-200']">
+              Kiosk 設定方案
+            </p>
             <Button v-if="capabilities?.canEditExperience" size="sm" variant="secondary" :disabled="saving || loading" @click="createProfileDraft">
               新增方案
             </Button>
@@ -213,6 +219,9 @@ watch(() => route.query.site, async (siteId) => {
           :busy="saving || loading"
           :policy="siteModelPolicy"
           @save="saveModelPolicy"
+          @update-proactive-vlm="saveProactiveVlmEnabled"
+          @update-performance-profile="savePerformanceProfile"
+          @update-voice-vad-threshold="saveVoiceVadThreshold"
         />
       </div>
     </section>

@@ -13,6 +13,7 @@ import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
   messages: readonly ChatHistoryItem[]
+  recognizing?: boolean
   sending: boolean
   voiceConversationOnly: boolean
   workStatus?: string
@@ -57,24 +58,21 @@ async function sendMessage() {
 
 <template>
   <section class="kiosk-conversation" aria-label="與虛擬服務員對話">
-    <header class="conversation-header">
-      <span class="conversation-kicker">{{ assistantLabel }}</span>
-      <strong class="conversation-title">對話</strong>
-    </header>
-
     <div class="message-history">
+      <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
+           placeholder would otherwise render only the assistant name. -->
       <ChatHistory
         ref="chatHistory"
         :messages="historyMessages"
         :assistant-label="assistantLabel"
-        :sending="props.sending"
+        :sending="false"
         :tool-call-renderers="orderToolCallRenderers"
         auto-scroll="follow-latest"
         variant="mobile"
       />
-      <div v-if="props.sending" class="assistant-activity" role="status" aria-live="polite">
+      <div v-if="props.recognizing || props.sending" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ props.workStatus ?? '正在思考…' }}</span>
+        <span>{{ props.recognizing ? '正在辨識語音…' : props.workStatus ?? '正在思考…' }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
     </div>
@@ -107,10 +105,7 @@ async function sendMessage() {
 </template>
 
 <style scoped>
-.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 14%); border-radius: 1.5rem; background: rgb(5 25 29 / 72%); grid-template-rows: auto minmax(0, 1fr) auto; }
-.conversation-header { display: grid; gap: .08rem; padding: .8rem 1rem .45rem; color: #d9faf6; }
-.conversation-kicker { color: #8bd9cb; font-size: .68rem; font-weight: 800; letter-spacing: .08em; }
-.conversation-title { font-size: .95rem; }
+.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 14%); border-radius: 1.5rem; background: rgb(5 25 29 / 72%); grid-template-rows: minmax(0, 1fr) auto; }
 .message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; }
 .message-history :deep([data-chat-message-role]) { display: flex; min-width: 0; max-width: 100%; }
 .message-history :deep([data-chat-message-role='assistant']), .message-history :deep([data-chat-message-role='error']) { justify-content: flex-start; }

@@ -1,4 +1,4 @@
-import type { KioskDevice, KioskProfile } from '../services/kiosk-device'
+import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile, KioskProfile } from '../services/kiosk-device'
 
 import { readonly, shallowRef } from 'vue'
 
@@ -15,6 +15,10 @@ export type KioskRegistrationState = 'checking' | 'registered' | 'unregistered' 
 export function useKioskDeviceRegistration() {
   const device = shallowRef<KioskDevice>()
   const profile = shallowRef<KioskProfile>()
+  const mediaCaptureMode = shallowRef<KioskMediaCaptureMode>('off')
+  const proactiveVlmEnabled = shallowRef(false)
+  const performanceProfile = shallowRef<KioskPerformanceProfile>('constrained')
+  const voiceVadThreshold = shallowRef(0.72)
   const error = shallowRef<string>()
   const state = shallowRef<KioskRegistrationState>('checking')
 
@@ -26,6 +30,10 @@ export function useKioskDeviceRegistration() {
       const response = await fetchKioskBootstrap()
       device.value = response.device
       profile.value = response.profile
+      mediaCaptureMode.value = response.mediaCapturePolicy.mode
+      proactiveVlmEnabled.value = response.proactiveVlmEnabled
+      performanceProfile.value = response.performanceProfile
+      voiceVadThreshold.value = response.voiceVadThreshold
       state.value = 'registered'
     }
     catch (exception) {
@@ -49,6 +57,10 @@ export function useKioskDeviceRegistration() {
       device.value = response.device
       const bootstrapResponse = await fetchKioskBootstrap()
       profile.value = bootstrapResponse.profile
+      mediaCaptureMode.value = bootstrapResponse.mediaCapturePolicy.mode
+      proactiveVlmEnabled.value = bootstrapResponse.proactiveVlmEnabled
+      performanceProfile.value = bootstrapResponse.performanceProfile
+      voiceVadThreshold.value = bootstrapResponse.voiceVadThreshold
       state.value = 'registered'
     }
     catch {
@@ -63,6 +75,10 @@ export function useKioskDeviceRegistration() {
     device: readonly(device),
     profile: readonly(profile),
     error: readonly(error),
+    mediaCaptureMode: readonly(mediaCaptureMode),
+    proactiveVlmEnabled: readonly(proactiveVlmEnabled),
+    performanceProfile: readonly(performanceProfile),
+    voiceVadThreshold: readonly(voiceVadThreshold),
     registerDevelopmentDevice,
     state: readonly(state),
   }

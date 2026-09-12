@@ -4,11 +4,13 @@ import { onMounted, shallowRef } from 'vue'
 import KioskAdminPanel from '../../components/KioskAdminPanel.vue'
 
 import { useFeedbackInvitationSettings } from '../../composables/useFeedbackInvitationSettings'
+import { useKioskCameraPreview } from '../../composables/useKioskCameraPreview'
 import { useKioskDeviceRegistration } from '../../composables/useKioskDeviceRegistration'
 import { useKioskInteractiveServiceAgentInstructions, useKioskInteractiveServices } from '../../composables/useKioskInteractiveServices'
 import { useKioskProactiveSettings } from '../../composables/useKioskProactiveSettings'
 
 const paused = shallowRef(false)
+const cameraPreviewEnabled = useKioskCameraPreview()
 const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
 const interactiveServiceAgentInstructions = useKioskInteractiveServiceAgentInstructions()
@@ -21,6 +23,7 @@ onMounted(() => void bootstrap())
 <template>
   <KioskAdminPanel
     v-model:paused="paused"
+    v-model:camera-preview-enabled="cameraPreviewEnabled"
     v-model:proactive-settings="proactiveSettings"
     v-model:interactive-services="interactiveServices"
     v-model:interactive-service-agent-instructions="interactiveServiceAgentInstructions"

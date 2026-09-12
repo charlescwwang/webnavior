@@ -1,5 +1,5 @@
 import type { Database } from '../../../libs/db'
-import type { KioskInteractionEntryKind, KioskMemberRole, KioskModelOverrides, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
+import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskModelOverrides, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
 
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -47,6 +47,8 @@ export interface KioskService {
   deleteVisitorSessions: (input: { siteId: string, userId: string, visitorSessionIds: string[] }) => Promise<string[]>
   /** Revokes a device's credentials so it can no longer bootstrap or start customer sessions. */
   disableDevice: (input: { deviceId: string, siteId: string, userId: string }) => Promise<void>
+  /** Restores a previously disabled device and its existing browser credential. */
+  enableDevice: (input: { deviceId: string, siteId: string, userId: string }) => Promise<void>
   /** Returns a complete transcript only when the caller has transcript-read permission for its site. */
   getVisitorSessionForUser: (input: {
     userId: string
@@ -90,7 +92,7 @@ export interface KioskService {
   /** Lists devices only after verifying the caller may access their Site's management summary. */
   listSiteDevices: (input: { siteId: string, userId: string }) => Promise<(typeof schema.kioskDevices.$inferSelect)[]>
   /** Lists the Site's retained visitor sessions without exposing their transcript content. */
-  listSiteVisitorSessions: (input: { siteId: string, userId: string }) => Promise<Array<{
+  listSiteVisitorSessions: (input: { deviceId?: string, siteId: string, userId: string }) => Promise<Array<{
     createdAt: Date
     deviceId: string
     deviceLabel: string
@@ -113,6 +115,16 @@ export interface KioskService {
   saveContentProfileDraft: (input: { siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
   /** Changes the policy used to calculate expiry for future visitor sessions. */
   setSiteInteractionRetentionDays: (input: { actorUserId: string, days: number, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  /** Replaces the Site's internal POC camera-evidence policy. */
+  setSiteMediaCapturePolicy: (input: { actorUserId: string, policy: KioskMediaCapturePolicy, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  /** Resolves the policy after a kiosk device has already been authenticated. */
+  getSiteMediaCapturePolicy: (siteId: string) => Promise<KioskMediaCapturePolicy>
+  getSiteProactiveVlmEnabled: (siteId: string) => Promise<boolean>
+  setSiteProactiveVlmEnabled: (input: { actorUserId: string, enabled: boolean, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  getSitePerformanceProfile: (siteId: string) => Promise<KioskPerformanceProfile>
+  setSitePerformanceProfile: (input: { actorUserId: string, profile: KioskPerformanceProfile, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  getSiteVoiceVadThreshold: (siteId: string) => Promise<number>
+  setSiteVoiceVadThreshold: (input: { actorUserId: string, threshold: number, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Replaces the site's choices after the caller has curated them against the approved catalog. */
   setSiteModelOverrides: (input: { overrides: KioskModelOverrides, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Publishes a selected draft as a new immutable release and assigns it to every Site device. */
@@ -230,6 +242,20 @@ export function createKioskService(db: Database): KioskService {
         targetId: device.id,
         details: {},
       })
+    })
+  }
+
+  async function enableDevice(input: { deviceId: string, siteId: string, userId: string }) {
+    const device = await getManagedActiveDevice(input)
+    if (!device.disabledAt)
+      return
+    const enabledAt = new Date()
+    await db.transaction(async (tx) => {
+      await tx.update(schema.kioskDevices).set({ disabledAt: null, updatedAt: enabledAt }).where(eq(schema.kioskDevices.id, device.id))
+      // Re-enable is an explicit administrator action in this POC. Restore the
+      // browser credential that was revoked by disable so the kiosk can return.
+      await tx.update(schema.kioskDeviceCredentials).set({ revokedAt: null }).where(eq(schema.kioskDeviceCredentials.deviceId, device.id))
+      await tx.insert(schema.kioskAuditLogs).values({ siteId: device.siteId, actorUserId: input.userId, action: 'device.enabled', targetType: 'kiosk_device', targetId: device.id, details: {} })
     })
   }
 
@@ -467,7 +493,10 @@ export function createKioskService(db: Database): KioskService {
     })
       .from(schema.kioskVisitorSessions)
       .innerJoin(schema.kioskDevices, eq(schema.kioskDevices.id, schema.kioskVisitorSessions.deviceId))
-      .where(eq(schema.kioskVisitorSessions.siteId, input.siteId))
+      .where(and(
+        eq(schema.kioskVisitorSessions.siteId, input.siteId),
+        ...(input.deviceId ? [eq(schema.kioskVisitorSessions.deviceId, input.deviceId)] : []),
+      ))
       .orderBy(desc(schema.kioskVisitorSessions.createdAt))
   }
 
@@ -594,6 +623,73 @@ export function createKioskService(db: Database): KioskService {
     await assertSystemAdministrator(input.actorUserId)
     const [site] = await db.update(schema.kioskSites)
       .set({ interactionRetentionDays: input.days, updatedAt: new Date() })
+      .where(eq(schema.kioskSites.id, input.siteId))
+      .returning()
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site
+  }
+
+  async function getSiteMediaCapturePolicy(siteId: string) {
+    const site = await db.query.kioskSites.findFirst({
+      where: eq(schema.kioskSites.id, siteId),
+      columns: { mediaCapturePolicy: true },
+    })
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site.mediaCapturePolicy
+  }
+
+  async function getSiteProactiveVlmEnabled(siteId: string) {
+    const site = await db.query.kioskSites.findFirst({ where: eq(schema.kioskSites.id, siteId), columns: { proactiveVlmEnabled: true } })
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site.proactiveVlmEnabled === 1
+  }
+
+  async function setSiteProactiveVlmEnabled(input: { actorUserId: string, enabled: boolean, siteId: string }) {
+    await assertSystemAdministrator(input.actorUserId)
+    const [site] = await db.update(schema.kioskSites).set({ proactiveVlmEnabled: input.enabled ? 1 : 0, updatedAt: new Date() }).where(eq(schema.kioskSites.id, input.siteId)).returning()
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site
+  }
+
+  async function getSitePerformanceProfile(siteId: string) {
+    const site = await db.query.kioskSites.findFirst({ where: eq(schema.kioskSites.id, siteId), columns: { performanceProfile: true } })
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site.performanceProfile
+  }
+
+  async function setSitePerformanceProfile(input: { actorUserId: string, profile: KioskPerformanceProfile, siteId: string }) {
+    await assertSystemAdministrator(input.actorUserId)
+    const [site] = await db.update(schema.kioskSites).set({ performanceProfile: input.profile, updatedAt: new Date() }).where(eq(schema.kioskSites.id, input.siteId)).returning()
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site
+  }
+
+  async function getSiteVoiceVadThreshold(siteId: string) {
+    const site = await db.query.kioskSites.findFirst({ where: eq(schema.kioskSites.id, siteId), columns: { voiceVadThreshold: true } })
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return Number(site.voiceVadThreshold)
+  }
+
+  async function setSiteVoiceVadThreshold(input: { actorUserId: string, threshold: number, siteId: string }) {
+    assertVoiceVadThreshold(input.threshold)
+    await assertSystemAdministrator(input.actorUserId)
+    const [site] = await db.update(schema.kioskSites).set({ voiceVadThreshold: String(input.threshold), updatedAt: new Date() }).where(eq(schema.kioskSites.id, input.siteId)).returning()
+    if (!site)
+      throw createNotFoundError('Kiosk Site was not found')
+    return site
+  }
+
+  async function setSiteMediaCapturePolicy(input: { actorUserId: string, policy: KioskMediaCapturePolicy, siteId: string }) {
+    await assertSystemAdministrator(input.actorUserId)
+    const [site] = await db.update(schema.kioskSites)
+      .set({ mediaCapturePolicy: input.policy, updatedAt: new Date() })
       .where(eq(schema.kioskSites.id, input.siteId))
       .returning()
     if (!site)
@@ -797,8 +893,13 @@ export function createKioskService(db: Database): KioskService {
     getSiteManagementCapabilities,
     endDeviceVisitorSession,
     disableDevice,
+    enableDevice,
     getDeviceProfile,
     getSiteModelOverrides,
+    getSiteMediaCapturePolicy,
+    getSiteProactiveVlmEnabled,
+    getSitePerformanceProfile,
+    getSiteVoiceVadThreshold,
     getProfileRelease,
     getSiteProfile,
     listManagedSites,
@@ -813,6 +914,10 @@ export function createKioskService(db: Database): KioskService {
     saveProfileDraft,
     saveContentProfileDraft,
     setSiteInteractionRetentionDays,
+    setSiteMediaCapturePolicy,
+    setSiteProactiveVlmEnabled,
+    setSitePerformanceProfile,
+    setSiteVoiceVadThreshold,
     setSiteModelOverrides,
     publishProfileDraft,
     purgeExpiredVisitorSessions,
@@ -822,6 +927,11 @@ export function createKioskService(db: Database): KioskService {
 function assertRetentionDays(days: number) {
   if (!Number.isSafeInteger(days) || days < 0)
     throw new Error('Kiosk interaction retention days must be a non-negative integer')
+}
+
+function assertVoiceVadThreshold(threshold: number) {
+  if (!Number.isFinite(threshold) || threshold < 0.5 || threshold > 0.95)
+    throw createBadRequestError('Kiosk VAD threshold must be between 0.5 and 0.95', 'INVALID_REQUEST')
 }
 
 function retentionExpiry(retentionDays: number) {

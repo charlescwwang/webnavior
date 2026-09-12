@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Button } from '@proj-airi/ui'
-import { onMounted } from 'vue'
+import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle } from 'reka-ui'
+import { onMounted, shallowRef } from 'vue'
 
 import { useKioskManagement } from '../../composables/useKioskManagement'
 
@@ -9,6 +10,7 @@ const {
   deleteDevice,
   devices,
   disableDevice,
+  enableDevice,
   load,
   loading,
   message,
@@ -18,6 +20,28 @@ const {
   selectSite,
   sites,
 } = useKioskManagement()
+
+const pendingAction = shallowRef<{ deviceId: string, kind: 'delete' | 'disable' | 'enable', label: string }>()
+const actionDialogOpen = shallowRef(false)
+
+function requestAction(deviceId: string, label: string, kind: 'delete' | 'disable' | 'enable') {
+  pendingAction.value = { deviceId, kind, label }
+  actionDialogOpen.value = true
+}
+
+async function confirmAction() {
+  const action = pendingAction.value
+  if (!action)
+    return
+  if (action.kind === 'disable')
+    await disableDevice(action.deviceId)
+  else if (action.kind === 'enable')
+    await enableDevice(action.deviceId)
+  else
+    await deleteDevice(action.deviceId)
+  actionDialogOpen.value = false
+  pendingAction.value = undefined
+}
 
 onMounted(() => void load())
 </script>
@@ -78,15 +102,23 @@ onMounted(() => void load())
               v-if="!device.disabledAt"
               variant="secondary"
               :disabled="saving"
-              @click="disableDevice(device.id)"
+              @click="requestAction(device.id, device.label, 'disable')"
             >
               停用
             </Button>
             <Button
               v-else
+              variant="secondary"
+              :disabled="saving"
+              @click="requestAction(device.id, device.label, 'enable')"
+            >
+              啟用
+            </Button>
+            <Button
+              v-if="device.disabledAt"
               variant="danger"
               :disabled="saving"
-              @click="deleteDevice(device.id)"
+              @click="requestAction(device.id, device.label, 'delete')"
             >
               刪除
             </Button>
@@ -97,6 +129,31 @@ onMounted(() => void load())
         此店別尚未註冊 Kiosk 設備。
       </div>
     </section>
+    <AlertDialogRoot :open="actionDialogOpen" @update:open="actionDialogOpen = $event">
+      <AlertDialogPortal>
+        <AlertDialogOverlay :class="['fixed inset-0 z-100 bg-black/50']" />
+        <AlertDialogContent :class="['fixed left-1/2 top-1/2 z-100 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900']" @interact-outside.prevent>
+          <AlertDialogTitle :class="['m-0 text-xl font-semibold text-slate-950 dark:text-white']">
+            {{ pendingAction?.kind === 'disable' ? '停用 Kiosk 設備？' : pendingAction?.kind === 'enable' ? '啟用 Kiosk 設備？' : '刪除 Kiosk 設備？' }}
+          </AlertDialogTitle>
+          <AlertDialogDescription :class="['mb-0 mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300']">
+            {{ pendingAction?.kind === 'disable' ? `「${pendingAction?.label}」的瀏覽器憑證會立即撤銷。` : pendingAction?.kind === 'enable' ? `「${pendingAction?.label}」會恢復使用原本的瀏覽器憑證。` : `「${pendingAction?.label}」只會從設備清單移除；既有訪客紀錄、逐字稿與媒體都會保留。` }}
+          </AlertDialogDescription>
+          <div :class="['mt-6 flex justify-end gap-3']">
+            <AlertDialogCancel as-child>
+              <Button variant="secondary" :disabled="saving">
+                取消
+              </Button>
+            </AlertDialogCancel>
+            <AlertDialogAction as-child>
+              <Button :variant="pendingAction?.kind === 'delete' ? 'danger' : 'secondary'" :disabled="saving" @click.prevent="confirmAction">
+                {{ saving ? '處理中…' : '確認' }}
+              </Button>
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialogPortal>
+    </AlertDialogRoot>
   </div>
 </template>
 

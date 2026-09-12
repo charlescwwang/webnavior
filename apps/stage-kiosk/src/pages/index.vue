@@ -16,9 +16,13 @@ const {
   bootstrap,
   device,
   error,
+  mediaCaptureMode,
+  proactiveVlmEnabled,
+  performanceProfile,
   profile,
   registerDevelopmentDevice,
   state,
+  voiceVadThreshold,
 } = useKioskDeviceRegistration()
 const route = useRoute()
 const isDraftPreview = computed(() => route.query.preview === 'webnavior')
@@ -54,7 +58,7 @@ watch(profile, async (assignedProfile) => {
 
 <template>
   <KioskDraftPreview v-if="isDraftPreview" />
-  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :voice-conversation-only="voiceConversationOnly" />
+  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-threshold="voiceVadThreshold" />
   <main v-else-if="state === 'registered' && device && profileSyncError" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-200']">
     <div :class="['max-w-xl space-y-3']">
       <h1 :class="['text-2xl font-semibold']">

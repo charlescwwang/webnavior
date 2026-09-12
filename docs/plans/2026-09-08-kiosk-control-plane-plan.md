@@ -1,6 +1,6 @@
 # Kiosk 管理平面與訪客互動資料保存計畫
 
-> 狀態：POC 方向已確認；第一至三階段已完成。第四、五階段持續實作：已具備瀏覽器模擬 kiosk、Server Gateway 文字對話／主動招呼、裝置驗證的 ASR/TTS、iframe 生命週期與點餐結果保存，以及含原始 WAV、觸發短片、連續攝影機分段、日期／時段分組與刪除功能的訪客使用歷程；保存期檔案清理、完整管理 UI、實體 kiosk 與韌性測試尚未實作。
+> 狀態：POC 方向已確認；第一至三階段已完成。第四、五階段持續實作：已具備瀏覽器模擬 kiosk、Server Gateway 文字對話、裝置驗證的 ASR/TTS、以即時 camera frame 交由 Site VLM 決定的主動招呼／提醒、iframe 生命週期與點餐結果保存，以及含原始 WAV、觸發短片、連續攝影機分段、日期／時段分組與刪除功能的訪客使用歷程；保存期檔案清理、完整管理 UI、實體 kiosk 與韌性測試尚未實作。
 >
 > 範圍：先以「互動點餐員與互動資料保存 POC」驗證 AIRI 能否有效協助點餐，再演進目前以瀏覽器 `localStorage` 為主的單機 AIRI Kiosk 為由後台控管的多設備 Web Kiosk。此文件不改變 AIRI Interaction Host、獨立互動服務與 WebMCP 的既有邊界。
 
@@ -58,7 +58,7 @@ Postgres 是正式資料真相來源：帳號、店別、設備、Profile 發布
 同一 Site 的 kiosk 使用相同偵測與媒體政策：
 
 - 主動偵測是否啟用、偵測模式（看向 kiosk／進入偵測區／混合）、偵測區域、停留時間、區域清空重設時間與最小觸發人數。
-- 正式化後可設定是否保存主動招呼圖片、完整會話影片與完整會話音訊。內部 POC 目前固定保存原始 WAV、10 秒觸發短片與 30 秒連續攝影機 WebM 分段；影片維持靜音，麥克風 WAV 另外保存。
+- 系統管理員可為每個 Site 設定保存天數與影像保存模式：關閉、只保存活動觸發短片，或活動短片加上會話期間的 30 秒連續攝影機 WebM 分段。影片維持靜音，麥克風 WAV 另外保存；影像編碼只在訪客會話存在時開始，結束時立即 flush 最後不足 30 秒的片段。
 - POC 直接保存可播放的 WebM 分段至 Server 私有 volume，尚未實作 FFmpeg 轉檔、MP4 成品或 Site 層級媒體開關。
 - 保存期、每日上傳上限與容量滿載行為。
 - 無操作協助提醒的啟用狀態、等待時間與單一訪客會話最大提醒次數。
@@ -70,7 +70,7 @@ Postgres 是正式資料真相來源：帳號、店別、設備、Profile 發布
 Profile 包含下列 kiosk 行為設定：
 
 - 已核准互動服務清單：`id`、名稱、用途描述、iframe URL 與啟用狀態；並指定預設服務。店別管理員可新增 URL，但 AIRI Agent 只能在目前 Profile 清單中的服務之間切換，不能開啟任意網頁。
-- Agent 的營運指示，以及主動招呼與無操作提醒的場域提示文字。
+- Agent 的營運指示，以及主動招呼與無操作提醒的場域提示文字。提示是 VLM 的決策脈絡，不可作為可直接輸出的固定台詞。
 - 問卷邀請：啟用狀態、固定問卷 URL、顯示秒數、標題、說明與略過按鈕文字。第一版不在問卷 URL 夾帶訂單、對話或會員資料。
 - 語言、互動服務面板版面與顧客流程：閒置等待秒數、閒置確認倒數秒數、完成後畫面與「繼續目前會話／重新開始」流程。
 - 角色發布版本、角色模型與背景等呈現資產版本。
@@ -103,7 +103,9 @@ POC 只需一個 Profile 草稿與其目前已發布版本；管理者儲存後�
 - kiosk 快取最後成功的設定。斷線時凍結菜單與對話、停止錄製並顯示連線中或維護提示的策略，連同不保留本機待上傳影音片段，延至有實體 kiosk 後的韌性驗證階段。
 - LLM、TTS、ASR 改經由 Server Gateway；Provider Key 不下發至 kiosk。
 - 已發布體驗可啟用 `voiceConversationOnly`。啟用後 Kiosk 隱藏文字 composer；若設備已獲准麥克風權限，載入時會啟動 VAD，並以可見狀態呈現實際收音是否成功。
+- VAD 在 kiosk 本機使用 Silero 模型，對每個音訊區塊產生人聲機率；Site 可由後台設定 `0.50`–`0.95` 的閾值，POC 預設採較嚴格的 `0.72`。數值越高越能排除環境聲，但也越可能漏掉較小聲的人聲。現有「最短有效語音」規則錯把等待靜音的時間納入語音長度，短雜音可能仍被送至 ASR；正式實體 kiosk 驗證前，必須改為只累積模型判為人聲的時間，再放行 ASR。
 - Kiosk 的 ASR 與 TTS 使用設備驗證的 `/api/kiosk/audio/*` 路由。Server 依 Site policy 選擇模型並保留上游 endpoint、voice 與憑證；TTS 回應以音訊 binary 原樣轉送給 Kiosk。
+- Kiosk 主動招呼／閒置提醒在本機滿足 Presence 與頻率政策後，僅擷取一張縮小 JPEG camera frame，送至設備驗證的 assistant-action 路由。Server 以 Site 的 VLM 模型策略呼叫既有 OpenAI-compatible Router；未設定 VLM 時拒絕動作，不回退為 Profile 範例台詞。該 inference frame 不保存為訪客媒體。
 
 ## Profile 發布與遠端控制
 
@@ -127,6 +129,16 @@ POC 不建立 Kiosk WebSocket Channel；kiosk 只在啟動、手動重新取得�
 第一版不提供遠端立即強制清除顧客會話，也不允許任意 JavaScript、Shell 指令或未核准 URL。
 
 前端更新採統一於非熱門時段或晚間執行。若更新失敗，kiosk 進入維護模式，並在系統內通知店別管理員；第一版不依賴 Email 通知。正在互動時不自動重載，待完成、取消或閒置後才重新載入。Nginx 部署採 `index.html` 不快取、帶 hash 的靜態資產長期快取。
+
+## Ubuntu 共存更新與環境設定
+
+Ubuntu 主機若同時承載其他服務，更新 AIRI 時只操作 AIRI 專用 checkout、服務單元或 Docker Compose project；禁止使用 `docker compose down`、`docker system prune`、全域套件更新，或未確認就占用既有 port。更新前先以唯讀方式記錄 `systemctl --type=service --state=running`、`docker ps` 與 `ss -ltnp`，確認 AIRI 的使用者、目錄、服務名稱與對外 port，並保留可回復的前一個 Git revision。
+
+`apps/server/.env.local` 與 `apps/stage-kiosk/.env.local` 含憑證與 kiosk 維護 PIN，絕不加入 Git、日誌或部署文件。首次移轉時可透過受保護 SSH 通道複製；後續更新應先上傳為 `.env.local.incoming`、以 `diff -u` 比對鍵值後人工合併，不能直接用開發機的檔案覆寫 Ubuntu 的 production 設定。Server 的 `BETTER_AUTH_SECRET`、`LLM_ROUTER_MASTER_KEY`、OAuth／Stripe 金鑰必須跨部署維持不變；改動會使既有登入或已保存的加密 Provider 設定失效。
+
+Docker Compose 部署需特別區分開發與 production 網路：container 內的 `DATABASE_URL`／`REDIS_URL` 必須指向同一 Compose network 的 `db:5432`／`redis:6379`，不能保留開發環境的 `localhost`；Compose 的 API health check 使用 container port `3000`，因此該部署的 `PORT` 必須為 `3000`。現有 `apps/server/docker-compose.yml` 同時定義 db、Redis 與 `6112` 對外映射，只有在三者均屬於 AIRI 且已確認沒有 port 衝突時才可使用。若 db／Redis 已在運行，更新 API 時使用 `docker compose -f apps/server/docker-compose.yml up -d --build --no-deps api`，只重建並替換 API，不停止其他 container。
+
+Server 啟動時會自動套用內嵌 migration；更新前先備份 Postgres，啟動後檢查 `/livez`、`/readyz`、Server log 的 `Applied schema`，再讓 kiosk 重新載入設定。`apps/stage-kiosk/.env.local` 的 `VITE_KIOSK_ADMIN_PIN` 與任何 `VITE_*` 值屬於前端 build-time 設定，變更後必須重建 kiosk 前端資產，不能只重啟 API。
 
 ## POC 訪客會話與逐字稿保存
 

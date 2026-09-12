@@ -57,6 +57,7 @@ function formatContent(entry: KioskInteractionEntry) {
   }
   return {
     completed: '顧客完成點餐流程',
+    proactive_greeting: 'Kiosk 主動招呼顧客',
     feedback_invitation_dismissed: '顧客關閉回饋邀請',
     feedback_invitation_shown: '顯示回饋邀請',
   }[entry.content] ?? entry.content
@@ -133,25 +134,35 @@ onUnmounted(() => Object.values(videoSources.value).forEach(source => URL.revoke
     </div>
     <div v-if="props.detail?.entries.length" :class="['flex flex-col gap-6 p-5']">
       <section v-if="conversationEntries.length">
-        <h3 :class="['m-0 text-sm font-semibold text-slate-950 dark:text-white']">對話</h3>
+        <h3 :class="['m-0 text-sm font-semibold text-slate-950 dark:text-white']">
+          對話
+        </h3>
         <ol :class="['mb-0 mt-3 flex flex-col gap-3 p-0']">
-      <li v-for="entry in conversationEntries" :key="entry.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
-        <div :class="['flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400']">
-          <span :class="['font-semibold text-slate-700 dark:text-slate-200']">{{ entryLabel(entry.kind) }}</span>
-          <time :datetime="entry.createdAt">{{ formatDate(entry.createdAt) }}</time>
-        </div>
-        <pre :class="['mb-0 mt-2 whitespace-pre-wrap break-words font-sans text-sm text-slate-800 dark:text-slate-100']">{{ formatContent(entry) }}</pre>
-        <button v-if="audioForEntry(entry) && !audioSources[entry.id]" type="button" :class="['mt-3 rounded-md bg-cyan-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-800']" :disabled="loadingAudioEntryId === entry.id" @click="loadAudio(entry)">{{ loadingAudioEntryId === entry.id ? '載入錄音中…' : '聽顧客原始語音' }}</button>
-        <audio v-else-if="audioSources[entry.id]" :src="audioSources[entry.id]" controls autoplay :class="['mt-3 w-full']" />
-      </li>
+          <li v-for="entry in conversationEntries" :key="entry.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
+            <div :class="['flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400']">
+              <span :class="['font-semibold text-slate-700 dark:text-slate-200']">{{ entryLabel(entry.kind) }}</span>
+              <time :datetime="entry.createdAt">{{ formatDate(entry.createdAt) }}</time>
+            </div>
+            <pre :class="['mb-0 mt-2 whitespace-pre-wrap break-words font-sans text-sm text-slate-800 dark:text-slate-100']">{{ formatContent(entry) }}</pre>
+            <button v-if="audioForEntry(entry) && !audioSources[entry.id]" type="button" :class="['mt-3 rounded-md bg-cyan-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-800']" :disabled="loadingAudioEntryId === entry.id" @click="loadAudio(entry)">
+              {{ loadingAudioEntryId === entry.id ? '載入錄音中…' : '聽顧客原始語音' }}
+            </button>
+            <audio v-else-if="audioSources[entry.id]" :src="audioSources[entry.id]" controls autoplay :class="['mt-3 w-full']" />
+          </li>
         </ol>
       </section>
       <section v-if="activityEntries.length">
-        <h3 :class="['m-0 text-sm font-semibold text-slate-950 dark:text-white']">行為摘要</h3>
+        <h3 :class="['m-0 text-sm font-semibold text-slate-950 dark:text-white']">
+          行為摘要
+        </h3>
         <ol :class="['mb-0 mt-3 flex flex-col gap-2 p-0']">
           <li v-for="entry in activityEntries" :key="entry.id" :class="['rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60']">
-            <div :class="['flex items-center justify-between gap-3']"><span>{{ formatContent(entry) }}</span><time :datetime="entry.createdAt" :class="['text-xs text-slate-500 dark:text-slate-400']">{{ formatDate(entry.createdAt) }}</time></div>
-            <button v-if="videoForEntry(entry) && !videoSources[entry.id]" type="button" :class="['mt-2 rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingVideoEntryId === entry.id" @click="loadVideo(entry)">{{ loadingVideoEntryId === entry.id ? '載入短片中…' : '檢視此活動短片' }}</button>
+            <div :class="['flex items-center justify-between gap-3']">
+              <span>{{ formatContent(entry) }}</span><time :datetime="entry.createdAt" :class="['text-xs text-slate-500 dark:text-slate-400']">{{ formatDate(entry.createdAt) }}</time>
+            </div>
+            <button v-if="videoForEntry(entry) && !videoSources[entry.id]" type="button" :class="['mt-2 rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingVideoEntryId === entry.id" @click="loadVideo(entry)">
+              {{ loadingVideoEntryId === entry.id ? '載入短片中…' : '檢視此活動短片' }}
+            </button>
             <video v-else-if="videoSources[entry.id]" :src="videoSources[entry.id]" controls playsinline :class="['mt-2 w-full rounded']" />
           </li>
         </ol>

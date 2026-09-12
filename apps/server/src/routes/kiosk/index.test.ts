@@ -63,6 +63,8 @@ describe('kiosk routes', () => {
           interactiveService: expect.objectContaining({ url: 'http://localhost:5166' }),
         }),
       }),
+      performanceProfile: 'balanced',
+      voiceVadThreshold: 0.72,
     })
   })
 
@@ -81,9 +83,10 @@ describe('kiosk routes', () => {
 
   it('frames a proactive reminder as customer-facing copy instead of a Character Card setup turn', async () => {
     const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '想看看菜單嗎？我可以幫您。' } }] }))
+    const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
-      kioskService: createKioskService(db),
+      kioskService,
       llmGateway: { complete, getDefaultModel: async () => 'test-model' },
       secureCookies: false,
     }))
@@ -93,6 +96,8 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ registrationCode: '483920' }),
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { vision: 'test-vlm' } })
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
@@ -103,7 +108,7 @@ describe('kiosk routes', () => {
     const reminder = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
-      body: JSON.stringify({ kind: 'reminder' }),
+      body: JSON.stringify({ frame: 'data:image/jpeg;base64,ZmFrZQ==', kind: 'reminder' }),
     })
 
     expect(reminder.status).toBe(200)
@@ -121,9 +126,10 @@ describe('kiosk routes', () => {
   })
 
   it('only lets the registered device create, append to, and end its own visitor session', async () => {
+    const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
-      kioskService: createKioskService(db),
+      kioskService,
       llmGateway,
       secureCookies: false,
     }))
@@ -133,6 +139,8 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ registrationCode: '483920' }),
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { vision: 'test-vlm' } })
 
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',
@@ -153,12 +161,10 @@ describe('kiosk routes', () => {
     const proactiveReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
-      body: JSON.stringify({ kind: 'greeting' }),
+      body: JSON.stringify({ frame: 'data:image/jpeg;base64,ZmFrZQ==', kind: 'greeting' }),
     })
     expect(proactiveReply.status).toBe(200)
-    // Character Card v3 `first_mes` and the Profile's greeting field are the
-    // customer-visible first turn. A model must not paraphrase or replace it.
-    await expect(proactiveReply.json()).resolves.toEqual({ answer: '您好，今天想吃些什麼？我可以協助您挑選。' })
+    await expect(proactiveReply.json()).resolves.toEqual({ answer: '您好，我可以協助您點餐。' })
 
     const orderResult = await app.request(`/api/kiosk/visitor-sessions/${session.id}/order-results`, {
       method: 'POST',
@@ -293,7 +299,7 @@ describe('kiosk routes', () => {
     })
     const audio = await app.request('/api/kiosk/audio/speech', {
       method: 'POST',
-      headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+      headers: { 'Cookie': cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: '您好，想吃什麼？', locale: 'zh-TW', model: 'forbidden', voice: 'forbidden' }),
     })
 

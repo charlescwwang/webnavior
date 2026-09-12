@@ -19,7 +19,7 @@ export function useKioskInteractionRecording() {
   const visitorSessionId = shallowRef<string>()
   const starting = shallowRef(false)
   let pendingStart: Promise<string | undefined> | undefined
-  let pendingAppend = Promise.resolve()
+  let pendingAppend: Promise<unknown> = Promise.resolve()
 
   async function start(serviceId: string) {
     if (visitorSessionId.value)
@@ -54,12 +54,13 @@ export function useKioskInteractionRecording() {
     const sessionId = visitorSessionId.value
     const save = async () => {
       try {
-        return await appendKioskInteraction({
+        const { entry } = await appendKioskInteraction({
           visitorSessionId: sessionId,
           kind,
           content,
           ...(metadata ? { metadata } : {}),
         })
+        return entry
       }
       catch {
         error.value = '互動資料暫時無法保存。'
@@ -126,13 +127,18 @@ export function useKioskInteractionRecording() {
     }
   }
 
-  async function runAssistantAction(serviceId: string, kind: 'greeting' | 'reminder', signal?: AbortSignal) {
+  async function runAssistantAction(
+    serviceId: string,
+    kind: 'greeting' | 'reminder',
+    frame: string,
+    signal?: AbortSignal,
+  ) {
     const sessionId = await start(serviceId)
     if (!sessionId)
       return undefined
 
     try {
-      const { answer } = await sendKioskAssistantAction({ kind, signal, visitorSessionId: sessionId })
+      const { answer } = await sendKioskAssistantAction({ frame, kind, signal, visitorSessionId: sessionId })
       return answer
     }
     catch {

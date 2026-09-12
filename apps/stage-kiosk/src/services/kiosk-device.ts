@@ -41,6 +41,9 @@ export interface KioskVisitorSession {
   state: 'active' | 'completed' | 'cancelled' | 'idle'
 }
 
+export type KioskMediaCaptureMode = 'off' | 'triggered' | 'continuous'
+export type KioskPerformanceProfile = 'constrained' | 'balanced' | 'high'
+
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
 export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_video' | 'continuous_video'
 
@@ -85,7 +88,7 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
 
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */
 export async function fetchKioskBootstrap() {
-  return await request<{ device: KioskDevice, profile?: KioskProfile }>('/api/kiosk/bootstrap')
+  return await request<{ device: KioskDevice, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadThreshold: number }>('/api/kiosk/bootstrap')
 }
 
 /** Enrolls this browser as a development kiosk when the Server explicitly permits it. */
@@ -111,7 +114,7 @@ export async function appendKioskInteraction(input: {
   metadata?: Record<string, unknown>
   visitorSessionId: string
 }) {
-  return await request(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/entries`, {
+  return await request<{ entry: { id: string } }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/entries`, {
     method: 'POST',
     body: JSON.stringify({ content: input.content, kind: input.kind, metadata: input.metadata ?? {} }),
   })
@@ -144,10 +147,15 @@ export async function sendKioskConversationMessage(input: {
 }
 
 /** Asks the Server Gateway to create one Profile-controlled proactive assistant turn. */
-export async function sendKioskAssistantAction(input: { kind: 'greeting' | 'reminder', signal?: AbortSignal, visitorSessionId: string }) {
+export async function sendKioskAssistantAction(input: {
+  frame: string
+  kind: 'greeting' | 'reminder'
+  signal?: AbortSignal
+  visitorSessionId: string
+}) {
   return await request<{ answer: string }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/assistant-actions`, {
     method: 'POST',
-    body: JSON.stringify({ kind: input.kind }),
+    body: JSON.stringify({ frame: input.frame, kind: input.kind }),
     signal: input.signal,
   })
 }

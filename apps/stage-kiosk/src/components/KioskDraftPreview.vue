@@ -39,7 +39,7 @@ onUnmounted(() => window.removeEventListener('message', receiveDraft))
 </script>
 
 <template>
-  <KioskScene v-if="ready" :voice-conversation-only="voiceConversationOnly" />
+  <KioskScene v-if="ready" media-capture-mode="off" performance-profile="constrained" :proactive-vlm-enabled="false" :voice-conversation-only="voiceConversationOnly" :voice-vad-threshold="0.72" />
   <main v-else :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-300']">
     正在載入草稿預覽…
   </main>

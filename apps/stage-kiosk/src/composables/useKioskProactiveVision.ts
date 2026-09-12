@@ -1,19 +1,21 @@
 import type { FaceLandmarker, NormalizedLandmark } from '@mediapipe/tasks-vision'
 import type { DetectionZone } from '@proj-airi/kiosk-proactive'
 
+import type { KioskPerformanceSettings } from '../services/kiosk-performance'
+
 import { errorMessageFrom } from '@moeru/std'
 import { createAttentionObservation } from '@proj-airi/kiosk-proactive'
 import { shallowRef } from 'vue'
 
 const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
 const wasmRoot = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm'
-const detectionIntervalMs = 200
-
 export type KioskProactiveVisionStatus = 'idle' | 'starting' | 'observing' | 'unsupported' | 'failed'
 
 interface Options {
   detectionZone: () => DetectionZone
+  performance: () => KioskPerformanceSettings
   onCameraStream?: (stream: MediaStream | undefined) => void
+  onFaces?: (faces: Array<{ centre: { x: number, y: number }, facesCamera: boolean }>) => void
   onObservation: (observation: ReturnType<typeof createAttentionObservation>) => void
 }
 
@@ -49,7 +51,7 @@ export function useKioskProactiveVision(options: Options) {
     try {
       cameraStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        video: options.performance().camera,
       })
       video.srcObject = cameraStream
       options.onCameraStream?.(cameraStream)
@@ -60,7 +62,7 @@ export function useKioskProactiveVision(options: Options) {
       const nextFaceLandmarker = await FaceLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath },
         runningMode: 'VIDEO',
-        numFaces: 4,
+        numFaces: options.performance().maxFaces,
         minFaceDetectionConfidence: 0.6,
         minFacePresenceConfidence: 0.6,
         minTrackingConfidence: 0.6,
@@ -107,18 +109,20 @@ export function useKioskProactiveVision(options: Options) {
     if (!running || !faceLandmarker || !video)
       return
 
-    // MediaPipe's video API is synchronous. Limiting this CPU-only POC to 5Hz
-    // leaves the kiosk renderer responsive while still supporting dwell rules.
-    if (nowMs - lastDetectionAtMs >= detectionIntervalMs && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    // MediaPipe's video API is synchronous, so its cadence is part of the
+    // selected kiosk hardware budget rather than an implicit rendering cost.
+    if (nowMs - lastDetectionAtMs >= options.performance().detectionIntervalMs && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       lastDetectionAtMs = nowMs
       const result = faceLandmarker.detectForVideo(video, nowMs)
       // `nowMs` is the frame's presentation timestamp. Customer activity can
       // occur after that frame is queued but before this callback runs, so it
       // must not become the policy timestamp or reminder ordering can regress.
       const observedAtMs = performance.now()
+      const faces = result.faceLandmarks.map(toFaceLandmarkObservation)
+      options.onFaces?.(faces)
       options.onObservation(createAttentionObservation(
         observedAtMs,
-        result.faceLandmarks.map(toFaceLandmarkObservation),
+        faces,
         options.detectionZone(),
       ))
     }

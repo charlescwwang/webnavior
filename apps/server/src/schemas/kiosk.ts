@@ -16,6 +16,12 @@ export type KioskVisitorSessionState = 'active' | 'completed' | 'cancelled' | 'i
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
 /** Binary evidence captured during an internal kiosk POC interaction. */
 export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_video' | 'continuous_video'
+/** Controls whether an internal POC preserves camera evidence for a Site. */
+export interface KioskMediaCapturePolicy {
+  mode: 'off' | 'triggered' | 'continuous'
+}
+/** Server-selected resource budget for a kiosk Site. */
+export type KioskPerformanceProfile = 'constrained' | 'balanced' | 'high'
 
 /** A site's explicit runtime model choices. Missing entries inherit the system default. */
 export interface KioskModelOverrides {
@@ -72,6 +78,14 @@ export const kioskSites = pgTable('kiosk_sites', {
   slug: text('slug').unique(),
   /** Days to retain completed interaction data; 0 removes it on the next sweep. */
   interactionRetentionDays: integer('interaction_retention_days').notNull().default(180),
+  /** Camera evidence is opt-in and independent from proactive VLM observation. */
+  mediaCapturePolicy: jsonb('media_capture_policy').$type<KioskMediaCapturePolicy>().notNull().default({ mode: 'triggered' }),
+  /** Enables Server VLM copy generation after local MediaPipe has qualified a trigger. */
+  proactiveVlmEnabled: integer('proactive_vlm_enabled').notNull().default(0),
+  /** Keeps constrained kiosk hardware from being configured with an unsafe capture workload. */
+  performanceProfile: text('performance_profile').$type<KioskPerformanceProfile>().notNull().default('balanced'),
+  /** Site-calibrated Silero VAD probability threshold; higher values reject more ambient noise. */
+  voiceVadThreshold: text('voice_vad_threshold').notNull().default('0.72'),
   /** Site-specific choices from the system administrator's approved model catalog. */
   modelOverrides: jsonb('model_overrides').$type<KioskModelOverrides>().notNull().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),

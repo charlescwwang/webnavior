@@ -197,6 +197,34 @@
       "when": 1789531200000,
       "tag": "0027_kiosk_media_event_link",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1789617600000,
+      "tag": "0028_kiosk_media_capture_policy",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1789704000000,
+      "tag": "0029_kiosk_proactive_vlm",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1789790400000,
+      "tag": "0030_kiosk_performance_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1789876800000,
+      "tag": "0031_kiosk_voice_vad_threshold",
+      "breakpoints": true
     }
   ]
 }

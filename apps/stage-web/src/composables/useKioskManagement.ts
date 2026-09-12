@@ -3,6 +3,8 @@ import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { computed, shallowRef } from 'vue'
 
+import { useWebnaviorNotice } from './useWebnaviorNotice'
+
 const managedSites = shallowRef<KioskSite[]>([])
 const managedSiteId = shallowRef('')
 
@@ -10,6 +12,7 @@ export interface KioskSite {
   id: string
   name: string
   interactionRetentionDays: number
+  mediaCapturePolicy: { mode: 'off' | 'triggered' | 'continuous' }
 }
 
 export interface KioskDevice {
@@ -74,6 +77,9 @@ export interface KioskSiteModelPolicy {
   defaults: Record<'asr' | 'llm' | 'tts' | 'vision', string | null>
   overrides: Partial<Record<'asr' | 'llm' | 'tts' | 'vision', string>>
   sources: Record<'asr' | 'llm' | 'tts' | 'vision', Record<string, { baseURL: string, upstreamModel: string, voice?: string }>>
+  proactiveVlmEnabled: boolean
+  performanceProfile: 'constrained' | 'balanced' | 'high'
+  voiceVadThreshold: number
 }
 
 /** The versioned settings that a Webnavior kiosk receives when a Profile is published. */
@@ -146,6 +152,7 @@ function createDefaultProfileDraft(): KioskProfileDraft {
  * local draft until the caller explicitly saves or publishes it.
  */
 export function useKioskManagement() {
+  const notice = useWebnaviorNotice()
   const sites = managedSites
   const devices = shallowRef<KioskDevice[]>([])
   const selectedSiteId = managedSiteId
@@ -213,7 +220,7 @@ export function useKioskManagement() {
         : undefined
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '無法載入此店別的管理資料。'
+      notice.error(errorMessageFrom(error) ?? '無法載入此店別的管理資料。')
     }
     finally {
       loading.value = false
@@ -229,14 +236,14 @@ export function useKioskManagement() {
       await loadSite()
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '請先以具管理權限的帳號登入。'
+      notice.error(errorMessageFrom(error) ?? '請先以具管理權限的帳號登入。')
     }
     finally {
       loading.value = false
     }
   }
 
-  async function loadVisitorSessions() {
+  async function loadVisitorSessions(deviceId?: string) {
     if (!selectedSiteId.value) {
       visitorSessions.value = []
       visitorSessionDetail.value = undefined
@@ -247,10 +254,11 @@ export function useKioskManagement() {
     visitorHistoryError.value = ''
     visitorSessionDetail.value = undefined
     try {
-      visitorSessions.value = await request<KioskVisitorSessionSummary[]>(`/sites/${selectedSiteId.value}/visitor-sessions`)
+      const query = deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ''
+      visitorSessions.value = await request<KioskVisitorSessionSummary[]>(`/sites/${selectedSiteId.value}/visitor-sessions${query}`)
     }
     catch (error) {
-      visitorHistoryError.value = errorMessageFrom(error) ?? '無法載入使用歷程。'
+      notice.error(errorMessageFrom(error) ?? '無法載入使用歷程。')
     }
     finally {
       visitorHistoryLoading.value = false
@@ -264,7 +272,7 @@ export function useKioskManagement() {
       visitorSessionDetail.value = await request<KioskVisitorSessionDetail>(`/visitor-sessions/${visitorSessionId}`)
     }
     catch (error) {
-      visitorHistoryError.value = errorMessageFrom(error) ?? '無法載入這次互動的內容。'
+      notice.error(errorMessageFrom(error) ?? '無法載入這次互動的內容。')
     }
     finally {
       visitorHistoryLoading.value = false
@@ -286,9 +294,10 @@ export function useKioskManagement() {
       if (visitorSessionIds.includes(visitorSessionDetail.value?.session.id ?? ''))
         visitorSessionDetail.value = undefined
       await loadVisitorSessions()
+      notice.success(`已刪除 ${visitorSessionIds.length} 筆使用歷程。`)
     }
     catch (error) {
-      visitorHistoryError.value = errorMessageFrom(error) ?? '無法刪除選取的使用歷程。'
+      notice.error(errorMessageFrom(error) ?? '無法刪除選取的使用歷程。')
     }
     finally {
       visitorHistoryLoading.value = false
@@ -320,12 +329,12 @@ export function useKioskManagement() {
       if (publish)
         await request(`/sites/${selectedSiteId.value}/profile-draft/publish`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draftId: savedDraft.id }) })
 
-      message.value = publish
+      notice.success(publish
         ? '草稿已發布；設備會在下次取得設定時套用。'
-        : '草稿已儲存。'
+        : '草稿已儲存。')
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '儲存失敗，請檢查各欄位是否完整。'
+      notice.error(errorMessageFrom(error) ?? '儲存失敗，請檢查各欄位是否完整。')
     }
     finally {
       saving.value = false
@@ -343,10 +352,10 @@ export function useKioskManagement() {
       sites.value = sites.value.filter(site => site.id !== selectedSiteId.value)
       selectedSiteId.value = sites.value[0]?.id ?? ''
       await loadSite()
-      message.value = '店別已刪除。'
+      notice.success('店別已刪除。')
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '無法刪除店別。'
+      notice.error(errorMessageFrom(error) ?? '無法刪除店別。')
     }
     finally {
       saving.value = false
@@ -361,17 +370,28 @@ export function useKioskManagement() {
     message.value = ''
     try {
       await request(`/sites/${selectedSiteId.value}/devices/${deviceId}/disable`, { method: 'POST' })
-      devices.value = devices.value.map(device => device.id === deviceId
-        ? { ...device, disabledAt: new Date().toISOString() }
-        : device)
-      message.value = '設備已停用，原本的瀏覽器憑證已撤銷。'
+      await loadSite()
+      notice.success('設備已停用，原本的瀏覽器憑證已撤銷。')
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '無法停用設備。'
+      notice.error(errorMessageFrom(error) ?? '無法停用設備。')
     }
     finally {
       saving.value = false
     }
+  }
+
+  async function enableDevice(deviceId: string) {
+    if (!selectedSiteId.value)
+      return
+    saving.value = true
+    try {
+      await request(`/sites/${selectedSiteId.value}/devices/${deviceId}/enable`, { method: 'POST' })
+      await loadSite()
+      notice.success('設備已啟用，原本的瀏覽器憑證已恢復有效。')
+    }
+    catch (error) { notice.error(errorMessageFrom(error) ?? '無法啟用設備。') }
+    finally { saving.value = false }
   }
 
   async function deleteDevice(deviceId: string) {
@@ -382,11 +402,11 @@ export function useKioskManagement() {
     message.value = ''
     try {
       await request(`/sites/${selectedSiteId.value}/devices/${deviceId}`, { method: 'DELETE' })
-      devices.value = devices.value.filter(device => device.id !== deviceId)
-      message.value = '設備已刪除；既有訪客紀錄會依保存政策保留。'
+      await loadSite()
+      notice.success('設備已刪除；既有訪客紀錄會依保存政策保留。')
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '無法刪除設備。請先停用它。'
+      notice.error(errorMessageFrom(error) ?? '無法刪除設備。請先停用它。')
     }
     finally {
       saving.value = false
@@ -410,11 +430,11 @@ export function useKioskManagement() {
       if (!response.ok)
         throw new Error(await response.text() || `Request failed: ${response.status}`)
       const result = await response.json() as { asset: NonNullable<KioskProfileSnapshot['characterAsset']>, card: Record<string, string> }
-      message.value = '角色模型已上傳，請儲存草稿後再發布到 Kiosk。'
+      notice.success('角色模型已上傳，請儲存草稿後再發布到 Kiosk。')
       return result
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '角色模型上傳失敗。'
+      notice.error(errorMessageFrom(error) ?? '角色模型上傳失敗。')
       throw error
     }
     finally {
@@ -436,10 +456,96 @@ export function useKioskManagement() {
       })
       if (siteModelPolicy.value)
         siteModelPolicy.value = { ...siteModelPolicy.value, overrides }
-      message.value = '店別模型設定已儲存。LLM 覆寫會在下一次對話時生效。'
+      notice.success('店別模型設定已儲存。LLM 覆寫會在下一次對話時生效。')
     }
     catch (error) {
-      message.value = errorMessageFrom(error) ?? '無法儲存店別模型設定。'
+      notice.error(errorMessageFrom(error) ?? '無法儲存店別模型設定。')
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
+  async function saveProactiveVlmEnabled(enabled: boolean) {
+    if (!selectedSiteId.value)
+      return
+    saving.value = true
+    try {
+      await request(`/sites/${selectedSiteId.value}/proactive-vlm`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) })
+      if (siteModelPolicy.value)
+        siteModelPolicy.value = { ...siteModelPolicy.value, proactiveVlmEnabled: enabled }
+      notice.success(`主動情境台詞生成已${enabled ? '啟用' : '停用'}。`)
+    }
+    catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新 VLM 設定。') }
+    finally { saving.value = false }
+  }
+
+  async function savePerformanceProfile(profile: KioskSiteModelPolicy['performanceProfile']) {
+    if (!selectedSiteId.value)
+      return
+    saving.value = true
+    try {
+      await request(`/sites/${selectedSiteId.value}/performance-profile`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile }) })
+      if (siteModelPolicy.value)
+        siteModelPolicy.value = { ...siteModelPolicy.value, performanceProfile: profile }
+      notice.success('Kiosk 效能設定檔已更新。設備重新載入後會套用。')
+    }
+    catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新 Kiosk 效能設定檔。') }
+    finally { saving.value = false }
+  }
+
+  async function saveVoiceVadThreshold(threshold: number) {
+    if (!selectedSiteId.value)
+      return
+    saving.value = true
+    try {
+      await request(`/sites/${selectedSiteId.value}/voice-vad-threshold`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threshold }) })
+      if (siteModelPolicy.value)
+        siteModelPolicy.value = { ...siteModelPolicy.value, voiceVadThreshold: threshold }
+      notice.success('語音偵測嚴格度已更新。設備重新載入後會套用。')
+    }
+    catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新語音偵測嚴格度。') }
+    finally { saving.value = false }
+  }
+
+  async function saveInteractionRetention(days: number) {
+    if (!selectedSiteId.value)
+      return
+    saving.value = true
+    try {
+      const site = await request<KioskSite>(`/sites/${selectedSiteId.value}/interaction-retention`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days }),
+      })
+      if (site)
+        managedSites.value = managedSites.value.map(item => item.id === site.id ? site : item)
+      notice.success('使用歷程保存天數已更新。新接待會套用這項設定。')
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法更新保存天數。')
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
+  async function saveMediaCapturePolicy(mode: KioskSite['mediaCapturePolicy']['mode']) {
+    if (!selectedSiteId.value)
+      return
+    saving.value = true
+    try {
+      const site = await request<KioskSite>(`/sites/${selectedSiteId.value}/media-capture-policy`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      })
+      if (site)
+        managedSites.value = managedSites.value.map(item => item.id === site.id ? site : item)
+      notice.success('Kiosk 影像保存模式已更新，設備下次同步時會套用。')
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法更新影像保存模式。')
     }
     finally {
       saving.value = false
@@ -460,6 +566,7 @@ export function useKioskManagement() {
     deleteSelectedSite,
     deviceCount,
     disableDevice,
+    enableDevice,
     devices,
     deleteVisitorSessions,
     load,
@@ -471,7 +578,12 @@ export function useKioskManagement() {
     createProfileDraft,
     publishedExperience,
     save,
+    saveInteractionRetention,
+    saveMediaCapturePolicy,
     saveModelPolicy,
+    saveProactiveVlmEnabled,
+    savePerformanceProfile,
+    saveVoiceVadThreshold,
     saving,
     siteModelPolicy,
     selectedSite,

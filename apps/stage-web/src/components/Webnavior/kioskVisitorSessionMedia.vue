@@ -8,7 +8,8 @@ import { computed, onUnmounted, shallowRef } from 'vue'
 const props = defineProps<{ media: KioskVisitorMedia[] }>()
 const sources = shallowRef<Record<string, string>>({})
 const loadingId = shallowRef<string>()
-const videoItems = computed(() => props.media.filter(item => item.kind === 'continuous_video'))
+const continuousVideoItems = computed(() => props.media.filter(item => item.kind === 'continuous_video'))
+const triggeredVideoItems = computed(() => props.media.filter(item => item.kind === 'triggered_video'))
 
 function label(kind: KioskVisitorMedia['kind']) {
   return {
@@ -24,6 +25,17 @@ function endpoint(media: KioskVisitorMedia) {
 
 function size(byteSize: number) {
   return `${(byteSize / 1024 / 1024).toFixed(1)} MB`
+}
+
+const dateTime = new Intl.DateTimeFormat('zh-TW', { dateStyle: 'short', timeStyle: 'medium' })
+
+function timeline(item: KioskVisitorMedia) {
+  if (!item.startedAt)
+    return `保存於 ${dateTime.format(new Date(item.createdAt))}`
+  const start = new Date(item.startedAt)
+  const end = item.endedAt ? new Date(item.endedAt) : undefined
+  const duration = end ? Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000)) : undefined
+  return `${dateTime.format(start)}${end ? ` ～ ${dateTime.format(end)} · ${duration} 秒` : ''}`
 }
 
 async function load(media: KioskVisitorMedia) {
@@ -47,15 +59,42 @@ onUnmounted(() => Object.values(sources.value).forEach(source => URL.revokeObjec
 
 <template>
   <section :class="['border-t border-slate-200 p-5 dark:border-slate-800']">
-    <h3 :class="['m-0 text-sm font-semibold text-slate-950 dark:text-white']">連續攝影機紀錄</h3>
-    <p :class="['mb-3 mt-1 text-xs text-slate-500 dark:text-slate-400']">互動短片會直接出現在對應的顧客活動下；此區保留完整時序的攝影機片段。</p>
-    <div v-if="videoItems.length" :class="['grid gap-4 lg:grid-cols-2']">
-      <article v-for="item in videoItems" :key="item.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
-        <p :class="['mb-2 mt-0 text-sm font-medium text-slate-800 dark:text-slate-100']">{{ label(item.kind) }} · {{ size(item.byteSize) }}</p>
-        <button v-if="!sources[item.id]" type="button" :class="['rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingId === item.id" @click="load(item)">{{ loadingId === item.id ? '載入中…' : '檢視影片' }}</button>
+    <h3 :class="['m-0 text-sm font-semibold text-slate-950 dark:text-white']">
+      連續攝影機紀錄
+    </h3>
+    <p :class="['mb-3 mt-1 text-xs text-slate-500 dark:text-slate-400']">
+      互動短片會直接出現在對應的顧客活動下；此區保留完整時序的攝影機片段。
+    </p>
+    <div v-if="continuousVideoItems.length" :class="['grid gap-4 lg:grid-cols-2']">
+      <article v-for="item in continuousVideoItems" :key="item.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
+        <p :class="['mb-2 mt-0 text-sm font-medium text-slate-800 dark:text-slate-100']">
+          {{ label(item.kind) }} · {{ size(item.byteSize) }}
+        </p>
+        <p :class="['mb-2 mt-0 text-xs text-slate-500 dark:text-slate-400']">
+          {{ timeline(item) }}
+        </p>
+        <button v-if="!sources[item.id]" type="button" :class="['rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingId === item.id" @click="load(item)">
+          {{ loadingId === item.id ? '載入中…' : '檢視影片' }}
+        </button>
         <video v-else :src="sources[item.id]" controls playsinline :class="['w-full rounded']" />
       </article>
     </div>
-    <p v-else :class="['m-0 text-sm text-slate-500 dark:text-slate-400']">這次接待目前沒有保存影片。</p>
+    <p v-else :class="['m-0 text-sm text-slate-500 dark:text-slate-400']">
+      這次接待目前沒有保存連續影片。
+    </p>
+    <div v-if="triggeredVideoItems.length" :class="['mt-4 grid gap-4 lg:grid-cols-2']">
+      <article v-for="item in triggeredVideoItems" :key="item.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
+        <p :class="['mb-2 mt-0 text-sm font-medium text-slate-800 dark:text-slate-100']">
+          {{ label(item.kind) }} · {{ size(item.byteSize) }}
+        </p>
+        <p :class="['mb-2 mt-0 text-xs text-slate-500 dark:text-slate-400']">
+          {{ timeline(item) }}
+        </p>
+        <button v-if="!sources[item.id]" type="button" :class="['rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingId === item.id" @click="load(item)">
+          {{ loadingId === item.id ? '載入中…' : '檢視短片' }}
+        </button>
+        <video v-else :src="sources[item.id]" controls playsinline :class="['w-full rounded']" />
+      </article>
+    </div>
   </section>
 </template>

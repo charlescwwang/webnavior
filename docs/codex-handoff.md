@@ -29,10 +29,19 @@ accumulating history.
 - Kiosk ASR/TTS now use device-authenticated `/api/kiosk/audio/*` routes. The
   Server resolves Site policy and retains provider, model, voice, endpoint, and
   credentials; kiosk bootstrap and local settings no longer carry audio models.
+- Kiosk Sites persist a performance profile (`constrained`, `balanced`, or
+  `high`). The kiosk bootstrap applies it locally to camera resolution,
+  MediaPipe cadence/face count, and evidence-clip duration; constrained devices
+  cap continuous recording to triggered clips regardless of the Site policy.
+- Kiosk Sites also persist a voice VAD probability threshold. Its default is
+  `0.72` (strict); authorized operators can set `0.50`–`0.95` in the Kiosk
+  technical settings, and kiosk bootstrap applies the value after reload.
 - Webnavior's OpenAI-compatible TTS connection now stores its own voice instead
   of consulting AIRI's general voice catalog. The default is
   `zh-TW-HsiaoChenNeural`; `/audio/speech` receives that voice, MP3 format, and
   speed `1.0` unless a System Manager changes the connection setting.
+- Removed the stale `azure-speech` SSML allow-list entry and the unused MiniMax
+  Speech provider registration, metadata, translations, and dedicated docs.
 
 ## In Progress / Known Issues
 

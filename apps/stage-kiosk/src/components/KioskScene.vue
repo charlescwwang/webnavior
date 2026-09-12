@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
+
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
 import { createAssistanceReminderWindow, createInteractionWindow } from '@proj-airi/kiosk-proactive'
@@ -17,12 +19,14 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 
 import KioskAdminAccess from './KioskAdminAccess.vue'
+import KioskCameraPreview from './KioskCameraPreview.vue'
 import KioskConversation from './KioskConversation.vue'
 import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
+import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
 import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
@@ -30,14 +34,19 @@ import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
 import { needsKioskObservation, useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { setKioskLocale } from '../modules/i18n'
-import { scenarioRegistry } from '../services/scenario-registry'
 import { synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { kioskPerformanceSettings } from '../services/kiosk-performance'
+import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
 type KioskOrientation = 'landscape' | 'portrait'
 
 const props = defineProps<{
+  mediaCaptureMode: KioskMediaCaptureMode
+  performanceProfile: KioskPerformanceProfile
+  proactiveVlmEnabled: boolean
   voiceConversationOnly: boolean
+  voiceVadThreshold: number
 }>()
 
 const configuredOrientation = import.meta.env.VITE_KIOSK_ORIENTATION as KioskOrientation | undefined
@@ -62,7 +71,22 @@ const customerSession = useKioskCustomerSession({
   resetConversation: clearConversationPresentation,
 })
 const interactionRecording = useKioskInteractionRecording()
-const mediaCapture = useKioskMediaCapture(() => interactionRecording.visitorSessionId.value)
+const performanceSettings = computed(() => kioskPerformanceSettings[props.performanceProfile])
+// The constrained profile intentionally cannot start continuous capture. The
+// Server still retains the selected policy, but weak kiosk hardware always has
+// a local safety ceiling instead of consuming its memory with long recordings.
+const effectiveMediaCaptureMode = computed<KioskMediaCaptureMode>(() => (
+  props.performanceProfile === 'constrained' && props.mediaCaptureMode === 'continuous'
+    ? 'triggered'
+    : props.mediaCaptureMode
+))
+const mediaCapture = useKioskMediaCapture(
+  () => interactionRecording.visitorSessionId.value,
+  () => performanceSettings.value,
+)
+const cameraPreviewEnabled = useKioskCameraPreview()
+const cameraStream = shallowRef<MediaStream>()
+const detectedFaces = shallowRef<Array<{ centre: { x: number, y: number }, facesCamera: boolean }>>([])
 const {
   continueCurrentSession,
   hasPendingWork,
@@ -72,9 +96,6 @@ const {
   state: customerSessionState,
 } = customerSession
 const showIdleDiagnostics = import.meta.env.DEV
-// This is intentionally unconditional during the internal data-collection POC.
-// A production release must make it an explicit Site policy before enabling it.
-const internalPocMediaCapture = true
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
 const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
@@ -92,18 +113,26 @@ let proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveG
 let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
 const proactiveVision = useKioskProactiveVision({
   detectionZone: () => proactiveSettings.value.observation.detectionZone,
-  onCameraStream: stream => mediaCapture.attachCameraStream(stream),
+  performance: () => performanceSettings.value,
+  onCameraStream: (stream) => {
+    cameraStream.value = stream
+    if (!stream)
+      detectedFaces.value = []
+    mediaCapture.attachCameraStream(stream)
+  },
+  onFaces: faces => detectedFaces.value = faces,
   onObservation: observation => void handleProactiveObservation(observation),
 })
 const localObservationRequired = computed(() => needsKioskObservation(
   proactiveSettings.value,
   customerSessionState.value === 'active',
 ))
+const cameraRequired = computed(() => localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
 const { x, y } = useMouse()
 const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
 
 const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
-  threshold: shallowRef(0.6),
+  threshold: computed(() => props.voiceVadThreshold),
   onSpeechStart: () => {
     interruptConversationRequest()
     interruptAssistantAction()
@@ -123,6 +152,7 @@ let assistantAudio: HTMLAudioElement | undefined
 let activeConversationRequest: AbortController | undefined
 let activeAssistantActionRequest: AbortController | undefined
 const audioInputStarted = shallowRef(false)
+const audioRecognizing = shallowRef(false)
 const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value)
 
 async function startAudioInteraction() {
@@ -136,16 +166,22 @@ async function startAudioInteraction() {
   stopOnStopRecord = onStopRecord(async (recording) => {
     if (!recording)
       return
-    const activity = await recordCustomerActivity('voice_input')
-    // Link the source recording to the input event before ASR. This preserves
-    // the WAV even when an upstream transcription request later fails.
-    mediaCapture.saveAudio(recording, activity?.id)
-    const { text } = await transcribeKioskAudio(recording)
-    if (!text?.trim())
-      return
+    audioRecognizing.value = true
+    try {
+      const activity = await recordCustomerActivity('voice_input')
+      // Link the source recording to the input event before ASR. This preserves
+      // the WAV even when an upstream transcription request later fails.
+      mediaCapture.saveAudio(recording, activity?.id)
+      const { text } = await transcribeKioskAudio(recording)
+      if (!text?.trim())
+        return
 
-    await interactionRecording.append('asr_transcript', text)
-    await sendConversationMessage(text)
+      await interactionRecording.append('asr_transcript', text)
+      await sendConversationMessage(text)
+    }
+    finally {
+      audioRecognizing.value = false
+    }
   })
 }
 
@@ -264,9 +300,7 @@ watch(proactiveSettings, () => {
 }, { deep: true })
 
 async function syncProactiveVision() {
-  // Internal POC capture deliberately keeps the camera stream available even
-  // when proactive greeting is disabled, so continuous video has one owner.
-  if (!localObservationRequired.value && !internalPocMediaCapture) {
+  if (!cameraRequired.value) {
     proactiveVision.stop()
     return
   }
@@ -275,7 +309,7 @@ async function syncProactiveVision() {
     await proactiveVision.start(proactiveCamera.value)
 }
 
-watch(localObservationRequired, () => void syncProactiveVision())
+watch(cameraRequired, () => void syncProactiveVision())
 
 watch(customerSessionState, (state) => {
   if (state !== 'active') {
@@ -338,14 +372,22 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   if (!decision.greetingTrigger)
     return
 
+  const frame = captureProactiveCameraFrame(proactiveCamera.value)
+  if (!frame)
+    return
+
   try {
     // Begin before asking the LLM so another camera frame cannot create a
     // second greeting while the selected provider is still streaming.
     await customerSession.begin()
     await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+    mediaCapture.startSessionCapture(effectiveMediaCaptureMode.value)
+    const greetingEvent = await interactionRecording.append('service_event', 'proactive_greeting')
+    if (effectiveMediaCaptureMode.value !== 'off')
+      mediaCapture.captureInteractionClip(greetingEvent?.id)
     const releasePendingWork = customerSession.beginPendingWork()
     try {
-      await sendAssistantAction('greeting')
+      await sendAssistantAction('greeting', frame)
       assistanceReminderWindow.start(performance.now())
     }
     finally {
@@ -360,19 +402,27 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
 async function recordCustomerActivity(source: 'scenario' | 'voice_input' | 'voice_transcript' | 'completed' = 'scenario') {
   await customerSession.recordActivity()
   await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+  mediaCapture.startSessionCapture(effectiveMediaCaptureMode.value)
   const activity = await interactionRecording.append('service_event', 'customer_activity', { source })
-  mediaCapture.captureInteractionClip(activity?.id)
+  if (effectiveMediaCaptureMode.value !== 'off')
+    mediaCapture.captureInteractionClip(activity?.id)
   assistanceReminderWindow.recordActivity(performance.now())
   return activity
 }
 
-async function sendAssistantAction(kind: 'greeting' | 'reminder') {
+async function sendAssistantAction(kind: 'greeting' | 'reminder', capturedFrame?: string) {
   const serviceId = scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction'
+  const frame = capturedFrame ?? captureProactiveCameraFrame(proactiveCamera.value)
+  if (!frame) {
+    console.warn('[stage-kiosk] skipped proactive assistant action because the camera frame is unavailable')
+    return
+  }
   conversationSending.value = true
+  conversationWorkStatus.value = '正在觀察現場…'
   const controller = new AbortController()
   activeAssistantActionRequest = controller
   try {
-    const answer = await interactionRecording.runAssistantAction(serviceId, kind, controller.signal)
+    const answer = await interactionRecording.runAssistantAction(serviceId, kind, frame, controller.signal)
     if (controller.signal.aborted)
       return
     if (answer) {
@@ -390,6 +440,24 @@ async function sendAssistantAction(kind: 'greeting' | 'reminder') {
         conversationSending.value = false
     }
   }
+}
+
+/**
+ * Captures only the frame needed to decide the next proactive line. The image
+ * is downscaled before leaving the device so it fits the normal API body cap
+ * and is never retained as kiosk media.
+ */
+function captureProactiveCameraFrame(video: HTMLVideoElement | null) {
+  if (!video?.videoWidth || !video.videoHeight)
+    return undefined
+
+  const width = Math.min(video.videoWidth, 512)
+  const height = Math.max(1, Math.round(video.videoHeight * width / video.videoWidth))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  canvas.getContext('2d')?.drawImage(video, 0, 0, width, height)
+  return canvas.toDataURL('image/jpeg', 0.7)
 }
 
 async function sendConversationMessage(text: string) {
@@ -454,14 +522,29 @@ async function handleScenarioCompleted(orderResult?: Parameters<typeof interacti
 
 async function finishCustomerSessionCompletion() {
   await interactionRecording.append('service_event', 'feedback_invitation_dismissed')
+  mediaCapture.stopContinuousCapture()
   await interactionRecording.end('completed')
   await customerSession.end('completed')
   conversationMessages.value = []
 }
 
 async function startNewCustomerSession() {
+  mediaCapture.stopContinuousCapture()
   await interactionRecording.end('idle')
   await resetForNewCustomer()
+}
+
+async function restartCustomerSession() {
+  if (customerSessionState.value === 'standby')
+    return
+
+  // This is an explicit customer reset, not an order completion. It bypasses
+  // `completeOrder`, so no thank-you screen or feedback invitation is shown.
+  mediaCapture.stopContinuousCapture()
+  await interactionRecording.append('service_event', 'customer_requested_restart')
+  await interactionRecording.end('idle')
+  await customerSession.end('staff')
+  conversationMessages.value = []
 }
 
 let stopMenuActivityListener: (() => void) | undefined
@@ -509,9 +592,21 @@ onUnmounted(() => {
 
     <ScenarioSurface class="menu-region" />
 
+    <button
+      v-if="customerSessionState === 'active'"
+      type="button"
+      class="customer-restart"
+      :disabled="conversationSending"
+      @click="restartCustomerSession"
+    >
+      <span class="i-solar:restart-bold h-4 w-4" aria-hidden="true" />
+      重新開始／新訂單
+    </button>
+
     <KioskConversation
       class="conversation-region"
       :messages="conversationMessages"
+      :recognizing="audioRecognizing"
       :sending="conversationSending"
       :voice-conversation-only="props.voiceConversationOnly"
       :work-status="conversationWorkStatus"
@@ -537,6 +632,7 @@ onUnmounted(() => {
       @finish="finishCustomerSessionCompletion"
     />
     <video ref="proactiveCamera" class="proactive-camera" muted playsinline aria-hidden="true" />
+    <KioskCameraPreview v-if="cameraPreviewEnabled && cameraStream" :faces="detectedFaces" :stream="cameraStream" :zone="proactiveSettings.observation.detectionZone" />
   </main>
 </template>
 
@@ -553,6 +649,7 @@ onUnmounted(() => {
 .menu-region { min-width: 0; min-height: 0; grid-column: 1 / span 2; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
 .audio-listening-indicator { position: fixed; z-index: 20; top: 1.15rem; right: 1.15rem; display: inline-flex; align-items: center; gap: .4rem; border: 1px solid; border-radius: 999px; padding: .45rem .7rem; color: #fff; font-size: .75rem; font-weight: 700; transition: color .2s ease, background .2s ease, border-color .2s ease; }.audio-listening-indicator.is-listening { border-color: rgb(74 222 128 / 70%); background: rgb(20 83 45 / 88%); box-shadow: 0 0 .9rem rgb(74 222 128 / 36%); }.audio-listening-indicator.is-not-listening { border-color: rgb(248 113 113 / 70%); background: rgb(127 29 29 / 88%); box-shadow: 0 0 .9rem rgb(248 113 113 / 30%); }.audio-listening-indicator.is-listening > :first-child { animation: audio-listening-pulse 1.2s ease-in-out infinite; }@keyframes audio-listening-pulse { 50% { opacity: .45; transform: scale(.82); } }
+.customer-restart { position: fixed; z-index: 20; bottom: 1.15rem; left: 1.15rem; display: inline-flex; align-items: center; gap: .45rem; border: 1px solid rgb(207 250 254 / 48%); border-radius: .7rem; padding: .6rem .8rem; color: #ecfeff; background: rgb(8 47 73 / 90%); font-size: .8rem; font-weight: 700; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(14 116 144 / 94%); }.customer-restart:disabled { cursor: wait; opacity: .55; }
 
 @media (max-width: 700px) {
   .kiosk-scene { padding: .6rem; gap: .6rem; }
