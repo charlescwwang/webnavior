@@ -196,6 +196,11 @@ sudo -u postgres createdb --owner=webnavior webnavior
 從目前已驗證的開發機透過受保護 SSH 複製 `apps/server/.env.local`，但**不能直接覆寫**
 Ubuntu 的檔案。先以 `.env.local.incoming` 上傳、`diff -u` 比較鍵名後人工合併。
 
+Ubuntu checkout 內若已有舊的 `apps/server/.env.local`，保留它作為回溯參考即可，不能把它
+當 production 設定。下面的 systemd unit 會直接執行 Server entrypoint，刻意避開
+`pnpm ... start`：該 npm script 會讀取並覆寫 `.env.local`，可能讓舊的 localhost、資料庫
+或開發開關蓋掉正式設定。
+
 ```bash
 sudo install -d -m 0750 /etc/webnavior
 sudoedit /etc/webnavior/server.env
@@ -235,7 +240,9 @@ sudo install -d -o <deploy-user> -g <deploy-user> -m 0750 /var/lib/webnavior/kio
 ## 5. 用 systemd 管理 API
 
 此方式直接在 checkout 中執行 Server，並使用前端部署腳本已安裝在
-`/home/<deploy-user>/.local/bin` 的 Node/Corepack；它不會建立或啟動原生 AIRI。
+`/home/<deploy-user>/.local/bin` 的 Node/Corepack；它不會建立或啟動原生 AIRI。不要把
+`ExecStart` 改成 package 的 `start` 或 `server` script，因為它們會讀取 checkout 裡的
+`.env.local`。
 
 建立 `/etc/systemd/system/webnavior-api.service`：
 
@@ -249,10 +256,10 @@ Wants=network-online.target
 Type=simple
 User=<deploy-user>
 Group=<deploy-user>
-WorkingDirectory=/srv/webnavior
+WorkingDirectory=/home/<deploy-user>/webnavior/apps/server
 Environment=PATH=/home/<deploy-user>/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/etc/webnavior/server.env
-ExecStart=/home/<deploy-user>/.local/bin/corepack pnpm -F @proj-airi/server start
+ExecStart=/home/<deploy-user>/.local/bin/corepack pnpm exec tsx --import ./instrumentation.ts src/bin/run.ts api
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
