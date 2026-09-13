@@ -65,6 +65,41 @@ The invitation, approved interactive services, and their AIRI instructions are s
 
 ## Administrator mode
 
+### Per-device operational settings
+
+System administrators open **Devices → Device settings** in the Dashboard
+(`/admin/kiosk/devices`) to configure each registered Kiosk and delegate
+individual fields with **Allow local changes**. The Kiosk's **現場設定** page
+edits the same Server-owned policy; saving requires the device cookie and a
+signed-in system administrator or an administrator of that device's Site.
+The PIN alone cannot authorize a settings write.
+
+Precedence is Site defaults, then administrator device overrides, then explicitly
+delegated local overrides. Site defaults cover recording, VLM, performance, and
+VAD; observation, greetings, reminders, timing, and detection zones have shared
+defaults and can be overridden per device. New devices have local controls locked
+and observation/greetings/reminders disabled. Old browser-local observation
+preferences are no longer authoritative and are not migrated automatically.
+
+Removing delegation discards that local value permanently. Administrators may
+also clear an existing local override while keeping the field delegated. Every
+accepted write increments the device revision and records the operator and
+before/after values in the audit log. A stale form receives HTTP 409 and must be
+reloaded instead of silently overwriting another operator's changes.
+
+The active Kiosk refreshes effective settings every 15 seconds after the previous
+request finishes. Offline it retains the last snapshot; reconnection applies the
+current policy. Camera work is stopped and restarted when policy changes, and
+the Server independently enforces recording and proactive-action permissions.
+Recording without observation does not start MediaPipe. These controls do not
+change browser camera/microphone permission or the existing local preview toggle.
+
+Deployment requires migration `0032_kiosk_device_settings.sql` before using the
+new Server routes. Include it in the Server schema package used by the normal
+startup migration process, then deploy the matching Dashboard and Kiosk assets.
+
+### Local access
+
 The visitor experience does not display settings. Long-press the `AIRI 餐飲服務員` label for 1.2 seconds, then enter the PIN configured before starting the kiosk:
 
 ```bash
