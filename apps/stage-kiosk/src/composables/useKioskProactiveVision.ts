@@ -9,9 +9,10 @@ import { shallowRef } from 'vue'
 
 const modelAssetPath = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
 const wasmRoot = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm'
-export type KioskProactiveVisionStatus = 'idle' | 'starting' | 'observing' | 'unsupported' | 'failed'
+export type KioskProactiveVisionStatus = 'idle' | 'starting' | 'capturing' | 'observing' | 'unsupported' | 'failed'
 
 interface Options {
+  detectionEnabled: () => boolean
   detectionZone: () => DetectionZone
   performance: () => KioskPerformanceSettings
   onCameraStream?: (stream: MediaStream | undefined) => void
@@ -33,6 +34,7 @@ export function useKioskProactiveVision(options: Options) {
   let lastDetectionAtMs = -Infinity
   let video: HTMLVideoElement | undefined
   let running = false
+  let generation = 0
 
   async function start(nextVideo: HTMLVideoElement) {
     if (running)
@@ -44,18 +46,33 @@ export function useKioskProactiveVision(options: Options) {
     }
 
     running = true
+    const startedGeneration = ++generation
     status.value = 'starting'
     error.value = undefined
     video = nextVideo
 
     try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({
+      const acquiredStream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: options.performance().camera,
       })
+      // Permission prompts and model downloads can finish after policy revocation
+      // or unmount. A stale start must release its own stream and never resume.
+      if (startedGeneration !== generation) {
+        acquiredStream.getTracks().forEach(track => track.stop())
+        return
+      }
+      cameraStream = acquiredStream
       video.srcObject = cameraStream
       options.onCameraStream?.(cameraStream)
       await video.play()
+
+      if (startedGeneration !== generation)
+        return
+      if (!options.detectionEnabled()) {
+        status.value = 'capturing'
+        return
+      }
 
       const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision')
       const vision = await FilesetResolver.forVisionTasks(wasmRoot)
@@ -68,7 +85,7 @@ export function useKioskProactiveVision(options: Options) {
         minTrackingConfidence: 0.6,
       })
 
-      if (!running) {
+      if (startedGeneration !== generation) {
         nextFaceLandmarker.close()
         return
       }
@@ -78,6 +95,8 @@ export function useKioskProactiveVision(options: Options) {
       scheduleNextFrame()
     }
     catch (cause) {
+      if (startedGeneration !== generation)
+        return
       stop()
       status.value = 'failed'
       error.value = errorMessageFrom(cause) ?? '無法啟動本機相機觀測'
@@ -85,6 +104,7 @@ export function useKioskProactiveVision(options: Options) {
   }
 
   function stop() {
+    generation++
     running = false
     if (animationFrame != null)
       cancelAnimationFrame(animationFrame)

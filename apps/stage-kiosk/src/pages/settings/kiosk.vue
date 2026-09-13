@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
 import { onMounted, shallowRef } from 'vue'
 
 import KioskAdminPanel from '../../components/KioskAdminPanel.vue'
@@ -7,16 +8,14 @@ import { useFeedbackInvitationSettings } from '../../composables/useFeedbackInvi
 import { useKioskCameraPreview } from '../../composables/useKioskCameraPreview'
 import { useKioskDeviceRegistration } from '../../composables/useKioskDeviceRegistration'
 import { useKioskInteractiveServiceAgentInstructions, useKioskInteractiveServices } from '../../composables/useKioskInteractiveServices'
-import { useKioskProactiveSettings } from '../../composables/useKioskProactiveSettings'
 
+const endpoint = new URL('/api/kiosk/settings', import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').href
 const paused = shallowRef(false)
 const cameraPreviewEnabled = useKioskCameraPreview()
-const proactiveSettings = useKioskProactiveSettings()
 const interactiveServices = useKioskInteractiveServices()
 const interactiveServiceAgentInstructions = useKioskInteractiveServiceAgentInstructions()
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
 const { bootstrap, device } = useKioskDeviceRegistration()
-
 onMounted(() => void bootstrap())
 </script>
 
@@ -24,15 +23,17 @@ onMounted(() => void bootstrap())
   <KioskAdminPanel
     v-model:paused="paused"
     v-model:camera-preview-enabled="cameraPreviewEnabled"
-    v-model:proactive-settings="proactiveSettings"
     v-model:interactive-services="interactiveServices"
     v-model:interactive-service-agent-instructions="interactiveServiceAgentInstructions"
     v-model:feedback-invitation-settings="feedbackInvitationSettings"
     :device="device"
     :session-ending="false"
-    proactive-status="idle"
     @close="$router.push('/')"
-  />
+  >
+    <template #device-settings>
+      <DeviceSettingsPanel :endpoint="endpoint" mode="local" />
+    </template>
+  </KioskAdminPanel>
 </template>
 
 <route lang="yaml">

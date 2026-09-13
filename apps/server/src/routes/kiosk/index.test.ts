@@ -1,11 +1,15 @@
 import type { Database } from '../../libs/db'
+import type { HonoEnv } from '../../types/hono'
 
+import { defaultDeviceSettings } from '@proj-airi/kiosk-proactive'
+import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createKioskRoutes, kioskDeviceCookieName } from '.'
 import { mockDB } from '../../libs/mock-db'
 import { createKioskService } from '../../services/domain/kiosk'
+import { ApiError } from '../../utils/error'
 
 import * as schema from '../../schemas'
 
@@ -19,6 +23,48 @@ describe('kiosk routes', () => {
 
   beforeEach(async () => {
     db = await mockDB(schema)
+  })
+
+  it('requires device and operator identities, returns effective bootstrap values, and rejects stale or forged local writes', async () => {
+    const kioskService = createKioskService(db)
+    await db.insert(schema.user).values({ id: 'settings-admin', name: 'Admin', email: 'settings@test.local', role: 'admin' })
+    const app = new Hono<HonoEnv>()
+      .use('*', async (c, next) => {
+        // The authentication boundary is supplied here; device resolution and
+        // account role authorization still use the real database-backed service.
+        c.set('user', c.req.header('X-Test-Operator') ? { id: 'settings-admin' } as HonoEnv['Variables']['user'] : null)
+        await next()
+      })
+      .onError((error, c) => {
+        if (error instanceof ApiError)
+          return c.json({ error: error.errorCode }, error.statusCode)
+        throw error
+      })
+      .route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, secureCookies: false }))
+    const enrollment = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = enrollment.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await kioskService.updateDeviceSettings({ deviceId: device!.id, siteId: device!.siteId, userId: 'settings-admin', source: 'admin', body: {
+      version: 1,
+      localControls: ['observationEnabled'],
+      overrides: {},
+    } })
+    const body = JSON.stringify({ version: 2, overrides: { observationEnabled: true } })
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers: { Cookie: cookie }, body })).status).toBe(401)
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers: { 'X-Test-Operator': 'yes' }, body })).status).toBe(401)
+    const headers = { 'Cookie': cookie, 'X-Test-Operator': 'yes', 'Content-Type': 'application/json' }
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers, body: JSON.stringify({ version: 2, overrides: { greetingEnabled: true } }) })).status).toBe(403)
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers, body: JSON.stringify({ version: 2, overrides: {}, deviceId: 'another-device' }) })).status).toBe(400)
+    const saved = await app.request('/api/kiosk/settings', { method: 'PUT', headers, body })
+    expect(saved.status).toBe(200)
+    await expect(saved.json()).resolves.toMatchObject({ deviceId: device!.id, settings: { version: 3 }, effective: { observationEnabled: true } })
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers, body })).status).toBe(409)
+    const bootstrap = await app.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })
+    await expect(bootstrap.json()).resolves.toMatchObject({ deviceSettings: { settings: { version: 3 }, effective: { observationEnabled: true } } })
   })
 
   it('registers a development kiosk and uses its HttpOnly device cookie for bootstrap', async () => {
@@ -98,6 +144,7 @@ describe('kiosk routes', () => {
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
     const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
     await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { vision: 'test-vlm' } })
+    await db.update(schema.kioskDevices).set({ settings: { ...defaultDeviceSettings, overrides: { observationEnabled: true, reminderEnabled: true, proactiveVlmEnabled: true } } }).where(eq(schema.kioskDevices.id, device!.id))
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
@@ -180,6 +227,7 @@ describe('kiosk routes', () => {
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
     const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
     await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { vision: 'test-vlm' } })
+    await db.update(schema.kioskDevices).set({ settings: { ...defaultDeviceSettings, overrides: { observationEnabled: true, greetingEnabled: true, proactiveVlmEnabled: true } } }).where(eq(schema.kioskDevices.id, device!.id))
 
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',

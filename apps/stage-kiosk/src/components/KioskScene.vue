@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import type { DeviceSettingsValues } from '@proj-airi/kiosk-proactive'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import type { KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
 
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
-import { createAssistanceReminderWindow, createInteractionWindow } from '@proj-airi/kiosk-proactive'
+import { createAssistanceReminderWindow, createInteractionWindow, defaultDeviceSettingsValues, observationSettings } from '@proj-airi/kiosk-proactive'
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
@@ -31,7 +32,7 @@ import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
-import { needsKioskObservation, useKioskProactiveSettings } from '../composables/useKioskProactiveSettings'
+import { needsKioskObservation } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { setKioskLocale } from '../modules/i18n'
 import { synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
@@ -42,6 +43,7 @@ import { webMcpAdapter } from '../services/webmcp-adapter'
 type KioskOrientation = 'landscape' | 'portrait'
 
 const props = defineProps<{
+  deviceSettings?: DeviceSettingsValues
   mediaCaptureMode: KioskMediaCaptureMode
   performanceProfile: KioskPerformanceProfile
   proactiveVlmEnabled: boolean
@@ -97,7 +99,7 @@ const {
 } = customerSession
 const showIdleDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
-const proactiveSettings = useKioskProactiveSettings()
+const proactiveSettings = computed(() => observationSettings(props.deviceSettings ?? defaultDeviceSettingsValues))
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
 // Agent-originated completion travels in the native WebMCP tool result. Direct
@@ -111,7 +113,12 @@ const proactiveCamera = useTemplateRef<HTMLVideoElement>('proactiveCamera')
 let releaseChatPendingWork: (() => void) | undefined
 let proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
 let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
+const localObservationRequired = computed(() => needsKioskObservation(
+  proactiveSettings.value,
+  customerSessionState.value === 'active',
+))
 const proactiveVision = useKioskProactiveVision({
+  detectionEnabled: () => localObservationRequired.value,
   detectionZone: () => proactiveSettings.value.observation.detectionZone,
   performance: () => performanceSettings.value,
   onCameraStream: (stream) => {
@@ -123,10 +130,6 @@ const proactiveVision = useKioskProactiveVision({
   onFaces: faces => detectedFaces.value = faces,
   onObservation: observation => void handleProactiveObservation(observation),
 })
-const localObservationRequired = computed(() => needsKioskObservation(
-  proactiveSettings.value,
-  customerSessionState.value === 'active',
-))
 const cameraRequired = computed(() => localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
 const { x, y } = useMouse()
 const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
@@ -309,7 +312,14 @@ async function syncProactiveVision() {
     await proactiveVision.start(proactiveCamera.value)
 }
 
-watch(cameraRequired, () => void syncProactiveVision())
+watch([cameraRequired, localObservationRequired, () => props.deviceSettings], () => {
+  // Stop in-flight camera work before applying a remote policy, including a
+  // recording downgrade while observation itself remains enabled.
+  interruptAssistantAction()
+  mediaCapture.stopContinuousCapture()
+  proactiveVision.stop()
+  void syncProactiveVision()
+})
 
 watch(customerSessionState, (state) => {
   if (state !== 'active') {
@@ -342,6 +352,8 @@ onUnmounted(() => {
 })
 
 async function handleProactiveObservation(observation: Parameters<typeof proactiveWindow.decide>[0]) {
+  if (!localObservationRequired.value)
+    return
   if (customerSessionState.value === 'active') {
     if (conversationSending.value)
       return
@@ -372,8 +384,8 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   if (!decision.greetingTrigger)
     return
 
-  const frame = captureProactiveCameraFrame(proactiveCamera.value)
-  if (!frame)
+  const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined
+  if (props.proactiveVlmEnabled && !frame)
     return
 
   try {
@@ -412,8 +424,8 @@ async function recordCustomerActivity(source: 'scenario' | 'voice_input' | 'voic
 
 async function sendAssistantAction(kind: 'greeting' | 'reminder', capturedFrame?: string) {
   const serviceId = scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction'
-  const frame = capturedFrame ?? captureProactiveCameraFrame(proactiveCamera.value)
-  if (!frame) {
+  const frame = props.proactiveVlmEnabled ? capturedFrame ?? captureProactiveCameraFrame(proactiveCamera.value) : undefined
+  if (props.proactiveVlmEnabled && !frame) {
     console.warn('[stage-kiosk] skipped proactive assistant action because the camera frame is unavailable')
     return
   }

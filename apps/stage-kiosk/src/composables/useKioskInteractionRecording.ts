@@ -130,7 +130,7 @@ export function useKioskInteractionRecording() {
   async function runAssistantAction(
     serviceId: string,
     kind: 'greeting' | 'reminder',
-    frame: string,
+    frame: string | undefined,
     signal?: AbortSignal,
   ) {
     const sessionId = await start(serviceId)

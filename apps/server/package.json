@@ -47,6 +47,7 @@
     "@opentelemetry/sdk-trace-node": "catalog:",
     "@opentelemetry/semantic-conventions": "catalog:",
     "@proj-airi/drizzle-orm-browser-migrator": "catalog:",
+    "@proj-airi/kiosk-proactive": "workspace:^",
     "@proj-airi/server-schema": "workspace:*",
     "@proj-airi/server-sdk-shared": "workspace:*",
     "better-auth": "catalog:",

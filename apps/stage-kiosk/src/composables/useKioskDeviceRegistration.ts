@@ -1,8 +1,10 @@
+import type { DeviceSettingsSnapshot } from '@proj-airi/kiosk-proactive'
+
 import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile, KioskProfile } from '../services/kiosk-device'
 
-import { readonly, shallowRef } from 'vue'
+import { onScopeDispose, readonly, shallowRef } from 'vue'
 
-import { fetchKioskBootstrap, KioskDeviceRequestError, registerDevelopmentKiosk } from '../services/kiosk-device'
+import { fetchDeviceSettings, fetchKioskBootstrap, KioskDeviceRequestError, registerDevelopmentKiosk } from '../services/kiosk-device'
 
 export type KioskRegistrationState = 'checking' | 'registered' | 'unregistered' | 'registering' | 'error'
 
@@ -15,12 +17,61 @@ export type KioskRegistrationState = 'checking' | 'registered' | 'unregistered' 
 export function useKioskDeviceRegistration() {
   const device = shallowRef<KioskDevice>()
   const profile = shallowRef<KioskProfile>()
+  const deviceSettings = shallowRef<DeviceSettingsSnapshot>()
   const mediaCaptureMode = shallowRef<KioskMediaCaptureMode>('off')
   const proactiveVlmEnabled = shallowRef(false)
   const performanceProfile = shallowRef<KioskPerformanceProfile>('constrained')
   const voiceVadThreshold = shallowRef(0.72)
   const error = shallowRef<string>()
   const state = shallowRef<KioskRegistrationState>('checking')
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
+  let controller: AbortController | undefined
+
+  function applySettings(snapshot: DeviceSettingsSnapshot) {
+    if (JSON.stringify(deviceSettings.value) === JSON.stringify(snapshot))
+      return
+    deviceSettings.value = snapshot
+    mediaCaptureMode.value = snapshot.effective.mediaCaptureMode
+    proactiveVlmEnabled.value = snapshot.effective.proactiveVlmEnabled
+    performanceProfile.value = snapshot.effective.performanceProfile
+    voiceVadThreshold.value = snapshot.effective.voiceVadThreshold
+  }
+
+  function scheduleSync() {
+    clearTimeout(timer)
+    if (disposed)
+      return
+    // One in-flight request per mounted registration owner. Re-read effective
+    // values too: a Site default may change without changing device revision.
+    timer = setTimeout(async () => {
+      controller = new AbortController()
+      try {
+        const snapshot = await fetchDeviceSettings(controller.signal)
+        if (!disposed && snapshot.deviceId === device.value?.id)
+          applySettings(snapshot)
+      }
+      catch (exception) {
+        if (exception instanceof KioskDeviceRequestError && exception.status === 401) {
+          state.value = 'unregistered'
+          device.value = undefined
+          return
+        }
+        // Offline devices retain their last Server snapshot; API mutations and
+        // uploads are independently authorized against current Server policy.
+      }
+      finally {
+        if (device.value)
+          scheduleSync()
+      }
+    }, 15000)
+  }
+
+  onScopeDispose(() => {
+    disposed = true
+    clearTimeout(timer)
+    controller?.abort()
+  })
 
   async function bootstrap() {
     state.value = 'checking'
@@ -34,7 +85,9 @@ export function useKioskDeviceRegistration() {
       proactiveVlmEnabled.value = response.proactiveVlmEnabled
       performanceProfile.value = response.performanceProfile
       voiceVadThreshold.value = response.voiceVadThreshold
+      applySettings(response.deviceSettings)
       state.value = 'registered'
+      scheduleSync()
     }
     catch (exception) {
       device.value = undefined
@@ -61,7 +114,9 @@ export function useKioskDeviceRegistration() {
       proactiveVlmEnabled.value = bootstrapResponse.proactiveVlmEnabled
       performanceProfile.value = bootstrapResponse.performanceProfile
       voiceVadThreshold.value = bootstrapResponse.voiceVadThreshold
+      applySettings(bootstrapResponse.deviceSettings)
       state.value = 'registered'
+      scheduleSync()
     }
     catch {
       device.value = undefined
@@ -72,6 +127,7 @@ export function useKioskDeviceRegistration() {
 
   return {
     bootstrap,
+    deviceSettings: readonly(deviceSettings),
     device: readonly(device),
     profile: readonly(profile),
     error: readonly(error),

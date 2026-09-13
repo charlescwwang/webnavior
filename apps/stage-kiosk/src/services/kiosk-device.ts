@@ -1,3 +1,5 @@
+import type { DeviceSettingsSnapshot } from '@proj-airi/kiosk-proactive'
+
 /** A registered kiosk browser installation returned by the Server bootstrap endpoint. */
 export interface KioskDevice {
   id: string
@@ -88,7 +90,12 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
 
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */
 export async function fetchKioskBootstrap() {
-  return await request<{ device: KioskDevice, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadThreshold: number }>('/api/kiosk/bootstrap')
+  return await request<{ device: KioskDevice, deviceSettings: DeviceSettingsSnapshot, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadThreshold: number }>('/api/kiosk/bootstrap')
+}
+
+/** Reads the current policy only for the device identified by its HttpOnly cookie. */
+export function fetchDeviceSettings(signal?: AbortSignal) {
+  return request<DeviceSettingsSnapshot>('/api/kiosk/settings', { signal })
 }
 
 /** Enrolls this browser as a development kiosk when the Server explicitly permits it. */
@@ -148,7 +155,7 @@ export async function sendKioskConversationMessage(input: {
 
 /** Asks the Server Gateway to create one Profile-controlled proactive assistant turn. */
 export async function sendKioskAssistantAction(input: {
-  frame: string
+  frame?: string
   kind: 'greeting' | 'reminder'
   signal?: AbortSignal
   visitorSessionId: string

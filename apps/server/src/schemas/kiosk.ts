@@ -1,5 +1,7 @@
+import type { DeviceSettings } from '@proj-airi/kiosk-proactive'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
+import { defaultDeviceSettings } from '@proj-airi/kiosk-proactive'
 import { relations } from 'drizzle-orm'
 import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
@@ -110,6 +112,8 @@ export const kioskDevices = pgTable('kiosk_devices', {
   siteId: text('site_id').notNull().references(() => kioskSites.id, { onDelete: 'cascade' }),
   label: text('label').notNull(),
   registrationMethod: text('registration_method').notNull().$type<KioskRegistrationMethod>(),
+  /** Device-specific overrides and the administrator's local-edit delegation policy. */
+  settings: jsonb('settings').$type<DeviceSettings>().notNull().default(defaultDeviceSettings),
   /** Stops new sessions and revokes every browser credential without removing retained history. */
   disabledAt: timestamp('disabled_at'),
   /** Hides the decommissioned device from operations while preserving audit and visitor records. */

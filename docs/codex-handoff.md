@@ -17,6 +17,15 @@ accumulating history.
 
 ## Recent Meaningful Changes
 
+- Per-device Kiosk settings now connect management API, device bootstrap/polling,
+  Dashboard Devices, and the Kiosk settings page. Migration `0032` adds the
+  Server-owned revision, admin overrides, delegated keys, and local overrides.
+  Admin revocation deletes local values; local writes require both a registered
+  device and a Site/system administrator account. Operational observation no
+  longer reads localStorage. See `apps/stage-kiosk/README.md` for precedence and
+  deployment requirements. Frontend build validation was blocked by the Live2D
+  SDK download; do not automatically rerun builds/typechecks (user preference).
+
 - Webnavior now has a structured Interactive Experience editor, operations
   dashboard, draft-only Kiosk preview, per-site model policy, and server-owned
   Kiosk character assets. The completed and remaining delivery steps are in

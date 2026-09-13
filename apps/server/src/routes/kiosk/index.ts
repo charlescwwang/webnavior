@@ -11,7 +11,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
-import { createBadRequestError, createUnauthorizedError } from '../../utils/error'
+import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
 export const kioskDeviceCookieName = 'airi_kiosk_device'
@@ -66,7 +66,7 @@ const orderResultSchema = object({
 const assistantActionSchema = object({
   // A downscaled JPEG from the live kiosk camera. It is inference-only and is
   // deliberately not persisted through the visitor-media route.
-  frame: pipe(string(), maxLength(700_000), regex(/^data:image\/jpeg;base64,[a-z0-9+/=]+$/i, 'frame must be a JPEG data URL')),
+  frame: optional(pipe(string(), maxLength(700_000), regex(/^data:image\/jpeg;base64,[a-z0-9+/=]+$/i, 'frame must be a JPEG data URL'))),
   kind: picklist(['greeting', 'reminder']),
 })
 
@@ -130,18 +130,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     }
 
     const profile = await options.kioskService.getDeviceProfile(device.id)
-    const mediaCapturePolicy = profile
-      ? await options.kioskService.getSiteMediaCapturePolicy(profile.siteId)
-      : { mode: 'off' as const }
-    const proactiveVlmEnabled = profile
-      ? (await options.kioskService.getSiteProactiveVlmEnabled(profile.siteId))
-      : false
-    const performanceProfile = profile
-      ? await options.kioskService.getSitePerformanceProfile(profile.siteId)
-      : 'constrained'
-    const voiceVadThreshold = profile
-      ? await options.kioskService.getSiteVoiceVadThreshold(profile.siteId)
-      : 0.72
+    const deviceSettings = await options.kioskService.getDeviceSettings(device.id)
+    const { effective } = deviceSettings
     return c.json({
       device: {
         id: device.id,
@@ -154,11 +144,31 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         name: profile.name,
         snapshot: profile.snapshot,
       },
-      mediaCapturePolicy,
-      proactiveVlmEnabled,
-      performanceProfile,
-      voiceVadThreshold,
+      deviceSettings,
+      mediaCapturePolicy: { mode: profile ? effective.mediaCaptureMode : 'off' },
+      proactiveVlmEnabled: Boolean(profile && effective.proactiveVlmEnabled),
+      performanceProfile: effective.performanceProfile,
+      voiceVadThreshold: effective.voiceVadThreshold,
     })
+  })
+
+  routes.get('/settings', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    return c.json(await options.kioskService.getDeviceSettings(device.id))
+  })
+
+  routes.put('/settings', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const user = c.get('user')
+    if (!user)
+      throw createUnauthorizedError('Sign in as a site operator to change settings')
+    return c.json(await options.kioskService.updateDeviceSettings({
+      deviceId: device.id,
+      siteId: device.siteId,
+      userId: user.id,
+      source: 'local',
+      body: await c.req.json().catch(() => null),
+    }))
   })
 
   routes.post('/audio/transcriptions', async (c) => {
@@ -239,6 +249,11 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       throw createBadRequestError('Kiosk media requires a file up to 32 MiB', 'INVALID_REQUEST')
     if (kind !== 'audio_recording' && kind !== 'triggered_video' && kind !== 'continuous_video')
       throw createBadRequestError('Invalid kiosk media kind', 'INVALID_REQUEST')
+    const { effective } = await options.kioskService.getDeviceSettings(device.id)
+    if (kind !== 'audio_recording' && (effective.mediaCaptureMode === 'off'
+      || (kind === 'continuous_video' && (effective.mediaCaptureMode !== 'continuous' || effective.performanceProfile === 'constrained')))) {
+      throw createForbiddenError('Camera recording is disabled by device policy')
+    }
     if (interactionEntryId !== null && (typeof interactionEntryId !== 'string' || interactionEntryId.length === 0 || interactionEntryId.length > 120))
       throw createBadRequestError('Invalid kiosk media interaction reference', 'INVALID_REQUEST')
 
@@ -361,7 +376,12 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!profile)
       throw createBadRequestError('Visitor session Profile was not found', 'PROFILE_NOT_FOUND')
 
-    const proactiveVlmEnabled = await options.kioskService.getSiteProactiveVlmEnabled(profile.siteId)
+    const { effective } = await options.kioskService.getDeviceSettings(device.id)
+    if (!effective.observationEnabled || !(result.output.kind === 'greeting' ? effective.greetingEnabled : effective.reminderEnabled))
+      throw createForbiddenError('Proactive action is disabled by device policy')
+    const proactiveVlmEnabled = effective.proactiveVlmEnabled
+    if (proactiveVlmEnabled && !result.output.frame)
+      throw createBadRequestError('A camera frame is required for VLM', 'INVALID_REQUEST')
     const answer = await completeKioskReply({
       actionPrompt: result.output.kind === 'greeting'
         ? profile.snapshot.greetingPrompt
