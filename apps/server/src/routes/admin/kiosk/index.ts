@@ -147,6 +147,25 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         userId: c.get('user')!.id,
       }))
     })
+    .get('/sites/:siteId/devices/:deviceId/settings', async (c) => {
+      const siteId = c.req.param('siteId')
+      const capabilities = await kioskService.getSiteManagementCapabilities({ siteId, userId: c.get('user')!.id })
+      if (!capabilities.canEditTechnicalSettings)
+        throw createForbiddenError()
+      const devices = await kioskService.listSiteDevices({ siteId, userId: c.get('user')!.id })
+      if (!devices.some(device => device.id === c.req.param('deviceId')))
+        throw createForbiddenError()
+      return c.json(await kioskService.getDeviceSettings(c.req.param('deviceId')))
+    })
+    .put('/sites/:siteId/devices/:deviceId/settings', async (c) => {
+      return c.json(await kioskService.updateDeviceSettings({
+        deviceId: c.req.param('deviceId'),
+        siteId: c.req.param('siteId'),
+        userId: c.get('user')!.id,
+        source: 'admin',
+        body: await c.req.json().catch(() => null),
+      }))
+    })
     .get('/sites/:siteId/visitor-sessions', async (c) => {
       return c.json(await kioskService.listSiteVisitorSessions({
         ...(c.req.query('deviceId') ? { deviceId: c.req.query('deviceId') } : {}),

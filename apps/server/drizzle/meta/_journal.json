@@ -225,6 +225,13 @@
       "when": 1789876800000,
       "tag": "0031_kiosk_voice_vad_threshold",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1789963200000,
+      "tag": "0032_kiosk_device_settings",
+      "breakpoints": true
     }
   ]
 }
