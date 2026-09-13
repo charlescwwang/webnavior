@@ -21,7 +21,7 @@ defineProps<{
         </h2>
       </div>
       <RouterLink
-        :to="site ? `/kiosk/profiles?site=${site.id}` : '/kiosk/profiles'"
+        :to="site ? `/admin/kiosk/profiles?site=${site.id}` : '/admin/kiosk/profiles'"
         :class="['inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700', 'hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800']"
       >
         管理互動體驗

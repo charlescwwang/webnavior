@@ -138,6 +138,7 @@ watch([selectedSiteId, selectedDeviceId], () => void loadVisitorSessions(selecte
 </template>
 
 <route lang="yaml">
+path: /admin/kiosk/history
 meta:
   layout: webnavior-admin
   title: Kiosk 使用歷程

@@ -11,11 +11,11 @@ const route = useRoute()
 
 const navigation: NavigationItem[] = [
   { icon: 'i-solar:widget-5-bold-duotone', label: '儀表板', to: '/dashboard' },
-  { icon: 'i-solar:monitor-smartphone-bold-duotone', label: 'Kiosk 設備', to: '/kiosk/devices' },
-  { icon: 'i-solar:history-bold-duotone', label: '使用歷程', to: '/kiosk/history' },
-  { icon: 'i-solar:clipboard-list-bold-duotone', label: '互動體驗', to: '/kiosk/profiles' },
-  { icon: 'i-solar:play-circle-bold-duotone', label: '體驗預覽', to: '/kiosk/preview' },
-  { icon: 'i-solar:cpu-bolt-bold-duotone', label: '系統模型', to: '/system/models' },
+  { icon: 'i-solar:monitor-smartphone-bold-duotone', label: 'Kiosk 設備', to: '/admin/kiosk/devices' },
+  { icon: 'i-solar:history-bold-duotone', label: '使用歷程', to: '/admin/kiosk/history' },
+  { icon: 'i-solar:clipboard-list-bold-duotone', label: '互動體驗', to: '/admin/kiosk/profiles' },
+  { icon: 'i-solar:play-circle-bold-duotone', label: '體驗預覽', to: '/admin/kiosk/preview' },
+  { icon: 'i-solar:cpu-bolt-bold-duotone', label: '系統模型', to: '/admin/system/models' },
 ]
 
 function isActive(item: NavigationItem) {

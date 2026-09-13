@@ -158,6 +158,7 @@ onMounted(() => void load())
 </template>
 
 <route lang="yaml">
+path: /admin/kiosk/devices
 meta:
   layout: webnavior-admin
   title: Kiosk 設備

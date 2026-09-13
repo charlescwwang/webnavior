@@ -74,6 +74,7 @@ watch(() => route.query.site, siteId => void selectSiteFromRoute(siteId))
 </template>
 
 <route lang="yaml">
+path: /admin/kiosk/preview
 meta:
   layout: webnavior-admin
   title: 體驗預覽

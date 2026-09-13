@@ -111,7 +111,7 @@ watch(() => route.query.site, async (siteId) => {
       </div>
       <div :class="['flex items-center gap-3']">
         <RouterLink
-          :to="selectedSiteId ? { path: '/kiosk/preview', query: { site: selectedSiteId } } : '/kiosk/preview'"
+          :to="selectedSiteId ? { path: '/admin/kiosk/preview', query: { site: selectedSiteId } } : '/admin/kiosk/preview'"
           :class="['rounded-lg border border-cyan-700 px-3 py-2 text-sm font-semibold text-cyan-800 transition-colors hover:bg-cyan-50 dark:border-cyan-300 dark:text-cyan-200 dark:hover:bg-cyan-400/10']"
         >
           查看草稿預覽
@@ -259,6 +259,7 @@ watch(() => route.query.site, async (siteId) => {
 </template>
 
 <route lang="yaml">
+path: /admin/kiosk/profiles
 meta:
   layout: webnavior-admin
   title: 互動體驗

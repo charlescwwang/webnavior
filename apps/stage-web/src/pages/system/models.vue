@@ -259,6 +259,7 @@ onMounted(load)
 </template>
 
 <route lang="yaml">
+path: /admin/system/models
 meta:
   layout: webnavior-admin
   title: 系統模型

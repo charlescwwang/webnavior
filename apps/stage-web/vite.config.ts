@@ -218,6 +218,11 @@ export default defineConfig({
               /^\/ui\//,
               /^\/remote-assets\//,
               /^\/api\//,
+              // The Kiosk and order menu are separate SPAs with their own
+              // asset bases. A root-scoped management SW must not serve its
+              // navigation fallback for either application.
+              /^\/kiosk\//,
+              /^\/menu\//,
             ],
           },
         })]),

@@ -24,7 +24,7 @@ const nextAction = computed(() => {
       title: '建立第一個店別',
       description: '建立店別後，才能安排 Kiosk 設備與顧客互動體驗。',
       icon: 'i-solar:buildings-3-bold-duotone',
-      to: '/kiosk/devices',
+      to: '/admin/kiosk/devices',
     }
   }
 
@@ -33,7 +33,7 @@ const nextAction = computed(() => {
       title: '發布第一個互動體驗',
       description: '先確認顧客會看到的助手名稱與互動服務，再發布到這個店別。',
       icon: 'i-solar:upload-minimalistic-bold-duotone',
-      to: `/kiosk/profiles?site=${selectedSite.value.id}`,
+      to: `/admin/kiosk/profiles?site=${selectedSite.value.id}`,
     }
   }
 
@@ -42,7 +42,7 @@ const nextAction = computed(() => {
       title: '註冊 Kiosk 設備',
       description: '發布後，仍需註冊設備才能讓現場顧客使用這套互動體驗。',
       icon: 'i-solar:monitor-smartphone-bold-duotone',
-      to: '/kiosk/devices',
+      to: '/admin/kiosk/devices',
     }
   }
 
@@ -50,7 +50,7 @@ const nextAction = computed(() => {
     title: '檢視 Kiosk 設備',
     description: '目前已有已註冊設備。設備即時健康狀態將在加入心跳回報後顯示。',
     icon: 'i-solar:monitor-smartphone-bold-duotone',
-    to: '/kiosk/devices',
+    to: '/admin/kiosk/devices',
   }
 })
 
@@ -72,7 +72,7 @@ onMounted(() => void load())
         </p>
       </div>
       <RouterLink
-        to="/kiosk/profiles"
+        to="/admin/kiosk/profiles"
         :class="['inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white', 'hover:bg-cyan-500']"
       >
         <span class="i-solar:clipboard-check-bold-duotone text-lg" />
@@ -101,7 +101,7 @@ onMounted(() => void load())
             名稱是管理範圍；進入後才會顯示該店別目前的顧客體驗與設備。
           </p>
         </div>
-        <RouterLink to="/kiosk/devices" :class="['text-sm font-semibold text-cyan-700 hover:text-cyan-600 dark:text-cyan-300']">
+        <RouterLink to="/admin/kiosk/devices" :class="['text-sm font-semibold text-cyan-700 hover:text-cyan-600 dark:text-cyan-300']">
           查看設備
         </RouterLink>
       </div>
@@ -121,7 +121,7 @@ onMounted(() => void load())
               互動資料保存 {{ site.interactionRetentionDays }} 天
             </p>
           </div>
-          <RouterLink :to="`/kiosk/profiles?site=${site.id}`" :class="['text-sm font-semibold text-cyan-700 hover:text-cyan-600 dark:text-cyan-300']">
+          <RouterLink :to="`/admin/kiosk/profiles?site=${site.id}`" :class="['text-sm font-semibold text-cyan-700 hover:text-cyan-600 dark:text-cyan-300']">
             管理
           </RouterLink>
         </li>
