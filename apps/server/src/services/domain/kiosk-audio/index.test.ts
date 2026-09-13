@@ -52,4 +52,43 @@ describe('createKioskAudioGateway', () => {
     expect(response.headers.get('Content-Type')).toBe('audio/mpeg')
     await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([0x49, 0x44, 0x33]).buffer)
   })
+
+  it('records a bounded ASR upstream failure without exposing its credential', async () => {
+    const warn = vi.fn()
+    const withFields = vi.fn(() => ({ warn }))
+    const configStore = new Map<string, string>()
+    const configKV = createConfigKVService({
+      get: vi.fn(async key => configStore.get(key) ?? null),
+      set: vi.fn(async (key, value) => { configStore.set(key, value) }),
+    } as any)
+    await configKV.set('WEBNAVIOR_AUDIO_CONFIG', {
+      asr: {
+        baseURL: 'https://asr.example.com/v1',
+        keyCiphertext: createEnvelopeCrypto({ masterKey: Buffer.alloc(32) }).encryptKey('secret-asr-key', { keyEntryId: 'default', modelName: 'webnavior-audio:asr' }),
+        modelName: 'openai-compatible/whisper-1',
+        upstreamModel: 'whisper-1',
+      },
+    })
+    const gateway = createKioskAudioGateway({
+      configKV,
+      envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32) }),
+      fetchImpl: vi.fn(async () => new Response('unsupported media type', { status: 415 })),
+      logger: { withFields },
+    })
+
+    await expect(gateway.transcribe({
+      audio: new File(['audio'], 'microphone.wav', { type: 'audio/wav' }),
+      modelName: 'openai-compatible/whisper-1',
+    })).rejects.toMatchObject({ errorCode: 'KIOSK_ASR_UPSTREAM_ERROR', statusCode: 503 })
+
+    expect(withFields).toHaveBeenCalledWith({
+      modelName: 'openai-compatible/whisper-1',
+      responseBodySnippet: 'unsupported media type',
+      status: 415,
+      upstreamHost: 'asr.example.com',
+      upstreamPath: '/v1/audio/transcriptions',
+    })
+    expect(JSON.stringify(withFields.mock.calls)).not.toContain('secret-asr-key')
+    expect(warn).toHaveBeenCalledWith('Kiosk ASR upstream returned an unsuccessful response')
+  })
 })

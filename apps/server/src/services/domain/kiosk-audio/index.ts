@@ -1,15 +1,25 @@
 import type { ConfigKVService } from '../../adapters/config-kv'
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
 
+import { Buffer as NodeBuffer } from 'node:buffer'
+
+import { useLogger } from '@guiiai/logg'
+
 import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../adapters/config-kv'
 import { createBadRequestError, createServiceUnavailableError } from '../../../utils/error'
 
 type AudioCapability = 'asr' | 'tts'
+const UPSTREAM_BODY_SNIPPET_MAX = 256
+
+interface KioskAudioLogger {
+  withFields: (fields: Record<string, unknown>) => { warn: (message: string) => void }
+}
 
 interface KioskAudioGatewayOptions {
   configKV: ConfigKVService
   envelopeCrypto: EnvelopeCrypto
   fetchImpl?: typeof fetch
+  logger?: KioskAudioLogger
 }
 
 export interface KioskAudioGateway {
@@ -26,6 +36,7 @@ export interface KioskAudioGateway {
  */
 export function createKioskAudioGateway(options: KioskAudioGatewayOptions): KioskAudioGateway {
   const fetchImpl = options.fetchImpl ?? fetch
+  const logger = options.logger ?? useLogger('kiosk-audio').useGlobalConfig()
 
   async function transcribe(input: { audio: File, modelName: string }) {
     const config = await resolveCapability('asr', input.modelName)
@@ -33,8 +44,17 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
     body.set('file', input.audio, input.audio.name || 'recording.webm')
     body.set('model', config.upstreamModel)
     const response = await forward(config, 'audio/transcriptions', { body, method: 'POST' })
-    if (!response.ok)
+    if (!response.ok) {
+      const requestUrl = new URL(endpoint(config.baseURL, 'audio/transcriptions'))
+      logger.withFields({
+        modelName: input.modelName,
+        responseBodySnippet: await readUpstreamBodySnippet(response),
+        status: response.status,
+        upstreamHost: requestUrl.host,
+        upstreamPath: requestUrl.pathname,
+      }).warn('Kiosk ASR upstream returned an unsuccessful response')
       throw createServiceUnavailableError('Kiosk ASR provider did not return a successful response', 'KIOSK_ASR_UPSTREAM_ERROR')
+    }
 
     const payload: unknown = await response.json()
     if (!payload || typeof payload !== 'object' || !('text' in payload) || typeof payload.text !== 'string')
@@ -105,5 +125,34 @@ function endpoint(baseURL: string, path: string) {
   }
   catch {
     throw createBadRequestError('Kiosk audio provider endpoint is invalid', 'KIOSK_AUDIO_ENDPOINT_INVALID')
+  }
+}
+
+/** Reads a small diagnostic snippet without buffering an arbitrary ASR error body. */
+async function readUpstreamBodySnippet(response: Response): Promise<string | undefined> {
+  if (response.body == null)
+    return undefined
+
+  const reader = response.body.getReader()
+  try {
+    const chunks: Uint8Array[] = []
+    let total = 0
+    while (total < UPSTREAM_BODY_SNIPPET_MAX) {
+      const { done, value } = await reader.read()
+      if (done)
+        break
+      chunks.push(value)
+      total += value.length
+    }
+    reader.cancel().catch(() => {})
+    if (chunks.length === 0)
+      return undefined
+    return NodeBuffer.concat(chunks.map(chunk => NodeBuffer.from(chunk)))
+      .subarray(0, UPSTREAM_BODY_SNIPPET_MAX)
+      .toString('utf8')
+  }
+  catch {
+    reader.cancel().catch(() => {})
+    return undefined
   }
 }
