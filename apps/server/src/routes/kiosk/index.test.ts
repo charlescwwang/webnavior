@@ -125,6 +125,45 @@ describe('kiosk routes', () => {
     }))
   })
 
+  it('sends a user turn for a proactive action when VLM is disabled', async () => {
+    const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '您好，今天想吃些什麼？' } }] }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway: { complete, getDefaultModel: async () => 'test-model' },
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+
+    const greeting = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ frame: 'data:image/jpeg;base64,ZmFrZQ==', kind: 'greeting' }),
+    })
+
+    expect(greeting.status).toBe(200)
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        messages: expect.arrayContaining([
+          expect.objectContaining({ role: 'user', content: expect.stringContaining('主動互動台詞') }),
+        ]),
+      }),
+      modelName: 'test-model',
+    }))
+  })
+
   it('only lets the registered device create, append to, and end its own visitor session', async () => {
     const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({

@@ -539,6 +539,12 @@ async function completeKioskReply(input: {
           ? [{ role: 'system', content: input.profile.snapshot.characterCard.postHistoryInstructions }]
           : []),
         ...(input.actionPrompt ? [{ role: 'system', content: createAssistantActionInstructions(input.actionPrompt) }] : []),
+        // Some OpenAI-compatible gateways reject a system-only conversation.
+        // When VLM is off there is no scene-frame user turn, so represent the
+        // proactive event explicitly without inventing visitor input.
+        ...(input.actionPrompt && !input.sceneFrame
+          ? [{ role: 'user', content: '請現在產生一則自然、簡短的繁體中文主動互動台詞。' }]
+          : []),
         ...(input.sceneFrame
           ? [{
               role: 'user',
