@@ -9,7 +9,6 @@ import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&u
 import { createAssistanceReminderWindow, createInteractionWindow, defaultDeviceSettingsValues, observationSettings } from '@proj-airi/kiosk-proactive'
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
-import { useAudioRecorder } from '@proj-airi/stage-ui/composables/audio/audio-recorder'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useLlmToolsStore } from '@proj-airi/stage-ui/stores/llm-tools'
@@ -35,6 +34,7 @@ import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
 import { needsKioskObservation } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { setKioskLocale } from '../modules/i18n'
+import { createKioskVadRecording } from '../services/kiosk-audio'
 import { synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { scenarioRegistry } from '../services/scenario-registry'
@@ -60,7 +60,6 @@ const settingsAudioDeviceStore = useSettingsAudioDevice()
 const { language } = storeToRefs(useSettings())
 const { enabled, stream } = storeToRefs(settingsAudioDeviceStore)
 const { askPermission: requestMicrophonePermission } = settingsAudioDeviceStore
-const { startRecord, stopRecord, onStopRecord } = useAudioRecorder(stream)
 const chatSessionStore = useChatSessionStore()
 const { activeTools } = storeToRefs(useLlmToolsStore())
 const { activeCardId } = storeToRefs(useAiriCardStore())
@@ -142,14 +141,12 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
     interruptAssistantOutput()
     if (customerSessionState.value === 'awaiting-idle-confirmation')
       continueCurrentSession()
-    startRecord()
   },
-  onSpeechEnd: () => {
-    stopRecord()
+  onSpeechReady: ({ buffer }) => {
+    void processVadRecording(buffer)
   },
 })
 
-let stopOnStopRecord: (() => void) | undefined
 let activeSpeechRequest: AbortController | undefined
 let assistantAudio: HTMLAudioElement | undefined
 let activeConversationRequest: AbortController | undefined
@@ -159,33 +156,58 @@ const audioRecognizing = shallowRef(false)
 const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value)
 
 async function startAudioInteraction() {
-  audioInputStarted.value = false
-  await init()
-  if (stream.value) {
-    await start(stream.value)
-    audioInputStarted.value = true
-  }
-
-  stopOnStopRecord = onStopRecord(async (recording) => {
-    if (!recording)
-      return
-    audioRecognizing.value = true
-    try {
-      const activity = await recordCustomerActivity('voice_input')
-      // Link the source recording to the input event before ASR. This preserves
-      // the WAV even when an upstream transcription request later fails.
-      mediaCapture.saveAudio(recording, activity?.id)
-      const { text } = await transcribeKioskAudio(recording)
-      if (!text?.trim())
-        return
-
-      await interactionRecording.append('asr_transcript', text)
-      await sendConversationMessage(text)
-    }
-    finally {
-      audioRecognizing.value = false
-    }
+  console.info('[KIOSK AUDIO] startAudioInteraction', {
+    enabled: enabled.value,
+    hasStream: !!stream.value,
+    loaded: loaded.value,
+    inferenceError: inferenceError.value,
   })
+
+  audioInputStarted.value = false
+
+  await init()
+
+  console.info('[KIOSK AUDIO] after VAD init', {
+    hasStream: !!stream.value,
+    loaded: loaded.value,
+    inferenceError: inferenceError.value,
+  })
+
+  if (stream.value) {
+    console.info('[KIOSK AUDIO] starting VAD with stream')
+
+    await start(stream.value)
+
+    audioInputStarted.value = true
+
+    console.info('[KIOSK AUDIO] VAD connected')
+  }
+  else {
+    console.warn('[KIOSK AUDIO] no microphone stream after VAD init')
+  }
+}
+
+async function processVadRecording(buffer: Float32Array) {
+  if (buffer.length === 0)
+    return
+
+  audioRecognizing.value = true
+  try {
+    const recording = createKioskVadRecording(buffer)
+    const activity = await recordCustomerActivity('voice_input')
+    // Store and transcribe the same VAD-owned WAV so operator evidence has
+    // the leading padding that lets ASR hear the first phoneme.
+    mediaCapture.saveAudio(recording, activity?.id)
+    const { text } = await transcribeKioskAudio(recording)
+    if (!text?.trim())
+      return
+
+    await interactionRecording.append('asr_transcript', text)
+    await sendConversationMessage(text)
+  }
+  finally {
+    audioRecognizing.value = false
+  }
 }
 
 function interruptAssistantOutput() {
@@ -250,8 +272,6 @@ async function speakAssistantReply(text: string) {
 }
 
 function stopAudioInteraction() {
-  stopOnStopRecord?.()
-  stopOnStopRecord = undefined
   dispose()
   audioInputStarted.value = false
 }
