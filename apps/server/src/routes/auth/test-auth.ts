@@ -69,8 +69,10 @@ export function createTestAuthenticationRoutes(deps: { auth: AuthInstance, db: D
       // better-call's signCookieValue recipe mirrored in oidc-jwt-bearer.ts.
       // Removal condition: remove this entire route before production launch.
       const cookieName = context.authCookies.sessionToken.name
+      // Browsers reject a __Secure- cookie unless its response explicitly sets Secure.
+      const secureAttribute = cookieName.startsWith('__Secure-') ? '; Secure' : ''
       const cookieValue = signCookieValue(session.token, context.secret)
-      c.header('Set-Cookie', `${cookieName}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax`)
+      c.header('Set-Cookie', `${cookieName}=${cookieValue}; Path=/; HttpOnly; SameSite=Lax${secureAttribute}`)
       return c.json({ user: { email: user.email, name: user.name } })
     })
 }
