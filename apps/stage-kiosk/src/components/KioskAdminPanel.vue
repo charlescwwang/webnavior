@@ -2,22 +2,15 @@
 import type { FeedbackInvitationSettings } from '@proj-airi/stage-ui/components'
 
 import type { KioskInteractiveService } from '../composables/useKioskInteractiveServices'
-import type { KioskProactiveSettings as KioskProactiveSettingsValue } from '../composables/useKioskProactiveSettings'
-import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiveVision'
 import type { KioskDevice } from '../services/kiosk-device'
 
-import KioskAssistanceReminderSettings from './KioskAssistanceReminderSettings.vue'
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import KioskFeedbackInvitationSettings from './KioskFeedbackInvitationSettings.vue'
 import KioskInteractiveServicesSettings from './KioskInteractiveServicesSettings.vue'
-import KioskObservationSettings from './KioskObservationSettings.vue'
-import KioskProactiveSettings from './KioskProactiveSettings.vue'
 
 const props = defineProps<{
   device?: KioskDevice
   sessionEnding: boolean
-  proactiveStatus: KioskProactiveVisionStatus
-  proactiveError?: string
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +20,6 @@ const emit = defineEmits<{
 
 const paused = defineModel<boolean>('paused', { required: true })
 const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
-const proactiveSettings = defineModel<KioskProactiveSettingsValue>('proactiveSettings', { required: true })
 const interactiveServices = defineModel<KioskInteractiveService[]>('interactiveServices', { required: true })
 const interactiveServiceAgentInstructions = defineModel<string>('interactiveServiceAgentInstructions', { required: true })
 const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feedbackInvitationSettings', { required: true })
@@ -68,16 +60,8 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
         </dl>
       </section>
 
-      <KioskObservationSettings v-model="proactiveSettings.observation" />
+      <slot name="device-settings" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
-
-      <KioskProactiveSettings
-        v-model="proactiveSettings.proactiveGreeting"
-        :status="props.proactiveStatus"
-        :error="props.proactiveError"
-      />
-
-      <KioskAssistanceReminderSettings v-model="proactiveSettings.assistanceReminder" />
 
       <KioskInteractiveServicesSettings
         v-model="interactiveServices"
