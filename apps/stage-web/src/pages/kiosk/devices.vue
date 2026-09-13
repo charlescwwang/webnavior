@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
+import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { Button } from '@proj-airi/ui'
 import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle } from 'reka-ui'
 import { onMounted, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useKioskManagement } from '../../composables/useKioskManagement'
 
@@ -22,6 +25,8 @@ const {
 } = useKioskManagement()
 
 const pendingAction = shallowRef<{ deviceId: string, kind: 'delete' | 'disable' | 'enable', label: string }>()
+const settingsDeviceId = shallowRef('')
+const { t } = useI18n()
 const actionDialogOpen = shallowRef(false)
 
 function requestAction(deviceId: string, label: string, kind: 'delete' | 'disable' | 'enable') {
@@ -98,6 +103,9 @@ onMounted(() => void load())
             </p>
           </div>
           <div v-if="capabilities?.canManageDevices" :class="['ml-auto flex items-center gap-2']">
+            <Button v-if="capabilities.canEditTechnicalSettings" variant="secondary" @click="settingsDeviceId = device.id">
+              {{ t('deviceSettings.title') }}
+            </Button>
             <Button
               v-if="!device.disabledAt"
               variant="secondary"
@@ -129,6 +137,12 @@ onMounted(() => void load())
         此店別尚未註冊 Kiosk 設備。
       </div>
     </section>
+    <DeviceSettingsPanel
+      v-if="capabilities?.canEditTechnicalSettings && devices.some(device => device.id === settingsDeviceId)"
+      :key="`${selectedSiteId}:${settingsDeviceId}`"
+      mode="admin"
+      :endpoint="new URL(`/api/admin/kiosk/sites/${selectedSiteId}/devices/${settingsDeviceId}/settings`, SERVER_URL).href"
+    />
     <AlertDialogRoot :open="actionDialogOpen" @update:open="actionDialogOpen = $event">
       <AlertDialogPortal>
         <AlertDialogOverlay :class="['fixed inset-0 z-100 bg-black/50']" />

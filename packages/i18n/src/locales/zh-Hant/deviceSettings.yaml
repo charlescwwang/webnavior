@@ -1,0 +1,42 @@
+title: 裝置設定
+description: 設定儲存在 Server，僅影響這台設備。取消覆寫即可繼承後台或店別值。設備在線時，遠端變更會在 15 秒內同步。
+override: 覆寫
+effective: 目前生效值
+delegate: 允許現場調整
+revoke: 清除現場覆寫
+locked: 後台已鎖定
+save: 儲存設定
+reload: 重新載入設定
+saved: 設定已儲存。
+failed: 無法載入或儲存設定，請確認連線與操作權限。
+conflict: 其他操作人已更新設定；已保留您的草稿，請重新載入後再儲存。
+login: 登入店別管理者帳號
+loginRequired: 請先透過管理頁登入，再回到此處儲存。僅能修改這台設備已被授權的欄位。
+fields:
+  observationEnabled: 本機相機觀測
+  greetingEnabled: 主動招呼
+  reminderEnabled: 閒置協助提醒
+  triggerMode: 招呼觸發條件
+  dwellMs: 停留時間（毫秒）
+  emptyResetMs: 區域清空重設時間（毫秒）
+  minAttendingPeople: 最少人數
+  reminderWaitMs: 提醒等待時間（毫秒）
+  maxReminders: 每次互動最多提醒次數
+  zoneX: 偵測區 X（0–1）
+  zoneY: 偵測區 Y（0–1）
+  zoneWidth: 偵測區寬度（0–1）
+  zoneHeight: 偵測區高度（0–1）
+  mediaCaptureMode: 相機錄影
+  proactiveVlmEnabled: 傳送主動觀測畫面給 VLM
+  performanceProfile: 效能設定檔
+  voiceVadThreshold: 語音偵測門檻（0.50–0.95）
+options:
+  attention: 看向 Kiosk
+  presence: 進入偵測區
+  mixed: 任一訊號
+  off: 關閉
+  triggered: 事件短片
+  continuous: 持續錄影
+  constrained: 低資源
+  balanced: 平衡
+  high: 高效能

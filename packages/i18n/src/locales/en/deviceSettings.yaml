@@ -1,0 +1,42 @@
+title: Device settings
+description: Settings are saved on the server for this device. Clear an override to inherit the administrator or site value. Remote changes synchronize within 15 seconds while the kiosk is online.
+override: Override
+effective: Current effective value
+delegate: Allow local adjustment
+revoke: Clear local override
+locked: Locked by administrator
+save: Save settings
+reload: Reload settings
+saved: Settings saved.
+failed: Could not load or save settings. Check your connection and permissions.
+conflict: Another operator changed these settings. Reload before saving; your draft has been kept.
+login: Sign in as a site operator
+loginRequired: Sign in through the management page, then return here to save. Only delegated fields on this device can be changed.
+fields:
+  observationEnabled: Local camera observation
+  greetingEnabled: Proactive greeting
+  reminderEnabled: Inactivity reminder
+  triggerMode: Greeting trigger
+  dwellMs: Dwell time (ms)
+  emptyResetMs: Empty area reset (ms)
+  minAttendingPeople: Minimum people
+  reminderWaitMs: Reminder wait (ms)
+  maxReminders: Maximum reminders per session
+  zoneX: Detection area X (0–1)
+  zoneY: Detection area Y (0–1)
+  zoneWidth: Detection area width (0–1)
+  zoneHeight: Detection area height (0–1)
+  mediaCaptureMode: Camera recording
+  proactiveVlmEnabled: Send proactive frames to VLM
+  performanceProfile: Performance budget
+  voiceVadThreshold: Voice detection threshold (0.50–0.95)
+options:
+  attention: Looking at kiosk
+  presence: Presence in area
+  mixed: Either signal
+  off: Disabled
+  triggered: Event clips
+  continuous: Continuous recording
+  constrained: Constrained
+  balanced: Balanced
+  high: High
