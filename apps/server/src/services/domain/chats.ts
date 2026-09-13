@@ -7,7 +7,7 @@ import type { ProductEventService } from './product-events'
 import { useLogger } from '@guiiai/logg'
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
 
-import { createForbiddenError, createNotFoundError } from '../../utils/error'
+import { createConflictError, createForbiddenError, createNotFoundError } from '../../utils/error'
 import { nanoid } from '../../utils/id'
 
 import * as schema from '../../schemas/chats'
@@ -85,13 +85,24 @@ export function createChatService(db: Database, metrics?: EngagementMetrics | nu
         const chatId = payload.id ?? nanoid()
         const now = new Date()
 
-        await tx.insert(schema.chats).values({
-          id: chatId,
-          type: payload.type ?? 'group',
-          title: payload.title ?? null,
-          createdAt: now,
-          updatedAt: now,
-        })
+        try {
+          await tx.insert(schema.chats).values({
+            id: chatId,
+            type: payload.type ?? 'group',
+            title: payload.title ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+        }
+        catch (error) {
+          // A cloud-sync retry may repeat a client-generated ID after the
+          // first insert committed but its response was lost. The client
+          // claims 409 by re-fetching its existing chat; do not leak the
+          // database exception as a 500.
+          if (payload.id && isChatIdConflict(error))
+            throw createConflictError('Chat already exists')
+          throw error
+        }
 
         // Always add creator as a user member
         await tx.insert(schema.chatMembers).values({
@@ -459,6 +470,15 @@ export function createChatService(db: Database, metrics?: EngagementMetrics | nu
       })
     },
   }
+}
+
+function isChatIdConflict(error: unknown): boolean {
+  return typeof error === 'object'
+    && error !== null
+    && 'code' in error
+    && error.code === '23505'
+    && 'constraint' in error
+    && error.constraint === 'chats_pkey'
 }
 
 export type ChatService = ReturnType<typeof createChatService>
