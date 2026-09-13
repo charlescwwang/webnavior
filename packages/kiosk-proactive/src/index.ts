@@ -1,4 +1,5 @@
 export * from './assistance-reminder'
+export * from './deviceSettings'
 export * from './interaction-settings'
 export * from './observation'
 export * from './session'
