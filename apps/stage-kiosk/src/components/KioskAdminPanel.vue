@@ -1,12 +1,7 @@
 <script setup lang="ts">
-import type { FeedbackInvitationSettings } from '@proj-airi/stage-ui/components'
-
-import type { KioskInteractiveService } from '../composables/useKioskInteractiveServices'
 import type { KioskDevice } from '../services/kiosk-device'
 
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
-import KioskFeedbackInvitationSettings from './KioskFeedbackInvitationSettings.vue'
-import KioskInteractiveServicesSettings from './KioskInteractiveServicesSettings.vue'
 
 const props = defineProps<{
   device?: KioskDevice
@@ -20,9 +15,6 @@ const emit = defineEmits<{
 
 const paused = defineModel<boolean>('paused', { required: true })
 const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
-const interactiveServices = defineModel<KioskInteractiveService[]>('interactiveServices', { required: true })
-const interactiveServiceAgentInstructions = defineModel<string>('interactiveServiceAgentInstructions', { required: true })
-const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feedbackInvitationSettings', { required: true })
 </script>
 
 <template>
@@ -63,17 +55,7 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
       <slot name="device-settings" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
 
-      <KioskInteractiveServicesSettings
-        v-model="interactiveServices"
-        v-model:agent-instructions="interactiveServiceAgentInstructions"
-      />
-
-      <KioskFeedbackInvitationSettings v-model="feedbackInvitationSettings" />
-
       <section class="admin-section">
-        <p class="session-description">
-          互動服務與完成後問卷使用同 origin 的互動設定 Profile，Stage Web 與此 Kiosk 會讀取相同設定。
-        </p>
         <h3>舞台</h3>
         <label class="toggle-row">
           <input v-model="paused" type="checkbox">
@@ -92,7 +74,7 @@ const feedbackInvitationSettings = defineModel<FeedbackInvitationSettings>('feed
       </section>
 
       <p class="admin-note">
-        對話模型與語音輸入請在一般設定中調整；此頁只保留 Kiosk 現場行為與互動服務設定。
+        互動服務與完成後問卷請在 Webnavior 管理後台的「互動體驗」調整並發布；此頁只保留 Kiosk 現場設定。
       </p>
     </div>
   </section>

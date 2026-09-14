@@ -52,6 +52,9 @@ function delegate(key: DeviceSettingKey, enabled: boolean) {
     <p>{{ t('deviceSettings.description') }}</p>
     <div v-for="key in deviceSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
+      <p v-if="key === 'performanceProfile'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
+        {{ t('deviceSettings.fieldDescriptions.performanceProfile') }}
+      </p>
       <label :class="['flex items-center gap-2']">
         <Checkbox :model-value="overrides[key] !== undefined" :disabled="locked(key)" @update:model-value="toggleOverride(key, $event)" />
         {{ t('deviceSettings.override') }}

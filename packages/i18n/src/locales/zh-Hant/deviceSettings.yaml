@@ -28,8 +28,10 @@ fields:
   zoneHeight: 偵測區高度（0–1）
   mediaCaptureMode: 相機錄影
   proactiveVlmEnabled: 傳送主動觀測畫面給 VLM
-  performanceProfile: 效能設定檔
+  performanceProfile: 裝置運作模式
   voiceVadThreshold: 語音偵測門檻（0.50–0.95）
+fieldDescriptions:
+  performanceProfile: 依硬體能力調整相機畫質、人員偵測速度與錄影上限。一般設備選「一般（建議）」；畫面卡頓時選「省資源」；高規設備才選「高規設備」。
 options:
   attention: 看向 Kiosk
   presence: 進入偵測區
@@ -37,6 +39,6 @@ options:
   off: 關閉
   triggered: 事件短片
   continuous: 持續錄影
-  constrained: 低資源
-  balanced: 平衡
-  high: 高效能
+  constrained: 省資源（較低畫質與較慢偵測）
+  balanced: 一般（建議）
+  high: 高規設備（較高畫質與較快偵測）

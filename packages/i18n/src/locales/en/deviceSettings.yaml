@@ -28,8 +28,10 @@ fields:
   zoneHeight: Detection area height (0–1)
   mediaCaptureMode: Camera recording
   proactiveVlmEnabled: Send proactive frames to VLM
-  performanceProfile: Performance budget
+  performanceProfile: Device operating mode
   voiceVadThreshold: Voice detection threshold (0.50–0.95)
+fieldDescriptions:
+  performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
 options:
   attention: Looking at kiosk
   presence: Presence in area
@@ -37,6 +39,6 @@ options:
   off: Disabled
   triggered: Event clips
   continuous: Continuous recording
-  constrained: Constrained
-  balanced: Balanced
-  high: High
+  constrained: Resource-saving (lower quality and slower detection)
+  balanced: General (recommended)
+  high: High-spec device (higher quality and faster detection)

@@ -4,17 +4,12 @@ import { onMounted, shallowRef } from 'vue'
 
 import KioskAdminPanel from '../../components/KioskAdminPanel.vue'
 
-import { useFeedbackInvitationSettings } from '../../composables/useFeedbackInvitationSettings'
 import { useKioskCameraPreview } from '../../composables/useKioskCameraPreview'
 import { useKioskDeviceRegistration } from '../../composables/useKioskDeviceRegistration'
-import { useKioskInteractiveServiceAgentInstructions, useKioskInteractiveServices } from '../../composables/useKioskInteractiveServices'
 
 const endpoint = new URL('/api/kiosk/settings', import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').href
 const paused = shallowRef(false)
 const cameraPreviewEnabled = useKioskCameraPreview()
-const interactiveServices = useKioskInteractiveServices()
-const interactiveServiceAgentInstructions = useKioskInteractiveServiceAgentInstructions()
-const feedbackInvitationSettings = useFeedbackInvitationSettings()
 const { bootstrap, device } = useKioskDeviceRegistration()
 onMounted(() => void bootstrap())
 </script>
@@ -23,9 +18,6 @@ onMounted(() => void bootstrap())
   <KioskAdminPanel
     v-model:paused="paused"
     v-model:camera-preview-enabled="cameraPreviewEnabled"
-    v-model:interactive-services="interactiveServices"
-    v-model:interactive-service-agent-instructions="interactiveServiceAgentInstructions"
-    v-model:feedback-invitation-settings="feedbackInvitationSettings"
     :device="device"
     :session-ending="false"
     @close="$router.push('/')"
