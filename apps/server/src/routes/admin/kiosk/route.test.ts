@@ -21,13 +21,15 @@ function createTestApp(configKV: ConfigKVService) {
     getSiteProactiveVlmEnabled: vi.fn(async () => false),
     getSitePerformanceProfile: vi.fn(async () => 'balanced'),
     getSiteVoiceVadThreshold: vi.fn(async () => 0.72),
+    disableDevice: vi.fn(async () => undefined),
+    deleteDevice: vi.fn(async () => undefined),
     setSitePerformanceProfile: vi.fn(async ({ profile }: { profile: 'constrained' | 'balanced' | 'high' }) => ({ performanceProfile: profile })),
     setSiteVoiceVadThreshold: vi.fn(async ({ threshold }: { threshold: number }) => ({ voiceVadThreshold: String(threshold) })),
     setSiteModelOverrides: vi.fn(async () => ({})),
   } as unknown as KioskService
   const characterAssets = {} as KioskCharacterAssetService
 
-  return new Hono<HonoEnv>()
+  const app = new Hono<HonoEnv>()
     .use('*', async (c, next) => {
       c.set('user', { id: 'admin-1', email: 'admin@example.com', role: 'admin' } as HonoEnv['Variables']['user'])
       await next()
@@ -38,6 +40,7 @@ function createTestApp(configKV: ConfigKVService) {
         return c.json({ error: error.errorCode }, error.statusCode)
       return c.json({ error: 'internal' }, 500)
     })
+  return { app, kioskService }
 }
 
 describe('admin kiosk model policy route', () => {
@@ -56,7 +59,7 @@ describe('admin kiosk model policy route', () => {
         return key === 'DEFAULT_CHAT_MODEL' ? 'chat-default' : null
       }),
     } as unknown as ConfigKVService
-    const app = createTestApp(configKV)
+    const { app } = createTestApp(configKV)
 
     const response = await app.request('/api/admin/kiosk/sites/site-1/model-policy', {
       method: 'PUT',
@@ -94,7 +97,7 @@ describe('admin kiosk model policy route', () => {
         return null
       }),
     } as unknown as ConfigKVService
-    const app = createTestApp(configKV)
+    const { app } = createTestApp(configKV)
 
     const response = await app.request('/api/admin/kiosk/sites/site-1/model-policy')
 
@@ -118,7 +121,7 @@ describe('admin kiosk model policy route', () => {
 
   it('stores a selected kiosk performance profile', async () => {
     const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
-    const app = createTestApp(configKV)
+    const { app } = createTestApp(configKV)
 
     const response = await app.request('/api/admin/kiosk/sites/site-1/performance-profile', {
       method: 'PUT',
@@ -132,7 +135,7 @@ describe('admin kiosk model policy route', () => {
 
   it('stores a kiosk voice VAD threshold', async () => {
     const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
-    const app = createTestApp(configKV)
+    const { app } = createTestApp(configKV)
 
     const response = await app.request('/api/admin/kiosk/sites/site-1/voice-vad-threshold', {
       method: 'PUT',
@@ -142,5 +145,40 @@ describe('admin kiosk model policy route', () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ voiceVadThreshold: '0.72' })
+  })
+
+  it('returns individual results when disabling a device batch has partial failures', async () => {
+    const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
+    const { app, kioskService } = createTestApp(configKV)
+    vi.mocked(kioskService.disableDevice).mockImplementation(async ({ deviceId }) => {
+      if (deviceId === 'device-failed')
+        throw new Error('Device is unavailable')
+    })
+
+    const response = await app.request('/api/admin/kiosk/sites/site-1/devices/batch-disable', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceIds: ['device-1', 'device-failed'] }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      failedDeviceIds: ['device-failed'],
+      succeededDeviceIds: ['device-1'],
+    })
+  })
+
+  it('forwards only selected devices to batch deletion', async () => {
+    const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
+    const { app, kioskService } = createTestApp(configKV)
+
+    const response = await app.request('/api/admin/kiosk/sites/site-1/devices/batch-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceIds: ['device-disabled'] }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(kioskService.deleteDevice).toHaveBeenCalledWith({ deviceId: 'device-disabled', siteId: 'site-1', userId: 'admin-1' })
   })
 })

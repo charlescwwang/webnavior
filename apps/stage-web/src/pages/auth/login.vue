@@ -4,7 +4,7 @@ import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { Button, Input } from '@proj-airi/ui'
 import { computed, onMounted, shallowRef } from 'vue'
 
-const email = shallowRef('admin@webnavior.local')
+const email = shallowRef('')
 const password = shallowRef('')
 const error = shallowRef('')
 const submitting = shallowRef(false)

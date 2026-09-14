@@ -34,6 +34,9 @@ const voiceVadThresholdSchema = object({ threshold: pipe(number(), minValue(0.5)
 const visitorSessionDeletionSchema = object({
   visitorSessionIds: pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(100)),
 })
+const deviceBatchSchema = object({
+  deviceIds: pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(100)),
+})
 
 const modelOverridesSchema = object({
   asr: optional(string()),
@@ -120,6 +123,22 @@ function assertApprovedOverrides(overrides: KioskModelOverrides, catalog: Approv
   }
 }
 
+/** Applies an independently auditable device operation without rolling back successful devices. */
+async function applyDeviceBatch(deviceIds: string[], operation: (deviceId: string) => Promise<void>) {
+  const failedDeviceIds: string[] = []
+  const succeededDeviceIds: string[] = []
+  for (const deviceId of deviceIds) {
+    try {
+      await operation(deviceId)
+      succeededDeviceIds.push(deviceId)
+    }
+    catch {
+      failedDeviceIds.push(deviceId)
+    }
+  }
+  return { failedDeviceIds, succeededDeviceIds }
+}
+
 /**
  * Minimal Profile management for the kiosk POC.
  *
@@ -181,6 +200,15 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
       })
       return c.body(null, 204)
     })
+    .post('/sites/:siteId/devices/batch-disable', async (c) => {
+      const result = safeParse(deviceBatchSchema, await c.req.json().catch(() => null))
+      if (!result.success)
+        throw createBadRequestError('Select one or more kiosk devices to disable', 'INVALID_REQUEST', result.issues)
+      const siteId = c.req.param('siteId')
+      const userId = c.get('user')!.id
+      const deviceIds = [...new Set(result.output.deviceIds)]
+      return c.json(await applyDeviceBatch(deviceIds, deviceId => kioskService.disableDevice({ deviceId, siteId, userId })))
+    })
     .post('/sites/:siteId/devices/:deviceId/enable', async (c) => {
       await kioskService.enableDevice({ deviceId: c.req.param('deviceId'), siteId: c.req.param('siteId'), userId: c.get('user')!.id })
       return c.body(null, 204)
@@ -192,6 +220,15 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         userId: c.get('user')!.id,
       })
       return c.body(null, 204)
+    })
+    .post('/sites/:siteId/devices/batch-delete', async (c) => {
+      const result = safeParse(deviceBatchSchema, await c.req.json().catch(() => null))
+      if (!result.success)
+        throw createBadRequestError('Select one or more kiosk devices to delete', 'INVALID_REQUEST', result.issues)
+      const siteId = c.req.param('siteId')
+      const userId = c.get('user')!.id
+      const deviceIds = [...new Set(result.output.deviceIds)]
+      return c.json(await applyDeviceBatch(deviceIds, deviceId => kioskService.deleteDevice({ deviceId, siteId, userId })))
     })
     .get('/sites/:siteId/capabilities', async (c) => {
       return c.json(await kioskService.getSiteManagementCapabilities({

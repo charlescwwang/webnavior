@@ -22,6 +22,12 @@ export interface KioskDevice {
   registrationMethod: string
 }
 
+/** The per-device outcome of a management action that may partially succeed. */
+export interface KioskDeviceBatchResult {
+  failedDeviceIds: string[]
+  succeededDeviceIds: string[]
+}
+
 /** One retained customer interaction, without its transcript content. */
 export interface KioskVisitorSessionSummary {
   createdAt: string
@@ -381,6 +387,31 @@ export function useKioskManagement() {
     }
   }
 
+  async function disableDevices(deviceIds: string[]) {
+    if (!selectedSiteId.value || deviceIds.length === 0)
+      return
+
+    saving.value = true
+    message.value = ''
+    try {
+      const result = await request<KioskDeviceBatchResult>(`/sites/${selectedSiteId.value}/devices/batch-disable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds }),
+      })
+      await loadSite()
+      if (result)
+        notice.success(`已停用 ${result.succeededDeviceIds.length} 台設備，原本的瀏覽器憑證已撤銷。`)
+      return result
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法批次停用設備。')
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
   async function enableDevice(deviceId: string) {
     if (!selectedSiteId.value)
       return
@@ -407,6 +438,31 @@ export function useKioskManagement() {
     }
     catch (error) {
       notice.error(errorMessageFrom(error) ?? '無法刪除設備。請先停用它。')
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
+  async function deleteDevices(deviceIds: string[]) {
+    if (!selectedSiteId.value || deviceIds.length === 0)
+      return
+
+    saving.value = true
+    message.value = ''
+    try {
+      const result = await request<KioskDeviceBatchResult>(`/sites/${selectedSiteId.value}/devices/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceIds }),
+      })
+      await loadSite()
+      if (result)
+        notice.success(`已刪除 ${result.succeededDeviceIds.length} 台設備；既有訪客紀錄會依保存政策保留。`)
+      return result
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法批次刪除設備。請確認設備已停用。')
     }
     finally {
       saving.value = false
@@ -563,9 +619,11 @@ export function useKioskManagement() {
   return {
     capabilities,
     deleteDevice,
+    deleteDevices,
     deleteSelectedSite,
     deviceCount,
     disableDevice,
+    disableDevices,
     enableDevice,
     devices,
     deleteVisitorSessions,

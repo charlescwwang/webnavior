@@ -30,6 +30,7 @@ const selectedVisitorSessionIds = shallowRef<string[]>([])
 const selectedDeviceId = shallowRef('')
 const retentionDays = shallowRef(180)
 const mediaCaptureMode = shallowRef<'off' | 'triggered' | 'continuous'>('triggered')
+const historyReady = shallowRef(false)
 
 watch(selectedSite, (site) => {
   retentionDays.value = site?.interactionRetentionDays ?? 180
@@ -41,9 +42,16 @@ async function deleteSelectedVisitorSessions() {
   selectedVisitorSessionIds.value = []
 }
 
-onMounted(() => void load())
+onMounted(async () => {
+  await load()
+  historyReady.value = true
+  await loadVisitorSessions(selectedDeviceId.value)
+})
 
-watch([selectedSiteId, selectedDeviceId], () => void loadVisitorSessions(selectedDeviceId.value))
+watch([selectedSiteId, selectedDeviceId], () => {
+  if (historyReady.value)
+    void loadVisitorSessions(selectedDeviceId.value)
+})
 </script>
 
 <template>
