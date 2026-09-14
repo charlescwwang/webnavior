@@ -5,6 +5,8 @@ import { useAnalytics } from '../use-analytics'
 
 const UNKNOWN_STT_PROVIDER_ID = 'unknown'
 
+export type AudioInputPermissionState = 'idle' | 'requesting' | 'granted' | 'denied' | 'unavailable'
+
 /**
  * Selects the default microphone when available, otherwise the first detected input.
  */
@@ -46,6 +48,8 @@ export function useAudioDevice(requestPermission: boolean = false) {
     trackMicrophonePermissionRequested,
   } = useAnalytics()
   const { audioInputs, permissionGranted, ensurePermissions } = useDevicesList({ constraints: { audio: true }, requestPermissions: requestPermission })
+  const permissionState = ref<AudioInputPermissionState>(permissionGranted.value ? 'granted' : 'idle')
+  let pendingPermissionRequest: Promise<void> | undefined
   const selectedAudioInput = ref<string>(audioInputs.value.find(device => device.deviceId === 'default')?.deviceId || '')
   /**
    * Keeps the selected microphone aligned with the currently available device list.
@@ -80,21 +84,29 @@ export function useAudioDevice(requestPermission: boolean = false) {
   })
 
   function askPermission() {
-    trackMicrophonePermissionRequested({ stt_provider_id: UNKNOWN_STT_PROVIDER_ID })
+    if (pendingPermissionRequest)
+      return pendingPermissionRequest
 
-    return ensurePermissions()
+    trackMicrophonePermissionRequested({ stt_provider_id: UNKNOWN_STT_PROVIDER_ID })
+    permissionState.value = 'requesting'
+    const request = ensurePermissions()
       .then(() => nextTick())
       .then(() => {
         selectAvailableAudioInput()
         if (audioInputs.value.length <= 0) {
+          permissionState.value = 'unavailable'
           trackAudioDeviceUnavailable({
             stt_provider_id: UNKNOWN_STT_PROVIDER_ID,
             error_code: 'device_unavailable',
           })
         }
+        else {
+          permissionState.value = 'granted'
+        }
       })
       .catch((error) => {
         const errorCode = audioDeviceErrorCode(error)
+        permissionState.value = errorCode === 'permission_denied' ? 'denied' : 'unavailable'
         if (errorCode === 'permission_denied') {
           trackMicrophonePermissionDenied({
             stt_provider_id: UNKNOWN_STT_PROVIDER_ID,
@@ -110,6 +122,13 @@ export function useAudioDevice(requestPermission: boolean = false) {
         console.error('Error ensuring permissions:', error)
         throw error // Re-throw so callers can handle the error
       })
+    pendingPermissionRequest = request
+    const clearPendingRequest = () => {
+      if (pendingPermissionRequest === request)
+        pendingPermissionRequest = undefined
+    }
+    void request.then(clearPendingRequest, clearPendingRequest)
+    return request
   }
 
   async function startStream() {
@@ -142,6 +161,7 @@ export function useAudioDevice(requestPermission: boolean = false) {
     stream,
     deviceConstraints,
     permissionGranted,
+    permissionState,
 
     askPermission,
     startStream,

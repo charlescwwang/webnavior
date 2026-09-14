@@ -3,18 +3,12 @@ import { Callout, FieldCheckbox, FieldCombobox } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 
-import { useAudioAnalyzer, useAudioDevice } from '../../../../composables'
+import { useAudioAnalyzer } from '../../../../composables'
 import { useSettingsAudioDevice } from '../../../../stores'
 
-const props = withDefaults(defineProps<{
-  granted?: boolean // permission status on OS level
-}>(), {
-  granted: false,
-})
-
 const deviceStore = useSettingsAudioDevice()
-const { enabled, selectedAudioInput } = storeToRefs(deviceStore)
-const { audioInputs, permissionGranted, askPermission } = useAudioDevice()
+const { audioInputs, enabled, permissionGranted, permissionState, selectedAudioInput } = storeToRefs(deviceStore)
+const { askPermission } = deviceStore
 const { volumeLevel } = useAudioAnalyzer()
 
 const autoSend = defineModel<boolean | undefined>('autoSend')
@@ -23,7 +17,20 @@ const autoSendEnabled = computed({
   get: () => autoSend.value ?? false,
   set: value => autoSend.value = value,
 })
-const hearingToggleLabel = computed(() => enabled.value ? 'Disable microphone input' : 'Enable microphone input')
+const permissionMessage = computed(() => {
+  if (permissionState.value === 'denied')
+    return 'Microphone access was denied. Choose Allow in your browser settings, then try again.'
+  if (permissionState.value === 'unavailable')
+    return 'No microphone is available. Connect or select a microphone, then try again.'
+  return undefined
+})
+const hearingToggleLabel = computed(() => {
+  if (enabled.value)
+    return 'Disable microphone input'
+  if (permissionState.value === 'denied' || permissionState.value === 'unavailable')
+    return 'Retry microphone permission'
+  return 'Enable microphone input'
+})
 const hearingToggleClass = computed(() => [
   'absolute left-1/2 top-1/2 grid h-16 w-16 place-items-center outline-none -translate-x-1/2 -translate-y-1/2',
   'rounded-2xl backdrop-blur-md',
@@ -49,13 +56,21 @@ const ringEnabledClass = computed(() => enabled.value
   : 'bg-neutral-300/20 dark:bg-neutral-700/20',
 )
 
-function toggleHearingEnabled() {
+async function toggleHearingEnabled() {
   if (enabled.value)
     return enabled.value = false
-  if (selectedAudioInput.value !== '' && permissionGranted.value)
-    return enabled.value = true
-  if (!permissionGranted.value)
-    return askPermission().then(() => { enabled.value = permissionGranted.value })
+
+  // This function is called directly by the visible microphone button. Keep
+  // getUserMedia within that user gesture so mobile browsers can display the
+  // permission prompt instead of suppressing it after a dialog watcher runs.
+  try {
+    if (!permissionGranted.value)
+      await askPermission()
+    enabled.value = permissionGranted.value || permissionState.value === 'granted'
+  }
+  catch {
+    enabled.value = false
+  }
 }
 </script>
 
@@ -94,12 +109,10 @@ function toggleHearingEnabled() {
 
       <div class="mt-3 h-1" />
 
-      <!-- Permission callout when needed (Electron contexts) -->
-      <div v-if="!props.granted" class="mt-3 w-full">
+      <div v-if="permissionMessage" class="mt-3 w-full">
         <Callout theme="orange" label="Microphone permission required">
           <div class="text-sm">
-            The app doesn't have permission to access your microphone.
-            Please grant microphone access in your system settings to enable audio input.
+            {{ permissionMessage }}
           </div>
         </Callout>
       </div>

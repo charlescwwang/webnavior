@@ -2,11 +2,10 @@
 import { useResizeObserver, useScreenSafeArea } from '@vueuse/core'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle, DialogTrigger, VisuallyHidden } from 'reka-ui'
 import { DrawerContent, DrawerHandle, DrawerOverlay, DrawerPortal, DrawerRoot, DrawerTrigger } from 'vaul-vue'
-import { onMounted, watch } from 'vue'
+import { onMounted } from 'vue'
 
 import HearingConfig from './hearing-config.vue'
 
-import { useAudioDevice } from '../../../../composables'
 import { useBreakpoints } from '../../../../composables/use-breakpoints'
 
 const props = defineProps<{
@@ -19,14 +18,9 @@ const showDialog = defineModel('show', { type: Boolean, default: false, required
 const autoSend = defineModel<boolean | undefined>('autoSend')
 
 const { isDesktop } = useBreakpoints()
-const { askPermission } = useAudioDevice()
 const screenSafeArea = useScreenSafeArea()
 
 useResizeObserver(document.documentElement, () => screenSafeArea.update())
-watch(showDialog, (show) => {
-  if (show)
-    askPermission()
-})
 onMounted(() => screenSafeArea.update())
 </script>
 

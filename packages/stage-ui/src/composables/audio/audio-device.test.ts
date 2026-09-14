@@ -61,9 +61,10 @@ describe('useAudioDevice analytics lifecycle', () => {
     const permissionError = new DOMException('User denied microphone', 'NotAllowedError')
     audioDeviceMock.ensurePermissions.mockRejectedValue(permissionError)
 
-    const { askPermission } = useAudioDevice()
+    const { askPermission, permissionState } = useAudioDevice()
 
     await expect(askPermission()).rejects.toThrow(permissionError)
+    expect(permissionState.value).toBe('denied')
 
     expect(audioDeviceMock.trackMicrophonePermissionRequested).toHaveBeenCalledWith({
       stt_provider_id: 'unknown',
@@ -84,9 +85,10 @@ describe('useAudioDevice analytics lifecycle', () => {
     const { useAudioDevice } = await import('./audio-device')
     audioDeviceMock.ensurePermissions.mockResolvedValue(undefined)
 
-    const { askPermission } = useAudioDevice()
+    const { askPermission, permissionState } = useAudioDevice()
 
     await askPermission()
+    expect(permissionState.value).toBe('unavailable')
 
     expect(audioDeviceMock.trackMicrophonePermissionRequested).toHaveBeenCalledWith({
       stt_provider_id: 'unknown',

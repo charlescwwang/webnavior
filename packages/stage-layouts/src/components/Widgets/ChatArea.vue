@@ -39,7 +39,6 @@ const providersStore = useProvidersStore()
 const { activeProvider, activeModel } = storeToRefs(useConsciousnessStore())
 const { themeColorsHueDynamic } = storeToRefs(useSettings())
 
-const { askPermission } = useSettingsAudioDevice()
 const { enabled, stream } = storeToRefs(useSettingsAudioDevice())
 const chatOrchestrator = useChatOrchestratorStore()
 const chatSession = useChatSessionStore()
@@ -132,12 +131,6 @@ function handleMessageInputKeydown(event: KeyboardEvent) {
       }
   }
 }
-
-watch(hearingPopoverOpen, async (value) => {
-  if (value) {
-    await askPermission()
-  }
-})
 
 onAfterMessageComposed(async () => {
 })
