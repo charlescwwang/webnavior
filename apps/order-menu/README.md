@@ -50,6 +50,12 @@ host lifecycle events in
 `activity` refreshes the anonymous-session idle timer and `completed` starts the
 next-customer flow. These events do not expose or execute tools.
 
+### Webnavior Kiosk Activity Manifest
+
+The menu publishes [`public/.well-known/webnavior-kiosk-activity.json`](public/.well-known/webnavior-kiosk-activity.json) for the Kiosk's optional customer-facing tool progress labels. It is not a WebMCP extension and is never passed to the LLM. Missing or invalid labels only make the Kiosk use its generic progress text; they never block menu or ordering operations.
+
+The Vite development server allows the configured `VITE_AIRI_ORIGIN` to read the manifest; production deployment must return the same CORS header for `/.well-known/webnavior-kiosk-activity.json`.
+
 ## Extending for a real ordering system
 
 The order state lives in `src/domain/order-machine.ts`; it owns menu selection,

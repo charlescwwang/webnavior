@@ -110,6 +110,25 @@ Administrator mode can choose the microphone, enable or disable voice input, and
 
 In Webnavior's published Kiosk Profile, **僅允許語音對話** hides the customer text composer and starts pre-authorized microphone capture on load. The kiosk visibly indicates whether its microphone is actively listening; it sends audio and reply text only to device-authenticated Server audio endpoints.
 
-When VAD detects a new customer utterance, the kiosk cancels its current reply request and TTS playback so a late response is never spoken over the new turn. Ordering workflows remain responsible for explicit customer confirmation before submission.
+The kiosk treats listening, ASR, LLM/tool work, TTS, and proactive greetings as one cancellable interaction turn. It visibly distinguishes listening, recognition, and ordering work; while ASR or the model is processing, new voice turns are held so they cannot cancel an in-flight order. Customers can still barge in during spoken output to stop a reply. Stale results never update the transcript, and proactive greetings/reminders wait until no customer turn is active. Ordering workflows remain responsible for explicit customer confirmation before submission.
+
+### Webnavior Kiosk Activity Manifest
+
+An approved interactive service can optionally serve `/.well-known/webnavior-kiosk-activity.json` from its own origin. It provides customer-facing status labels for its WebMCP tools; it does not change tool execution and is never sent to the LLM. The kiosk ignores missing, unavailable, or invalid manifests and uses its generic status labels instead.
+
+```json
+{
+  "version": 1,
+  "tools": {
+    "cart_add_item": {
+      "running": "正在將餐點加入清單…",
+      "success": "餐點已加入清單。",
+      "error": "無法加入餐點，正在重新確認…"
+    }
+  }
+}
+```
+
+The manifest must be served with CORS allowing the kiosk origin to fetch it. Labels are display-only: each non-empty label is capped at 160 characters and malformed entries are ignored individually. New tools without an entry continue to work and display the generic progress message.
 
 `VITE_KIOSK_ADMIN_PIN` is an on-device guard against accidental customer access, not a replacement for server-side administrator authentication: Vite exposes `VITE_` values to the browser bundle. Production deployment should place provider credentials in a protected management service rather than relying on this PIN alone.

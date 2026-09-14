@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "tools": {
+    "menu_get": {
+      "running": "正在查詢菜單…",
+      "success": "已取得菜單資訊，正在整理選項…"
+    },
+    "menu_recommend": {
+      "running": "正在挑選適合的餐點…",
+      "success": "已找到推薦餐點，正在整理建議…"
+    },
+    "menu_select_item": {
+      "running": "正在選擇餐點…",
+      "success": "餐點已選取，正在確認客製選項…"
+    },
+    "menu_set_item_option": {
+      "running": "正在設定餐點選項…",
+      "success": "餐點選項已更新。"
+    },
+    "menu_set_quantity": {
+      "running": "正在調整餐點數量…",
+      "success": "餐點數量已更新。"
+    },
+    "order_add_item": {
+      "running": "正在將餐點加入清單…",
+      "success": "餐點已加入清單。"
+    },
+    "cart_add_item": {
+      "running": "正在將餐點加入清單…",
+      "success": "餐點已加入清單。"
+    },
+    "cart_remove_item": {
+      "running": "正在從清單移除餐點…",
+      "success": "餐點已從清單移除。"
+    },
+    "cart_set_line_quantity": {
+      "running": "正在調整餐點數量…",
+      "success": "餐點數量已更新。"
+    },
+    "cart_get": {
+      "running": "正在確認餐點與價格…",
+      "success": "餐點與價格已更新。"
+    },
+    "order_set_fulfillment": {
+      "running": "正在設定取餐方式…",
+      "success": "取餐方式已設定。"
+    },
+    "order_confirm": {
+      "running": "正在送出訂單…",
+      "success": "訂單已送出。"
+    }
+  }
+}

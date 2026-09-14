@@ -192,9 +192,9 @@ export function createKioskTranscriptionBody(recording: Blob) {
 }
 
 /** Sends microphone bytes to the device-authenticated ASR gateway. */
-export async function transcribeKioskAudio(recording: Blob) {
+export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal) {
   const body = createKioskTranscriptionBody(recording)
-  const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST' })
+  const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST', signal })
   return await response.json() as { text: string }
 }
 

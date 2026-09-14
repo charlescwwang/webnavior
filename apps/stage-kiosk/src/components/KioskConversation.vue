@@ -12,11 +12,12 @@ import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
+  activityStatus?: string
   messages: readonly ChatHistoryItem[]
-  recognizing?: boolean
+  pendingTranscript?: string
   sending: boolean
+  voiceInputLocked: boolean
   voiceConversationOnly: boolean
-  workStatus?: string
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +34,11 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [...props.messages])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
 const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !props.sending && serviceReady.value)
 const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
+const voiceOnlyNotice = computed(() => (
+  props.voiceInputLocked
+    ? '正在處理上一句話，請稍候。'
+    : '請直接對麥克風說話。'
+))
 const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
@@ -41,7 +47,7 @@ const chatHistory = useTemplateRef<InstanceType<typeof ChatHistory>>('chatHistor
 // Kiosk status rows live beside ChatHistory so they remain visible while a
 // reply is pending. Keep the transcript at its live edge when either the
 // message list or that adjacent status changes.
-watch([() => props.messages, () => props.sending, () => props.workStatus], () => {
+watch([() => props.messages, () => props.activityStatus, () => props.pendingTranscript], () => {
   void nextTick(() => chatHistory.value?.scrollToBottom())
 }, { flush: 'post' })
 
@@ -70,15 +76,19 @@ async function sendMessage() {
         auto-scroll="follow-latest"
         variant="mobile"
       />
-      <div v-if="props.recognizing || props.sending" class="assistant-activity" role="status" aria-live="polite">
+      <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
+        <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
+        <span>{{ props.pendingTranscript }}</span>
+      </div>
+      <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ props.recognizing ? '正在辨識語音…' : props.workStatus ?? '正在思考…' }}</span>
+        <span>{{ props.activityStatus }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
     </div>
 
     <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
-      請直接對麥克風說話。
+      {{ voiceOnlyNotice }}
     </p>
     <form v-else class="message-composer" @submit.prevent="sendMessage">
       <BasicTextarea
@@ -112,6 +122,7 @@ async function sendMessage() {
 .message-history :deep([data-chat-message-role='user']) { justify-content: flex-end; }
 .message-history :deep(.ph-no-capture), .message-history :deep(.ph-no-capture *) { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .message-history :deep(pre), .message-history :deep(code) { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
+.pending-transcript { display: flex; align-items: center; gap: .4rem; width: fit-content; max-width: 90%; margin: .55rem .2rem .1rem auto; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #c9fffa; background: rgb(17 81 79 / 40%); font-size: .78rem; font-style: italic; }
 .assistant-activity { display: flex; align-items: center; gap: .45rem; width: fit-content; max-width: 90%; margin: .55rem .2rem; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #b9f5ec; background: rgb(17 81 79 / 48%); font-size: .78rem; font-weight: 700; }.activity-orb { width: .55rem; height: .55rem; border-radius: 999px; background: #7ce7d8; box-shadow: 0 0 .8rem #7ce7d8; animation: activity-pulse 1.2s ease-in-out infinite; }.activity-dots { display: flex; gap: .14rem; }.activity-dots i { width: .24rem; height: .24rem; border-radius: 999px; background: currentColor; animation: activity-bounce .9s ease-in-out infinite; }.activity-dots i:nth-child(2) { animation-delay: .12s; }.activity-dots i:nth-child(3) { animation-delay: .24s; }@keyframes activity-pulse { 50% { opacity: .35; transform: scale(.75); } }@keyframes activity-bounce { 50% { opacity: .3; transform: translateY(-.18rem); } }
 .message-composer { display: flex; min-width: 0; gap: .5rem; border-top: 1px solid rgb(255 255 255 / 12%); padding: .55rem; background: rgb(1 17 20 / 48%); }
 .message-input { min-width: 0; flex: 1; resize: none; border: 1px solid rgb(255 255 255 / 18%); border-radius: .8rem; padding: .45rem .7rem; color: #ecfffb; background: rgb(255 255 255 / 8%); outline: none; }
