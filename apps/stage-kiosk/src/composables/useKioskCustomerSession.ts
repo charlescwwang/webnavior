@@ -8,6 +8,8 @@ export type { AnonymousKioskCustomer, KioskCustomerSessionState } from '@proj-ai
 
 /** Connects the shared kiosk customer lifecycle to this host's scenario surface. */
 interface KioskCustomerSessionHostOptions extends Omit<KioskCustomerSessionOptions, 'resetInteractiveSurface'> {
+  /** Closes the host's durable visitor session before its next customer starts. */
+  endVisitorSession?: () => void | Promise<void>
   /** Clears host-rendered customer content when the shared session transitions to standby. */
   resetConversation?: () => void
 }
@@ -16,6 +18,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
   return useSharedKioskCustomerSession({
     ...options,
     resetInteractiveSurface: async () => {
+      await options.endVisitorSession?.()
       await scenarioRegistry.reloadActive()
       options.resetConversation?.()
     },

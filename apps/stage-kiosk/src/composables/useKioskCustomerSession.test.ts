@@ -148,6 +148,7 @@ describe('useKioskCustomerSession', () => {
 
   it('clears the host conversation when the idle-confirmation countdown expires', async () => {
     vi.useFakeTimers()
+    const endVisitorSession = vi.fn().mockResolvedValue(undefined)
     const resetConversation = vi.fn()
     const chatSession = {
       createSession: vi.fn().mockResolvedValue('customer-chat'),
@@ -158,6 +159,7 @@ describe('useKioskCustomerSession', () => {
     const options = {
       activeCardId: shallowRef('default'),
       chatSession,
+      endVisitorSession,
       resetConversation,
     }
     const scope = effectScope()
@@ -170,6 +172,7 @@ describe('useKioskCustomerSession', () => {
     await vi.advanceTimersByTimeAsync(45_000)
     await vi.advanceTimersByTimeAsync(15_000)
 
+    expect(endVisitorSession).toHaveBeenCalledOnce()
     expect(resetConversation).toHaveBeenCalledOnce()
     expect(session.state.value).toBe('standby')
   })

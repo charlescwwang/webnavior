@@ -38,6 +38,7 @@ import { setKioskLocale } from '../modules/i18n'
 import { createKioskVadRecording } from '../services/kiosk-audio'
 import { synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
+import { createKioskStartupPermissionGate } from '../services/kiosk-startup-permission-gate'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
@@ -86,12 +87,13 @@ const conversationActivityStatus = computed(() => {
     return '正在說明，可直接說話打斷。'
   return undefined
 })
+const interactionRecording = useKioskInteractionRecording()
 const customerSession = useKioskCustomerSession({
   activeCardId,
   chatSession: chatSessionStore,
+  endVisitorSession: () => interactionRecording.end('idle'),
   resetConversation: clearConversationPresentation,
 })
-const interactionRecording = useKioskInteractionRecording()
 const performanceSettings = computed(() => kioskPerformanceSettings[props.performanceProfile])
 // The constrained profile intentionally cannot start continuous capture. The
 // Server still retains the selected policy, but weak kiosk hardware always has
@@ -140,6 +142,7 @@ watch(webMcpAdapter.completionRevision, (revision, previousRevision) => {
     handleScenarioCompleted()
 })
 const proactiveCamera = useTemplateRef<HTMLVideoElement>('proactiveCamera')
+const initialMicrophonePermission = createKioskStartupPermissionGate()
 let releaseChatPendingWork: (() => void) | undefined
 let proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
 let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
@@ -376,12 +379,14 @@ watch(enabled, async (isEnabled) => {
     stopAudioInteraction()
 }, { immediate: true })
 
-// Production kiosks receive microphone permission during provisioning. Once a
-// published experience is voice-only, make that approved input available
-// immediately instead of leaving a customer at a textless, silent surface.
-watch(() => props.voiceConversationOnly, async (voiceOnly) => {
-  if (!voiceOnly || enabled.value)
+// A published experience chooses exactly one customer input mode. Only the
+// voice-only mode requests a microphone, and it does so before optional camera
+// work so private browser profiles cannot lose the microphone prompt.
+async function prepareMicrophone() {
+  if (!props.voiceConversationOnly || enabled.value) {
+    initialMicrophonePermission.settle()
     return
+  }
 
   try {
     // `useDevicesList` is deliberately passive during startup. Ask explicitly
@@ -393,7 +398,14 @@ watch(() => props.voiceConversationOnly, async (voiceOnly) => {
   catch (error) {
     console.error('Kiosk microphone permission was not granted:', error)
   }
-}, { immediate: true })
+  finally {
+    // Camera observation is optional. It starts only after the microphone
+    // prompt settles, so closing a camera prompt can never block voice input.
+    initialMicrophonePermission.settle()
+  }
+}
+
+watch(() => props.voiceConversationOnly, () => void prepareMicrophone(), { immediate: true })
 
 watch(language, locale => setKioskLocale(locale), { immediate: true })
 
@@ -700,10 +712,11 @@ let stopMenuCompletionListener: (() => void) | undefined
 onMounted(() => {
   stopMenuActivityListener = scenarioRegistry.on('activity', () => void recordCustomerActivity('scenario'))
   stopMenuCompletionListener = scenarioRegistry.on('completed', orderResult => void handleScenarioCompleted(orderResult))
-  void syncProactiveVision()
+  void initialMicrophonePermission.wait().then(syncProactiveVision)
 })
 
 onUnmounted(() => {
+  initialMicrophonePermission.settle()
   releaseChatPendingWork?.()
   stopMenuActivityListener?.()
   stopMenuCompletionListener?.()
