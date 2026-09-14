@@ -177,6 +177,8 @@ Host 可在 `completed` 與最終 iframe reload 之間插入可選的完成後 U
 
 工具 schema 已補強 `menu_get` → `menu_select_item(itemId)` 的資料依賴，所有 domain-specific 前置條件應由服務工具 schema 擁有，而非由共用 AIRI Prompt 硬編碼。
 
+WebMCP 標準工具描述不含顧客進度文案。Webnavior Kiosk 以可選的 `Webnavior Kiosk Activity Manifest v1` 讀取已核准服務 origin 的 `/.well-known/webnavior-kiosk-activity.json`，取得工具開始／成功／失敗的顧客可見文字。它是呈現層契約，不送入 LLM，也不改變 WebMCP 執行；服務未提供或 Kiosk 無法驗證時，Host 使用通用文案。工具成功後的具體菜名必須來自服務驗證過的結果，不得以 LLM tool arguments 猜測。
+
 不同模型在 Prompt 遵循、多步工具呼叫、讀取 `ok: false` 後重試、工具後自然語言回覆與 context 壓力下的表現仍需評估。可選 token diagnostics 已存在，但尚未提供完整的每步工具 token 拆分。
 
 ### 視覺輔助與資料治理

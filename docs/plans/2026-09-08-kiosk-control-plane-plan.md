@@ -106,6 +106,9 @@ POC 只需一個 Profile 草稿與其目前已發布版本；管理者儲存後�
 - VAD 在 kiosk 本機使用 Silero 模型，對每個音訊區塊產生人聲機率；Site 可由後台設定 `0.50`–`0.95` 的閾值，POC 預設採較嚴格的 `0.72`。數值越高越能排除環境聲，但也越可能漏掉較小聲的人聲。現有「最短有效語音」規則錯把等待靜音的時間納入語音長度，短雜音可能仍被送至 ASR；正式實體 kiosk 驗證前，必須改為只累積模型判為人聲的時間，再放行 ASR。
 - Kiosk 的 ASR 與 TTS 使用設備驗證的 `/api/kiosk/audio/*` 路由。Server 依 Site policy 選擇模型並保留上游 endpoint、voice 與憑證；TTS 回應以音訊 binary 原樣轉送給 Kiosk。
 - Kiosk 主動招呼／閒置提醒在本機滿足 Presence 與頻率政策後，僅擷取一張縮小 JPEG camera frame，送至設備驗證的 assistant-action 路由。Server 以 Site 的 VLM 模型策略呼叫既有 OpenAI-compatible Router；未設定 VLM 時拒絕動作，不回退為 Profile 範例台詞。該 inference frame 不保存為訪客媒體。
+- Kiosk 將收音、ASR、LLM／工具、TTS 與主動招呼管理為單一 interaction turn。辨識與 LLM／工具處理時不接受新的 VAD 回合，避免取消正在進行的點餐；播放 TTS 時仍可由顧客說話打斷。畫面明確區分收音、辨識與處理中狀態。
+- LLM Router 的 `fullChainTimeoutMs` 是所有 key 與 upstream fallback 共用的總 deadline。每次嘗試僅可使用單次 timeout 與整鏈剩餘時間的較小值；慢硬體可透過較長 `perAttemptTimeoutMs` 正常等待，但部署端的反向代理 timeout 必須長於 `fullChainTimeoutMs`，否則代理會先回 504。
+- 已核准的互動服務可選擇在自己的 origin 發布 `/.well-known/webnavior-kiosk-activity.json`。Kiosk 非阻塞讀取並驗證其中的工具顧客進度文案；檔案遺失、CORS 不可用、格式錯誤或新工具未列出時，一律退回通用文案，不影響 WebMCP 工具執行或訂單狀態。
 
 ## Profile 發布與遠端控制
 

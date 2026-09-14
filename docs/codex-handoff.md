@@ -45,6 +45,12 @@ accumulating history.
 - Kiosk Sites also persist a voice VAD probability threshold. Its default is
   `0.72` (strict); authorized operators can set `0.50`–`0.95` in the Kiosk
   technical settings, and kiosk bootstrap applies the value after reload.
+- Kiosk interaction now has one cancellable turn across VAD, ASR, LLM/tool,
+  TTS, and proactive work. ASR/model work gates new VAD turns; TTS remains
+  interruptible. The Router now enforces `fullChainTimeoutMs` across all LLM
+  fallback attempts. Order-menu publishes the optional Webnavior Kiosk Activity
+  Manifest at `/.well-known/webnavior-kiosk-activity.json`; its customer labels
+  are display-only and always have a generic Kiosk fallback.
 - Webnavior's OpenAI-compatible TTS connection now stores its own voice instead
   of consulting AIRI's general voice catalog. The default is
   `zh-TW-HsiaoChenNeural`; `/audio/speech` receives that voice, MP3 format, and
