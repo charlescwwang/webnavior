@@ -93,6 +93,7 @@ function makeConfigKV(config: RouterConfig | null): ConfigKVService {
 function makeConfig(opts: {
   upstreams?: Array<{ baseURL: string, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
   fallbackHttpCodes?: number[]
+  fullChainTimeoutMs?: number
 }): { config: RouterConfig, ciphertextByKey: Map<string, string>, crypto: ReturnType<typeof createEnvelopeCrypto> } {
   const crypto = createEnvelopeCrypto({ masterKey: freshMasterKey() })
   const modelName = 'openai/gpt-5-mini'
@@ -127,7 +128,7 @@ function makeConfig(opts: {
     tts: { models: {} },
     defaults: {
       perAttemptTimeoutMs: 30000,
-      fullChainTimeoutMs: 60000,
+      fullChainTimeoutMs: opts.fullChainTimeoutMs ?? 60000,
       fallbackHttpCodes: opts.fallbackHttpCodes ?? [401, 402, 403, 429, 500, 502, 503, 504],
     },
   } as RouterConfig
@@ -535,13 +536,10 @@ describe('createLlmRouterService', () => {
     expect(fetchImpl.mock.calls.length).toBe(2)
   })
 
-  it('full-chain timeout shape: every attempt is a timeout → throws 504 GATEWAY_TIMEOUT', async () => {
-    // Surrogate for plan U3 scenario (7) — we exercise the policy that every
-    // attempt timing out yields a 504, without trying to drive a real wall-
-    // clock 60s test. The router's per-attempt timeout fires; mixed-cause
-    // last-attempt-wins puts 'timeout' in the final mapping bucket.
+  it('full-chain timeout stops a slow attempt before its longer per-attempt timeout', async () => {
     const { config, crypto } = makeConfig({
-      upstreams: [{ baseURL: 'https://up-a.example/v1', keyIds: ['k1', 'k2', 'k3'], timeoutMs: 15 }],
+      fullChainTimeoutMs: 20,
+      upstreams: [{ baseURL: 'https://up-a.example/v1', keyIds: ['k1', 'k2'], timeoutMs: 100 }],
     })
 
     const fetchImpl = vi.fn().mockImplementation(async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
@@ -560,16 +558,10 @@ describe('createLlmRouterService', () => {
       concurrencyLedger: makeLedger(),
     })
 
-    try {
-      await router.route({ modelName: 'openai/gpt-5-mini', body: {} })
-      throw new Error('expected throw')
-    }
-    catch (err) {
-      expect(err).toBeInstanceOf(ApiError)
-      expect((err as ApiError).statusCode).toBe(504)
-      expect((err as ApiError).errorCode).toBe('GATEWAY_TIMEOUT')
-    }
-    expect(fetchImpl.mock.calls.length).toBe(3)
+    const result = router.route({ modelName: 'openai/gpt-5-mini', body: {} })
+
+    await expect(result).rejects.toMatchObject({ statusCode: 504, errorCode: 'GATEWAY_TIMEOUT' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
   })
 
   it('pre-upstream validation: unknown model → throws 400, no fetch issued, no fallback metric', async () => {

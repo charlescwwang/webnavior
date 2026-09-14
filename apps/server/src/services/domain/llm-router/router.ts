@@ -221,6 +221,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
     upstreamIndex: number,
     req: LlmRouteRequest,
     perAttemptTimeoutMs: number,
+    fullChainDeadlineAt: number,
     fallbackHttpCodes: number[],
     onAttemptFailure: (failure: { keyId: string, status: number | 'timeout', bodySnippet?: string, errorMessage?: string }) => void,
   ): Promise<
@@ -234,6 +235,10 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
     let attemptIndex = 0
 
     for (const key of rotator) {
+      const remainingChainTimeMs = fullChainDeadlineAt - Date.now()
+      if (remainingChainTimeMs <= 0)
+        break
+
       try {
         const headers: Record<string, string> = {
           ...req.headers,
@@ -253,7 +258,10 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         // once tsconfig lib bumps to ES2024 and Node 20 minimum, swap to
         // `AbortSignal.any([attemptCtrl.signal, req.abortSignal])`.
         const attemptCtrl = new AbortController()
-        const timeoutHandle = setTimeout(() => attemptCtrl.abort(new Error('attempt-timeout')), perAttemptTimeoutMs)
+        const timeoutHandle = setTimeout(
+          () => attemptCtrl.abort(new Error('attempt-timeout')),
+          Math.min(perAttemptTimeoutMs, remainingChainTimeMs),
+        )
         const callerOnAbort = () => attemptCtrl.abort(req.abortSignal?.reason)
         if (req.abortSignal != null) {
           if (req.abortSignal.aborted)
@@ -369,11 +377,31 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
 
     const defaults = slice.defaults ?? { perAttemptTimeoutMs: 30000, fullChainTimeoutMs: 60000, fallbackHttpCodes: [401, 402, 403, 429, 500, 502, 503, 504] }
     const fallbackHttpCodes = slice.model.fallbackTriggers?.httpCodes ?? defaults.fallbackHttpCodes ?? [401, 402, 403, 429, 500, 502, 503, 504]
+    const fullChainDeadlineAt = Date.now() + (defaults.fullChainTimeoutMs ?? 60000)
 
     const allFailures: Array<{ provider: string, keyId: string, status: number | 'timeout', bodySnippet?: string, errorMessage?: string }> = []
     let triedUpstreams = 0
 
+    function fullChainTimeoutError() {
+      const lastFailure = allFailures.at(-1)
+      return mapUpstreamError(
+        'timeout',
+        {
+          triedKeys: allFailures.length,
+          triedUpstreams,
+          lastStatusCode: 'timeout',
+        },
+        lastFailure
+          ? [...allFailures, { ...lastFailure, errorMessage: 'full-chain-timeout', status: 'timeout' as const }]
+          : undefined,
+      )
+    }
+
     for (let i = 0; i < slice.model.upstreams.length; i += 1) {
+      const remainingChainTimeMs = fullChainDeadlineAt - Date.now()
+      if (remainingChainTimeMs <= 0)
+        throw fullChainTimeoutError()
+
       const upstream = slice.model.upstreams[i]
       const provider = deriveProviderTag(upstream.baseURL)
       triedUpstreams += 1
@@ -383,6 +411,9 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
       if (ctx)
         ctx.provider = provider
 
+      // The whole request gets one budget. `dispatchOneUpstream` recalculates
+      // the remaining time before every key attempt, so a slow local model can
+      // use most of the budget without letting fallback extend the wait.
       const perAttemptTimeoutMs = upstream.timeoutMs ?? defaults.perAttemptTimeoutMs ?? 30000
 
       const result = await dispatchOneUpstream(
@@ -390,6 +421,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         i,
         req,
         perAttemptTimeoutMs,
+        fullChainDeadlineAt,
         fallbackHttpCodes,
         (failure) => { allFailures.push({ provider, ...failure }) },
       )
@@ -399,6 +431,9 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
           ctx.upstreamModel = result.upstreamModel
         return result.response
       }
+
+      if (Date.now() >= fullChainDeadlineAt)
+        throw fullChainTimeoutError()
 
       // This upstream exhausted; record and continue.
       options.gatewayMetrics?.keyExhaustedCount.add(1, { provider })
