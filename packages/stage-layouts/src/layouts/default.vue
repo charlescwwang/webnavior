@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { isStageTamagotchi } from '@proj-airi/stage-shared'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 
 import HeaderLink from '../components/Layouts/HeaderLink.vue'
+
+const route = useRoute()
 </script>
 
 <template>
@@ -17,7 +19,7 @@ import HeaderLink from '../components/Layouts/HeaderLink.vue'
   >
     <!-- Header -->
     <div
-      v-if="!isStageTamagotchi()"
+      v-if="!isStageTamagotchi() && route.meta.layout !== 'webnavior-admin'"
       class="px-0 py-1 md:px-3 md:py-3"
       w-full gap-2
       bg="$bg-color"
