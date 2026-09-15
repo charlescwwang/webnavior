@@ -59,6 +59,7 @@ const copyText = computed(() => getChatHistoryItemCopyText(props.message as Chat
       <template #default="{ setMeasuredElement }">
         <div
           :ref="setMeasuredElement"
+          data-chat-message-bubble
           flex="~ col" shadow="sm neutral-200/50 dark:none"
           min-w-20 rounded-xl h="unset <sm:fit"
           :class="[

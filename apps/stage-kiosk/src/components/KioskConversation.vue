@@ -129,7 +129,8 @@ async function sendMessage() {
 .kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(155 218 211 / 24%); border-radius: 1.5rem; background: linear-gradient(160deg, rgb(13 29 33 / 96%), rgb(5 15 18 / 98%)); grid-template-rows: minmax(0, 1fr) auto; }
 .message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: linear-gradient(180deg, rgb(2 13 16 / 68%), rgb(4 19 21 / 82%)); }
 .message-history :deep([data-chat-message-role]) { display: flex; min-width: 0; max-width: 100%; }
-.message-history :deep(.ph-no-capture) { box-sizing: border-box; max-width: min(78%, 42rem); }
+.message-history :deep(.ph-no-capture) { max-width: min(78%, 42rem); }
+.message-history :deep([data-chat-message-bubble]) { box-sizing: border-box; max-width: 100%; border-width: 2px; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 34%); }
 .message-history :deep([data-chat-message-role='assistant']), .message-history :deep([data-chat-message-role='error']) { justify-content: flex-start; }
 .message-history :deep([data-chat-message-role='user']) { justify-content: flex-end; }
 .message-history :deep(.markdown-content), .message-history :deep(.markdown-content *) { font-size: var(--conversation-font-size) !important; line-height: 1.45 !important; }
@@ -138,8 +139,10 @@ async function sendMessage() {
 .message-history :deep(.chat-message-label) { display: none; }
 .message-history :deep(.ph-no-capture), .message-history :deep(.ph-no-capture *) { min-width: 0; overflow-wrap: anywhere; }
 .message-history :deep(.ph-no-capture *) { max-width: 100%; }
-.message-history :deep([data-chat-message-role='assistant'] .ph-no-capture > *) { color: #dcefeb; background: rgb(21 49 52 / 88%) !important; border: 1px solid rgb(145 218 210 / 24%); }
-.message-history :deep([data-chat-message-role='user'] .ph-no-capture > *) { color: #e6f8f7; background: rgb(24 67 78 / 88%) !important; border: 1px solid rgb(128 219 229 / 28%); }
+.message-history :deep([data-chat-message-role='assistant'] [data-chat-message-bubble]) { color: #101819; background: #f6f8f7 !important; border-color: #2b7773; }
+.message-history :deep([data-chat-message-role='assistant'] [data-chat-message-bubble] .markdown-content), .message-history :deep([data-chat-message-role='assistant'] [data-chat-message-bubble] .markdown-content *) { color: #101819 !important; font-weight: 700; }
+.message-history :deep([data-chat-message-role='user'] [data-chat-message-bubble]) { color: #101819; background: #f6f8f7 !important; border-color: #096f7c; }
+.message-history :deep([data-chat-message-role='user'] [data-chat-message-bubble] .markdown-content), .message-history :deep([data-chat-message-role='user'] [data-chat-message-bubble] .markdown-content *) { color: #101819 !important; font-weight: 700; }
 .message-history :deep(pre), .message-history :deep(code) { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 .pending-transcript { display: flex; align-items: center; gap: .4rem; width: fit-content; max-width: 90%; margin: .55rem .2rem .1rem auto; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #c9fffa; background: rgb(17 81 79 / 40%); font-size: .78rem; font-style: italic; }
 .assistant-activity { display: flex; align-items: center; gap: .45rem; width: fit-content; max-width: 90%; margin: .55rem .2rem; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #b9f5ec; background: rgb(17 81 79 / 48%); font-size: .78rem; font-weight: 700; }.activity-orb { width: .55rem; height: .55rem; border-radius: 999px; background: #7ce7d8; box-shadow: 0 0 .8rem #7ce7d8; animation: activity-pulse 1.2s ease-in-out infinite; }.activity-dots { display: flex; gap: .14rem; }.activity-dots i { width: .24rem; height: .24rem; border-radius: 999px; background: currentColor; animation: activity-bounce .9s ease-in-out infinite; }.activity-dots i:nth-child(2) { animation-delay: .12s; }.activity-dots i:nth-child(3) { animation-delay: .24s; }@keyframes activity-pulse { 50% { opacity: .35; transform: scale(.75); } }@keyframes activity-bounce { 50% { opacity: .3; transform: translateY(-.18rem); } }
