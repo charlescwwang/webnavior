@@ -12,7 +12,6 @@ export interface KioskSite {
   id: string
   name: string
   interactionRetentionDays: number
-  mediaCapturePolicy: { mode: 'off' | 'snapshot' | 'triggered' | 'continuous' }
 }
 
 export interface KioskDevice {
@@ -586,28 +585,6 @@ export function useKioskManagement() {
     }
   }
 
-  async function saveMediaCapturePolicy(mode: KioskSite['mediaCapturePolicy']['mode']) {
-    if (!selectedSiteId.value)
-      return
-    saving.value = true
-    try {
-      const site = await request<KioskSite>(`/sites/${selectedSiteId.value}/media-capture-policy`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode }),
-      })
-      if (site)
-        managedSites.value = managedSites.value.map(item => item.id === site.id ? site : item)
-      notice.success('Kiosk 影像保存模式已更新，設備下次同步時會套用。')
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法更新影像保存模式。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
   function selectProfileDraft(draft: KioskProfileDraft) {
     profileDraft.value = draft
   }
@@ -637,7 +614,6 @@ export function useKioskManagement() {
     publishedExperience,
     save,
     saveInteractionRetention,
-    saveMediaCapturePolicy,
     saveModelPolicy,
     saveProactiveVlmEnabled,
     savePerformanceProfile,

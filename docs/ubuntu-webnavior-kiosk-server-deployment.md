@@ -298,6 +298,44 @@ log 應出現 `Applied schema` 與 `Server started`。若 `/readyz` 失敗，先
 `webnavior-api`。資料庫 migration 不是自動可逆操作，因此更新前的 PostgreSQL 備份是
 回復資料狀態的唯一可靠方式。
 
+### 前端建置網址
+
+前端的 `VITE_*` 值是在建置時寫入靜態檔，不能放在
+`/etc/webnavior/server.env`。在每台部署機建立下列未提交的檔案；將
+`https://kiosk.example.com` 替換為實際對外 HTTPS 網域。
+
+`apps/stage-web/.env.production.local`：
+
+```env
+VITE_SERVER_URL=https://kiosk.example.com
+```
+
+`apps/stage-kiosk/.env.production.local`：
+
+```env
+VITE_KIOSK_ADMIN_PIN=<kiosk-admin-pin>
+VITE_SERVER_URL=https://kiosk.example.com
+VITE_API_SERVER_URL=https://kiosk.example.com
+VITE_ORDERING_SCENARIO_URL=https://kiosk.example.com/menu/
+```
+
+`VITE_SERVER_URL` 是 Stage Web 與 Kiosk 共用服務的來源；缺少它可能會讓瀏覽器嘗試連線到
+預設 AIRI API。`VITE_API_SERVER_URL` 是 Kiosk 的設備 API；
+`VITE_ORDERING_SCENARIO_URL` 是 Kiosk 內嵌點餐頁的網址。
+
+目前的 `scripts/updateKioskUbuntu.sh` 會讀取上述兩個檔案，建置 Web 根目錄 `/`、Kiosk
+`/kiosk/` 與菜單 `/menu/` 後發布到 Nginx。若更新內容包含腳本本身，先拉取新版，再執行它：
+
+```bash
+cd /srv/webnavior
+git pull --ff-only
+bash scripts/updateKioskUbuntu.sh
+```
+
+Web 根目錄必須以 `--base=/` 建置；若使用 `/web/`，Nginx 會把找不到的 JavaScript 請求回應為
+SPA HTML，瀏覽器便會顯示 `Unexpected token '<'`。部署完成後，對管理頁做一次硬重新整理以清除
+舊的 chunk 快取。
+
 ## 維運指令
 
 ```bash

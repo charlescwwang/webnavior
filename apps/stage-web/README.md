@@ -22,3 +22,18 @@ The iframe URL comes from the enabled service's saved **互動服務** `serviceU
 `VITE_ORDER_MENU_URL` supplies only the first-run default; it does not replace an
 already saved URL. `VITE_AIRI_ORIGIN` is an embedded service's WebMCP allowlist
 setting and does not alter the iframe `src`.
+
+## Webnavior Kiosk management
+
+The Webnavior admin Kiosk pages separate retained customer records from device
+configuration:
+
+- **Kiosk 使用歷程** is for viewing and deleting retained visitor sessions,
+  transcripts, and associated media only.
+- **Kiosk 設備** is where an administrator opens one registered device's
+  **裝置設定**. Camera evidence mode is configured per device there. The
+  **保存天數** control appears with that device configuration, but applies to
+  every device in the selected site because session retention is a site policy.
+
+The admin application does not embed a Kiosk preview. Open the separately
+deployed `/kiosk/` application when an end-to-end customer-flow check is needed.

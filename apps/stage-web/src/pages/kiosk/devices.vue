@@ -23,6 +23,7 @@ const {
   selectedSite,
   selectedSiteId,
   selectSite,
+  saveInteractionRetention,
   sites,
 } = useKioskManagement()
 
@@ -36,6 +37,7 @@ interface PendingAction {
 
 const pendingAction = shallowRef<PendingAction>()
 const settingsDeviceId = shallowRef('')
+const retentionDays = shallowRef(180)
 const { t } = useI18n()
 const actionDialogOpen = shallowRef(false)
 const selectedDeviceIds = shallowRef<string[]>([])
@@ -137,6 +139,10 @@ watch(selectedSiteId, () => {
   selectedDeviceIds.value = []
   batchResultMessage.value = ''
 })
+
+watch(selectedSite, (site) => {
+  retentionDays.value = site?.interactionRetentionDays ?? 180
+}, { immediate: true })
 
 onMounted(() => void load())
 </script>
@@ -286,6 +292,28 @@ onMounted(() => void load())
       mode="admin"
       :endpoint="settingsEndpoint"
     />
+    <section
+      v-if="capabilities?.canEditTechnicalSettings && devices.some(device => device.id === settingsDeviceId) && selectedSite"
+      :class="['grid gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-800']"
+    >
+      <div>
+        <h2 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
+          資料保存設定
+        </h2>
+        <p :class="['mb-0 mt-1 text-sm text-slate-500 dark:text-slate-400']">
+          保存天數會套用到「{{ selectedSite.name }}」的所有設備；影像保存模式則在上方裝置設定中逐台調整。
+        </p>
+      </div>
+      <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
+        保存天數
+        <div :class="['flex gap-2']">
+          <input v-model.number="retentionDays" min="0" type="number" :class="['w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
+          <Button :disabled="saving || retentionDays < 0" @click="saveInteractionRetention(retentionDays)">
+            儲存
+          </Button>
+        </div>
+      </label>
+    </section>
     <AlertDialogRoot :open="actionDialogOpen" @update:open="actionDialogOpen = $event">
       <AlertDialogPortal>
         <AlertDialogOverlay :class="['fixed inset-0 z-100 bg-black/50']" />
