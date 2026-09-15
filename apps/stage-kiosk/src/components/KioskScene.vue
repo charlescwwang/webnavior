@@ -181,6 +181,11 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
     if (!canStartKioskVoiceTurn(interactionTurn.phase.value))
       return
 
+    // VAD has crossed the configured speech threshold. Stop TTS immediately
+    // before replacing the spoken turn, so barge-in never waits for audio
+    // playback cleanup or a later asynchronous phase transition.
+    if (interactionTurn.phase.value === 'speaking')
+      interruptAssistantOutput()
     activeVoiceTurn = interactionTurn.begin('voice', 'hearing-speech')
     if (customerSessionState.value === 'awaiting-idle-confirmation')
       continueCurrentSession()
@@ -199,19 +204,12 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
 const audioInputStarted = shallowRef(false)
 const isAudioListening = computed(() => enabled.value && audioInputStarted.value && !inferenceError.value)
 const audioInputIndicator = computed(() => {
-  if (!isAudioListening.value) {
-    return {
-      icon: 'i-solar:microphone-slash-bold',
-      label: '未收音',
-      mode: 'not-listening',
-      title: '麥克風未收音',
-    }
-  }
-
+  // A customer-facing operation always wins over background observation. This
+  // keeps the floating indicator useful while speech or a reply is in flight.
   if (interactionTurn.phase.value === 'transcribing') {
     return {
       icon: 'i-solar:microphone-3-bold-duotone',
-      label: '辨識中',
+      label: '系統正在辨識',
       mode: 'transcribing',
       title: '正在辨識語音，請稍候。',
     }
@@ -220,7 +218,7 @@ const audioInputIndicator = computed(() => {
   if (interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool') {
     return {
       icon: 'i-solar:cpu-bolt-bold-duotone',
-      label: '處理中',
+      label: '系統正在處理',
       mode: 'processing',
       title: '正在處理你的點餐需求，暫時不接收新的語音。',
     }
@@ -229,7 +227,7 @@ const audioInputIndicator = computed(() => {
   if (interactionTurn.phase.value === 'hearing-speech') {
     return {
       icon: 'i-solar:microphone-3-bold',
-      label: '正在收音',
+      label: '系統正在收音',
       mode: 'hearing-speech',
       title: '正在收音，說完後會自動辨識。',
     }
@@ -238,19 +236,54 @@ const audioInputIndicator = computed(() => {
   if (interactionTurn.phase.value === 'speaking') {
     return {
       icon: 'i-solar:volume-loud-bold-duotone',
-      label: '正在說明',
+      hint: '直接說話即可打斷',
+      label: '系統正在說明',
       mode: 'speaking',
       title: '系統正在說明回覆內容',
     }
   }
 
+  if (proactiveVision.status.value === 'starting') {
+    return {
+      icon: 'i-solar:camera-rotate-bold-duotone',
+      label: '系統正在啟動偵測',
+      mode: 'starting-detection',
+      title: '正在啟動相機與人員偵測。',
+    }
+  }
+
+  if (proactiveVision.status.value === 'observing') {
+    return {
+      icon: 'i-solar:radar-2-bold-duotone',
+      label: '系統正在偵測',
+      mode: 'detecting',
+      title: '正在本機偵測偵測區內的人員。',
+    }
+  }
+
+  if (proactiveVision.status.value === 'failed' || proactiveVision.status.value === 'unsupported') {
+    return {
+      icon: 'i-solar:camera-slash-bold',
+      label: '系統無法偵測',
+      mode: 'detection-unavailable',
+      title: proactiveVision.error.value ?? '相機偵測目前無法使用。',
+    }
+  }
+
+  if (!isAudioListening.value) {
+    return {
+      icon: 'i-solar:microphone-slash-bold',
+      label: '系統未收音',
+      mode: 'not-listening',
+      title: '麥克風未收音',
+    }
+  }
+
   return {
     icon: 'i-solar:microphone-3-bold',
-    label: '收音中',
+    label: '系統正在傾聽',
     mode: 'listening',
-    title: interactionTurn.phase.value === 'speaking'
-      ? '正在說明，可直接說話打斷。'
-      : '麥克風收音中',
+    title: '麥克風正在傾聽，直接說話即可開始。',
   }
 })
 

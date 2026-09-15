@@ -5,6 +5,7 @@ import { computed, shallowRef } from 'vue'
 
 const props = defineProps<{
   icon: string
+  hint?: string
   interruptible: boolean
   label: string
   mode: string
@@ -58,6 +59,7 @@ function endMove(event: PointerEvent) {
   >
     <span :class="[props.icon, 'status-icon']" aria-hidden="true" />
     <span class="status-label">{{ props.label }}</span>
+    <span v-if="props.hint" class="status-hint">{{ props.hint }}</span>
     <button
       v-if="props.interruptible"
       class="interrupt-button"
@@ -77,6 +79,7 @@ function endMove(event: PointerEvent) {
 .audio-status-overlay:active { cursor: grabbing; }
 .status-icon { width: 3.6rem; height: 3.6rem; }
 .status-label { font-size: 1.05rem; font-weight: 700; letter-spacing: .04em; }
+.status-hint { font-size: .82rem; font-weight: 700; line-height: 1.35; text-align: center; }
 .interrupt-button { border: 1px solid currentColor; border-radius: 999px; padding: .4rem .75rem; color: inherit; font-size: .85rem; font-weight: 800; background: rgb(0 0 0 / 22%); cursor: pointer; }
 .interrupt-button:hover, .interrupt-button:focus-visible { background: rgb(0 0 0 / 40%); outline: 2px solid currentColor; outline-offset: 2px; }
 .audio-status-overlay.is-listening, .audio-status-overlay.is-hearing-speech { color: #91e7d6; border-color: rgb(82 217 190 / 62%); background: rgb(9 51 50 / 88%); }
@@ -84,6 +87,11 @@ function endMove(event: PointerEvent) {
 .audio-status-overlay.is-transcribing { color: #a8d8ff; border-color: rgb(116 187 255 / 62%); background: rgb(11 39 68 / 88%); }
 .audio-status-overlay.is-processing { color: #e5c8ff; border-color: rgb(192 138 255 / 62%); background: rgb(49 26 75 / 88%); }
 .audio-status-overlay.is-speaking { color: #ffe0a6; border-color: rgb(255 186 89 / 62%); background: rgb(70 45 14 / 88%); }
+.audio-status-overlay.is-starting-detection { color: #c6e9ff; border-color: rgb(127 199 248 / 62%); background: rgb(12 47 68 / 88%); }
+.audio-status-overlay.is-detecting { color: #9af2c5; border-color: rgb(94 220 154 / 62%); background: rgb(11 61 43 / 88%); }
+.audio-status-overlay.is-detecting .status-icon, .audio-status-overlay.is-starting-detection .status-icon { animation: detection-status-pulse 1.4s ease-in-out infinite; }
+.audio-status-overlay.is-detection-unavailable { color: #f4c6ba; border-color: rgb(244 151 131 / 50%); background: rgb(76 31 26 / 88%); }
 .audio-status-overlay.is-not-listening { color: #b8c6c4; border-color: rgb(184 198 196 / 28%); background: rgb(20 29 31 / 90%); }
 @keyframes audio-status-pulse { 50% { transform: scale(1.12); } }
+@keyframes detection-status-pulse { 50% { transform: scale(1.1); opacity: .66; } }
 </style>
