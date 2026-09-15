@@ -30,6 +30,22 @@ describe('useKioskInteractionTurn', () => {
     scope.stop()
   })
 
+  it('lets a customer voice turn supersede spoken output immediately', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())
+    if (!interaction)
+      throw new Error('Expected kiosk interaction turn to initialize.')
+
+    const spokenTurn = interaction.begin('conversation', 'speaking')
+    expect(canStartKioskVoiceTurn(interaction.phase.value)).toBe(true)
+
+    const voiceTurn = interaction.begin('voice', 'hearing-speech')
+    expect(spokenTurn.signal.aborted).toBe(true)
+    expect(interaction.isCurrent(voiceTurn)).toBe(true)
+    expect(interaction.phase.value).toBe('hearing-speech')
+    scope.stop()
+  })
+
   it('allows proactive interaction only when no customer turn is active', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())
