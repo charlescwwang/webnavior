@@ -168,18 +168,35 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
       pendingWorkTokens.clear()
       pendingWorkCount.value = 0
       state.value = 'resetting'
+      const customerBeforeReset = customer.value
       const completedChatSessionId = standbyChatSessionId.value
 
-      await options.resetInteractiveSurface()
-      standbyChatSessionId.value = await options.chatSession.createSession(
-        options.activeCardId.value || 'default',
-        { setActive: true, title: 'Kiosk 等候中' },
-      )
-      if (completedChatSessionId)
-        await options.chatSession.deleteSession(completedChatSessionId)
+      try {
+        await options.resetInteractiveSurface()
+        standbyChatSessionId.value = await options.chatSession.createSession(
+          options.activeCardId.value || 'default',
+          { setActive: true, title: 'Kiosk 等候中' },
+        )
+        if (completedChatSessionId)
+          await options.chatSession.deleteSession(completedChatSessionId)
 
-      customer.value = undefined
-      state.value = 'standby'
+        customer.value = undefined
+        state.value = 'standby'
+      }
+      catch (error) {
+        // A failed iframe or chat reset must not strand the current visitor in
+        // `resetting`; return the existing session to an actionable state so
+        // the customer can continue or retry the explicit restart.
+        customer.value = customerBeforeReset
+        if (customerBeforeReset) {
+          state.value = 'active'
+          scheduleIdleTimeout()
+        }
+        else {
+          state.value = 'standby'
+        }
+        throw error
+      }
     })().finally(() => {
       resetTask = undefined
     })

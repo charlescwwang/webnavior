@@ -51,6 +51,30 @@ describe('useKioskCustomerSession', () => {
     expect(session.state.value).toBe('standby')
   })
 
+  it('restores the active customer session when interactive reset fails', async () => {
+    reloadScenario.mockRejectedValueOnce(new Error('iframe unavailable'))
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({
+      activeCardId: shallowRef('default'),
+      chatSession,
+    }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    await expect(session.end('staff')).rejects.toThrow('iframe unavailable')
+
+    expect(session.state.value).toBe('active')
+    expect(session.customer.value?.sessionId).toBeTruthy()
+  })
+
   it('keeps a session active while AIRI is waiting for a provider response', async () => {
     // ROOT CAUSE:
     //

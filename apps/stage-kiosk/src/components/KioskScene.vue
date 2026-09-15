@@ -72,6 +72,7 @@ const { activeCardId } = storeToRefs(useAiriCardStore())
 const conversationMessages = shallowRef<ChatHistoryItem[]>([])
 const conversationWorkStatus = shallowRef<string>()
 const pendingTranscript = shallowRef<string>()
+const customerResetError = shallowRef<string>()
 const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorKioskActivityManifest>>>()
 const interactionTurn = useKioskInteractionTurn()
 const conversationSending = computed(() => (
@@ -123,6 +124,7 @@ const {
   startNewCustomerSession: resetForNewCustomer,
   state: customerSessionState,
 } = customerSession
+const sessionNotice = computed(() => customerResetError.value ?? notice.value)
 const showIdleDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
 const proactiveSettings = computed(() => observationSettings(props.deviceSettings ?? defaultDeviceSettingsValues))
@@ -761,11 +763,18 @@ async function restartCustomerSession() {
 
   // This is an explicit customer reset, not an order completion. It bypasses
   // `completeOrder`, so no thank-you screen or feedback invitation is shown.
-  mediaCapture.stopContinuousCapture()
-  await interactionRecording.append('service_event', 'customer_requested_restart')
-  await interactionRecording.end('idle')
-  await customerSession.end('staff')
-  conversationMessages.value = []
+  customerResetError.value = undefined
+  try {
+    mediaCapture.stopContinuousCapture()
+    await interactionRecording.append('service_event', 'customer_requested_restart')
+    await interactionRecording.end('idle')
+    await customerSession.end('staff')
+    conversationMessages.value = []
+  }
+  catch (error) {
+    customerResetError.value = '無法重新開始，請確認連線後再試。'
+    console.error('[stage-kiosk] failed to restart the customer session:', error)
+  }
 }
 
 let stopMenuActivityListener: (() => void) | undefined
@@ -841,7 +850,7 @@ onUnmounted(() => {
       :pending-work="hasPendingWork"
       :state="customerSessionState"
     />
-    <KioskSessionNotice :message="notice" />
+    <KioskSessionNotice :message="sessionNotice" />
     <CustomerSessionIdleConfirmation
       v-if="customerSessionState === 'awaiting-idle-confirmation'"
       :deadline-at="idleDeadlineAt"
