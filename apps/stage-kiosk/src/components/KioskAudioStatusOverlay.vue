@@ -5,6 +5,7 @@ import { computed, shallowRef } from 'vue'
 
 const props = defineProps<{
   icon: string
+  interruptible: boolean
   label: string
   mode: string
   position: KioskAudioStatusPosition
@@ -12,6 +13,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  interrupt: []
   move: [position: KioskAudioStatusPosition]
 }>()
 
@@ -56,6 +58,17 @@ function endMove(event: PointerEvent) {
   >
     <span :class="[props.icon, 'status-icon']" aria-hidden="true" />
     <span class="status-label">{{ props.label }}</span>
+    <button
+      v-if="props.interruptible"
+      class="interrupt-button"
+      type="button"
+      @pointerdown.stop
+      @pointermove.stop
+      @pointerup.stop
+      @click.stop="emit('interrupt')"
+    >
+      停止語音
+    </button>
   </output>
 </template>
 
@@ -64,6 +77,8 @@ function endMove(event: PointerEvent) {
 .audio-status-overlay:active { cursor: grabbing; }
 .status-icon { width: 3.6rem; height: 3.6rem; }
 .status-label { font-size: 1.05rem; font-weight: 700; letter-spacing: .04em; }
+.interrupt-button { border: 1px solid currentColor; border-radius: 999px; padding: .4rem .75rem; color: inherit; font-size: .85rem; font-weight: 800; background: rgb(0 0 0 / 22%); cursor: pointer; }
+.interrupt-button:hover, .interrupt-button:focus-visible { background: rgb(0 0 0 / 40%); outline: 2px solid currentColor; outline-offset: 2px; }
 .audio-status-overlay.is-listening, .audio-status-overlay.is-hearing-speech { color: #91e7d6; border-color: rgb(82 217 190 / 62%); background: rgb(9 51 50 / 88%); }
 .audio-status-overlay.is-hearing-speech .status-icon { animation: audio-status-pulse 1.1s ease-in-out infinite; }
 .audio-status-overlay.is-transcribing { color: #a8d8ff; border-color: rgb(116 187 255 / 62%); background: rgb(11 39 68 / 88%); }

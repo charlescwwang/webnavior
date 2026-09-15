@@ -340,6 +340,16 @@ function interruptAssistantOutput() {
   assistantAudio = undefined
 }
 
+function interruptSpokenReply() {
+  if (interactionTurn.phase.value !== 'speaking')
+    return
+
+  // Cancelling the active turn also aborts speech synthesis when the audio
+  // has not started yet; the player's abort listener pauses active playback.
+  interactionTurn.cancel()
+  interruptAssistantOutput()
+}
+
 function clearConversationPresentation() {
   interactionTurn.cancel()
   interruptAssistantOutput()
@@ -742,7 +752,9 @@ onUnmounted(() => {
   <main :class="['kiosk-scene', `is-${orientation}`]">
     <KioskAudioStatusOverlay
       v-bind="audioInputIndicator"
+      :interruptible="interactionTurn.phase === 'speaking'"
       :position="audioStatusPosition"
+      @interrupt="interruptSpokenReply"
       @move="audioStatusPosition = $event"
     />
     <KioskAdminAccess class="kiosk-admin-access">
