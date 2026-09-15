@@ -12,7 +12,7 @@ export interface KioskSite {
   id: string
   name: string
   interactionRetentionDays: number
-  mediaCapturePolicy: { mode: 'off' | 'triggered' | 'continuous' }
+  mediaCapturePolicy: { mode: 'off' | 'snapshot' | 'triggered' | 'continuous' }
 }
 
 export interface KioskDevice {
@@ -64,7 +64,7 @@ export interface KioskVisitorMedia {
   endedAt: string | null
   id: string
   interactionEntryId: string | null
-  kind: 'audio_recording' | 'continuous_video' | 'triggered_video'
+  kind: 'audio_recording' | 'continuous_video' | 'triggered_image' | 'triggered_video'
   mimeType: string
   startedAt: string | null
 }

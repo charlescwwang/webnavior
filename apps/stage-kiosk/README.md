@@ -75,9 +75,11 @@ signed-in system administrator or an administrator of that device's Site.
 The PIN alone cannot authorize a settings write.
 
 Precedence is Site defaults, then administrator device overrides, then explicitly
-delegated local overrides. Site defaults cover recording, VLM, performance, and
-VAD; observation, greetings, reminders, timing, and detection zones have shared
-defaults and can be overridden per device. New devices have local controls locked
+delegated local overrides. Site defaults cover camera capture (off, JPEG snapshot,
+event clip, or continuous video), VLM, performance, and VAD; observation,
+greetings, reminders, timing, detection zones, and the MediaPipe face-confidence
+threshold (`0.40`–`0.80`, default `0.60`) have shared defaults and can be overridden
+per device. New devices have local controls locked
 and observation/greetings/reminders disabled. Old browser-local observation
 preferences are no longer authoritative and are not migrated automatically.
 

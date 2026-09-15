@@ -30,6 +30,7 @@ describe('device policy authorization and concurrency', () => {
     const other = await service.createDevice({ siteId, label: 'B', registrationMethod: 'qr_code' })
     const initial = await service.getDeviceSettings(deviceId)
     expect(initial.effective.observationEnabled).toBe(false)
+    expect(initial.effective.faceDetectionConfidence).toBe(0.6)
     expect(initial.effective.voiceVadThreshold).toBe(0.72)
     const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
@@ -74,6 +75,11 @@ describe('device policy authorization and concurrency', () => {
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
       overrides: { voiceVadThreshold: 2 },
+      localControls: [],
+    } })).rejects.toMatchObject({ statusCode: 400 })
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
+      version: 1,
+      overrides: { faceDetectionConfidence: 0.3 },
       localControls: [],
     } })).rejects.toMatchObject({ statusCode: 400 })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {

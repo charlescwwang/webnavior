@@ -17,10 +17,10 @@ export type KioskVisitorSessionState = 'active' | 'completed' | 'cancelled' | 'i
 /** The kind of ordered customer interaction record retained by the POC. */
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
 /** Binary evidence captured during an internal kiosk POC interaction. */
-export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_video' | 'continuous_video'
+export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_image' | 'triggered_video' | 'continuous_video'
 /** Controls whether an internal POC preserves camera evidence for a Site. */
 export interface KioskMediaCapturePolicy {
-  mode: 'off' | 'triggered' | 'continuous'
+  mode: 'off' | 'snapshot' | 'triggered' | 'continuous'
 }
 /** Server-selected resource budget for a kiosk Site. */
 export type KioskPerformanceProfile = 'constrained' | 'balanced' | 'high'

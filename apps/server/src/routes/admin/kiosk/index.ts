@@ -25,7 +25,7 @@ const interactionRetentionSchema = object({
 })
 
 const mediaCapturePolicySchema = object({
-  mode: picklist(['off', 'triggered', 'continuous']),
+  mode: picklist(['off', 'snapshot', 'triggered', 'continuous']),
 })
 const proactiveVlmSchema = object({ enabled: boolean() })
 const performanceProfileSchema = object({ profile: picklist(['constrained', 'balanced', 'high']) })

@@ -26,17 +26,20 @@ fields:
   zoneY: 偵測區 Y（0–1）
   zoneWidth: 偵測區寬度（0–1）
   zoneHeight: 偵測區高度（0–1）
-  mediaCaptureMode: 相機錄影
+  mediaCaptureMode: 相機保存方式
+  faceDetectionConfidence: 人臉偵測信心（0.40–0.80）
   proactiveVlmEnabled: 傳送主動觀測畫面給 VLM
   performanceProfile: 裝置運作模式
   voiceVadThreshold: 語音偵測門檻（0.50–0.95）
 fieldDescriptions:
   performanceProfile: 依硬體能力調整相機畫質、人員偵測速度與錄影上限。一般設備選「一般（建議）」；畫面卡頓時選「省資源」；高規設備才選「高規設備」。
+  faceDetectionConfidence: 調低可偵測較遠或較小的人臉，但較容易誤判。預設為 0.60。
 options:
   attention: 看向 Kiosk
   presence: 進入偵測區
   mixed: 任一訊號
   off: 關閉
+  snapshot: 活動觸發圖片快照
   triggered: 事件短片
   continuous: 持續錄影
   constrained: 省資源（較低畫質與較慢偵測）

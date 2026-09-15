@@ -43,11 +43,11 @@ export interface KioskVisitorSession {
   state: 'active' | 'completed' | 'cancelled' | 'idle'
 }
 
-export type KioskMediaCaptureMode = 'off' | 'triggered' | 'continuous'
+export type KioskMediaCaptureMode = 'off' | 'snapshot' | 'triggered' | 'continuous'
 export type KioskPerformanceProfile = 'constrained' | 'balanced' | 'high'
 
 export type KioskInteractionEntryKind = 'user_text' | 'assistant_text' | 'asr_transcript' | 'tool_call' | 'tool_result' | 'service_event' | 'order_result'
-export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_video' | 'continuous_video'
+export type KioskVisitorMediaKind = 'audio_recording' | 'triggered_image' | 'triggered_video' | 'continuous_video'
 
 export interface KioskToolDefinition {
   function: { description?: string, name: string, parameters: unknown }
@@ -208,7 +208,12 @@ export async function uploadKioskVisitorMedia(input: {
   visitorSessionId: string
 }) {
   const body = new FormData()
-  body.set('file', input.recording, input.kind === 'audio_recording' ? 'microphone.wav' : 'camera.webm')
+  const filename = input.kind === 'audio_recording'
+    ? 'microphone.wav'
+    : input.kind === 'triggered_image'
+      ? 'camera.jpg'
+      : 'camera.webm'
+  body.set('file', input.recording, filename)
   body.set('kind', input.kind)
   if (input.interactionEntryId)
     body.set('interactionEntryId', input.interactionEntryId)

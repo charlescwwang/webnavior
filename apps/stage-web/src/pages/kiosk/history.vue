@@ -29,7 +29,7 @@ const selectedSession = computed(() => visitorSessions.value.find(session => ses
 const selectedVisitorSessionIds = shallowRef<string[]>([])
 const selectedDeviceId = shallowRef('')
 const retentionDays = shallowRef(180)
-const mediaCaptureMode = shallowRef<'off' | 'triggered' | 'continuous'>('triggered')
+const mediaCaptureMode = shallowRef<'off' | 'snapshot' | 'triggered' | 'continuous'>('triggered')
 const historyReady = shallowRef(false)
 
 watch(selectedSite, (site) => {
@@ -95,7 +95,7 @@ watch([selectedSiteId, selectedDeviceId], () => {
           資料保存設定
         </h2>
         <p :class="['mb-0 mt-1 text-sm text-slate-500 dark:text-slate-400']">
-          連續影片只在訪客會話進行中錄製；主動招呼與顧客活動短片會直接關聯到對應事件。
+          圖片快照或活動短片會直接關聯到對應事件；連續影片只在訪客會話進行中錄製。
         </p>
       </div>
       <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
@@ -110,6 +110,7 @@ watch([selectedSiteId, selectedDeviceId], () => {
         <div :class="['flex gap-2']">
           <select v-model="mediaCaptureMode" :class="['flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
             <option value="off">關閉影像保存</option>
+            <option value="snapshot">只保存活動觸發圖片</option>
             <option value="triggered">只保存活動觸發短片</option>
             <option value="continuous">活動短片與會話連續影片</option>
           </select>

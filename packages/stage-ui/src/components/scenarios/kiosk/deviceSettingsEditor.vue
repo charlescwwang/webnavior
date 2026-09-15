@@ -17,7 +17,7 @@ const localControls = ref<DeviceSettingKey[]>([])
 const clearLocalOverrides = ref<DeviceSettingKey[]>([])
 const options: Partial<Record<DeviceSettingKey, string[]>> = {
   triggerMode: ['attention', 'presence', 'mixed'],
-  mediaCaptureMode: ['off', 'triggered', 'continuous'],
+  mediaCaptureMode: ['off', 'snapshot', 'triggered', 'continuous'],
   performanceProfile: ['constrained', 'balanced', 'high'],
 }
 watch(() => props.snapshot, (snapshot) => {
@@ -52,8 +52,8 @@ function delegate(key: DeviceSettingKey, enabled: boolean) {
     <p>{{ t('deviceSettings.description') }}</p>
     <div v-for="key in deviceSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
-      <p v-if="key === 'performanceProfile'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
-        {{ t('deviceSettings.fieldDescriptions.performanceProfile') }}
+      <p v-if="key === 'performanceProfile' || key === 'faceDetectionConfidence'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
+        {{ t(`deviceSettings.fieldDescriptions.${key}`) }}
       </p>
       <label :class="['flex items-center gap-2']">
         <Checkbox :model-value="overrides[key] !== undefined" :disabled="locked(key)" @update:model-value="toggleOverride(key, $event)" />

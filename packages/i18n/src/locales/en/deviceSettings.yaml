@@ -26,17 +26,20 @@ fields:
   zoneY: Detection area Y (0–1)
   zoneWidth: Detection area width (0–1)
   zoneHeight: Detection area height (0–1)
-  mediaCaptureMode: Camera recording
+  mediaCaptureMode: Camera capture
+  faceDetectionConfidence: Face detection confidence (0.40–0.80)
   proactiveVlmEnabled: Send proactive frames to VLM
   performanceProfile: Device operating mode
   voiceVadThreshold: Voice detection threshold (0.50–0.95)
 fieldDescriptions:
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
+  faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
 options:
   attention: Looking at kiosk
   presence: Presence in area
   mixed: Either signal
   off: Disabled
+  snapshot: Event-triggered image snapshot
   triggered: Event clips
   continuous: Continuous recording
   constrained: Resource-saving (lower quality and slower detection)

@@ -12,6 +12,7 @@ const wasmRoot = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/w
 export type KioskProactiveVisionStatus = 'idle' | 'starting' | 'capturing' | 'observing' | 'unsupported' | 'failed'
 
 interface Options {
+  detectionConfidence: () => number
   detectionEnabled: () => boolean
   detectionZone: () => DetectionZone
   performance: () => KioskPerformanceSettings
@@ -80,9 +81,9 @@ export function useKioskProactiveVision(options: Options) {
         baseOptions: { modelAssetPath },
         runningMode: 'VIDEO',
         numFaces: options.performance().maxFaces,
-        minFaceDetectionConfidence: 0.6,
-        minFacePresenceConfidence: 0.6,
-        minTrackingConfidence: 0.6,
+        minFaceDetectionConfidence: options.detectionConfidence(),
+        minFacePresenceConfidence: options.detectionConfidence(),
+        minTrackingConfidence: options.detectionConfidence(),
       })
 
       if (startedGeneration !== generation) {

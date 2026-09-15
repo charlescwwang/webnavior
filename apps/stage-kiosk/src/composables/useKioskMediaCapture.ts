@@ -6,7 +6,7 @@ import { uploadKioskVisitorMedia } from '../services/kiosk-device'
 /**
  * Captures POC evidence from the already-approved kiosk camera and microphone.
  * Continuous footage is split into independently playable files; interaction
- * clips give reviewers a short, direct view of the trigger context.
+ * capture can instead save one JPEG without creating a recorder.
  */
 export function useKioskMediaCapture(getVisitorSessionId: () => string | undefined, getPerformance: () => KioskPerformanceSettings) {
   let cameraStream: MediaStream | undefined
@@ -71,6 +71,47 @@ export function useKioskMediaCapture(getVisitorSessionId: () => string | undefin
     window.setTimeout(() => recorder.stop(), getPerformance().triggeredClipMs)
   }
 
+  /** Saves one still frame without creating a MediaRecorder or collecting video buffers. */
+  async function captureInteractionSnapshot(interactionEntryId: string | undefined) {
+    if (!cameraStream?.active)
+      return
+
+    const sessionId = getVisitorSessionId()
+    if (!sessionId)
+      return
+
+    const video = document.createElement('video')
+    video.autoplay = true
+    video.muted = true
+    video.playsInline = true
+    video.srcObject = cameraStream
+
+    try {
+      await video.play()
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
+        await new Promise<void>(resolve => video.addEventListener('loadeddata', () => resolve(), { once: true }))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      if (canvas.width === 0 || canvas.height === 0)
+        return
+      canvas.getContext('2d')?.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const image = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+      if (image) {
+        const capturedAt = new Date()
+        save('triggered_image', image, { endedAt: capturedAt, interactionEntryId, startedAt: capturedAt }, sessionId)
+      }
+    }
+    catch (error) {
+      console.error('Failed to capture kiosk image snapshot:', error)
+    }
+    finally {
+      video.pause()
+      video.srcObject = null
+    }
+  }
+
   function saveAudio(recording: Blob, interactionEntryId: string | undefined) {
     save('audio_recording', recording, { endedAt: new Date(), interactionEntryId })
   }
@@ -85,7 +126,7 @@ export function useKioskMediaCapture(getVisitorSessionId: () => string | undefin
     continuousRecorder = undefined
   }
 
-  return { attachCameraStream, captureInteractionClip, saveAudio, startSessionCapture, stopContinuousCapture }
+  return { attachCameraStream, captureInteractionClip, captureInteractionSnapshot, saveAudio, startSessionCapture, stopContinuousCapture }
 }
 
 function supportedVideoMimeType() {

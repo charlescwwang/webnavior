@@ -247,12 +247,16 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const interactionEntryId = form.get('interactionEntryId')
     if (!(file instanceof File) || file.size === 0 || file.size > 32 * 1024 * 1024)
       throw createBadRequestError('Kiosk media requires a file up to 32 MiB', 'INVALID_REQUEST')
-    if (kind !== 'audio_recording' && kind !== 'triggered_video' && kind !== 'continuous_video')
+    if (kind !== 'audio_recording' && kind !== 'triggered_image' && kind !== 'triggered_video' && kind !== 'continuous_video')
       throw createBadRequestError('Invalid kiosk media kind', 'INVALID_REQUEST')
     const { effective } = await options.kioskService.getDeviceSettings(device.id)
-    if (kind !== 'audio_recording' && (effective.mediaCaptureMode === 'off'
-      || (kind === 'continuous_video' && (effective.mediaCaptureMode !== 'continuous' || effective.performanceProfile === 'constrained')))) {
-      throw createForbiddenError('Camera recording is disabled by device policy')
+    const cameraMediaAllowed = kind === 'triggered_image'
+      ? effective.mediaCaptureMode === 'snapshot'
+      : kind === 'continuous_video'
+        ? effective.mediaCaptureMode === 'continuous' && effective.performanceProfile !== 'constrained'
+        : effective.mediaCaptureMode === 'triggered' || effective.mediaCaptureMode === 'continuous'
+    if (kind !== 'audio_recording' && !cameraMediaAllowed) {
+      throw createForbiddenError('Camera capture is disabled by device policy')
     }
     if (interactionEntryId !== null && (typeof interactionEntryId !== 'string' || interactionEntryId.length === 0 || interactionEntryId.length > 120))
       throw createBadRequestError('Invalid kiosk media interaction reference', 'INVALID_REQUEST')

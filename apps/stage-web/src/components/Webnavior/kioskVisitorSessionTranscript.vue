@@ -15,6 +15,8 @@ const audioSources = shallowRef<Record<string, string>>({})
 const loadingAudioEntryId = shallowRef<string>()
 const videoSources = shallowRef<Record<string, string>>({})
 const loadingVideoEntryId = shallowRef<string>()
+const imageSources = shallowRef<Record<string, string>>({})
+const loadingImageEntryId = shallowRef<string>()
 const conversationEntries = computed(() => {
   const entries = props.detail?.entries ?? []
   return entries.filter((entry, index) => {
@@ -84,6 +86,10 @@ function videoForEntry(entry: KioskInteractionEntry) {
   return props.detail?.media.find(item => item.kind === 'triggered_video' && item.interactionEntryId === entry.id)
 }
 
+function imageForEntry(entry: KioskInteractionEntry) {
+  return props.detail?.media.find(item => item.kind === 'triggered_image' && item.interactionEntryId === entry.id)
+}
+
 async function loadAudio(entry: KioskInteractionEntry) {
   const media = audioForEntry(entry)
   if (!media || audioSources.value[entry.id])
@@ -118,8 +124,26 @@ async function loadVideo(entry: KioskInteractionEntry) {
   }
 }
 
+async function loadImage(entry: KioskInteractionEntry) {
+  const media = imageForEntry(entry)
+  if (!media || imageSources.value[entry.id])
+    return
+  loadingImageEntryId.value = entry.id
+  try {
+    const response = await authedFetch(new URL(`/api/admin/kiosk/visitor-media/${media.id}`, SERVER_URL).toString())
+    if (!response.ok)
+      throw new Error(`Request failed: ${response.status}`)
+    imageSources.value = { ...imageSources.value, [entry.id]: URL.createObjectURL(await response.blob()) }
+  }
+  finally {
+    if (loadingImageEntryId.value === entry.id)
+      loadingImageEntryId.value = undefined
+  }
+}
+
 onUnmounted(() => Object.values(audioSources.value).forEach(source => URL.revokeObjectURL(source)))
 onUnmounted(() => Object.values(videoSources.value).forEach(source => URL.revokeObjectURL(source)))
+onUnmounted(() => Object.values(imageSources.value).forEach(source => URL.revokeObjectURL(source)))
 </script>
 
 <template>
@@ -164,6 +188,10 @@ onUnmounted(() => Object.values(videoSources.value).forEach(source => URL.revoke
               {{ loadingVideoEntryId === entry.id ? '載入短片中…' : '檢視此活動短片' }}
             </button>
             <video v-else-if="videoSources[entry.id]" :src="videoSources[entry.id]" controls playsinline :class="['mt-2 w-full rounded']" />
+            <button v-if="imageForEntry(entry) && !imageSources[entry.id]" type="button" :class="['mt-2 rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingImageEntryId === entry.id" @click="loadImage(entry)">
+              {{ loadingImageEntryId === entry.id ? '載入圖片中…' : '檢視此活動圖片' }}
+            </button>
+            <img v-else-if="imageSources[entry.id]" :src="imageSources[entry.id]" alt="此活動的圖片快照" :class="['mt-2 w-full rounded']">
           </li>
         </ol>
       </section>

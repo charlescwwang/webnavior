@@ -10,11 +10,13 @@ const sources = shallowRef<Record<string, string>>({})
 const loadingId = shallowRef<string>()
 const continuousVideoItems = computed(() => props.media.filter(item => item.kind === 'continuous_video'))
 const triggeredVideoItems = computed(() => props.media.filter(item => item.kind === 'triggered_video'))
+const triggeredImageItems = computed(() => props.media.filter(item => item.kind === 'triggered_image'))
 
 function label(kind: KioskVisitorMedia['kind']) {
   return {
     audio_recording: '原始麥克風錄音',
     continuous_video: '連續攝影機片段',
+    triggered_image: '互動觸發圖片快照',
     triggered_video: '互動觸發短片',
   }[kind]
 }
@@ -63,7 +65,7 @@ onUnmounted(() => Object.values(sources.value).forEach(source => URL.revokeObjec
       連續攝影機紀錄
     </h3>
     <p :class="['mb-3 mt-1 text-xs text-slate-500 dark:text-slate-400']">
-      互動短片會直接出現在對應的顧客活動下；此區保留完整時序的攝影機片段。
+      互動短片與圖片快照會直接出現在對應的顧客活動下；此區保留完整時序的攝影機片段。
     </p>
     <div v-if="continuousVideoItems.length" :class="['grid gap-4 lg:grid-cols-2']">
       <article v-for="item in continuousVideoItems" :key="item.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
@@ -94,6 +96,20 @@ onUnmounted(() => Object.values(sources.value).forEach(source => URL.revokeObjec
           {{ loadingId === item.id ? '載入中…' : '檢視短片' }}
         </button>
         <video v-else :src="sources[item.id]" controls playsinline :class="['w-full rounded']" />
+      </article>
+    </div>
+    <div v-if="triggeredImageItems.length" :class="['mt-4 grid gap-4 lg:grid-cols-2']">
+      <article v-for="item in triggeredImageItems" :key="item.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
+        <p :class="['mb-2 mt-0 text-sm font-medium text-slate-800 dark:text-slate-100']">
+          {{ label(item.kind) }} · {{ size(item.byteSize) }}
+        </p>
+        <p :class="['mb-2 mt-0 text-xs text-slate-500 dark:text-slate-400']">
+          {{ timeline(item) }}
+        </p>
+        <button v-if="!sources[item.id]" type="button" :class="['rounded-md bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white dark:bg-slate-100 dark:text-slate-900']" :disabled="loadingId === item.id" @click="load(item)">
+          {{ loadingId === item.id ? '載入中…' : '檢視圖片' }}
+        </button>
+        <img v-else :src="sources[item.id]" alt="互動觸發圖片快照" :class="['w-full rounded']">
       </article>
     </div>
   </section>

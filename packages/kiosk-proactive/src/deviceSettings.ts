@@ -17,7 +17,9 @@ export interface DeviceSettingsValues {
   zoneY: number
   zoneWidth: number
   zoneHeight: number
-  mediaCaptureMode: 'off' | 'triggered' | 'continuous'
+  mediaCaptureMode: 'off' | 'snapshot' | 'triggered' | 'continuous'
+  /** MediaPipe acceptance threshold; lower values detect smaller/distant faces with more false positives. */
+  faceDetectionConfidence: number
   proactiveVlmEnabled: boolean
   performanceProfile: 'constrained' | 'balanced' | 'high'
   voiceVadThreshold: number
@@ -39,6 +41,7 @@ export const deviceSettingKeys = [
   'zoneWidth',
   'zoneHeight',
   'mediaCaptureMode',
+  'faceDetectionConfidence',
   'proactiveVlmEnabled',
   'performanceProfile',
   'voiceVadThreshold',
@@ -84,6 +87,7 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   zoneWidth: 0.6,
   zoneHeight: 0.7,
   mediaCaptureMode: 'off',
+  faceDetectionConfidence: 0.6,
   proactiveVlmEnabled: false,
   performanceProfile: 'balanced',
   voiceVadThreshold: 0.72,

@@ -45,6 +45,11 @@ accumulating history.
 - Kiosk Sites also persist a voice VAD probability threshold. Its default is
   `0.72` (strict); authorized operators can set `0.50`–`0.95` in the Kiosk
   technical settings, and kiosk bootstrap applies the value after reload.
+- Kiosk camera evidence supports `snapshot` in addition to off, triggered
+  video, and continuous video. Snapshot captures one event-linked JPEG without
+  creating `MediaRecorder`; the per-device `faceDetectionConfidence` setting
+  defaults to `0.60` and accepts `0.40`–`0.80` for MediaPipe detection,
+  presence, and tracking thresholds.
 - Kiosk interaction now has one cancellable turn across VAD, ASR, LLM/tool,
   TTS, and proactive work. ASR/model work gates new VAD turns; TTS remains
   interruptible. The Router now enforces `fullChainTimeoutMs` across all LLM

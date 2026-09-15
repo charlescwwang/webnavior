@@ -156,6 +156,7 @@ const localObservationRequired = computed(() => needsKioskObservation(
   customerSessionState.value === 'active',
 ))
 const proactiveVision = useKioskProactiveVision({
+  detectionConfidence: () => props.deviceSettings?.faceDetectionConfidence ?? defaultDeviceSettingsValues.faceDetectionConfidence,
   detectionEnabled: () => localObservationRequired.value,
   detectionZone: () => proactiveSettings.value.observation.detectionZone,
   performance: () => performanceSettings.value,
@@ -555,7 +556,9 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     const greetingEvent = await interactionRecording.append('service_event', 'proactive_greeting')
     if (!interactionTurn.isCurrent(turn))
       return
-    if (effectiveMediaCaptureMode.value !== 'off')
+    if (effectiveMediaCaptureMode.value === 'snapshot')
+      void mediaCapture.captureInteractionSnapshot(greetingEvent?.id)
+    else if (effectiveMediaCaptureMode.value !== 'off')
       mediaCapture.captureInteractionClip(greetingEvent?.id)
     const releasePendingWork = customerSession.beginPendingWork()
     try {
@@ -581,7 +584,9 @@ async function recordCustomerActivity(source: 'scenario' | 'voice_input' | 'voic
   await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
   mediaCapture.startSessionCapture(effectiveMediaCaptureMode.value)
   const activity = await interactionRecording.append('service_event', 'customer_activity', { source })
-  if (effectiveMediaCaptureMode.value !== 'off')
+  if (effectiveMediaCaptureMode.value === 'snapshot')
+    void mediaCapture.captureInteractionSnapshot(activity?.id)
+  else if (effectiveMediaCaptureMode.value !== 'off')
     mediaCapture.captureInteractionClip(activity?.id)
   assistanceReminderWindow.recordActivity(performance.now())
   return activity
