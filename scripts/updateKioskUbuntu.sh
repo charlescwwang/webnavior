@@ -7,6 +7,7 @@ readonly stage_web_deploy_dir='/var/www/airi/web'
 readonly kiosk_deploy_dir='/var/www/airi/kiosk'
 readonly order_menu_deploy_dir='/var/www/airi/menu'
 readonly pin_file='apps/stage-kiosk/.env.production.local'
+readonly stage_web_env_file='apps/stage-web/.env.production.local'
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 askpass_file=''
@@ -66,6 +67,11 @@ if ! grep -qE '^VITE_SERVER_URL=' "$pin_file" || ! grep -qE '^VITE_API_SERVER_UR
   exit 1
 fi
 
+if [[ ! -f "$stage_web_env_file" ]] || ! grep -qE '^VITE_SERVER_URL=' "$stage_web_env_file"; then
+  echo "Error: Add VITE_SERVER_URL to $stage_web_env_file before building." >&2
+  exit 1
+fi
+
 branch_name="$(git branch --show-current)"
 if [[ -z "$branch_name" ]]; then
   echo 'Error: The repository is not currently on a branch.' >&2
@@ -94,7 +100,7 @@ if ! GIT_TERMINAL_PROMPT=0 git pull --ff-only "$remote_name" "$branch_name"; the
 fi
 
 corepack pnpm install --frozen-lockfile
-corepack pnpm -F @proj-airi/stage-web exec vite build --base=/web/
+corepack pnpm -F @proj-airi/stage-web exec vite build --base=/
 corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
 corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
@@ -103,7 +109,7 @@ sudo rsync -a --delete apps/stage-web/dist/ "$stage_web_deploy_dir/"
 sudo rsync -a --delete apps/stage-kiosk/dist/ "$kiosk_deploy_dir/"
 sudo rsync -a --delete apps/order-menu/dist/ "$order_menu_deploy_dir/"
 
-echo 'Stage Web updated:  /web/'
+echo 'Stage Web updated:  /'
 echo 'Kiosk updated:     /kiosk/'
 echo 'Order menu updated: /menu/'
 echo 'API health check:  curl -fsS http://127.0.0.1:5168/readyz'

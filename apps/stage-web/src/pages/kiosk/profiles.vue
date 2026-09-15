@@ -11,7 +11,7 @@ import {
   AlertDialogTitle,
 } from 'reka-ui'
 import { onMounted, shallowRef, watch } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import KioskModelPolicyEditor from '../../components/Webnavior/kioskModelPolicyEditor.vue'
 import KioskProfileEditor from '../../components/Webnavior/kioskProfileEditor.vue'
@@ -110,12 +110,6 @@ watch(() => route.query.site, async (siteId) => {
         </p>
       </div>
       <div :class="['flex items-center gap-3']">
-        <RouterLink
-          :to="selectedSiteId ? { path: '/admin/kiosk/preview', query: { site: selectedSiteId } } : '/admin/kiosk/preview'"
-          :class="['rounded-lg border border-cyan-700 px-3 py-2 text-sm font-semibold text-cyan-800 transition-colors hover:bg-cyan-50 dark:border-cyan-300 dark:text-cyan-200 dark:hover:bg-cyan-400/10']"
-        >
-          查看草稿預覽
-        </RouterLink>
         <span v-if="selectedSite" :class="['rounded-full bg-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200']">{{ devices.length }} 台設備</span>
       </div>
     </section>
