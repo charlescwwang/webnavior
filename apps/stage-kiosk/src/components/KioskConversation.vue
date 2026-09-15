@@ -3,7 +3,7 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { BasicTextarea } from '@proj-airi/ui'
-import { computed, nextTick, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
@@ -44,19 +44,28 @@ const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
 const chatHistory = useTemplateRef<InstanceType<typeof ChatHistory>>('chatHistory')
+let lateTailFollow: ReturnType<typeof setTimeout> | undefined
 
 // Kiosk status rows live beside ChatHistory so they remain visible while a
 // reply is pending. Keep the transcript at its live edge when either the
 // message list or that adjacent status changes.
 function followLatestMessage() {
+  if (lateTailFollow)
+    clearTimeout(lateTailFollow)
+
   void nextTick(() => {
     // The history viewport can resize after a status row is rendered. Waiting
     // for two frames makes the follow operation happen after that layout work.
     requestAnimationFrame(() => requestAnimationFrame(() => chatHistory.value?.scrollToBottom()))
   })
+
+  // Markdown rendering is asynchronous. Follow again after that content has
+  // settled so a voice transcript is visible immediately like an LLM reply.
+  lateTailFollow = setTimeout(() => chatHistory.value?.scrollToBottom(), 300)
 }
 
 watch([historyMessages, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post' })
+onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 
 async function sendMessage() {
   if (!canSend.value)
