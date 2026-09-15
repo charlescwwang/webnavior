@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { KioskDevice } from '../services/kiosk-device'
 
+import { FieldRange } from '@proj-airi/ui'
+
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 
 const props = defineProps<{
@@ -15,6 +17,7 @@ const emit = defineEmits<{
 
 const paused = defineModel<boolean>('paused', { required: true })
 const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
+const conversationFontSize = defineModel<number>('conversationFontSize', { required: true })
 </script>
 
 <template>
@@ -54,6 +57,21 @@ const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { requ
 
       <slot name="device-settings" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
+
+      <section class="admin-section">
+        <h3>對話顯示</h3>
+        <FieldRange
+          v-model="conversationFontSize"
+          :default-value="20"
+          :max="40"
+          :min="20"
+          :step="1"
+          as="div"
+          description="只影響這台 Kiosk 瀏覽器上的顧客對話文字。"
+          label="對話文字大小"
+          :format-value="value => `${value}px`"
+        />
+      </section>
 
       <section class="admin-section">
         <h3>舞台</h3>

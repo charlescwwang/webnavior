@@ -66,7 +66,7 @@ const copyText = computed(() => getChatHistoryItemCopyText(props.message as Chat
             (isStageWeb() || isStageCapacitor()) && props.variant === 'mobile' ? 'select-none sm:select-auto' : '',
           ]"
         >
-          <div>
+          <div class="chat-message-label">
             <span text-sm text="black/60 dark:white/65" font-normal class="inline <sm:hidden">{{ label }}</span>
           </div>
           <MarkdownRenderer

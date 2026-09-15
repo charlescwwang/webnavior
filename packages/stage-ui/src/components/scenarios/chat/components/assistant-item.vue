@@ -111,7 +111,7 @@ const copyText = computed(() => getChatHistoryItemCopyText(props.message as Chat
             :message="message"
             :variant="variant"
           />
-          <div class="<sm:hidden">
+          <div class="chat-message-label <sm:hidden">
             <span text-sm text="black/60 dark:white/65" font-normal>{{ label }}</span>
           </div>
           <div v-if="resolvedSlices.length > 0" class="flex flex-col gap-2 break-words" text="primary-700 dark:primary-100">

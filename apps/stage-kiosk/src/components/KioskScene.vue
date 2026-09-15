@@ -19,6 +19,7 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 
 import KioskAdminAccess from './KioskAdminAccess.vue'
+import KioskAudioStatusOverlay from './KioskAudioStatusOverlay.vue'
 import KioskCameraPreview from './KioskCameraPreview.vue'
 import KioskConversation from './KioskConversation.vue'
 import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
@@ -26,7 +27,9 @@ import KioskSessionNotice from './KioskSessionNotice.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
+import { useKioskAudioStatusPosition } from '../composables/useKioskAudioStatusPosition'
 import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
+import { useKioskConversationFontSize } from '../composables/useKioskConversationFontSize'
 import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
 import { canStartKioskVoiceTurn, useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
@@ -108,6 +111,8 @@ const mediaCapture = useKioskMediaCapture(
   () => performanceSettings.value,
 )
 const cameraPreviewEnabled = useKioskCameraPreview()
+const audioStatusPosition = useKioskAudioStatusPosition()
+const conversationFontSize = useKioskConversationFontSize()
 const cameraStream = shallowRef<MediaStream>()
 const detectedFaces = shallowRef<Array<{ centre: { x: number, y: number }, facesCamera: boolean }>>([])
 const {
@@ -226,6 +231,15 @@ const audioInputIndicator = computed(() => {
       label: '正在收音',
       mode: 'hearing-speech',
       title: '正在收音，說完後會自動辨識。',
+    }
+  }
+
+  if (interactionTurn.phase.value === 'speaking') {
+    return {
+      icon: 'i-solar:volume-loud-bold-duotone',
+      label: '正在說明',
+      mode: 'speaking',
+      title: '系統正在說明回覆內容',
     }
   }
 
@@ -726,15 +740,11 @@ onUnmounted(() => {
 
 <template>
   <main :class="['kiosk-scene', `is-${orientation}`]">
-    <output
-      class="audio-listening-indicator"
-      :class="[`is-${audioInputIndicator.mode}`]"
-      :aria-label="audioInputIndicator.title"
-      :title="audioInputIndicator.title"
-    >
-      <span :class="[audioInputIndicator.icon, 'h-4 w-4']" aria-hidden="true" />
-      <span class="audio-listening-label">{{ audioInputIndicator.label }}</span>
-    </output>
+    <KioskAudioStatusOverlay
+      v-bind="audioInputIndicator"
+      :position="audioStatusPosition"
+      @move="audioStatusPosition = $event"
+    />
     <KioskAdminAccess class="kiosk-admin-access">
       <span class="i-solar:settings-outline h-4 w-4" aria-hidden="true" />
       <span>設定</span>
@@ -769,6 +779,7 @@ onUnmounted(() => {
       :messages="conversationMessages"
       :pending-transcript="pendingTranscript"
       :sending="conversationSending"
+      :font-size="conversationFontSize"
       :voice-input-locked="interactionTurn.phase === 'transcribing' || conversationSending"
       :voice-conversation-only="props.voiceConversationOnly"
       @activity="recordCustomerActivity"
@@ -798,10 +809,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.kiosk-scene { display: grid; width: 100vw; height: 100dvh; padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at top left, #154d56, transparent 45%), #101719; gap: 1rem; }
+.kiosk-scene { display: grid; width: 100vw; height: 100dvh; padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(29 85 85 / 34%), transparent 38%), linear-gradient(135deg, #0a1417, #111d21); gap: 1rem; }
 .kiosk-scene.is-landscape { grid-template-columns: minmax(14rem, .24fr) minmax(0, .76fr); grid-template-rows: minmax(0, .31fr) minmax(0, .69fr); }
 .kiosk-scene.is-portrait { grid-template-columns: minmax(10rem, .3fr) minmax(0, .7fr); grid-template-rows: minmax(0, .35fr) minmax(0, .65fr); }
-.stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.5rem; background: rgb(4 19 22 / 74%); grid-column: 1; grid-row: 1; }
+.stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 16%); border-radius: 1.5rem; background: rgb(3 15 18 / 88%); grid-column: 1; grid-row: 1; }
 .stage-model { width: 100%; height: 100%; }
 /* Keep the administrator hold target available without exposing controls in the customer-facing composition. */
 :global(.kiosk-admin-access) { position: fixed; z-index: 100; top: 1.75rem; left: 1.75rem; display: inline-flex; height: 2.25rem; align-items: center; gap: .35rem; border: 1px solid rgb(217 250 246 / 28%); border-radius: .7rem; padding: 0 .7rem; color: #d9faf6; background: rgb(1 17 20 / 92%); box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); opacity: 0; transition: opacity .16s ease, background .16s ease; }
@@ -809,13 +820,6 @@ onUnmounted(() => {
 .conversation-region { grid-column: 2; grid-row: 1; }
 .menu-region { min-width: 0; min-height: 0; grid-column: 1 / span 2; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
-.audio-listening-indicator { position: fixed; z-index: 20; top: 1.15rem; right: 1.15rem; display: inline-flex; align-items: center; gap: .4rem; border: 1px solid; border-radius: 999px; padding: .45rem .7rem; color: #fff; font-size: .75rem; font-weight: 700; transition: color .2s ease, background .2s ease, border-color .2s ease; }
-.audio-listening-indicator.is-listening, .audio-listening-indicator.is-hearing-speech { border-color: rgb(74 222 128 / 70%); background: rgb(20 83 45 / 88%); box-shadow: 0 0 .9rem rgb(74 222 128 / 36%); }
-.audio-listening-indicator.is-transcribing { border-color: rgb(250 204 21 / 76%); background: rgb(113 63 18 / 91%); box-shadow: 0 0 .9rem rgb(250 204 21 / 34%); }
-.audio-listening-indicator.is-processing { border-color: rgb(103 232 249 / 76%); background: rgb(8 47 73 / 91%); box-shadow: 0 0 .9rem rgb(103 232 249 / 34%); }
-.audio-listening-indicator.is-not-listening { border-color: rgb(248 113 113 / 70%); background: rgb(127 29 29 / 88%); box-shadow: 0 0 .9rem rgb(248 113 113 / 30%); }
-.audio-listening-indicator.is-listening > :first-child, .audio-listening-indicator.is-hearing-speech > :first-child, .audio-listening-indicator.is-transcribing > :first-child, .audio-listening-indicator.is-processing > :first-child { animation: audio-listening-pulse 1.2s ease-in-out infinite; }
-@keyframes audio-listening-pulse { 50% { opacity: .45; transform: scale(.82); } }
 .customer-restart { position: fixed; z-index: 20; bottom: 1.15rem; left: 1.15rem; display: inline-flex; align-items: center; gap: .45rem; border: 1px solid rgb(207 250 254 / 48%); border-radius: .7rem; padding: .6rem .8rem; color: #ecfeff; background: rgb(8 47 73 / 90%); font-size: .8rem; font-weight: 700; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(14 116 144 / 94%); }.customer-restart:disabled { cursor: wait; opacity: .55; }
 
 @media (max-width: 700px) {
