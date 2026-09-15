@@ -2,11 +2,11 @@
 import { computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import AdminMetric from '../components/Webnavior/AdminMetric.vue'
-import DashboardExperienceOverview from '../components/Webnavior/dashboardExperienceOverview.vue'
-import DashboardNextAction from '../components/Webnavior/dashboardNextAction.vue'
+import AdminMetric from '../../components/Webnavior/AdminMetric.vue'
+import DashboardExperienceOverview from '../../components/Webnavior/dashboardExperienceOverview.vue'
+import DashboardNextAction from '../../components/Webnavior/dashboardNextAction.vue'
 
-import { useKioskManagement } from '../composables/useKioskManagement'
+import { useKioskManagement } from '../../composables/useKioskManagement'
 
 const {
   deviceCount,
@@ -136,5 +136,5 @@ onMounted(() => void load())
 <route lang="yaml">
 meta:
   layout: webnavior-admin
-  title: Webnavior 儀表板
+  title: Webnavior 管理後台
 </route>

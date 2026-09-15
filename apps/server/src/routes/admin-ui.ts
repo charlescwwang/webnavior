@@ -12,5 +12,5 @@ export function createAdminUiRoutes(env: Pick<Env, 'WEB_APP_URL'>) {
 }
 
 function buildLocalAdminRedirectUrl(env: Pick<Env, 'WEB_APP_URL'>): string {
-  return new URL('/dashboard', env.WEB_APP_URL).toString()
+  return new URL('/admin', env.WEB_APP_URL).toString()
 }

@@ -10,7 +10,7 @@ interface NavigationItem {
 const route = useRoute()
 
 const navigation: NavigationItem[] = [
-  { icon: 'i-solar:widget-5-bold-duotone', label: '儀表板', to: '/dashboard' },
+  { icon: 'i-solar:widget-5-bold-duotone', label: '儀表板', to: '/admin' },
   { icon: 'i-solar:monitor-smartphone-bold-duotone', label: 'Kiosk 設備', to: '/admin/kiosk/devices' },
   { icon: 'i-solar:history-bold-duotone', label: '使用歷程', to: '/admin/kiosk/history' },
   { icon: 'i-solar:clipboard-list-bold-duotone', label: '互動體驗', to: '/admin/kiosk/profiles' },
