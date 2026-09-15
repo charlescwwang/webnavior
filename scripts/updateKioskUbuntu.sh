@@ -61,8 +61,8 @@ fi
 # The Kiosk browser may run on a different machine than this Server. These
 # build-time public URLs must therefore be explicit; otherwise Vite falls back
 # to localhost and produces a bundle that cannot register through Nginx.
-if ! grep -qE '^VITE_API_SERVER_URL=' "$pin_file" || ! grep -qE '^VITE_ORDERING_SCENARIO_URL=' "$pin_file"; then
-  echo "Error: Add VITE_API_SERVER_URL and VITE_ORDERING_SCENARIO_URL to $pin_file before building." >&2
+if ! grep -qE '^VITE_SERVER_URL=' "$pin_file" || ! grep -qE '^VITE_API_SERVER_URL=' "$pin_file" || ! grep -qE '^VITE_ORDERING_SCENARIO_URL=' "$pin_file"; then
+  echo "Error: Add VITE_SERVER_URL, VITE_API_SERVER_URL, and VITE_ORDERING_SCENARIO_URL to $pin_file before building." >&2
   exit 1
 fi
 
