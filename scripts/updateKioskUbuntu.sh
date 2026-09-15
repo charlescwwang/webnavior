@@ -95,6 +95,7 @@ sudo rsync -a --delete apps/stage-web/dist/ "$stage_web_deploy_dir/"
 sudo rsync -a --delete apps/stage-kiosk/dist/ "$kiosk_deploy_dir/"
 sudo rsync -a --delete apps/order-menu/dist/ "$order_menu_deploy_dir/"
 
-echo 'Stage Web updated:  http://YOUR-UBUNTU-IP:5169/web/'
-echo 'Kiosk updated:     http://YOUR-UBUNTU-IP:5169/kiosk/'
-echo 'Order menu updated: http://YOUR-UBUNTU-IP:5169/menu/'
+echo 'Stage Web updated:  /web/'
+echo 'Kiosk updated:     /kiosk/'
+echo 'Order menu updated: /menu/'
+echo 'API health check:  curl -fsS http://127.0.0.1:5168/readyz'
