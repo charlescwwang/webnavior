@@ -272,6 +272,44 @@ describe('kiosk service', () => {
     expect(laterRelease.snapshot.greetingPrompt).toBe('晚上好，想吃些什麼？')
   })
 
+  it('provisions a new site from the administrator default without changing existing sites', async () => {
+    await service.saveOwnerExperienceTemplateDraft({
+      ownerUserId: 'system-admin',
+      name: '營運者預設體驗',
+      snapshot: profileSnapshot,
+    })
+    const template = await service.publishOwnerExperienceTemplate({ ownerUserId: 'system-admin' })
+    const firstSite = await service.provisionSite({ name: 'First Store', ownerUserId: 'system-admin' })
+    const secondSite = await service.provisionSite({ name: 'Second Store', ownerUserId: 'system-admin' })
+
+    const [firstProfile, secondProfile] = await Promise.all([
+      service.getSiteProfile(firstSite.id),
+      service.getSiteProfile(secondSite.id),
+    ])
+    expect(firstSite.ownerUserId).toBe('system-admin')
+    expect(firstProfile.release).toMatchObject({ revision: 1, changeScope: 'template_seed', sourceTemplateReleaseId: template.id, snapshot: profileSnapshot })
+    expect(secondProfile.release).toMatchObject({ revision: 1, sourceTemplateReleaseId: template.id })
+
+    const siteDraft = await service.saveProfileDraft({
+      siteId: firstSite.id,
+      name: 'First Store custom',
+      snapshot: { ...profileSnapshot, greetingPrompt: '歡迎來到第一店。' },
+    })
+    const siteRelease = await service.publishProfileDraft({ siteId: firstSite.id, draftId: siteDraft.id })
+    expect(siteRelease).toMatchObject({ revision: 2, changeScope: 'site_override', parentSiteReleaseId: firstProfile.release?.id, sourceTemplateReleaseId: template.id })
+    await expect(service.getOwnerExperienceTemplate('system-admin')).resolves.toMatchObject({ release: { id: template.id, revision: 1 } })
+    await expect(service.getSiteProfile(secondSite.id)).resolves.toMatchObject({ release: { id: secondProfile.release?.id, revision: 1 } })
+  })
+
+  it('assigns a newly registered device to the site latest release', async () => {
+    await service.saveOwnerExperienceTemplateDraft({ ownerUserId: 'system-admin', name: '預設', snapshot: profileSnapshot })
+    await service.publishOwnerExperienceTemplate({ ownerUserId: 'system-admin' })
+    const site = await service.provisionSite({ name: 'Ready Store', ownerUserId: 'system-admin' })
+    const release = (await service.getSiteProfile(site.id)).release!
+    const device = await service.createDevice({ siteId: site.id, label: 'COUNTER-01', registrationMethod: 'qr_code' })
+    await expect(service.getDeviceProfile(device.id)).resolves.toMatchObject({ id: release.id, revision: 1 })
+  })
+
   it('removes completed visitor sessions after their captured retention deadline together with interaction entries', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const device = await service.createDevice({ siteId: site.id, label: 'DEV-COUNTER-01', registrationMethod: 'development' })

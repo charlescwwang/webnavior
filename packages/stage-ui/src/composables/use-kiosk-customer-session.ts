@@ -44,6 +44,11 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
   let resetTask: Promise<void> | undefined
   const pendingWorkTokens = new Set<symbol>()
   const pendingWorkCount = shallowRef(0)
+  const presenceIdleSuppressed = shallowRef(false)
+  // A proactive greeting opens a session but is not itself proof that the
+  // visitor has begun using the kiosk. Hosts use this distinction to cap
+  // camera-only idle protection without weakening protection after input.
+  const hasCustomerActivity = shallowRef(false)
   const hasPendingWork = computed(() => pendingWorkCount.value > 0)
 
   const notice = computed(() => {
@@ -75,7 +80,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
 
   function scheduleIdleTimeout() {
     clearTimers()
-    if (pendingWorkTokens.size > 0)
+    if (pendingWorkTokens.size > 0 || presenceIdleSuppressed.value)
       return
 
     idleDeadlineAt.value = Date.now() + idleTimeoutMs
@@ -83,7 +88,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
   }
 
   function requestIdleConfirmation() {
-    if (state.value !== 'active' || pendingWorkTokens.size > 0)
+    if (state.value !== 'active' || pendingWorkTokens.size > 0 || presenceIdleSuppressed.value)
       return
 
     clearTimers()
@@ -105,6 +110,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
       const chatSessionId = await ensureStandbyChat()
       await options.chatSession.setActiveSession(chatSessionId)
       customer.value = { kind: 'anonymous', sessionId: crypto.randomUUID() }
+      hasCustomerActivity.value = false
     }
 
     state.value = 'active'
@@ -115,6 +121,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     if (state.value === 'completing' || state.value === 'awaiting-idle-confirmation')
       return
     await begin()
+    hasCustomerActivity.value = true
   }
 
   function continueCurrentSession() {
@@ -122,6 +129,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
       return
 
     state.value = 'active'
+    hasCustomerActivity.value = true
     scheduleIdleTimeout()
   }
 
@@ -131,6 +139,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
 
     await end('staff')
     await begin()
+    hasCustomerActivity.value = true
   }
 
   function beginPendingWork() {
@@ -151,10 +160,24 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     }
   }
 
+  /** Defers idle reset while local presence has high-confidence interaction evidence. */
+  function setPresenceIdleSuppressed(suppressed: boolean) {
+    if (presenceIdleSuppressed.value === suppressed)
+      return
+    presenceIdleSuppressed.value = suppressed
+    if (suppressed) {
+      clearTimers()
+      return
+    }
+    if (state.value === 'active')
+      scheduleIdleTimeout()
+  }
+
   function completeOrder() {
     if (!customer.value || state.value === 'awaiting-idle-confirmation' || state.value === 'completing' || state.value === 'resetting')
       return false
     clearTimers()
+    presenceIdleSuppressed.value = false
     state.value = 'completing'
     return true
   }
@@ -167,6 +190,8 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
       clearTimers()
       pendingWorkTokens.clear()
       pendingWorkCount.value = 0
+      presenceIdleSuppressed.value = false
+      hasCustomerActivity.value = false
       state.value = 'resetting'
       const customerBeforeReset = customer.value
       const completedChatSessionId = standbyChatSessionId.value
@@ -211,11 +236,13 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     beginPendingWork,
     continueCurrentSession,
     customer,
+    hasCustomerActivity: readonly(hasCustomerActivity),
     end,
     hasPendingWork: readonly(hasPendingWork),
     idleDeadlineAt: readonly(idleDeadlineAt),
     notice,
     recordActivity,
+    setPresenceIdleSuppressed,
     completeOrder,
     startNewCustomerSession,
     state,

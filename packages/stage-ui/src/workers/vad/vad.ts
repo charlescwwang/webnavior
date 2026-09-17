@@ -21,6 +21,10 @@ export class VAD implements BaseVAD {
   private eventListeners: Partial<Record<keyof VADEvents, VADEventCallback<any>[]>> = {}
   private isReady: boolean = false
 
+  // Start small and grow only while a person is actually speaking. A configured
+  // maximum of 9999 seconds must not reserve roughly 640 MB on kiosk startup.
+  private static readonly initialBufferDurationSeconds = 30
+
   constructor(userConfig: Partial<BaseVADConfig> = {}) {
     // Default configuration
     const defaultConfig: BaseVADConfig = {
@@ -36,7 +40,7 @@ export class VAD implements BaseVAD {
 
     this.config = { ...defaultConfig, ...userConfig }
 
-    this.buffer = new Float32Array(this.config.maxBufferDuration * this.config.sampleRate)
+    this.buffer = new Float32Array(this.initialBufferLength())
     this.sampleRateTensor = new Tensor('int64', [this.config.sampleRate], [])
     this.state = new Tensor('float32', new Float32Array(2 * 1 * 128), [2, 1, 128])
   }
@@ -122,18 +126,24 @@ export class VAD implements BaseVAD {
       return
     }
 
-    // Check if we need to handle buffer overflow
+    // Grow up to the configured utterance maximum. Reaching that maximum emits
+    // the current recording and carries the remaining samples into the next one.
     const remaining = this.buffer.length - this.bufferPointer
     if (inputBuffer.length >= remaining) {
-      // The buffer is full, process what we have
-      this.buffer.set(inputBuffer.subarray(0, remaining), this.bufferPointer)
-      this.bufferPointer += remaining
+      if (this.growBuffer()) {
+        this.buffer.set(inputBuffer, this.bufferPointer)
+        this.bufferPointer += inputBuffer.length
+      }
+      else {
+        // The buffer is full, process what we have.
+        this.buffer.set(inputBuffer.subarray(0, remaining), this.bufferPointer)
+        this.bufferPointer += remaining
 
-      // Process and reset with overflow
-      const overflow = inputBuffer.subarray(remaining)
-      this.processSpeechSegment(overflow)
-
-      return
+        // Process and reset with overflow.
+        const overflow = inputBuffer.subarray(remaining)
+        this.processSpeechSegment(overflow)
+        return
+      }
     }
     else {
       // Add input to the buffer
@@ -260,14 +270,31 @@ export class VAD implements BaseVAD {
 
     // If buffer size changed, create a new buffer
     if (newConfig.maxBufferDuration || newConfig.sampleRate) {
-      this.buffer = new Float32Array(this.config.maxBufferDuration * this.config.sampleRate)
-      this.bufferPointer = 0
+      const previous = this.buffer
+      this.buffer = new Float32Array(Math.max(this.initialBufferLength(), this.bufferPointer))
+      this.buffer.set(previous.subarray(0, this.bufferPointer))
     }
 
     // Update sample rate tensor if needed
     if (newConfig.sampleRate) {
       this.sampleRateTensor = new Tensor('int64', [this.config.sampleRate], [])
     }
+  }
+
+  private initialBufferLength() {
+    return Math.min(this.config.maxBufferDuration, VAD.initialBufferDurationSeconds) * this.config.sampleRate
+  }
+
+  private growBuffer() {
+    const maximum = this.config.maxBufferDuration * this.config.sampleRate
+    if (this.buffer.length >= maximum)
+      return false
+
+    const nextLength = Math.min(maximum, Math.max(this.buffer.length * 2, this.buffer.length + this.config.newBufferSize))
+    const next = new Float32Array(nextLength)
+    next.set(this.buffer.subarray(0, this.bufferPointer))
+    this.buffer = next
+    return true
   }
 }
 

@@ -110,7 +110,7 @@ describe('kiosk routes', () => {
         }),
       }),
       performanceProfile: 'balanced',
-      voiceVadThreshold: 0.72,
+      voiceVadSettings: { threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 },
     })
   })
 

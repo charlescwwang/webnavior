@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import type { DeviceSettingKey, DeviceSettingsSnapshot, DeviceSettingsValues } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettingKey, DeviceSettingsSnapshot, DeviceSettingsValues, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import { deviceSettingKeys } from '@proj-airi/kiosk-proactive'
 import { Button, Checkbox, Input } from '@proj-airi/ui'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+
+import DeviceSettingsVoiceVadEditor from './deviceSettingsVoiceVadEditor.vue'
 
 const props = defineProps<{ snapshot: DeviceSettingsSnapshot, mode: 'admin' | 'local', saving: boolean }>()
 const emit = defineEmits<{
@@ -19,7 +21,10 @@ const options: Partial<Record<DeviceSettingKey, string[]>> = {
   triggerMode: ['attention', 'presence', 'mixed'],
   mediaCaptureMode: ['off', 'snapshot', 'triggered', 'continuous'],
   performanceProfile: ['constrained', 'balanced', 'high'],
+  presenceVisionMode: ['face_only', 'pose_only', 'pose_plus_conditional_face'],
 }
+const genericSettingKeys = deviceSettingKeys.filter(key => key !== 'voiceVadSettings')
+const voiceVadOverride = computed(() => overrides.value.voiceVadSettings)
 watch(() => props.snapshot, (snapshot) => {
   overrides.value = { ...(props.mode === 'admin' ? snapshot.settings.overrides : snapshot.settings.localOverrides) }
   localControls.value = [...snapshot.settings.localControls]
@@ -45,12 +50,28 @@ function setValue(key: DeviceSettingKey, value: string | number | boolean | unde
 function delegate(key: DeviceSettingKey, enabled: boolean) {
   localControls.value = enabled ? [...localControls.value, key] : localControls.value.filter(item => item !== key)
 }
+
+function toggleVoiceVadOverride(enabled: boolean) {
+  if (enabled) {
+    overrides.value = {
+      ...overrides.value,
+      voiceVadSettings: { ...props.snapshot.effective.voiceVadSettings },
+    }
+  }
+  else {
+    delete overrides.value.voiceVadSettings
+  }
+}
+
+function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
+  overrides.value = { ...overrides.value, voiceVadSettings: settings }
+}
 </script>
 
 <template>
   <form :class="['flex flex-col gap-4']" @submit.prevent="emit('save', { version: snapshot.settings.version, overrides, localControls, clearLocalOverrides })">
     <p>{{ t('deviceSettings.description') }}</p>
-    <div v-for="key in deviceSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
+    <div v-for="key in genericSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
       <p v-if="key === 'performanceProfile' || key === 'faceDetectionConfidence'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
         {{ t(`deviceSettings.fieldDescriptions.${key}`) }}
@@ -98,6 +119,20 @@ function delegate(key: DeviceSettingKey, enabled: boolean) {
       </label>
       <span v-if="mode === 'local' && locked(key)">{{ t('deviceSettings.locked') }}</span>
     </div>
+    <DeviceSettingsVoiceVadEditor
+      :delegate-enabled="localControls.includes('voiceVadSettings')"
+      :effective="snapshot.effective.voiceVadSettings"
+      :has-local-override="snapshot.settings.localOverrides.voiceVadSettings !== undefined"
+      :locked="locked('voiceVadSettings')"
+      :mode="mode"
+      :override="voiceVadOverride"
+      :override-enabled="voiceVadOverride !== undefined"
+      :saving="saving"
+      @delegate="delegate('voiceVadSettings', $event)"
+      @revoke="clearLocalOverrides = $event ? [...clearLocalOverrides, 'voiceVadSettings'] : clearLocalOverrides.filter(item => item !== 'voiceVadSettings')"
+      @toggle-override="toggleVoiceVadOverride"
+      @update="setVoiceVadSettings"
+    />
     <div :class="['flex gap-3']">
       <Button type="submit" :disabled="saving">
         {{ t('deviceSettings.save') }}

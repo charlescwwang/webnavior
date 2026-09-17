@@ -13,6 +13,7 @@ describe('server device policy projection', () => {
     })
     expect(effective.observationEnabled).toBe(true)
     expect(effective.proactiveVlmEnabled).toBe(false)
+    expect(effective.presenceVisionMode).toBe('pose_plus_conditional_face')
     expect(needsKioskObservation(observationSettings(effective), false)).toBe(true)
     expect(needsKioskObservation(observationSettings({ ...effective, observationEnabled: false }), true)).toBe(false)
   })

@@ -83,6 +83,12 @@ per device. New devices have local controls locked
 and observation/greetings/reminders disabled. Old browser-local observation
 preferences are no longer authoritative and are not migrated automatically.
 
+The **Presence vision mode** setting is per-device and supports `face_only`
+(the legacy baseline), `pose_only`, and `pose_plus_conditional_face` (the
+default). Pose modes use local Pose Lite for anonymous relative body-scale and
+movement evidence; conditional face checks run only for attention-capable
+greeting modes and never in the same inference callback as Pose.
+
 Removing delegation discards that local value permanently. Administrators may
 also clear an existing local override while keeping the field delegated. Every
 accepted write increments the device revision and records the operator and
@@ -96,9 +102,20 @@ the Server independently enforces recording and proactive-action permissions.
 Recording without observation does not start MediaPipe. These controls do not
 change browser camera/microphone permission or the existing local preview toggle.
 
-Deployment requires migration `0032_kiosk_device_settings.sql` before using the
+Deployment requires migrations `0032_kiosk_device_settings.sql` and
+`0033_kiosk_voice_vad_settings.sql` before using the
 new Server routes. Include it in the Server schema package used by the normal
 startup migration process, then deploy the matching Dashboard and Kiosk assets.
+
+### Voice activity detection
+
+Kiosk voice input uses the Silero VAD model. System administrators can set the
+Site-wide threshold, minimum speech and silence durations, maximum utterance
+duration, and leading/trailing speech padding in **Kiosk 模型設定 → Silero VAD**.
+The initial policy is `0.5`, `250 ms`, `9999 s`, `250 ms`, and `2000 ms`
+respectively. The Kiosk receives this policy through its normal 15-second
+settings sync. Its audio buffer expands only while a visitor speaks, so a
+`9999 s` maximum does not allocate a large buffer at startup.
 
 ### Local access
 

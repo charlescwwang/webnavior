@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import type { DeviceSettingsValues } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettingsValues, KioskVoiceVadSettings, PresenceCandidate } from '@proj-airi/kiosk-proactive'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
-import type { KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
+import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
 
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
-import { createAssistanceReminderWindow, createInteractionWindow, defaultDeviceSettingsValues, observationSettings } from '@proj-airi/kiosk-proactive'
+import { createAssistanceReminderWindow, createInteractionWindow, createPresenceWindow, defaultDeviceSettingsValues, defaultPresenceSettings, observationSettings } from '@proj-airi/kiosk-proactive'
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
+import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
@@ -17,12 +18,15 @@ import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/
 import { useMouse, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 import KioskAdminAccess from './KioskAdminAccess.vue'
+import KioskAdminPanel from './KioskAdminPanel.vue'
 import KioskAudioStatusOverlay from './KioskAudioStatusOverlay.vue'
 import KioskCameraPreview from './KioskCameraPreview.vue'
 import KioskConversation from './KioskConversation.vue'
 import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
+import KioskPresenceDiagnostics from './KioskPresenceDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
@@ -49,13 +53,19 @@ import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest 
 type KioskOrientation = 'landscape' | 'portrait'
 
 const props = defineProps<{
+  device?: KioskDevice
   deviceSettings?: DeviceSettingsValues
   mediaCaptureMode: KioskMediaCaptureMode
   performanceProfile: KioskPerformanceProfile
   proactiveVlmEnabled: boolean
   voiceConversationOnly: boolean
-  voiceVadThreshold: number
+  voiceVadSettings: KioskVoiceVadSettings
 }>()
+
+const route = useRoute()
+const router = useRouter()
+const adminPanelOpen = computed(() => route.query.admin === 'true')
+const deviceSettingsEndpoint = new URL('/api/kiosk/settings', import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').href
 
 const configuredOrientation = import.meta.env.VITE_KIOSK_ORIENTATION as KioskOrientation | undefined
 const { width, height } = useWindowSize()
@@ -115,9 +125,9 @@ const cameraPreviewEnabled = useKioskCameraPreview()
 const audioStatusPosition = useKioskAudioStatusPosition()
 const conversationFontSize = useKioskConversationFontSize()
 const cameraStream = shallowRef<MediaStream>()
-const detectedFaces = shallowRef<Array<{ centre: { x: number, y: number }, facesCamera: boolean }>>([])
 const {
   continueCurrentSession,
+  hasCustomerActivity,
   hasPendingWork,
   idleDeadlineAt,
   notice,
@@ -125,6 +135,9 @@ const {
   state: customerSessionState,
 } = customerSession
 const sessionNotice = computed(() => customerResetError.value ?? notice.value)
+const customerSessionButtonLabel = computed(() => (
+  customerSessionState.value === 'standby' ? '開始新交談／新訂單' : '重新開始／新訂單'
+))
 const showIdleDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
 const proactiveSettings = computed(() => observationSettings(props.deviceSettings ?? defaultDeviceSettingsValues))
@@ -153,23 +166,59 @@ const initialMicrophonePermission = createKioskStartupPermissionGate()
 let releaseChatPendingWork: (() => void) | undefined
 let proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
 let assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
-const localObservationRequired = computed(() => needsKioskObservation(
-  proactiveSettings.value,
-  customerSessionState.value === 'active',
-))
+const presenceSettings = {
+  ...defaultPresenceSettings,
+  greetingRoi: proactiveSettings.value.observation.detectionZone,
+}
+let presenceWindow = createPresenceWindow(presenceSettings, proactiveSettings.value.proactiveGreeting)
+const presenceDecision = shallowRef<ReturnType<typeof presenceWindow.decide>>()
+const lastPresenceCandidate = shallowRef<Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'>>()
+let visualEngagementProtectionStartedAtMs: number | undefined
+const presenceDiagnostics = shallowRef<{ cadenceTier: 'idle' | 'boost' | 'stable', faceActive: boolean, poseIntervalMs: number }>({ cadenceTier: 'idle', faceActive: false, poseIntervalMs: performanceSettings.value.detectionIntervalMs })
+const localObservationRequired = computed(() => {
+  const hasActiveSession = customerSessionState.value === 'active'
+  // Once observation is explicitly enabled, an active session keeps the local
+  // presence policy running even when greetings and reminders are disabled.
+  // Otherwise ENGAGED could never release or restore the idle timer.
+  return proactiveSettings.value.observation.enabled && (
+    hasActiveSession || needsKioskObservation(proactiveSettings.value, hasActiveSession)
+  )
+})
+const presenceIdleProtection = computed(() => {
+  const decision = presenceDecision.value
+  if (customerSessionState.value !== 'active' || !decision?.idleSuppressed)
+    return undefined
+  if (hasCustomerActivity.value)
+    return { reason: 'customer-activity' as const }
+  if (decision.state !== 'ENGAGED')
+    return { reason: 'visual-engagement' as const }
+
+  const startedAtMs = visualEngagementProtectionStartedAtMs
+  const until = startedAtMs == null ? undefined : startedAtMs + presenceSettings.visualEngagedIdleProtectionMs
+  if (until != null && Date.now() >= until)
+    return undefined
+  return { reason: 'visual-engagement' as const, until }
+})
 const proactiveVision = useKioskProactiveVision({
   detectionConfidence: () => props.deviceSettings?.faceDetectionConfidence ?? defaultDeviceSettingsValues.faceDetectionConfidence,
   detectionEnabled: () => localObservationRequired.value,
   detectionZone: () => proactiveSettings.value.observation.detectionZone,
   performance: () => performanceSettings.value,
+  visionMode: () => props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode,
+  shouldRunFace: () => {
+    const mode = props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode
+    const candidate = presenceDecision.value?.candidate
+    return mode === 'pose_plus_conditional_face'
+      && (proactiveSettings.value.proactiveGreeting.triggerMode === 'attention' || proactiveSettings.value.proactiveGreeting.triggerMode === 'mixed')
+      && Boolean(candidate?.greetingRoiHit || candidate?.interactionRoiHit)
+  },
   onCameraStream: (stream) => {
     cameraStream.value = stream
-    if (!stream)
-      detectedFaces.value = []
     mediaCapture.attachCameraStream(stream)
   },
-  onFaces: faces => detectedFaces.value = faces,
   onObservation: observation => void handleProactiveObservation(observation),
+  onPresenceCandidate: candidate => handlePresenceCandidate(candidate),
+  onDiagnostics: diagnostics => presenceDiagnostics.value = diagnostics,
 })
 const cameraRequired = computed(() => localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
 const { x, y } = useMouse()
@@ -178,7 +227,11 @@ let assistantAudio: HTMLAudioElement | undefined
 let activeVoiceTurn: ReturnType<typeof interactionTurn.begin> | undefined
 
 const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
-  threshold: computed(() => props.voiceVadThreshold),
+  threshold: computed(() => props.voiceVadSettings.threshold),
+  minSpeechDurationMs: computed(() => props.voiceVadSettings.minSpeechDurationMs),
+  maxSpeechDurationS: computed(() => props.voiceVadSettings.maxSpeechDurationS),
+  minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
+  speechPadMs: computed(() => props.voiceVadSettings.speechPadMs),
   onSpeechStart: () => {
     if (!canStartKioskVoiceTurn(interactionTurn.phase.value))
       return
@@ -483,6 +536,11 @@ watch([stream, loaded], async ([audioStream, vadLoaded]) => {
 watch(proactiveSettings, () => {
   proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
   assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
+  presenceWindow = createPresenceWindow({
+    ...defaultPresenceSettings,
+    greetingRoi: proactiveSettings.value.observation.detectionZone,
+  }, proactiveSettings.value.proactiveGreeting)
+  presenceDecision.value = undefined
   if (customerSessionState.value === 'active')
     assistanceReminderWindow.start(performance.now())
 }, { deep: true })
@@ -564,10 +622,73 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
     return
 
+  if ((props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode) !== 'face_only')
+    return
+
   const decision = proactiveWindow.decide(observation)
   if (!decision.shouldGreet)
     return
   if (!decision.greetingTrigger)
+    return
+
+  await startProactiveGreeting()
+}
+
+function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'> | undefined) {
+  lastPresenceCandidate.value = candidate
+  const decision = presenceWindow.decide(performance.now(), candidate)
+  presenceDecision.value = decision
+  if (import.meta.env.DEV && decision.state !== decision.previousState) {
+    console.info('[stage-kiosk] presence transition', {
+      bodyScale: decision.candidate?.bodyScale,
+      centre: decision.candidate?.centre,
+      greetingEligible: decision.greetingEligible,
+      greetingRoiHit: decision.candidate?.greetingRoiHit,
+      idleSuppressed: decision.idleSuppressed,
+      interactionRoiHit: decision.candidate?.interactionRoiHit,
+      lastSeenAgeMs: decision.lastSeenAgeMs,
+      movement: { scaleVelocity: decision.scaleVelocity, velocityX: decision.velocityX },
+      poseQuality: decision.candidate?.poseQuality,
+      previousState: decision.previousState,
+      reason: decision.transitionReason,
+      state: decision.state,
+    })
+  }
+  syncPresenceIdleSuppression(decision)
+
+  const visionMode = props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode
+  if (visionMode !== 'face_only' && customerSessionState.value === 'standby' && decision.greetingEligible && interactionTurn.canProactivelySpeak.value)
+    void startProactiveGreeting()
+}
+
+/**
+ * Camera geometry alone is intentionally not allowed to reserve a greeted
+ * session forever. A real kiosk action upgrades the same ENGAGED state to
+ * normal protection; otherwise the 15-second visual grace ends and restarts
+ * the existing 45-second customer-session timer.
+ */
+function syncPresenceIdleSuppression(decision: ReturnType<typeof presenceWindow.decide> | undefined) {
+  if (customerSessionState.value !== 'active') {
+    visualEngagementProtectionStartedAtMs = undefined
+    return
+  }
+  if (!decision?.idleSuppressed) {
+    visualEngagementProtectionStartedAtMs = undefined
+    customerSession.setPresenceIdleSuppressed(false)
+    return
+  }
+  if (hasCustomerActivity.value || decision.state !== 'ENGAGED') {
+    customerSession.setPresenceIdleSuppressed(true)
+    return
+  }
+
+  visualEngagementProtectionStartedAtMs ??= Date.now()
+  const visualProtectionExpired = Date.now() - visualEngagementProtectionStartedAtMs >= presenceSettings.visualEngagedIdleProtectionMs
+  customerSession.setPresenceIdleSuppressed(!visualProtectionExpired)
+}
+
+async function startProactiveGreeting() {
+  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
     return
 
   const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined
@@ -581,7 +702,9 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   try {
     // Begin before asking the LLM so another camera frame cannot create a
     // second greeting while the selected provider is still streaming.
+    visualEngagementProtectionStartedAtMs = undefined
     await customerSession.begin()
+    syncPresenceIdleSuppression(presenceDecision.value)
     if (!interactionTurn.isCurrent(turn))
       return
     await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
@@ -614,8 +737,15 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   }
 }
 
-async function recordCustomerActivity(source: 'scenario' | 'voice_input' | 'voice_transcript' | 'completed' = 'scenario') {
+async function recordCustomerActivity(source: 'manual' | 'scenario' | 'voice_input' | 'voice_transcript' | 'completed' = 'scenario') {
+  if (customerSessionState.value === 'standby')
+    visualEngagementProtectionStartedAtMs = undefined
+  if (lastPresenceCandidate.value) {
+    const decision = presenceWindow.decide(performance.now(), lastPresenceCandidate.value, true)
+    presenceDecision.value = decision
+  }
   await customerSession.recordActivity()
+  syncPresenceIdleSuppression(presenceDecision.value)
   await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
   mediaCapture.startSessionCapture(effectiveMediaCaptureMode.value)
   const activity = await interactionRecording.append('service_event', 'customer_activity', { source })
@@ -777,6 +907,26 @@ async function restartCustomerSession() {
   }
 }
 
+async function startOrRestartCustomerSession() {
+  if (customerSessionState.value === 'standby') {
+    await recordCustomerActivity('manual')
+    return
+  }
+  await restartCustomerSession()
+}
+
+function reloadKiosk() {
+  // Entering the PIN-protected maintenance panel is an explicit operator
+  // takeover. Camera presence cannot distinguish that operator from a
+  // customer, so do not add a second customer-state confirmation here.
+  window.location.reload()
+}
+
+function closeAdminPanel() {
+  const { admin: _admin, ...query } = route.query
+  void router.replace({ query })
+}
+
 let stopMenuActivityListener: (() => void) | undefined
 let stopMenuCompletionListener: (() => void) | undefined
 
@@ -809,6 +959,23 @@ onUnmounted(() => {
       <span>設定</span>
     </KioskAdminAccess>
 
+    <aside v-if="adminPanelOpen" class="kiosk-admin-panel-layer">
+      <KioskAdminPanel
+        v-model:camera-preview-enabled="cameraPreviewEnabled"
+        v-model:conversation-font-size="conversationFontSize"
+        v-model:paused="paused"
+        :device="props.device"
+        :session-ending="customerSessionState === 'resetting'"
+        @close="closeAdminPanel"
+        @end-session="restartCustomerSession"
+        @reload="reloadKiosk"
+      >
+        <template #device-settings>
+          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" />
+        </template>
+      </KioskAdminPanel>
+    </aside>
+
     <section class="stage-region" aria-label="虛擬服務員">
       <WidgetStage
         class="stage-model"
@@ -822,14 +989,14 @@ onUnmounted(() => {
     <ScenarioSurface class="menu-region" />
 
     <button
-      v-if="customerSessionState === 'active'"
+      v-if="customerSessionState === 'active' || customerSessionState === 'standby'"
       type="button"
       class="customer-restart"
       :disabled="conversationSending"
-      @click="restartCustomerSession"
+      @click="startOrRestartCustomerSession"
     >
       <span class="i-solar:restart-bold h-4 w-4" aria-hidden="true" />
-      重新開始／新訂單
+      {{ customerSessionButtonLabel }}
     </button>
 
     <KioskConversation
@@ -848,7 +1015,14 @@ onUnmounted(() => {
       v-if="showIdleDiagnostics"
       :idle-deadline-at="idleDeadlineAt"
       :pending-work="hasPendingWork"
+      :presence-idle-protection="presenceIdleProtection"
       :state="customerSessionState"
+    />
+    <KioskPresenceDiagnostics
+      v-if="showIdleDiagnostics && presenceDecision"
+      :decision="presenceDecision"
+      :diagnostics="presenceDiagnostics"
+      :vision-mode="props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode"
     />
     <KioskSessionNotice :message="sessionNotice" />
     <CustomerSessionIdleConfirmation
@@ -863,7 +1037,14 @@ onUnmounted(() => {
       @finish="finishCustomerSessionCompletion"
     />
     <video ref="proactiveCamera" class="proactive-camera" muted playsinline aria-hidden="true" />
-    <KioskCameraPreview v-if="cameraPreviewEnabled && cameraStream" :faces="detectedFaces" :stream="cameraStream" :zone="proactiveSettings.observation.detectionZone" />
+    <KioskCameraPreview
+      v-if="cameraPreviewEnabled && cameraStream"
+      :decision="presenceDecision"
+      :diagnostics="presenceDiagnostics"
+      :stream="cameraStream"
+      :vision-mode="props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode"
+      :zone="proactiveSettings.observation.detectionZone"
+    />
   </main>
 </template>
 
@@ -873,6 +1054,7 @@ onUnmounted(() => {
 .kiosk-scene.is-portrait { grid-template-columns: minmax(10rem, .3fr) minmax(0, .7fr); grid-template-rows: minmax(0, .35fr) minmax(0, .65fr); }
 .stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 16%); border-radius: 1.5rem; background: rgb(3 15 18 / 88%); grid-column: 1; grid-row: 1; }
 .stage-model { width: 100%; height: 100%; }
+.kiosk-admin-panel-layer { position: fixed; z-index: 90; inset: 0; display: grid; overflow: auto; padding: 1.5rem; background: rgb(1 12 15 / 72%); backdrop-filter: blur(.4rem); }
 /* Keep the administrator hold target available without exposing controls in the customer-facing composition. */
 :global(.kiosk-admin-access) { position: fixed; z-index: 100; top: 1.75rem; left: 1.75rem; display: inline-flex; height: 2.25rem; align-items: center; gap: .35rem; border: 1px solid rgb(217 250 246 / 28%); border-radius: .7rem; padding: 0 .7rem; color: #d9faf6; background: rgb(1 17 20 / 92%); box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); opacity: 0; transition: opacity .16s ease, background .16s ease; }
 :global(.kiosk-admin-access:hover), :global(.kiosk-admin-access:focus-visible) { background: #153f43; opacity: 1; }

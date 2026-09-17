@@ -1,3 +1,5 @@
+import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+
 import type { KioskMediaCapturePolicy, KioskModelOverrides, KioskProfileSnapshot } from '../../../schemas/kiosk'
 import type { ConfigKVService } from '../../../services/adapters/config-kv'
 import type { KioskService } from '../../../services/domain/kiosk'
@@ -19,6 +21,11 @@ const profileDraftSchema = object({
   name: string(),
   snapshot: KioskProfileSnapshotSchema,
 })
+const siteProvisionSchema = object({
+  interactionRetentionDays: optional(pipe(number(), integer(), minValue(0))),
+  name: pipe(string(), minLength(1), maxLength(120)),
+  slug: optional(pipe(string(), minLength(1), maxLength(120))),
+})
 
 const interactionRetentionSchema = object({
   days: pipe(number(), integer(), minValue(0)),
@@ -29,7 +36,13 @@ const mediaCapturePolicySchema = object({
 })
 const proactiveVlmSchema = object({ enabled: boolean() })
 const performanceProfileSchema = object({ profile: picklist(['constrained', 'balanced', 'high']) })
-const voiceVadThresholdSchema = object({ threshold: pipe(number(), minValue(0.5), maxValue(0.95)) })
+const voiceVadSettingsSchema = object({
+  threshold: pipe(number(), minValue(0.1), maxValue(0.99)),
+  minSpeechDurationMs: pipe(number(), integer(), minValue(0), maxValue(60_000)),
+  maxSpeechDurationS: pipe(number(), integer(), minValue(1), maxValue(9_999)),
+  minSilenceDurationMs: pipe(number(), integer(), minValue(0), maxValue(60_000)),
+  speechPadMs: pipe(number(), integer(), minValue(0), maxValue(10_000)),
+})
 
 const visitorSessionDeletionSchema = object({
   visitorSessionIds: pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(100)),
@@ -150,8 +163,31 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
   return new Hono<HonoEnv>()
     .use('*', authGuard)
     .route('/', createAdminKioskCharacterAssetRoutes({ assets: characterAssets, kioskService }))
+    .get('/experience-template', async (c) => {
+      return c.json(await kioskService.getOwnerExperienceTemplate(c.get('user')!.id))
+    })
+    .put('/experience-template/draft', async (c) => {
+      const result = safeParse(profileDraftSchema, await c.req.json().catch(() => null))
+      if (!result.success)
+        throw createBadRequestError('Invalid default kiosk experience draft', 'INVALID_REQUEST', result.issues)
+      return c.json(await kioskService.saveOwnerExperienceTemplateDraft({
+        id: result.output.id,
+        name: result.output.name,
+        ownerUserId: c.get('user')!.id,
+        snapshot: result.output.snapshot as KioskProfileSnapshot,
+      }))
+    })
+    .post('/experience-template/publish', async (c) => {
+      return c.json(await kioskService.publishOwnerExperienceTemplate({ ownerUserId: c.get('user')!.id }))
+    })
     .get('/sites', async (c) => {
       return c.json(await kioskService.listManagedSites(c.get('user')!.id))
+    })
+    .post('/sites', async (c) => {
+      const result = safeParse(siteProvisionSchema, await c.req.json().catch(() => null))
+      if (!result.success)
+        throw createBadRequestError('Invalid kiosk Site', 'INVALID_REQUEST', result.issues)
+      return c.json(await kioskService.provisionSite({ ...result.output, ownerUserId: c.get('user')!.id }), 201)
     })
     .delete('/sites/:siteId', async (c) => {
       const siteId = c.req.param('siteId')
@@ -245,7 +281,7 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         kioskService.getSiteModelOverrides(c.req.param('siteId')),
       ])
       const siteId = c.req.param('siteId')
-      return c.json({ ...catalog, overrides, proactiveVlmEnabled: await kioskService.getSiteProactiveVlmEnabled(siteId), performanceProfile: await kioskService.getSitePerformanceProfile(siteId), voiceVadThreshold: await kioskService.getSiteVoiceVadThreshold(siteId) })
+      return c.json({ ...catalog, overrides, proactiveVlmEnabled: await kioskService.getSiteProactiveVlmEnabled(siteId), performanceProfile: await kioskService.getSitePerformanceProfile(siteId), voiceVadSettings: await kioskService.getSiteVoiceVadSettings(siteId) })
     })
     .get('/sites/:siteId/profile', async (c) => {
       const capabilities = await kioskService.getSiteManagementCapabilities({ siteId: c.req.param('siteId'), userId: c.get('user')!.id })
@@ -321,11 +357,11 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         throw createBadRequestError('Invalid kiosk performance profile', 'INVALID_REQUEST', result.issues)
       return c.json(await kioskService.setSitePerformanceProfile({ actorUserId: c.get('user')!.id, profile: result.output.profile, siteId: c.req.param('siteId') }))
     })
-    .put('/sites/:siteId/voice-vad-threshold', async (c) => {
-      const result = safeParse(voiceVadThresholdSchema, await c.req.json().catch(() => null))
+    .put('/sites/:siteId/voice-vad-settings', async (c) => {
+      const result = safeParse(voiceVadSettingsSchema, await c.req.json().catch(() => null))
       if (!result.success)
-        throw createBadRequestError('Invalid kiosk voice VAD threshold', 'INVALID_REQUEST', result.issues)
-      return c.json(await kioskService.setSiteVoiceVadThreshold({ actorUserId: c.get('user')!.id, threshold: result.output.threshold, siteId: c.req.param('siteId') }))
+        throw createBadRequestError('Invalid kiosk voice VAD settings', 'INVALID_REQUEST', result.issues)
+      return c.json(await kioskService.setSiteVoiceVadSettings({ actorUserId: c.get('user')!.id, settings: result.output as KioskVoiceVadSettings, siteId: c.req.param('siteId') }))
     })
     .put('/sites/:siteId/model-policy', async (c) => {
       const body = await c.req.json().catch(() => null)

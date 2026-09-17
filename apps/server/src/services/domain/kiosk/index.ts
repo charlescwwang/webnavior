@@ -1,4 +1,4 @@
-import type { DeviceSettingKey, DeviceSettings, DeviceSettingsSnapshot } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettingKey, DeviceSettings, DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import type { Database } from '../../../libs/db'
 import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskModelOverrides, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
@@ -47,6 +47,8 @@ export interface KioskService {
   createProfileRelease: (input: { siteId: string, name: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
   /** Creates the root management scope for kiosk configuration and data. */
   createSite: (input: { interactionRetentionDays?: number, name: string, slug?: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  /** Creates a store from the operator's latest published default experience. */
+  provisionSite: (input: { interactionRetentionDays?: number, name: string, ownerUserId: string, slug?: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Permanently removes one Site and every configuration/device record it owns. System administrators only. */
   deleteSite: (input: { siteId: string, userId: string }) => Promise<void>
   /** Soft-deletes a previously disabled device while retaining every visitor and audit record. */
@@ -117,8 +119,14 @@ export interface KioskService {
     drafts: (typeof schema.kioskProfileDrafts.$inferSelect)[]
     release: typeof schema.kioskProfileReleases.$inferSelect | undefined
   }>
+  /** Returns the operator's editable baseline and its newest immutable release. */
+  getOwnerExperienceTemplate: (ownerUserId: string) => Promise<{
+    draft: typeof schema.kioskOwnerExperienceDrafts.$inferSelect | undefined
+    release: typeof schema.kioskOwnerExperienceReleases.$inferSelect | undefined
+  }>
   /** Creates or updates a selectable draft after validating its POC configuration shape. */
   saveProfileDraft: (input: { id?: string, name: string, siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
+  saveOwnerExperienceTemplateDraft: (input: { id?: string, name: string, ownerUserId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskOwnerExperienceDrafts.$inferSelect>
   /** Applies only customer-facing content from a content manager's draft submission. */
   saveContentProfileDraft: (input: { siteId: string, snapshot: KioskProfileSnapshot }) => Promise<typeof schema.kioskProfileDrafts.$inferSelect>
   /** Changes the policy used to calculate expiry for future visitor sessions. */
@@ -131,12 +139,13 @@ export interface KioskService {
   setSiteProactiveVlmEnabled: (input: { actorUserId: string, enabled: boolean, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   getSitePerformanceProfile: (siteId: string) => Promise<KioskPerformanceProfile>
   setSitePerformanceProfile: (input: { actorUserId: string, profile: KioskPerformanceProfile, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
-  getSiteVoiceVadThreshold: (siteId: string) => Promise<number>
-  setSiteVoiceVadThreshold: (input: { actorUserId: string, threshold: number, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
+  getSiteVoiceVadSettings: (siteId: string) => Promise<KioskVoiceVadSettings>
+  setSiteVoiceVadSettings: (input: { actorUserId: string, settings: KioskVoiceVadSettings, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Replaces the site's choices after the caller has curated them against the approved catalog. */
   setSiteModelOverrides: (input: { overrides: KioskModelOverrides, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Publishes a selected draft as a new immutable release and assigns it to every Site device. */
   publishProfileDraft: (input: { actorUserId?: string, draftId: string, siteId: string }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
+  publishOwnerExperienceTemplate: (input: { ownerUserId: string }) => Promise<typeof schema.kioskOwnerExperienceReleases.$inferSelect>
   /** Removes expired visitor sessions and their cascading interaction entries. */
   purgeExpiredVisitorSessions: (now: Date) => Promise<number>
 }
@@ -209,6 +218,39 @@ export function createKioskService(db: Database): KioskService {
       assertRetentionDays(input.interactionRetentionDays)
     const [site] = await db.insert(schema.kioskSites).values(input).returning()
     return site
+  }
+
+  async function provisionSite(input: { interactionRetentionDays?: number, name: string, ownerUserId: string, slug?: string }) {
+    if (input.interactionRetentionDays !== undefined)
+      assertRetentionDays(input.interactionRetentionDays)
+    await assertSystemAdministrator(input.ownerUserId)
+    return await db.transaction(async (tx) => {
+      const template = await tx.query.kioskOwnerExperienceReleases.findFirst({
+        where: eq(schema.kioskOwnerExperienceReleases.ownerUserId, input.ownerUserId),
+        orderBy: [desc(schema.kioskOwnerExperienceReleases.revision)],
+      })
+      if (!template)
+        throw createConflictError('Publish a default kiosk experience before creating a Site')
+      const [site] = await tx.insert(schema.kioskSites).values({ ...input, ownerUserId: input.ownerUserId }).returning()
+      const [draft] = await tx.insert(schema.kioskProfileDrafts).values({ siteId: site.id, name: template.name, snapshot: template.snapshot }).returning()
+      const [release] = await tx.insert(schema.kioskProfileReleases).values({
+        siteId: site.id,
+        name: template.name,
+        revision: 1,
+        sourceTemplateReleaseId: template.id,
+        changeScope: 'template_seed',
+        snapshot: template.snapshot,
+      }).returning()
+      await tx.insert(schema.kioskAuditLogs).values({
+        siteId: site.id,
+        actorUserId: input.ownerUserId,
+        action: 'site.provisioned',
+        targetType: 'kiosk_site',
+        targetId: site.id,
+        details: { draftId: draft.id, profileReleaseId: release.id, sourceTemplateReleaseId: template.id },
+      })
+      return site
+    })
   }
 
   async function deleteSite(input: { siteId: string, userId: string }) {
@@ -294,8 +336,17 @@ export function createKioskService(db: Database): KioskService {
   }
 
   async function createDevice(input: { siteId: string, label: string, registrationMethod: KioskRegistrationMethod }) {
-    const [device] = await db.insert(schema.kioskDevices).values(input).returning()
-    return device
+    return await db.transaction(async (tx) => {
+      const [device] = await tx.insert(schema.kioskDevices).values(input).returning()
+      const release = await tx.query.kioskProfileReleases.findFirst({
+        where: eq(schema.kioskProfileReleases.siteId, input.siteId),
+        orderBy: [desc(schema.kioskProfileReleases.revision)],
+      })
+      if (release) {
+        await tx.insert(schema.kioskDeviceProfileAssignments).values({ deviceId: device.id, profileReleaseId: release.id })
+      }
+      return device
+    })
   }
 
   async function createProfileRelease(input: { siteId: string, name: string, snapshot: KioskProfileSnapshot }) {
@@ -483,7 +534,7 @@ export function createKioskService(db: Database): KioskService {
     })
   }
 
-  async function listSiteVisitorSessions(input: { siteId: string, userId: string }) {
+  async function listSiteVisitorSessions(input: { deviceId?: string, siteId: string, userId: string }) {
     await assertCanReadTranscript(input.userId, input.siteId)
     return await db.select({
       createdAt: schema.kioskVisitorSessions.createdAt,
@@ -515,9 +566,32 @@ export function createKioskService(db: Database): KioskService {
   async function getSiteProfile(siteId: string) {
     const [drafts, release] = await Promise.all([
       db.query.kioskProfileDrafts.findMany({ where: eq(schema.kioskProfileDrafts.siteId, siteId), orderBy: [desc(schema.kioskProfileDrafts.updatedAt)] }),
-      getDeviceProfileForSite(siteId),
+      db.query.kioskProfileReleases.findFirst({ where: eq(schema.kioskProfileReleases.siteId, siteId), orderBy: [desc(schema.kioskProfileReleases.revision)] }),
     ])
     return { drafts, release }
+  }
+
+  async function getOwnerExperienceTemplate(ownerUserId: string) {
+    await assertSystemAdministrator(ownerUserId)
+    const [draft, release] = await Promise.all([
+      db.query.kioskOwnerExperienceDrafts.findFirst({ where: eq(schema.kioskOwnerExperienceDrafts.ownerUserId, ownerUserId) }),
+      db.query.kioskOwnerExperienceReleases.findFirst({ where: eq(schema.kioskOwnerExperienceReleases.ownerUserId, ownerUserId), orderBy: [desc(schema.kioskOwnerExperienceReleases.revision)] }),
+    ])
+    return { draft, release }
+  }
+
+  async function saveOwnerExperienceTemplateDraft(input: { id?: string, name: string, ownerUserId: string, snapshot: KioskProfileSnapshot }) {
+    await assertSystemAdministrator(input.ownerUserId)
+    const snapshot = parseProfileSnapshot(input.snapshot)
+    const [draft] = await db.insert(schema.kioskOwnerExperienceDrafts).values({
+      ownerUserId: input.ownerUserId,
+      name: input.name,
+      snapshot,
+    }).onConflictDoUpdate({
+      target: schema.kioskOwnerExperienceDrafts.ownerUserId,
+      set: { name: input.name, snapshot, updatedAt: new Date() },
+    }).returning()
+    return draft
   }
 
   async function saveContentProfileDraft(input: { siteId: string, snapshot: KioskProfileSnapshot }) {
@@ -568,9 +642,17 @@ export function createKioskService(db: Database): KioskService {
       if (!draft)
         throw createNotFoundError('Kiosk Profile draft was not found')
 
+      const previousRelease = await tx.query.kioskProfileReleases.findFirst({
+        where: eq(schema.kioskProfileReleases.siteId, input.siteId),
+        orderBy: [desc(schema.kioskProfileReleases.revision)],
+      })
       const [release] = await tx.insert(schema.kioskProfileReleases).values({
         siteId: input.siteId,
         name: draft.name,
+        revision: (previousRelease?.revision ?? 0) + 1,
+        parentSiteReleaseId: previousRelease?.id,
+        sourceTemplateReleaseId: previousRelease?.sourceTemplateReleaseId,
+        changeScope: 'site_override',
         snapshot: draft.snapshot,
       }).returning()
       const devices = await tx.query.kioskDevices.findMany({
@@ -596,6 +678,26 @@ export function createKioskService(db: Database): KioskService {
         targetId: release.id,
         details: { assignedDeviceCount: devices.length },
       })
+      return release
+    })
+  }
+
+  async function publishOwnerExperienceTemplate(input: { ownerUserId: string }) {
+    await assertSystemAdministrator(input.ownerUserId)
+    return await db.transaction(async (tx) => {
+      const draft = await tx.query.kioskOwnerExperienceDrafts.findFirst({ where: eq(schema.kioskOwnerExperienceDrafts.ownerUserId, input.ownerUserId) })
+      if (!draft)
+        throw createNotFoundError('Default kiosk experience draft was not found')
+      const latest = await tx.query.kioskOwnerExperienceReleases.findFirst({
+        where: eq(schema.kioskOwnerExperienceReleases.ownerUserId, input.ownerUserId),
+        orderBy: [desc(schema.kioskOwnerExperienceReleases.revision)],
+      })
+      const [release] = await tx.insert(schema.kioskOwnerExperienceReleases).values({
+        ownerUserId: input.ownerUserId,
+        name: draft.name,
+        revision: (latest?.revision ?? 0) + 1,
+        snapshot: draft.snapshot,
+      }).returning()
       return release
     })
   }
@@ -650,7 +752,7 @@ export function createKioskService(db: Database): KioskService {
       mediaCaptureMode: site.mediaCapturePolicy.mode,
       performanceProfile: site.performanceProfile,
       proactiveVlmEnabled: site.proactiveVlmEnabled === 1,
-      voiceVadThreshold: Number(site.voiceVadThreshold),
+      voiceVadSettings: site.voiceVadSettings,
     }
     return { deviceId, settings: device.settings, defaults, effective: resolveDeviceSettings(defaults, device.settings) }
   }
@@ -744,17 +846,16 @@ export function createKioskService(db: Database): KioskService {
     return site
   }
 
-  async function getSiteVoiceVadThreshold(siteId: string) {
-    const site = await db.query.kioskSites.findFirst({ where: eq(schema.kioskSites.id, siteId), columns: { voiceVadThreshold: true } })
+  async function getSiteVoiceVadSettings(siteId: string) {
+    const site = await db.query.kioskSites.findFirst({ where: eq(schema.kioskSites.id, siteId), columns: { voiceVadSettings: true } })
     if (!site)
       throw createNotFoundError('Kiosk Site was not found')
-    return Number(site.voiceVadThreshold)
+    return site.voiceVadSettings
   }
 
-  async function setSiteVoiceVadThreshold(input: { actorUserId: string, threshold: number, siteId: string }) {
-    assertVoiceVadThreshold(input.threshold)
+  async function setSiteVoiceVadSettings(input: { actorUserId: string, settings: KioskVoiceVadSettings, siteId: string }) {
     await assertSystemAdministrator(input.actorUserId)
-    const [site] = await db.update(schema.kioskSites).set({ voiceVadThreshold: String(input.threshold), updatedAt: new Date() }).where(eq(schema.kioskSites.id, input.siteId)).returning()
+    const [site] = await db.update(schema.kioskSites).set({ voiceVadSettings: input.settings, updatedAt: new Date() }).where(eq(schema.kioskSites.id, input.siteId)).returning()
     if (!site)
       throw createNotFoundError('Kiosk Site was not found')
     return site
@@ -966,6 +1067,7 @@ export function createKioskService(db: Database): KioskService {
     deleteSite,
     createProfileRelease,
     createSite,
+    provisionSite,
     getSiteManagementCapabilities,
     endDeviceVisitorSession,
     disableDevice,
@@ -975,9 +1077,10 @@ export function createKioskService(db: Database): KioskService {
     getSiteMediaCapturePolicy,
     getSiteProactiveVlmEnabled,
     getSitePerformanceProfile,
-    getSiteVoiceVadThreshold,
+    getSiteVoiceVadSettings,
     getProfileRelease,
     getSiteProfile,
+    getOwnerExperienceTemplate,
     listManagedSites,
     listSiteDevices,
     listSiteVisitorSessions,
@@ -988,14 +1091,16 @@ export function createKioskService(db: Database): KioskService {
     isCurrentDevelopmentDevice,
     resolveDeviceCredential,
     saveProfileDraft,
+    saveOwnerExperienceTemplateDraft,
     saveContentProfileDraft,
     setSiteInteractionRetentionDays,
     setSiteMediaCapturePolicy,
     setSiteProactiveVlmEnabled,
     setSitePerformanceProfile,
-    setSiteVoiceVadThreshold,
+    setSiteVoiceVadSettings,
     setSiteModelOverrides,
     publishProfileDraft,
+    publishOwnerExperienceTemplate,
     purgeExpiredVisitorSessions,
   }
 }
@@ -1003,11 +1108,6 @@ export function createKioskService(db: Database): KioskService {
 function assertRetentionDays(days: number) {
   if (!Number.isSafeInteger(days) || days < 0)
     throw new Error('Kiosk interaction retention days must be a non-negative integer')
-}
-
-function assertVoiceVadThreshold(threshold: number) {
-  if (!Number.isFinite(threshold) || threshold < 0.5 || threshold > 0.95)
-    throw createBadRequestError('Kiosk VAD threshold must be between 0.5 and 0.95', 'INVALID_REQUEST')
 }
 
 function retentionExpiry(retentionDays: number) {

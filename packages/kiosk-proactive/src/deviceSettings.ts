@@ -2,6 +2,26 @@ import type { KioskInteractionSettings } from './types'
 
 import { defaultKioskInteractionSettings } from './interaction-settings'
 
+/** Selects the local vision evidence used by the kiosk presence policy. */
+export type PresenceVisionMode = 'face_only' | 'pose_only' | 'pose_plus_conditional_face'
+
+/** Silero VAD segmenting policy, owned by a kiosk Site and applied on the device. */
+export interface KioskVoiceVadSettings {
+  threshold: number
+  minSpeechDurationMs: number
+  maxSpeechDurationS: number
+  minSilenceDurationMs: number
+  speechPadMs: number
+}
+
+export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
+  threshold: 0.5,
+  minSpeechDurationMs: 250,
+  maxSpeechDurationS: 9999,
+  minSilenceDurationMs: 250,
+  speechPadMs: 2000,
+}
+
 /** Operational policy shared by Server, management UI, and the device runtime. */
 export interface DeviceSettingsValues {
   observationEnabled: boolean
@@ -22,7 +42,9 @@ export interface DeviceSettingsValues {
   faceDetectionConfidence: number
   proactiveVlmEnabled: boolean
   performanceProfile: 'constrained' | 'balanced' | 'high'
-  voiceVadThreshold: number
+  /** Server-managed rollout switch for the anonymous local presence policy. */
+  presenceVisionMode: PresenceVisionMode
+  voiceVadSettings: KioskVoiceVadSettings
 }
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
@@ -44,7 +66,8 @@ export const deviceSettingKeys = [
   'faceDetectionConfidence',
   'proactiveVlmEnabled',
   'performanceProfile',
-  'voiceVadThreshold',
+  'presenceVisionMode',
+  'voiceVadSettings',
 ] as const satisfies readonly (keyof DeviceSettingsValues)[]
 
 export type DeviceSettingKey = typeof deviceSettingKeys[number]
@@ -90,7 +113,8 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   faceDetectionConfidence: 0.6,
   proactiveVlmEnabled: false,
   performanceProfile: 'balanced',
-  voiceVadThreshold: 0.72,
+  presenceVisionMode: 'pose_plus_conditional_face',
+  voiceVadSettings: defaultKioskVoiceVadSettings,
 }
 
 /** Site defaults < administrator device overrides < explicitly delegated local overrides. */

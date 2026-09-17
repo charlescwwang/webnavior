@@ -20,11 +20,15 @@ function createTestApp(configKV: ConfigKVService) {
     getSiteModelOverrides: vi.fn(async () => ({})),
     getSiteProactiveVlmEnabled: vi.fn(async () => false),
     getSitePerformanceProfile: vi.fn(async () => 'balanced'),
-    getSiteVoiceVadThreshold: vi.fn(async () => 0.72),
+    getSiteVoiceVadSettings: vi.fn(async () => ({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 })),
+    getOwnerExperienceTemplate: vi.fn(async () => ({ draft: undefined, release: undefined })),
+    saveOwnerExperienceTemplateDraft: vi.fn(async ({ name, snapshot }: { name: string, snapshot: object }) => ({ id: 'template-draft', name, snapshot })),
+    publishOwnerExperienceTemplate: vi.fn(async () => ({ id: 'template-release', revision: 1 })),
+    provisionSite: vi.fn(async ({ name, ownerUserId }: { name: string, ownerUserId: string }) => ({ id: 'site-new', name, ownerUserId })),
     disableDevice: vi.fn(async () => undefined),
     deleteDevice: vi.fn(async () => undefined),
     setSitePerformanceProfile: vi.fn(async ({ profile }: { profile: 'constrained' | 'balanced' | 'high' }) => ({ performanceProfile: profile })),
-    setSiteVoiceVadThreshold: vi.fn(async ({ threshold }: { threshold: number }) => ({ voiceVadThreshold: String(threshold) })),
+    setSiteVoiceVadSettings: vi.fn(async ({ settings }: { settings: object }) => ({ voiceVadSettings: settings })),
     setSiteModelOverrides: vi.fn(async () => ({})),
   } as unknown as KioskService
   const characterAssets = {} as KioskCharacterAssetService
@@ -44,6 +48,33 @@ function createTestApp(configKV: ConfigKVService) {
 }
 
 describe('admin kiosk model policy route', () => {
+  it('publishes the signed-in administrator default experience and provisions a site from it', async () => {
+    const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
+    const { app, kioskService } = createTestApp(configKV)
+    const draft = {
+      name: '營運者預設',
+      snapshot: {
+        version: 1,
+        assistanceReminderPrompt: '需要時協助。',
+        agentInstructions: '保持簡潔。',
+        characterName: '助手',
+        greetingPrompt: '您好。',
+        interactiveService: { id: 'ordering', title: '點餐', description: '點餐服務', url: 'http://localhost:5166' },
+        surveyUrl: 'https://example.com/survey',
+        voiceConversationOnly: false,
+      },
+    }
+    const saved = await app.request('/api/admin/kiosk/experience-template/draft', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) })
+    expect(saved.status).toBe(200)
+    expect(kioskService.saveOwnerExperienceTemplateDraft).toHaveBeenCalledWith(expect.objectContaining({ ownerUserId: 'admin-1' }))
+
+    const published = await app.request('/api/admin/kiosk/experience-template/publish', { method: 'POST' })
+    expect(published.status).toBe(200)
+    const site = await app.request('/api/admin/kiosk/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '新店' }) })
+    expect(site.status).toBe(201)
+    expect(kioskService.provisionSite).toHaveBeenCalledWith({ name: '新店', ownerUserId: 'admin-1' })
+  })
+
   it('accepts an unprefixed LLM router model ID', async () => {
     const configKV = {
       getOptional: vi.fn(async (key: string) => {
@@ -115,7 +146,7 @@ describe('admin kiosk model policy route', () => {
         },
       },
       performanceProfile: 'balanced',
-      voiceVadThreshold: 0.72,
+      voiceVadSettings: { threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 },
     })
   })
 
@@ -133,18 +164,18 @@ describe('admin kiosk model policy route', () => {
     await expect(response.json()).resolves.toMatchObject({ performanceProfile: 'constrained' })
   })
 
-  it('stores a kiosk voice VAD threshold', async () => {
+  it('stores kiosk Silero VAD segmentation settings', async () => {
     const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
     const { app } = createTestApp(configKV)
 
-    const response = await app.request('/api/admin/kiosk/sites/site-1/voice-vad-threshold', {
+    const response = await app.request('/api/admin/kiosk/sites/site-1/voice-vad-settings', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ threshold: 0.72 }),
+      body: JSON.stringify({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 }),
     })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({ voiceVadThreshold: '0.72' })
+    await expect(response.json()).resolves.toMatchObject({ voiceVadSettings: { threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } })
   })
 
   it('returns individual results when disabling a device batch has partial failures', async () => {

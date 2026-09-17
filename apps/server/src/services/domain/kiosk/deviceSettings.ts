@@ -25,7 +25,14 @@ const overrides = partial(strictObject({
   faceDetectionConfidence: pipe(number(), minValue(0.4), maxValue(0.8)),
   proactiveVlmEnabled: boolean(),
   performanceProfile: picklist(['constrained', 'balanced', 'high']),
-  voiceVadThreshold: pipe(number(), minValue(0.5), maxValue(0.95)),
+  presenceVisionMode: picklist(['face_only', 'pose_only', 'pose_plus_conditional_face']),
+  voiceVadSettings: strictObject({
+    threshold: pipe(number(), minValue(0.1), maxValue(0.99)),
+    minSpeechDurationMs: pipe(number(), integer(), minValue(0), maxValue(60_000)),
+    maxSpeechDurationS: pipe(number(), integer(), minValue(1), maxValue(9_999)),
+    minSilenceDurationMs: pipe(number(), integer(), minValue(0), maxValue(60_000)),
+    speechPadMs: pipe(number(), integer(), minValue(0), maxValue(10_000)),
+  }),
 }))
 const version = pipe(number(), integer(), minValue(1))
 

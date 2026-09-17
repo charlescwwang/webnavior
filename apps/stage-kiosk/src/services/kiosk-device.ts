@@ -1,4 +1,4 @@
-import type { DeviceSettingsSnapshot } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 /** A registered kiosk browser installation returned by the Server bootstrap endpoint. */
 export interface KioskDevice {
@@ -90,7 +90,7 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
 
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */
 export async function fetchKioskBootstrap() {
-  return await request<{ device: KioskDevice, deviceSettings: DeviceSettingsSnapshot, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadThreshold: number }>('/api/kiosk/bootstrap')
+  return await request<{ device: KioskDevice, deviceSettings: DeviceSettingsSnapshot, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadSettings: KioskVoiceVadSettings }>('/api/kiosk/bootstrap')
 }
 
 /** Reads the current policy only for the device identified by its HttpOnly cookie. */

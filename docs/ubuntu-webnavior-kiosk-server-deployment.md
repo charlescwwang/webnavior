@@ -290,9 +290,16 @@ log 應出現 `Applied schema` 與 `Server started`。若 `/readyz` 失敗，先
 1. 記錄目前 revision，並先確認 PostgreSQL 備份可用。
 2. `git fetch`，檢視將更新的 commit 與環境檔鍵名；不覆寫 `/etc/webnavior/server.env`。
 3. 以 `git pull --ff-only` 更新 checkout，執行 `corepack pnpm install --frozen-lockfile`。
-4. 重新建置三個前端；確認 build 成功後才發布靜態檔。
-5. `sudo systemctl restart webnavior-api`；Server 會自動 migration。
-6. 驗證 `/livez`、`/readyz`、Nginx `/api/`，以及 kiosk 實際登入與媒體上傳。
+4. 重新建置三個前端，但先不要發布靜態檔。
+5. 執行 `corepack pnpm -F @proj-airi/server-schema build`，再建置 Server，確保新 migration 已內嵌於 Server bundle。
+6. `sudo systemctl restart webnavior-api`；Server 會自動 migration，先確認 log 出現 `Applied schema`。
+7. 確認 Server 健康後才發布靜態前端，接著驗證 `/livez`、`/readyz`、Nginx `/api/`，以及 kiosk 實際登入與媒體上傳。
+
+Server 的新程式碼不能先於資料庫 migration 使用：若更新後 API log 出現 PostgreSQL
+`42703` 或 `missing column`，代表該環境沒有套用所屬版本的 migration。確認部署的
+checkout 包含 `apps/server/drizzle/` 的新 SQL 與 `_journal.json` 項目、
+`@proj-airi/server-schema` 已重新建置，然後重啟 `webnavior-api`；不要把此錯誤誤判為
+登入、WebSocket 或前端問題。
 
 失敗時，切回先前記錄的 Git revision、重新安裝該 revision 的 lockfile 依賴，重啟
 `webnavior-api`。資料庫 migration 不是自動可逆操作，因此更新前的 PostgreSQL 備份是

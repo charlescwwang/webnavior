@@ -56,6 +56,8 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 
 ## 本輪實作邊界
 
+- 每位系統管理者現在可發布一份「新店別預設互動體驗」。新店別建立時會複製該管理員最新發布快照，建立自身的 draft 與 immutable release；既有店別不會被模板更新覆寫。店別 release 會記錄模板來源、店別 revision、父版本與變更範圍，方便辨識本店客製版本。
+
 - Kiosk 體驗快照現在可引用伺服器擁有的 VRM 或 Live2D 角色資產；上傳的原始檔案是部署期資料，不納入 git。Kiosk 只會依已發布快照下載及快取角色資產。
 - 管理端保留內部 `Profile` 資料模型與 API 名稱，以維持既有版本化發布契約；面向使用者的頁面改以「互動體驗」描述。
 - 系統模型頁的 OpenAI-compatible TTS 連線保留自己的上游 model、endpoint、選填 API key 與 voice。voice 預設為 `zh-TW-HsiaoChenNeural`，由 Server 以 MP3、speed `1.0` 呼叫上游；Kiosk 不會取得這些設定或任何 Provider 憑證。

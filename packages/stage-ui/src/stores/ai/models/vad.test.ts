@@ -10,16 +10,18 @@ describe('resolveVADConfig', () => {
       minSilenceDurationMs: 1200,
       speechPadMs: 360,
       minSpeechDurationMs: 300,
+      maxBufferDuration: 30,
     })
   })
 
   it('preserves explicit threshold and silence duration values', () => {
-    expect(resolveVADConfig(0.45, 650, 420, 500)).toEqual({
+    expect(resolveVADConfig(0.45, 650, 420, 500, 9999)).toEqual({
       speechThreshold: 0.45,
       exitThreshold: 0.135,
       minSilenceDurationMs: 650,
       speechPadMs: 420,
       minSpeechDurationMs: 500,
+      maxBufferDuration: 9999,
     })
   })
 })

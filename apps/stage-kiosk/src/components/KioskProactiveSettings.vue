@@ -21,6 +21,7 @@ const triggerOptions = [
 const statusLabel = computed(() => ({
   idle: '尚未啟用本機相機。',
   starting: '正在開啟本機相機與模型…',
+  capturing: '相機已啟動，觀測目前未啟用。',
   observing: '正在本機觀測；畫面不會上傳或保存。',
   unsupported: '此瀏覽器不支援相機觀測。',
   failed: props.error ?? '無法啟動本機相機觀測。',

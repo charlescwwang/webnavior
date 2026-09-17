@@ -1,7 +1,8 @@
-import type { DeviceSettingsSnapshot } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile, KioskProfile } from '../services/kiosk-device'
 
+import { defaultKioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 import { onScopeDispose, readonly, shallowRef } from 'vue'
 
 import { fetchDeviceSettings, fetchKioskBootstrap, KioskDeviceRequestError, registerDevelopmentKiosk } from '../services/kiosk-device'
@@ -21,7 +22,7 @@ export function useKioskDeviceRegistration() {
   const mediaCaptureMode = shallowRef<KioskMediaCaptureMode>('off')
   const proactiveVlmEnabled = shallowRef(false)
   const performanceProfile = shallowRef<KioskPerformanceProfile>('constrained')
-  const voiceVadThreshold = shallowRef(0.72)
+  const voiceVadSettings = shallowRef<KioskVoiceVadSettings>({ ...defaultKioskVoiceVadSettings })
   const error = shallowRef<string>()
   const state = shallowRef<KioskRegistrationState>('checking')
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -35,7 +36,7 @@ export function useKioskDeviceRegistration() {
     mediaCaptureMode.value = snapshot.effective.mediaCaptureMode
     proactiveVlmEnabled.value = snapshot.effective.proactiveVlmEnabled
     performanceProfile.value = snapshot.effective.performanceProfile
-    voiceVadThreshold.value = snapshot.effective.voiceVadThreshold
+    voiceVadSettings.value = snapshot.effective.voiceVadSettings
   }
 
   function scheduleSync() {
@@ -84,7 +85,7 @@ export function useKioskDeviceRegistration() {
       mediaCaptureMode.value = response.mediaCapturePolicy.mode
       proactiveVlmEnabled.value = response.proactiveVlmEnabled
       performanceProfile.value = response.performanceProfile
-      voiceVadThreshold.value = response.voiceVadThreshold
+      voiceVadSettings.value = response.voiceVadSettings
       applySettings(response.deviceSettings)
       state.value = 'registered'
       scheduleSync()
@@ -113,7 +114,7 @@ export function useKioskDeviceRegistration() {
       mediaCaptureMode.value = bootstrapResponse.mediaCapturePolicy.mode
       proactiveVlmEnabled.value = bootstrapResponse.proactiveVlmEnabled
       performanceProfile.value = bootstrapResponse.performanceProfile
-      voiceVadThreshold.value = bootstrapResponse.voiceVadThreshold
+      voiceVadSettings.value = bootstrapResponse.voiceVadSettings
       applySettings(bootstrapResponse.deviceSettings)
       state.value = 'registered'
       scheduleSync()
@@ -134,7 +135,7 @@ export function useKioskDeviceRegistration() {
     mediaCaptureMode: readonly(mediaCaptureMode),
     proactiveVlmEnabled: readonly(proactiveVlmEnabled),
     performanceProfile: readonly(performanceProfile),
-    voiceVadThreshold: readonly(voiceVadThreshold),
+    voiceVadSettings: readonly(voiceVadSettings),
     registerDevelopmentDevice,
     state: readonly(state),
   }

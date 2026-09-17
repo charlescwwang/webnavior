@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+
 import type { KioskSiteModelPolicy } from '../../composables/useKioskManagement'
 
 import { Button, Checkbox } from '@proj-airi/ui'
@@ -15,7 +17,7 @@ const emit = defineEmits<{
   save: [overrides: KioskSiteModelPolicy['overrides']]
   updateProactiveVlm: [enabled: boolean]
   updatePerformanceProfile: [profile: KioskSiteModelPolicy['performanceProfile']]
-  updateVoiceVadThreshold: [threshold: number]
+  updateVoiceVadSettings: [settings: KioskVoiceVadSettings]
 }>()
 
 const overrides = reactive<KioskSiteModelPolicy['overrides']>({ ...props.policy.overrides })
@@ -70,6 +72,18 @@ function save() {
   emit('save', { ...overrides })
 }
 
+function updateVoiceVadSettings(event: Event) {
+  const form = event.currentTarget as HTMLFormElement
+  const fields = new FormData(form)
+  emit('updateVoiceVadSettings', {
+    threshold: Number(fields.get('threshold')),
+    minSpeechDurationMs: Number(fields.get('minSpeechDurationMs')),
+    maxSpeechDurationS: Number(fields.get('maxSpeechDurationS')),
+    minSilenceDurationMs: Number(fields.get('minSilenceDurationMs')),
+    speechPadMs: Number(fields.get('speechPadMs')),
+  })
+}
+
 const hasSelectableModels = computed(() => modelCategories.some(category => props.policy.available[category.id].length > 0))
 const selectedTtsModel = computed(() => selectedValue('tts') || props.policy.defaults.tts)
 const selectedTtsVoice = computed(() => selectedTtsModel.value
@@ -97,11 +111,36 @@ const selectedTtsVoice = computed(() => selectedTtsModel.value
         <option value="high">高效能：720p、10 Hz、遵從錄影政策</option>
       </select>
     </label>
-    <label :class="['grid gap-2 rounded-xl border border-slate-200 p-4 text-sm font-semibold dark:border-slate-700']">
-      語音偵測嚴格度：{{ props.policy.voiceVadThreshold.toFixed(2) }}
-      <input type="range" min="0.5" max="0.95" step="0.01" :value="props.policy.voiceVadThreshold" :disabled="busy" @change="emit('updateVoiceVadThreshold', Number(($event.target as HTMLInputElement).value))">
-      <span :class="['text-xs font-normal text-slate-500']">數值越高越不易把環境聲當成語音；建議先使用較嚴格的 0.72。變更後請重新載入 kiosk。</span>
-    </label>
+    <form :class="['grid gap-3 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-700']" @submit.prevent="updateVoiceVadSettings">
+      <div>
+        <h3 :class="['m-0 text-sm font-semibold']">
+          Silero VAD
+        </h3>
+        <p :class="['mb-0 mt-1 text-xs text-slate-500']">
+          控制語音開始、結束與送往 ASR 的切段方式。儲存後，已連線的 Kiosk 會在下一次設定同步時套用。
+        </p>
+      </div>
+      <label :class="['grid gap-1 font-semibold']">Threshold
+        <input name="threshold" type="number" min="0.1" max="0.99" step="0.01" :value="props.policy.voiceVadSettings.threshold" :disabled="busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
+      </label>
+      <div :class="['grid gap-3 sm:grid-cols-2']">
+        <label :class="['grid gap-1 font-semibold']">Min speech duration (ms)
+          <input name="minSpeechDurationMs" type="number" min="0" max="60000" step="1" :value="props.policy.voiceVadSettings.minSpeechDurationMs" :disabled="busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
+        </label>
+        <label :class="['grid gap-1 font-semibold']">Max speech duration (s)
+          <input name="maxSpeechDurationS" type="number" min="1" max="9999" step="1" :value="props.policy.voiceVadSettings.maxSpeechDurationS" :disabled="busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
+        </label>
+        <label :class="['grid gap-1 font-semibold']">Min silence duration (ms)
+          <input name="minSilenceDurationMs" type="number" min="0" max="60000" step="1" :value="props.policy.voiceVadSettings.minSilenceDurationMs" :disabled="busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
+        </label>
+        <label :class="['grid gap-1 font-semibold']">Speech pad (ms)
+          <input name="speechPadMs" type="number" min="0" max="10000" step="1" :value="props.policy.voiceVadSettings.speechPadMs" :disabled="busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
+        </label>
+      </div>
+      <Button type="submit" :disabled="busy">
+        儲存 VAD 設定
+      </Button>
+    </form>
     <section v-for="category in modelCategories" :key="category.id" :class="['grid gap-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700']">
       <div :class="['flex items-start gap-3']">
         <span :class="[category.icon, 'rounded-lg bg-cyan-50 p-2 text-xl text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300']" />

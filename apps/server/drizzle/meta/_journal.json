@@ -232,6 +232,20 @@
       "when": 1789963200000,
       "tag": "0032_kiosk_device_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790049600000,
+      "tag": "0033_kiosk_voice_vad_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790136000000,
+      "tag": "0034_kiosk_owner_experience_templates",
+      "breakpoints": true
     }
   ]
 }

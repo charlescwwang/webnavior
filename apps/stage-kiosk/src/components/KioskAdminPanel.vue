@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   endSession: []
+  reload: []
 }>()
 
 const paused = defineModel<boolean>('paused', { required: true })
@@ -91,6 +92,16 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
         </button>
       </section>
 
+      <section class="admin-section">
+        <h3>現場維護</h3>
+        <p class="session-description">
+          重新載入整個 Kiosk 頁面，重新取得目前已發布的裝置與互動設定。
+        </p>
+        <button type="button" class="reload-button" @click="emit('reload')">
+          重新載入 Kiosk
+        </button>
+      </section>
+
       <p class="admin-note">
         互動服務與完成後問卷請在 Webnavior 管理後台的「互動體驗」調整並發布；此頁只保留 Kiosk 現場設定。
       </p>
@@ -99,13 +110,13 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
 </template>
 
 <style scoped>
-.admin-panel { display: grid; width: min(100%, 64rem); min-width: 0; margin: 0 auto; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.5rem; color: #ecfffb; background: #0d2225; box-shadow: 0 1rem 3rem rgb(0 0 0 / 28%); grid-template-rows: auto minmax(0, 1fr); }
+.admin-panel { display: grid; width: min(100%, 64rem); min-width: 0; max-height: calc(100dvh - 3rem); margin: 0 auto; overflow: hidden; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.5rem; color: #ecfffb; background: #0d2225; box-shadow: 0 1rem 3rem rgb(0 0 0 / 28%); grid-template-rows: auto minmax(0, 1fr); }
 .admin-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgb(255 255 255 / 12%); padding: 1rem 1.2rem; }
 .admin-kicker { color: #8bd9cb; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
 .admin-title { margin: .15rem 0 0; font-size: 1.2rem; }
 .close-button { display: grid; place-items: center; border: 0; border-radius: .75rem; padding: .35rem; color: #d9faf6; background: transparent; cursor: pointer; }
 .close-button:hover { background: rgb(255 255 255 / 10%); }
-.admin-content { display: grid; min-width: 0; gap: 1rem; padding: 1.2rem; }
+.admin-content { display: grid; min-width: 0; min-height: 0; gap: 1rem; overflow-y: auto; overscroll-behavior: contain; padding: 1.2rem; }
 .admin-section { display: grid; gap: .8rem; border: 1px solid rgb(255 255 255 / 12%); border-radius: 1rem; padding: 1rem; background: rgb(255 255 255 / 4%); }
 .admin-section h3 { margin: 0; font-size: .95rem; }
 .device-details { display: grid; gap: .7rem; margin: 0; }
@@ -117,6 +128,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
 .session-description { margin: -.25rem 0 0; color: rgb(217 250 246 / 70%); font-size: .84rem; line-height: 1.5; }
 .end-session-button { justify-self: start; border: 1px solid rgb(255 191 125 / 46%); border-radius: .7rem; padding: .6rem .85rem; color: #ffe0b5; background: rgb(117 58 26 / 36%); cursor: pointer; }
 .end-session-button:disabled { cursor: wait; opacity: .65; }
+.reload-button { justify-self: start; border: 1px solid rgb(120 225 209 / 42%); border-radius: .7rem; padding: .6rem .85rem; color: #d9faf6; background: rgb(19 77 76 / 56%); cursor: pointer; }
 .toggle-row input { width: 1.1rem; height: 1.1rem; accent-color: #78e1d1; }
 .admin-note { margin: 0; color: rgb(217 250 246 / 70%); font-size: .8rem; line-height: 1.5; }
 @media (max-width: 520px) {

@@ -1,0 +1,1 @@
+ALTER TABLE "kiosk_sites" ADD COLUMN IF NOT EXISTS "voice_vad_settings" jsonb NOT NULL DEFAULT '{"threshold":0.5,"minSpeechDurationMs":250,"maxSpeechDurationS":9999,"minSilenceDurationMs":250,"speechPadMs":2000}'::jsonb;

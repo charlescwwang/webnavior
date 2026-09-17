@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { onUnmounted, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { beginKioskAdminSession } from '../services/admin-session'
 
 defineOptions({ inheritAttrs: false })
 
 const router = useRouter()
+const route = useRoute()
 
 const configuredPin = import.meta.env.VITE_KIOSK_ADMIN_PIN?.trim()
 const holdTimer = shallowRef<ReturnType<typeof setTimeout> | undefined>()
@@ -47,10 +48,9 @@ function unlockAdmin() {
   pinError.value = ''
   pinPromptOpen.value = false
   beginKioskAdminSession()
-  // The kiosk has one dedicated local-settings route. Going through the
-  // generic settings index first mounts its transition guard, which can
-  // interrupt this first post-PIN navigation.
-  void router.push('/settings/kiosk')
+  // Keep the customer scene mounted: navigating to the dedicated settings
+  // route destroys and recreates the embedded interactive service.
+  void router.push({ path: '/', query: { ...route.query, admin: 'true' } })
 }
 
 function closePrompt() {

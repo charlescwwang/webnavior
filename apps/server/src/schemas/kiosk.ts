@@ -1,7 +1,7 @@
-import type { DeviceSettings } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettings, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
-import { defaultDeviceSettings } from '@proj-airi/kiosk-proactive'
+import { defaultDeviceSettings, defaultKioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 import { relations } from 'drizzle-orm'
 import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
@@ -75,6 +75,8 @@ export interface KioskProfileSnapshot {
 /** A site owns kiosk devices, configuration releases, and collected interaction data. */
 export const kioskSites = pgTable('kiosk_sites', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  /** The current single-operator boundary; future store managers are delegated below this owner. */
+  ownerUserId: text('owner_user_id').references(() => user.id, { onDelete: 'restrict' }),
   name: text('name').notNull(),
   /** Stable machine key for a system-created Site, such as the local POC Site. */
   slug: text('slug').unique(),
@@ -88,6 +90,8 @@ export const kioskSites = pgTable('kiosk_sites', {
   performanceProfile: text('performance_profile').$type<KioskPerformanceProfile>().notNull().default('balanced'),
   /** Site-calibrated Silero VAD probability threshold; higher values reject more ambient noise. */
   voiceVadThreshold: text('voice_vad_threshold').notNull().default('0.72'),
+  /** Complete Silero VAD policy, including utterance segmentation behavior. */
+  voiceVadSettings: jsonb('voice_vad_settings').$type<KioskVoiceVadSettings>().notNull().default(defaultKioskVoiceVadSettings),
   /** Site-specific choices from the system administrator's approved model catalog. */
   modelOverrides: jsonb('model_overrides').$type<KioskModelOverrides>().notNull().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -131,11 +135,39 @@ export const kioskDeviceCredentials = pgTable('kiosk_device_credentials', {
   revokedAt: timestamp('revoked_at'),
 }, table => [index('kiosk_device_credentials_device_idx').on(table.deviceId)])
 
+/** The editable default experience owned by one operator, used when provisioning new stores. */
+export const kioskOwnerExperienceDrafts = pgTable('kiosk_owner_experience_drafts', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  ownerUserId: text('owner_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }).unique(),
+  name: text('name').notNull(),
+  snapshot: jsonb('snapshot').$type<KioskProfileSnapshot>().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
+})
+
+/** Immutable default-experience history for one operator. */
+export const kioskOwnerExperienceReleases = pgTable('kiosk_owner_experience_releases', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  ownerUserId: text('owner_user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  revision: integer('revision').notNull(),
+  snapshot: jsonb('snapshot').$type<KioskProfileSnapshot>().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, table => [
+  uniqueIndex('kiosk_owner_experience_releases_owner_revision_uidx').on(table.ownerUserId, table.revision),
+  index('kiosk_owner_experience_releases_owner_idx').on(table.ownerUserId),
+])
+
 /** An immutable kiosk configuration snapshot released for one site. */
 export const kioskProfileReleases = pgTable('kiosk_profile_releases', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
   siteId: text('site_id').notNull().references(() => kioskSites.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
+  revision: integer('revision').notNull().default(1),
+  /** The operator template that seeded this store; remains stable across local edits. */
+  sourceTemplateReleaseId: text('source_template_release_id').references(() => kioskOwnerExperienceReleases.id, { onDelete: 'set null' }),
+  parentSiteReleaseId: text('parent_site_release_id').references((): any => kioskProfileReleases.id, { onDelete: 'set null' }),
+  changeScope: text('change_scope').$type<'site_override' | 'template_seed'>().notNull().default('site_override'),
   snapshot: jsonb('snapshot').$type<KioskProfileSnapshot>().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, table => [index('kiosk_profile_releases_site_idx').on(table.siteId)])

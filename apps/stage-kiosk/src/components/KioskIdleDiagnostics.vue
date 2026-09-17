@@ -7,6 +7,7 @@ import { computed } from 'vue'
 const props = defineProps<{
   idleDeadlineAt: number | undefined
   pendingWork: boolean
+  presenceIdleProtection?: { reason: 'customer-activity' | 'visual-engagement', until?: number }
   state: KioskCustomerSessionState
 }>()
 
@@ -27,6 +28,14 @@ const label = computed(() => {
     return '重置中'
   if (props.pendingWork)
     return '閒置重置暫停：服務員處理中'
+  if (props.presenceIdleProtection?.reason === 'customer-activity')
+    return '閒置重置暫停：顧客正在互動'
+  if (props.presenceIdleProtection?.reason === 'visual-engagement') {
+    const seconds = props.presenceIdleProtection.until == null
+      ? undefined
+      : Math.max(0, Math.ceil((props.presenceIdleProtection.until - now.value.getTime()) / 1_000))
+    return `閒置重置暫停：偵測使用者靠近（${seconds ?? '—'} 秒）`
+  }
   return `閒置重置：${secondsUntilReset.value ?? '—'} 秒`
 })
 </script>

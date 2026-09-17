@@ -148,7 +148,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       mediaCapturePolicy: { mode: profile ? effective.mediaCaptureMode : 'off' },
       proactiveVlmEnabled: Boolean(profile && effective.proactiveVlmEnabled),
       performanceProfile: effective.performanceProfile,
-      voiceVadThreshold: effective.voiceVadThreshold,
+      voiceVadSettings: effective.voiceVadSettings,
     })
   })
 

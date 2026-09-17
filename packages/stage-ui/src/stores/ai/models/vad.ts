@@ -13,6 +13,7 @@ interface UseVADOptions {
   minSilenceDurationMs?: MaybeRefOrGetter<number>
   speechPadMs?: MaybeRefOrGetter<number>
   minSpeechDurationMs?: MaybeRefOrGetter<number>
+  maxSpeechDurationS?: MaybeRefOrGetter<number>
 
   onSpeechStart?: () => void
   onSpeechEnd?: () => void
@@ -23,13 +24,15 @@ const DEFAULT_VAD_THRESHOLD = 0.52
 const DEFAULT_VAD_MIN_SILENCE_DURATION_MS = 1200
 const DEFAULT_VAD_SPEECH_PAD_MS = 360
 const DEFAULT_VAD_MIN_SPEECH_DURATION_MS = 300
+const DEFAULT_VAD_MAX_SPEECH_DURATION_S = 30
 
 export function resolveVADConfig(
   threshold?: number,
   minSilenceDurationMs?: number,
   speechPadMs?: number,
   minSpeechDurationMs?: number,
-): Pick<BaseVADConfig, 'speechThreshold' | 'exitThreshold' | 'minSilenceDurationMs' | 'speechPadMs' | 'minSpeechDurationMs'> {
+  maxSpeechDurationS?: number,
+): Pick<BaseVADConfig, 'speechThreshold' | 'exitThreshold' | 'minSilenceDurationMs' | 'speechPadMs' | 'minSpeechDurationMs' | 'maxBufferDuration'> {
   const resolvedThreshold = threshold ?? DEFAULT_VAD_THRESHOLD
 
   return {
@@ -38,6 +41,7 @@ export function resolveVADConfig(
     minSilenceDurationMs: minSilenceDurationMs ?? DEFAULT_VAD_MIN_SILENCE_DURATION_MS,
     speechPadMs: speechPadMs ?? DEFAULT_VAD_SPEECH_PAD_MS,
     minSpeechDurationMs: minSpeechDurationMs ?? DEFAULT_VAD_MIN_SPEECH_DURATION_MS,
+    maxBufferDuration: maxSpeechDurationS ?? DEFAULT_VAD_MAX_SPEECH_DURATION_S,
   }
 }
 
@@ -47,6 +51,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
     minSilenceDurationMs: ref(DEFAULT_VAD_MIN_SILENCE_DURATION_MS),
     speechPadMs: ref(DEFAULT_VAD_SPEECH_PAD_MS),
     minSpeechDurationMs: ref(DEFAULT_VAD_MIN_SPEECH_DURATION_MS),
+    maxSpeechDurationS: ref(DEFAULT_VAD_MAX_SPEECH_DURATION_S),
   }
 
   options = merge(defaultOptions, options)
@@ -67,6 +72,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
   const minSilenceDurationMs = toRef(options.minSilenceDurationMs)
   const speechPadMs = toRef(options.speechPadMs)
   const minSpeechDurationMs = toRef(options.minSpeechDurationMs)
+  const maxSpeechDurationS = toRef(options.maxSpeechDurationS)
 
   async function init() {
     if (loaded.value || loading.value || manager.value)
@@ -81,6 +87,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
         minSilenceDurationMs.value,
         speechPadMs.value,
         minSpeechDurationMs.value,
+        maxSpeechDurationS.value,
       )
 
       vad.value = await createVAD({
@@ -186,6 +193,11 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
     }
   })
 
+  watch(maxSpeechDurationS, (newVal) => {
+    if (vad.value && newVal !== undefined)
+      vad.value.updateConfig({ maxBufferDuration: newVal })
+  })
+
   return {
     isSpeech,
     isSpeechProb,
@@ -197,6 +209,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
     minSilenceDurationMs,
     speechPadMs,
     minSpeechDurationMs,
+    maxSpeechDurationS,
 
     init,
     start,

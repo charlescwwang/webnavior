@@ -31,7 +31,8 @@ describe('device policy authorization and concurrency', () => {
     const initial = await service.getDeviceSettings(deviceId)
     expect(initial.effective.observationEnabled).toBe(false)
     expect(initial.effective.faceDetectionConfidence).toBe(0.6)
-    expect(initial.effective.voiceVadThreshold).toBe(0.72)
+    expect(initial.effective.presenceVisionMode).toBe('pose_plus_conditional_face')
+    expect(initial.effective.voiceVadSettings).toEqual({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 })
     const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
       localControls: ['observationEnabled'],
@@ -62,6 +63,20 @@ describe('device policy authorization and concurrency', () => {
     expect(logs[1].details).toMatchObject({ source: 'local', before: { version: 2 }, after: { version: 3 } })
   })
 
+  it('persists and delegates the presence vision mode', async () => {
+    const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
+      version: 1,
+      localControls: ['presenceVisionMode'],
+      overrides: { presenceVisionMode: 'pose_only' },
+    } })
+    const local = await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
+      version: admin.settings.version,
+      overrides: { presenceVisionMode: 'face_only' },
+    } })
+
+    expect(local.effective.presenceVisionMode).toBe('face_only')
+  })
+
   it('rejects locked fields, forged delegation, invalid ranges, and cross-site operators without writes', async () => {
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
       version: 1,
@@ -74,7 +89,7 @@ describe('device policy authorization and concurrency', () => {
     } })).rejects.toMatchObject({ statusCode: 400 })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      overrides: { voiceVadThreshold: 2 },
+      overrides: { voiceVadSettings: { threshold: 2, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
       localControls: [],
     } })).rejects.toMatchObject({ statusCode: 400 })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
@@ -112,25 +127,25 @@ describe('device policy authorization and concurrency', () => {
   it('allows explicit clearing while retaining delegation and blocks local writes to disabled devices', async () => {
     await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      localControls: ['voiceVadThreshold'],
-      overrides: { voiceVadThreshold: 0.8 },
+      localControls: ['voiceVadSettings'],
+      overrides: { voiceVadSettings: { threshold: 0.8, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
     } })
     await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
       version: 2,
-      overrides: { voiceVadThreshold: 0.6 },
+      overrides: { voiceVadSettings: { threshold: 0.6, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
     } })
     const cleared = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 3,
-      localControls: ['voiceVadThreshold'],
-      overrides: { voiceVadThreshold: 0.8 },
-      clearLocalOverrides: ['voiceVadThreshold'],
+      localControls: ['voiceVadSettings'],
+      overrides: { voiceVadSettings: { threshold: 0.8, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
+      clearLocalOverrides: ['voiceVadSettings'],
     } })
-    expect(cleared.effective.voiceVadThreshold).toBe(0.8)
-    expect(cleared.settings.localControls).toEqual(['voiceVadThreshold'])
+    expect(cleared.effective.voiceVadSettings.threshold).toBe(0.8)
+    expect(cleared.settings.localControls).toEqual(['voiceVadSettings'])
     await service.disableDevice({ deviceId, siteId, userId: 'admin' })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
       version: 4,
-      overrides: { voiceVadThreshold: 0.5 },
+      overrides: { voiceVadSettings: { threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
     } })).rejects.toMatchObject({ statusCode: 403 })
   })
 })

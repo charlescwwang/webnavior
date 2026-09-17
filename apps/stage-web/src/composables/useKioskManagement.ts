@@ -1,3 +1,5 @@
+import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+
 import { errorMessageFrom } from '@moeru/std'
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
@@ -84,7 +86,7 @@ export interface KioskSiteModelPolicy {
   sources: Record<'asr' | 'llm' | 'tts' | 'vision', Record<string, { baseURL: string, upstreamModel: string, voice?: string }>>
   proactiveVlmEnabled: boolean
   performanceProfile: 'constrained' | 'balanced' | 'high'
-  voiceVadThreshold: number
+  voiceVadSettings: KioskVoiceVadSettings
 }
 
 /** The versioned settings that a Webnavior kiosk receives when a Profile is published. */
@@ -121,6 +123,10 @@ export interface KioskProfileSnapshot {
 export interface KioskProfileDraft {
   id?: string
   name: string
+  revision?: number
+  sourceTemplateReleaseId?: string | null
+  parentSiteReleaseId?: string | null
+  changeScope?: 'site_override' | 'template_seed'
   snapshot: KioskProfileSnapshot
 }
 
@@ -164,6 +170,8 @@ export function useKioskManagement() {
   const profileDraft = shallowRef<KioskProfileDraft>()
   const profileDrafts = shallowRef<KioskProfileDraft[]>([])
   const publishedExperience = shallowRef<KioskProfileDraft>()
+  const ownerTemplateDraft = shallowRef<KioskProfileDraft>()
+  const publishedOwnerTemplate = shallowRef<KioskProfileDraft>()
   const capabilities = shallowRef<KioskSiteManagementCapabilities>()
   const siteModelPolicy = shallowRef<KioskSiteModelPolicy>()
   const loading = shallowRef(false)
@@ -245,6 +253,42 @@ export function useKioskManagement() {
     }
     finally {
       loading.value = false
+    }
+  }
+
+  async function loadOwnerExperienceTemplate() {
+    loading.value = true
+    try {
+      const template = await request<{ draft?: KioskProfileDraft, release?: KioskProfileDraft }>('/experience-template')
+      ownerTemplateDraft.value = template.draft ?? createDefaultProfileDraft()
+      publishedOwnerTemplate.value = template.release
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法載入預設互動體驗。')
+    }
+    finally {
+      loading.value = false
+    }
+  }
+
+  async function saveOwnerExperienceTemplate(draft: KioskProfileDraft, publish: boolean) {
+    saving.value = true
+    try {
+      const savedDraft = await request<KioskProfileDraft>('/experience-template/draft', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      })
+      ownerTemplateDraft.value = savedDraft
+      if (publish)
+        publishedOwnerTemplate.value = await request<KioskProfileDraft>('/experience-template/publish', { method: 'POST' })
+      notice.success(publish ? '預設互動體驗已發布；新店別會套用此版本。' : '預設互動體驗草稿已儲存。')
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法儲存預設互動體驗。')
+    }
+    finally {
+      saving.value = false
     }
   }
 
@@ -549,17 +593,17 @@ export function useKioskManagement() {
     finally { saving.value = false }
   }
 
-  async function saveVoiceVadThreshold(threshold: number) {
+  async function saveVoiceVadSettings(settings: KioskVoiceVadSettings) {
     if (!selectedSiteId.value)
       return
     saving.value = true
     try {
-      await request(`/sites/${selectedSiteId.value}/voice-vad-threshold`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threshold }) })
+      await request(`/sites/${selectedSiteId.value}/voice-vad-settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
       if (siteModelPolicy.value)
-        siteModelPolicy.value = { ...siteModelPolicy.value, voiceVadThreshold: threshold }
-      notice.success('語音偵測嚴格度已更新。設備重新載入後會套用。')
+        siteModelPolicy.value = { ...siteModelPolicy.value, voiceVadSettings: settings }
+      notice.success('Silero VAD 設定已更新，連線中的設備會在下一次同步時套用。')
     }
-    catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新語音偵測嚴格度。') }
+    catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新 Silero VAD 設定。') }
     finally { saving.value = false }
   }
 
@@ -612,12 +656,16 @@ export function useKioskManagement() {
     profileDrafts,
     createProfileDraft,
     publishedExperience,
+    ownerTemplateDraft,
+    publishedOwnerTemplate,
+    loadOwnerExperienceTemplate,
+    saveOwnerExperienceTemplate,
     save,
     saveInteractionRetention,
     saveModelPolicy,
     saveProactiveVlmEnabled,
     savePerformanceProfile,
-    saveVoiceVadThreshold,
+    saveVoiceVadSettings,
     saving,
     siteModelPolicy,
     selectedSite,

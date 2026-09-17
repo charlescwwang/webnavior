@@ -136,10 +136,18 @@ async function ensureSiteMembership(input: { role: 'content_manager' | 'site_adm
  */
 try {
   const site = await ensureTestSite()
+  let systemAdministratorId = ''
   for (const account of testAccounts) {
     const user = await ensureAccount(account)
+    if (account.globalRole === 'admin')
+      systemAdministratorId = user.id
     if (account.siteRole)
       await ensureSiteMembership({ role: account.siteRole, siteId: site.id, userId: user.id })
+  }
+  if (systemAdministratorId) {
+    await db.update(schema.kioskSites)
+      .set({ ownerUserId: systemAdministratorId, updatedAt: new Date() })
+      .where(eq(schema.kioskSites.id, site.id))
   }
 
   console.info(`Webnavior test accounts are ready for ${site.name}:`)

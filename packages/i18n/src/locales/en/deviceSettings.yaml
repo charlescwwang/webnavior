@@ -30,10 +30,24 @@ fields:
   faceDetectionConfidence: Face detection confidence (0.40–0.80)
   proactiveVlmEnabled: Send proactive frames to VLM
   performanceProfile: Device operating mode
-  voiceVadThreshold: Voice detection threshold (0.50–0.95)
+  presenceVisionMode: Presence vision mode
+  voiceVadSettings: Silero voice detection
 fieldDescriptions:
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
   faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
+vad:
+  title: Silero voice detection
+  description: Controls when recording starts and ends, and how much audio is retained around an utterance before transcription.
+  override: Override the Site default
+  effective: 'Current effective setting:'
+  delegate: Allow on-site adjustment of all voice detection settings
+  summary: Threshold {threshold}; minimum speech {minSpeechDurationMs} ms; maximum speech {maxSpeechDurationS} s; end after {minSilenceDurationMs} ms of silence; padding {speechPadMs} ms
+  fields:
+    threshold: Speech threshold
+    minSpeechDurationMs: Minimum speech duration (ms)
+    maxSpeechDurationS: Maximum speech duration (s)
+    minSilenceDurationMs: Silence before ending (ms)
+    speechPadMs: Audio padding (ms)
 options:
   attention: Looking at kiosk
   presence: Presence in area
@@ -45,3 +59,6 @@ options:
   constrained: Resource-saving (lower quality and slower detection)
   balanced: General (recommended)
   high: High-spec device (higher quality and faster detection)
+  face_only: Face only
+  pose_only: Pose only
+  pose_plus_conditional_face: Pose with conditional face attention

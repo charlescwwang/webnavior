@@ -28,6 +28,42 @@ export interface FaceLandmarkObservation {
   facesCamera: boolean
 }
 
+/** Anonymous geometry derived locally from pose or face landmarks. It is a relative proxy, not physical distance. */
+export interface PresenceCandidate {
+  centre: { x: number, y: number }
+  /** Normalized visual scale used only to compare samples from the same camera. */
+  bodyScale: number
+  /** Confidence in the locally derived proxy, from 0 to 1. */
+  poseQuality: number
+  /** `unknown` means the conditional face pass has not run or could not match this candidate. */
+  attention: boolean | 'unknown'
+  greetingRoiHit: boolean
+  interactionRoiHit: boolean
+}
+
+export type PresenceState = 'EMPTY' | 'PASSING' | 'DISTANT' | 'APPROACHING' | 'ENGAGED'
+
+/** Tunable local policy; intentionally not yet exposed through device settings. */
+export interface PresenceSettings {
+  greetingRoi: DetectionZone
+  interactionRoi: DetectionZone
+  greetingDwellMs: number
+  greetingCooldownMs: number
+  passingSpeedPerSecond: number
+  passingMaxDwellMs: number
+  approachingScaleVelocityPerSecond: number
+  approachingMinSamples: number
+  approachingIdleSuppressMs: number
+  /** Maximum idle protection granted to a visual-only ENGAGED state before any customer input. */
+  visualEngagedIdleProtectionMs: number
+  engagedBodyScale: number
+  engagedExitBodyScale: number
+  engagedDwellMs: number
+  transitionDwellMs: number
+  lostGraceMs: number
+  historySize: number
+}
+
 /** The local condition that opens an anonymous kiosk interaction window. */
 export type ProactiveTriggerMode = 'attention' | 'presence' | 'mixed'
 

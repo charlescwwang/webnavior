@@ -30,6 +30,12 @@ accumulating history.
   dashboard, draft-only Kiosk preview, per-site model policy, and server-owned
   Kiosk character assets. The completed and remaining delivery steps are in
   [`plans/2026-09-10-webnavior-management-experience.md`](plans/2026-09-10-webnavior-management-experience.md).
+- Kiosk provisioning now has a one-administrator operator boundary: an
+  administrator can publish a default experience template, and a newly created
+  Site copies its latest snapshot into its own draft and immutable release.
+  Store releases track revisions, template origin, parent release, and whether
+  they are a template seed or store override. New devices inherit the Site's
+  latest release; template changes never overwrite existing Sites.
 - A published Kiosk Profile now has `voiceConversationOnly`. It hides the text
   composer and, with provisioned microphone permission, starts VAD on load;
   the Kiosk displays green/red microphone status from its actual VAD startup

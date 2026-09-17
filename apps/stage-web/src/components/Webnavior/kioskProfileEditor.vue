@@ -7,6 +7,7 @@ import { reactive, watch } from 'vue'
 import ExperienceEditorSection from './experienceEditorSection.vue'
 
 const props = defineProps<{
+  allowAssetUpload?: boolean
   busy: boolean
   capabilities?: KioskSiteManagementCapabilities
   draft: KioskProfileDraft
@@ -75,7 +76,7 @@ function selectRoleCard(event: Event) {
     </ExperienceEditorSection>
 
     <ExperienceEditorSection title="角色卡與虛擬角色" description="匯入角色卡可帶入角色文字，並將 VRM 或 Live2D 模型保存到 Server；發布後 Kiosk 會自動下載及快取。">
-      <div v-if="props.capabilities?.canEditExperience" :class="['grid gap-4 sm:grid-cols-2']">
+      <div v-if="props.capabilities?.canEditExperience && props.allowAssetUpload !== false" :class="['grid gap-4 sm:grid-cols-2']">
         <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
           匯入角色卡
           <input type="file" accept=".zip" :class="['block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-cyan-700 file:px-3 file:py-2 file:font-semibold file:text-white hover:file:bg-cyan-800 dark:text-slate-300']" :disabled="busy" @change="selectRoleCard">

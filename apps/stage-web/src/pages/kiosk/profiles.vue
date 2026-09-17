@@ -30,10 +30,12 @@ const {
   message,
   profileDraft,
   profileDrafts,
+  publishedExperience,
   save,
   saveModelPolicy,
   saveProactiveVlmEnabled,
   savePerformanceProfile,
+  saveVoiceVadSettings,
   saving,
   siteModelPolicy,
   selectedSite,
@@ -183,6 +185,17 @@ watch(() => route.query.site, async (siteId) => {
                 {{ selectedSite.interactionRetentionDays }} 天
               </dd>
             </div>
+            <div v-if="publishedExperience">
+              <dt :class="['text-slate-500 dark:text-slate-400']">
+                已發布體驗
+              </dt>
+              <dd :class="['mb-0 mt-1 font-semibold text-slate-900 dark:text-white']">
+                {{ publishedExperience.name }} · 店別 v{{ publishedExperience.revision ?? 1 }}
+              </dd>
+              <p v-if="publishedExperience.sourceTemplateReleaseId" :class="['mb-0 mt-1 text-xs text-slate-500 dark:text-slate-400']">
+                {{ publishedExperience.changeScope === 'template_seed' ? '由管理員模板初始化' : '含店別客製變更' }}
+              </p>
+            </div>
           </dl>
           <Button
             v-if="capabilities?.canEditTechnicalSettings"
@@ -215,7 +228,7 @@ watch(() => route.query.site, async (siteId) => {
           @save="saveModelPolicy"
           @update-proactive-vlm="saveProactiveVlmEnabled"
           @update-performance-profile="savePerformanceProfile"
-          @update-voice-vad-threshold="saveVoiceVadThreshold"
+          @update-voice-vad-settings="saveVoiceVadSettings"
         />
       </div>
     </section>

@@ -113,6 +113,51 @@ describe('useKioskCustomerSession', () => {
     expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
   })
 
+  it('defers idle reset while high-confidence presence is engaged', async () => {
+    vi.useFakeTimers()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    session.setPresenceIdleSuppressed(true)
+    await vi.advanceTimersByTimeAsync(61_000)
+    expect(session.state.value).toBe('active')
+    session.setPresenceIdleSuppressed(false)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
+  })
+
+  it('distinguishes a proactive session from a customer action', async () => {
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.begin()
+    expect(session.hasCustomerActivity.value).toBe(false)
+
+    await session.recordActivity()
+    expect(session.hasCustomerActivity.value).toBe(true)
+
+    await session.end('staff')
+    expect(session.hasCustomerActivity.value).toBe(false)
+  })
+
   it('asks before clearing an inactive customer and keeps their conversation after continuing', async () => {
     vi.useFakeTimers()
     const chatSession = {
