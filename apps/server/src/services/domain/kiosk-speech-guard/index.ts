@@ -7,6 +7,12 @@ export interface KioskSpeechPrototype {
   requiresContext: boolean
 }
 
+export interface KioskSpeechEvaluationRow {
+  embedding: readonly number[]
+  expectedLabel: KioskSpeechGuardLabel
+  hasMatchingDialogueContext: boolean
+}
+
 /**
  * Classifies a candidate against separately embedded examples. Labels never
  * enter the embedding request: they are only used after nearest-neighbour
@@ -44,6 +50,38 @@ export function classifySpeechCandidate(input: {
   return {
     label: best?.label ?? 'AMBIGUOUS',
     score: best?.score,
+  }
+}
+
+/** Summarizes a fixed benchmark without retaining its utterance text. */
+export function evaluateSpeechGuard(input: {
+  prototypes: readonly KioskSpeechPrototype[]
+  rows: readonly KioskSpeechEvaluationRow[]
+}) {
+  const byExpectedLabel = new Map<KioskSpeechGuardLabel, { correct: number, total: number }>()
+  let correct = 0
+  for (const row of input.rows) {
+    const predicted = classifySpeechCandidate({
+      candidateEmbedding: row.embedding,
+      hasMatchingDialogueContext: row.hasMatchingDialogueContext,
+      prototypes: input.prototypes,
+    }).label
+    const summary = byExpectedLabel.get(row.expectedLabel) ?? { correct: 0, total: 0 }
+    summary.total++
+    if (predicted === row.expectedLabel) {
+      correct++
+      summary.correct++
+    }
+    byExpectedLabel.set(row.expectedLabel, summary)
+  }
+  return {
+    accuracy: input.rows.length === 0 ? undefined : correct / input.rows.length,
+    byExpectedLabel: kioskSpeechGuardLabels.map(label => ({
+      correct: byExpectedLabel.get(label)?.correct ?? 0,
+      label,
+      total: byExpectedLabel.get(label)?.total ?? 0,
+    })),
+    total: input.rows.length,
   }
 }
 

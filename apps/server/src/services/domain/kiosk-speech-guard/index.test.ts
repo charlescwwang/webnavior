@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { classifySpeechCandidate } from '.'
+import { classifySpeechCandidate, evaluateSpeechGuard } from '.'
 
 describe('classifySpeechCandidate', () => {
   const prototypes = [
@@ -25,5 +25,25 @@ describe('classifySpeechCandidate', () => {
       ],
       topK: 2,
     })).toMatchObject({ label: 'ORDER_INTENT' })
+  })
+
+  it('reports benchmark accuracy by expected label without returning utterance text', () => {
+    expect(evaluateSpeechGuard({
+      prototypes,
+      rows: [
+        { embedding: [1, 0], expectedLabel: 'ORDER_INTENT', hasMatchingDialogueContext: false },
+        { embedding: [0, 1], expectedLabel: 'AGENT_RESPONSE', hasMatchingDialogueContext: true },
+      ],
+    })).toEqual({
+      accuracy: 1,
+      byExpectedLabel: [
+        { correct: 1, label: 'ORDER_INTENT', total: 1 },
+        { correct: 1, label: 'AGENT_RESPONSE', total: 1 },
+        { correct: 0, label: 'KIOSK_COMMAND', total: 0 },
+        { correct: 0, label: 'BACKGROUND_CONVERSATION', total: 0 },
+        { correct: 0, label: 'AMBIGUOUS', total: 0 },
+      ],
+      total: 2,
+    })
   })
 })
