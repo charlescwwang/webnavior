@@ -162,6 +162,10 @@ volumes:
   webnavior_redis_data:
 ```
 
+`webnavior_redis_data` 是 Server 的動態營運設定來源。系統管理員在後台儲存的模型、ASR/TTS
+與 Kiosk embedding 連線（含加密後金鑰）都會在此保留；更新程式不會重建或清除此 volume。
+因此請把 Docker volume 備份納入既有維運備份，且不要以 `docker compose down -v` 清除它。
+
 啟動與驗證（此 Compose project 只會操作 `webnavior_redis`）：
 
 ```bash
@@ -338,6 +342,10 @@ cd /srv/webnavior
 git pull --ff-only
 bash scripts/updateKioskUbuntu.sh
 ```
+
+此腳本會在發布前重啟 `webnavior-api` 並以 `/readyz` 確認 PostgreSQL 與 Redis 均可用。Kiosk
+embedding 等動態 Provider 設定儲存在第 2 節的 Redis volume，不在前端 `.env.production.local`
+或更新腳本中；後台儲存後，下一次語意判斷就會讀到新值，不需要為了更換服務網址再重啟 API。
 
 Web 根目錄必須以 `--base=/` 建置；若使用 `/web/`，Nginx 會把找不到的 JavaScript 請求回應為
 SPA HTML，瀏覽器便會顯示 `Unexpected token '<'`。部署完成後，對管理頁做一次硬重新整理以清除

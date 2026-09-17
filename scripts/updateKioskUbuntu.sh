@@ -104,7 +104,8 @@ corepack pnpm install --frozen-lockfile
 # The systemd unit runs the API directly from this checkout. Apply the declared
 # PostgreSQL schema, rebuild the shared schema package, then restart before
 # publishing browser code so a new management page never reaches an older
-# API/schema contract.
+# API/schema contract. Provider connections, including Kiosk embeddings, live
+# in Redis' persistent volume; this update never replaces that volume.
 corepack pnpm -F @proj-airi/server db:push
 corepack pnpm -F @proj-airi/server-schema build
 sudo systemctl restart webnavior-api
@@ -122,4 +123,4 @@ sudo rsync -a --delete apps/order-menu/dist/ "$order_menu_deploy_dir/"
 echo 'Stage Web updated:  /'
 echo 'Kiosk updated:     /kiosk/'
 echo 'Order menu updated: /menu/'
-echo 'API restarted and ready: webnavior-api'
+echo 'API restarted and ready: webnavior-api (Redis-backed provider settings retained)'

@@ -7,7 +7,10 @@ import {
   boolean,
   literal,
   maxLength,
+  maxValue,
+  minValue,
   nonEmpty,
+  number,
   object,
   optional,
   picklist,
@@ -60,6 +63,14 @@ const WebnaviorAudioConfigSchema = object({
   baseURL: pipe(string(), url('baseURL must be a valid URL')),
   voice: optional(pipe(string(), nonEmpty('voice must not be empty when provided'), maxLength(200)), DEFAULT_WEBNAVIOR_TTS_VOICE),
   plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
+})
+
+const WebnaviorEmbeddingConfigSchema = object({
+  baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
+  modelName: pipe(string(), nonEmpty('modelName is required'), maxLength(200)),
+  provider: picklist(['ollama', 'openai-compatible']),
+  plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
+  timeoutMs: optional(pipe(number(), minValue(1000), maxValue(30_000)), 5000),
 })
 
 const OpenRouterSliceSchema = object({
@@ -366,6 +377,20 @@ export function createAdminRouterConfigRoutes(
         throw createBadRequestError('Invalid audio capability', 'INVALID_BODY')
       await service.clearWebnaviorAudioConfig(capability)
       return c.body(null, 204)
+    })
+    .get('/webnavior-embedding', async (c) => {
+      const config = await service.currentWebnaviorEmbeddingConfig()
+      return c.json(config
+        ? { ...config, keyCiphertext: undefined, hasApiKey: Boolean(config.keyCiphertext) }
+        : { configured: false, hasApiKey: false })
+    })
+    .post('/webnavior-embedding', async (c) => {
+      const raw = await c.req.json().catch(() => null)
+      const parsed = safeParse(WebnaviorEmbeddingConfigSchema, raw)
+      if (!parsed.success)
+        throw createBadRequestError('Invalid Webnavior embedding configuration', 'INVALID_BODY')
+      const config = await service.saveWebnaviorEmbeddingConfig(parsed.output)
+      return c.json({ ...config, keyCiphertext: undefined, hasApiKey: Boolean(config?.keyCiphertext) })
     })
     .delete('/models/:modelName', async (c) => {
       const modelName = c.req.param('modelName').trim()

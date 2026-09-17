@@ -19,6 +19,7 @@ import { computed, onMounted, reactive, shallowRef } from 'vue'
 
 import AudioProviderConnection from '../../components/Webnavior/audioProviderConnection.vue'
 import ConversationModelList from '../../components/Webnavior/ConversationModelList.vue'
+import EmbeddingProviderConnection from '../../components/Webnavior/EmbeddingProviderConnection.vue'
 import ModelProviderConnection from '../../components/Webnavior/modelProviderConnection.vue'
 import SystemModelOverview from '../../components/Webnavior/SystemModelOverview.vue'
 
@@ -45,8 +46,17 @@ interface AudioConfig {
   tts?: { modelName: string, upstreamModel: string, baseURL: string, hasApiKey: boolean, voice?: string }
 }
 
+interface EmbeddingConfig {
+  baseURL: string
+  hasApiKey: boolean
+  modelName: string
+  provider: 'ollama' | 'openai-compatible'
+  timeoutMs: number
+}
+
 const config = shallowRef<RouterConfigCurrent>()
 const audioConfig = shallowRef<AudioConfig>({})
+const embeddingConfig = shallowRef<EmbeddingConfig>()
 const loading = shallowRef(false)
 const message = shallowRef('')
 const pendingRemovalModelId = shallowRef<string>()
@@ -92,10 +102,42 @@ async function load() {
     if (!audioResponse.ok)
       throw new Error(await audioResponse.text() || `Request failed: ${audioResponse.status}`)
     audioConfig.value = await audioResponse.json() as AudioConfig
+    const embeddingResponse = await authedFetch(endpoint('/webnavior-embedding'))
+    if (!embeddingResponse.ok)
+      throw new Error(await embeddingResponse.text() || `Request failed: ${embeddingResponse.status}`)
+    const nextEmbeddingConfig = await embeddingResponse.json() as EmbeddingConfig | { configured: false }
+    embeddingConfig.value = 'configured' in nextEmbeddingConfig ? undefined : nextEmbeddingConfig
     form.chatModel = nextConfig.request.defaults.chatModel ?? ''
   }
   catch (error) {
     notice.error(errorMessageFrom(error) ?? '無法讀取系統模型設定。請以系統管理員登入。')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+async function saveEmbedding(input: {
+  baseURL: string
+  modelName: string
+  plaintextKey?: string
+  provider: 'ollama' | 'openai-compatible'
+  timeoutMs: number
+}) {
+  loading.value = true
+  try {
+    const response = await authedFetch(endpoint('/webnavior-embedding'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+    if (!response.ok)
+      throw new Error(await response.text() || `Request failed: ${response.status}`)
+    notice.success('Kiosk 語意判斷設定已加密儲存，後續語音判斷會立即使用。')
+    await load()
+  }
+  catch (error) {
+    notice.error(errorMessageFrom(error) ?? '無法儲存 Kiosk 語意判斷設定。')
   }
   finally {
     loading.value = false
@@ -225,6 +267,7 @@ onMounted(load)
     <div id="audio-services">
       <AudioProviderConnection :busy="loading" @saved="load" />
     </div>
+    <EmbeddingProviderConnection :busy="loading" :connection="embeddingConfig" @save="saveEmbedding" />
 
     <AlertDialogRoot :open="removalDialogOpen" @update:open="removalDialogOpen = $event">
       <AlertDialogPortal>

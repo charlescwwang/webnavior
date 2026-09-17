@@ -28,7 +28,7 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 ## 後續 Kiosk 營運設定原則
 
 - 店務管理者不應調整 VAD threshold、視覺 cadence、embedding 分數、模型或 Provider URL。這些參數由系統管理者以版本化 policy 管理，Kiosk 依現場噪音、推論耗時與決策結果採取受限的自動調整。
-- Provider、模型、URL 與憑證仍是系統管理者的動態 Server 設定；更新後由下一次請求生效，不要求重啟 Kiosk 或 Server。embedding provider 已採相同的 Server-only 動態設定，支援 Ollama 與 OpenAI-compatible endpoint，Kiosk 不會下載模型或取得憑證。
+- Provider、模型、URL 與憑證仍是系統管理者的動態 Server 設定；更新後由下一次請求生效，不要求重啟 Kiosk 或 Server。系統模型頁提供 embedding provider 的 Ollama／OpenAI-compatible 連線設定；Kiosk 不會下載模型或取得憑證，金鑰只會加密寫入 Server 的 Redis 設定。
 - 實際 POS 或店家菜單整合暫不納入目前 POC。日後由領域服務將其正式商品、庫存與訂單能力實作為原生 WebMCP；Kiosk Host 不建立廠商專用 adapter，也不管理 POS 資料。
 - VRM 待機動作可作為發布版 Profile 的獨立 `.vrma` 資產；招呼、推薦與完成點餐的 one-shot 動作需在後續設計為有限、可驗證的 action mapping，不能讓角色卡文字或 LLM 直接指定檔名或 URL。
 

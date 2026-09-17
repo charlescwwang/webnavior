@@ -6,8 +6,8 @@ import type { asrModelSchema, ConfigKVService, llmModelSchema, llmRouterConfigSc
 
 import { useLogger } from '@guiiai/logg'
 
-import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../adapters/config-kv'
 import { createBadRequestError } from '../../../../utils/error'
+import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../adapters/config-kv'
 
 /**
  * AAD label used when encrypting/decrypting the streaming TTS upstream key.
@@ -1275,7 +1275,43 @@ export function createAdminRouterConfigService(deps: AdminRouterConfigDeps) {
     return await currentWebnaviorAudioConfig()
   }
 
-  return { apply, current, removeLlmModel, currentWebnaviorAudioConfig, saveWebnaviorAudioConfig, clearWebnaviorAudioConfig }
+  async function currentWebnaviorEmbeddingConfig() {
+    return await deps.configKV.getOptional('WEBNAVIOR_EMBEDDING_CONFIG')
+  }
+
+  async function saveWebnaviorEmbeddingConfig(input: {
+    baseURL: string
+    modelName: string
+    provider: 'ollama' | 'openai-compatible'
+    plaintextKey?: string
+    timeoutMs?: number
+  }) {
+    const existing = await currentWebnaviorEmbeddingConfig()
+    const keyCiphertext = input.plaintextKey?.trim()
+      ? deps.envelope.encryptKey(input.plaintextKey, { modelName: 'webnavior-kiosk:embedding', keyEntryId: 'default' })
+      : existing?.keyCiphertext
+    const next = {
+      baseURL: input.baseURL,
+      modelName: input.modelName,
+      provider: input.provider,
+      timeoutMs: input.timeoutMs ?? 5000,
+      ...(keyCiphertext ? { keyCiphertext } : {}),
+    }
+    await deps.configKV.set('WEBNAVIOR_EMBEDDING_CONFIG', next)
+    await deps.redis.publish('configkv:invalidate', JSON.stringify({ key: 'WEBNAVIOR_EMBEDDING_CONFIG', version: Date.now(), publishedAt: Date.now() }))
+    return await currentWebnaviorEmbeddingConfig()
+  }
+
+  return {
+    apply,
+    clearWebnaviorAudioConfig,
+    current,
+    currentWebnaviorAudioConfig,
+    currentWebnaviorEmbeddingConfig,
+    removeLlmModel,
+    saveWebnaviorAudioConfig,
+    saveWebnaviorEmbeddingConfig,
+  }
 }
 
 export type AdminRouterConfigService = ReturnType<typeof createAdminRouterConfigService>

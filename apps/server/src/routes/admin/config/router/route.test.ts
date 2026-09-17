@@ -29,6 +29,13 @@ function createServiceStub(overrides: Partial<AdminRouterConfigService> = {}): A
     currentWebnaviorAudioConfig: vi.fn(async () => ({})),
     saveWebnaviorAudioConfig: vi.fn(async () => ({})),
     clearWebnaviorAudioConfig: vi.fn(async () => ({})),
+    currentWebnaviorEmbeddingConfig: vi.fn(async () => null),
+    saveWebnaviorEmbeddingConfig: vi.fn(async () => ({
+      baseURL: 'http://ollama.local:11434/v1',
+      modelName: 'gemma-embedding:latest',
+      provider: 'ollama' as const,
+      timeoutMs: 5000,
+    })),
     ...overrides,
   }
 }
@@ -114,6 +121,34 @@ describe('admin router config route', () => {
       upstreamModel: 'tts-1',
       voice: 'zh-TW-HsiaoChenNeural',
     })
+  })
+
+  it('stores the kiosk embedding connection without returning its plaintext key', async () => {
+    const service = createServiceStub()
+    const app = createTestApp(service)
+
+    const response = await app.request('/api/admin/config/router/webnavior-embedding', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        baseURL: 'http://ollama.local:11434/v1',
+        modelName: 'gemma-embedding:latest',
+        plaintextKey: 'not-returned',
+        provider: 'ollama',
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(service.saveWebnaviorEmbeddingConfig).toHaveBeenCalledWith({
+      baseURL: 'http://ollama.local:11434/v1',
+      modelName: 'gemma-embedding:latest',
+      plaintextKey: 'not-returned',
+      provider: 'ollama',
+      timeoutMs: 5000,
+    })
+    const body = await response.json() as Record<string, unknown>
+    expect(body).toMatchObject({ hasApiKey: false, modelName: 'gemma-embedding:latest' })
+    expect(body).not.toHaveProperty('keyCiphertext')
   })
 
   it('accepts Bedrock bearer tokens longer than ordinary provider keys', async () => {
