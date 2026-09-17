@@ -16,6 +16,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   save: [input: { draft: KioskProfileDraft, publish: boolean }]
   uploadAvatar: [file: File]
+  uploadIdleMotion: [file: File]
   uploadRoleCard: [file: File]
 }>()
 
@@ -25,6 +26,7 @@ function cloneDraft(draft: KioskProfileDraft): KioskProfileDraft {
     snapshot: {
       ...draft.snapshot,
       ...(draft.snapshot.characterAsset ? { characterAsset: { ...draft.snapshot.characterAsset } } : {}),
+      ...(draft.snapshot.idleMotion ? { idleMotion: { ...draft.snapshot.idleMotion } } : {}),
       ...(draft.snapshot.characterCard ? { characterCard: { ...draft.snapshot.characterCard } } : {}),
       interactiveService: { ...draft.snapshot.interactiveService },
     },
@@ -52,6 +54,14 @@ function selectRoleCard(event: Event) {
   const file = input.files?.item(0)
   if (file)
     emit('uploadRoleCard', file)
+  input.value = ''
+}
+
+function selectIdleMotion(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.item(0)
+  if (file)
+    emit('uploadIdleMotion', file)
   input.value = ''
 }
 </script>
@@ -91,6 +101,15 @@ function selectRoleCard(event: Event) {
       <div v-if="form.snapshot.characterAsset" :class="['rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-950/40']">
         <span :class="['font-semibold text-slate-900 dark:text-white']">目前虛擬角色：</span>
         <span :class="['text-slate-600 dark:text-slate-300']">{{ form.snapshot.characterAsset.name }}（{{ form.snapshot.characterAsset.format === 'vrm' ? 'VRM' : 'Live2D' }}）</span>
+      </div>
+      <label v-if="props.capabilities?.canEditExperience && form.snapshot.characterAsset?.format === 'vrm'" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+        待機動作
+        <input type="file" accept=".vrma" :class="['block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-amber-700 file:px-3 file:py-2 file:font-semibold file:text-white hover:file:bg-amber-800 dark:text-slate-300']" :disabled="busy" @change="selectIdleMotion">
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">上傳與目前 VRM 相容的 .vrma。發布後它會成為角色的待機循環；招呼與推薦動作會在後續版本另行設定。</span>
+      </label>
+      <div v-if="form.snapshot.idleMotion" :class="['rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100']">
+        <span :class="['font-semibold']">目前待機動作：</span>
+        {{ form.snapshot.idleMotion.name }}
       </div>
       <div v-if="form.snapshot.characterCard" :class="['grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/40']">
         <p :class="['m-0 text-sm font-semibold text-slate-900 dark:text-white']">

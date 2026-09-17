@@ -36,6 +36,14 @@ When embedded by AIRI, the service exposes its domain operations through native
 WebMCP. AIRI discovers the tools dynamically, so this service is one interactive
 service among many rather than an AIRI built-in feature.
 
+When the customer explicitly agrees to see recommendations, an Agent may call
+`menu_show_recommendations` with one to four verified menu item IDs. The menu
+renders those items as a non-blocking recommendation rail with the catalog's
+own image, name, price, and availability data; it never trusts model-generated
+product details. Returning to the regular menu automatically compacts the rail
+to a small recommendation label, so the customer does not need to close a modal
+or leave their current browsing position.
+
 Set `VITE_AIRI_ORIGIN` to the exact AIRI browser-visible origin when deploying
 separately. The embedded menu otherwise uses its referrer origin, including a
 port when that port is genuinely part of the page URL. The Ubuntu deployment

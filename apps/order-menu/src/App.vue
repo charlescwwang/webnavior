@@ -2,12 +2,13 @@
 import type { ComponentPublicInstance } from 'vue'
 
 import type { CartSnapshot, FulfillmentMode, Selection, SubmittedOrder } from './domain/order-machine'
-import type { AgentAction, MenuToolName } from './webmcp'
+import type { AgentAction, MenuToolName, RecommendationPresentation } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef } from 'vue'
 
 import MenuItemCard from './components/menuItemCard.vue'
+import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
 
 import { defaultOptionsFor, menu } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
@@ -32,6 +33,8 @@ const orderStatus = shallowRef<string>()
 const completedOrderId = shallowRef<string>()
 const fulfillmentMode = shallowRef<FulfillmentMode>()
 const addingItemId = shallowRef<string>()
+const recommendations = shallowRef<RecommendationPresentation>()
+const recommendationsCollapsed = shallowRef(false)
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
 let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
@@ -48,6 +51,11 @@ const menuSections = computed(() => [...new Set(menu.map(item => item.category))
   items: menu.filter(item => item.category === category),
 })))
 const isAgentOperating = computed(() => agentOperationCount.value > 0)
+const recommendedItems = computed(() => recommendations.value
+  ? recommendations.value.itemIds
+      .map(itemId => menu.find(item => item.id === itemId))
+      .filter((item): item is typeof menu[number] => item !== undefined)
+  : [])
 
 function currency(amount: number) {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
@@ -110,6 +118,10 @@ const runtime = createMenuToolRuntime({
   onFulfillmentChange: mode => fulfillmentMode.value = mode,
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
+  onRecommendationsChange: (presentation) => {
+    recommendations.value = presentation
+    recommendationsCollapsed.value = false
+  },
 })
 
 async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, options: { animate?: boolean } = {}) {
@@ -158,6 +170,37 @@ function notifyActivity() {
   cursorTargetId.value = undefined
   showAgentCursor.value = false
   notifyHost('activity')
+}
+
+function collapseRecommendations() {
+  if (!recommendations.value || recommendationsCollapsed.value)
+    return
+
+  recommendationsCollapsed.value = true
+}
+
+function handleMenuPointerDown(event: PointerEvent) {
+  // The recommendation rail is deliberately non-blocking. Browsing the
+  // original menu compacts it, while choosing a recommended item keeps the
+  // collection available for a second choice.
+  if (event.target instanceof Element && event.target.closest('[data-recommendation-rail]'))
+    return
+
+  collapseRecommendations()
+  notifyActivity()
+}
+
+function addRecommendedItem(itemId: string) {
+  // Recommendation cards are excluded from the broad pointer handler so they
+  // do not collapse before the customer can compare them. They still count as
+  // a real customer action and must refresh the Kiosk session.
+  notifyActivity()
+  void addItem(itemId)
+}
+
+function expandRecommendations() {
+  recommendationsCollapsed.value = false
+  notifyActivity()
 }
 
 function updateQuantity(itemId: string, quantity: number) {
@@ -258,7 +301,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main class="menu-app" @pointerdown="notifyActivity">
+  <main class="menu-app" @pointerdown="handleMenuPointerDown">
     <header class="menu-header">
       <div>
         <h1>周氏蝦捲菜單</h1>
@@ -270,9 +313,19 @@ onUnmounted(() => {
 
     <output :class="['agent-status', { 'is-active': isAgentOperating }]" aria-live="polite">
       <span class="status-dot" />
-      <span>{{ isAgentOperating ? '代理操作中' : '等待下一步操作' }}</span>
+      <span>{{ isAgentOperating ? '正在為你整理餐點' : '菜單可直接點選' }}</span>
       <small v-if="isAgentOperating">{{ action.label }}</small>
     </output>
+
+    <MenuRecommendationRail
+      v-if="recommendations && recommendedItems.length > 0"
+      :adding-item-id="addingItemId"
+      :collapsed="recommendationsCollapsed"
+      :items="recommendedItems"
+      :presentation="recommendations"
+      @add="addRecommendedItem"
+      @expand="expandRecommendations"
+    />
 
     <section v-for="section in menuSections" :key="section.category" class="menu-section">
       <h2>{{ section.category }}</h2>

@@ -178,6 +178,12 @@ export const KioskProfileSnapshotSchema = object({
     scenario: pipe(string(), maxLength(8_000)),
     systemPrompt: pipe(string(), maxLength(8_000)),
   })),
+  idleMotion: optional(object({
+    format: literal('vrma'),
+    id: pipe(string(), minLength(1), maxLength(120)),
+    name: pipe(string(), minLength(1), maxLength(255)),
+    sha256: pipe(string(), minLength(64), maxLength(64)),
+  })),
   greetingPrompt: pipe(string(), minLength(1), maxLength(2_000)),
   interactiveService: object({
     description: pipe(string(), maxLength(500)),

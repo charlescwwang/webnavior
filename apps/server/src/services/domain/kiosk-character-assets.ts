@@ -46,7 +46,8 @@ export interface KioskCharacterAssetFileReference {
 
 export function createKioskCharacterAssetService(db: Database, assetDirectory: string): KioskCharacterAssetService {
   function filePath(assetId: string, format: KioskCharacterAssetReference['format']) {
-    return join(assetDirectory, `${assetId}.${format === 'vrm' ? 'vrm' : 'zip'}`)
+    const extension = format === 'live2d_zip' ? 'zip' : format
+    return join(assetDirectory, `${assetId}.${extension}`)
   }
 
   async function save(input: CharacterAssetUpload): Promise<KioskCharacterAssetReference> {

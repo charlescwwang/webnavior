@@ -49,6 +49,8 @@ import { useSpeechRuntimeStore } from '../../stores/speech-runtime'
 
 const props = withDefaults(defineProps<{
   cursorPosition?: { x: number, y: number }
+  /** Optional server-selected VRM idle animation. */
+  idleAnimation?: string
   personPosition?: { x: number, y: number }
   enableOrbitControls?: boolean
   paused?: boolean
@@ -1039,7 +1041,7 @@ defineExpose({
         :model-src="stageModelSelectedUrl"
         :cursor-position="cursorPosition"
         :person-position="personPosition"
-        :idle-animation="animations.idleLoop.toString()"
+        :idle-animation="props.idleAnimation ?? animations.idleLoop.toString()"
         :paused="paused"
         :show-axes="stageViewControlsEnabled"
         :enable-orbit-controls="props.enableOrbitControls"

@@ -1,7 +1,7 @@
 import type { AttentionObservation, InteractionPhase, ProactiveGreetingTrigger, ProactiveInteractionDecision, ProactiveInteractionSettings } from './types'
 
 /** Stable safety and tone policy for every provider-generated proactive greeting. */
-export const kioskGreetingInstruction = '你是餐飲 kiosk 的 AIRI 服務員。請以繁體中文自然、中性地主動招呼可能是一組訪客。不要推測或稱呼年齡、性別、種族或外貌，也不要提到相機、偵測或辨識。限兩句內，表示可協助瀏覽菜單、點餐或介紹餐點。'
+export const kioskGreetingInstruction = '你是餐飲 kiosk 的 AIRI 服務員。請以繁體中文自然、中性地主動招呼可能是一組訪客。不要推測或稱呼年齡、性別、種族或外貌，也不要提到相機、偵測或辨識。限兩句內；優先自然地問對方是否想先看看今天推薦的搭配，同時保留可直接瀏覽菜單或點餐的選擇。只有在對方明確表示想看推薦後，才可展示推薦品項。'
 
 /** Default non-authoritative context reference for an attentive visitor. */
 export const defaultAttentionGreetingPrompt = '現場參考：訪客正注視 kiosk，可能正在等候引導或準備開始互動。可自然、低打擾地提供瀏覽菜單、點餐或餐點介紹的協助。'

@@ -101,6 +101,12 @@ export interface KioskProfileSnapshot {
     name: string
     sha256: string
   }
+  idleMotion?: {
+    format: 'vrma'
+    id: string
+    name: string
+    sha256: string
+  }
   characterCard?: {
     description: string
     personality: string
@@ -574,6 +580,34 @@ export function useKioskManagement() {
     }
   }
 
+  async function uploadMotionAsset(file: File) {
+    if (!selectedSiteId.value)
+      throw new Error('請先選擇店別。')
+
+    saving.value = true
+    message.value = ''
+    try {
+      const body = new FormData()
+      body.set('asset', file)
+      const response = await authedFetch(endpoint(`/sites/${selectedSiteId.value}/motion-assets`), {
+        method: 'POST',
+        body,
+      })
+      if (!response.ok)
+        throw new Error(await response.text() || `Request failed: ${response.status}`)
+      const result = await response.json() as { asset: NonNullable<KioskProfileSnapshot['idleMotion']> }
+      notice.success('待機動作已上傳，請儲存草稿後再發布到 Kiosk。')
+      return result
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '待機動作上傳失敗。')
+      throw error
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
   async function saveModelPolicy(overrides: KioskSiteModelPolicy['overrides']) {
     if (!selectedSiteId.value)
       return
@@ -709,6 +743,7 @@ export function useKioskManagement() {
     selectVisitorSession,
     sites,
     uploadCharacterAsset,
+    uploadMotionAsset,
     visitorHistoryError,
     visitorHistoryLoading,
     visitorSessionDetail,

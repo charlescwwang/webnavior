@@ -44,6 +44,7 @@ const {
   selectProfileDraft,
   sites,
   uploadCharacterAsset,
+  uploadMotionAsset,
 } = useKioskManagement()
 
 async function handleRoleCardUpload(file: File) {
@@ -76,6 +77,17 @@ async function handleAvatarUpload(file: File) {
   profileDraft.value = {
     ...profileDraft.value,
     snapshot: { ...profileDraft.value.snapshot, characterAsset: uploaded.asset },
+  }
+}
+
+async function handleIdleMotionUpload(file: File) {
+  const uploaded = await uploadMotionAsset(file)
+  if (!profileDraft.value)
+    return
+
+  profileDraft.value = {
+    ...profileDraft.value,
+    snapshot: { ...profileDraft.value.snapshot, idleMotion: uploaded.asset },
   }
 }
 
@@ -219,6 +231,7 @@ watch(() => route.query.site, async (siteId) => {
           :draft="profileDraft"
           @save="save($event.draft, $event.publish)"
           @upload-avatar="handleAvatarUpload"
+          @upload-idle-motion="handleIdleMotionUpload"
           @upload-role-card="handleRoleCardUpload"
         />
         <KioskModelPolicyEditor

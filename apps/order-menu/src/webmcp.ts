@@ -7,6 +7,7 @@ import { catalogInfo, createOrderMachine } from './domain/order-machine'
 export type MenuToolName
   = | 'menu_get'
     | 'menu_recommend'
+    | 'menu_show_recommendations'
     | 'menu_select_item'
     | 'menu_set_item_option'
     | 'menu_set_quantity'
@@ -23,6 +24,13 @@ export interface AgentAction {
   expandCustomization?: boolean
   label: string
   targetId?: string
+}
+
+/** A customer-facing collection chosen from the current menu catalog. */
+export interface RecommendationPresentation {
+  itemIds: string[]
+  reason?: string
+  title?: string
 }
 
 /** Returns the DOM control identifier used to visually follow an AI option change. */
@@ -61,6 +69,8 @@ interface MenuToolRuntimeOptions {
   onSelectionChange?: (selection: Selection) => void
   /** Notifies the embedding host after the first successfully confirmed order. */
   onOrderConfirmed?: (order: SubmittedOrder) => void
+  /** Requests a non-blocking recommendation rail in the human menu UI. */
+  onRecommendationsChange?: (presentation: RecommendationPresentation) => void
 }
 
 interface ModelContextLike {
@@ -77,6 +87,7 @@ interface ModelContextLike {
 const toolDefinitions: MenuToolDefinition[] = [
   { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。回傳合法的內用／外帶選項。顧客問某個分類有哪些品項時，先查詢後直接列出本次回傳、符合該分類的品項，不可只說「有幾種」後反問。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false }, readOnly: true },
   { name: 'menu_recommend', description: '依顧客需求推薦最多三項餐點。每個 needs 標籤都必須符合：rice 為飯類、fried 為炸物、pork-free 為已確認不含豬肉。', inputSchema: { type: 'object', properties: { needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried', 'pork-free'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['needs'], additionalProperties: false }, readOnly: true },
+  { name: 'menu_show_recommendations', description: '在菜單中非阻斷地展示 1 至 4 項推薦。只可在顧客明確表示想看推薦後使用。itemIds 必須全部來自先前 menu_get 或 menu_recommend 的回傳結果；不得自行猜測品項。可附簡短標題與理由，但不得加入未提供的健康、過敏或供應資訊。', inputSchema: { type: 'object', properties: { itemIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true, description: '必要。先前菜單工具回傳的 item.id。' }, reason: { type: 'string', maxLength: 90, description: '可選。給顧客看的簡短搭配理由。' }, title: { type: 'string', maxLength: 36, description: '可選。推薦列標題。' } }, required: ['itemIds'], additionalProperties: false } },
   { name: 'menu_select_item', description: '選擇一個餐點並建立可設定的選擇。呼叫前必須先使用 menu_get，並傳入其結果中完全相同的 item.id。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。先前 menu_get 回傳的其中一個 item.id；不得猜測、翻譯或自行建立。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'menu_set_item_option', description: '設定目前餐點的口味、辣度、甜度或冰量。groupId 與 valueId 必須來自 menu_select_item 回傳的 item.optionGroups。', inputSchema: { type: 'object', properties: { groupId: { type: 'string', description: '必要。已選餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['groupId', 'valueId'], additionalProperties: false } },
   { name: 'menu_set_quantity', description: '設定目前餐點的數量。只可在 menu_select_item 後、cart_add_item 前使用。', inputSchema: { type: 'object', properties: { quantity: { type: 'integer', minimum: 1, maximum: 20, description: '必要。顧客指定的整數數量；未指定時使用 1。' } }, required: ['quantity'], additionalProperties: false } },
@@ -193,6 +204,29 @@ function recommendationNeeds(input: Record<string, unknown>): RecommendationTag[
   return [...new Set(needs)] as RecommendationTag[]
 }
 
+function recommendationPresentation(input: Record<string, unknown>): RecommendationPresentation {
+  const itemIds = input.itemIds
+  if (!Array.isArray(itemIds) || itemIds.length === 0 || itemIds.length > 4 || !itemIds.every(itemId => typeof itemId === 'string' && itemId.trim()))
+    throw new Error('itemIds must contain one to four menu item IDs.')
+
+  const normalizedItemIds = itemIds.map(itemId => itemId.trim())
+  if (new Set(normalizedItemIds).size !== normalizedItemIds.length)
+    throw new Error('itemIds must not repeat an item ID.')
+
+  const title = typeof input.title === 'string' ? input.title.trim() : undefined
+  const reason = typeof input.reason === 'string' ? input.reason.trim() : undefined
+  if (title && title.length > 36)
+    throw new Error('title must be 36 characters or fewer.')
+  if (reason && reason.length > 90)
+    throw new Error('reason must be 90 characters or fewer.')
+
+  return {
+    itemIds: normalizedItemIds,
+    ...(reason ? { reason } : {}),
+    ...(title ? { title } : {}),
+  }
+}
+
 /** Builds an LLM-readable retry result instead of allowing browser mediation to hide the validation error. */
 function nativeInvocationFailure(name: MenuToolName, error: unknown) {
   const message = errorMessageFrom(error) ?? 'The requested menu operation could not be completed.'
@@ -269,6 +303,22 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               .slice(0, limit)
               .map(menuItemForAgent),
             needs,
+          }
+        }
+        case 'menu_show_recommendations': {
+          const presentation = recommendationPresentation(input)
+          const items = presentation.itemIds.map((itemId) => {
+            const item = machine.getMenu().find(candidate => candidate.id === itemId)
+            if (!item)
+              throw new Error(`Menu item ${itemId} was not found.`)
+            return item
+          })
+
+          options.onRecommendationsChange?.(presentation)
+          return {
+            customerMessage: '已在菜單上顯示推薦餐點。',
+            items: items.map(menuItemForAgent),
+            presentation,
           }
         }
         case 'menu_select_item': {

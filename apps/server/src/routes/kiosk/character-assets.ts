@@ -14,7 +14,7 @@ export function createKioskCharacterAssetRoutes(assets: KioskCharacterAssetServi
         throw createNotFoundError('Character asset not found')
 
       c.header('Cache-Control', 'public, max-age=31536000, immutable')
-      c.header('Content-Type', asset.format === 'vrm' ? 'model/gltf-binary' : 'application/zip')
+      c.header('Content-Type', asset.format === 'vrm' ? 'model/gltf-binary' : asset.format === 'vrma' ? 'application/octet-stream' : 'application/zip')
       return c.body(asset.data.buffer as ArrayBuffer)
     })
 }

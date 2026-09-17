@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
+
 import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { BasicTextarea } from '@proj-airi/ui'
 import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import KioskAssistantPresence from './KioskAssistantPresence.vue'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 
 import { scenarioRegistry } from '../services/scenario-registry'
@@ -13,6 +16,11 @@ import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
   activityStatus?: string
+  assistantPresence: {
+    description: string
+    mode: KioskAssistantPresenceMode
+    title: string
+  }
   fontSize: number
   messages: readonly ChatHistoryItem[]
   pendingTranscript?: string
@@ -85,9 +93,16 @@ async function sendMessage() {
     aria-label="與虛擬服務員對話"
   >
     <div class="message-history">
+      <KioskAssistantPresence
+        v-if="historyMessages.length === 0 && !props.pendingTranscript"
+        :description="props.assistantPresence.description"
+        :mode="props.assistantPresence.mode"
+        :title="props.assistantPresence.title"
+      />
       <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
            placeholder would otherwise render only the assistant name. -->
       <ChatHistory
+        v-if="historyMessages.length > 0"
         ref="chatHistory"
         :messages="historyMessages"
         :assistant-label="assistantLabel"

@@ -35,7 +35,15 @@ export interface KioskModelOverrides {
 
 /** A server-owned avatar file that an immutable kiosk profile may reference. */
 export interface KioskCharacterAssetReference {
-  format: 'live2d_zip' | 'vrm'
+  format: 'live2d_zip' | 'vrm' | 'vrma'
+  id: string
+  name: string
+  sha256: string
+}
+
+/** A server-owned VRM animation selected independently from the avatar model. */
+export interface KioskMotionAssetReference {
+  format: 'vrma'
   id: string
   name: string
   sha256: string
@@ -57,6 +65,8 @@ export interface KioskProfileSnapshot {
   characterName: string
   /** Optional visual avatar selected for the service character. */
   characterAsset?: KioskCharacterAssetReference
+  /** Optional idle animation compatible with the selected VRM avatar. */
+  idleMotion?: KioskMotionAssetReference
   /** Character identity and behavioural context imported from Character Card v3. */
   characterCard?: KioskCharacterCard
   greetingPrompt: string

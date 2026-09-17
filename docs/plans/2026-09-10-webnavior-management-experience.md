@@ -25,6 +25,13 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 
 現行全域 `admin` 暫時對應「系統管理者」；現行 `site_admin` 暫時對應「店務管理者」。內容管理者的正式授權模型在帳號管理功能完成時才加入，避免先建立沒有指派與稽核介面的角色。
 
+## 後續 Kiosk 營運設定原則
+
+- 店務管理者不應調整 VAD threshold、視覺 cadence、embedding 分數、模型或 Provider URL。這些參數由系統管理者以版本化 policy 管理，Kiosk 依現場噪音、推論耗時與決策結果採取受限的自動調整。
+- Provider、模型、URL 與憑證仍是系統管理者的動態 Server 設定；更新後由下一次請求生效，不要求重啟 Kiosk 或 Server。未來 embedding provider 採與 LLM／VLM／ASR 相同的系統管理模式，支援 Ollama 與 OpenAI-compatible endpoint。
+- 實際 POS 或店家菜單整合暫不納入目前 POC。日後由領域服務將其正式商品、庫存與訂單能力實作為原生 WebMCP；Kiosk Host 不建立廠商專用 adapter，也不管理 POS 資料。
+- VRM 待機動作可作為發布版 Profile 的獨立 `.vrma` 資產；招呼、推薦與完成點餐的 one-shot 動作需在後續設計為有限、可驗證的 action mapping，不能讓角色卡文字或 LLM 直接指定檔名或 URL。
+
 ## 首頁資訊層級
 
 所有角色的首頁先回答三件事：

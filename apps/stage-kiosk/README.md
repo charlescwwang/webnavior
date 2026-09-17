@@ -57,6 +57,23 @@ Each customer starts an anonymous Kiosk session when they touch the screen, type
 
 This is intentionally separate from AIRI's general chat history. The current version has no membership identity; a later member lookup can attach an identity to the same Kiosk session lifecycle without retaining anonymous conversations.
 
+## Customer-facing assistance state
+
+The conversation surface presents a large, plain-language state tied visually to
+the avatar: listening, understanding speech, arranging a request, or speaking.
+It starts with “直接告訴我想吃什麼” and always leaves the menu touchable. The old
+draggable technical audio-status card is available only in development
+diagnostics; camera, microphone, and model failures are not customer-facing
+copy. When an embedded menu displays accepted recommendations, it does so in
+its own non-blocking rail rather than navigating the Kiosk away from the menu.
+
+For VRM characters, a system manager may upload one compatible `.vrma` as the
+published Profile's **待機動作** in **互動體驗 → 角色卡與虛擬角色**. The animation
+is stored independently from the model, hash-versioned, and applied only after
+that Profile is published. This first motion setting intentionally controls the
+idle loop only; greeting, recommendation, and other one-shot movements require
+a later action mapping rather than silently reusing the idle animation.
+
 ## Completion survey invitation
 
 In administrator mode, open **完成後問卷邀請** to enable the optional survey, set a fixed HTTP(S) survey URL, and adjust its customer-facing copy and duration. AIRI generates the QR Code in the browser; it does not send the URL to a QR Code provider or append order, conversation, member, or customer data to the link.

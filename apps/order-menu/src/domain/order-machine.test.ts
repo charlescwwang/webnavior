@@ -113,6 +113,7 @@ describe('createMenuToolRuntime', () => {
     expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
       'menu_get',
       'menu_recommend',
+      'menu_show_recommendations',
       'menu_select_item',
       'menu_set_item_option',
       'menu_set_quantity',
@@ -487,5 +488,33 @@ describe('createMenuToolRuntime', () => {
       needs: ['fried', 'pork-free'],
     })
     await expect(runtime.invoke('menu_recommend', { needs: ['rice', 'pork-free'] })).resolves.toMatchObject({ items: [] })
+  })
+
+  it('shows only verified catalog items in the non-blocking recommendation rail', async () => {
+    const presentations: unknown[] = []
+    const runtime = createMenuToolRuntime({
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onRecommendationsChange: presentation => presentations.push(presentation),
+    })
+
+    await expect(runtime.invoke('menu_show_recommendations', {
+      itemIds: ['danzai-noodles', 'winter-melon-tea'],
+      reason: '一碗主食配一杯飲料。',
+      title: '今天想吃得剛剛好',
+    })).resolves.toMatchObject({
+      customerMessage: '已在菜單上顯示推薦餐點。',
+      items: [
+        { id: 'danzai-noodles', name: '周氏擔仔麵' },
+        { id: 'winter-melon-tea', name: '古早味冬瓜茶' },
+      ],
+    })
+    expect(presentations).toEqual([{
+      itemIds: ['danzai-noodles', 'winter-melon-tea'],
+      reason: '一碗主食配一杯飲料。',
+      title: '今天想吃得剛剛好',
+    }])
+    await expect(runtime.invoke('menu_show_recommendations', { itemIds: ['not-a-menu-item'] })).rejects.toThrow('Menu item not-a-menu-item was not found.')
   })
 })

@@ -22,6 +22,12 @@ export interface KioskProfile {
       name: string
       sha256: string
     }
+    idleMotion?: {
+      format: 'vrma'
+      id: string
+      name: string
+      sha256: string
+    }
     characterCard?: {
       description: string
       personality: string

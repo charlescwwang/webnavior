@@ -46,6 +46,29 @@ export function createAdminKioskCharacterAssetRoutes(options: { assets: KioskCha
       const asset = await options.assets.save({ ...imported, siteId })
       return c.json({ asset, card: imported.card }, 201)
     })
+    .post('/sites/:siteId/motion-assets', async (c) => {
+      const siteId = c.req.param('siteId')
+      const capabilities = await options.kioskService.getSiteManagementCapabilities({ siteId, userId: c.get('user')!.id })
+      if (!capabilities.canEditExperience)
+        throw createForbiddenError()
+      const body = await c.req.parseBody()
+      const uploaded = body.asset
+      if (!(uploaded instanceof File))
+        throw createBadRequestError('Please choose a VRMA animation file.', 'INVALID_MOTION_ASSET')
+      if (uploaded.size === 0 || uploaded.size > maximumUploadBytes)
+        throw createBadRequestError('VRMA animation must be between 1 byte and 64 MB.', 'INVALID_MOTION_ASSET')
+      if (!uploaded.name.toLowerCase().endsWith('.vrma'))
+        throw createBadRequestError('Only .vrma animation files are supported.', 'INVALID_MOTION_ASSET')
+
+      const asset = await options.assets.save({
+        card: {},
+        data: new Uint8Array(await uploaded.arrayBuffer()),
+        format: 'vrma',
+        name: safeName(uploaded.name, '待機動作'),
+        siteId,
+      })
+      return c.json({ asset }, 201)
+    })
 }
 
 async function importCharacterAsset(file: File, kind: UploadKind): Promise<ImportedCardPackage> {

@@ -34,6 +34,13 @@ const profileSyncError = shallowRef<string>()
 const voiceConversationOnly = computed(() => Boolean(
   profile.value?.snapshot.voiceConversationOnly,
 ))
+const idleAnimation = computed(() => {
+  const motion = profile.value?.snapshot.idleMotion
+  if (!motion)
+    return undefined
+  const baseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
+  return `${baseUrl}/assets/kiosk/${encodeURIComponent(motion.id)}?v=${encodeURIComponent(motion.sha256)}`
+})
 
 onMounted(async () => {
   await waitForKioskRuntime()
@@ -60,7 +67,7 @@ watch(profile, async (assignedProfile) => {
 
 <template>
   <KioskDraftPreview v-if="isDraftPreview" />
-  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :device="device" :device-settings="deviceSettings?.effective" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-settings="voiceVadSettings" @device-settings-updated="refreshSettings" />
+  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :device="device" :device-settings="deviceSettings?.effective" :idle-animation="idleAnimation" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-settings="voiceVadSettings" @device-settings-updated="refreshSettings" />
   <main v-else-if="state === 'registered' && device && profileSyncError" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-200']">
     <div :class="['max-w-xl space-y-3']">
       <h1 :class="['text-2xl font-semibold']">

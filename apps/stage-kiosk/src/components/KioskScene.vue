@@ -3,6 +3,7 @@ import type { DeviceSettingsValues, KioskVoiceVadSettings, PresenceCandidate } f
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
+import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
@@ -55,6 +56,7 @@ type KioskOrientation = 'landscape' | 'portrait'
 const props = defineProps<{
   device?: KioskDevice
   deviceSettings?: DeviceSettingsValues
+  idleAnimation?: string
   mediaCaptureMode: KioskMediaCaptureMode
   performanceProfile: KioskPerformanceProfile
   proactiveVlmEnabled: boolean
@@ -89,6 +91,45 @@ const interactionTurn = useKioskInteractionTurn()
 const conversationSending = computed(() => (
   interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool'
 ))
+const assistantOutputInterruptible = computed(() => interactionTurn.phase.value === 'speaking')
+const voiceInputLocked = computed(() => (
+  interactionTurn.phase.value === 'transcribing' || conversationSending.value
+))
+const assistantPresence = computed<{ description: string, mode: KioskAssistantPresenceMode, title: string }>(() => {
+  if (interactionTurn.phase.value === 'hearing-speech') {
+    return {
+      description: '你說完後，我會接著協助你。',
+      mode: 'hearing-speech',
+      title: '我正在聽',
+    }
+  }
+  if (interactionTurn.phase.value === 'transcribing') {
+    return {
+      description: '正在整理你剛剛說的內容。',
+      mode: 'transcribing',
+      title: '讓我確認一下',
+    }
+  }
+  if (interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool') {
+    return {
+      description: '我正在幫你確認菜單與點餐內容。',
+      mode: 'processing',
+      title: '正在幫你安排',
+    }
+  }
+  if (interactionTurn.phase.value === 'speaking') {
+    return {
+      description: '想換個選擇時，直接說出來就可以。',
+      mode: 'speaking',
+      title: '我正在說明',
+    }
+  }
+  return {
+    description: '也可以直接點選下方菜單。',
+    mode: 'listening',
+    title: '直接告訴我想吃什麼',
+  }
+})
 const conversationActivityStatus = computed(() => {
   if (interactionTurn.phase.value === 'hearing-speech')
     return '正在聆聽…'
@@ -959,8 +1000,9 @@ onUnmounted(() => {
 <template>
   <main :class="['kiosk-scene', `is-${orientation}`]">
     <KioskAudioStatusOverlay
+      v-if="showIdleDiagnostics"
       v-bind="audioInputIndicator"
-      :interruptible="interactionTurn.phase === 'speaking'"
+      :interruptible="assistantOutputInterruptible"
       :position="audioStatusPosition"
       @interrupt="interruptSpokenReply"
       @move="audioStatusPosition = $event"
@@ -987,11 +1029,12 @@ onUnmounted(() => {
       </KioskAdminPanel>
     </aside>
 
-    <section class="stage-region" aria-label="虛擬服務員">
+    <section :class="['stage-region', `is-${assistantPresence.mode}`]" aria-label="虛擬服務員">
       <WidgetStage
         class="stage-model"
         :cursor-position="cursorPosition"
         :enable-orbit-controls="false"
+        :idle-animation="props.idleAnimation"
         :paused="paused"
         :thinking="conversationSending"
       />
@@ -1013,11 +1056,12 @@ onUnmounted(() => {
     <KioskConversation
       class="conversation-region"
       :activity-status="conversationActivityStatus"
+      :assistant-presence="assistantPresence"
       :messages="conversationMessages"
       :pending-transcript="pendingTranscript"
       :sending="conversationSending"
       :font-size="conversationFontSize"
-      :voice-input-locked="interactionTurn.phase === 'transcribing' || conversationSending"
+      :voice-input-locked="voiceInputLocked"
       :voice-conversation-only="props.voiceConversationOnly"
       @activity="recordCustomerActivity"
       @send-message="sendConversationMessage"
@@ -1063,7 +1107,7 @@ onUnmounted(() => {
 .kiosk-scene { display: grid; width: 100vw; height: 100dvh; padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(29 85 85 / 34%), transparent 38%), linear-gradient(135deg, #0a1417, #111d21); gap: 1rem; }
 .kiosk-scene.is-landscape { grid-template-columns: minmax(14rem, .24fr) minmax(0, .76fr); grid-template-rows: minmax(0, .31fr) minmax(0, .69fr); }
 .kiosk-scene.is-portrait { grid-template-columns: minmax(10rem, .3fr) minmax(0, .7fr); grid-template-rows: minmax(0, .35fr) minmax(0, .65fr); }
-.stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 16%); border-radius: 1.5rem; background: rgb(3 15 18 / 88%); grid-column: 1; grid-row: 1; }
+.stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 16%); border-radius: 1.5rem; background: rgb(3 15 18 / 88%); grid-column: 1; grid-row: 1; transition: border-color .2s ease, box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { border-color: rgb(124 231 216 / 40%); box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 10%); }.stage-region.is-processing, .stage-region.is-transcribing { border-color: rgb(255 202 128 / 56%); box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 12%); }.stage-region.is-speaking { border-color: rgb(167 195 255 / 54%); box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 12%); }
 .stage-model { width: 100%; height: 100%; }
 .kiosk-admin-panel-layer { position: fixed; z-index: 90; inset: 0; display: grid; overflow: auto; padding: 1.5rem; background: rgb(1 12 15 / 72%); backdrop-filter: blur(.4rem); }
 /* Keep the administrator hold target available without exposing controls in the customer-facing composition. */

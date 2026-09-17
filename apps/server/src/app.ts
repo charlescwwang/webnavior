@@ -29,6 +29,7 @@ import type { HonoEnv } from './types/hono'
 import type { EnvelopeCrypto } from './utils/envelope-crypto'
 
 import process from 'node:process'
+
 import { join } from 'node:path'
 
 import Stripe from 'stripe'
@@ -75,7 +76,6 @@ import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
 import { createKioskRoutes } from './routes/kiosk'
 import { createKioskCharacterAssetRoutes } from './routes/kiosk/character-assets'
-import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -93,6 +93,7 @@ import { createChatService } from './services/domain/chats'
 import { createFluxService } from './services/domain/flux'
 import { createFluxTransactionService } from './services/domain/flux-transaction'
 import { createKioskService } from './services/domain/kiosk'
+import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
 import { createKioskMediaService } from './services/domain/kiosk-media'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
@@ -291,7 +292,7 @@ export async function buildApp(deps: AppDeps) {
     // Large binary uploads are exceptions to the API's 1 MB JSON limit. Bind
     // each cap to its exact route so arbitrary requests cannot consume memory.
     .use('*', (c, next) => {
-      if (/^\/api\/admin\/kiosk\/sites\/[^/]+\/character-assets$/.test(c.req.path))
+      if (/^\/api\/admin\/kiosk\/sites\/[^/]+\/(?:character|motion)-assets$/.test(c.req.path))
         return characterAssetBodyLimit(c, next)
       if (/^\/api\/kiosk\/visitor-sessions\/[^/]+\/media$/.test(c.req.path))
         return kioskMediaBodyLimit(c, next)
