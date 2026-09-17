@@ -161,6 +161,17 @@ server {
         try_files $uri $uri/ /menu/index.html;
     }
 
+    # Vite names build assets with a content hash. A removed hash must remain
+    # a missing asset, not fall through to the SPA document: otherwise an old
+    # browser tab receives HTML where it expects JavaScript and cannot recover
+    # to the newly deployed application.
+    location ^~ /assets/ {
+        root /var/www/airi/web;
+        try_files $uri =404;
+        expires 4h;
+        add_header Cache-Control "public, max-age=14400";
+    }
+
     location / {
         root /var/www/airi/web;
         try_files $uri $uri/ /index.html;
