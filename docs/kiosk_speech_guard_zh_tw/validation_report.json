@@ -1,0 +1,423 @@
+{
+  "status": "PASS",
+  "scope": "schema, counts, split isolation, intentional duplicates, pair integrity; no model accuracy claim",
+  "normalization": "NFKC + casefold; remove Unicode punctuation, separators, symbols and controls",
+  "prototype": {
+    "rows": 680,
+    "unique_exact_texts": 652,
+    "unique_normalized_texts": 652,
+    "labels": {
+      "ORDER_INTENT": 120,
+      "AGENT_RESPONSE": 180,
+      "KIOSK_COMMAND": 120,
+      "BACKGROUND_CONVERSATION": 140,
+      "AMBIGUOUS": 120
+    },
+    "difficulty": {
+      "easy": 89,
+      "hard": 496,
+      "medium": 95
+    },
+    "requires_context": {
+      "true": 362,
+      "false": 318
+    },
+    "agent_responses_at_most_4_normalized_characters": 176,
+    "source_dependent_background_rows": 32
+  },
+  "hard_test": {
+    "rows": 150,
+    "unique_exact_texts": 135,
+    "unique_normalized_texts": 135,
+    "labels": {
+      "ORDER_INTENT": 30,
+      "AGENT_RESPONSE": 30,
+      "KIOSK_COMMAND": 30,
+      "BACKGROUND_CONVERSATION": 30,
+      "AMBIGUOUS": 30
+    },
+    "difficulty": {
+      "hard": 150
+    },
+    "requires_context": {
+      "true": 67,
+      "false": 83
+    },
+    "agent_responses_at_most_4_normalized_characters": 29,
+    "source_dependent_background_rows": 7,
+    "pairs": 75,
+    "pair_focus_counts": {
+      "order_vs_reported_or_social_food_talk": 15,
+      "same_text_with_vs_without_valid_agent_context": 15,
+      "kiosk_action_vs_other_person_or_other_system": 15,
+      "grounded_meal_request_vs_ungrounded_fragment": 15,
+      "elliptical_agent_answer_vs_explicit_system_action": 15
+    },
+    "background_rows_with_preceding_agent_turn": 6,
+    "ambiguous_rows_with_insufficient_supplied_context": 6
+  },
+  "split_overlap": {
+    "exact": 0,
+    "normalized": 0
+  },
+  "intentional_prototype_duplicate_groups": [
+    {
+      "text": "對",
+      "ids": [
+        "P-AR-001",
+        "P-AM-005"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "是",
+      "ids": [
+        "P-AR-002",
+        "P-AM-012"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "好",
+      "ids": [
+        "P-AR-003",
+        "P-AM-004"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "可以",
+      "ids": [
+        "P-AR-004",
+        "P-AM-009"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "嗯",
+      "ids": [
+        "P-AR-005",
+        "P-AM-031"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "不要",
+      "ids": [
+        "P-AR-016",
+        "P-AM-003"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "不用",
+      "ids": [
+        "P-AR-017",
+        "P-AM-011"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "不是",
+      "ids": [
+        "P-AR-018",
+        "P-AM-013"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "兩份",
+      "ids": [
+        "P-AR-037",
+        "P-AM-014"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "兩個",
+      "ids": [
+        "P-AR-042",
+        "P-AM-006"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "內用",
+      "ids": [
+        "P-AR-051",
+        "P-AM-015"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "外帶",
+      "ids": [
+        "P-AR-052",
+        "P-AM-016"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "大的",
+      "ids": [
+        "P-AR-061",
+        "P-AM-029"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "小的",
+      "ids": [
+        "P-AR-062",
+        "P-AM-030"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "載具",
+      "ids": [
+        "P-AR-121",
+        "P-AM-019"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "統編",
+      "ids": [
+        "P-AR-122",
+        "P-AM-020"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "有",
+      "ids": [
+        "P-AR-151",
+        "P-AM-017"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "沒有",
+      "ids": [
+        "P-AR-152",
+        "P-AM-018"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "第一個",
+      "ids": [
+        "P-AR-153",
+        "P-AM-022"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "第二個",
+      "ids": [
+        "P-AR-154",
+        "P-AM-023"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "左邊的",
+      "ids": [
+        "P-AR-156",
+        "P-AM-024"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "右邊那個",
+      "ids": [
+        "P-AR-157",
+        "P-AM-025"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "上面那個",
+      "ids": [
+        "P-AR-158",
+        "P-AM-026"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "最下面",
+      "ids": [
+        "P-AR-159",
+        "P-AM-027"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "中間的",
+      "ids": [
+        "P-AR-160",
+        "P-AM-028"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "下一個",
+      "ids": [
+        "P-AR-171",
+        "P-AM-021"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "就這樣",
+      "ids": [
+        "P-AR-173",
+        "P-AM-010"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "等一下",
+      "ids": [
+        "P-AR-177",
+        "P-AM-007"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    }
+  ],
+  "intentional_test_same_text_pairs": [
+    {
+      "text": "對呀",
+      "ids": [
+        "H-031",
+        "H-032"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "沒錯啦",
+      "ids": [
+        "H-033",
+        "H-034"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "嗯對",
+      "ids": [
+        "H-035",
+        "H-036"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "不用了",
+      "ids": [
+        "H-037",
+        "H-038"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "不必",
+      "ids": [
+        "H-039",
+        "H-040"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "兩份啦",
+      "ids": [
+        "H-041",
+        "H-042"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "帶出去",
+      "ids": [
+        "H-043",
+        "H-044"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "中間那款",
+      "ids": [
+        "H-045",
+        "H-046"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "大份的",
+      "ids": [
+        "H-047",
+        "H-048"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "無糖的",
+      "ids": [
+        "H-049",
+        "H-050"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "冰一點的",
+      "ids": [
+        "H-051",
+        "H-052"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "淡一點",
+      "ids": [
+        "H-053",
+        "H-054"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "手機那種",
+      "ids": [
+        "H-055",
+        "H-056"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "統一編號",
+      "ids": [
+        "H-057",
+        "H-058"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    },
+    {
+      "text": "看別款",
+      "ids": [
+        "H-059",
+        "H-060"
+      ],
+      "reason": "intentional_answer_vs_ungrounded_same_text"
+    }
+  ],
+  "sha256": {
+    "prototype_examples.jsonl": "8f91e16de73e42f5e25372fafe7a4fb9e2b80b317972bb55e5963eb8a22dc6ae",
+    "hard_test.jsonl": "411e1e930c9780d0e90927360c619bbe894fcd872755ae859f2250cae7d08c00",
+    "label_definitions.json": "32a7473711d357643bb81522d0206cf8fe466c84b7e4a2e20fb946cbdca47063"
+  },
+  "limitations": [
+    "Synthetic corpus; not representative field sampling.",
+    "No acoustic speaker-target evidence is supplied.",
+    "Annotation notes and pair metadata must not be model inputs.",
+    "No semantic-family isolation or real-world false-reject-rate claim.",
+    "Hard test must not be used to tune thresholds and then reported as untouched."
+  ]
+}
