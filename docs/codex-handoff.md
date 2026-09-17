@@ -48,9 +48,9 @@ accumulating history.
   `high`). The kiosk bootstrap applies it locally to camera resolution,
   MediaPipe cadence/face count, and evidence-clip duration; constrained devices
   cap continuous recording to triggered clips regardless of the Site policy.
-- Kiosk Sites also persist a voice VAD probability threshold. Its default is
-  `0.72` (strict); authorized operators can set `0.50`–`0.95` in the Kiosk
-  technical settings, and kiosk bootstrap applies the value after reload.
+- Kiosk Sites persist their voice VAD settings, including probability threshold
+  and speech padding. Authorized operators can adjust them in Kiosk technical
+  settings; the kiosk applies the next synchronized snapshot.
 - Kiosk camera evidence supports `snapshot` in addition to off, triggered
   video, and continuous video. Snapshot captures one event-linked JPEG without
   creating `MediaRecorder`; the per-device `faceDetectionConfidence` setting
@@ -62,6 +62,11 @@ accumulating history.
   fallback attempts. Order-menu publishes the optional Webnavior Kiosk Activity
   Manifest at `/.well-known/webnavior-kiosk-activity.json`; its customer labels
   are display-only and always have a generic Kiosk fallback.
+- Kiosk history classifies retained sessions as interactive, greeting-only, or
+  empty without deleting associated evidence. Administrators can select reviewed
+  sessions and export LLM JSONL or ASR metadata plus paired audio ZIP. The
+  Ubuntu updater applies the PostgreSQL schema, rebuilds server schema, and
+  restarts `webnavior-api` before publishing browser assets.
 - Webnavior's OpenAI-compatible TTS connection now stores its own voice instead
   of consulting AIRI's general voice catalog. The default is
   `zh-TW-HsiaoChenNeural`; `/audio/speech` receives that voice, MP3 format, and

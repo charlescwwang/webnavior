@@ -147,6 +147,7 @@ describe('admin kiosk model policy route', () => {
       },
       performanceProfile: 'balanced',
       voiceVadSettings: { threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 },
+      voiceVadThreshold: 0.5,
     })
   })
 

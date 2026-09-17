@@ -7,6 +7,8 @@ import type { KioskCharacterAssetService } from '../../../services/domain/kiosk-
 import type { KioskMediaService } from '../../../services/domain/kiosk-media'
 import type { HonoEnv } from '../../../types/hono'
 
+import JSZip from 'jszip'
+
 import { Hono } from 'hono'
 import { array, boolean, integer, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, string } from 'valibot'
 
@@ -45,6 +47,9 @@ const voiceVadSettingsSchema = object({
 })
 
 const visitorSessionDeletionSchema = object({
+  visitorSessionIds: pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(100)),
+})
+const trainingDataExportSchema = object({
   visitorSessionIds: pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(100)),
 })
 const deviceBatchSchema = object({
@@ -150,6 +155,18 @@ async function applyDeviceBatch(deviceIds: string[], operation: (deviceId: strin
     }
   }
   return { failedDeviceIds, succeededDeviceIds }
+}
+
+function hasCustomerConversation(entries: Array<{ kind: string }>) {
+  return entries.some(entry => entry.kind === 'user_text' || entry.kind === 'asr_transcript' || entry.kind === 'order_result')
+}
+
+function ownBytes(bytes: Uint8Array) {
+  // JSZip's buffer can be backed by a SharedArrayBuffer; Hono responses require
+  // a normal ArrayBuffer-backed view in the Node runtime.
+  const buffer = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(buffer).set(bytes)
+  return new Uint8Array(buffer)
 }
 
 /**
@@ -281,7 +298,11 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         kioskService.getSiteModelOverrides(c.req.param('siteId')),
       ])
       const siteId = c.req.param('siteId')
-      return c.json({ ...catalog, overrides, proactiveVlmEnabled: await kioskService.getSiteProactiveVlmEnabled(siteId), performanceProfile: await kioskService.getSitePerformanceProfile(siteId), voiceVadSettings: await kioskService.getSiteVoiceVadSettings(siteId) })
+      const voiceVadSettings = await kioskService.getSiteVoiceVadSettings(siteId)
+      // Existing PWA clients may still render the prior model-policy bundle
+      // while a new static deployment activates. Keep its scalar field derived
+      // from the authoritative settings object during that rollout window.
+      return c.json({ ...catalog, overrides, proactiveVlmEnabled: await kioskService.getSiteProactiveVlmEnabled(siteId), performanceProfile: await kioskService.getSitePerformanceProfile(siteId), voiceVadSettings, voiceVadThreshold: voiceVadSettings.threshold })
     })
     .get('/sites/:siteId/profile', async (c) => {
       const capabilities = await kioskService.getSiteManagementCapabilities({ siteId: c.req.param('siteId'), userId: c.get('user')!.id })
@@ -307,6 +328,90 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         visitorSessionId: file.media.visitorSessionId,
       })
       return c.body(file.data, 200, { 'Content-Type': file.media.mimeType })
+    })
+    .post('/sites/:siteId/training-data/llm', async (c) => {
+      const result = safeParse(trainingDataExportSchema, await c.req.json().catch(() => null))
+      if (!result.success)
+        throw createBadRequestError('Select one or more visitor sessions to export', 'INVALID_REQUEST', result.issues)
+
+      const siteId = c.req.param('siteId')
+      const userId = c.get('user')!.id
+      const lines: string[] = []
+      for (const visitorSessionId of [...new Set(result.output.visitorSessionIds)]) {
+        const detail = await kioskService.getVisitorSessionForUser({ userId, visitorSessionId })
+        if (detail.session.siteId !== siteId)
+          throw createForbiddenError()
+        if (!hasCustomerConversation(detail.entries))
+          continue
+
+        const profile = await kioskService.getProfileRelease(detail.session.profileReleaseId)
+        const messages: Array<{ content: string, role: 'assistant' | 'system' | 'user' }> = []
+        if (profile?.snapshot.agentInstructions)
+          messages.push({ role: 'system', content: profile.snapshot.agentInstructions })
+        let previousAsr = ''
+        for (const entry of detail.entries) {
+          if (entry.kind === 'asr_transcript') {
+            previousAsr = entry.content
+            messages.push({ role: 'user', content: entry.content })
+          }
+          else if (entry.kind === 'user_text') {
+            // The kiosk persists a transcript and its submitted text separately.
+            if (entry.content !== previousAsr)
+              messages.push({ role: 'user', content: entry.content })
+            previousAsr = ''
+          }
+          else if (entry.kind === 'assistant_text' && entry.metadata.action !== 'greeting') {
+            messages.push({ role: 'assistant', content: entry.content })
+          }
+        }
+        if (messages.some(message => message.role === 'user') && messages.some(message => message.role === 'assistant')) {
+          lines.push(JSON.stringify({
+            messages,
+            metadata: { profileReleaseId: detail.session.profileReleaseId, serviceId: detail.session.serviceId, visitorSessionId },
+          }))
+        }
+      }
+      return c.body(lines.join('\n'), 200, {
+        'Content-Disposition': 'attachment; filename="kiosk-llm-training.jsonl"',
+        'Content-Type': 'application/x-ndjson; charset=utf-8',
+      })
+    })
+    .post('/sites/:siteId/training-data/asr', async (c) => {
+      if (!mediaService)
+        throw createBadRequestError('Kiosk media storage is unavailable', 'KIOSK_MEDIA_UNAVAILABLE')
+      const result = safeParse(trainingDataExportSchema, await c.req.json().catch(() => null))
+      if (!result.success)
+        throw createBadRequestError('Select one or more visitor sessions to export', 'INVALID_REQUEST', result.issues)
+
+      const siteId = c.req.param('siteId')
+      const userId = c.get('user')!.id
+      const zip = new JSZip()
+      const records: string[] = []
+      for (const visitorSessionId of [...new Set(result.output.visitorSessionIds)]) {
+        const detail = await kioskService.getVisitorSessionForUser({ userId, visitorSessionId })
+        if (detail.session.siteId !== siteId)
+          throw createForbiddenError()
+        const media = await mediaService.listVisitorSessionMedia(visitorSessionId)
+        for (const transcript of detail.entries.filter(entry => entry.kind === 'asr_transcript')) {
+          const activity = [...detail.entries].reverse().find(entry => entry.sequence < transcript.sequence && entry.kind === 'service_event' && entry.content === 'customer_activity' && entry.metadata.source === 'voice_input')
+          const recording = media.find(item => item.kind === 'audio_recording' && item.interactionEntryId === activity?.id)
+          if (!recording)
+            continue
+          const file = await mediaService.getFile(recording.id)
+          if (!file)
+            continue
+          const extension = recording.mimeType.includes('wav') ? 'wav' : 'webm'
+          const path = `audio/${recording.id}.${extension}`
+          zip.file(path, file.data)
+          records.push(JSON.stringify({ audio: path, language: 'zh-TW', text: transcript.content, visitorSessionId }))
+        }
+      }
+      zip.file('metadata.jsonl', records.join('\n'))
+      const archive = ownBytes(await zip.generateAsync({ type: 'uint8array' }))
+      return c.body(archive, 200, {
+        'Content-Disposition': 'attachment; filename="kiosk-asr-training.zip"',
+        'Content-Type': 'application/zip',
+      })
     })
     .delete('/sites/:siteId/visitor-sessions', async (c) => {
       const result = safeParse(visitorSessionDeletionSchema, await c.req.json().catch(() => null))

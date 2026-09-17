@@ -28,8 +28,11 @@ setting and does not alter the iframe `src`.
 The Webnavior admin Kiosk pages separate retained customer records from device
 configuration:
 
-- **Kiosk 使用歷程** is for viewing and deleting retained visitor sessions,
-  transcripts, and associated media only.
+- **Kiosk 使用歷程** groups retained records into customer interactions,
+  greeting-only observations, and empty records. Greeting-only evidence remains
+  retained but is excluded by the default filter. An administrator can select
+  reviewed interaction records and download LLM JSONL or an ASR ZIP containing
+  `metadata.jsonl` and its paired recordings.
 - **Kiosk 設備** is where an administrator opens one registered device's
   **裝置設定**. Camera evidence mode is configured per device there. The
   **保存天數** control appears with that device configuration, but applies to

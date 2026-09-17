@@ -9,6 +9,7 @@ import DeviceSettingsEditor from './deviceSettingsEditor.vue'
 import { getAuthToken } from '../../../libs/auth'
 
 const props = defineProps<{ endpoint: string, mode: 'admin' | 'local' }>()
+const emit = defineEmits<{ updated: [snapshot: DeviceSettingsSnapshot] }>()
 const { t } = useI18n()
 const snapshot = shallowRef<DeviceSettingsSnapshot>()
 const message = shallowRef('')
@@ -41,8 +42,10 @@ async function request(change?: { version: number, overrides: Partial<DeviceSett
     const next = await response.json() as DeviceSettingsSnapshot
     if (!controller.signal.aborted) {
       snapshot.value = next
-      if (change)
+      if (change) {
         message.value = t('deviceSettings.saved')
+        emit('updated', next)
+      }
     }
   }
   catch {

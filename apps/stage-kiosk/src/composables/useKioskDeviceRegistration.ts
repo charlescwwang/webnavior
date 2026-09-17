@@ -68,6 +68,13 @@ export function useKioskDeviceRegistration() {
     }, 15000)
   }
 
+  /** Refreshes effective device policy immediately after an authenticated local write. */
+  async function refreshSettings() {
+    const snapshot = await fetchDeviceSettings()
+    if (snapshot.deviceId === device.value?.id)
+      applySettings(snapshot)
+  }
+
   onScopeDispose(() => {
     disposed = true
     clearTimeout(timer)
@@ -131,6 +138,7 @@ export function useKioskDeviceRegistration() {
     deviceSettings: readonly(deviceSettings),
     device: readonly(device),
     profile: readonly(profile),
+    refreshSettings,
     error: readonly(error),
     mediaCaptureMode: readonly(mediaCaptureMode),
     proactiveVlmEnabled: readonly(proactiveVlmEnabled),

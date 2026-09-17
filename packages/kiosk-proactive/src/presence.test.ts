@@ -51,4 +51,15 @@ describe('createPresenceWindow', () => {
     expect(unknown.decide(500, candidate()).greetingEligible).toBe(false)
     expect(falseAttention.decide(500, candidate({ attention: false })).greetingEligible).toBe(false)
   })
+
+  it('requires two samples and starts cooldown only after the greeting is claimed', () => {
+    const window = createPresenceWindow(defaultPresenceSettings, greeting)
+
+    expect(window.decide(0, candidate()).greetingEligible).toBe(false)
+    expect(window.decide(200, candidate()).greetingEligible).toBe(true)
+    expect(window.decide(400, candidate()).greetingEligible).toBe(true)
+
+    window.claimGreeting()
+    expect(window.decide(600, candidate()).greetingEligible).toBe(false)
+  })
 })

@@ -9,6 +9,7 @@ import { useKioskManagement } from '../../composables/useKioskManagement'
 const {
   load,
   deleteVisitorSessions,
+  downloadTrainingDataset,
   loadVisitorSessions,
   selectedSiteId,
   selectSite,
@@ -24,11 +25,19 @@ const {
 const selectedSession = computed(() => visitorSessions.value.find(session => session.id === visitorSessionDetail.value?.session.id))
 const selectedVisitorSessionIds = shallowRef<string[]>([])
 const selectedDeviceId = shallowRef('')
+const historyFilter = shallowRef<'all' | 'greeting_only' | 'interactive'>('interactive')
 const historyReady = shallowRef(false)
+const filteredVisitorSessions = computed(() => historyFilter.value === 'all'
+  ? visitorSessions.value
+  : visitorSessions.value.filter(session => session.presence === historyFilter.value))
 
 async function deleteSelectedVisitorSessions() {
   await deleteVisitorSessions(selectedVisitorSessionIds.value)
   selectedVisitorSessionIds.value = []
+}
+
+async function downloadSelectedTrainingDataset(kind: 'asr' | 'llm') {
+  await downloadTrainingDataset(kind, selectedVisitorSessionIds.value)
 }
 
 onMounted(async () => {
@@ -40,6 +49,10 @@ onMounted(async () => {
 watch([selectedSiteId, selectedDeviceId], () => {
   if (historyReady.value)
     void loadVisitorSessions(selectedDeviceId.value)
+})
+
+watch(historyFilter, () => {
+  selectedVisitorSessionIds.value = []
 })
 </script>
 
@@ -68,6 +81,14 @@ watch([selectedSiteId, selectedDeviceId], () => {
       </select>
     </label>
     <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
+      接待類型
+      <select v-model="historyFilter" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900']">
+        <option value="interactive">有顧客互動（建議）</option>
+        <option value="greeting_only">僅主動招呼</option>
+        <option value="all">全部紀錄</option>
+      </select>
+    </label>
+    <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
       設備
       <select v-model="selectedDeviceId" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-900']">
         <option value="">所有設備</option>
@@ -84,16 +105,18 @@ watch([selectedSiteId, selectedDeviceId], () => {
 
     <section v-else :class="['grid gap-6 xl:grid-cols-[minmax(18rem,0.7fr)_minmax(0,1.3fr)]']">
       <div :class="['flex flex-col gap-3']">
-        <div v-if="selectedVisitorSessionIds.length" :class="['flex items-center justify-between gap-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900 dark:bg-rose-400/10 dark:text-rose-100']">
+        <div v-if="selectedVisitorSessionIds.length" :class="['flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-900 dark:bg-slate-800 dark:text-slate-100']">
           <span>已選取 {{ selectedVisitorSessionIds.length }} 筆</span>
-          <button type="button" :class="['rounded-md bg-rose-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-800']" @click="deleteSelectedVisitorSessions">
-            刪除選取紀錄
-          </button>
+          <span :class="['flex flex-wrap gap-2']">
+            <button type="button" :class="['rounded-md bg-cyan-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-cyan-800']" @click="downloadSelectedTrainingDataset('llm')">下載 LLM JSONL</button>
+            <button type="button" :class="['rounded-md bg-violet-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-violet-800']" @click="downloadSelectedTrainingDataset('asr')">下載 ASR ZIP</button>
+            <button type="button" :class="['rounded-md bg-rose-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-800']" @click="deleteSelectedVisitorSessions">刪除選取紀錄</button>
+          </span>
         </div>
         <KioskVisitorSessionList
           :selected-id="visitorSessionDetail?.session.id"
           :selected-ids="selectedVisitorSessionIds"
-          :sessions="visitorSessions"
+          :sessions="filteredVisitorSessions"
           @select="selectVisitorSession"
           @select-ids="selectedVisitorSessionIds = $event"
         />

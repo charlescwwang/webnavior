@@ -88,6 +88,7 @@ describe('kiosk service', () => {
         deviceLabel: 'COUNTER-01',
         id: visitorSession.id,
         interactionCount: 2,
+        presence: 'interactive',
       }),
     ])
   })

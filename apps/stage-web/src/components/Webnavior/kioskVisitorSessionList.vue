@@ -32,6 +32,14 @@ function stateLabel(state: KioskVisitorSessionSummary['state']) {
   }[state]
 }
 
+function presenceLabel(presence: KioskVisitorSessionSummary['presence']) {
+  return {
+    empty: '無對話',
+    greeting_only: '僅招呼',
+    interactive: '有互動',
+  }[presence]
+}
+
 const sessionGroups = computed(() => {
   const day = new Intl.DateTimeFormat('zh-TW', { dateStyle: 'full' })
   const groups = new Map<string, Map<string, KioskVisitorSessionSummary[]>>()
@@ -75,30 +83,37 @@ function toggleSelection(visitorSessionId: string, checked: boolean) {
     </div>
     <div v-if="props.sessions.length" :class="['divide-y divide-slate-100 dark:divide-slate-800']">
       <section v-for="group in sessionGroups" :key="group.label">
-        <h3 :class="['m-0 bg-slate-50 px-5 py-2 text-xs font-semibold text-slate-600 dark:bg-slate-800/60 dark:text-slate-300']">{{ group.label }}</h3>
+        <h3 :class="['m-0 bg-slate-50 px-5 py-2 text-xs font-semibold text-slate-600 dark:bg-slate-800/60 dark:text-slate-300']">
+          {{ group.label }}
+        </h3>
         <section v-for="period in group.periods" :key="period.period">
-          <h4 :class="['m-0 border-t border-slate-100 px-5 py-2 text-xs font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400']">{{ period.period }}</h4>
+          <h4 :class="['m-0 border-t border-slate-100 px-5 py-2 text-xs font-medium text-slate-500 dark:border-slate-800 dark:text-slate-400']">
+            {{ period.period }}
+          </h4>
           <ul :class="['m-0 divide-y divide-slate-100 p-0 dark:divide-slate-800']">
-          <li v-for="session in period.sessions" :key="session.id" :class="['flex items-stretch']">
-        <label :class="['flex items-center px-3']">
-          <input type="checkbox" :checked="props.selectedIds.includes(session.id)" aria-label="選取此筆接待紀錄" @change="toggleSelection(session.id, ($event.target as HTMLInputElement).checked)">
-        </label>
-        <button
-          type="button"
-          :class="['flex min-w-0 flex-1 items-start gap-3 py-4 pr-5 text-left transition-colors', props.selectedId === session.id ? 'bg-cyan-50 dark:bg-cyan-400/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60']"
-          @click="emit('select', session.id)"
-        >
-          <span :class="['i-solar:chat-round-dots-bold-duotone mt-0.5 rounded-lg bg-cyan-50 p-2 text-lg text-cyan-700', 'dark:bg-cyan-400/10 dark:text-cyan-300']" />
-          <span :class="['min-w-0 flex-1']">
-            <span :class="['flex items-center justify-between gap-3']">
-              <span :class="['truncate text-sm font-semibold text-slate-950 dark:text-white']">{{ session.deviceLabel }}</span>
-              <span :class="['shrink-0 text-xs text-slate-500 dark:text-slate-400']">{{ stateLabel(session.state) }}</span>
-            </span>
-            <span :class="['mt-1 block text-xs text-slate-500 dark:text-slate-400']">{{ formatDate(session.createdAt) }} · {{ session.interactionCount }} 個事件</span>
-          </span>
-        </button>
-      </li>
-        </ul>
+            <li v-for="session in period.sessions" :key="session.id" :class="['flex items-stretch']">
+              <label :class="['flex items-center px-3']">
+                <input type="checkbox" :checked="props.selectedIds.includes(session.id)" aria-label="選取此筆接待紀錄" @change="toggleSelection(session.id, ($event.target as HTMLInputElement).checked)">
+              </label>
+              <button
+                type="button"
+                :class="['flex min-w-0 flex-1 items-start gap-3 py-4 pr-5 text-left transition-colors', props.selectedId === session.id ? 'bg-cyan-50 dark:bg-cyan-400/10' : 'hover:bg-slate-50 dark:hover:bg-slate-800/60']"
+                @click="emit('select', session.id)"
+              >
+                <span :class="['i-solar:chat-round-dots-bold-duotone mt-0.5 rounded-lg bg-cyan-50 p-2 text-lg text-cyan-700', 'dark:bg-cyan-400/10 dark:text-cyan-300']" />
+                <span :class="['min-w-0 flex-1']">
+                  <span :class="['flex items-center justify-between gap-3']">
+                    <span :class="['truncate text-sm font-semibold text-slate-950 dark:text-white']">{{ session.deviceLabel }}</span>
+                    <span :class="['flex shrink-0 items-center gap-2 text-xs text-slate-500 dark:text-slate-400']">
+                      <span :class="['rounded-full bg-slate-100 px-2 py-0.5 dark:bg-slate-800']">{{ presenceLabel(session.presence) }}</span>
+                      <span>{{ stateLabel(session.state) }}</span>
+                    </span>
+                  </span>
+                  <span :class="['mt-1 block text-xs text-slate-500 dark:text-slate-400']">{{ formatDate(session.createdAt) }} · {{ session.interactionCount }} 個事件</span>
+                </span>
+              </button>
+            </li>
+          </ul>
         </section>
       </section>
     </div>

@@ -46,6 +46,24 @@ describe('useKioskInteractionTurn', () => {
     scope.stop()
   })
 
+  it('lets a customer voice turn interrupt proactive analysis but not customer analysis', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())
+    if (!interaction)
+      throw new Error('Expected kiosk interaction turn to initialize.')
+
+    const proactiveTurn = interaction.begin('proactive', 'thinking')
+    const voiceTurn = interaction.beginCustomerVoiceTurn()
+    expect(proactiveTurn.signal.aborted).toBe(true)
+    expect(voiceTurn).toBeDefined()
+    expect(interaction.phase.value).toBe('hearing-speech')
+
+    interaction.begin('conversation', 'thinking')
+    expect(interaction.beginCustomerVoiceTurn()).toBeUndefined()
+    expect(interaction.phase.value).toBe('thinking')
+    scope.stop()
+  })
+
   it('allows proactive interaction only when no customer turn is active', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())

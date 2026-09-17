@@ -6,7 +6,7 @@ import { isInsideDetectionZone } from './observation'
 export const defaultPresenceSettings: PresenceSettings = {
   greetingRoi: { x: 0.15, y: 0.1, width: 0.7, height: 0.8 },
   interactionRoi: { x: 0.3, y: 0.18, width: 0.4, height: 0.7 },
-  greetingDwellMs: 400,
+  greetingMinSamples: 2,
   greetingCooldownMs: 12_000,
   passingSpeedPerSecond: 0.45,
   passingMaxDwellMs: 2_000,
@@ -98,10 +98,10 @@ export function createPresenceWindow(settings: PresenceSettings, greeting: Proac
     const greetingEligible = state !== 'ENGAGED'
       && Boolean(trigger)
       && enriched.greetingRoiHit
-      && dwellMs >= settings.greetingDwellMs
+      // A fast passer must still survive more than one local inference, but
+      // should not have to wait for a third sample after the scheduler boosts.
+      && history.length >= settings.greetingMinSamples
       && (!greetedAtMs || observedAtMs - greetedAtMs >= settings.greetingCooldownMs)
-    if (greetingEligible)
-      greetedAtMs = observedAtMs
 
     return decision(previousState, enriched, dwellMs, velocityX, scaleVelocity, greetingEligible, trigger)
   }
@@ -183,5 +183,10 @@ export function createPresenceWindow(settings: PresenceSettings, greeting: Proac
       || (state === 'APPROACHING' && observedAtMs - stateStartedAtMs < settings.approachingIdleSuppressMs)
   }
 
-  return { decide }
+  /** Claims the cooldown only after the caller has successfully started the greeting turn. */
+  function claimGreeting() {
+    greetedAtMs = lastObservedAtMs
+  }
+
+  return { claimGreeting, decide }
 }

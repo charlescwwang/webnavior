@@ -109,6 +109,8 @@ export interface KioskService {
     endedAt: Date | null
     id: string
     interactionCount: number
+    /** Greeting-only records retain their evidence but are normally excluded from training review. */
+    presence: 'greeting_only' | 'interactive' | 'empty'
     serviceId: string
     state: KioskVisitorSessionState
   }>>
@@ -536,7 +538,7 @@ export function createKioskService(db: Database): KioskService {
 
   async function listSiteVisitorSessions(input: { deviceId?: string, siteId: string, userId: string }) {
     await assertCanReadTranscript(input.userId, input.siteId)
-    return await db.select({
+    const sessions = await db.select({
       createdAt: schema.kioskVisitorSessions.createdAt,
       deviceId: schema.kioskVisitorSessions.deviceId,
       deviceLabel: schema.kioskDevices.label,
@@ -547,6 +549,17 @@ export function createKioskService(db: Database): KioskService {
         from ${schema.kioskInteractionEntries}
         where ${schema.kioskInteractionEntries.visitorSessionId} = ${schema.kioskVisitorSessions.id}
       )`.mapWith(Number),
+      hasCustomerInput: sql<boolean>`exists (
+        select 1 from ${schema.kioskInteractionEntries}
+        where ${schema.kioskInteractionEntries.visitorSessionId} = ${schema.kioskVisitorSessions.id}
+          and ${schema.kioskInteractionEntries.kind} in ('user_text', 'asr_transcript', 'order_result')
+      )`,
+      hasProactiveGreeting: sql<boolean>`exists (
+        select 1 from ${schema.kioskInteractionEntries}
+        where ${schema.kioskInteractionEntries.visitorSessionId} = ${schema.kioskVisitorSessions.id}
+          and ${schema.kioskInteractionEntries.kind} = 'service_event'
+          and ${schema.kioskInteractionEntries.content} = 'proactive_greeting'
+      )`,
       serviceId: schema.kioskVisitorSessions.serviceId,
       state: schema.kioskVisitorSessions.state,
     })
@@ -557,6 +570,12 @@ export function createKioskService(db: Database): KioskService {
         ...(input.deviceId ? [eq(schema.kioskVisitorSessions.deviceId, input.deviceId)] : []),
       ))
       .orderBy(desc(schema.kioskVisitorSessions.createdAt))
+    return sessions.map(({ hasCustomerInput, hasProactiveGreeting, ...session }) => ({
+      ...session,
+      // A greeting is operational evidence, not a customer conversation. Keep it
+      // visible and retain its media, while making training review opt-in.
+      presence: hasCustomerInput ? 'interactive' : hasProactiveGreeting ? 'greeting_only' : 'empty' as const,
+    }))
   }
 
   async function getProfileRelease(profileReleaseId: string) {

@@ -37,6 +37,7 @@ export interface KioskVisitorSessionSummary {
   endedAt: string | null
   id: string
   interactionCount: number
+  presence: 'greeting_only' | 'interactive' | 'empty'
   serviceId: string
   state: 'active' | 'cancelled' | 'completed' | 'idle'
 }
@@ -353,6 +354,38 @@ export function useKioskManagement() {
     }
   }
 
+  async function downloadTrainingDataset(kind: 'asr' | 'llm', visitorSessionIds: string[]) {
+    if (!selectedSiteId.value || visitorSessionIds.length === 0)
+      return
+
+    visitorHistoryLoading.value = true
+    visitorHistoryError.value = ''
+    try {
+      const response = await authedFetch(endpoint(`/sites/${selectedSiteId.value}/training-data/${kind}`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorSessionIds }),
+      })
+      if (!response.ok)
+        throw new Error(await response.text() || `Request failed: ${response.status}`)
+
+      const file = new Blob([await response.arrayBuffer()], { type: response.headers.get('Content-Type') ?? 'application/octet-stream' })
+      const url = URL.createObjectURL(file)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = kind === 'asr' ? 'kiosk-asr-training.zip' : 'kiosk-llm-training.jsonl'
+      link.click()
+      URL.revokeObjectURL(url)
+      notice.success(kind === 'asr' ? 'ASR 訓練資料已下載。' : 'LLM 訓練資料已下載。')
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '無法下載訓練資料。')
+    }
+    finally {
+      visitorHistoryLoading.value = false
+    }
+  }
+
   async function selectSite(siteId: string) {
     if (siteId === selectedSiteId.value)
       return
@@ -648,6 +681,7 @@ export function useKioskManagement() {
     enableDevice,
     devices,
     deleteVisitorSessions,
+    downloadTrainingDataset,
     load,
     loadVisitorSessions,
     loading,

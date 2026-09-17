@@ -100,6 +100,16 @@ if ! GIT_TERMINAL_PROMPT=0 git pull --ff-only "$remote_name" "$branch_name"; the
 fi
 
 corepack pnpm install --frozen-lockfile
+
+# The systemd unit runs the API directly from this checkout. Apply the declared
+# PostgreSQL schema, rebuild the shared schema package, then restart before
+# publishing browser code so a new management page never reaches an older
+# API/schema contract.
+corepack pnpm -F @proj-airi/server db:push
+corepack pnpm -F @proj-airi/server-schema build
+sudo systemctl restart webnavior-api
+curl -fsS http://127.0.0.1:5168/readyz >/dev/null
+
 corepack pnpm -F @proj-airi/stage-web exec vite build --base=/
 corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
 corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
@@ -112,4 +122,4 @@ sudo rsync -a --delete apps/order-menu/dist/ "$order_menu_deploy_dir/"
 echo 'Stage Web updated:  /'
 echo 'Kiosk updated:     /kiosk/'
 echo 'Order menu updated: /menu/'
-echo 'API health check:  curl -fsS http://127.0.0.1:5168/readyz'
+echo 'API restarted and ready: webnavior-api'

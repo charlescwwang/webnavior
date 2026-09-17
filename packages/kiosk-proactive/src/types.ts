@@ -47,7 +47,8 @@ export type PresenceState = 'EMPTY' | 'PASSING' | 'DISTANT' | 'APPROACHING' | 'E
 export interface PresenceSettings {
   greetingRoi: DetectionZone
   interactionRoi: DetectionZone
-  greetingDwellMs: number
+  /** Consecutive local samples needed before a candidate may earn a greeting. */
+  greetingMinSamples: number
   greetingCooldownMs: number
   passingSpeedPerSecond: number
   passingMaxDwellMs: number

@@ -87,11 +87,23 @@ export function useKioskInteractionTurn() {
       cancel()
   }
 
+  /**
+   * Gives an actual customer utterance precedence over a background greeting,
+   * while preserving the no-interruption rule for customer work in progress.
+   */
+  function beginCustomerVoiceTurn() {
+    cancelProactive()
+    if (!canStartKioskVoiceTurn(phase.value))
+      return undefined
+    return begin('voice', 'hearing-speech')
+  }
+
   onScopeDispose(cancel)
 
   return {
     advance,
     begin,
+    beginCustomerVoiceTurn,
     canProactivelySpeak: readonly(canProactivelySpeak),
     cancel,
     cancelProactive,

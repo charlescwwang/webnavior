@@ -36,7 +36,7 @@ import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
 import { useKioskConversationFontSize } from '../composables/useKioskConversationFontSize'
 import { useKioskCustomerSession } from '../composables/useKioskCustomerSession'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
-import { canStartKioskVoiceTurn, useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
+import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
 import { needsKioskObservation } from '../composables/useKioskProactiveSettings'
@@ -61,6 +61,7 @@ const props = defineProps<{
   voiceConversationOnly: boolean
   voiceVadSettings: KioskVoiceVadSettings
 }>()
+const emit = defineEmits<{ deviceSettingsUpdated: [] }>()
 
 const route = useRoute()
 const router = useRouter()
@@ -127,6 +128,7 @@ const conversationFontSize = useKioskConversationFontSize()
 const cameraStream = shallowRef<MediaStream>()
 const {
   continueCurrentSession,
+  end: endCustomerSession,
   hasCustomerActivity,
   hasPendingWork,
   idleDeadlineAt,
@@ -233,15 +235,15 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
   minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
   speechPadMs: computed(() => props.voiceVadSettings.speechPadMs),
   onSpeechStart: () => {
-    if (!canStartKioskVoiceTurn(interactionTurn.phase.value))
-      return
-
     // VAD has crossed the configured speech threshold. Stop TTS immediately
     // before replacing the spoken turn, so barge-in never waits for audio
     // playback cleanup or a later asynchronous phase transition.
     if (interactionTurn.phase.value === 'speaking')
       interruptAssistantOutput()
-    activeVoiceTurn = interactionTurn.begin('voice', 'hearing-speech')
+    const voiceTurn = interactionTurn.beginCustomerVoiceTurn()
+    if (!voiceTurn)
+      return
+    activeVoiceTurn = voiceTurn
     if (customerSessionState.value === 'awaiting-idle-confirmation')
       continueCurrentSession()
   },
@@ -656,9 +658,17 @@ function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoi
   }
   syncPresenceIdleSuppression(decision)
 
+  // A greeting alone does not reserve the kiosk for the old 45-second
+  // customer idle timeout. Once its anonymous candidate leaves the grace
+  // period, return to standby so the next passer can earn a new greeting.
+  if (customerSessionState.value === 'active' && !hasCustomerActivity.value && !hasPendingWork.value && decision.state === 'EMPTY') {
+    void endCustomerSession('idle').catch(error => console.error('Failed to release an unclaimed proactive greeting session:', error))
+    return
+  }
+
   const visionMode = props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode
   if (visionMode !== 'face_only' && customerSessionState.value === 'standby' && decision.greetingEligible && interactionTurn.canProactivelySpeak.value)
-    void startProactiveGreeting()
+    void startProactiveGreeting(() => presenceWindow.claimGreeting())
 }
 
 /**
@@ -687,7 +697,7 @@ function syncPresenceIdleSuppression(decision: ReturnType<typeof presenceWindow.
   customerSession.setPresenceIdleSuppressed(!visualProtectionExpired)
 }
 
-async function startProactiveGreeting() {
+async function startProactiveGreeting(onStarted?: () => void) {
   if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
     return
 
@@ -707,6 +717,7 @@ async function startProactiveGreeting() {
     syncPresenceIdleSuppression(presenceDecision.value)
     if (!interactionTurn.isCurrent(turn))
       return
+    onStarted?.()
     await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
     if (!interactionTurn.isCurrent(turn))
       return
@@ -971,7 +982,7 @@ onUnmounted(() => {
         @reload="reloadKiosk"
       >
         <template #device-settings>
-          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" />
+          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated')" />
         </template>
       </KioskAdminPanel>
     </aside>
