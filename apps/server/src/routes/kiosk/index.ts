@@ -2,6 +2,7 @@ import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
+import type { KioskEmbeddingGateway } from '../../services/domain/kiosk-embedding'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { HonoEnv } from '../../types/hono'
 
@@ -11,6 +12,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
+import { calculateCosineSimilarity, evaluateKioskTurn } from '../../services/domain/kiosk-turn-decision'
 import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
@@ -75,6 +77,14 @@ const speechSchema = object({
   text: pipe(string(), regex(/\S/), maxLength(8_000)),
 })
 
+const turnDecisionSchema = object({
+  activeWork: boolean(),
+  asrConfidence: optional(number()),
+  currentRequest: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
+  presenceState: optional(picklist(['EMPTY', 'PASSING', 'DISTANT', 'APPROACHING', 'ENGAGED'])),
+  text: pipe(string(), regex(/\S/), maxLength(8_000)),
+})
+
 /** Dependencies that configure the kiosk device enrollment transport. */
 export interface KioskRoutesOptions {
   /** Enables the development-only number enrollment route. Never enable in production. */
@@ -92,6 +102,9 @@ export interface KioskRoutesOptions {
     speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
     transcribe: (input: { audio: File, modelName: string }) => Promise<string>
   }
+  /** Optional Server-only semantic enrichment for candidate speech decisions. */
+  embeddingGateway?: KioskEmbeddingGateway
+  turnDecisionObserver?: { record: (input: { decision: string, embeddingAvailable: boolean, presenceState?: string, reason: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
 }
@@ -182,6 +195,22 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       throw createBadRequestError('Kiosk ASR gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
     const text = await options.audioGateway.transcribe({ audio, modelName })
     return c.json({ text })
+  })
+
+  routes.post('/turn-decisions', async (c) => {
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    const result = safeParse(turnDecisionSchema, await c.req.json().catch(() => null))
+    if (!result.success)
+      throw createBadRequestError('Invalid kiosk turn decision request', 'INVALID_REQUEST', result.issues)
+    const semanticSimilarity = await resolveSemanticSimilarity(options.embeddingGateway, result.output.currentRequest, result.output.text)
+    const evaluated = evaluateKioskTurn({ ...result.output, semanticSimilarity })
+    options.turnDecisionObserver?.record({
+      decision: evaluated.decision,
+      embeddingAvailable: semanticSimilarity !== undefined,
+      presenceState: result.output.presenceState,
+      reason: evaluated.reason,
+    })
+    return c.json(evaluated)
   })
 
   routes.post('/audio/speech', async (c) => {
@@ -458,6 +487,30 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   })
 
   return routes
+}
+
+async function resolveSemanticSimilarity(
+  embeddingGateway: KioskEmbeddingGateway | undefined,
+  currentRequest: string | undefined,
+  candidateText: string,
+) {
+  if (!embeddingGateway || !currentRequest)
+    return undefined
+
+  try {
+    const embeddings = await embeddingGateway.embed([currentRequest, candidateText])
+    if (!embeddings)
+      return undefined
+    const [currentEmbedding, candidateEmbedding] = embeddings
+    if (!currentEmbedding || !candidateEmbedding)
+      return undefined
+    return calculateCosineSimilarity(currentEmbedding, candidateEmbedding)
+  }
+  catch {
+    // The turn policy retains its intent-only fallback when a remote embedding
+    // provider times out or is reconfigured. Customer ordering must not wait.
+    return undefined
+  }
 }
 
 function parseOptionalMediaDate(value: FormDataEntryValue | null): Date | undefined | null {

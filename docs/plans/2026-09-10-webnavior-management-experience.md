@@ -28,7 +28,7 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 ## 後續 Kiosk 營運設定原則
 
 - 店務管理者不應調整 VAD threshold、視覺 cadence、embedding 分數、模型或 Provider URL。這些參數由系統管理者以版本化 policy 管理，Kiosk 依現場噪音、推論耗時與決策結果採取受限的自動調整。
-- Provider、模型、URL 與憑證仍是系統管理者的動態 Server 設定；更新後由下一次請求生效，不要求重啟 Kiosk 或 Server。未來 embedding provider 採與 LLM／VLM／ASR 相同的系統管理模式，支援 Ollama 與 OpenAI-compatible endpoint。
+- Provider、模型、URL 與憑證仍是系統管理者的動態 Server 設定；更新後由下一次請求生效，不要求重啟 Kiosk 或 Server。embedding provider 已採相同的 Server-only 動態設定，支援 Ollama 與 OpenAI-compatible endpoint，Kiosk 不會下載模型或取得憑證。
 - 實際 POS 或店家菜單整合暫不納入目前 POC。日後由領域服務將其正式商品、庫存與訂單能力實作為原生 WebMCP；Kiosk Host 不建立廠商專用 adapter，也不管理 POS 資料。
 - VRM 待機動作可作為發布版 Profile 的獨立 `.vrma` 資產；招呼、推薦與完成點餐的 one-shot 動作需在後續設計為有限、可驗證的 action mapping，不能讓角色卡文字或 LLM 直接指定檔名或 URL。
 
@@ -69,6 +69,8 @@ Webnavior Control Center 的首頁應協助人員判斷「現場是否正常、�
 - 管理端保留內部 `Profile` 資料模型與 API 名稱，以維持既有版本化發布契約；面向使用者的頁面改以「互動體驗」描述。
 - 系統模型頁的 OpenAI-compatible TTS 連線保留自己的上游 model、endpoint、選填 API key 與 voice。voice 預設為 `zh-TW-HsiaoChenNeural`，由 Server 以 MP3、speed `1.0` 呼叫上游；Kiosk 不會取得這些設定或任何 Provider 憑證。
 - 體驗草稿可設定 voice-only 對話模式。已發布後，Kiosk 隱藏文字輸入並依已獲准的麥克風權限啟動 VAD；這不是一般內容管理者可見的 Provider 設定。
+- Kiosk 在 LLM 或 WebMCP 工作進行中收到新的 VAD 語句時，會由 Server 以當前顧客需求與候選語句的 embedding 相似度輔助判斷；只有明確改單／新增需求才會中斷既有工作。既有的匿名 presence state 只會否決 `EMPTY` 或 `PASSING` 的明顯非主要顧客情境，不用於身分辨識；embedding 不可用時保留相同的意圖式保守判斷，背景人聲不會寫入顧客會話或使用歷程。
+- Server 會以既有 OTel product counter 匯總候選語句決策的結果、內容無關原因、presence state 與 embedding 可用性，不保存文字、向量、設備或顧客識別資料。這是現場驗證與後續 policy A/B 的量測基礎，不代表目前已向店務管理者暴露技術調參。
 - 管理端已提供 Site 範圍的訪客使用歷程：會話依日期／時段分組，閱讀頁將對話與行為摘要分開；顧客語音轉錄可播放原始 WAV，活動可播放對應觸發短片，連續影片則按需載入。管理者可單筆或批次永久刪除會話及附屬媒體。它服務內部 POC 的營運回顧，不構成尚待實作的沙盒測試或現場驗證流程。
 - Kiosk 設備清單支援目前店別範圍的全選與批次停用；批次刪除只會納入已停用設備。每台設備維持既有的個別授權與稽核，操作回報成功及失敗清單，不會回復已成功的設備操作。
 - 本機開發預設連接埠固定為：管理端 `5167`、Server API `5168`、Kiosk `5169`、點餐服務 `5166`。這些固定來源也用於登入 callback、CORS 與 WebMCP allowlist。

@@ -80,4 +80,21 @@ describe('useKioskInteractionTurn', () => {
     expect(interaction.canProactivelySpeak.value).toBe(true)
     scope.stop()
   })
+
+  it('keeps a candidate separate from customer work and aborts it when the work changes', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())
+    if (!interaction)
+      throw new Error('Expected kiosk interaction turn to initialize.')
+
+    const activeTurn = interaction.begin('conversation', 'thinking')
+    const candidate = interaction.beginCustomerVoiceCandidate()
+    expect(candidate).toBeDefined()
+    expect(interaction.isCurrent(activeTurn)).toBe(true)
+    expect(interaction.isCurrentVoiceCandidate(candidate!)).toBe(true)
+
+    interaction.begin('voice', 'hearing-speech')
+    expect(candidate!.signal.aborted).toBe(true)
+    scope.stop()
+  })
 })

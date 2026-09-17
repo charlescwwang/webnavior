@@ -58,5 +58,5 @@ export function createKioskEmbeddingGateway(options: {
 function isEmbeddingResponse(value: unknown, expectedCount: number): value is { data: Array<{ embedding: number[] }> } {
   if (!value || typeof value !== 'object' || !('data' in value) || !Array.isArray(value.data) || value.data.length !== expectedCount)
     return false
-  return value.data.every(item => item && typeof item === 'object' && 'embedding' in item && Array.isArray(item.embedding) && item.embedding.every(value => typeof value === 'number' && Number.isFinite(value)))
+  return value.data.every(item => item && typeof item === 'object' && 'embedding' in item && Array.isArray(item.embedding) && item.embedding.every((coordinate: unknown) => typeof coordinate === 'number' && Number.isFinite(coordinate)))
 }

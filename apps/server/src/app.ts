@@ -95,6 +95,7 @@ import { createFluxTransactionService } from './services/domain/flux-transaction
 import { createKioskService } from './services/domain/kiosk'
 import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
+import { createKioskEmbeddingGateway } from './services/domain/kiosk-embedding'
 import { createKioskMediaService } from './services/domain/kiosk-media'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
@@ -403,6 +404,10 @@ export async function buildApp(deps: AppDeps) {
         envelopeCrypto: deps.envelopeCrypto,
       }),
       developmentRegistrationEnabled: deps.env.KIOSK_DEVELOPMENT_REGISTRATION_ENABLED === 'true' && process.env.NODE_ENV !== 'production',
+      embeddingGateway: createKioskEmbeddingGateway({
+        configKV: deps.configKV,
+        envelopeCrypto: deps.envelopeCrypto,
+      }),
       kioskService: deps.kioskService,
       mediaService: kioskMediaService,
       llmGateway: {
@@ -410,6 +415,9 @@ export async function buildApp(deps: AppDeps) {
         complete: input => deps.llmRouter.route({ abortSignal: input.abortSignal, modelName: input.modelName, body: input.body }),
       },
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
+      turnDecisionObserver: {
+        record: input => deps.otel?.product.events.add(1, { event: 'kiosk_turn_decision', ...input }),
+      },
     }))
     .route('/assets/kiosk', createKioskCharacterAssetRoutes(deps.kioskCharacterAssetService))
 

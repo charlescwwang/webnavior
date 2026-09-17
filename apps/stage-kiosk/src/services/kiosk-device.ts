@@ -1,4 +1,4 @@
-import type { DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
 
 /** A registered kiosk browser installation returned by the Server bootstrap endpoint. */
 export interface KioskDevice {
@@ -202,6 +202,14 @@ export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal
   const body = createKioskTranscriptionBody(recording)
   const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST', signal })
   return await response.json() as { text: string }
+}
+
+/** Lets the Server decide whether a candidate utterance supersedes active work. */
+export async function decideKioskTurn(input: { activeWork: boolean, asrConfidence?: number, currentRequest?: string, presenceState?: PresenceState, text: string }) {
+  return await request<{ decision: 'continue' | 'ignore' | 'interrupt', reason: string }>('/api/kiosk/turn-decisions', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
 }
 
 /** Uploads private POC evidence for the active visitor session. */

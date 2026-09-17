@@ -16,6 +16,11 @@ export interface KioskInteractionTurn {
   signal: AbortSignal
 }
 
+export interface KioskVoiceCandidate {
+  id: number
+  signal: AbortSignal
+}
+
 /**
  * Determines when VAD may begin a new customer utterance.
  *
@@ -38,6 +43,7 @@ export function canStartKioskVoiceTurn(phase: KioskInteractionPhase) {
 export function useKioskInteractionTurn() {
   const phase = shallowRef<KioskInteractionPhase>('listening')
   let activeTurn: (KioskInteractionTurn & { controller: AbortController }) | undefined
+  let activeVoiceCandidate: (KioskVoiceCandidate & { controller: AbortController }) | undefined
   let nextTurnId = 0
   const canProactivelySpeak = computed(() => phase.value === 'listening' && activeTurn === undefined)
 
@@ -77,6 +83,8 @@ export function useKioskInteractionTurn() {
   }
 
   function cancel() {
+    activeVoiceCandidate?.controller.abort()
+    activeVoiceCandidate = undefined
     activeTurn?.controller.abort()
     activeTurn = undefined
     phase.value = 'listening'
@@ -98,17 +106,46 @@ export function useKioskInteractionTurn() {
     return begin('voice', 'hearing-speech')
   }
 
+  /**
+   * Lets VAD capture a possible customer correction without pre-empting an
+   * in-flight order. The caller must ask the Server decision module before it
+   * cancels the active turn or presents the transcript.
+   */
+  function beginCustomerVoiceCandidate() {
+    if (phase.value !== 'thinking' && phase.value !== 'using-tool')
+      return undefined
+
+    activeVoiceCandidate?.controller.abort()
+    const controller = new AbortController()
+    activeVoiceCandidate = { controller, id: ++nextTurnId, signal: controller.signal }
+    return activeVoiceCandidate
+  }
+
+  function isCurrentVoiceCandidate(candidate: KioskVoiceCandidate) {
+    return activeVoiceCandidate?.id === candidate.id && !candidate.signal.aborted
+  }
+
+  function completeVoiceCandidate(candidate: KioskVoiceCandidate) {
+    if (!isCurrentVoiceCandidate(candidate))
+      return false
+    activeVoiceCandidate = undefined
+    return true
+  }
+
   onScopeDispose(cancel)
 
   return {
     advance,
     begin,
     beginCustomerVoiceTurn,
+    beginCustomerVoiceCandidate,
     canProactivelySpeak: readonly(canProactivelySpeak),
     cancel,
     cancelProactive,
     complete,
+    completeVoiceCandidate,
     isCurrent,
+    isCurrentVoiceCandidate,
     phase: readonly(phase),
   }
 }

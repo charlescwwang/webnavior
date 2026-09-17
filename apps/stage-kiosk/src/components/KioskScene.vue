@@ -44,7 +44,7 @@ import { needsKioskObservation } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { setKioskLocale } from '../modules/i18n'
 import { createKioskVadRecording } from '../services/kiosk-audio'
-import { synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { decideKioskTurn as requestTurnDecision, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate } from '../services/kiosk-startup-permission-gate'
 import { scenarioRegistry } from '../services/scenario-registry'
@@ -85,6 +85,7 @@ const { activeCardId } = storeToRefs(useAiriCardStore())
 const conversationMessages = shallowRef<ChatHistoryItem[]>([])
 const conversationWorkStatus = shallowRef<string>()
 const pendingTranscript = shallowRef<string>()
+const activeCustomerRequest = shallowRef<string>()
 const customerResetError = shallowRef<string>()
 const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorKioskActivityManifest>>>()
 const interactionTurn = useKioskInteractionTurn()
@@ -268,6 +269,7 @@ const { x, y } = useMouse()
 const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
 let assistantAudio: HTMLAudioElement | undefined
 let activeVoiceTurn: ReturnType<typeof interactionTurn.begin> | undefined
+let activeVoiceCandidate: ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate> | undefined
 
 const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
   threshold: computed(() => props.voiceVadSettings.threshold),
@@ -283,8 +285,9 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
       interruptAssistantOutput()
     const voiceTurn = interactionTurn.beginCustomerVoiceTurn()
     if (!voiceTurn)
-      return
-    activeVoiceTurn = voiceTurn
+      activeVoiceCandidate = interactionTurn.beginCustomerVoiceCandidate()
+    else
+      activeVoiceTurn = voiceTurn
     if (customerSessionState.value === 'awaiting-idle-confirmation')
       continueCurrentSession()
   },
@@ -293,9 +296,13 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
     // slot before ASR starts; otherwise a later, gated utterance could reuse
     // the old turn and feed its audio into the in-flight ordering request.
     const turn = activeVoiceTurn
+    const candidate = activeVoiceCandidate
     activeVoiceTurn = undefined
+    activeVoiceCandidate = undefined
     if (turn && interactionTurn.isCurrent(turn))
       void processVadRecording(buffer, turn)
+    else if (candidate)
+      void processVoiceCandidate(buffer, candidate)
   },
 })
 
@@ -417,6 +424,47 @@ async function startAudioInteraction() {
   }
 }
 
+async function processVoiceCandidate(buffer: Float32Array, candidate: NonNullable<ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate>>) {
+  if (buffer.length === 0)
+    return
+  try {
+    const recording = createKioskVadRecording(buffer)
+    const { text } = await transcribeKioskAudio(recording, candidate.signal)
+    if (!text.trim() || !interactionTurn.isCurrentVoiceCandidate(candidate))
+      return
+    const { decision, reason } = await requestTurnDecision({
+      activeWork: conversationSending.value,
+      currentRequest: activeCustomerRequest.value,
+      presenceState: presenceDecision.value?.state,
+      text,
+    })
+    if (import.meta.env.DEV)
+      console.info('[stage-kiosk] candidate speech decision', { decision, presenceState: presenceDecision.value?.state, reason })
+    if (decision === 'ignore' || !interactionTurn.isCurrentVoiceCandidate(candidate))
+      return
+
+    if (decision === 'interrupt') {
+      interactionTurn.cancel()
+      interruptAssistantOutput()
+    }
+
+    // Candidate speech becomes a real visitor input only after Server policy
+    // accepts it. Background speech stays out of the customer conversation and
+    // its retained ASR history.
+    const activity = await recordCustomerActivity('voice_input')
+    mediaCapture.saveAudio(recording, activity?.id)
+    await interactionRecording.append('asr_transcript', text)
+    await sendConversationMessage(text)
+  }
+  catch (error) {
+    if (!candidate.signal.aborted)
+      console.error('Failed to process kiosk voice candidate:', error)
+  }
+  finally {
+    interactionTurn.completeVoiceCandidate(candidate)
+  }
+}
+
 async function processVadRecording(buffer: Float32Array, turn: ReturnType<typeof interactionTurn.begin>) {
   if (buffer.length === 0) {
     if (interactionTurn.isCurrent(turn))
@@ -488,6 +536,7 @@ function clearConversationPresentation() {
   conversationMessages.value = []
   conversationWorkStatus.value = undefined
   pendingTranscript.value = undefined
+  activeCustomerRequest.value = undefined
 }
 
 async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>) {
@@ -873,6 +922,7 @@ async function sendConversationMessage(text: string, existingTurn?: ReturnType<t
   if (existingTurn && !interactionTurn.advance(turn, 'thinking'))
     return
 
+  activeCustomerRequest.value = text
   conversationMessages.value = [...conversationMessages.value, { role: 'user', content: text }]
   conversationWorkStatus.value = '正在思考…'
   try {
@@ -931,6 +981,7 @@ async function finishCustomerSessionCompletion() {
   await interactionRecording.end('completed')
   await customerSession.end('completed')
   conversationMessages.value = []
+  activeCustomerRequest.value = undefined
 }
 
 async function startNewCustomerSession() {
@@ -952,6 +1003,7 @@ async function restartCustomerSession() {
     await interactionRecording.end('idle')
     await customerSession.end('staff')
     conversationMessages.value = []
+    activeCustomerRequest.value = undefined
   }
   catch (error) {
     customerResetError.value = '無法重新開始，請確認連線後再試。'

@@ -127,6 +127,37 @@ describe('kiosk routes', () => {
     expect(response.status).toBe(404)
   })
 
+  it('uses the Server embedding provider only to enrich a candidate speech decision', async () => {
+    const embed = vi.fn(async () => [[1, 0], [1, 0]])
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      embeddingGateway: { embed },
+      kioskService: createKioskService(db),
+      llmGateway,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+
+    const response = await app.request('/api/kiosk/turn-decisions', {
+      method: 'POST',
+      headers: { 'Cookie': cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        activeWork: true,
+        currentRequest: '我要一碗擔仔麵',
+        text: '我要一碗擔仔麵',
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ decision: 'ignore', reason: 'similar-acknowledgement' })
+    expect(embed).toHaveBeenCalledWith(['我要一碗擔仔麵', '我要一碗擔仔麵'])
+  })
+
   it('frames a proactive reminder as customer-facing copy instead of a Character Card setup turn', async () => {
     const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '想看看菜單嗎？我可以幫您。' } }] }))
     const kioskService = createKioskService(db)
