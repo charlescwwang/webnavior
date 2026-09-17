@@ -86,7 +86,7 @@ async function getApprovedModelCatalog(configKV: ConfigKVService): Promise<Appro
     configKV.getOptional('WEBNAVIOR_AUDIO_CONFIG'),
     configKV.getOptional('DEFAULT_CHAT_MODEL'),
   ])
-  const sources = {
+  const sources: ApprovedModelCatalog['sources'] = {
     // Kiosk audio is dispatched through the Webnavior gateway, not the
     // general AIRI router. Listing router models here makes a selection that
     // the gateway will always reject as an unconfigured audio policy.
@@ -102,7 +102,7 @@ async function getApprovedModelCatalog(configKV: ConfigKVService): Promise<Appro
       const source = modelSource(id, model.upstreams[0])
       return source ? [[id, source]] : []
     })),
-  } satisfies ApprovedModelCatalog['sources']
+  }
   if (audioConfig?.asr) {
     sources.asr[audioConfig.asr.modelName] = {
       baseURL: audioConfig.asr.baseURL,
@@ -161,7 +161,7 @@ function hasCustomerConversation(entries: Array<{ kind: string }>) {
   return entries.some(entry => entry.kind === 'user_text' || entry.kind === 'asr_transcript' || entry.kind === 'order_result')
 }
 
-function ownBytes(bytes: Uint8Array) {
+function ownBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   // JSZip's buffer can be backed by a SharedArrayBuffer; Hono responses require
   // a normal ArrayBuffer-backed view in the Node runtime.
   const buffer = new ArrayBuffer(bytes.byteLength)
@@ -327,7 +327,7 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         userId: c.get('user')!.id,
         visitorSessionId: file.media.visitorSessionId,
       })
-      return c.body(file.data, 200, { 'Content-Type': file.media.mimeType })
+      return c.body(ownBytes(file.data), 200, { 'Content-Type': file.media.mimeType })
     })
     .post('/sites/:siteId/training-data/llm', async (c) => {
       const result = safeParse(trainingDataExportSchema, await c.req.json().catch(() => null))

@@ -513,7 +513,7 @@ async function resolveSemanticSimilarity(
   }
 }
 
-function parseOptionalMediaDate(value: FormDataEntryValue | null): Date | undefined | null {
+function parseOptionalMediaDate(value: unknown): Date | undefined | null {
   if (value === null)
     return undefined
   if (typeof value !== 'string')

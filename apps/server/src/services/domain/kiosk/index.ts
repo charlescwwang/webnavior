@@ -580,7 +580,7 @@ export function createKioskService(db: Database): KioskService {
       ...session,
       // A greeting is operational evidence, not a customer conversation. Keep it
       // visible and retain its media, while making training review opt-in.
-      presence: hasCustomerInput ? 'interactive' : hasProactiveGreeting ? 'greeting_only' : 'empty' as const,
+      presence: classifySessionPresence(hasCustomerInput, hasProactiveGreeting),
     }))
   }
 
@@ -1128,6 +1128,14 @@ export function createKioskService(db: Database): KioskService {
     publishOwnerExperienceTemplate,
     purgeExpiredVisitorSessions,
   }
+}
+
+function classifySessionPresence(hasCustomerInput: boolean, hasProactiveGreeting: boolean): 'greeting_only' | 'interactive' | 'empty' {
+  if (hasCustomerInput)
+    return 'interactive'
+  if (hasProactiveGreeting)
+    return 'greeting_only'
+  return 'empty'
 }
 
 function assertRetentionDays(days: number) {
