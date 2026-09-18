@@ -1,9 +1,6 @@
 <script setup lang="ts">
-import type { ModelProviderSlice } from '../../components/Webnavior/modelProviderConnection.vue'
+import type { AiConnection } from '../../composables/useWebnaviorAiControl'
 
-import { errorMessageFrom } from '@moeru/std'
-import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
-import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { Button } from '@proj-airi/ui'
 import {
   AlertDialogAction,
@@ -15,278 +12,177 @@ import {
   AlertDialogRoot,
   AlertDialogTitle,
 } from 'reka-ui'
-import { computed, onMounted, reactive, shallowRef } from 'vue'
+import { onMounted, shallowRef } from 'vue'
 
-import AudioProviderConnection from '../../components/Webnavior/audioProviderConnection.vue'
-import ConversationModelList from '../../components/Webnavior/ConversationModelList.vue'
-import EmbeddingProviderConnection from '../../components/Webnavior/EmbeddingProviderConnection.vue'
-import ModelProviderConnection from '../../components/Webnavior/modelProviderConnection.vue'
-import SystemModelOverview from '../../components/Webnavior/SystemModelOverview.vue'
+import AiCapabilityBindings from '../../components/Webnavior/AiCapabilityBindings.vue'
+import AiConnectionForm from '../../components/Webnavior/AiConnectionForm.vue'
 
+import { useWebnaviorAiControl } from '../../composables/useWebnaviorAiControl'
 import { useWebnaviorNotice } from '../../composables/useWebnaviorNotice'
 
-interface RouterConfigCurrent {
-  preview: {
-    LLM_ROUTER_CONFIG?: {
-      asr?: { models: Record<string, unknown> }
-      llm: { models: Record<string, unknown> }
-      tts: { models: Record<string, unknown> }
-    }
-  }
-  request: {
-    defaults: {
-      chatModel?: string
-      ttsModel?: string
-    }
-  }
-}
-
-interface AudioConfig {
-  asr?: { modelName: string, upstreamModel: string, baseURL: string, hasApiKey: boolean }
-  tts?: { modelName: string, upstreamModel: string, baseURL: string, hasApiKey: boolean, voice?: string }
-}
-
-interface EmbeddingConfig {
-  baseURL: string
-  hasApiKey: boolean
-  modelName: string
-  provider: 'ollama' | 'openai-compatible'
-  timeoutMs: number
-}
-
-const config = shallowRef<RouterConfigCurrent>()
-const audioConfig = shallowRef<AudioConfig>({})
-const embeddingConfig = shallowRef<EmbeddingConfig>()
-const loading = shallowRef(false)
-const message = shallowRef('')
-const pendingRemovalModelId = shallowRef<string>()
-const removalDialogOpen = shallowRef(false)
-const form = reactive({ chatModel: '' })
+const aiControl = useWebnaviorAiControl()
 const notice = useWebnaviorNotice()
+const editingConnection = shallowRef<AiConnection>()
+const pendingDeletion = shallowRef<AiConnection>()
 
-const llmModels = computed(() => Object.keys(config.value?.preview.LLM_ROUTER_CONFIG?.llm.models ?? {}).sort())
-const vlmModels = computed(() => llmModels.value.filter(model => model.startsWith('vlm/')))
-const llmEndpoints = computed<Record<string, string | undefined>>(() => Object.fromEntries(llmModels.value.map((modelId) => {
-  const model = config.value?.preview.LLM_ROUTER_CONFIG?.llm.models[modelId]
-  const upstreams = model && typeof model === 'object' ? (model as { upstreams?: unknown }).upstreams : undefined
-  const firstUpstream = Array.isArray(upstreams) ? upstreams[0] : undefined
-  const baseURL = firstUpstream && typeof firstUpstream === 'object' ? (firstUpstream as { baseURL?: unknown }).baseURL : undefined
-  return [modelId, typeof baseURL === 'string' ? baseURL : undefined]
-})))
-const llmEndpoint = computed(() => {
-  const model = config.value?.preview.LLM_ROUTER_CONFIG?.llm.models[form.chatModel]
-  if (!model || typeof model !== 'object')
-    return undefined
-  const upstreams = (model as { upstreams?: unknown }).upstreams
-  if (!Array.isArray(upstreams) || !upstreams[0] || typeof upstreams[0] !== 'object')
-    return undefined
-  const baseURL = (upstreams[0] as { baseURL?: unknown }).baseURL
-  return typeof baseURL === 'string' ? baseURL : undefined
-})
-
-function endpoint(path = '') {
-  return new URL(`/api/admin/config/router${path}`, SERVER_URL).toString()
-}
-
-async function load() {
-  loading.value = true
-  message.value = ''
+async function createConnection(input: Parameters<typeof aiControl.createConnection>[0]) {
   try {
-    const nextConfig = await authedFetch(endpoint()).then(async (response) => {
-      if (!response.ok)
-        throw new Error(await response.text() || `Request failed: ${response.status}`)
-      return await response.json() as RouterConfigCurrent
-    })
-    config.value = nextConfig
-    const audioResponse = await authedFetch(endpoint('/webnavior-audio'))
-    if (!audioResponse.ok)
-      throw new Error(await audioResponse.text() || `Request failed: ${audioResponse.status}`)
-    audioConfig.value = await audioResponse.json() as AudioConfig
-    const embeddingResponse = await authedFetch(endpoint('/webnavior-embedding'))
-    if (!embeddingResponse.ok)
-      throw new Error(await embeddingResponse.text() || `Request failed: ${embeddingResponse.status}`)
-    const nextEmbeddingConfig = await embeddingResponse.json() as EmbeddingConfig | { configured: false }
-    embeddingConfig.value = 'configured' in nextEmbeddingConfig ? undefined : nextEmbeddingConfig
-    form.chatModel = nextConfig.request.defaults.chatModel ?? ''
+    await aiControl.createConnection(input)
+    editingConnection.value = undefined
+    notice.success('服務連線已儲存。請接著讀取模型清單。')
   }
-  catch (error) {
-    notice.error(errorMessageFrom(error) ?? '無法讀取系統模型設定。請以系統管理員登入。')
-  }
-  finally {
-    loading.value = false
-  }
+  catch {}
 }
 
-async function saveEmbedding(input: {
-  baseURL: string
-  modelName: string
-  plaintextKey?: string
-  provider: 'ollama' | 'openai-compatible'
-  timeoutMs: number
-}) {
-  loading.value = true
+async function updateConnection(input: Parameters<typeof aiControl.updateConnection>[1] & { id: string }) {
   try {
-    const response = await authedFetch(endpoint('/webnavior-embedding'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
-    if (!response.ok)
-      throw new Error(await response.text() || `Request failed: ${response.status}`)
-    notice.success('Kiosk 語意判斷設定已加密儲存，後續語音判斷會立即使用。')
-    await load()
+    const { id, ...connection } = input
+    await aiControl.updateConnection(id, connection)
+    editingConnection.value = undefined
+    notice.success('服務連線已更新。若已變更網址或服務類型，請重新讀取模型清單後再套用。')
   }
-  catch (error) {
-    notice.error(errorMessageFrom(error) ?? '無法儲存 Kiosk 語意判斷設定。')
-  }
-  finally {
-    loading.value = false
-  }
+  catch {}
 }
 
-async function removeAudio(capability: 'asr' | 'tts') {
-  loading.value = true
+async function refreshModels(connectionId: string) {
   try {
-    const response = await authedFetch(endpoint(`/webnavior-audio/${capability}`), { method: 'DELETE' })
-    if (!response.ok)
-      throw new Error(await response.text())
-    notice.success(`已移除${capability === 'asr' ? '語音辨識' : '語音合成'}設定。`)
-    await load()
+    await aiControl.refreshModels(connectionId)
+    notice.success('模型清單已更新。現在可指派給 Kiosk 能力。')
   }
-  catch (error) { notice.error(errorMessageFrom(error) ?? '無法移除語音設定。') }
-  finally { loading.value = false }
+  catch {}
 }
 
-async function save() {
-  const defaults = (form.chatModel ? { chatModel: form.chatModel } : {})
-  if (Object.keys(defaults).length === 0)
+async function removeConnection() {
+  if (!pendingDeletion.value)
     return
-
-  loading.value = true
-  message.value = ''
   try {
-    const response = await authedFetch(endpoint(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mode: 'merge',
-        defaults,
-      }),
-    })
-    if (!response.ok)
-      throw new Error(await response.text() || `Request failed: ${response.status}`)
-    notice.success('系統預設對話模型已更新。新的 Kiosk 對話會立即使用新的 LLM 預設。')
-    await load()
+    await aiControl.deleteConnection(pendingDeletion.value.id)
+    pendingDeletion.value = undefined
+    notice.success('服務連線已移除。')
   }
-  catch (error) {
-    notice.error(errorMessageFrom(error) ?? '無法儲存系統模型設定。')
-  }
-  finally {
-    loading.value = false
-  }
+  catch {}
 }
 
-async function saveProvider(slices: ModelProviderSlice[]) {
-  loading.value = true
-  message.value = ''
+async function saveBinding(input: Parameters<typeof aiControl.saveBinding>[0]) {
   try {
-    const response = await authedFetch(endpoint(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'merge', slices }),
-    })
-    if (!response.ok)
-      throw new Error(await response.text() || `Request failed: ${response.status}`)
-    notice.success(`已加密儲存 ${slices.length} 個模型。現在可將它們選為系統預設或店別覆寫。`)
-    await load()
+    await aiControl.saveBinding(input)
+    notice.success('能力模型已儲存；完成其他選擇後再套用。')
   }
-  catch (error) {
-    notice.error(errorMessageFrom(error) ?? '無法儲存模型連線。')
-  }
-  finally {
-    loading.value = false
-  }
+  catch {}
 }
 
-async function removeModel() {
-  const modelId = pendingRemovalModelId.value
-  if (!modelId)
-    return
-  removalDialogOpen.value = false
-  pendingRemovalModelId.value = undefined
-  loading.value = true
-  message.value = ''
+async function apply() {
   try {
-    const response = await authedFetch(endpoint(`/models/${encodeURIComponent(modelId)}`), { method: 'DELETE' })
-    if (!response.ok)
-      throw new Error(await response.text() || `Request failed: ${response.status}`)
-    notice.success(`已移除模型「${modelId}」。`)
-    await load()
+    const result = await aiControl.apply()
+    notice.success(`已套用 ${result.appliedCapabilities.length} 項 Kiosk AI 能力；下一次請求會使用新設定。`)
   }
-  catch (error) {
-    notice.error(errorMessageFrom(error) ?? '無法移除模型。若它正被使用，請先改用其他模型。')
-  }
-  finally {
-    loading.value = false
-  }
+  catch {}
 }
 
-onMounted(load)
+onMounted(aiControl.load)
 </script>
 
 <template>
-  <div :class="['flex max-w-4xl flex-col gap-6']">
+  <div :class="['flex max-w-5xl flex-col gap-6']">
     <section>
       <p :class="['mb-2 mt-0 text-sm font-semibold tracking-wide text-cyan-700 dark:text-cyan-300']">
-        RUNTIME POLICY
+        Webnavior 系統管理
       </p>
-      <h1 :class="['m-0 text-3xl font-bold tracking-tight text-slate-950 dark:text-white']">
-        系統模型
+      <h1 :class="['m-0 text-2xl font-bold text-slate-950 dark:text-white']">
+        Kiosk AI 服務
       </h1>
-      <p :class="['mb-0 mt-2 text-sm text-slate-600 dark:text-slate-300']">
-        設定所有店別共同沿用的模型。店別只能覆寫為這裡已配置的模型，無法看見供應商金鑰。
+      <p :class="['mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300']">
+        管理服務連線、讀取模型，並分別指派 Kiosk 的對話、視覺、語音與語意判斷能力。這裡是唯一的模型設定來源。
       </p>
     </section>
 
-    <SystemModelOverview
-      :asr="audioConfig.asr"
-      :chat-model="form.chatModel"
-      :llm-endpoint="llmEndpoint"
-      :llm-models="llmModels"
-      :vlm-models="vlmModels"
-      :loading="loading"
-      :tts="audioConfig.tts"
-      @remove-audio="removeAudio"
-      @save-defaults="save"
-      @update:chat-model="form.chatModel = $event"
+    <p v-if="aiControl.error.value" :class="['m-0 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200']">
+      {{ aiControl.error.value }}
+    </p>
+
+    <AiConnectionForm
+      :busy="aiControl.busy.value"
+      :connection="editingConnection"
+      @cancel="editingConnection = undefined"
+      @create="createConnection"
+      @update="updateConnection"
     />
 
-    <ConversationModelList :endpoints="llmEndpoints" :loading="loading" :models="llmModels" @remove="pendingRemovalModelId = $event; removalDialogOpen = true" />
+    <section :class="['flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900']">
+      <div :class="['flex flex-wrap items-start justify-between gap-3']">
+        <div>
+          <h2 :class="['m-0 text-lg font-semibold text-slate-950 dark:text-white']">
+            已儲存的服務
+          </h2>
+          <p :class="['mb-0 mt-1 text-sm text-slate-600 dark:text-slate-300']">
+            每次讀取模型清單都由 Server 使用已加密保存的 Key；Key 不會回傳到瀏覽器。
+          </p>
+        </div>
+        <Button :disabled="aiControl.busy.value" @click="aiControl.load">
+          重新整理
+        </Button>
+      </div>
 
-    <ModelProviderConnection :busy="loading" @save="saveProvider" />
-    <div id="audio-services">
-      <AudioProviderConnection :busy="loading" @saved="load" />
-    </div>
-    <EmbeddingProviderConnection :busy="loading" :connection="embeddingConfig" @save="saveEmbedding" />
+      <p v-if="!aiControl.connections.value.length && !aiControl.busy.value" :class="['m-0 text-sm text-slate-500 dark:text-slate-400']">
+        尚未建立 AI 服務連線。
+      </p>
+      <article v-for="connection in aiControl.connections.value" :key="connection.id" :class="['flex flex-col gap-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800']">
+        <div :class="['flex flex-wrap items-start justify-between gap-3']">
+          <div>
+            <h3 :class="['m-0 text-base font-semibold text-slate-900 dark:text-white']">
+              {{ connection.name }}
+            </h3>
+            <p :class="['mb-0 mt-1 break-all text-sm text-slate-600 dark:text-slate-300']">
+              {{ connection.kind }} · {{ connection.baseURL }} · {{ connection.hasApiKey ? '已保存 API Key' : '未使用 API Key' }}
+            </p>
+          </div>
+          <div :class="['flex flex-wrap gap-2']">
+            <Button :disabled="aiControl.busy.value" @click="editingConnection = connection">
+              編輯
+            </Button>
+            <Button :disabled="aiControl.busy.value" @click="refreshModels(connection.id)">
+              讀取模型
+            </Button>
+            <Button :disabled="aiControl.busy.value" @click="pendingDeletion = connection">
+              移除
+            </Button>
+          </div>
+        </div>
+        <p v-if="connection.lastCheckError" :class="['m-0 text-sm text-red-600 dark:text-red-300']">
+          上次讀取失敗：{{ connection.lastCheckError }}
+        </p>
+        <p :class="['m-0 text-sm text-slate-600 dark:text-slate-300']">
+          {{ connection.discoveredModels.length ? `已讀取 ${connection.discoveredModels.length} 個模型：${connection.discoveredModels.map(model => model.id).join('、')}` : '尚未讀取模型清單。' }}
+        </p>
+      </article>
+    </section>
 
-    <AlertDialogRoot :open="removalDialogOpen" @update:open="removalDialogOpen = $event">
+    <AiCapabilityBindings
+      :bindings="aiControl.bindings.value"
+      :busy="aiControl.busy.value"
+      :connections="aiControl.connections.value"
+      @apply="apply"
+      @save="saveBinding"
+    />
+
+    <AlertDialogRoot :open="Boolean(pendingDeletion)" @update:open="open => !open && (pendingDeletion = undefined)">
       <AlertDialogPortal>
         <AlertDialogOverlay :class="['fixed inset-0 z-100 bg-black/50']" />
         <AlertDialogContent :class="['fixed left-1/2 top-1/2 z-100 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900']" @interact-outside.prevent>
           <AlertDialogTitle :class="['text-xl font-semibold text-slate-950 dark:text-white']">
-            移除模型？
+            移除 AI 服務連線？
           </AlertDialogTitle>
           <AlertDialogDescription :class="['mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300']">
-            「{{ pendingRemovalModelId }}」的連線設定會被刪除，無法復原。
+            「{{ pendingDeletion?.name }}」若仍被任何能力使用，系統會拒絕移除；請先改綁定其他服務。
           </AlertDialogDescription>
           <div :class="['mt-6 flex justify-end gap-3']">
             <AlertDialogCancel as-child>
-              <Button variant="secondary" @click="pendingRemovalModelId = undefined">
+              <Button :disabled="aiControl.busy.value">
                 取消
               </Button>
             </AlertDialogCancel>
             <AlertDialogAction as-child>
-              <Button variant="danger" @click="removeModel">
+              <Button :disabled="aiControl.busy.value" @click="removeConnection">
                 確認移除
               </Button>
             </AlertDialogAction>
@@ -294,16 +190,5 @@ onMounted(load)
         </AlertDialogContent>
       </AlertDialogPortal>
     </AlertDialogRoot>
-
-    <p v-if="message" :class="['m-0 text-sm text-amber-700 dark:text-amber-300']">
-      {{ message }}
-    </p>
   </div>
 </template>
-
-<route lang="yaml">
-path: /admin/system/models
-meta:
-  layout: webnavior-admin
-  title: 系統模型
-</route>

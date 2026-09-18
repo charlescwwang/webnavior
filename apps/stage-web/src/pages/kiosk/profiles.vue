@@ -13,7 +13,7 @@ import {
 import { onMounted, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import KioskModelPolicyEditor from '../../components/Webnavior/kioskModelPolicyEditor.vue'
+import KioskTechnicalSettingsEditor from '../../components/Webnavior/kioskModelPolicyEditor.vue'
 import KioskProfileEditor from '../../components/Webnavior/kioskProfileEditor.vue'
 
 import { useKioskManagement } from '../../composables/useKioskManagement'
@@ -32,12 +32,11 @@ const {
   profileDrafts,
   publishedExperience,
   save,
-  saveModelPolicy,
   saveProactiveVlmEnabled,
   savePerformanceProfile,
   saveVoiceVadSettings,
   saving,
-  siteModelPolicy,
+  siteTechnicalSettings,
   selectedSite,
   selectedSiteId,
   selectSite,
@@ -234,11 +233,10 @@ watch(() => route.query.site, async (siteId) => {
           @upload-idle-motion="handleIdleMotionUpload"
           @upload-role-card="handleRoleCardUpload"
         />
-        <KioskModelPolicyEditor
-          v-if="siteModelPolicy && capabilities?.canEditTechnicalSettings"
+        <KioskTechnicalSettingsEditor
+          v-if="siteTechnicalSettings && capabilities?.canEditTechnicalSettings"
           :busy="saving || loading"
-          :policy="siteModelPolicy"
-          @save="saveModelPolicy"
+          :settings="siteTechnicalSettings"
           @update-proactive-vlm="saveProactiveVlmEnabled"
           @update-performance-profile="savePerformanceProfile"
           @update-voice-vad-settings="saveVoiceVadSettings"

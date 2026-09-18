@@ -79,12 +79,8 @@ export interface KioskSiteManagementCapabilities {
   canPublishExperience: boolean
 }
 
-/** The approved inventory, system defaults, and explicit choices for one kiosk site. */
-export interface KioskSiteModelPolicy {
-  available: Record<'asr' | 'llm' | 'tts' | 'vision', string[]>
-  defaults: Record<'asr' | 'llm' | 'tts' | 'vision', string | null>
-  overrides: Partial<Record<'asr' | 'llm' | 'tts' | 'vision', string>>
-  sources: Record<'asr' | 'llm' | 'tts' | 'vision', Record<string, { baseURL: string, upstreamModel: string, voice?: string }>>
+/** Per-site controls that affect device behavior, but never choose AI models. */
+export interface KioskSiteTechnicalSettings {
   proactiveVlmEnabled: boolean
   performanceProfile: 'constrained' | 'balanced' | 'high'
   voiceVadSettings: KioskVoiceVadSettings
@@ -180,7 +176,7 @@ export function useKioskManagement() {
   const ownerTemplateDraft = shallowRef<KioskProfileDraft>()
   const publishedOwnerTemplate = shallowRef<KioskProfileDraft>()
   const capabilities = shallowRef<KioskSiteManagementCapabilities>()
-  const siteModelPolicy = shallowRef<KioskSiteModelPolicy>()
+  const siteTechnicalSettings = shallowRef<KioskSiteTechnicalSettings>()
   const loading = shallowRef(false)
   const saving = shallowRef(false)
   const message = shallowRef('')
@@ -218,7 +214,7 @@ export function useKioskManagement() {
       profileDrafts.value = []
       publishedExperience.value = undefined
       capabilities.value = undefined
-      siteModelPolicy.value = undefined
+      siteTechnicalSettings.value = undefined
       return
     }
 
@@ -235,8 +231,8 @@ export function useKioskManagement() {
       profileDraft.value = profile.drafts[0] ?? createDefaultProfileDraft()
       publishedExperience.value = profile.release
       capabilities.value = nextCapabilities
-      siteModelPolicy.value = nextCapabilities.canEditTechnicalSettings
-        ? await request<KioskSiteModelPolicy>(`/sites/${selectedSiteId.value}/model-policy`)
+      siteTechnicalSettings.value = nextCapabilities.canEditTechnicalSettings
+        ? await request<KioskSiteTechnicalSettings>(`/sites/${selectedSiteId.value}/technical-settings`)
         : undefined
     }
     catch (error) {
@@ -608,52 +604,28 @@ export function useKioskManagement() {
     }
   }
 
-  async function saveModelPolicy(overrides: KioskSiteModelPolicy['overrides']) {
-    if (!selectedSiteId.value)
-      return
-
-    saving.value = true
-    message.value = ''
-    try {
-      await request(`/sites/${selectedSiteId.value}/model-policy`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(overrides),
-      })
-      if (siteModelPolicy.value)
-        siteModelPolicy.value = { ...siteModelPolicy.value, overrides }
-      notice.success('店別模型設定已儲存。LLM 覆寫會在下一次對話時生效。')
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法儲存店別模型設定。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
   async function saveProactiveVlmEnabled(enabled: boolean) {
     if (!selectedSiteId.value)
       return
     saving.value = true
     try {
       await request(`/sites/${selectedSiteId.value}/proactive-vlm`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) })
-      if (siteModelPolicy.value)
-        siteModelPolicy.value = { ...siteModelPolicy.value, proactiveVlmEnabled: enabled }
+      if (siteTechnicalSettings.value)
+        siteTechnicalSettings.value = { ...siteTechnicalSettings.value, proactiveVlmEnabled: enabled }
       notice.success(`主動情境台詞生成已${enabled ? '啟用' : '停用'}。`)
     }
     catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新 VLM 設定。') }
     finally { saving.value = false }
   }
 
-  async function savePerformanceProfile(profile: KioskSiteModelPolicy['performanceProfile']) {
+  async function savePerformanceProfile(profile: KioskSiteTechnicalSettings['performanceProfile']) {
     if (!selectedSiteId.value)
       return
     saving.value = true
     try {
       await request(`/sites/${selectedSiteId.value}/performance-profile`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile }) })
-      if (siteModelPolicy.value)
-        siteModelPolicy.value = { ...siteModelPolicy.value, performanceProfile: profile }
+      if (siteTechnicalSettings.value)
+        siteTechnicalSettings.value = { ...siteTechnicalSettings.value, performanceProfile: profile }
       notice.success('Kiosk 效能設定檔已更新。設備重新載入後會套用。')
     }
     catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新 Kiosk 效能設定檔。') }
@@ -666,8 +638,8 @@ export function useKioskManagement() {
     saving.value = true
     try {
       await request(`/sites/${selectedSiteId.value}/voice-vad-settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) })
-      if (siteModelPolicy.value)
-        siteModelPolicy.value = { ...siteModelPolicy.value, voiceVadSettings: settings }
+      if (siteTechnicalSettings.value)
+        siteTechnicalSettings.value = { ...siteTechnicalSettings.value, voiceVadSettings: settings }
       notice.success('Silero VAD 設定已更新，連線中的設備會在下一次同步時套用。')
     }
     catch (error) { notice.error(errorMessageFrom(error) ?? '無法更新 Silero VAD 設定。') }
@@ -730,12 +702,11 @@ export function useKioskManagement() {
     saveOwnerExperienceTemplate,
     save,
     saveInteractionRetention,
-    saveModelPolicy,
     saveProactiveVlmEnabled,
     savePerformanceProfile,
     saveVoiceVadSettings,
     saving,
-    siteModelPolicy,
+    siteTechnicalSettings,
     selectedSite,
     selectedSiteId,
     selectSite,
