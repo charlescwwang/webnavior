@@ -162,9 +162,10 @@ volumes:
   webnavior_redis_data:
 ```
 
-`webnavior_redis_data` 是 Server 的動態營運設定來源。系統管理員在後台儲存的模型、ASR/TTS
-與 Kiosk embedding 連線（含加密後金鑰）都會在此保留；更新程式不會重建或清除此 volume。
-因此請把 Docker volume 備份納入既有維運備份，且不要以 `docker compose down -v` 清除它。
+`webnavior_redis_data` 保存 Server 的快取、設定 KV 與 Pub/Sub。Webnavior 的 AI 服務連線、
+模型目錄與能力指派則保存在 PostgreSQL；Server 將它們編譯成短暫的執行期設定寫入 Redis。
+更新程式不會重建或清除此 volume，但 PostgreSQL 才是需納入備份的正式資料來源；同樣不要以
+`docker compose down -v` 清除它。
 
 啟動與驗證（此 Compose project 只會操作 `webnavior_redis`）：
 
@@ -344,8 +345,36 @@ bash scripts/updateKioskUbuntu.sh
 ```
 
 此腳本會在發布前重啟 `webnavior-api` 並以 `/readyz` 確認 PostgreSQL 與 Redis 均可用。Kiosk
-embedding 等動態 Provider 設定儲存在第 2 節的 Redis volume，不在前端 `.env.production.local`
-或更新腳本中；後台儲存後，下一次語意判斷就會讀到新值，不需要為了更換服務網址再重啟 API。
+embedding 等動態 Provider 設定保存在 PostgreSQL，並由 Server 編譯至第 2 節的 Redis 執行期
+快取；它們不在前端 `.env.production.local` 或更新腳本中。後台套用後，下一次語意判斷就會讀到
+新值，不需要為了更換服務網址再重啟 API。
+
+### Kiosk AI 服務設定
+
+登入系統管理後，從「模型與服務」建立 Ollama 或 OpenAI-compatible 服務連線、讀取 `/models`
+目錄，再分別綁定對話、視覺、ASR、TTS 與 embedding 能力，最後按「套用到 Kiosk」。這是 Kiosk
+唯一的模型設定來源；店別頁面只保留效能、VAD 與主動視覺等現場技術設定。
+
+連線網址、Key 與模型綁定儲存在 PostgreSQL，Key 以 `LLM_ROUTER_MASTER_KEY` 加密。修改 URL 或
+服務類型後，系統會清空舊模型目錄；必須重新讀取 `/models` 後才能套用，避免舊模型 ID 被送往新服務。
+按套用後的下一個 Kiosk 請求即使用新設定，不需要重啟 API。
+
+### 更新、媒體匯出與重置
+
+`scripts/updateKioskUbuntu.sh` 是**就地更新**：它會套用 schema、重啟 API 與替換三個前端
+發布目錄，但不會重建 PostgreSQL、Redis volume 或
+`WEBNAVIOR_KIOSK_ASSET_DIR`。因此一般更新前不需要匯出，既有訪客歷程、照片與錄音會保留。
+
+目前訪客媒體保存在
+`$WEBNAVIOR_KIOSK_ASSET_DIR/visitor-media/<media-id>.bin`。內容是原始媒體 bytes，**沒有加密**；
+副檔名 `.bin` 只是儲存實作，正確 MIME type、拍攝時間與會話關聯保存在 PostgreSQL。
+後台的媒體下載 API 會依 MIME type 回傳，因此下載後可以直接開啟。
+
+若未來需要刻意重新初始化 Ubuntu 環境，這不是更新腳本的一部分。必須先執行專用匯出流程，
+產生可攜 archive：每個媒體檔依 MIME type 改為可直接開啟的副檔名，並附上 JSONL manifest
+（session、時間、媒體 kind、MIME type 與原始 ID）。匯出指令必須在驗證 archive 可讀、manifest
+筆數與資料庫媒體筆數一致後才允許進入重置步驟；未來導入該指令前，不可用手動刪除資料目錄
+取代這個流程。
 
 Web 根目錄必須以 `--base=/` 建置；若使用 `/web/`，Nginx 會把找不到的 JavaScript 請求回應為
 SPA HTML，瀏覽器便會顯示 `Unexpected token '<'`。部署完成後，對管理頁做一次硬重新整理以清除

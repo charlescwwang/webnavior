@@ -95,7 +95,10 @@ export interface KioskRoutesOptions {
   /** Server-owned default model selection and Provider dispatch boundary. */
   llmGateway: {
     complete: (input: { abortSignal?: AbortSignal, body: Record<string, unknown>, modelName: string }) => Promise<Response>
-    getDefaultModel: () => Promise<string>
+  }
+  /** Sole source for the system-wide Webnavior model choices. */
+  runtimeModelPolicy: {
+    modelFor: (capability: 'chat' | 'vision' | 'asr' | 'tts') => Promise<string | undefined>
   }
   /** Device-authenticated ASR/TTS transport; its configuration stays server-side. */
   audioGateway?: {
@@ -185,12 +188,12 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   })
 
   routes.post('/audio/transcriptions', async (c) => {
-    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    await resolveAuthenticatedDevice(c, options.kioskService)
     const audio = (await c.req.formData()).get('file')
     if (!(audio instanceof File) || audio.size === 0)
       throw createBadRequestError('Kiosk transcription requires a non-empty audio file', 'INVALID_REQUEST')
 
-    const modelName = await resolveKioskAudioModel(options.kioskService, device.id, 'asr')
+    const modelName = await resolveKioskAudioModel(options.runtimeModelPolicy, 'asr')
     if (!options.audioGateway)
       throw createBadRequestError('Kiosk ASR gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
     const text = await options.audioGateway.transcribe({ audio, modelName })
@@ -214,12 +217,12 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   })
 
   routes.post('/audio/speech', async (c) => {
-    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    await resolveAuthenticatedDevice(c, options.kioskService)
     const result = safeParse(speechSchema, await c.req.json().catch(() => null))
     if (!result.success)
       throw createBadRequestError('Invalid kiosk speech request', 'INVALID_REQUEST', result.issues)
 
-    const modelName = await resolveKioskAudioModel(options.kioskService, device.id, 'tts')
+    const modelName = await resolveKioskAudioModel(options.runtimeModelPolicy, 'tts')
     if (!options.audioGateway)
       throw createBadRequestError('Kiosk TTS gateway is unavailable', 'KIOSK_AUDIO_GATEWAY_UNAVAILABLE')
     return await options.audioGateway.speak({
@@ -365,6 +368,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       content,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
+      runtimeModelPolicy: options.runtimeModelPolicy,
       profile,
       transcript,
       toolResults: result.output.toolResults,
@@ -422,6 +426,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       abortSignal: c.req.raw.signal,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
+      runtimeModelPolicy: options.runtimeModelPolicy,
       ...(proactiveVlmEnabled ? { modelCapability: 'vision' as const, sceneFrame: result.output.frame } : {}),
       profile,
       transcript,
@@ -539,25 +544,20 @@ async function resolveAuthenticatedDevice(c: Context<HonoEnv>, kioskService: Kio
 
 /** Resolves a device's Site policy only after authenticating its opaque credential. */
 async function resolveKioskAudioModel(
-  kioskService: KioskService,
-  deviceId: string,
+  runtimeModelPolicy: KioskRoutesOptions['runtimeModelPolicy'],
   capability: 'asr' | 'tts',
 ) {
-  const profile = await kioskService.getDeviceProfile(deviceId)
-  if (!profile)
-    throw createBadRequestError('Kiosk device has no assigned Profile', 'PROFILE_UNASSIGNED')
-
-  const modelName = (await kioskService.getSiteModelOverrides(profile.siteId))[capability]
+  const modelName = await runtimeModelPolicy.modelFor(capability)
   if (!modelName)
-    throw createBadRequestError(`Kiosk Site has no ${capability.toUpperCase()} model policy`, 'KIOSK_AUDIO_POLICY_NOT_CONFIGURED')
+    throw createBadRequestError(`Kiosk 系統尚未設定 ${capability.toUpperCase()} 模型。`, 'KIOSK_AUDIO_POLICY_NOT_CONFIGURED')
   return modelName
 }
 
-/** Resolves the VLM explicitly so proactive copy can never fall back to a static template. */
-async function resolveKioskVisionModel(kioskService: KioskService, siteId: string) {
-  const modelName = (await kioskService.getSiteModelOverrides(siteId)).vision
+/** VLM is explicit: an absent binding disables the feature instead of guessing. */
+async function resolveKioskVisionModel(runtimeModelPolicy: KioskRoutesOptions['runtimeModelPolicy']) {
+  const modelName = await runtimeModelPolicy.modelFor('vision')
   if (!modelName)
-    throw createBadRequestError('Kiosk Site has no VLM model policy', 'KIOSK_VISION_POLICY_NOT_CONFIGURED')
+    throw createBadRequestError('Kiosk 系統尚未設定 VLM 模型。', 'KIOSK_VISION_POLICY_NOT_CONFIGURED')
   return modelName
 }
 
@@ -591,6 +591,7 @@ async function completeKioskReply(input: {
   content?: string
   kioskService: KioskService
   llmGateway: KioskRoutesOptions['llmGateway']
+  runtimeModelPolicy: KioskRoutesOptions['runtimeModelPolicy']
   modelCapability?: 'llm' | 'vision'
   profile: { siteId: string, snapshot: KioskProfileSnapshot }
   sceneFrame?: string
@@ -598,10 +599,11 @@ async function completeKioskReply(input: {
   toolResults?: Array<{ content: string, name: string, toolCallId: string }>
   tools?: Array<{ function: { description?: string, name: string, parameters: unknown }, type: 'function' }>
 }) {
-  const overrides = await input.kioskService.getSiteModelOverrides(input.profile.siteId)
   const modelName = input.modelCapability === 'vision'
-    ? await resolveKioskVisionModel(input.kioskService, input.profile.siteId)
-    : overrides.llm ?? await input.llmGateway.getDefaultModel()
+    ? await resolveKioskVisionModel(input.runtimeModelPolicy)
+    : await input.runtimeModelPolicy.modelFor('chat')
+  if (!modelName)
+    throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
   const response = await input.llmGateway.complete({
     abortSignal: input.abortSignal,
     modelName,

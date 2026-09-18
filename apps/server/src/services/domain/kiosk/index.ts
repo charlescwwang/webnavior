@@ -1,7 +1,7 @@
 import type { DeviceSettingKey, DeviceSettings, DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import type { Database } from '../../../libs/db'
-import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskModelOverrides, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
+import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
 
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -95,8 +95,6 @@ export interface KioskService {
   isCurrentDevelopmentDevice: (deviceId: string) => Promise<boolean>
   /** Retrieves the currently assigned immutable Profile release for one kiosk device. */
   getDeviceProfile: (deviceId: string) => Promise<typeof schema.kioskProfileReleases.$inferSelect | undefined>
-  /** Returns explicit model choices; categories not present inherit system defaults. */
-  getSiteModelOverrides: (siteId: string) => Promise<KioskModelOverrides>
   /** Lists the Sites the account may administer without exposing other Site identifiers. */
   listManagedSites: (userId: string) => Promise<(typeof schema.kioskSites.$inferSelect)[]>
   /** Lists devices only after verifying the caller may access their Site's management summary. */
@@ -143,8 +141,6 @@ export interface KioskService {
   setSitePerformanceProfile: (input: { actorUserId: string, profile: KioskPerformanceProfile, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   getSiteVoiceVadSettings: (siteId: string) => Promise<KioskVoiceVadSettings>
   setSiteVoiceVadSettings: (input: { actorUserId: string, settings: KioskVoiceVadSettings, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
-  /** Replaces the site's choices after the caller has curated them against the approved catalog. */
-  setSiteModelOverrides: (input: { overrides: KioskModelOverrides, siteId: string }) => Promise<typeof schema.kioskSites.$inferSelect>
   /** Publishes a selected draft as a new immutable release and assigns it to every Site device. */
   publishProfileDraft: (input: { actorUserId?: string, draftId: string, siteId: string }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
   publishOwnerExperienceTemplate: (input: { ownerUserId: string }) => Promise<typeof schema.kioskOwnerExperienceReleases.$inferSelect>
@@ -493,16 +489,6 @@ export function createKioskService(db: Database): KioskService {
     return await db.query.kioskProfileReleases.findFirst({
       where: eq(schema.kioskProfileReleases.id, assignment.profileReleaseId),
     })
-  }
-
-  async function getSiteModelOverrides(siteId: string) {
-    const site = await db.query.kioskSites.findFirst({
-      where: eq(schema.kioskSites.id, siteId),
-      columns: { modelOverrides: true },
-    })
-    if (!site)
-      throw createNotFoundError('Kiosk Site was not found')
-    return site.modelOverrides
   }
 
   async function listManagedSites(userId: string) {
@@ -897,16 +883,6 @@ export function createKioskService(db: Database): KioskService {
     return site
   }
 
-  async function setSiteModelOverrides(input: { overrides: KioskModelOverrides, siteId: string }) {
-    const [site] = await db.update(schema.kioskSites)
-      .set({ modelOverrides: input.overrides, updatedAt: new Date() })
-      .where(eq(schema.kioskSites.id, input.siteId))
-      .returning()
-    if (!site)
-      throw createNotFoundError('Kiosk Site was not found')
-    return site
-  }
-
   async function ensureDevelopmentSite() {
     const slug = 'webnavior-test-site'
     await db.insert(schema.kioskSites).values({
@@ -1098,7 +1074,6 @@ export function createKioskService(db: Database): KioskService {
     disableDevice,
     enableDevice,
     getDeviceProfile,
-    getSiteModelOverrides,
     getSiteMediaCapturePolicy,
     getSiteProactiveVlmEnabled,
     getSitePerformanceProfile,
@@ -1123,7 +1098,6 @@ export function createKioskService(db: Database): KioskService {
     setSiteProactiveVlmEnabled,
     setSitePerformanceProfile,
     setSiteVoiceVadSettings,
-    setSiteModelOverrides,
     publishProfileDraft,
     publishOwnerExperienceTemplate,
     purgeExpiredVisitorSessions,

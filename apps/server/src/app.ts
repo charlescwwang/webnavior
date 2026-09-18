@@ -25,6 +25,8 @@ import type { RequestLogService } from './services/domain/request-log'
 import type { StripeService } from './services/domain/stripe'
 import type { UserDeletionService } from './services/domain/user-deletion'
 import type { VoicePackService } from './services/domain/voice-packs'
+import type { WebnaviorAiControlService } from './services/domain/webnavior-ai-control'
+import type { WebnaviorAiRuntimeService } from './services/domain/webnavior-ai-control/runtime'
 import type { HonoEnv } from './types/hono'
 import type { EnvelopeCrypto } from './utils/envelope-crypto'
 
@@ -67,6 +69,7 @@ import { createAdminKioskRoutes } from './routes/admin/kiosk'
 import { createAdminProviderCatalogRoutes } from './routes/admin/provider-catalog'
 import { createAdminUsersRoutes } from './routes/admin/users'
 import { createAdminVoicePackRoutes } from './routes/admin/voice-packs'
+import { createAdminWebnaviorAiRoutes } from './routes/admin/webnavior-ai'
 import { createAudioSpeechWsHandlers } from './routes/audio-speech-ws'
 import { createAudioTranscriptionStreamHandler } from './routes/audio-transcription-stream/route'
 import { createAuthRoutes } from './routes/auth'
@@ -106,6 +109,8 @@ import { createRequestLogService } from './services/domain/request-log'
 import { createStripeService } from './services/domain/stripe'
 import { createUserDeletionService } from './services/domain/user-deletion'
 import { createVoicePackService } from './services/domain/voice-packs'
+import { createWebnaviorAiControlService } from './services/domain/webnavior-ai-control'
+import { createWebnaviorAiRuntimeService } from './services/domain/webnavior-ai-control/runtime'
 import { createEnvelopeCrypto } from './utils/envelope-crypto'
 import { ApiError, createInternalError } from './utils/error'
 import { nanoid } from './utils/id'
@@ -136,6 +141,8 @@ interface AppDeps {
   userDeletionService: UserDeletionService
   llmRouter: LlmRouterService
   providerCatalogService: ProviderCatalogService
+  webnaviorAiControlService: WebnaviorAiControlService
+  webnaviorAiRuntimeService: WebnaviorAiRuntimeService
   kioskService: KioskService
   kioskCharacterAssetService: KioskCharacterAssetService
 }
@@ -411,9 +418,9 @@ export async function buildApp(deps: AppDeps) {
       kioskService: deps.kioskService,
       mediaService: kioskMediaService,
       llmGateway: {
-        getDefaultModel: () => deps.configKV.getOrThrow('DEFAULT_CHAT_MODEL'),
         complete: input => deps.llmRouter.route({ abortSignal: input.abortSignal, modelName: input.modelName, body: input.body }),
       },
+      runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
       turnDecisionObserver: {
         record: input => deps.otel?.product.events.add(1, { event: 'kiosk_turn_decision', ...input }),
@@ -470,7 +477,7 @@ export async function buildApp(deps: AppDeps) {
     /**
      * Admin kiosk Profile draft and release management.
      */
-    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService, deps.configKV, deps.kioskCharacterAssetService, kioskMediaService))
+    .route('/api/admin/kiosk', createAdminKioskRoutes(deps.kioskService, deps.kioskCharacterAssetService, kioskMediaService))
 
     /**
      * Admin per-user balance override (set balance, incl. 0 for testing).
@@ -511,6 +518,12 @@ export async function buildApp(deps: AppDeps) {
      * `routes/admin/config/router/index.ts` for the body shape.
      */
     .route('/api/admin/config/router', createAdminRouterConfigRoutes(deps.adminRouterConfigService))
+
+    /** Webnavior's operator-facing AI connections and capability bindings. */
+    .route('/api/admin/webnavior-ai', createAdminWebnaviorAiRoutes({
+      runtimeService: deps.webnaviorAiRuntimeService,
+      service: deps.webnaviorAiControlService,
+    }))
 
     /**
      * Admin dashboard support APIs: user search, balance adjustments, metrics,
@@ -858,6 +871,24 @@ export async function createApp() {
     }),
   })
 
+  const webnaviorAiControlService = injeca.provide('services:webnaviorAiControl', {
+    dependsOn: { db, envelopeCrypto },
+    build: ({ dependsOn }) => createWebnaviorAiControlService({
+      db: dependsOn.db,
+      envelopeCrypto: dependsOn.envelopeCrypto,
+    }),
+  })
+
+  const webnaviorAiRuntimeService = injeca.provide('services:webnaviorAiRuntime', {
+    dependsOn: { configKV, db, envelopeCrypto, redis },
+    build: ({ dependsOn }) => createWebnaviorAiRuntimeService({
+      configKV: dependsOn.configKV,
+      db: dependsOn.db,
+      envelopeCrypto: dependsOn.envelopeCrypto,
+      redis: dependsOn.redis,
+    }),
+  })
+
   // LLM router (KTD-5 in-process replacement for the knoway sidecar).
   // LLM_ROUTER_MASTER_KEY is required at env-parse time, so this provider
   // always builds a real router — the legacy `null` fallback path is gone.
@@ -896,6 +927,8 @@ export async function createApp() {
     billingService,
     adminFluxGrantsService,
     adminRouterConfigService,
+    webnaviorAiControlService,
+    webnaviorAiRuntimeService,
     adminUsersService,
     ttsMeter,
     configKV,
@@ -943,6 +976,8 @@ export async function createApp() {
     billingService: resolved.billingService,
     adminFluxGrantsService: resolved.adminFluxGrantsService,
     adminRouterConfigService: resolved.adminRouterConfigService,
+    webnaviorAiControlService: resolved.webnaviorAiControlService,
+    webnaviorAiRuntimeService: resolved.webnaviorAiRuntimeService,
     adminUsersService: resolved.adminUsersService,
     ttsMeter: resolved.ttsMeter,
     requestLogService: resolved.requestLogService,

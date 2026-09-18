@@ -73,6 +73,14 @@ accumulating history.
   speed `1.0` unless a System Manager changes the connection setting.
 - Removed the stale `azure-speech` SSML allow-list entry and the unused MiniMax
   Speech provider registration, metadata, translations, and dedicated docs.
+- Webnavior Kiosk AI now uses a Server-owned control plane: persistent provider
+  connections, discovered catalogs, and capability bindings live in PostgreSQL;
+  the runtime compiler projects only those bindings into the existing AIRI
+  gateways. `face_only` and other presence settings remain independent. The
+  former Site `model_overrides` schema and direct Webnavior audio/embedding
+  admin endpoints were removed, so a Site cannot select a separate model.
+  System Managers use the Stage Web 「Kiosk AI 服務」 page to create/edit a
+  connection, read `/models`, bind chat/vision/ASR/TTS/embedding, then apply.
 
 ## In Progress / Known Issues
 

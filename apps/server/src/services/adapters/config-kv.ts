@@ -83,6 +83,18 @@ export const webnaviorEmbeddingConfigSchema = optional(object({
   timeoutMs: optional(number(), 5000),
 }))
 
+/**
+ * Kiosk-only system defaults compiled from the Webnavior AI control plane.
+ * A Site's explicit model override always wins; absence here preserves the
+ * pre-control-plane router defaults as a complete fallback baseline.
+ */
+export const webnaviorAiRuntimeConfigSchema = optional(object({
+  asrModel: optional(pipe(string(), nonEmpty('asrModel must not be empty'))),
+  chatModel: optional(pipe(string(), nonEmpty('chatModel must not be empty'))),
+  ttsModel: optional(pipe(string(), nonEmpty('ttsModel must not be empty'))),
+  visionModel: optional(pipe(string(), nonEmpty('visionModel must not be empty'))),
+}), {})
+
 export const ttsUpstreamSchema = object({
   baseURL: pipe(string(), nonEmpty('tts.upstreams[].baseURL must not be empty')),
   keys: pipe(array(keyEntrySchema), check(v => v.length >= 1, 'tts.upstreams[].keys must contain at least 1 entry')),
@@ -154,6 +166,8 @@ export const llmRouterConfigSchema = object({
   defaults: llmRouterDefaultsSchema,
 })
 
+export type LlmRouterConfig = InferOutput<typeof llmRouterConfigSchema>
+
 /**
  * Config entry schemas are the single source of truth for:
  * - runtime validation
@@ -206,6 +220,7 @@ const ConfigEntrySchemas = {
   // Absent intentionally means semantic policy falls back to conservative
   // turn handling; Kiosks never load an embedding model themselves.
   WEBNAVIOR_EMBEDDING_CONFIG: webnaviorEmbeddingConfigSchema,
+  WEBNAVIOR_AI_RUNTIME_CONFIG: webnaviorAiRuntimeConfigSchema,
 } as const
 
 type ConfigDefinitions = {

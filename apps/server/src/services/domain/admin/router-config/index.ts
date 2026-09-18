@@ -2,12 +2,11 @@ import type Redis from 'ioredis'
 import type { InferOutput } from 'valibot'
 
 import type { EnvelopeCrypto } from '../../../../utils/envelope-crypto'
-import type { asrModelSchema, ConfigKVService, llmModelSchema, llmRouterConfigSchema, ttsModelSchema, unspeechUpstreamSchema, webnaviorAudioConfigSchema } from '../../../adapters/config-kv'
+import type { asrModelSchema, ConfigKVService, llmModelSchema, llmRouterConfigSchema, ttsModelSchema, unspeechUpstreamSchema } from '../../../adapters/config-kv'
 
 import { useLogger } from '@guiiai/logg'
 
 import { createBadRequestError } from '../../../../utils/error'
-import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../adapters/config-kv'
 
 /**
  * AAD label used when encrypting/decrypting the streaming TTS upstream key.
@@ -40,7 +39,6 @@ type LlmModel = InferOutput<typeof llmModelSchema>
 type TtsModel = InferOutput<typeof ttsModelSchema>
 type AsrModel = InferOutput<typeof asrModelSchema>
 type UnspeechUpstream = InferOutput<typeof unspeechUpstreamSchema>
-type WebnaviorAudioConfig = InferOutput<typeof webnaviorAudioConfigSchema>
 type KeyEntry = LlmModel['upstreams'][number]['keys'][number]
 type LlmSliceKind = 'openrouter' | 'bedrock' | 'openai-compatible'
 
@@ -1235,82 +1233,10 @@ export function createAdminRouterConfigService(deps: AdminRouterConfigDeps) {
     logger.withFields({ modelName, invalidatedKeys }).log('admin-router-config LLM model removed')
   }
 
-  async function currentWebnaviorAudioConfig(): Promise<WebnaviorAudioConfig> {
-    return await deps.configKV.getOrThrow('WEBNAVIOR_AUDIO_CONFIG')
-  }
-
-  async function saveWebnaviorAudioConfig(input: {
-    capability: 'asr' | 'tts'
-    modelName: string
-    upstreamModel: string
-    baseURL: string
-    voice?: string
-    plaintextKey?: string
-  }): Promise<WebnaviorAudioConfig> {
-    const existing = await currentWebnaviorAudioConfig()
-    const current = existing[input.capability]
-    const keyCiphertext = input.plaintextKey?.trim()
-      ? deps.envelope.encryptKey(input.plaintextKey, { modelName: `webnavior-audio:${input.capability}`, keyEntryId: 'default' })
-      : current?.keyCiphertext
-    await deps.configKV.set('WEBNAVIOR_AUDIO_CONFIG', {
-      ...existing,
-      [input.capability]: {
-        modelName: input.modelName,
-        upstreamModel: input.upstreamModel,
-        baseURL: input.baseURL,
-        ...(input.capability === 'tts' ? { voice: input.voice ?? DEFAULT_WEBNAVIOR_TTS_VOICE } : {}),
-        ...(keyCiphertext ? { keyCiphertext } : {}),
-      },
-    })
-    await deps.redis.publish('configkv:invalidate', JSON.stringify({ key: 'WEBNAVIOR_AUDIO_CONFIG', version: Date.now(), publishedAt: Date.now() }))
-    return await currentWebnaviorAudioConfig()
-  }
-
-  async function clearWebnaviorAudioConfig(capability: 'asr' | 'tts'): Promise<WebnaviorAudioConfig> {
-    const existing = await currentWebnaviorAudioConfig()
-    const next = { ...existing }
-    delete next[capability]
-    await deps.configKV.set('WEBNAVIOR_AUDIO_CONFIG', next)
-    await deps.redis.publish('configkv:invalidate', JSON.stringify({ key: 'WEBNAVIOR_AUDIO_CONFIG', version: Date.now(), publishedAt: Date.now() }))
-    return await currentWebnaviorAudioConfig()
-  }
-
-  async function currentWebnaviorEmbeddingConfig() {
-    return await deps.configKV.getOptional('WEBNAVIOR_EMBEDDING_CONFIG')
-  }
-
-  async function saveWebnaviorEmbeddingConfig(input: {
-    baseURL: string
-    modelName: string
-    provider: 'ollama' | 'openai-compatible'
-    plaintextKey?: string
-    timeoutMs?: number
-  }) {
-    const existing = await currentWebnaviorEmbeddingConfig()
-    const keyCiphertext = input.plaintextKey?.trim()
-      ? deps.envelope.encryptKey(input.plaintextKey, { modelName: 'webnavior-kiosk:embedding', keyEntryId: 'default' })
-      : existing?.keyCiphertext
-    const next = {
-      baseURL: input.baseURL,
-      modelName: input.modelName,
-      provider: input.provider,
-      timeoutMs: input.timeoutMs ?? 5000,
-      ...(keyCiphertext ? { keyCiphertext } : {}),
-    }
-    await deps.configKV.set('WEBNAVIOR_EMBEDDING_CONFIG', next)
-    await deps.redis.publish('configkv:invalidate', JSON.stringify({ key: 'WEBNAVIOR_EMBEDDING_CONFIG', version: Date.now(), publishedAt: Date.now() }))
-    return await currentWebnaviorEmbeddingConfig()
-  }
-
   return {
     apply,
-    clearWebnaviorAudioConfig,
     current,
-    currentWebnaviorAudioConfig,
-    currentWebnaviorEmbeddingConfig,
     removeLlmModel,
-    saveWebnaviorAudioConfig,
-    saveWebnaviorEmbeddingConfig,
   }
 }
 

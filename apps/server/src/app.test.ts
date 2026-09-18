@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { buildApp } from './app'
@@ -57,6 +59,8 @@ function createTestDeps() {
     billingService: {} as any,
     adminFluxGrantsService: {} as any,
     adminRouterConfigService: {} as any,
+    webnaviorAiControlService: {} as any,
+    webnaviorAiRuntimeService: { modelFor: vi.fn(async () => 'test-model') } as any,
     adminUsersService: {} as any,
     ttsMeter: {} as any,
     requestLogService: {} as any,
@@ -82,6 +86,7 @@ function createTestDeps() {
     redis: redis as any,
     env: {
       API_SERVER_URL: 'http://localhost:3000',
+      WEBNAVIOR_KIOSK_ASSET_DIR: '/tmp/webnavior-app-test-assets',
     } as any,
     otel: null,
     userDeletionService: {} as any,

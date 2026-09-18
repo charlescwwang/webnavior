@@ -25,14 +25,6 @@ export interface KioskMediaCapturePolicy {
 /** Server-selected resource budget for a kiosk Site. */
 export type KioskPerformanceProfile = 'constrained' | 'balanced' | 'high'
 
-/** A site's explicit runtime model choices. Missing entries inherit the system default. */
-export interface KioskModelOverrides {
-  asr?: string
-  llm?: string
-  tts?: string
-  vision?: string
-}
-
 /** A server-owned avatar file that an immutable kiosk profile may reference. */
 export interface KioskCharacterAssetReference {
   format: 'live2d_zip' | 'vrm' | 'vrma'
@@ -102,8 +94,6 @@ export const kioskSites = pgTable('kiosk_sites', {
   voiceVadThreshold: text('voice_vad_threshold').notNull().default('0.72'),
   /** Complete Silero VAD policy, including utterance segmentation behavior. */
   voiceVadSettings: jsonb('voice_vad_settings').$type<KioskVoiceVadSettings>().notNull().default(defaultKioskVoiceVadSettings),
-  /** Site-specific choices from the system administrator's approved model catalog. */
-  modelOverrides: jsonb('model_overrides').$type<KioskModelOverrides>().notNull().default({}),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 })

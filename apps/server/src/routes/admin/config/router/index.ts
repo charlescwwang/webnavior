@@ -7,10 +7,7 @@ import {
   boolean,
   literal,
   maxLength,
-  maxValue,
-  minValue,
   nonEmpty,
-  number,
   object,
   optional,
   picklist,
@@ -25,7 +22,6 @@ import {
 
 import { adminGuard } from '../../../../middlewares/admin-guard'
 import { authGuard } from '../../../../middlewares/auth'
-import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../../services/adapters/config-kv'
 import { createBadRequestError } from '../../../../utils/error'
 import { discoverModels } from './operations/discover-models'
 
@@ -54,23 +50,6 @@ const DiscoverAudioSchema = object({
   capability: picklist(['asr', 'tts']),
   baseURL: pipe(string(), url('baseURL must be a valid URL')),
   plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
-})
-
-const WebnaviorAudioConfigSchema = object({
-  capability: picklist(['asr', 'tts']),
-  modelName: pipe(string(), nonEmpty('modelName is required'), maxLength(200), NO_PIPE),
-  upstreamModel: pipe(string(), nonEmpty('upstreamModel is required'), maxLength(200)),
-  baseURL: pipe(string(), url('baseURL must be a valid URL')),
-  voice: optional(pipe(string(), nonEmpty('voice must not be empty when provided'), maxLength(200)), DEFAULT_WEBNAVIOR_TTS_VOICE),
-  plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
-})
-
-const WebnaviorEmbeddingConfigSchema = object({
-  baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
-  modelName: pipe(string(), nonEmpty('modelName is required'), maxLength(200)),
-  provider: picklist(['ollama', 'openai-compatible']),
-  plaintextKey: optional(pipe(string(), nonEmpty('plaintextKey must not be empty when provided'), maxLength(MAX_KEY_LENGTH))),
-  timeoutMs: optional(pipe(number(), minValue(1000), maxValue(30_000)), 5000),
 })
 
 const OpenRouterSliceSchema = object({
@@ -352,45 +331,6 @@ export function createAdminRouterConfigRoutes(
       }
 
       return c.json({ models: await discoverModels(parsed.output, fetchImpl), source: 'models' })
-    })
-    .get('/webnavior-audio', async (c) => {
-      const config = await service.currentWebnaviorAudioConfig()
-      return c.json({
-        asr: config.asr ? { ...config.asr, keyCiphertext: undefined, hasApiKey: Boolean(config.asr.keyCiphertext) } : undefined,
-        tts: config.tts ? { ...config.tts, keyCiphertext: undefined, hasApiKey: Boolean(config.tts.keyCiphertext) } : undefined,
-      })
-    })
-    .post('/webnavior-audio', async (c) => {
-      const raw = await c.req.json().catch(() => null)
-      const parsed = safeParse(WebnaviorAudioConfigSchema, raw)
-      if (!parsed.success)
-        throw createBadRequestError('Invalid Webnavior audio configuration', 'INVALID_BODY')
-      const config = await service.saveWebnaviorAudioConfig(parsed.output)
-      return c.json({
-        asr: config.asr ? { ...config.asr, keyCiphertext: undefined, hasApiKey: Boolean(config.asr.keyCiphertext) } : undefined,
-        tts: config.tts ? { ...config.tts, keyCiphertext: undefined, hasApiKey: Boolean(config.tts.keyCiphertext) } : undefined,
-      })
-    })
-    .delete('/webnavior-audio/:capability', async (c) => {
-      const capability = c.req.param('capability')
-      if (capability !== 'asr' && capability !== 'tts')
-        throw createBadRequestError('Invalid audio capability', 'INVALID_BODY')
-      await service.clearWebnaviorAudioConfig(capability)
-      return c.body(null, 204)
-    })
-    .get('/webnavior-embedding', async (c) => {
-      const config = await service.currentWebnaviorEmbeddingConfig()
-      return c.json(config
-        ? { ...config, keyCiphertext: undefined, hasApiKey: Boolean(config.keyCiphertext) }
-        : { configured: false, hasApiKey: false })
-    })
-    .post('/webnavior-embedding', async (c) => {
-      const raw = await c.req.json().catch(() => null)
-      const parsed = safeParse(WebnaviorEmbeddingConfigSchema, raw)
-      if (!parsed.success)
-        throw createBadRequestError('Invalid Webnavior embedding configuration', 'INVALID_BODY')
-      const config = await service.saveWebnaviorEmbeddingConfig(parsed.output)
-      return c.json({ ...config, keyCiphertext: undefined, hasApiKey: Boolean(config?.keyCiphertext) })
     })
     .delete('/models/:modelName', async (c) => {
       const modelName = c.req.param('modelName').trim()

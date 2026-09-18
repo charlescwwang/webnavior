@@ -798,37 +798,4 @@ describe('createAdminRouterConfigService', () => {
       { kind: 'stepfun', target: 'llm-router', surface: 'tts', modelName: 'stepfun/stepaudio-2.5-tts', keyEntryId: 'stepfun-tts-prod-1' },
     ])
   })
-
-  it('encrypts and publishes a kiosk embedding connection while retaining its key on URL changes', async () => {
-    const envelope = freshEnvelope()
-    const kv = fakeConfigKV()
-    const redis = fakeRedis(kv.publishedChannels)
-    const service = createAdminRouterConfigService({ configKV: kv.service, envelope, redis })
-
-    await service.saveWebnaviorEmbeddingConfig({
-      baseURL: 'http://ollama.local:11434/v1',
-      modelName: 'gemma-embedding:latest',
-      plaintextKey: 'embedding-secret',
-      provider: 'ollama',
-    })
-    await service.saveWebnaviorEmbeddingConfig({
-      baseURL: 'https://embeddings.example.com/v1',
-      modelName: 'text-embedding-3-small',
-      provider: 'openai-compatible',
-    })
-
-    const saved = kv.store.get('WEBNAVIOR_EMBEDDING_CONFIG') as {
-      baseURL: string
-      keyCiphertext?: string
-      modelName: string
-      provider: string
-    }
-    expect(saved).toMatchObject({
-      baseURL: 'https://embeddings.example.com/v1',
-      modelName: 'text-embedding-3-small',
-      provider: 'openai-compatible',
-    })
-    expect(envelope.decryptKey(saved.keyCiphertext!, { keyEntryId: 'default', modelName: 'webnavior-kiosk:embedding' }).toString('utf8')).toBe('embedding-secret')
-    expect(kv.publishedChannels.filter(item => item.channel === 'configkv:invalidate')).toHaveLength(2)
-  })
 })

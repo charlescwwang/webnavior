@@ -1,7 +1,6 @@
 import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
-import type { KioskMediaCapturePolicy, KioskModelOverrides, KioskProfileSnapshot } from '../../../schemas/kiosk'
-import type { ConfigKVService } from '../../../services/adapters/config-kv'
+import type { KioskMediaCapturePolicy, KioskProfileSnapshot } from '../../../schemas/kiosk'
 import type { KioskService } from '../../../services/domain/kiosk'
 import type { KioskCharacterAssetService } from '../../../services/domain/kiosk-character-assets'
 import type { KioskMediaService } from '../../../services/domain/kiosk-media'
@@ -13,7 +12,6 @@ import { Hono } from 'hono'
 import { array, boolean, integer, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, string } from 'valibot'
 
 import { authGuard } from '../../../middlewares/auth'
-import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../../services/adapters/config-kv'
 import { KioskProfileSnapshotSchema } from '../../../services/domain/kiosk'
 import { createBadRequestError, createForbiddenError } from '../../../utils/error'
 import { createAdminKioskCharacterAssetRoutes } from './character-assets'
@@ -56,91 +54,6 @@ const deviceBatchSchema = object({
   deviceIds: pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(100)),
 })
 
-const modelOverridesSchema = object({
-  asr: optional(string()),
-  llm: optional(string()),
-  tts: optional(string()),
-  vision: optional(string()),
-})
-
-type ModelCategory = 'asr' | 'llm' | 'tts' | 'vision'
-
-interface ApprovedModelCatalog {
-  available: Record<ModelCategory, string[]>
-  defaults: Record<ModelCategory, string | null>
-  sources: Record<ModelCategory, Record<string, { baseURL: string, upstreamModel: string, voice?: string }>>
-}
-
-function modelSource(id: string, upstream: unknown): { baseURL: string, upstreamModel: string } | undefined {
-  if (!upstream || typeof upstream !== 'object' || !('baseURL' in upstream) || typeof upstream.baseURL !== 'string')
-    return undefined
-  return {
-    baseURL: upstream.baseURL,
-    upstreamModel: 'overrideModel' in upstream && typeof upstream.overrideModel === 'string' ? upstream.overrideModel : id,
-  }
-}
-
-async function getApprovedModelCatalog(configKV: ConfigKVService): Promise<ApprovedModelCatalog> {
-  const [routerConfig, audioConfig, defaultChatModel] = await Promise.all([
-    configKV.getOptional('LLM_ROUTER_CONFIG'),
-    configKV.getOptional('WEBNAVIOR_AUDIO_CONFIG'),
-    configKV.getOptional('DEFAULT_CHAT_MODEL'),
-  ])
-  const sources: ApprovedModelCatalog['sources'] = {
-    // Kiosk audio is dispatched through the Webnavior gateway, not the
-    // general AIRI router. Listing router models here makes a selection that
-    // the gateway will always reject as an unconfigured audio policy.
-    asr: {},
-    llm: Object.fromEntries(Object.entries(routerConfig?.llm.models ?? {}).flatMap(([id, model]) => {
-      const source = modelSource(id, model.upstreams[0])
-      return source ? [[id, source]] : []
-    })),
-    tts: {},
-    // VLM follows the same router and provider configuration as chat. The
-    // selected model itself declares image support to its upstream provider.
-    vision: Object.fromEntries(Object.entries(routerConfig?.llm.models ?? {}).filter(([id]) => id.startsWith('vlm/')).flatMap(([id, model]) => {
-      const source = modelSource(id, model.upstreams[0])
-      return source ? [[id, source]] : []
-    })),
-  }
-  if (audioConfig?.asr) {
-    sources.asr[audioConfig.asr.modelName] = {
-      baseURL: audioConfig.asr.baseURL,
-      upstreamModel: audioConfig.asr.upstreamModel,
-    }
-  }
-  if (audioConfig?.tts) {
-    sources.tts[audioConfig.tts.modelName] = {
-      baseURL: audioConfig.tts.baseURL,
-      upstreamModel: audioConfig.tts.upstreamModel,
-      voice: audioConfig.tts.voice ?? DEFAULT_WEBNAVIOR_TTS_VOICE,
-    }
-  }
-  return {
-    available: {
-      asr: Object.keys(sources.asr).sort(),
-      llm: Object.keys(routerConfig?.llm.models ?? {}).sort(),
-      tts: Object.keys(sources.tts).sort(),
-      vision: Object.keys(routerConfig?.llm.models ?? {}).filter(id => id.startsWith('vlm/')).sort(),
-    },
-    defaults: {
-      asr: audioConfig?.asr?.modelName ?? null,
-      llm: defaultChatModel,
-      tts: audioConfig?.tts?.modelName ?? null,
-      vision: null,
-    },
-    sources,
-  }
-}
-
-function assertApprovedOverrides(overrides: KioskModelOverrides, catalog: ApprovedModelCatalog) {
-  for (const category of ['asr', 'llm', 'tts', 'vision'] as const) {
-    const modelId = overrides[category]
-    if (modelId && !catalog.available[category].includes(modelId))
-      throw createBadRequestError(`Model is not approved for ${category}`, 'MODEL_NOT_APPROVED')
-  }
-}
-
 /** Applies an independently auditable device operation without rolling back successful devices. */
 async function applyDeviceBatch(deviceIds: string[], operation: (deviceId: string) => Promise<void>) {
   const failedDeviceIds: string[] = []
@@ -176,7 +89,7 @@ function ownBytes(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
  * only their own Site; the domain service keeps that authorization rule next
  * to the Site membership data rather than depending on a global HTTP guard.
  */
-export function createAdminKioskRoutes(kioskService: KioskService, configKV: ConfigKVService, characterAssets: KioskCharacterAssetService, mediaService?: KioskMediaService) {
+export function createAdminKioskRoutes(kioskService: KioskService, characterAssets: KioskCharacterAssetService, mediaService?: KioskMediaService) {
   return new Hono<HonoEnv>()
     .use('*', authGuard)
     .route('/', createAdminKioskCharacterAssetRoutes({ assets: characterAssets, kioskService }))
@@ -289,20 +202,13 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
         userId: c.get('user')!.id,
       }))
     })
-    .get('/sites/:siteId/model-policy', async (c) => {
+    .get('/sites/:siteId/technical-settings', async (c) => {
       const capabilities = await kioskService.getSiteManagementCapabilities({ siteId: c.req.param('siteId'), userId: c.get('user')!.id })
       if (!capabilities.canEditTechnicalSettings)
         throw createForbiddenError()
-      const [catalog, overrides] = await Promise.all([
-        getApprovedModelCatalog(configKV),
-        kioskService.getSiteModelOverrides(c.req.param('siteId')),
-      ])
       const siteId = c.req.param('siteId')
       const voiceVadSettings = await kioskService.getSiteVoiceVadSettings(siteId)
-      // Existing PWA clients may still render the prior model-policy bundle
-      // while a new static deployment activates. Keep its scalar field derived
-      // from the authoritative settings object during that rollout window.
-      return c.json({ ...catalog, overrides, proactiveVlmEnabled: await kioskService.getSiteProactiveVlmEnabled(siteId), performanceProfile: await kioskService.getSitePerformanceProfile(siteId), voiceVadSettings, voiceVadThreshold: voiceVadSettings.threshold })
+      return c.json({ proactiveVlmEnabled: await kioskService.getSiteProactiveVlmEnabled(siteId), performanceProfile: await kioskService.getSitePerformanceProfile(siteId), voiceVadSettings, voiceVadThreshold: voiceVadSettings.threshold })
     })
     .get('/sites/:siteId/profile', async (c) => {
       const capabilities = await kioskService.getSiteManagementCapabilities({ siteId: c.req.param('siteId'), userId: c.get('user')!.id })
@@ -337,7 +243,7 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
       const siteId = c.req.param('siteId')
       const userId = c.get('user')!.id
       const lines: string[] = []
-      for (const visitorSessionId of [...new Set(result.output.visitorSessionIds)]) {
+      for (const visitorSessionId of new Set(result.output.visitorSessionIds)) {
         const detail = await kioskService.getVisitorSessionForUser({ userId, visitorSessionId })
         if (detail.session.siteId !== siteId)
           throw createForbiddenError()
@@ -387,7 +293,7 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
       const userId = c.get('user')!.id
       const zip = new JSZip()
       const records: string[] = []
-      for (const visitorSessionId of [...new Set(result.output.visitorSessionIds)]) {
+      for (const visitorSessionId of new Set(result.output.visitorSessionIds)) {
         const detail = await kioskService.getVisitorSessionForUser({ userId, visitorSessionId })
         if (detail.session.siteId !== siteId)
           throw createForbiddenError()
@@ -467,20 +373,6 @@ export function createAdminKioskRoutes(kioskService: KioskService, configKV: Con
       if (!result.success)
         throw createBadRequestError('Invalid kiosk voice VAD settings', 'INVALID_REQUEST', result.issues)
       return c.json(await kioskService.setSiteVoiceVadSettings({ actorUserId: c.get('user')!.id, settings: result.output as KioskVoiceVadSettings, siteId: c.req.param('siteId') }))
-    })
-    .put('/sites/:siteId/model-policy', async (c) => {
-      const body = await c.req.json().catch(() => null)
-      const result = safeParse(modelOverridesSchema, body)
-      if (!result.success)
-        throw createBadRequestError('Invalid kiosk model policy', 'INVALID_REQUEST', result.issues)
-
-      const siteId = c.req.param('siteId')
-      const capabilities = await kioskService.getSiteManagementCapabilities({ siteId, userId: c.get('user')!.id })
-      if (!capabilities.canEditTechnicalSettings)
-        throw createForbiddenError()
-      const catalog = await getApprovedModelCatalog(configKV)
-      assertApprovedOverrides(result.output as KioskModelOverrides, catalog)
-      return c.json(await kioskService.setSiteModelOverrides({ siteId, overrides: result.output as KioskModelOverrides }))
     })
     .put('/sites/:siteId/profile-draft', async (c) => {
       const body = await c.req.json().catch(() => null)

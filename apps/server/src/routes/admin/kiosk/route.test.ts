@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAdminKioskRoutes } from '.'
 import { ApiError } from '../../../utils/error'
 
-function createTestApp(configKV: ConfigKVService) {
+function createTestApp(_configKV?: ConfigKVService) {
   const kioskService = {
     getSiteManagementCapabilities: vi.fn(async () => ({
       canEditExperience: true,
@@ -17,7 +17,6 @@ function createTestApp(configKV: ConfigKVService) {
       canManageDevices: true,
       canPublishExperience: true,
     })),
-    getSiteModelOverrides: vi.fn(async () => ({})),
     getSiteProactiveVlmEnabled: vi.fn(async () => false),
     getSitePerformanceProfile: vi.fn(async () => 'balanced'),
     getSiteVoiceVadSettings: vi.fn(async () => ({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 })),
@@ -29,7 +28,6 @@ function createTestApp(configKV: ConfigKVService) {
     deleteDevice: vi.fn(async () => undefined),
     setSitePerformanceProfile: vi.fn(async ({ profile }: { profile: 'constrained' | 'balanced' | 'high' }) => ({ performanceProfile: profile })),
     setSiteVoiceVadSettings: vi.fn(async ({ settings }: { settings: object }) => ({ voiceVadSettings: settings })),
-    setSiteModelOverrides: vi.fn(async () => ({})),
   } as unknown as KioskService
   const characterAssets = {} as KioskCharacterAssetService
 
@@ -38,7 +36,7 @@ function createTestApp(configKV: ConfigKVService) {
       c.set('user', { id: 'admin-1', email: 'admin@example.com', role: 'admin' } as HonoEnv['Variables']['user'])
       await next()
     })
-    .route('/api/admin/kiosk', createAdminKioskRoutes(kioskService, configKV, characterAssets))
+    .route('/api/admin/kiosk', createAdminKioskRoutes(kioskService, characterAssets))
     .onError((error, c) => {
       if (error instanceof ApiError)
         return c.json({ error: error.errorCode }, error.statusCode)
@@ -49,8 +47,7 @@ function createTestApp(configKV: ConfigKVService) {
 
 describe('admin kiosk model policy route', () => {
   it('publishes the signed-in administrator default experience and provisions a site from it', async () => {
-    const configKV = { getOptional: vi.fn(async () => null) } as unknown as ConfigKVService
-    const { app, kioskService } = createTestApp(configKV)
+    const { app, kioskService } = createTestApp()
     const draft = {
       name: '營運者預設',
       snapshot: {
@@ -73,82 +70,6 @@ describe('admin kiosk model policy route', () => {
     const site = await app.request('/api/admin/kiosk/sites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '新店' }) })
     expect(site.status).toBe(201)
     expect(kioskService.provisionSite).toHaveBeenCalledWith({ name: '新店', ownerUserId: 'admin-1' })
-  })
-
-  it('accepts an unprefixed LLM router model ID', async () => {
-    const configKV = {
-      getOptional: vi.fn(async (key: string) => {
-        if (key === 'LLM_ROUTER_CONFIG') {
-          return {
-            llm: {
-              models: {
-                'chat-default': { upstreams: [{ baseURL: 'https://router.example.com/v1' }] },
-              },
-            },
-          }
-        }
-        return key === 'DEFAULT_CHAT_MODEL' ? 'chat-default' : null
-      }),
-    } as unknown as ConfigKVService
-    const { app } = createTestApp(configKV)
-
-    const response = await app.request('/api/admin/kiosk/sites/site-1/model-policy', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ llm: 'chat-default' }),
-    })
-
-    expect(response.status).toBe(200)
-  })
-
-  it('offers only the executable Webnavior TTS connection and returns its voice', async () => {
-    const configKV = {
-      getOptional: vi.fn(async (key: string) => {
-        if (key === 'LLM_ROUTER_CONFIG') {
-          return {
-            llm: { models: {} },
-            asr: { models: {} },
-            tts: {
-              models: {
-                'router-only-tts': { upstreams: [{ baseURL: 'https://router.example.com/v1' }] },
-              },
-            },
-          }
-        }
-        if (key === 'WEBNAVIOR_AUDIO_CONFIG') {
-          return {
-            tts: {
-              baseURL: 'https://speech.example.com/v1',
-              modelName: 'webnavior-tts',
-              upstreamModel: 'edge-tts-v1',
-              voice: 'zh-TW-HsiaoChenNeural',
-            },
-          }
-        }
-        return null
-      }),
-    } as unknown as ConfigKVService
-    const { app } = createTestApp(configKV)
-
-    const response = await app.request('/api/admin/kiosk/sites/site-1/model-policy')
-
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
-      available: { tts: ['webnavior-tts'] },
-      defaults: { tts: 'webnavior-tts' },
-      sources: {
-        tts: {
-          'webnavior-tts': {
-            baseURL: 'https://speech.example.com/v1',
-            upstreamModel: 'edge-tts-v1',
-            voice: 'zh-TW-HsiaoChenNeural',
-          },
-        },
-      },
-      performanceProfile: 'balanced',
-      voiceVadSettings: { threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 },
-      voiceVadThreshold: 0.5,
-    })
   })
 
   it('stores a selected kiosk performance profile', async () => {

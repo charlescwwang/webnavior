@@ -15,7 +15,16 @@ import * as schema from '../../schemas'
 
 const llmGateway = {
   complete: async () => Response.json({ choices: [{ message: { content: '您好，我可以協助您點餐。' } }] }),
-  getDefaultModel: async () => 'test-model',
+}
+
+const runtimeModelPolicy = {
+  modelFor: async (capability: 'chat' | 'vision' | 'asr' | 'tts') => capability === 'vision'
+    ? 'test-vlm'
+    : capability === 'asr'
+      ? 'restaurant-asr'
+      : capability === 'tts'
+        ? 'restaurant-tts'
+        : 'test-model',
 }
 
 describe('kiosk routes', () => {
@@ -40,7 +49,7 @@ describe('kiosk routes', () => {
           return c.json({ error: error.errorCode }, error.statusCode)
         throw error
       })
-      .route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, secureCookies: false }))
+      .route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false }))
     const enrollment = await app.request('/api/kiosk/development/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -72,6 +81,7 @@ describe('kiosk routes', () => {
       developmentRegistrationEnabled: true,
       kioskService: createKioskService(db),
       llmGateway,
+      runtimeModelPolicy,
       secureCookies: false,
     }))
 
@@ -119,6 +129,7 @@ describe('kiosk routes', () => {
       developmentRegistrationEnabled: false,
       kioskService: createKioskService(db),
       llmGateway,
+      runtimeModelPolicy,
       secureCookies: false,
     }))
 
@@ -134,6 +145,7 @@ describe('kiosk routes', () => {
       embeddingGateway: { embed },
       kioskService: createKioskService(db),
       llmGateway,
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -164,7 +176,8 @@ describe('kiosk routes', () => {
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
       kioskService,
-      llmGateway: { complete, getDefaultModel: async () => 'test-model' },
+      llmGateway: { complete },
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -174,7 +187,6 @@ describe('kiosk routes', () => {
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
     const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
-    await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { vision: 'test-vlm' } })
     await db.update(schema.kioskDevices).set({ settings: { ...defaultDeviceSettings, overrides: { observationEnabled: true, reminderEnabled: true, proactiveVlmEnabled: true } } }).where(eq(schema.kioskDevices.id, device!.id))
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',
@@ -209,7 +221,8 @@ describe('kiosk routes', () => {
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
       kioskService,
-      llmGateway: { complete, getDefaultModel: async () => 'test-model' },
+      llmGateway: { complete },
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -218,6 +231,10 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ registrationCode: '483920' }),
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await db.update(schema.kioskDevices)
+      .set({ settings: { ...defaultDeviceSettings, overrides: { observationEnabled: true, greetingEnabled: true } } })
+      .where(eq(schema.kioskDevices.id, device!.id))
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
@@ -248,6 +265,7 @@ describe('kiosk routes', () => {
       developmentRegistrationEnabled: true,
       kioskService,
       llmGateway,
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -257,7 +275,6 @@ describe('kiosk routes', () => {
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
     const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
-    await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { vision: 'test-vlm' } })
     await db.update(schema.kioskDevices).set({ settings: { ...defaultDeviceSettings, overrides: { observationEnabled: true, greetingEnabled: true, proactiveVlmEnabled: true } } }).where(eq(schema.kioskDevices.id, device!.id))
 
     const started = await app.request('/api/kiosk/visitor-sessions', {
@@ -319,13 +336,14 @@ describe('kiosk routes', () => {
     })
   })
 
-  it('uses a site-approved LLM override instead of the system default', async () => {
+  it('uses the system control-plane chat binding', async () => {
     const kioskService = createKioskService(db)
     const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '已依店別模型回覆。' } }] }))
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
       kioskService,
-      llmGateway: { complete, getDefaultModel: async () => 'system-default' },
+      llmGateway: { complete },
+      runtimeModelPolicy,
       secureCookies: false,
     }))
 
@@ -335,9 +353,6 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ registrationCode: '483920' }),
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
-    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
-    await kioskService.setSiteModelOverrides({ siteId: device!.siteId, overrides: { llm: 'restaurant-specialist' } })
-
     const started = await app.request('/api/kiosk/visitor-sessions', {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
@@ -352,7 +367,7 @@ describe('kiosk routes', () => {
     })
 
     expect(reply.status).toBe(200)
-    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'restaurant-specialist' }))
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ modelName: 'test-model' }))
   })
 
   it('keeps Server-owned audio model policy out of the device bootstrap', async () => {
@@ -361,6 +376,7 @@ describe('kiosk routes', () => {
       developmentRegistrationEnabled: true,
       kioskService,
       llmGateway,
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -369,12 +385,6 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ registrationCode: '483920' }),
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
-    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
-    await kioskService.setSiteModelOverrides({
-      siteId: device!.siteId,
-      overrides: { asr: 'restaurant-asr', tts: 'restaurant-tts' },
-    })
-
     const bootstrap = await app.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })
 
     expect(bootstrap.status).toBe(200)
@@ -394,6 +404,7 @@ describe('kiosk routes', () => {
       developmentRegistrationEnabled: true,
       kioskService,
       llmGateway,
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -402,12 +413,6 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ registrationCode: '483920' }),
     })
     const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
-    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
-    await kioskService.setSiteModelOverrides({
-      siteId: device!.siteId,
-      overrides: { asr: 'restaurant-asr', tts: 'restaurant-tts' },
-    })
-
     const recording = new FormData()
     recording.set('file', new File(['audio'], 'order.webm', { type: 'audio/webm' }))
     const transcript = await app.request('/api/kiosk/audio/transcriptions', {
@@ -441,7 +446,8 @@ describe('kiosk routes', () => {
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
       kioskService: createKioskService(db),
-      llmGateway: { complete, getDefaultModel: async () => 'test-model' },
+      llmGateway: { complete },
+      runtimeModelPolicy,
       secureCookies: false,
     }))
     const registration = await app.request('/api/kiosk/development/register', {
