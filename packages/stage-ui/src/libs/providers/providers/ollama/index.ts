@@ -126,10 +126,13 @@ export const providerOllama = defineProvider<OllamaConfig>({
         const chatOptions = baseProvider.chat(model)
         const think = resolveOllamaThink(model, config.thinkingMode)
 
-        if (think === undefined)
-          return chatOptions
-
-        return { ...chatOptions, think }
+        // xsAI serializes provider options as snake case, so this becomes the
+        // Ollama-specific `keep_alive: 1` request field for every chat step.
+        return {
+          ...chatOptions,
+          keepAlive: 1,
+          ...(think === undefined ? {} : { think }),
+        }
       },
     }
   },

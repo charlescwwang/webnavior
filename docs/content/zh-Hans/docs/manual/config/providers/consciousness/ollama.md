@@ -34,6 +34,8 @@ Ollama 是开源的本地大模型运行框架。它可以在自己的设备上�
 2. 保留默认 Base URL：`http://localhost:11434/v1/`；如果 Ollama 运行在其他设备上，填写该设备可访问的地址。
 3. 在“意识”中选择 Ollama 与刚才下载的模型。
 
+每次通过 AIRI 发送给 Ollama 的聊天请求都会带上 `keep_alive: 1`。
+
 ### 4. 配置校验
 
 1. **Ping API**: 点击此按钮测试 AIRI 能否连接本地服务。
