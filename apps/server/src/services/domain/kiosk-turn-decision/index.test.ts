@@ -4,7 +4,20 @@ import { calculateCosineSimilarity, decideKioskTurn, evaluateKioskTurn } from '.
 
 describe('decideKioskTurn', () => {
   it('keeps a new customer request when no work is active', () => {
-    expect(decideKioskTurn({ activeWork: false, text: '我要一碗擔仔麵' })).toBe('continue')
+    expect(evaluateKioskTurn({ activeWork: false, presenceState: 'ENGAGED', text: '我要一碗擔仔麵' })).toEqual({ decision: 'continue', reason: 'initial-customer-intent' })
+  })
+
+  it('filters weak and passing speech while retaining an engaged ambiguous candidate', () => {
+    expect(decideKioskTurn({ activeWork: false, presenceState: 'ENGAGED', text: '嗯' })).toBe('ignore')
+    expect(decideKioskTurn({ activeWork: false, presenceState: 'PASSING', text: '我要一碗擔仔麵' })).toBe('ignore')
+    expect(evaluateKioskTurn({ activeWork: false, presenceState: 'ENGAGED', text: '今天天氣真好' })).toEqual({ decision: 'candidate', reason: 'initial-uncertain' })
+    expect(evaluateKioskTurn({ activeWork: false, presenceState: 'DISTANT', text: '今天天氣真好' })).toEqual({ decision: 'ignore', reason: 'initial-no-customer-intent' })
+  })
+
+  it('lets a ready Speech Guard supplement the initial text-pattern fallback', () => {
+    expect(evaluateKioskTurn({ activeWork: false, presenceState: 'ENGAGED', speechGuardLabel: 'ORDER_INTENT', text: '我想吃一點清淡的' })).toEqual({ decision: 'continue', reason: 'speech-guard-customer-intent' })
+    expect(evaluateKioskTurn({ activeWork: false, presenceState: 'ENGAGED', speechGuardLabel: 'BACKGROUND_CONVERSATION', text: '我昨天吃過這個' })).toEqual({ decision: 'candidate', reason: 'speech-guard-uncertain' })
+    expect(evaluateKioskTurn({ activeWork: false, presenceState: 'ENGAGED', speechGuardLabel: 'BACKGROUND_CONVERSATION', text: '肚子餓了，有什麼東西可以吃' })).toEqual({ decision: 'continue', reason: 'initial-customer-intent' })
   })
 
   it('ignores weak or duplicate background speech during an order', () => {

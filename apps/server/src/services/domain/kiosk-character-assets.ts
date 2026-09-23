@@ -1,5 +1,5 @@
 import type { Database } from '../../libs/db'
-import type { KioskCharacterAssetReference } from '../../schemas/kiosk'
+import type { KioskCharacterAssetReference, KioskSceneBackgroundAssetReference, KioskStoredAssetFormat } from '../../schemas/kiosk'
 
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
@@ -9,23 +9,26 @@ import { and, eq } from 'drizzle-orm'
 
 import * as schema from '../../schemas'
 
-/** A validated avatar payload ready to become a server-owned kiosk asset. */
-export interface CharacterAssetUpload {
+/** A validated model, motion, or scene payload ready to become a server-owned kiosk asset. */
+export interface KioskAssetUpload<TFormat extends KioskStoredAssetFormat = KioskStoredAssetFormat> {
   card: Record<string, string>
   data: Uint8Array
-  format: KioskCharacterAssetReference['format']
+  format: TFormat
   name: string
   siteId: string
 }
 
-/** Resolves the binary response metadata for an immutable kiosk avatar. */
-export interface CharacterAssetFile {
+/** Resolves the binary response metadata for an immutable kiosk asset. */
+export interface KioskAssetFile {
   data: Uint8Array
-  format: KioskCharacterAssetReference['format']
+  format: KioskStoredAssetFormat
 }
 
+type KioskStoredAssetReference = KioskCharacterAssetReference | KioskSceneBackgroundAssetReference
+type KioskAssetReferenceForFormat<TFormat extends KioskStoredAssetFormat> = Extract<KioskStoredAssetReference, { format: TFormat }>
+
 /**
- * Owns the durable avatar asset boundary.
+ * Owns the durable kiosk asset boundary.
  *
  * Postgres stores metadata and profile references while the configured local
  * volume stores binary payloads. Content hashes make a repeated upload for one
@@ -33,30 +36,30 @@ export interface CharacterAssetFile {
  */
 export interface KioskCharacterAssetService {
   cleanupFiles: (assets: KioskCharacterAssetFileReference[]) => Promise<void>
-  getFile: (assetId: string) => Promise<CharacterAssetFile | undefined>
+  getFile: (assetId: string) => Promise<KioskAssetFile | undefined>
   listSiteFiles: (siteId: string) => Promise<KioskCharacterAssetFileReference[]>
-  save: (input: CharacterAssetUpload) => Promise<KioskCharacterAssetReference>
+  save: <TFormat extends KioskStoredAssetFormat>(input: KioskAssetUpload<TFormat>) => Promise<KioskAssetReferenceForFormat<TFormat>>
 }
 
 /** File references captured before the owning Site database row is deleted. */
 export interface KioskCharacterAssetFileReference {
-  format: KioskCharacterAssetReference['format']
+  format: KioskStoredAssetFormat
   id: string
 }
 
 export function createKioskCharacterAssetService(db: Database, assetDirectory: string): KioskCharacterAssetService {
-  function filePath(assetId: string, format: KioskCharacterAssetReference['format']) {
+  function filePath(assetId: string, format: KioskStoredAssetFormat) {
     const extension = format === 'live2d_zip' ? 'zip' : format
     return join(assetDirectory, `${assetId}.${extension}`)
   }
 
-  async function save(input: CharacterAssetUpload): Promise<KioskCharacterAssetReference> {
+  async function save<TFormat extends KioskStoredAssetFormat>(input: KioskAssetUpload<TFormat>): Promise<KioskAssetReferenceForFormat<TFormat>> {
     const sha256 = createHash('sha256').update(input.data).digest('hex')
     const existing = await db.query.kioskCharacterAssets.findFirst({
       where: and(eq(schema.kioskCharacterAssets.siteId, input.siteId), eq(schema.kioskCharacterAssets.sha256, sha256)),
     })
     if (existing) {
-      return { id: existing.id, name: existing.name, format: existing.format, sha256: existing.sha256 }
+      return { id: existing.id, name: existing.name, format: existing.format, sha256: existing.sha256 } as KioskAssetReferenceForFormat<TFormat>
     }
 
     const [asset] = await db.insert(schema.kioskCharacterAssets).values({
@@ -77,10 +80,10 @@ export function createKioskCharacterAssetService(db: Database, assetDirectory: s
       throw cause
     }
 
-    return { id: asset.id, name: asset.name, format: asset.format, sha256: asset.sha256 }
+    return { id: asset.id, name: asset.name, format: asset.format, sha256: asset.sha256 } as KioskAssetReferenceForFormat<TFormat>
   }
 
-  async function getFile(assetId: string): Promise<CharacterAssetFile | undefined> {
+  async function getFile(assetId: string): Promise<KioskAssetFile | undefined> {
     const asset = await db.query.kioskCharacterAssets.findFirst({ where: eq(schema.kioskCharacterAssets.id, assetId) })
     if (!asset)
       return

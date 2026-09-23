@@ -81,7 +81,7 @@ describe('useKioskInteractionTurn', () => {
     scope.stop()
   })
 
-  it('keeps a candidate separate from customer work and aborts it when the work changes', () => {
+  it('keeps a candidate separate from customer work while the model is thinking or using a tool', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())
     if (!interaction)
@@ -93,8 +93,14 @@ describe('useKioskInteractionTurn', () => {
     expect(interaction.isCurrent(activeTurn)).toBe(true)
     expect(interaction.isCurrentVoiceCandidate(candidate!)).toBe(true)
 
+    interaction.advance(activeTurn, 'using-tool')
+    const toolCandidate = interaction.beginCustomerVoiceCandidate()
+    expect(toolCandidate).toBeDefined()
+    expect(interaction.isCurrent(activeTurn)).toBe(true)
+    expect(interaction.isCurrentVoiceCandidate(toolCandidate!)).toBe(true)
+
     interaction.begin('voice', 'hearing-speech')
-    expect(candidate!.signal.aborted).toBe(true)
+    expect(toolCandidate!.signal.aborted).toBe(true)
     scope.stop()
   })
 })

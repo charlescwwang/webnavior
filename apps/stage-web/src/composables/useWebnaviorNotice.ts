@@ -12,6 +12,9 @@ let nextId = 0
 /** Central, short-lived feedback for Webnavior API operations. */
 export function useWebnaviorNotice() {
   function show(message: string, tone: WebnaviorNotice['tone']) {
+    // Avoid filling the viewport when a failed request retries repeatedly.
+    if (tone === 'error' && notices.value.some(notice => notice.tone === tone && notice.message === message))
+      return
     const id = nextId++
     notices.value = [...notices.value, { id, message, tone }]
     window.setTimeout(dismiss, 5_000, id)

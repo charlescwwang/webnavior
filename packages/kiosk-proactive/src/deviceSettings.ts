@@ -45,6 +45,8 @@ export interface DeviceSettingsValues {
   /** Server-managed rollout switch for the anonymous local presence policy. */
   presenceVisionMode: PresenceVisionMode
   voiceVadSettings: KioskVoiceVadSettings
+  /** Enables on-screen ASR and turn-policy diagnostics for this device only. */
+  voiceDiagnosticsEnabled: boolean
 }
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
@@ -68,6 +70,7 @@ export const deviceSettingKeys = [
   'performanceProfile',
   'presenceVisionMode',
   'voiceVadSettings',
+  'voiceDiagnosticsEnabled',
 ] as const satisfies readonly (keyof DeviceSettingsValues)[]
 
 export type DeviceSettingKey = typeof deviceSettingKeys[number]
@@ -115,6 +118,7 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   performanceProfile: 'balanced',
   presenceVisionMode: 'pose_plus_conditional_face',
   voiceVadSettings: defaultKioskVoiceVadSettings,
+  voiceDiagnosticsEnabled: false,
 }
 
 /** Site defaults < administrator device overrides < explicitly delegated local overrides. */

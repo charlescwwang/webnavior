@@ -22,3 +22,27 @@ export function createKioskStartupPermissionGate() {
 
   return { settle, wait }
 }
+
+/**
+ * Re-checks browser microphone consent whenever a voice-only kiosk starts.
+ * The persisted audio toggle only records the operator's preference; it must
+ * not be used as evidence of browser consent.
+ */
+export async function prepareKioskMicrophonePermission(input: {
+  audioInputEnabled: boolean
+  requestPermission: () => Promise<void>
+  setAudioInputEnabled: (enabled: boolean) => void
+  voiceConversationOnly: boolean
+}) {
+  if (!input.voiceConversationOnly)
+    return
+
+  // Browsers do not display another prompt for an existing grant, but asking
+  // again detects a permission reset or revocation between kiosk sessions.
+  await input.requestPermission()
+
+  // Keep the audio pipeline running after a previously granted permission,
+  // including when its local preference was reset between kiosk sessions.
+  if (!input.audioInputEnabled)
+    input.setAudioInputEnabled(true)
+}

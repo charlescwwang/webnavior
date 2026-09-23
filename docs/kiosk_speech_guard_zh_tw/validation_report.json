@@ -3,11 +3,11 @@
   "scope": "schema, counts, split isolation, intentional duplicates, pair integrity; no model accuracy claim",
   "normalization": "NFKC + casefold; remove Unicode punctuation, separators, symbols and controls",
   "prototype": {
-    "rows": 680,
-    "unique_exact_texts": 652,
-    "unique_normalized_texts": 652,
+    "rows": 685,
+    "unique_exact_texts": 657,
+    "unique_normalized_texts": 657,
     "labels": {
-      "ORDER_INTENT": 120,
+      "ORDER_INTENT": 125,
       "AGENT_RESPONSE": 180,
       "KIOSK_COMMAND": 120,
       "BACKGROUND_CONVERSATION": 140,
@@ -15,43 +15,44 @@
     },
     "difficulty": {
       "easy": 89,
-      "hard": 496,
+      "hard": 501,
       "medium": 95
     },
     "requires_context": {
       "true": 362,
-      "false": 318
+      "false": 323
     },
     "agent_responses_at_most_4_normalized_characters": 176,
     "source_dependent_background_rows": 32
   },
   "hard_test": {
-    "rows": 150,
-    "unique_exact_texts": 135,
-    "unique_normalized_texts": 135,
+    "rows": 154,
+    "unique_exact_texts": 139,
+    "unique_normalized_texts": 139,
     "labels": {
-      "ORDER_INTENT": 30,
+      "ORDER_INTENT": 32,
       "AGENT_RESPONSE": 30,
       "KIOSK_COMMAND": 30,
-      "BACKGROUND_CONVERSATION": 30,
+      "BACKGROUND_CONVERSATION": 32,
       "AMBIGUOUS": 30
     },
     "difficulty": {
-      "hard": 150
+      "hard": 154
     },
     "requires_context": {
       "true": 67,
-      "false": 83
+      "false": 87
     },
     "agent_responses_at_most_4_normalized_characters": 29,
     "source_dependent_background_rows": 7,
-    "pairs": 75,
+    "pairs": 77,
     "pair_focus_counts": {
       "order_vs_reported_or_social_food_talk": 15,
       "same_text_with_vs_without_valid_agent_context": 15,
       "kiosk_action_vs_other_person_or_other_system": 15,
       "grounded_meal_request_vs_ungrounded_fragment": 15,
-      "elliptical_agent_answer_vs_explicit_system_action": 15
+      "elliptical_agent_answer_vs_explicit_system_action": 15,
+      "customer_menu_request_vs_social_food_talk": 2
     },
     "background_rows_with_preceding_agent_turn": 6,
     "ambiguous_rows_with_insufficient_supplied_context": 6
@@ -409,8 +410,8 @@
     }
   ],
   "sha256": {
-    "prototype_examples.jsonl": "8f91e16de73e42f5e25372fafe7a4fb9e2b80b317972bb55e5963eb8a22dc6ae",
-    "hard_test.jsonl": "411e1e930c9780d0e90927360c619bbe894fcd872755ae859f2250cae7d08c00",
+    "prototype_examples.jsonl": "a1e2e44dce26d27ddf2a849b9af1fbf3f890c6f8a8bdbd3e27c924fab8b495f9",
+    "hard_test.jsonl": "e41dbb2dc781e4960085fa47e415c238927bcecd87387650285698120805a850",
     "label_definitions.json": "32a7473711d357643bb81522d0206cf8fe466c84b7e4a2e20fb946cbdca47063"
   },
   "limitations": [

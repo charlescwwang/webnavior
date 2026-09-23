@@ -4,6 +4,7 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
 import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
+import type { KioskVoiceDiagnosticEntry } from './KioskVoiceDiagnostics.vue'
 
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
@@ -12,6 +13,7 @@ import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@pro
 import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
 import { useVAD } from '@proj-airi/stage-ui/stores/ai/models/vad'
+import { useAudioContext } from '@proj-airi/stage-ui/stores/audio'
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useLlmToolsStore } from '@proj-airi/stage-ui/stores/llm-tools'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
@@ -29,6 +31,7 @@ import KioskConversation from './KioskConversation.vue'
 import KioskIdleDiagnostics from './KioskIdleDiagnostics.vue'
 import KioskPresenceDiagnostics from './KioskPresenceDiagnostics.vue'
 import KioskSessionNotice from './KioskSessionNotice.vue'
+import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
@@ -46,17 +49,25 @@ import { setKioskLocale } from '../modules/i18n'
 import { createKioskVadRecording } from '../services/kiosk-audio'
 import { decideKioskTurn as requestTurnDecision, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
-import { createKioskStartupPermissionGate } from '../services/kiosk-startup-permission-gate'
+import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
 
 type KioskOrientation = 'landscape' | 'portrait'
+type KioskMotionName = 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking'
+
+interface PendingSpeechCandidate {
+  recording: Blob
+  text: string
+}
 
 const props = defineProps<{
   device?: KioskDevice
   deviceSettings?: DeviceSettingsValues
   idleAnimation?: string
+  motionAnimations?: Partial<Record<KioskMotionName, string>>
+  sceneBackgroundUrl?: string
   mediaCaptureMode: KioskMediaCaptureMode
   performanceProfile: KioskPerformanceProfile
   proactiveVlmEnabled: boolean
@@ -64,6 +75,9 @@ const props = defineProps<{
   voiceVadSettings: KioskVoiceVadSettings
 }>()
 const emit = defineEmits<{ deviceSettingsUpdated: [] }>()
+
+const candidateConfirmationPrompt = '需要我幫您點餐嗎？'
+const candidateConfirmationTimeoutMs = 10_000
 
 const route = useRoute()
 const router = useRouter()
@@ -80,23 +94,83 @@ const { language } = storeToRefs(useSettings())
 const { enabled, stream } = storeToRefs(settingsAudioDeviceStore)
 const { askPermission: requestMicrophonePermission } = settingsAudioDeviceStore
 const chatSessionStore = useChatSessionStore()
+const { audioContext } = useAudioContext()
+const assistantAudioNode = shallowRef<AudioNode>()
 const { activeTools } = storeToRefs(useLlmToolsStore())
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const conversationMessages = shallowRef<ChatHistoryItem[]>([])
 const conversationWorkStatus = shallowRef<string>()
+const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
 const pendingTranscript = shallowRef<string>()
+const pendingSpeechCandidate = shallowRef<PendingSpeechCandidate>()
 const activeCustomerRequest = shallowRef<string>()
 const customerResetError = shallowRef<string>()
+const agentInteractionNotice = shallowRef<string>()
+const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
+let nextVoiceDiagnosticId = 0
 const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorKioskActivityManifest>>>()
 const interactionTurn = useKioskInteractionTurn()
+const transientMotion = shallowRef<'acknowledge' | 'greeting' | 'presentRecommendations'>()
+let transientMotionTimer: ReturnType<typeof setTimeout> | undefined
+let candidateConfirmationTimer: ReturnType<typeof setTimeout> | undefined
 const conversationSending = computed(() => (
   interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool'
 ))
+const activeMotionAnimation = computed(() => {
+  if (transientMotion.value)
+    return props.motionAnimations?.[transientMotion.value] ?? props.motionAnimations?.idle ?? props.idleAnimation
+  if (interactionTurn.phase.value === 'hearing-speech')
+    return props.motionAnimations?.listening ?? props.idleAnimation
+  if (interactionTurn.phase.value === 'transcribing' || conversationSending.value)
+    return props.motionAnimations?.thinking ?? props.idleAnimation
+  return props.motionAnimations?.idle ?? props.idleAnimation
+})
+const activeMotionLoop = computed(() => !transientMotion.value)
+const voiceDiagnosticsEnabled = computed(() => Boolean(props.deviceSettings?.voiceDiagnosticsEnabled))
+const stageBackgroundStyle = computed(() => props.sceneBackgroundUrl
+  ? { backgroundImage: `linear-gradient(180deg, rgb(4 16 18 / 14%), rgb(3 12 14 / 52%)), url("${props.sceneBackgroundUrl}")` }
+  : undefined,
+)
+
+function playTransientMotion(name: 'acknowledge' | 'greeting' | 'presentRecommendations') {
+  if (!props.motionAnimations?.[name])
+    return
+  transientMotion.value = name
+  if (transientMotionTimer)
+    clearTimeout(transientMotionTimer)
+  transientMotionTimer = setTimeout(() => {
+    transientMotion.value = undefined
+    transientMotionTimer = undefined
+  }, 1800)
+}
+
+function startVoiceDiagnostic() {
+  const id = ++nextVoiceDiagnosticId
+  if (!voiceDiagnosticsEnabled.value)
+    return id
+  const entry: KioskVoiceDiagnosticEntry = { id, status: 'recognizing' }
+  voiceDiagnosticEntries.value = [
+    ...voiceDiagnosticEntries.value,
+    entry,
+  ].slice(-8)
+  return id
+}
+
+function updateVoiceDiagnostic(id: number, patch: Omit<Partial<KioskVoiceDiagnosticEntry>, 'id'>) {
+  if (!voiceDiagnosticsEnabled.value)
+    return
+  voiceDiagnosticEntries.value = voiceDiagnosticEntries.value.map(entry => entry.id === id ? { ...entry, ...patch } : entry)
+}
 const assistantOutputInterruptible = computed(() => interactionTurn.phase.value === 'speaking')
-const voiceInputLocked = computed(() => (
-  interactionTurn.phase.value === 'transcribing' || conversationSending.value
-))
+const voiceInputLocked = computed(() => interactionTurn.phase.value === 'transcribing')
 const assistantPresence = computed<{ description: string, mode: KioskAssistantPresenceMode, title: string }>(() => {
+  if (pendingSpeechCandidate.value) {
+    return {
+      description: '回答「好」即可讓我接著協助；若不是要點餐，直接繼續說明也可以。',
+      mode: 'listening',
+      title: candidateConfirmationPrompt,
+    }
+  }
   if (interactionTurn.phase.value === 'hearing-speech') {
     return {
       description: '你說完後，我會接著協助你。',
@@ -132,6 +206,8 @@ const assistantPresence = computed<{ description: string, mode: KioskAssistantPr
   }
 })
 const conversationActivityStatus = computed(() => {
+  if (pendingSpeechCandidate.value)
+    return candidateConfirmationPrompt
   if (interactionTurn.phase.value === 'hearing-speech')
     return '正在聆聽…'
   if (interactionTurn.phase.value === 'transcribing')
@@ -178,7 +254,7 @@ const {
   startNewCustomerSession: resetForNewCustomer,
   state: customerSessionState,
 } = customerSession
-const sessionNotice = computed(() => customerResetError.value ?? notice.value)
+const sessionNotice = computed(() => customerResetError.value ?? notice.value ?? agentInteractionNotice.value)
 const customerSessionButtonLabel = computed(() => (
   customerSessionState.value === 'standby' ? '開始新交談／新訂單' : '重新開始／新訂單'
 ))
@@ -323,9 +399,9 @@ const audioInputIndicator = computed(() => {
   if (interactionTurn.phase.value === 'thinking' || interactionTurn.phase.value === 'using-tool') {
     return {
       icon: 'i-solar:cpu-bolt-bold-duotone',
-      label: '系統正在處理',
+      label: '系統處理中，也持續收音',
       mode: 'processing',
-      title: '正在處理你的點餐需求，暫時不接收新的語音。',
+      title: '正在處理你的點餐需求；若你繼續說話，系統會先判斷是否需要中斷或更新目前工作。',
     }
   }
 
@@ -427,16 +503,29 @@ async function startAudioInteraction() {
 async function processVoiceCandidate(buffer: Float32Array, candidate: NonNullable<ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate>>) {
   if (buffer.length === 0)
     return
+  const diagnosticId = startVoiceDiagnostic()
   try {
     const recording = createKioskVadRecording(buffer)
     const { text } = await transcribeKioskAudio(recording, candidate.signal)
-    if (!text.trim() || !interactionTurn.isCurrentVoiceCandidate(candidate))
+    if (!text.trim()) {
+      updateVoiceDiagnostic(diagnosticId, { status: 'unrecognized' })
       return
-    const { decision, reason } = await requestTurnDecision({
+    }
+    updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text })
+    if (!interactionTurn.isCurrentVoiceCandidate(candidate))
+      return
+    const { decision, diagnostic, reason } = await requestTurnDecision({
       activeWork: conversationSending.value,
       currentRequest: activeCustomerRequest.value,
       presenceState: presenceDecision.value?.state,
       text,
+    })
+    updateVoiceDiagnostic(diagnosticId, {
+      decision,
+      embeddingAvailable: diagnostic?.embeddingAvailable,
+      reason,
+      speechGuard: diagnostic?.speechGuard,
+      status: 'decided',
     })
     if (import.meta.env.DEV)
       console.info('[stage-kiosk] candidate speech decision', { decision, presenceState: presenceDecision.value?.state, reason })
@@ -457,6 +546,7 @@ async function processVoiceCandidate(buffer: Float32Array, candidate: NonNullabl
     await sendConversationMessage(text)
   }
   catch (error) {
+    updateVoiceDiagnostic(diagnosticId, { status: 'failed' })
     if (!candidate.signal.aborted)
       console.error('Failed to process kiosk voice candidate:', error)
   }
@@ -472,34 +562,73 @@ async function processVadRecording(buffer: Float32Array, turn: ReturnType<typeof
     return
   }
 
+  const diagnosticId = startVoiceDiagnostic()
+
   try {
     if (!interactionTurn.advance(turn, 'transcribing'))
       return
 
     pendingTranscript.value = '正在辨識你的語音…'
     const recording = createKioskVadRecording(buffer)
-    const activity = await recordCustomerActivity('voice_input')
-    if (!interactionTurn.isCurrent(turn))
-      return
-
-    // Store and transcribe the same VAD-owned WAV so operator evidence has
-    // the leading padding that lets ASR hear the first phoneme.
-    mediaCapture.saveAudio(recording, activity?.id)
     const { text } = await transcribeKioskAudio(recording, turn.signal)
     if (!interactionTurn.isCurrent(turn))
       return
 
-    if (!text?.trim())
+    if (!text?.trim()) {
+      updateVoiceDiagnostic(diagnosticId, { status: 'unrecognized' })
+      pendingTranscript.value = undefined
+      return
+    }
+    updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text })
+
+    const pendingCandidate = pendingSpeechCandidate.value
+    if (pendingCandidate) {
+      const confirmation = classifyCandidateConfirmation(text)
+      if (confirmation === 'confirm') {
+        clearPendingSpeechCandidate()
+        await acceptVoiceInput(pendingCandidate, turn)
+        return
+      }
+      if (confirmation === 'deny') {
+        clearPendingSpeechCandidate()
+        return
+      }
+    }
+
+    const { decision, diagnostic, reason } = await requestTurnDecision({
+      activeWork: false,
+      presenceState: presenceDecision.value?.state,
+      text,
+    })
+    updateVoiceDiagnostic(diagnosticId, {
+      decision,
+      embeddingAvailable: diagnostic?.embeddingAvailable,
+      reason,
+      speechGuard: diagnostic?.speechGuard,
+      status: 'decided',
+    })
+    if (import.meta.env.DEV)
+      console.info('[stage-kiosk] initial speech decision', { decision, presenceState: presenceDecision.value?.state, reason })
+    if (decision === 'ignore' || !interactionTurn.isCurrent(turn))
       return
 
-    await interactionRecording.append('asr_transcript', text)
-    if (!interactionTurn.isCurrent(turn))
+    if (decision === 'candidate') {
+      rememberPendingSpeechCandidate({ recording, text })
+      pendingTranscript.value = undefined
+      if (interactionTurn.advance(turn, 'speaking'))
+        await speakAssistantReply(candidateConfirmationPrompt, turn)
       return
+    }
 
-    pendingTranscript.value = undefined
-    await sendConversationMessage(text, turn)
+    // Keep audio and ASR history only after Server policy accepts it as a
+    // customer request. VAD still performs the ASR request, but background
+    // speech can no longer create a visitor session or retained conversation.
+    clearPendingSpeechCandidate()
+    await acceptVoiceInput({ recording, text }, turn)
   }
   catch (error) {
+    updateVoiceDiagnostic(diagnosticId, { status: 'failed' })
+    pendingTranscript.value = undefined
     if (!turn.signal.aborted)
       console.error('Failed to process kiosk voice input:', error)
   }
@@ -511,6 +640,50 @@ async function processVadRecording(buffer: Float32Array, turn: ReturnType<typeof
       interactionTurn.complete(turn)
     }
   }
+}
+
+/**
+ * Keeps a readable but unconfirmed utterance only in the browser until the
+ * person confirms that it was addressed to the kiosk. The recording is never
+ * retained unless that confirmation later promotes the candidate to a turn.
+ */
+function rememberPendingSpeechCandidate(candidate: PendingSpeechCandidate) {
+  clearPendingSpeechCandidate()
+  pendingSpeechCandidate.value = candidate
+  candidateConfirmationTimer = setTimeout(() => {
+    pendingSpeechCandidate.value = undefined
+    candidateConfirmationTimer = undefined
+  }, candidateConfirmationTimeoutMs)
+}
+
+function clearPendingSpeechCandidate() {
+  pendingSpeechCandidate.value = undefined
+  if (candidateConfirmationTimer) {
+    clearTimeout(candidateConfirmationTimer)
+    candidateConfirmationTimer = undefined
+  }
+}
+
+function classifyCandidateConfirmation(text: string): 'confirm' | 'deny' | undefined {
+  const response = text.trim().replace(/[。！？，、\s]/g, '')
+  if (/^(?:[好對是要嗯]|可以|沒錯)$/.test(response))
+    return 'confirm'
+  if (/^(?:不用|不要|不是|沒有|沒)$/.test(response))
+    return 'deny'
+  return undefined
+}
+
+async function acceptVoiceInput(input: PendingSpeechCandidate, turn: ReturnType<typeof interactionTurn.begin>) {
+  const activity = await recordCustomerActivity('voice_input')
+  if (!interactionTurn.isCurrent(turn))
+    return
+  mediaCapture.saveAudio(input.recording, activity?.id)
+  await interactionRecording.append('asr_transcript', input.text)
+  if (!interactionTurn.isCurrent(turn))
+    return
+
+  pendingTranscript.value = undefined
+  await sendConversationMessage(input.text, turn)
 }
 
 function interruptAssistantOutput() {
@@ -534,8 +707,10 @@ function clearConversationPresentation() {
   interactionTurn.cancel()
   interruptAssistantOutput()
   conversationMessages.value = []
+  streamingAssistantMessage.value = undefined
   conversationWorkStatus.value = undefined
   pendingTranscript.value = undefined
+  clearPendingSpeechCandidate()
   activeCustomerRequest.value = undefined
 }
 
@@ -547,12 +722,20 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
       return
 
     const player = new Audio(URL.createObjectURL(audio))
+    const source = audioContext ? audioContext.createMediaElementSource(player) : undefined
+    if (source) {
+      assistantAudioNode.value = source
+      source.connect(audioContext.destination)
+    }
     assistantAudio = player
     await new Promise<void>((resolve) => {
       function finish() {
         turn.signal.removeEventListener('abort', stop)
         if (assistantAudio === player)
           assistantAudio = undefined
+        if (assistantAudioNode.value === source)
+          assistantAudioNode.value = undefined
+        source?.disconnect()
         URL.revokeObjectURL(player.src)
         resolve()
       }
@@ -577,30 +760,35 @@ function stopAudioInteraction() {
   audioInputStarted.value = false
 }
 
-watch(enabled, async (isEnabled) => {
-  if (isEnabled)
+watch([enabled, () => props.voiceConversationOnly], async ([isEnabled, voiceConversationOnly]) => {
+  if (isEnabled && voiceConversationOnly)
     await startAudioInteraction().catch(error => console.error('Failed to start kiosk audio interaction:', error))
   else
     stopAudioInteraction()
 }, { immediate: true })
 
-// A published experience chooses exactly one customer input mode. Only the
-// voice-only mode requests a microphone, and it does so before optional camera
-// work so private browser profiles cannot lose the microphone prompt.
+// Voice-only mode is the explicit microphone consent mode. It asks before
+// optional camera work begins, while text kiosks never request microphone use.
 async function prepareMicrophone() {
-  if (!props.voiceConversationOnly || enabled.value) {
+  if (!props.voiceConversationOnly) {
+    // A profile can change from voice-only to text mode while this browser
+    // retains its previous local preference. Keep that stale preference from
+    // starting the audio pipeline in the text-only experience.
+    enabled.value = false
     initialMicrophonePermission.settle()
     return
   }
 
   try {
-    // `useDevicesList` is deliberately passive during startup. Ask explicitly
-    // here so a provisioned kiosk surfaces the browser's microphone prompt
-    // before VAD tries to consume the stream.
-    await requestMicrophonePermission()
-    enabled.value = true
+    await prepareKioskMicrophonePermission({
+      audioInputEnabled: enabled.value,
+      requestPermission: requestMicrophonePermission,
+      setAudioInputEnabled: nextEnabled => enabled.value = nextEnabled,
+      voiceConversationOnly: props.voiceConversationOnly,
+    })
   }
   catch (error) {
+    enabled.value = false
     console.error('Kiosk microphone permission was not granted:', error)
   }
   finally {
@@ -690,7 +878,7 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   if (!localObservationRequired.value)
     return
   if (customerSessionState.value === 'active') {
-    if (!interactionTurn.canProactivelySpeak.value)
+    if (!interactionTurn.canProactivelySpeak.value || pendingSpeechCandidate.value)
       return
 
     const reminderCandidate = assistanceReminderWindow.decide(observation)
@@ -711,7 +899,7 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     return
   }
 
-  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
+  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || pendingSpeechCandidate.value)
     return
 
   if ((props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode) !== 'face_only')
@@ -757,7 +945,7 @@ function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoi
   }
 
   const visionMode = props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode
-  if (visionMode !== 'face_only' && customerSessionState.value === 'standby' && decision.greetingEligible && interactionTurn.canProactivelySpeak.value)
+  if (visionMode !== 'face_only' && customerSessionState.value === 'standby' && decision.greetingEligible && interactionTurn.canProactivelySpeak.value && !pendingSpeechCandidate.value)
     void startProactiveGreeting(() => presenceWindow.claimGreeting())
 }
 
@@ -788,7 +976,7 @@ function syncPresenceIdleSuppression(decision: ReturnType<typeof presenceWindow.
 }
 
 async function startProactiveGreeting(onStarted?: () => void) {
-  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
+  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || pendingSpeechCandidate.value)
     return
 
   const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined
@@ -839,6 +1027,12 @@ async function startProactiveGreeting(onStarted?: () => void) {
 }
 
 async function recordCustomerActivity(source: 'manual' | 'scenario' | 'voice_input' | 'voice_transcript' | 'completed' = 'scenario') {
+  // Speech Guard and the turn decision have accepted this utterance as a real
+  // customer request. If its ASR round-trip crossed into the confirmation
+  // countdown, resume before writing activity; the shared session otherwise
+  // deliberately ignores generic activity while awaiting an explicit choice.
+  if (source === 'voice_input' && customerSessionState.value === 'awaiting-idle-confirmation')
+    continueCurrentSession()
   if (customerSessionState.value === 'standby')
     visualEngagementProtectionStartedAtMs = undefined
   if (lastPresenceCandidate.value) {
@@ -883,6 +1077,8 @@ async function sendAssistantAction(
         ...conversationMessages.value,
         { role: 'assistant', content: answer, slices: [], tool_results: [] },
       ]
+      if (kind === 'greeting')
+        playTransientMotion('greeting')
       interactionTurn.advance(turn, 'speaking')
       await speakAssistantReply(answer, turn)
       delivered = !turn.signal.aborted
@@ -924,9 +1120,10 @@ async function sendConversationMessage(text: string, existingTurn?: ReturnType<t
 
   activeCustomerRequest.value = text
   conversationMessages.value = [...conversationMessages.value, { role: 'user', content: text }]
+  streamingAssistantMessage.value = undefined
   conversationWorkStatus.value = '正在思考…'
   try {
-    const answer = await interactionRecording.send(
+    const reply = await interactionRecording.send(
       scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction',
       text,
       activeTools.value,
@@ -935,23 +1132,48 @@ async function sendConversationMessage(text: string, existingTurn?: ReturnType<t
           return
         interactionTurn.advance(turn, 'using-tool')
         conversationWorkStatus.value = describeToolActivity(toolName, state)
+        if (state === 'done' && toolName === 'menu_show_recommendations')
+          playTransientMotion('presentRecommendations')
+        if (state === 'done' && ['order_add_item', 'cart_add_item', 'cart_remove_item', 'cart_set_line_quantity', 'order_set_fulfillment'].includes(toolName))
+          playTransientMotion('acknowledge')
       },
       turn.signal,
+      (delta) => {
+        if (!interactionTurn.isCurrent(turn))
+          return
+        conversationWorkStatus.value = '正在回覆…'
+        const previous = streamingAssistantMessage.value?.content ?? ''
+        streamingAssistantMessage.value = {
+          role: 'assistant',
+          content: `${previous}${delta}`,
+          slices: [],
+          tool_results: [],
+        }
+      },
     )
     if (!interactionTurn.isCurrent(turn))
       return
+    const answer = reply?.answer
+    agentInteractionNotice.value = reply?.agentMode === 'decision_guidance'
+      ? '我先整理幾個不同方向的選項，您可以直接點選。'
+      : reply?.agentMode === 'touch_preferred'
+        ? '畫面點選優先；需要比較或調整時，隨時再告訴我。'
+        : undefined
     conversationMessages.value = [
       ...conversationMessages.value,
       answer
         ? { role: 'assistant', content: answer, slices: [], tool_results: [] }
         : { role: 'error', content: '暫時無法回覆，請稍後再試。' },
     ]
+    streamingAssistantMessage.value = undefined
     if (answer) {
       interactionTurn.advance(turn, 'speaking')
       await speakAssistantReply(answer, turn)
     }
   }
   finally {
+    if (interactionTurn.isCurrent(turn))
+      streamingAssistantMessage.value = undefined
     if (interactionTurn.isCurrent(turn)) {
       interactionTurn.complete(turn)
       conversationWorkStatus.value = undefined
@@ -981,6 +1203,7 @@ async function finishCustomerSessionCompletion() {
   await interactionRecording.end('completed')
   await customerSession.end('completed')
   conversationMessages.value = []
+  streamingAssistantMessage.value = undefined
   activeCustomerRequest.value = undefined
 }
 
@@ -1003,6 +1226,7 @@ async function restartCustomerSession() {
     await interactionRecording.end('idle')
     await customerSession.end('staff')
     conversationMessages.value = []
+    streamingAssistantMessage.value = undefined
     activeCustomerRequest.value = undefined
   }
   catch (error) {
@@ -1042,6 +1266,9 @@ onMounted(() => {
 
 onUnmounted(() => {
   initialMicrophonePermission.settle()
+  if (transientMotionTimer)
+    clearTimeout(transientMotionTimer)
+  clearPendingSpeechCandidate()
   releaseChatPendingWork?.()
   stopMenuActivityListener?.()
   stopMenuCompletionListener?.()
@@ -1081,14 +1308,32 @@ onUnmounted(() => {
       </KioskAdminPanel>
     </aside>
 
-    <section :class="['stage-region', `is-${assistantPresence.mode}`]" aria-label="虛擬服務員">
-      <WidgetStage
-        class="stage-model"
-        :cursor-position="cursorPosition"
-        :enable-orbit-controls="false"
-        :idle-animation="props.idleAnimation"
-        :paused="paused"
-        :thinking="conversationSending"
+    <section :class="['service-hero', `is-${orientation}`]" :style="stageBackgroundStyle">
+      <section :class="['stage-region', `is-${assistantPresence.mode}`]" aria-label="虛擬服務員">
+        <WidgetStage
+          class="stage-model"
+          :cursor-position="cursorPosition"
+          :enable-orbit-controls="false"
+          :idle-animation="activeMotionAnimation"
+          :animation-loop="activeMotionLoop"
+          :paused="paused"
+          :thinking="conversationSending"
+          :external-audio-source="assistantAudioNode"
+        />
+      </section>
+      <KioskConversation
+        class="conversation-region"
+        :activity-status="conversationActivityStatus"
+        :assistant-presence="assistantPresence"
+        :messages="conversationMessages"
+        :streaming-assistant-message="streamingAssistantMessage"
+        :pending-transcript="pendingTranscript"
+        :sending="conversationSending"
+        :font-size="conversationFontSize"
+        :voice-input-locked="voiceInputLocked"
+        :voice-conversation-only="props.voiceConversationOnly"
+        @activity="recordCustomerActivity"
+        @send-message="sendConversationMessage"
       />
     </section>
 
@@ -1105,19 +1350,6 @@ onUnmounted(() => {
       {{ customerSessionButtonLabel }}
     </button>
 
-    <KioskConversation
-      class="conversation-region"
-      :activity-status="conversationActivityStatus"
-      :assistant-presence="assistantPresence"
-      :messages="conversationMessages"
-      :pending-transcript="pendingTranscript"
-      :sending="conversationSending"
-      :font-size="conversationFontSize"
-      :voice-input-locked="voiceInputLocked"
-      :voice-conversation-only="props.voiceConversationOnly"
-      @activity="recordCustomerActivity"
-      @send-message="sendConversationMessage"
-    />
     <KioskIdleDiagnostics
       v-if="showIdleDiagnostics"
       :idle-deadline-at="idleDeadlineAt"
@@ -1130,6 +1362,10 @@ onUnmounted(() => {
       :decision="presenceDecision"
       :diagnostics="presenceDiagnostics"
       :vision-mode="props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode"
+    />
+    <KioskVoiceDiagnostics
+      v-if="voiceDiagnosticsEnabled"
+      :entries="voiceDiagnosticEntries"
     />
     <KioskSessionNotice :message="sessionNotice" />
     <CustomerSessionIdleConfirmation
@@ -1156,22 +1392,23 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.kiosk-scene { display: grid; width: 100vw; height: 100dvh; padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(29 85 85 / 34%), transparent 38%), linear-gradient(135deg, #0a1417, #111d21); gap: 1rem; }
-.kiosk-scene.is-landscape { grid-template-columns: minmax(14rem, .24fr) minmax(0, .76fr); grid-template-rows: minmax(0, .31fr) minmax(0, .69fr); }
-.kiosk-scene.is-portrait { grid-template-columns: minmax(10rem, .3fr) minmax(0, .7fr); grid-template-rows: minmax(0, .35fr) minmax(0, .65fr); }
-.stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 16%); border-radius: 1.5rem; background: rgb(3 15 18 / 88%); grid-column: 1; grid-row: 1; transition: border-color .2s ease, box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { border-color: rgb(124 231 216 / 40%); box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 10%); }.stage-region.is-processing, .stage-region.is-transcribing { border-color: rgb(255 202 128 / 56%); box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 12%); }.stage-region.is-speaking { border-color: rgb(167 195 255 / 54%); box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 12%); }
-.stage-model { width: 100%; height: 100%; }
+.kiosk-scene { display: grid; width: 100vw; height: 100dvh; grid-template-columns: minmax(0, 1fr); padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(59 79 63 / 24%), transparent 38%), linear-gradient(135deg, #111a17, #15211d); row-gap: 1rem; }
+.kiosk-scene.is-landscape { grid-template-rows: minmax(0, .32fr) minmax(0, .68fr); }
+.kiosk-scene.is-portrait { grid-template-rows: minmax(0, .36fr) minmax(0, .64fr); }
+.service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1.125rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(14rem, .32fr) minmax(0, .68fr); }.service-hero.is-portrait { grid-template-columns: minmax(10rem, .35fr) minmax(0, .65fr); }
+.stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: transparent; transition: box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 7%); }.stage-region.is-processing, .stage-region.is-transcribing { box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 8%); }.stage-region.is-speaking { box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 8%); }
+.stage-model { position: relative; z-index: 1; width: 100%; height: 100%; transform: translate3d(2%, 6%, 0) scale(1.12); transform-origin: center bottom; transition: transform .3s ease; }
 .kiosk-admin-panel-layer { position: fixed; z-index: 90; inset: 0; display: grid; overflow: auto; padding: 1.5rem; background: rgb(1 12 15 / 72%); backdrop-filter: blur(.4rem); }
 /* Keep the administrator hold target available without exposing controls in the customer-facing composition. */
 :global(.kiosk-admin-access) { position: fixed; z-index: 100; top: 1.75rem; left: 1.75rem; display: inline-flex; height: 2.25rem; align-items: center; gap: .35rem; border: 1px solid rgb(217 250 246 / 28%); border-radius: .7rem; padding: 0 .7rem; color: #d9faf6; background: rgb(1 17 20 / 92%); box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); opacity: 0; transition: opacity .16s ease, background .16s ease; }
 :global(.kiosk-admin-access:hover), :global(.kiosk-admin-access:focus-visible) { background: #153f43; opacity: 1; }
-.conversation-region { grid-column: 2; grid-row: 1; }
-.menu-region { min-width: 0; min-height: 0; grid-column: 1 / span 2; grid-row: 2; }
+.conversation-region { min-width: 0; min-height: 0; }
+.menu-region { min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
 .customer-restart { position: fixed; z-index: 20; bottom: 1.15rem; left: 1.15rem; display: inline-flex; align-items: center; gap: .45rem; border: 1px solid rgb(207 250 254 / 48%); border-radius: .7rem; padding: .6rem .8rem; color: #ecfeff; background: rgb(8 47 73 / 90%); font-size: .8rem; font-weight: 700; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(14 116 144 / 94%); }.customer-restart:disabled { cursor: wait; opacity: .55; }
 
 @media (max-width: 700px) {
-  .kiosk-scene { padding: .6rem; gap: .6rem; }
-  .kiosk-scene.is-landscape { grid-template-columns: minmax(7rem, .25fr) minmax(0, .75fr); }
+  .kiosk-scene { padding: .6rem; row-gap: .6rem; }
+  .service-hero.is-landscape { grid-template-columns: minmax(7rem, .32fr) minmax(0, .68fr); }
 }
 </style>

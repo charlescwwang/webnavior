@@ -49,7 +49,7 @@ Hard test 有 75 組 pair，每組兩筆，分成五種設計，各 15 組：
 - 完整餐點需求 vs 未指明對象的片段。
 - 回答 Agent 的省略短答 vs 明確系統操作。
 
-其中 15 組是**同一句文字、不同情境**，所以 150 筆共有 135 個不重複轉寫。這是診斷上下文利用能力的測試，不是 prototype/test 洩漏。
+其中 15 組是**同一句文字、不同情境**，所以 154 筆共有 139 個不重複轉寫。這是診斷上下文利用能力的測試，不是 prototype/test 洩漏。
 
 此外，6 筆背景樣本也附有上一輪 Agent 問句；6 筆 AMBIGUOUS 則有前文但仍不足以判定，避免把「context 不是 null」當成正確分類捷徑。
 
@@ -59,12 +59,12 @@ Hard test 有 75 組 pair，每組兩筆，分成五種設計，各 15 組：
 
 | label | prototype_examples.jsonl | hard_test.jsonl |
 |---|---:|---:|
-| ORDER_INTENT | 120 | 30 |
+| ORDER_INTENT | 125 | 32 |
 | AGENT_RESPONSE | 180 | 30 |
 | KIOSK_COMMAND | 120 | 30 |
-| BACKGROUND_CONVERSATION | 140 | 30 |
+| BACKGROUND_CONVERSATION | 140 | 32 |
 | AMBIGUOUS | 120 | 30 |
-| 合計 | 680 | 150 |
+| 合計 | 685 | 154 |
 
 180 筆 AGENT_RESPONSE 中，176 筆在上述正規化後不超過 4 個字元。單一標籤內沒有重複句。
 

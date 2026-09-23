@@ -4,6 +4,7 @@ import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { KioskEmbeddingGateway } from '../../services/domain/kiosk-embedding'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
+import type { KioskSpeechGuardRuntime } from '../../services/domain/kiosk-speech-guard/runtime'
 import type { HonoEnv } from '../../types/hono'
 
 import { randomInt } from 'node:crypto'
@@ -12,6 +13,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
+import { createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults } from '../../services/domain/kiosk-agent-interaction'
 import { calculateCosineSimilarity, evaluateKioskTurn } from '../../services/domain/kiosk-turn-decision'
 import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
@@ -58,10 +60,12 @@ const conversationMessageSchema = object({
 })
 
 const orderResultSchema = object({
+  environment: picklist(['test', 'live']),
   fulfillmentMode: picklist(['dine-in', 'takeout']),
   id: pipe(string(), regex(/^[\w-]+$/), maxLength(120)),
   itemCount: pipe(number(), integer(), minValue(0)),
-  simulated: boolean(),
+  posOrderId: optional(pipe(string(), regex(/^[\w-]+$/), maxLength(120))),
+  status: literal('accepted'),
   total: pipe(number(), minValue(0)),
 })
 
@@ -107,7 +111,9 @@ export interface KioskRoutesOptions {
   }
   /** Optional Server-only semantic enrichment for candidate speech decisions. */
   embeddingGateway?: KioskEmbeddingGateway
-  turnDecisionObserver?: { record: (input: { decision: string, embeddingAvailable: boolean, presenceState?: string, reason: string }) => void }
+  /** Persisted semantic baseline used only before a new conversation begins. */
+  speechGuard?: KioskSpeechGuardRuntime
+  turnDecisionObserver?: { record: (input: { decision: string, embeddingAvailable: boolean, presenceState?: string, reason: string, speechGuardLabel?: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
 }
@@ -201,19 +207,34 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   })
 
   routes.post('/turn-decisions', async (c) => {
-    await resolveAuthenticatedDevice(c, options.kioskService)
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
     const result = safeParse(turnDecisionSchema, await c.req.json().catch(() => null))
     if (!result.success)
       throw createBadRequestError('Invalid kiosk turn decision request', 'INVALID_REQUEST', result.issues)
     const semanticSimilarity = await resolveSemanticSimilarity(options.embeddingGateway, result.output.currentRequest, result.output.text)
-    const evaluated = evaluateKioskTurn({ ...result.output, semanticSimilarity })
+    const speechGuard = result.output.activeWork
+      ? undefined
+      : await resolveInitialSpeechGuard(options.speechGuard, result.output.text)
+    const evaluated = evaluateKioskTurn({ ...result.output, semanticSimilarity, speechGuardLabel: speechGuard?.label })
     options.turnDecisionObserver?.record({
       decision: evaluated.decision,
-      embeddingAvailable: semanticSimilarity !== undefined,
+      embeddingAvailable: semanticSimilarity !== undefined || speechGuard !== undefined,
       presenceState: result.output.presenceState,
       reason: evaluated.reason,
+      speechGuardLabel: speechGuard?.label,
     })
-    return c.json(evaluated)
+    const voiceDiagnosticsEnabled = (await options.kioskService.getDeviceSettings(device.id)).effective.voiceDiagnosticsEnabled
+    return c.json({
+      ...evaluated,
+      ...(voiceDiagnosticsEnabled
+        ? {
+            diagnostic: {
+              embeddingAvailable: semanticSimilarity !== undefined || speechGuard !== undefined,
+              speechGuard: speechGuard && { label: speechGuard.label, score: speechGuard.score },
+            },
+          }
+        : {}),
+    })
   })
 
   routes.post('/audio/speech', async (c) => {
@@ -364,7 +385,38 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         visitorSessionId: transcript.session.id,
       })
     }
+    let agentInteraction = transcript.session.agentInteraction
+    if (content)
+      agentInteraction = recordCustomerInput(agentInteraction, content)
+    if (result.output.toolResults.length > 0)
+      agentInteraction = recordToolResults(agentInteraction, result.output.toolResults)
+    if (agentInteraction !== transcript.session.agentInteraction) {
+      await options.kioskService.updateDeviceAgentInteraction({
+        deviceId: device.id,
+        interaction: agentInteraction,
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    if (c.req.header('accept')?.includes('text/event-stream')) {
+      return c.body(createKioskReplyEventStream({
+        agentInteraction,
+        content,
+        deviceId: device.id,
+        kioskService: options.kioskService,
+        llmGateway: options.llmGateway,
+        runtimeModelPolicy: options.runtimeModelPolicy,
+        profile,
+        signal: c.req.raw.signal,
+        toolResults: result.output.toolResults,
+        tools: result.output.tools,
+        transcript,
+      }), 200, {
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'text/event-stream',
+      })
+    }
     const answer = await completeKioskReply({
+      agentInteraction,
       content,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
@@ -392,7 +444,25 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         visitorSessionId: transcript.session.id,
       })
     }
-    return c.json({ answer: answer.content, toolCalls: answer.toolCalls })
+    const nextAgentInteraction = recordAssistantActions(agentInteraction, answer.toolCalls)
+    if (nextAgentInteraction !== agentInteraction) {
+      agentInteraction = nextAgentInteraction
+      await options.kioskService.updateDeviceAgentInteraction({
+        deviceId: device.id,
+        interaction: agentInteraction,
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    if (agentInteraction.mode !== 'active') {
+      await options.kioskService.appendDeviceInteraction({
+        content: agentInteraction.mode === 'decision_guidance' ? 'agent.decision_guidance' : 'agent.touch_preferred',
+        deviceId: device.id,
+        kind: 'service_event',
+        metadata: { mode: agentInteraction.mode, noProgressCount: agentInteraction.noProgressCount },
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    return c.json({ agentInteraction: { mode: agentInteraction.mode }, answer: answer.content, toolCalls: answer.toolCalls })
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/assistant-actions', async (c) => {
@@ -452,10 +522,12 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
 
     const entry = await options.kioskService.appendDeviceInteraction({
       content: JSON.stringify({
+        environment: result.output.environment,
         fulfillmentMode: result.output.fulfillmentMode,
         id: result.output.id,
         itemCount: result.output.itemCount,
-        simulated: result.output.simulated,
+        ...(result.output.posOrderId ? { posOrderId: result.output.posOrderId } : {}),
+        status: result.output.status,
         total: result.output.total,
       }),
       kind: 'order_result',
@@ -518,6 +590,20 @@ async function resolveSemanticSimilarity(
   }
 }
 
+async function resolveInitialSpeechGuard(speechGuard: KioskSpeechGuardRuntime | undefined, text: string) {
+  if (!speechGuard)
+    return undefined
+  try {
+    return await speechGuard.classifyInitialSpeech(text)
+  }
+  catch {
+    // Speech Guard is an optional semantic enrichment. A remote embedding
+    // outage must fall back to the conservative intent policy, not block a
+    // genuine customer from starting a conversation.
+    return undefined
+  }
+}
+
 function parseOptionalMediaDate(value: unknown): Date | undefined | null {
   if (value === null)
     return undefined
@@ -567,6 +653,8 @@ interface KioskToolCall {
   type: 'function'
 }
 
+type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferred'
+
 interface KioskCompletion {
   content?: string
   toolCalls: KioskToolCall[]
@@ -587,6 +675,7 @@ async function parseAssistantReply(response: Response): Promise<KioskCompletion>
 
 async function completeKioskReply(input: {
   actionPrompt?: string
+  agentInteraction?: { dismissedSubjectIds: string[], mode: 'active' | 'decision_guidance' | 'touch_preferred', noProgressCount: number, suggestedSubjectIds: string[] }
   abortSignal?: AbortSignal
   content?: string
   kioskService: KioskService
@@ -604,20 +693,17 @@ async function completeKioskReply(input: {
     : await input.runtimeModelPolicy.modelFor('chat')
   if (!modelName)
     throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
+  const systemInstructions = createKioskSystemInstructions(input)
   const response = await input.llmGateway.complete({
     abortSignal: input.abortSignal,
     modelName,
     body: {
       model: modelName,
       messages: [
-        { role: 'system', content: createCharacterInstructions(input.profile.snapshot) },
+        { role: 'system', content: systemInstructions },
         ...toConversationMessages(input.transcript.entries),
         ...(input.toolResults ?? []).map(toolResult => ({ role: 'tool', content: toolResult.content, tool_call_id: toolResult.toolCallId })),
         ...(input.content ? [{ role: 'user', content: input.content }] : []),
-        ...(input.profile.snapshot.characterCard?.postHistoryInstructions
-          ? [{ role: 'system', content: input.profile.snapshot.characterCard.postHistoryInstructions }]
-          : []),
-        ...(input.actionPrompt ? [{ role: 'system', content: createAssistantActionInstructions(input.actionPrompt) }] : []),
         // Some OpenAI-compatible gateways reject a system-only conversation.
         // When VLM is off there is no scene-frame user turn, so represent the
         // proactive event explicitly without inventing visitor input.
@@ -638,6 +724,217 @@ async function completeKioskReply(input: {
     },
   })
   return await parseAssistantReply(response)
+}
+
+type KioskReplyEvent
+  = | { type: 'turn-started' }
+    | { text: string, type: 'assistant-delta' }
+    | { toolCall: KioskToolCall, type: 'tool-requested' }
+    | { agentMode: KioskAgentInteractionMode, answer?: string, toolCalls: KioskToolCall[], type: 'turn-finished' }
+    | { message: string, type: 'turn-failed' }
+
+interface KioskReplyStreamInput {
+  agentInteraction: { dismissedSubjectIds: string[], mode: KioskAgentInteractionMode, noProgressCount: number, suggestedSubjectIds: string[] }
+  content?: string
+  deviceId: string
+  kioskService: KioskService
+  llmGateway: KioskRoutesOptions['llmGateway']
+  profile: { siteId: string, snapshot: KioskProfileSnapshot }
+  runtimeModelPolicy: KioskRoutesOptions['runtimeModelPolicy']
+  signal: AbortSignal
+  toolResults: Array<{ content: string, name: string, toolCallId: string }>
+  tools: Array<{ function: { description?: string, name: string, parameters: unknown }, type: 'function' }>
+  transcript: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>
+}
+
+/**
+ * Streams only customer-safe progress to the kiosk while retaining the model
+ * credentials and authoritative transcript on the Server. Provider-specific
+ * SSE never crosses this seam; the browser receives this stable event shape.
+ */
+function createKioskReplyEventStream(input: KioskReplyStreamInput) {
+  const encoder = new TextEncoder()
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const emit = (event: KioskReplyEvent) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+      }
+
+      try {
+        emit({ type: 'turn-started' })
+        const answer = await streamKioskReply(input, text => emit({ text, type: 'assistant-delta' }))
+
+        if (answer.content) {
+          await input.kioskService.appendDeviceInteraction({
+            content: answer.content,
+            kind: 'assistant_text',
+            deviceId: input.deviceId,
+            visitorSessionId: input.transcript.session.id,
+          })
+        }
+        if (answer.toolCalls.length > 0) {
+          await input.kioskService.appendDeviceInteraction({
+            content: JSON.stringify(answer.toolCalls),
+            kind: 'tool_call',
+            metadata: { toolCalls: answer.toolCalls },
+            deviceId: input.deviceId,
+            visitorSessionId: input.transcript.session.id,
+          })
+        }
+
+        const agentInteraction = recordAssistantActions(input.agentInteraction, answer.toolCalls)
+        if (agentInteraction !== input.agentInteraction) {
+          await input.kioskService.updateDeviceAgentInteraction({
+            deviceId: input.deviceId,
+            interaction: agentInteraction,
+            visitorSessionId: input.transcript.session.id,
+          })
+        }
+        if (agentInteraction.mode !== 'active') {
+          await input.kioskService.appendDeviceInteraction({
+            content: agentInteraction.mode === 'decision_guidance' ? 'agent.decision_guidance' : 'agent.touch_preferred',
+            deviceId: input.deviceId,
+            kind: 'service_event',
+            metadata: { mode: agentInteraction.mode, noProgressCount: agentInteraction.noProgressCount },
+            visitorSessionId: input.transcript.session.id,
+          })
+        }
+
+        for (const toolCall of answer.toolCalls)
+          emit({ toolCall, type: 'tool-requested' })
+        emit({ agentMode: agentInteraction.mode, answer: answer.content, toolCalls: answer.toolCalls, type: 'turn-finished' })
+      }
+      catch {
+        if (!input.signal.aborted)
+          emit({ message: '點餐助手暫時無法回覆。', type: 'turn-failed' })
+      }
+      finally {
+        controller.close()
+      }
+    },
+  })
+}
+
+/** Converts an OpenAI-compatible provider SSE response into the kiosk event contract. */
+async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
+  const modelName = await input.runtimeModelPolicy.modelFor('chat')
+  if (!modelName)
+    throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
+
+  const response = await input.llmGateway.complete({
+    abortSignal: input.signal,
+    modelName,
+    body: {
+      model: modelName,
+      messages: [
+        { role: 'system', content: createKioskSystemInstructions(input) },
+        ...toConversationMessages(input.transcript.entries),
+        ...input.toolResults.map(toolResult => ({ role: 'tool', content: toolResult.content, tool_call_id: toolResult.toolCallId })),
+        ...(input.content ? [{ role: 'user', content: input.content }] : []),
+      ],
+      ...(input.tools.length ? { tools: input.tools } : {}),
+      stream: true,
+    },
+  })
+  return await parseKioskReplyStream(response, onTextDelta)
+}
+
+async function parseKioskReplyStream(response: Response, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
+  if (!response.ok)
+    throw createBadRequestError('LLM Provider did not return a stream', 'LLM_PROVIDER_ERROR')
+  // Some OpenAI-compatible providers accept `stream: true` but still return a
+  // normal completion. Preserve a usable reply instead of producing an empty
+  // turn; only genuine SSE responses can provide progressive presentation.
+  if (response.headers.get('Content-Type')?.includes('application/json'))
+    return await parseAssistantReply(response)
+  if (!response.body)
+    throw createBadRequestError('LLM Provider stream has no body', 'LLM_PROVIDER_INVALID_RESPONSE')
+
+  const decoder = new TextDecoder()
+  const reader = response.body.getReader()
+  let buffer = ''
+  let content = ''
+  let receivedPayload = false
+  const toolCalls: Array<Partial<KioskToolCall>> = []
+
+  const consumeEvent = (rawEvent: string) => {
+    const data = rawEvent.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n')
+    if (!data || data === '[DONE]')
+      return
+    const parsed: unknown = JSON.parse(data)
+    if (!parsed || typeof parsed !== 'object' || !('choices' in parsed) || !Array.isArray(parsed.choices))
+      return
+    receivedPayload = true
+    const delta = parsed.choices[0]?.delta
+    if (!delta || typeof delta !== 'object')
+      return
+    if (typeof delta.content === 'string') {
+      content += delta.content
+      onTextDelta(delta.content)
+    }
+    if (!Array.isArray(delta.tool_calls))
+      return
+    for (const partial of delta.tool_calls) {
+      if (!partial || typeof partial !== 'object' || typeof partial.index !== 'number')
+        continue
+      const existing = toolCalls[partial.index] ?? { function: { arguments: '', name: '' }, id: '', type: 'function' }
+      const functionDelta = partial.function
+      toolCalls[partial.index] = {
+        ...existing,
+        ...(typeof partial.id === 'string' ? { id: partial.id } : {}),
+        ...(typeof partial.type === 'string' ? { type: partial.type } : {}),
+        function: {
+          arguments: `${existing.function?.arguments ?? ''}${functionDelta && typeof functionDelta === 'object' && typeof functionDelta.arguments === 'string' ? functionDelta.arguments : ''}`,
+          name: `${existing.function?.name ?? ''}${functionDelta && typeof functionDelta === 'object' && typeof functionDelta.name === 'string' ? functionDelta.name : ''}`,
+        },
+      }
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    let eventBoundary = /\r?\n\r?\n/.exec(buffer)
+    while (eventBoundary?.index !== undefined) {
+      consumeEvent(buffer.slice(0, eventBoundary.index))
+      buffer = buffer.slice(eventBoundary.index + eventBoundary[0].length)
+      eventBoundary = /\r?\n\r?\n/.exec(buffer)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    consumeEvent(buffer)
+  if (!receivedPayload)
+    throw createBadRequestError('LLM Provider stream contained no completion events', 'LLM_PROVIDER_INVALID_RESPONSE')
+
+  const completedToolCalls = toolCalls.filter((toolCall): toolCall is KioskToolCall => (
+    typeof toolCall.id === 'string'
+    && toolCall.type === 'function'
+    && typeof toolCall.function?.name === 'string'
+    && typeof toolCall.function.arguments === 'string'
+  ))
+  return { content: content || undefined, toolCalls: completedToolCalls }
+}
+
+/**
+ * Creates the portable instruction envelope for Kiosk chat requests.
+ *
+ * Ollama and OpenAI-compatible servers commonly implement model chat
+ * templates that only accept `system` at the beginning of a conversation.
+ * Keep instructions in their original precedence order, but serialize them
+ * into one leading message so the same request shape works across providers.
+ */
+function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'profile'>) {
+  return [
+    { content: createCharacterInstructions(input.profile.snapshot), title: '角色與店別設定' },
+    input.agentInteraction ? { content: createInteractionInstructions(input.agentInteraction), title: '本次點餐互動規則' } : undefined,
+    input.profile.snapshot.characterCard?.postHistoryInstructions
+      ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
+      : undefined,
+    input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
+  ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }
 
 /** Combines imported Character Card v3 context with site-specific additions. */
@@ -670,7 +967,10 @@ function createAssistantActionInstructions(prompt: string) {
 }
 
 function toConversationMessages(entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries']) {
-  return entries.flatMap((entry) => {
+  // Keep a generous recent window for natural references while bounding tool
+  // payload growth during a long-running visitor session. Durable entries are
+  // retained separately for operator review and never discarded here.
+  return entries.slice(-48).flatMap((entry) => {
     if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
       return [{ role: entry.kind === 'user_text' ? 'user' : 'assistant', content: entry.content }]
     if (entry.kind === 'tool_call') {

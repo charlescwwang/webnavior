@@ -32,6 +32,7 @@ describe('device policy authorization and concurrency', () => {
     expect(initial.effective.observationEnabled).toBe(false)
     expect(initial.effective.faceDetectionConfidence).toBe(0.6)
     expect(initial.effective.presenceVisionMode).toBe('pose_plus_conditional_face')
+    expect(initial.effective.voiceDiagnosticsEnabled).toBe(false)
     expect(initial.effective.voiceVadSettings).toEqual({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 })
     const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
@@ -75,6 +76,16 @@ describe('device policy authorization and concurrency', () => {
     } })
 
     expect(local.effective.presenceVisionMode).toBe('face_only')
+  })
+
+  it('enables voice diagnostics only when an administrator explicitly overrides it', async () => {
+    const updated = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
+      version: 1,
+      localControls: [],
+      overrides: { voiceDiagnosticsEnabled: true },
+    } })
+
+    expect(updated.effective.voiceDiagnosticsEnabled).toBe(true)
   })
 
   it('rejects locked fields, forged delegation, invalid ranges, and cross-site operators without writes', async () => {

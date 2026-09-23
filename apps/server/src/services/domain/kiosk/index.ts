@@ -2,6 +2,7 @@ import type { DeviceSettingKey, DeviceSettings, DeviceSettingsSnapshot, KioskVoi
 
 import type { Database } from '../../../libs/db'
 import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
+import type { KioskAgentInteractionState } from '../kiosk-agent-interaction'
 
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -41,6 +42,8 @@ export interface KioskService {
     metadata?: Record<string, unknown>
     visitorSessionId: string
   }) => Promise<typeof schema.kioskInteractionEntries.$inferSelect>
+  /** Replaces compact, session-local Agent context after verifying device ownership. */
+  updateDeviceAgentInteraction: (input: { deviceId: string, interaction: KioskAgentInteractionState, visitorSessionId: string }) => Promise<typeof schema.kioskVisitorSessions.$inferSelect>
   /** Creates a kiosk browser installation owned by a site. */
   createDevice: (input: { siteId: string, label: string, registrationMethod: KioskRegistrationMethod }) => Promise<typeof schema.kioskDevices.$inferSelect>
   /** Stores an immutable configuration snapshot for one site. */
@@ -167,6 +170,12 @@ export const KioskProfileSnapshotSchema = object({
     name: pipe(string(), minLength(1), maxLength(255)),
     sha256: pipe(string(), minLength(64), maxLength(64)),
   })),
+  sceneBackground: optional(object({
+    format: picklist(['jpeg', 'png', 'webp']),
+    id: pipe(string(), minLength(1), maxLength(120)),
+    name: pipe(string(), minLength(1), maxLength(255)),
+    sha256: pipe(string(), minLength(64), maxLength(64)),
+  })),
   characterCard: optional(object({
     description: pipe(string(), maxLength(8_000)),
     personality: pipe(string(), maxLength(8_000)),
@@ -179,6 +188,14 @@ export const KioskProfileSnapshotSchema = object({
     id: pipe(string(), minLength(1), maxLength(120)),
     name: pipe(string(), minLength(1), maxLength(255)),
     sha256: pipe(string(), minLength(64), maxLength(64)),
+  })),
+  motionPack: optional(object({
+    acknowledge: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
+    greeting: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
+    idle: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
+    listening: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
+    presentRecommendations: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
+    thinking: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
   })),
   greetingPrompt: pipe(string(), minLength(1), maxLength(2_000)),
   interactiveService: object({
@@ -416,6 +433,20 @@ export function createKioskService(db: Database): KioskService {
       .returning()
     if (!session)
       throw createNotFoundError('Active visitor session was not found')
+    return session
+  }
+
+  async function updateDeviceAgentInteraction(input: { deviceId: string, interaction: KioskAgentInteractionState, visitorSessionId: string }) {
+    const [session] = await db.update(schema.kioskVisitorSessions)
+      .set({ agentInteraction: input.interaction })
+      .where(and(
+        eq(schema.kioskVisitorSessions.id, input.visitorSessionId),
+        eq(schema.kioskVisitorSessions.deviceId, input.deviceId),
+        eq(schema.kioskVisitorSessions.state, 'active'),
+      ))
+      .returning()
+    if (!session)
+      throw createNotFoundError('Active visitor session was not found for this kiosk device')
     return session
   }
 
@@ -1058,6 +1089,7 @@ export function createKioskService(db: Database): KioskService {
   return {
     getDeviceSettings,
     updateDeviceSettings,
+    updateDeviceAgentInteraction,
     addMember,
     assertCanManageSite,
     appendInteractionEntry,

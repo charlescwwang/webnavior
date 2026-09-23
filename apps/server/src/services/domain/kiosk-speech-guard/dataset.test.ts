@@ -24,8 +24,8 @@ describe('kiosk speech guard dataset', () => {
       readJsonl('hard_test.jsonl'),
     ])
 
-    expect(prototype).toHaveLength(680)
-    expect(hardTest).toHaveLength(150)
+    expect(prototype).toHaveLength(685)
+    expect(hardTest).toHaveLength(154)
     expect(new Set(prototype.map(row => row.id)).size).toBe(prototype.length)
     expect(new Set(hardTest.map(row => row.id)).size).toBe(hardTest.length)
     const prototypeTexts = new Set(prototype.map(row => row.text))

@@ -11,6 +11,7 @@ import { Hono } from 'hono'
 import { createBadRequestError, createForbiddenError } from '../../../utils/error'
 
 const maximumUploadBytes = 64 * 1024 * 1024
+const maximumBackgroundUploadBytes = 12 * 1024 * 1024
 const maximumExtractedModelBytes = 128 * 1024 * 1024
 
 interface ImportedCardPackage {
@@ -69,6 +70,40 @@ export function createAdminKioskCharacterAssetRoutes(options: { assets: KioskCha
       })
       return c.json({ asset }, 201)
     })
+    .post('/sites/:siteId/background-assets', async (c) => {
+      const siteId = c.req.param('siteId')
+      const capabilities = await options.kioskService.getSiteManagementCapabilities({ siteId, userId: c.get('user')!.id })
+      if (!capabilities.canEditExperience)
+        throw createForbiddenError()
+      const body = await c.req.parseBody()
+      const uploaded = body.asset
+      if (!(uploaded instanceof File))
+        throw createBadRequestError('Please choose a PNG, JPEG, or WebP scene image.', 'INVALID_BACKGROUND_ASSET')
+      if (uploaded.size === 0 || uploaded.size > maximumBackgroundUploadBytes)
+        throw createBadRequestError('Scene image must be between 1 byte and 12 MB.', 'INVALID_BACKGROUND_ASSET')
+
+      const data = new Uint8Array(await uploaded.arrayBuffer())
+      const format = detectBackgroundFormat(data)
+      if (!format)
+        throw createBadRequestError('Only PNG, JPEG, and WebP scene images are supported.', 'INVALID_BACKGROUND_ASSET')
+      const asset = await options.assets.save({
+        card: {},
+        data,
+        format,
+        name: safeName(uploaded.name, 'Kiosk 場景背景'),
+        siteId,
+      })
+      return c.json({ asset }, 201)
+    })
+}
+
+function detectBackgroundFormat(data: Uint8Array): 'jpeg' | 'png' | 'webp' | undefined {
+  if (data.length >= 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47 && data[4] === 0x0D && data[5] === 0x0A && data[6] === 0x1A && data[7] === 0x0A)
+    return 'png'
+  if (data.length >= 3 && data[0] === 0xFF && data[1] === 0xD8 && data[2] === 0xFF)
+    return 'jpeg'
+  if (data.length >= 12 && data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50)
+    return 'webp'
 }
 
 async function importCharacterAsset(file: File, kind: UploadKind): Promise<ImportedCardPackage> {

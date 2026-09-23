@@ -61,18 +61,23 @@ This is intentionally separate from AIRI's general chat history. The current ver
 
 The conversation surface presents a large, plain-language state tied visually to
 the avatar: listening, understanding speech, arranging a request, or speaking.
+Normal customer replies stream through the device-authenticated Server route, so
+the conversation displays customer-safe assistant text as it is generated and
+switches to the interactive service's tool status when browser-owned work begins.
+Only the completed assistant reply is retained in the visitor transcript; an
+interrupted partial reply remains presentation-only.
 It starts with “直接告訴我想吃什麼” and always leaves the menu touchable. The old
 draggable technical audio-status card is available only in development
 diagnostics; camera, microphone, and model failures are not customer-facing
 copy. When an embedded menu displays accepted recommendations, it does so in
 its own non-blocking rail rather than navigating the Kiosk away from the menu.
 
-For VRM characters, a system manager may upload one compatible `.vrma` as the
-published Profile's **待機動作** in **互動體驗 → 角色卡與虛擬角色**. The animation
-is stored independently from the model, hash-versioned, and applied only after
-that Profile is published. This first motion setting intentionally controls the
-idle loop only; greeting, recommendation, and other one-shot movements require
-a later action mapping rather than silently reusing the idle animation.
+For VRM characters, a system manager may upload compatible `.vrma` clips in a
+published Profile's **角色動作包** under **互動體驗 → 角色卡與虛擬角色**. The clips
+are stored independently from the model, hash-versioned, and applied only after
+that Profile is published. **待機動作** loops while the Kiosk waits; **招呼客人**
+plays once when a proactive greeting is spoken. Other configured clips map to
+listening, thinking, recommendation presentation, and order acknowledgement.
 
 ## Completion survey invitation
 
@@ -119,6 +124,13 @@ the Server independently enforces recording and proactive-action permissions.
 Recording without observation does not start MediaPipe. These controls do not
 change browser camera/microphone permission or the existing local preview toggle.
 
+For voice-only acceptance testing, an administrator can enable **語音診斷模式（測試用）**
+on an individual device. The Kiosk then shows its latest eight VAD segments as
+recognizing, unrecognized, recognized, failed, or decided, together with the
+Speech Guard label/score when available and the final turn-decision reason.
+The Server returns these diagnostics only while that device setting is enabled;
+turn it off after testing because recognized visitor speech is visible on screen.
+
 Deployment requires migrations `0032_kiosk_device_settings.sql` and
 `0033_kiosk_voice_vad_settings.sql` before using the
 new Server routes. Include it in the Server schema package used by the normal
@@ -146,7 +158,16 @@ Administrator mode can choose the microphone, adjust the locally stored customer
 
 In Webnavior's published Kiosk Profile, **僅允許語音對話** hides the customer text composer and starts pre-authorized microphone capture on load. The kiosk visibly indicates whether its microphone is actively listening; it sends audio and reply text only to device-authenticated Server audio endpoints.
 
+The Profile can also include an optional PNG, JPEG, or WebP **服務場景** image. It is served as an immutable versioned kiosk asset and appears behind the virtual service character after the Profile is published. When no image is configured, the kiosk deliberately uses its built-in counter scene, so a readable service setting does not require a background upload.
+
 The kiosk treats listening, ASR, LLM/tool work, TTS, and proactive greetings as one cancellable interaction turn. It visibly distinguishes listening, recognition, and ordering work; while ASR or the model is processing, new voice turns are held so they cannot cancel an in-flight order. Customers can still barge in during spoken output to stop a reply. Stale results never update the transcript, and proactive greetings/reminders wait until no customer turn is active. Ordering workflows remain responsible for explicit customer confirmation before submission.
+
+Before a conversation starts, an engaged person's intelligible but semantically
+uncertain utterance becomes a short-lived browser-only candidate instead of
+being retained as a visitor turn. The Kiosk asks once whether help is wanted;
+a short affirmative answer promotes the already transcribed original utterance
+without requiring the customer to repeat it. Candidates expire without saving
+their audio or transcript when they are not confirmed.
 
 ### Webnavior Kiosk Activity Manifest
 

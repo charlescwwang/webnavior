@@ -10,7 +10,7 @@ import profile from '../../assets/lip-sync-profile.json' with { type: 'json' }
 
 import { useAudioContext } from '../../../../stage-ui/src/stores/audio'
 
-export function useVRMLipSync(audioNode: Ref<AudioBufferSourceNode | undefined, AudioBufferSourceNode | undefined>) {
+export function useVRMLipSync(audioNode: Ref<AudioNode | undefined, AudioNode | undefined>) {
   const { audioContext } = useAudioContext()
   const { state: lipSyncNode, isReady } = useAsyncState(createWLipSyncNode(audioContext, profile as Profile), undefined)
 

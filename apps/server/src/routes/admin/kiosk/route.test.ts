@@ -29,7 +29,14 @@ function createTestApp(_configKV?: ConfigKVService) {
     setSitePerformanceProfile: vi.fn(async ({ profile }: { profile: 'constrained' | 'balanced' | 'high' }) => ({ performanceProfile: profile })),
     setSiteVoiceVadSettings: vi.fn(async ({ settings }: { settings: object }) => ({ voiceVadSettings: settings })),
   } as unknown as KioskService
-  const characterAssets = {} as KioskCharacterAssetService
+  const characterAssets = {
+    save: vi.fn(async (input: { format: string, name: string }) => ({
+      format: input.format,
+      id: 'asset-1',
+      name: input.name,
+      sha256: 'a'.repeat(64),
+    })),
+  } as unknown as KioskCharacterAssetService
 
   const app = new Hono<HonoEnv>()
     .use('*', async (c, next) => {
@@ -42,10 +49,46 @@ function createTestApp(_configKV?: ConfigKVService) {
         return c.json({ error: error.errorCode }, error.statusCode)
       return c.json({ error: 'internal' }, 500)
     })
-  return { app, kioskService }
+  return { app, characterAssets, kioskService }
 }
 
 describe('admin kiosk model policy route', () => {
+  it('accepts a signature-validated scene background asset', async () => {
+    const { app, characterAssets } = createTestApp()
+    const body = new FormData()
+    body.set('asset', new File([
+      new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+    ], 'counter.png', { type: 'image/png' }))
+
+    const response = await app.request('/api/admin/kiosk/sites/site-1/background-assets', {
+      method: 'POST',
+      body,
+    })
+
+    expect(response.status).toBe(201)
+    await expect(response.json()).resolves.toMatchObject({ asset: { format: 'png', id: 'asset-1' } })
+    expect(characterAssets.save).toHaveBeenCalledWith(expect.objectContaining({
+      format: 'png',
+      name: 'counter.png',
+      siteId: 'site-1',
+    }))
+  })
+
+  it('rejects a scene background whose bytes are not an image', async () => {
+    const { app, characterAssets } = createTestApp()
+    const body = new FormData()
+    body.set('asset', new File(['not an image'], 'counter.png', { type: 'image/png' }))
+
+    const response = await app.request('/api/admin/kiosk/sites/site-1/background-assets', {
+      method: 'POST',
+      body,
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'INVALID_BACKGROUND_ASSET' })
+    expect(characterAssets.save).not.toHaveBeenCalled()
+  })
+
   it('publishes the signed-in administrator default experience and provisions a site from it', async () => {
     const { app, kioskService } = createTestApp()
     const draft = {

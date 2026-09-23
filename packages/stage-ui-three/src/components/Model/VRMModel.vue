@@ -35,6 +35,8 @@ import { until } from '@vueuse/core'
 import {
   AnimationMixer,
   Box3,
+  LoopOnce,
+  LoopRepeat,
   MathUtils,
   Mesh,
   MeshPhysicalMaterial,
@@ -106,12 +108,13 @@ import {
   * - modelRotationY: The rotation of the model (y-axis)
 */
 const props = withDefaults(defineProps<{
-  currentAudioSource?: AudioBufferSourceNode
+  currentAudioSource?: AudioNode
   cursorPosition?: { x: number, y: number }
   personPosition?: { x: number, y: number }
   lastCommittedModelSrc?: string
   modelSrc?: string
   idleAnimation: string
+  animationLoop?: boolean
   // loadAnimations?: string[]
   paused?: boolean
 
@@ -128,6 +131,7 @@ const props = withDefaults(defineProps<{
 
   camera: PerspectiveCamera
 }>(), {
+  animationLoop: true,
   paused: false,
 })
 /*
@@ -151,6 +155,7 @@ const {
   lastCommittedModelSrc,
   modelSrc,
   idleAnimation,
+  animationLoop,
   // loadAnimations, // TBC
   paused,
 
@@ -176,6 +181,7 @@ const raycaster = new Raycaster()
 
 // Animation related ref
 const vrmAnimationMixer = ref<AnimationMixer>()
+let activeMotionAction: ReturnType<AnimationMixer['clipAction']> | undefined
 const { onBeforeRender, stop, start } = useLoop()
 
 const vrmHooks: readonly VrmHook[] = resolveInternalVrmHooks()
@@ -784,9 +790,21 @@ async function loadModel() {
 
     // play animation
     nextVrmAnimationMixer = new AnimationMixer(_vrm.scene)
-    nextVrmAnimationMixer.clipAction(clip).play()
+    activeMotionAction = nextVrmAnimationMixer.clipAction(clip)
+    activeMotionAction.setLoop(animationLoop.value ? LoopRepeat : LoopOnce, animationLoop.value ? Infinity : 1)
+    activeMotionAction.clampWhenFinished = !animationLoop.value
+    activeMotionAction.play()
 
     nextVrmEmote = useVRMEmote(_vrm)
+    const requiredLipExpressions = ['aa', 'ee', 'ih', 'oh', 'ou']
+    const availableExpressions = _vrm.expressionManager
+      ? Object.keys(_vrm.expressionManager.expressionMap)
+      : []
+    const missingLipExpressions = requiredLipExpressions.filter(name => !availableExpressions.includes(name))
+    if (missingLipExpressions.length > 0) {
+      // NOTICE: VRMA clips cannot add visemes; this must be fixed in the VRM export.
+      console.warn('[stage-ui-three] VRM is missing lip-sync expressions', { missingLipExpressions })
+    }
 
     /*
       * Shader setting
@@ -924,6 +942,21 @@ onMounted(async () => {
     if (newSrc !== oldSrc) {
       loadModel()
     }
+  })
+  watch(idleAnimation, async (nextAnimation, previousAnimation) => {
+    if (!vrm.value || !vrmAnimationMixer.value || nextAnimation === previousAnimation)
+      return
+    const animation = await loadVRMAnimation(nextAnimation)
+    const clip = await clipFromVRMAnimation(vrm.value, animation)
+    if (!clip)
+      return
+    reAnchorRootPositionTrack(clip, vrm.value)
+    const nextAction = vrmAnimationMixer.value.clipAction(clip).reset()
+    nextAction.setLoop(animationLoop.value ? LoopRepeat : LoopOnce, animationLoop.value ? Infinity : 1)
+    nextAction.clampWhenFinished = !animationLoop.value
+    activeMotionAction?.crossFadeTo(nextAction, 0.18, false)
+    nextAction.play()
+    activeMotionAction = nextAction
   })
 
   // wait until scene is not undefined

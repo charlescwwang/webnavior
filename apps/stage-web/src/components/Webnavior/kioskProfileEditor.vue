@@ -6,6 +6,8 @@ import { reactive, watch } from 'vue'
 
 import ExperienceEditorSection from './experienceEditorSection.vue'
 
+type MotionSlot = 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking'
+
 const props = defineProps<{
   allowAssetUpload?: boolean
   busy: boolean
@@ -16,9 +18,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   save: [input: { draft: KioskProfileDraft, publish: boolean }]
   uploadAvatar: [file: File]
-  uploadIdleMotion: [file: File]
+  uploadBackground: [file: File]
+  uploadMotion: [input: { file: File, slot: MotionSlot }]
   uploadRoleCard: [file: File]
 }>()
+
+const motionSlots: Array<{ description: string, key: MotionSlot, label: string }> = [
+  { key: 'idle', label: '待機動作', description: '顧客尚未互動時循環播放。' },
+  { key: 'greeting', label: '招呼客人', description: 'Kiosk 主動開口招呼客人時播放一次。' },
+  { key: 'listening', label: '聆聽顧客', description: '顧客說話或輸入時循環播放。' },
+  { key: 'thinking', label: '思考／查詢中', description: '辨識、LLM 或工具處理時循環播放。' },
+  { key: 'presentRecommendations', label: '展示推薦', description: '推薦餐點實際顯示在畫面時播放一次。' },
+  { key: 'acknowledge', label: '確認選擇', description: '加入購物車或確認餐點時播放一次。' },
+]
 
 function cloneDraft(draft: KioskProfileDraft): KioskProfileDraft {
   return {
@@ -26,7 +38,9 @@ function cloneDraft(draft: KioskProfileDraft): KioskProfileDraft {
     snapshot: {
       ...draft.snapshot,
       ...(draft.snapshot.characterAsset ? { characterAsset: { ...draft.snapshot.characterAsset } } : {}),
+      ...(draft.snapshot.sceneBackground ? { sceneBackground: { ...draft.snapshot.sceneBackground } } : {}),
       ...(draft.snapshot.idleMotion ? { idleMotion: { ...draft.snapshot.idleMotion } } : {}),
+      ...(draft.snapshot.motionPack ? { motionPack: { ...draft.snapshot.motionPack } } : {}),
       ...(draft.snapshot.characterCard ? { characterCard: { ...draft.snapshot.characterCard } } : {}),
       interactiveService: { ...draft.snapshot.interactiveService },
     },
@@ -49,6 +63,14 @@ function selectAvatar(event: Event) {
   input.value = ''
 }
 
+function selectBackground(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.item(0)
+  if (file)
+    emit('uploadBackground', file)
+  input.value = ''
+}
+
 function selectRoleCard(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.item(0)
@@ -57,11 +79,11 @@ function selectRoleCard(event: Event) {
   input.value = ''
 }
 
-function selectIdleMotion(event: Event) {
+function selectMotion(slot: MotionSlot, event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.item(0)
   if (file)
-    emit('uploadIdleMotion', file)
+    emit('uploadMotion', { file, slot })
   input.value = ''
 }
 </script>
@@ -102,14 +124,20 @@ function selectIdleMotion(event: Event) {
         <span :class="['font-semibold text-slate-900 dark:text-white']">目前虛擬角色：</span>
         <span :class="['text-slate-600 dark:text-slate-300']">{{ form.snapshot.characterAsset.name }}（{{ form.snapshot.characterAsset.format === 'vrm' ? 'VRM' : 'Live2D' }}）</span>
       </div>
-      <label v-if="props.capabilities?.canEditExperience && form.snapshot.characterAsset?.format === 'vrm'" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
-        待機動作
-        <input type="file" accept=".vrma" :class="['block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-amber-700 file:px-3 file:py-2 file:font-semibold file:text-white hover:file:bg-amber-800 dark:text-slate-300']" :disabled="busy" @change="selectIdleMotion">
-        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">上傳與目前 VRM 相容的 .vrma。發布後它會成為角色的待機循環；招呼與推薦動作會在後續版本另行設定。</span>
-      </label>
-      <div v-if="form.snapshot.idleMotion" :class="['rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100']">
-        <span :class="['font-semibold']">目前待機動作：</span>
-        {{ form.snapshot.idleMotion.name }}
+      <div v-if="props.capabilities?.canEditExperience && form.snapshot.characterAsset?.format === 'vrm'" :class="['grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30']">
+        <div>
+          <p :class="['m-0 text-sm font-semibold text-amber-950 dark:text-amber-100']">
+            角色動作包
+          </p>
+          <p :class="['mb-0 mt-1 text-xs text-amber-900 dark:text-amber-200']">
+            依檔名可協助辨識，但請確認每個欄位的動作角色。
+          </p>
+        </div>
+        <label v-for="slot in motionSlots" :key="slot.key" :class="['flex flex-col gap-1 text-sm font-medium text-slate-700 dark:text-slate-200']">
+          {{ slot.label }}
+          <input type="file" accept=".vrma" :disabled="busy" @change="selectMotion(slot.key, $event)">
+          <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ form.snapshot.motionPack?.[slot.key]?.name ?? slot.description }}</span>
+        </label>
       </div>
       <div v-if="form.snapshot.characterCard" :class="['grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-950/40']">
         <p :class="['m-0 text-sm font-semibold text-slate-900 dark:text-white']">
@@ -145,6 +173,17 @@ function selectIdleMotion(event: Event) {
         <Textarea v-model="form.snapshot.agentInstructions" :disabled="busy || !props.capabilities?.canEditExperience" :rows="5" placeholder="例如：以親切、簡潔的口吻協助顧客；不確定時主動說明限制。" />
         <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">這些內容會加在角色卡指示之後，可用來補充本店的營運規則。</span>
       </label>
+    </ExperienceEditorSection>
+
+    <ExperienceEditorSection title="服務場景" description="未設定圖片時，Kiosk 會使用內建的柔和櫃台氛圍；上傳後，圖片會顯示在服務員後方。">
+      <label v-if="props.capabilities?.canEditExperience && props.allowAssetUpload !== false" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+        自訂場景背景
+        <input type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" :class="['block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-amber-700 file:px-3 file:py-2 file:font-semibold file:text-white hover:file:bg-amber-800 dark:text-slate-300']" :disabled="busy" @change="selectBackground">
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">支援 PNG、JPEG、WebP，最大 12 MB。建議使用沒有文字的店內、櫃台或品牌氛圍圖片。</span>
+      </label>
+      <p :class="['m-0 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-950/40 dark:text-slate-300']">
+        {{ form.snapshot.sceneBackground ? `目前場景背景：${form.snapshot.sceneBackground.name}` : '目前使用內建櫃台氛圍。' }}
+      </p>
     </ExperienceEditorSection>
 
     <ExperienceEditorSection title="對話行為" description="設定顧客開始互動時會看到的文字。">

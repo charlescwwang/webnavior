@@ -3,6 +3,7 @@ import type { KioskInteractionEntry, KioskVisitorSessionDetail, KioskVisitorSess
 
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
+import { Button } from '@proj-airi/ui'
 import { computed, onUnmounted, shallowRef } from 'vue'
 
 import KioskVisitorSessionMedia from './kioskVisitorSessionMedia.vue'
@@ -10,6 +11,9 @@ import KioskVisitorSessionMedia from './kioskVisitorSessionMedia.vue'
 const props = defineProps<{
   detail?: KioskVisitorSessionDetail
   session?: KioskVisitorSessionSummary
+}>()
+const emit = defineEmits<{
+  delete: [visitorSessionId: string]
 }>()
 const audioSources = shallowRef<Record<string, string>>({})
 const loadingAudioEntryId = shallowRef<string>()
@@ -148,13 +152,18 @@ onUnmounted(() => Object.values(imageSources.value).forEach(source => URL.revoke
 
 <template>
   <section :class="['overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm', 'dark:border-slate-800 dark:bg-slate-900']">
-    <div :class="['border-b border-slate-200 px-5 py-4 dark:border-slate-800']">
-      <h2 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
-        {{ props.session ? `${props.session.deviceLabel} 的互動內容` : '互動內容' }}
-      </h2>
-      <p v-if="props.session" :class="['mb-0 mt-1 text-xs text-slate-500 dark:text-slate-400']">
-        開始於 {{ formatDate(props.session.createdAt) }}
-      </p>
+    <div :class="['flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800']">
+      <div>
+        <h2 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
+          {{ props.session ? `${props.session.deviceLabel} 的互動內容` : '互動內容' }}
+        </h2>
+        <p v-if="props.session" :class="['mb-0 mt-1 text-xs text-slate-500 dark:text-slate-400']">
+          開始於 {{ formatDate(props.session.createdAt) }}
+        </p>
+      </div>
+      <Button v-if="props.session" size="sm" variant="danger" @click="emit('delete', props.session.id)">
+        刪除本次對話
+      </Button>
     </div>
     <div v-if="props.detail?.entries.length" :class="['flex flex-col gap-6 p-5']">
       <section v-if="conversationEntries.length">

@@ -148,3 +148,7 @@
 {"id":"H-148","label":"KIOSK_COMMAND","text":"不登帳號直接進菜單","difficulty":"hard","requires_context":false,"context":null,"pair_id":"HPAIR-074","pair_focus":"elliptical_agent_answer_vs_explicit_system_action"}
 {"id":"H-149","label":"AGENT_RESPONSE","text":"購物車那邊","difficulty":"hard","requires_context":true,"context":{"previous_agent_turn":"要回菜單，還是查看購物車？","kiosk_state":"AWAITING_NAVIGATION_CHOICE","expected_response":"navigation_choice"},"pair_id":"HPAIR-075","pair_focus":"elliptical_agent_answer_vs_explicit_system_action"}
 {"id":"H-150","label":"KIOSK_COMMAND","text":"開一下目前購物車內容","difficulty":"hard","requires_context":false,"context":null,"pair_id":"HPAIR-075","pair_focus":"elliptical_agent_answer_vs_explicit_system_action"}
+{"id":"H-151","label":"ORDER_INTENT","text":"今天很餓，有什麼可以推薦我吃的","difficulty":"hard","requires_context":false,"context":null,"pair_id":"HPAIR-076","pair_focus":"customer_menu_request_vs_social_food_talk"}
+{"id":"H-152","label":"BACKGROUND_CONVERSATION","text":"他今天很餓，等等想去別家吃","difficulty":"hard","requires_context":false,"context":null,"pair_id":"HPAIR-076","pair_focus":"customer_menu_request_vs_social_food_talk"}
+{"id":"H-153","label":"ORDER_INTENT","text":"不知道吃什麼，可以幫我推薦嗎","difficulty":"hard","requires_context":false,"context":null,"pair_id":"HPAIR-077","pair_focus":"customer_menu_request_vs_social_food_talk"}
+{"id":"H-154","label":"BACKGROUND_CONVERSATION","text":"她每次不知道吃什麼就問大家推薦","difficulty":"hard","requires_context":false,"context":null,"pair_id":"HPAIR-077","pair_focus":"customer_menu_request_vs_social_food_talk"}

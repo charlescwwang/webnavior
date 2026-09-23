@@ -34,12 +34,26 @@ const profileSyncError = shallowRef<string>()
 const voiceConversationOnly = computed(() => Boolean(
   profile.value?.snapshot.voiceConversationOnly,
 ))
+function kioskAssetUrl(asset: { id: string, sha256: string }) {
+  const baseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
+  return `${baseUrl}/assets/kiosk/${encodeURIComponent(asset.id)}?v=${encodeURIComponent(asset.sha256)}`
+}
 const idleAnimation = computed(() => {
-  const motion = profile.value?.snapshot.idleMotion
+  const motion = profile.value?.snapshot.motionPack?.idle ?? profile.value?.snapshot.idleMotion
   if (!motion)
     return undefined
-  const baseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
-  return `${baseUrl}/assets/kiosk/${encodeURIComponent(motion.id)}?v=${encodeURIComponent(motion.sha256)}`
+  return kioskAssetUrl(motion)
+})
+const motionAnimations = computed(() => {
+  const pack = profile.value?.snapshot.motionPack
+  return Object.fromEntries(Object.entries(pack ?? {}).map(([name, motion]) => [
+    name,
+    kioskAssetUrl(motion),
+  ]))
+})
+const sceneBackgroundUrl = computed(() => {
+  const background = profile.value?.snapshot.sceneBackground
+  return background ? kioskAssetUrl(background) : undefined
 })
 
 onMounted(async () => {
@@ -67,7 +81,7 @@ watch(profile, async (assignedProfile) => {
 
 <template>
   <KioskDraftPreview v-if="isDraftPreview" />
-  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :device="device" :device-settings="deviceSettings?.effective" :idle-animation="idleAnimation" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-settings="voiceVadSettings" @device-settings-updated="refreshSettings" />
+  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :device="device" :device-settings="deviceSettings?.effective" :idle-animation="idleAnimation" :motion-animations="motionAnimations" :scene-background-url="sceneBackgroundUrl" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-settings="voiceVadSettings" @device-settings-updated="refreshSettings" />
   <main v-else-if="state === 'registered' && device && profileSyncError" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-200']">
     <div :class="['max-w-xl space-y-3']">
       <h1 :class="['text-2xl font-semibold']">

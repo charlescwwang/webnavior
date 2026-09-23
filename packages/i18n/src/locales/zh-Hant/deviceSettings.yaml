@@ -32,9 +32,11 @@ fields:
   performanceProfile: 裝置運作模式
   presenceVisionMode: Presence 視覺模式
   voiceVadSettings: Silero 語音偵測
+  voiceDiagnosticsEnabled: 語音診斷模式（測試用）
 fieldDescriptions:
   performanceProfile: 依硬體能力調整相機畫質、人員偵測速度與錄影上限。一般設備選「一般（建議）」；畫面卡頓時選「省資源」；高規設備才選「高規設備」。
   faceDetectionConfidence: 調低可偵測較遠或較小的人臉，但較容易誤判。預設為 0.60。
+  voiceDiagnosticsEnabled: 僅測試時開啟。Kiosk 會顯示語音辨識、Speech Guard 與 turn decision 的即時結果；此資訊不會顯示給一般顧客。
 vad:
   title: Silero 語音偵測
   description: 控制何時開始錄音、何時結束一段語句，以及送往語音辨識前保留的前後音訊。

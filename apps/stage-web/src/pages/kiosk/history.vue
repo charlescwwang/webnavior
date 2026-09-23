@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { Button } from '@proj-airi/ui'
+import { AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogRoot, AlertDialogTitle } from 'reka-ui'
 import { computed, onMounted, shallowRef, watch } from 'vue'
 
 import KioskVisitorSessionList from '../../components/Webnavior/kioskVisitorSessionList.vue'
@@ -27,6 +29,8 @@ const selectedVisitorSessionIds = shallowRef<string[]>([])
 const selectedDeviceId = shallowRef('')
 const historyFilter = shallowRef<'all' | 'greeting_only' | 'interactive'>('interactive')
 const historyReady = shallowRef(false)
+const deleteDialogOpen = shallowRef(false)
+const pendingDeleteSessionId = shallowRef<string>()
 const filteredVisitorSessions = computed(() => historyFilter.value === 'all'
   ? visitorSessions.value
   : visitorSessions.value.filter(session => session.presence === historyFilter.value))
@@ -34,6 +38,22 @@ const filteredVisitorSessions = computed(() => historyFilter.value === 'all'
 async function deleteSelectedVisitorSessions() {
   await deleteVisitorSessions(selectedVisitorSessionIds.value)
   selectedVisitorSessionIds.value = []
+}
+
+function requestDeleteVisitorSession(visitorSessionId: string) {
+  pendingDeleteSessionId.value = visitorSessionId
+  deleteDialogOpen.value = true
+}
+
+async function confirmDeleteVisitorSession() {
+  const visitorSessionId = pendingDeleteSessionId.value
+  if (!visitorSessionId)
+    return
+
+  await deleteVisitorSessions([visitorSessionId])
+  selectedVisitorSessionIds.value = selectedVisitorSessionIds.value.filter(id => id !== visitorSessionId)
+  deleteDialogOpen.value = false
+  pendingDeleteSessionId.value = undefined
 }
 
 async function downloadSelectedTrainingDataset(kind: 'asr' | 'llm') {
@@ -121,8 +141,33 @@ watch(historyFilter, () => {
           @select-ids="selectedVisitorSessionIds = $event"
         />
       </div>
-      <KioskVisitorSessionTranscript :detail="visitorSessionDetail" :session="selectedSession" />
+      <KioskVisitorSessionTranscript :detail="visitorSessionDetail" :session="selectedSession" @delete="requestDeleteVisitorSession" />
     </section>
+    <AlertDialogRoot :open="deleteDialogOpen" @update:open="deleteDialogOpen = $event">
+      <AlertDialogPortal>
+        <AlertDialogOverlay :class="['fixed inset-0 z-100 bg-black/50']" />
+        <AlertDialogContent :class="['fixed left-1/2 top-1/2 z-100 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-6 shadow-xl dark:border-slate-700 dark:bg-slate-900']" @interact-outside.prevent>
+          <AlertDialogTitle :class="['m-0 text-xl font-semibold text-slate-950 dark:text-white']">
+            刪除本次對話？
+          </AlertDialogTitle>
+          <AlertDialogDescription :class="['mb-0 mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300']">
+            此操作會永久刪除這次接待的對話、事件與已保存的媒體，無法復原。
+          </AlertDialogDescription>
+          <div :class="['mt-6 flex justify-end gap-3']">
+            <AlertDialogCancel as-child>
+              <Button variant="secondary" :disabled="visitorHistoryLoading">
+                取消
+              </Button>
+            </AlertDialogCancel>
+            <AlertDialogAction as-child>
+              <Button variant="danger" :disabled="visitorHistoryLoading" @click.prevent="confirmDeleteVisitorSession">
+                {{ visitorHistoryLoading ? '刪除中…' : '確認刪除' }}
+              </Button>
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialogPortal>
+    </AlertDialogRoot>
   </div>
 </template>
 

@@ -13,8 +13,16 @@ An embedded service may send either event to its parent:
 window.parent.postMessage({
   source: 'airi-interaction-lifecycle',
   type: 'activity' | 'completed',
-  // Present only for a completed order and limited to non-personal POC data.
-  orderResult: { id, fulfillmentMode, itemCount, total, simulated },
+  // Present only for an accepted completed order and limited to non-personal data.
+  orderResult: {
+    id,
+    fulfillmentMode,
+    itemCount,
+    total,
+    environment,
+    status: 'accepted',
+    ...(posOrderId ? { posOrderId } : {}),
+  },
 }, { targetOrigin: hostOrigin })
 ```
 
@@ -30,7 +38,8 @@ available.
 - `completed` means the service completed its customer flow. The host enters
   its existing completion and next-customer lifecycle. A menu service may
   attach the listed non-personal `orderResult`; the host validates its shape
-  only after validating the current iframe source and approved origin.
+  only after validating the current iframe source and approved origin. A
+  rejected or uncertain submission must not emit `completed`.
 
 The host accepts a message only when both the event's service origin and
 `event.source` match the currently embedded, allow-listed service iframe.

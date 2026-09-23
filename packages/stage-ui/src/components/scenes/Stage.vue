@@ -49,8 +49,12 @@ import { useSpeechRuntimeStore } from '../../stores/speech-runtime'
 
 const props = withDefaults(defineProps<{
   cursorPosition?: { x: number, y: number }
-  /** Optional server-selected VRM idle animation. */
+  /** Optional server-selected VRM animation. */
   idleAnimation?: string
+  /** Whether the selected animation repeats instead of completing once. */
+  animationLoop?: boolean
+  /** External speech audio, used by kiosk TTS to drive VRM lip-sync. */
+  externalAudioSource?: AudioNode
   personPosition?: { x: number, y: number }
   enableOrbitControls?: boolean
   paused?: boolean
@@ -58,6 +62,7 @@ const props = withDefaults(defineProps<{
   thinking?: boolean
 }>(), {
   enableOrbitControls: true,
+  animationLoop: true,
   paused: false,
   thinking: false,
 })
@@ -1042,10 +1047,11 @@ defineExpose({
         :cursor-position="cursorPosition"
         :person-position="personPosition"
         :idle-animation="props.idleAnimation ?? animations.idleLoop.toString()"
+        :animation-loop="props.animationLoop"
         :paused="paused"
         :show-axes="stageViewControlsEnabled"
         :enable-orbit-controls="props.enableOrbitControls"
-        :current-audio-source="currentAudioSource"
+        :current-audio-source="props.externalAudioSource ?? currentAudioSource"
         @error="console.error"
       />
       <SpineScene

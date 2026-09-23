@@ -17,6 +17,7 @@ import type { FluxService } from './services/domain/flux'
 import type { FluxTransactionService } from './services/domain/flux-transaction'
 import type { KioskService } from './services/domain/kiosk'
 import type { KioskCharacterAssetService } from './services/domain/kiosk-character-assets'
+import type { KioskSpeechGuardRuntime } from './services/domain/kiosk-speech-guard/runtime'
 import type { LlmRouterService } from './services/domain/llm-router'
 import type { ProductEventService } from './services/domain/product-events'
 import type { ProviderCatalogService } from './services/domain/provider-catalog'
@@ -100,6 +101,7 @@ import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
 import { createKioskEmbeddingGateway } from './services/domain/kiosk-embedding'
 import { createKioskMediaService } from './services/domain/kiosk-media'
+import { createKioskSpeechGuardRuntime } from './services/domain/kiosk-speech-guard/runtime'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
 import { createProductEventService } from './services/domain/product-events'
@@ -145,6 +147,7 @@ interface AppDeps {
   webnaviorAiRuntimeService: WebnaviorAiRuntimeService
   kioskService: KioskService
   kioskCharacterAssetService: KioskCharacterAssetService
+  kioskSpeechGuardRuntime: KioskSpeechGuardRuntime
 }
 
 export async function buildApp(deps: AppDeps) {
@@ -415,6 +418,7 @@ export async function buildApp(deps: AppDeps) {
         configKV: deps.configKV,
         envelopeCrypto: deps.envelopeCrypto,
       }),
+      speechGuard: deps.kioskSpeechGuardRuntime,
       kioskService: deps.kioskService,
       mediaService: kioskMediaService,
       llmGateway: {
@@ -523,6 +527,7 @@ export async function buildApp(deps: AppDeps) {
     .route('/api/admin/webnavior-ai', createAdminWebnaviorAiRoutes({
       runtimeService: deps.webnaviorAiRuntimeService,
       service: deps.webnaviorAiControlService,
+      speechGuard: deps.kioskSpeechGuardRuntime,
     }))
 
     /**
@@ -889,6 +894,18 @@ export async function createApp() {
     }),
   })
 
+  const kioskSpeechGuardRuntime = injeca.provide('services:kioskSpeechGuardRuntime', {
+    dependsOn: { configKV, db, envelopeCrypto },
+    build: ({ dependsOn }) => createKioskSpeechGuardRuntime({
+      db: dependsOn.db,
+      embeddingGateway: createKioskEmbeddingGateway({
+        configKV: dependsOn.configKV,
+        envelopeCrypto: dependsOn.envelopeCrypto,
+      }),
+      embeddingRuntimeConfig: async () => await dependsOn.configKV.getOptional('WEBNAVIOR_EMBEDDING_CONFIG') ?? undefined,
+    }),
+  })
+
   // LLM router (KTD-5 in-process replacement for the knoway sidecar).
   // LLM_ROUTER_MASTER_KEY is required at env-parse time, so this provider
   // always builds a real router — the legacy `null` fallback path is gone.
@@ -941,6 +958,7 @@ export async function createApp() {
     providerCatalogService,
     ttsConcurrencyLedger,
     kioskCharacterAssetService,
+    kioskSpeechGuardRuntime,
     kioskRetentionSweep,
   })
   // Register the cluster-wide ObservableGauges for sessions / users. Each
@@ -968,6 +986,7 @@ export async function createApp() {
     chatService: resolved.chatService,
     kioskService: resolved.kioskService,
     kioskCharacterAssetService: resolved.kioskCharacterAssetService,
+    kioskSpeechGuardRuntime: resolved.kioskSpeechGuardRuntime,
     providerService: resolved.providerService,
     fluxService: resolved.fluxService,
     fluxTransactionService: resolved.fluxTransactionService,

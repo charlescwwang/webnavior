@@ -1,10 +1,13 @@
 import type { PresenceState } from '@proj-airi/kiosk-proactive'
 
-export type KioskTurnDecision = 'continue' | 'ignore' | 'interrupt'
-export type KioskTurnDecisionReason = 'inactive-work' | 'low-confidence' | 'missing-or-passing' | 'explicit-change' | 'similar-acknowledgement' | 'new-order-intent' | 'no-customer-intent'
+import type { KioskSpeechGuardLabel } from '../kiosk-speech-guard'
+
+export type KioskTurnDecision = 'candidate' | 'continue' | 'ignore' | 'interrupt'
+export type KioskTurnDecisionReason = 'low-confidence' | 'missing-or-passing' | 'speech-guard-customer-intent' | 'speech-guard-uncertain' | 'initial-customer-intent' | 'initial-uncertain' | 'initial-no-customer-intent' | 'explicit-change' | 'similar-acknowledgement' | 'new-order-intent' | 'no-customer-intent'
 
 const orderChangePattern = /不要|取消|改[成為]?|換[成掉]?|加[一兩\d點]|減[一兩\d點]|多[一兩\d]|少[一兩\d]/
 const newOrderIntentPattern = /我要|我想要|幫我|再來/
+const initialCustomerIntentPattern = /我要|我想要|幫我|再來|點餐|菜單|推薦|請問|多少錢|有.+嗎|可以.+嗎|有什麼.*(?:吃|點)|(?:肚子)?餓.*(?:吃|點)/
 
 /**
  * Makes the conservative interruption decision independently from UI and VAD.
@@ -16,6 +19,7 @@ export function decideKioskTurn(input: {
   asrConfidence?: number
   presenceState?: PresenceState
   semanticSimilarity?: number
+  speechGuardLabel?: KioskSpeechGuardLabel
   text: string
 }): KioskTurnDecision {
   return evaluateKioskTurn(input).decision
@@ -27,20 +31,44 @@ export function evaluateKioskTurn(input: {
   asrConfidence?: number
   presenceState?: PresenceState
   semanticSimilarity?: number
+  speechGuardLabel?: KioskSpeechGuardLabel
   text: string
 }): { decision: KioskTurnDecision, reason: KioskTurnDecisionReason } {
-  if (!input.activeWork)
-    return { decision: 'continue', reason: 'inactive-work' }
-
   const text = input.text.trim()
   if (text.length < 2 || (input.asrConfidence !== undefined && input.asrConfidence < 0.55))
     return { decision: 'ignore', reason: 'low-confidence' }
 
   // Presence is a local, anonymous state rather than identity proof. It may
   // only veto the clearly implausible case: a passer-by or no current person
-  // trying to pre-empt the customer whose order is already under way.
+  // sending a new request or pre-empting an active customer.
   if (input.presenceState === 'EMPTY' || input.presenceState === 'PASSING')
     return { decision: 'ignore', reason: 'missing-or-passing' }
+
+  if (!input.activeWork) {
+    if (input.speechGuardLabel) {
+      if (input.speechGuardLabel === 'ORDER_INTENT' || input.speechGuardLabel === 'KIOSK_COMMAND')
+        return { decision: 'continue', reason: 'speech-guard-customer-intent' }
+
+      // An embedding label alone cannot establish whether someone is addressing
+      // the kiosk. Keep an engaged person's intelligible utterance in a
+      // short-lived, non-persisted candidate state instead of silently losing a
+      // genuine request that happened to resemble background conversation.
+      return initialCustomerIntentPattern.test(text)
+        ? { decision: 'continue', reason: 'initial-customer-intent' }
+        : input.presenceState === 'ENGAGED'
+          ? { decision: 'candidate', reason: 'speech-guard-uncertain' }
+          : { decision: 'ignore', reason: 'initial-no-customer-intent' }
+    }
+
+    // A fresh conversation has no customer request to compare semantically.
+    // Require an observable ordering/questioning intent, so room conversation
+    // and ASR noise do not create a visitor session or reach the Agent.
+    return initialCustomerIntentPattern.test(text)
+      ? { decision: 'continue', reason: 'initial-customer-intent' }
+      : input.presenceState === 'ENGAGED'
+        ? { decision: 'candidate', reason: 'initial-uncertain' }
+        : { decision: 'ignore', reason: 'initial-no-customer-intent' }
+  }
 
   // An explicit correction wins even when it shares most of its words with the
   // order under way, such as "不要蝦捲，改成擔仔麵".

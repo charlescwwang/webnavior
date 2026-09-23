@@ -18,10 +18,12 @@ export type InteractiveServiceEvent = 'activity' | 'completed'
 
 /** Non-personal order outcome emitted by the approved demonstration ordering service. */
 export interface InteractiveServiceOrderResult {
+  environment: 'test' | 'live'
   fulfillmentMode: 'dine-in' | 'takeout'
   id: string
   itemCount: number
-  simulated: boolean
+  posOrderId?: string
+  status: 'accepted'
   total: number
 }
 
@@ -40,10 +42,12 @@ function hasValidOrderResult(value: unknown): value is InteractiveServiceOrderRe
   if (!value || typeof value !== 'object' || Array.isArray(value))
     return false
   const result = value as Record<string, unknown>
-  return typeof result.id === 'string'
+  return (result.environment === 'test' || result.environment === 'live')
+    && typeof result.id === 'string'
     && typeof result.itemCount === 'number'
-    && typeof result.simulated === 'boolean'
+    && result.status === 'accepted'
     && typeof result.total === 'number'
+    && (result.posOrderId === undefined || typeof result.posOrderId === 'string')
     && (result.fulfillmentMode === 'dine-in' || result.fulfillmentMode === 'takeout')
 }
 

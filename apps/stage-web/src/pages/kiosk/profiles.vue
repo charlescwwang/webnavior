@@ -44,6 +44,7 @@ const {
   sites,
   uploadCharacterAsset,
   uploadMotionAsset,
+  uploadSceneBackgroundAsset,
 } = useKioskManagement()
 
 async function handleRoleCardUpload(file: File) {
@@ -79,14 +80,28 @@ async function handleAvatarUpload(file: File) {
   }
 }
 
-async function handleIdleMotionUpload(file: File) {
-  const uploaded = await uploadMotionAsset(file)
+async function handleBackgroundUpload(file: File) {
+  const uploaded = await uploadSceneBackgroundAsset(file)
+  if (!profileDraft.value)
+    return
+  profileDraft.value = {
+    ...profileDraft.value,
+    snapshot: { ...profileDraft.value.snapshot, sceneBackground: uploaded.asset },
+  }
+}
+
+async function handleMotionUpload(input: { file: File, slot: 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking' }) {
+  const uploaded = await uploadMotionAsset(input.file)
   if (!profileDraft.value)
     return
 
   profileDraft.value = {
     ...profileDraft.value,
-    snapshot: { ...profileDraft.value.snapshot, idleMotion: uploaded.asset },
+    snapshot: {
+      ...profileDraft.value.snapshot,
+      ...(input.slot === 'idle' ? { idleMotion: uploaded.asset } : {}),
+      motionPack: { ...profileDraft.value.snapshot.motionPack, [input.slot]: uploaded.asset },
+    },
   }
 }
 
@@ -230,7 +245,8 @@ watch(() => route.query.site, async (siteId) => {
           :draft="profileDraft"
           @save="save($event.draft, $event.publish)"
           @upload-avatar="handleAvatarUpload"
-          @upload-idle-motion="handleIdleMotionUpload"
+          @upload-background="handleBackgroundUpload"
+          @upload-motion="handleMotionUpload"
           @upload-role-card="handleRoleCardUpload"
         />
         <KioskTechnicalSettingsEditor

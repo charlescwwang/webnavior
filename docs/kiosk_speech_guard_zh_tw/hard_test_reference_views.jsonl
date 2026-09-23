@@ -148,3 +148,7 @@
 {"id":"H-148","text_only_expected_label":"KIOSK_COMMAND","dialogue_state_expected_label":"KIOSK_COMMAND","scene_grounded_expected_label":"KIOSK_COMMAND","requires_external_speaker_target_evidence":false}
 {"id":"H-149","text_only_expected_label":"AMBIGUOUS","dialogue_state_expected_label":"AGENT_RESPONSE","scene_grounded_expected_label":"AGENT_RESPONSE","requires_external_speaker_target_evidence":false}
 {"id":"H-150","text_only_expected_label":"KIOSK_COMMAND","dialogue_state_expected_label":"KIOSK_COMMAND","scene_grounded_expected_label":"KIOSK_COMMAND","requires_external_speaker_target_evidence":false}
+{"id":"H-151","text_only_expected_label":"ORDER_INTENT","dialogue_state_expected_label":"ORDER_INTENT","scene_grounded_expected_label":"ORDER_INTENT","requires_external_speaker_target_evidence":false}
+{"id":"H-152","text_only_expected_label":"BACKGROUND_CONVERSATION","dialogue_state_expected_label":"BACKGROUND_CONVERSATION","scene_grounded_expected_label":"BACKGROUND_CONVERSATION","requires_external_speaker_target_evidence":false}
+{"id":"H-153","text_only_expected_label":"ORDER_INTENT","dialogue_state_expected_label":"ORDER_INTENT","scene_grounded_expected_label":"ORDER_INTENT","requires_external_speaker_target_evidence":false}
+{"id":"H-154","text_only_expected_label":"BACKGROUND_CONVERSATION","dialogue_state_expected_label":"BACKGROUND_CONVERSATION","scene_grounded_expected_label":"BACKGROUND_CONVERSATION","requires_external_speaker_target_evidence":false}

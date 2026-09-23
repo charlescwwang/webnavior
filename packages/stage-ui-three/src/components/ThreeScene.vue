@@ -48,7 +48,7 @@ import { SkyBox } from './Environment'
 import { VRMModel } from './Model'
 
 const props = withDefaults(defineProps<{
-  currentAudioSource?: AudioBufferSourceNode
+  currentAudioSource?: AudioNode
   cursorPosition?: { x: number, y: number }
   personPosition?: { x: number, y: number }
   modelSrc?: string
@@ -70,11 +70,13 @@ const props = withDefaults(defineProps<{
   enableOrbitControls?: boolean
   showAxes?: boolean
   idleAnimation?: string
+  animationLoop?: boolean
   paused?: boolean
 }>(), {
   enableOrbitControls: true,
   showAxes: false,
   idleAnimation: new URL('../assets/vrm/animations/idle_loop.vrma', import.meta.url).href,
+  animationLoop: true,
   paused: false,
 })
 
@@ -793,6 +795,7 @@ defineExpose({
         :last-committed-model-src="lastCommittedModelSrc"
         :model-src="props.modelSrc"
         :idle-animation="props.idleAnimation"
+        :animation-loop="props.animationLoop"
         :paused="props.paused"
         :env-select="envSelect"
         :sky-box-intensity="skyBoxIntensity"

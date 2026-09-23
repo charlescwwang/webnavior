@@ -25,6 +25,7 @@ const props = defineProps<{
   messages: readonly ChatHistoryItem[]
   pendingTranscript?: string
   sending: boolean
+  streamingAssistantMessage?: ChatHistoryItem
   voiceInputLocked: boolean
   voiceConversationOnly: boolean
 }>()
@@ -39,7 +40,12 @@ const { t } = useI18n()
 const messageInput = shallowRef('')
 const isComposing = shallowRef(false)
 const assistantLabel = 'Webnavior'
-const historyMessages = computed<ChatHistoryItem[]>(() => [...props.messages])
+// The unfinished assistant message is display-only. KioskScene moves it into
+// durable conversation history only after the Server emits turn-finished.
+const historyMessages = computed<ChatHistoryItem[]>(() => [
+  ...props.messages,
+  ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
+])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
 const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !props.sending && serviceReady.value)
 const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
@@ -150,8 +156,8 @@ async function sendMessage() {
 </template>
 
 <style scoped>
-.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(155 218 211 / 24%); border-radius: 1.5rem; background: linear-gradient(160deg, rgb(13 29 33 / 96%), rgb(5 15 18 / 98%)); grid-template-rows: minmax(0, 1fr) auto; }
-.message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: linear-gradient(180deg, rgb(2 13 16 / 68%), rgb(4 19 21 / 82%)); }
+.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; background: transparent; grid-template-rows: minmax(0, 1fr) auto; }
+.message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: transparent; }
 .message-history :deep([data-chat-message-role]) { display: flex; min-width: 0; max-width: 100%; }
 .message-history :deep(.ph-no-capture) { max-width: min(78%, 42rem); }
 .message-history :deep([data-chat-message-bubble]) { box-sizing: border-box; max-width: 100%; border-width: 2px; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 34%); }
@@ -170,7 +176,7 @@ async function sendMessage() {
 .message-history :deep(pre), .message-history :deep(code) { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 .pending-transcript { display: flex; align-items: center; gap: .4rem; width: fit-content; max-width: 90%; margin: .55rem .2rem .1rem auto; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #c9fffa; background: rgb(17 81 79 / 40%); font-size: .78rem; font-style: italic; }
 .assistant-activity { display: flex; align-items: center; gap: .45rem; width: fit-content; max-width: 90%; margin: .55rem .2rem; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #b9f5ec; background: rgb(17 81 79 / 48%); font-size: .78rem; font-weight: 700; }.activity-orb { width: .55rem; height: .55rem; border-radius: 999px; background: #7ce7d8; box-shadow: 0 0 .8rem #7ce7d8; animation: activity-pulse 1.2s ease-in-out infinite; }.activity-dots { display: flex; gap: .14rem; }.activity-dots i { width: .24rem; height: .24rem; border-radius: 999px; background: currentColor; animation: activity-bounce .9s ease-in-out infinite; }.activity-dots i:nth-child(2) { animation-delay: .12s; }.activity-dots i:nth-child(3) { animation-delay: .24s; }@keyframes activity-pulse { 50% { opacity: .35; transform: scale(.75); } }@keyframes activity-bounce { 50% { opacity: .3; transform: translateY(-.18rem); } }
-.message-composer { display: flex; min-width: 0; gap: .5rem; border-top: 1px solid rgb(255 255 255 / 12%); padding: .55rem; background: rgb(1 17 20 / 48%); }
+.message-composer { display: flex; min-width: 0; gap: .5rem; border-top: 1px solid rgb(255 255 255 / 10%); padding: .55rem; background: rgb(1 17 20 / 24%); }
 .message-input { min-width: 0; flex: 1; resize: none; border: 1px solid rgb(255 255 255 / 18%); border-radius: .8rem; padding: .45rem .7rem; color: #ecfffb; background: rgb(255 255 255 / 8%); font-size: var(--conversation-font-size); outline: none; }
 .message-input::placeholder { color: rgb(217 250 246 / 60%); }
 .send-button { display: flex; width: 2.5rem; height: 2.5rem; flex: none; align-items: center; justify-content: center; align-self: end; border: 0; border-radius: .75rem; color: #063437; background: #78e1d1; cursor: pointer; }

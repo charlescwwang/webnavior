@@ -1,4 +1,6 @@
+import type { KioskRoutesOptions } from '.'
 import type { Database } from '../../libs/db'
+import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { HonoEnv } from '../../types/hono'
 
 import { defaultDeviceSettings } from '@proj-airi/kiosk-proactive'
@@ -170,6 +172,50 @@ describe('kiosk routes', () => {
     expect(embed).toHaveBeenCalledWith(['我要一碗擔仔麵', '我要一碗擔仔麵'])
   })
 
+  it('uses the ready Speech Guard before opening a new customer conversation', async () => {
+    const classifyInitialSpeech = vi.fn(async () => ({ label: 'BACKGROUND_CONVERSATION' as const, score: 0.91 }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway,
+      runtimeModelPolicy,
+      secureCookies: false,
+      speechGuard: {
+        classifyInitialSpeech,
+        getStatus: async () => ({ baselineCount: 680, ready: true }),
+        initialize: async () => ({ baselineCount: 680, embeddingModelId: 'embeddinggemma', embeddingProfileId: 'profile-1' }),
+      },
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await db.insert(schema.user).values({ id: 'admin', name: 'Admin', email: 'admin@test.local', role: 'admin' })
+    await kioskService.updateDeviceSettings({ deviceId: device!.id, siteId: device!.siteId, userId: 'admin', source: 'admin', body: {
+      version: 1,
+      localControls: [],
+      overrides: { voiceDiagnosticsEnabled: true },
+    } })
+
+    const response = await app.request('/api/kiosk/turn-decisions', {
+      method: 'POST',
+      headers: { 'Cookie': cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ activeWork: false, presenceState: 'ENGAGED', text: '我昨天吃過這個' }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      decision: 'candidate',
+      diagnostic: { embeddingAvailable: true, speechGuard: { label: 'BACKGROUND_CONVERSATION', score: 0.91 } },
+      reason: 'speech-guard-uncertain',
+    })
+    expect(classifyInitialSpeech).toHaveBeenCalledWith('我昨天吃過這個')
+  })
+
   it('frames a proactive reminder as customer-facing copy instead of a Character Card setup turn', async () => {
     const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '想看看菜單嗎？我可以幫您。' } }] }))
     const kioskService = createKioskService(db)
@@ -259,6 +305,73 @@ describe('kiosk routes', () => {
     }))
   })
 
+  it('keeps every Kiosk instruction in the leading system message for strict OpenAI-compatible chat templates', async () => {
+    const complete = vi.fn(async (_input: Parameters<KioskRoutesOptions['llmGateway']['complete']>[0]) => Response.json({ choices: [{ message: { content: '您好，請問需要協助嗎？' } }] }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway: { complete },
+      runtimeModelPolicy,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const bootstrap = await app.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })
+    const { profile } = await bootstrap.json() as { profile: { releaseId: string, snapshot: KioskProfileSnapshot } }
+    await db.update(schema.kioskProfileReleases).set({
+      snapshot: {
+        ...profile.snapshot,
+        characterCard: {
+          description: '',
+          personality: '',
+          postHistoryInstructions: '回覆前必須遵守這項後置指示。',
+          scenario: '',
+          systemPrompt: '',
+        },
+      },
+    }).where(eq(schema.kioskProfileReleases.id, profile.releaseId))
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    await db.update(schema.kioskDevices)
+      .set({ settings: { ...defaultDeviceSettings, overrides: { greetingEnabled: true, observationEnabled: true, proactiveVlmEnabled: true } } })
+      .where(eq(schema.kioskDevices.id, device!.id))
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+    await app.request(`/api/kiosk/visitor-sessions/${session.id}/entries`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ content: '我想看看菜單。', kind: 'user_text', metadata: {} }),
+    })
+
+    const greeting = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ frame: 'data:image/jpeg;base64,ZmFrZQ==', kind: 'greeting' }),
+    })
+
+    expect(greeting.status).toBe(200)
+    const lastCompletion = complete.mock.calls.at(-1)
+    expect(lastCompletion).toBeDefined()
+    const messages = (lastCompletion![0].body as { messages: Array<{ content: unknown, role: string }> }).messages
+    expect(messages.filter(message => message.role === 'system')).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: 'system',
+      content: expect.stringContaining('這是 Kiosk 的系統主動互動事件。'),
+    })
+    expect(messages[0]).toMatchObject({
+      content: expect.stringContaining('【每次回覆都必須遵守的角色規則】\n回覆前必須遵守這項後置指示。'),
+    })
+    expect(messages[1]).toMatchObject({ role: 'user', content: '我想看看菜單。' })
+  })
+
   it('only lets the registered device create, append to, and end its own visitor session', async () => {
     const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
@@ -291,7 +404,7 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ content: '你好，想要牛肉麵。' }),
     })
     expect(reply.status).toBe(200)
-    await expect(reply.json()).resolves.toEqual({ answer: '您好，我可以協助您點餐。', toolCalls: [] })
+    await expect(reply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: '您好，我可以協助您點餐。', toolCalls: [] })
 
     const proactiveReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, {
       method: 'POST',
@@ -304,16 +417,25 @@ describe('kiosk routes', () => {
     const orderResult = await app.request(`/api/kiosk/visitor-sessions/${session.id}/order-results`, {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
-      body: JSON.stringify({ id: 'demo-order-1', fulfillmentMode: 'takeout', itemCount: 2, simulated: true, total: 180 }),
+      body: JSON.stringify({ environment: 'test', id: 'demo-order-1', fulfillmentMode: 'takeout', itemCount: 2, status: 'accepted', total: 180 }),
     })
     expect(orderResult.status).toBe(201)
     await expect(orderResult.json()).resolves.toEqual({
       entry: expect.objectContaining({
-        content: JSON.stringify({ fulfillmentMode: 'takeout', id: 'demo-order-1', itemCount: 2, simulated: true, total: 180 }),
+        content: JSON.stringify({ environment: 'test', fulfillmentMode: 'takeout', id: 'demo-order-1', itemCount: 2, status: 'accepted', total: 180 }),
         kind: 'order_result',
         sequence: 4,
       }),
     })
+
+    const retiredOrderResult = await app.request(`/api/kiosk/visitor-sessions/${session.id}/order-results`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ id: 'demo-order-2', fulfillmentMode: 'takeout', itemCount: 2, simulated: true, total: 180 }),
+    })
+    // This route-only harness has no app-wide API error middleware, so the
+    // thrown validation error is exposed as 500 here rather than the full app's 400.
+    expect(retiredOrderResult.status).toBe(500)
 
     const entry = await app.request(`/api/kiosk/visitor-sessions/${session.id}/entries`, {
       method: 'POST',
@@ -473,14 +595,14 @@ describe('kiosk routes', () => {
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
       body: JSON.stringify({ content: '我要牛肉麵', tools }),
     })
-    await expect(initialReply.json()).resolves.toEqual({ answer: undefined, toolCalls: expect.any(Array) })
+    await expect(initialReply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: undefined, toolCalls: expect.any(Array) })
 
     const completedReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
       body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'find_menu_item', content: '{"available":true}' }] }),
     })
-    await expect(completedReply.json()).resolves.toEqual({ answer: '牛肉麵目前可以點餐。', toolCalls: [] })
+    await expect(completedReply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: '牛肉麵目前可以點餐。', toolCalls: [] })
     expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({
       body: expect.objectContaining({
         tools,
@@ -491,5 +613,58 @@ describe('kiosk routes', () => {
         ]),
       }),
     }))
+  })
+
+  it('streams customer-safe assistant deltas without persisting partial text', async () => {
+    const complete = vi.fn(async () => new Response([
+      'data: {"choices":[{"delta":{"content":"牛肉"}}]}',
+      '',
+      'data: {"choices":[{"delta":{"content":"麵可以點餐。"}}]}',
+      '',
+      'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_menu","type":"function","function":{"name":"find_menu_item","arguments":"{}"}}]}}]}',
+      '',
+      'data: [DONE]',
+      '',
+    ].join('\r\n'), { headers: { 'Content-Type': 'text/event-stream' } }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway: { complete },
+      runtimeModelPolicy,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+
+    const reply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: { 'Accept': 'text/event-stream', 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ content: '我要牛肉麵' }),
+    })
+
+    expect(reply.headers.get('Content-Type')).toContain('text/event-stream')
+    const replyEvents = await reply.text()
+    expect(replyEvents).toContain('"text":"牛肉","type":"assistant-delta"')
+    expect(replyEvents).toContain('"id":"call_menu"')
+    expect(replyEvents).toContain('"type":"tool-requested"')
+    expect(replyEvents).toContain('"type":"turn-finished"')
+    await expect(kioskService.getVisitorSessionForDevice({ deviceId: (await kioskService.resolveDeviceCredential(cookie.split('=')[1]))!.id, visitorSessionId: session.id })).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ content: '牛肉麵可以點餐。', kind: 'assistant_text' }),
+        expect.objectContaining({ kind: 'tool_call' }),
+      ]),
+    })
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({ stream: true }) }))
   })
 })

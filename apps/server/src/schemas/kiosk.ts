@@ -1,6 +1,8 @@
 import type { DeviceSettings, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
+import type { KioskAgentInteractionState } from '../services/domain/kiosk-agent-interaction'
+
 import { defaultDeviceSettings, defaultKioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 import { relations } from 'drizzle-orm'
 import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
@@ -33,12 +35,32 @@ export interface KioskCharacterAssetReference {
   sha256: string
 }
 
+/** A server-owned image that optionally replaces the kiosk's CSS counter scene. */
+export interface KioskSceneBackgroundAssetReference {
+  format: 'jpeg' | 'png' | 'webp'
+  id: string
+  name: string
+  sha256: string
+}
+
+export type KioskStoredAssetFormat = KioskCharacterAssetReference['format'] | KioskSceneBackgroundAssetReference['format']
+
 /** A server-owned VRM animation selected independently from the avatar model. */
 export interface KioskMotionAssetReference {
   format: 'vrma'
   id: string
   name: string
   sha256: string
+}
+
+/** Server-owned VRMA clips assigned to observable kiosk interaction states. */
+export interface KioskMotionPack {
+  acknowledge?: KioskMotionAssetReference
+  greeting?: KioskMotionAssetReference
+  idle?: KioskMotionAssetReference
+  listening?: KioskMotionAssetReference
+  presentRecommendations?: KioskMotionAssetReference
+  thinking?: KioskMotionAssetReference
 }
 
 /** Portable Character Card v3 text retained by a Webnavior experience. */
@@ -57,8 +79,12 @@ export interface KioskProfileSnapshot {
   characterName: string
   /** Optional visual avatar selected for the service character. */
   characterAsset?: KioskCharacterAssetReference
+  /** Optional store scene shown behind the service character. */
+  sceneBackground?: KioskSceneBackgroundAssetReference
   /** Optional idle animation compatible with the selected VRM avatar. */
   idleMotion?: KioskMotionAssetReference
+  /** Optional interaction clips. `idleMotion` remains the fallback for existing releases. */
+  motionPack?: KioskMotionPack
   /** Character identity and behavioural context imported from Character Card v3. */
   characterCard?: KioskCharacterCard
   greetingPrompt: string
@@ -187,7 +213,7 @@ export const kioskCharacterAssets = pgTable('kiosk_character_assets', {
   id: text('id').primaryKey().$defaultFn(() => nanoid()),
   siteId: text('site_id').notNull().references(() => kioskSites.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
-  format: text('format').notNull().$type<KioskCharacterAssetReference['format']>(),
+  format: text('format').notNull().$type<KioskStoredAssetFormat>(),
   sha256: text('sha256').notNull(),
   byteSize: integer('byte_size').notNull(),
   /** Sanitized CCv3 fields, retained for future editing without retaining AIRI runtime configuration. */
@@ -218,6 +244,8 @@ export const kioskVisitorSessions = pgTable('kiosk_visitor_sessions', {
   expiresAt: timestamp('expires_at').notNull(),
   /** Allocated atomically so transcript and event entries retain a stable session order. */
   lastSequence: integer('last_sequence').notNull().default(0),
+  /** Ephemeral ordering-assistant context; cart data remains in the interactive service. */
+  agentInteraction: jsonb('agent_interaction').$type<KioskAgentInteractionState>().notNull().default({ dismissedSubjectIds: [], mode: 'active', noProgressCount: 0, suggestedSubjectIds: [] }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, table => [
   index('kiosk_visitor_sessions_site_created_idx').on(table.siteId, table.createdAt),

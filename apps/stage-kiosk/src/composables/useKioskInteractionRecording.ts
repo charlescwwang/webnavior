@@ -6,7 +6,7 @@ import type { InteractiveServiceOrderResult } from '../services/scenario-registr
 import { executeTool } from '@xsai/shared-chat'
 import { readonly, shallowRef } from 'vue'
 
-import { appendKioskInteraction, endKioskVisitorSession, recordKioskOrderResult, sendKioskAssistantAction, sendKioskConversationMessage, startKioskVisitorSession } from '../services/kiosk-device'
+import { appendKioskInteraction, endKioskVisitorSession, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
 
 /**
  * Owns a device-authenticated visitor session and its ordered durable records.
@@ -90,6 +90,7 @@ export function useKioskInteractionRecording() {
     tools: Tool[],
     onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void,
     signal?: AbortSignal,
+    onAssistantDelta?: (text: string) => void,
   ) {
     const sessionId = await start(serviceId)
     if (!sessionId)
@@ -100,7 +101,10 @@ export function useKioskInteractionRecording() {
         function: tool.function,
         type: 'function',
       }))
-      let response = await sendKioskConversationMessage({ content, signal, tools: toolDefinitions, visitorSessionId: sessionId })
+      let response = await streamKioskConversationMessage({ content, signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        if (event.type === 'assistant-delta')
+          onAssistantDelta?.(event.text)
+      })
       // A browser-owned WebMCP tool cannot execute on the Server. Keep the
       // model credentials server-side while returning each requested call to
       // this kiosk, then resume the same persisted conversation with its result.
@@ -110,16 +114,19 @@ export function useKioskInteractionRecording() {
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools })
           onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
           return {
-            content: String(result.message.content),
+            content: serializeToolResultContent(result.message.content),
             name: toolCall.function.name,
             toolCallId: toolCall.id,
           }
         }))
         if (signal?.aborted)
           return undefined
-        response = await sendKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId })
+        response = await streamKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+          if (event.type === 'assistant-delta')
+            onAssistantDelta?.(event.text)
+        })
       }
-      return response.answer
+      return { answer: response.answer, agentMode: response.agentMode }
     }
     catch {
       error.value = '點餐助手暫時無法回覆。'
@@ -172,4 +179,8 @@ export function useKioskInteractionRecording() {
     starting: readonly(starting),
     visitorSessionId: readonly(visitorSessionId),
   }
+}
+
+function serializeToolResultContent(content: unknown) {
+  return typeof content === 'string' ? content : JSON.stringify(content) ?? ''
 }

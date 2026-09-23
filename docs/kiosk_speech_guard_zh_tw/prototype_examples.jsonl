@@ -118,6 +118,11 @@
 {"id":"P-OI-118","label":"ORDER_INTENT","text":"便當的肉跟飯分開放","difficulty":"hard","requires_context":false,"context":null}
 {"id":"P-OI-119","label":"ORDER_INTENT","text":"我點一份粥給老人家吃","difficulty":"hard","requires_context":false,"context":null}
 {"id":"P-OI-120","label":"ORDER_INTENT","text":"炸物先一份米血再一份豆干","difficulty":"hard","requires_context":false,"context":null}
+{"id":"P-OI-121","label":"ORDER_INTENT","text":"肚子餓了，有什麼東西可以吃","difficulty":"hard","requires_context":false,"context":null,"annotation_note":"以飢餓感與探索菜單開啟互動；雖未指定品項，仍是面向 Kiosk 的有效點餐意圖。"}
+{"id":"P-OI-122","label":"ORDER_INTENT","text":"我想吃點東西，有推薦嗎","difficulty":"hard","requires_context":false,"context":null,"annotation_note":"請求餐點推薦，應建立新的顧客互動。"}
+{"id":"P-OI-123","label":"ORDER_INTENT","text":"不知道要吃什麼，幫我介紹一下","difficulty":"hard","requires_context":false,"context":null,"annotation_note":"猶豫型開場仍是在請 Kiosk 協助選餐。"}
+{"id":"P-OI-124","label":"ORDER_INTENT","text":"有沒有適合一個人吃的","difficulty":"hard","requires_context":false,"context":null,"annotation_note":"以用餐情境請求菜單篩選，屬於有效選餐意圖。"}
+{"id":"P-OI-125","label":"ORDER_INTENT","text":"今天想吃清淡一點，有什麼選擇","difficulty":"hard","requires_context":false,"context":null,"annotation_note":"以飲食偏好請求推薦，屬於有效選餐意圖。"}
 {"id":"P-AR-001","label":"AGENT_RESPONSE","text":"對","difficulty":"hard","requires_context":true,"context":{"previous_agent_turn":"目前是一份雞腿便當，這樣正確嗎？","kiosk_state":"AWAITING_CONFIRMATION","expected_response":"confirmation"}}
 {"id":"P-AR-002","label":"AGENT_RESPONSE","text":"是","difficulty":"hard","requires_context":true,"context":{"previous_agent_turn":"目前是一份雞腿便當，這樣正確嗎？","kiosk_state":"AWAITING_CONFIRMATION","expected_response":"confirmation"}}
 {"id":"P-AR-003","label":"AGENT_RESPONSE","text":"好","difficulty":"hard","requires_context":true,"context":{"previous_agent_turn":"目前是一份雞腿便當，這樣正確嗎？","kiosk_state":"AWAITING_CONFIRMATION","expected_response":"confirmation"}}

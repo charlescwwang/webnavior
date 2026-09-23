@@ -60,7 +60,7 @@ describe('createScenarioRegistry', () => {
       data: {
         source: 'airi-interaction-lifecycle',
         type: 'completed',
-        orderResult: { id: 'demo-1', fulfillmentMode: 'takeout', itemCount: 2, simulated: true, total: 180 },
+        orderResult: { environment: 'test', fulfillmentMode: 'takeout', id: 'demo-1', itemCount: 2, status: 'accepted', total: 180 },
       },
       origin: 'https://menu.example',
       source: activeFrame,
@@ -70,9 +70,38 @@ describe('createScenarioRegistry', () => {
       id: 'demo-1',
       fulfillmentMode: 'takeout',
       itemCount: 2,
-      simulated: true,
+      environment: 'test',
+      status: 'accepted',
       total: 180,
     })
+  })
+
+  it('rejects the retired simulated order payload instead of completing a customer session', () => {
+    const messageTarget = new EventTarget()
+    const registry = createScenarioRegistry({ messageTarget })
+    const activeFrame = new MessageChannel().port1
+    const completed = vi.fn()
+    registry.on('completed', completed)
+    registry.setServices([{
+      id: 'restaurant-ordering',
+      title: '點餐',
+      description: '餐點點餐',
+      serviceUrl: 'https://menu.example/order',
+      enabled: true,
+    }])
+    registry.attachActiveFrame(activeFrame)
+
+    messageTarget.dispatchEvent(new MessageEvent('message', {
+      data: {
+        source: 'airi-interaction-lifecycle',
+        type: 'completed',
+        orderResult: { id: 'demo-1', fulfillmentMode: 'takeout', itemCount: 2, simulated: true, total: 180 },
+      },
+      origin: 'https://menu.example',
+      source: activeFrame,
+    }))
+
+    expect(completed).not.toHaveBeenCalled()
   })
 
   it('does not register disabled, malformed, or duplicate service definitions', () => {

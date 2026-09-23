@@ -97,12 +97,24 @@ export interface KioskProfileSnapshot {
     name: string
     sha256: string
   }
+  sceneBackground?: {
+    format: 'jpeg' | 'png' | 'webp'
+    id: string
+    name: string
+    sha256: string
+  }
   idleMotion?: {
     format: 'vrma'
     id: string
     name: string
     sha256: string
   }
+  motionPack?: Partial<Record<'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking', {
+    format: 'vrma'
+    id: string
+    name: string
+    sha256: string
+  }>>
   characterCard?: {
     description: string
     personality: string
@@ -592,11 +604,39 @@ export function useKioskManagement() {
       if (!response.ok)
         throw new Error(await response.text() || `Request failed: ${response.status}`)
       const result = await response.json() as { asset: NonNullable<KioskProfileSnapshot['idleMotion']> }
-      notice.success('待機動作已上傳，請儲存草稿後再發布到 Kiosk。')
+      notice.success('角色動作已上傳，請儲存草稿後再發布到 Kiosk。')
       return result
     }
     catch (error) {
-      notice.error(errorMessageFrom(error) ?? '待機動作上傳失敗。')
+      notice.error(errorMessageFrom(error) ?? '角色動作上傳失敗。')
+      throw error
+    }
+    finally {
+      saving.value = false
+    }
+  }
+
+  async function uploadSceneBackgroundAsset(file: File) {
+    if (!selectedSiteId.value)
+      throw new Error('請先選擇店別。')
+
+    saving.value = true
+    message.value = ''
+    try {
+      const body = new FormData()
+      body.set('asset', file)
+      const response = await authedFetch(endpoint(`/sites/${selectedSiteId.value}/background-assets`), {
+        method: 'POST',
+        body,
+      })
+      if (!response.ok)
+        throw new Error(await response.text() || `Request failed: ${response.status}`)
+      const result = await response.json() as { asset: NonNullable<KioskProfileSnapshot['sceneBackground']> }
+      notice.success('場景背景已上傳，請儲存草稿後再發布到 Kiosk。')
+      return result
+    }
+    catch (error) {
+      notice.error(errorMessageFrom(error) ?? '場景背景上傳失敗。')
       throw error
     }
     finally {
@@ -715,6 +755,7 @@ export function useKioskManagement() {
     sites,
     uploadCharacterAsset,
     uploadMotionAsset,
+    uploadSceneBackgroundAsset,
     visitorHistoryError,
     visitorHistoryLoading,
     visitorSessionDetail,

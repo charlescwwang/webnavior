@@ -22,12 +22,24 @@ export interface KioskProfile {
       name: string
       sha256: string
     }
+    sceneBackground?: {
+      format: 'jpeg' | 'png' | 'webp'
+      id: string
+      name: string
+      sha256: string
+    }
     idleMotion?: {
       format: 'vrma'
       id: string
       name: string
       sha256: string
     }
+    motionPack?: Partial<Record<'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking', {
+      format: 'vrma'
+      id: string
+      name: string
+      sha256: string
+    }>>
     characterCard?: {
       description: string
       personality: string
@@ -65,6 +77,17 @@ export interface KioskToolCall {
   id: string
   type: 'function'
 }
+
+/** The Server's non-destructive guidance state for the active ordering interaction. */
+export type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferred'
+
+/** Customer-safe progress emitted by the Server-owned Kiosk reply stream. */
+export type KioskConversationStreamEvent
+  = | { type: 'turn-started' }
+    | { text: string, type: 'assistant-delta' }
+    | { toolCall: KioskToolCall, type: 'tool-requested' }
+    | { agentMode: KioskAgentInteractionMode, answer?: string, toolCalls: KioskToolCall[], type: 'turn-finished' }
+    | { message: string, type: 'turn-failed' }
 
 const apiBaseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
 
@@ -144,19 +167,67 @@ export async function endKioskVisitorSession(input: {
   })
 }
 
-/** Sends visitor text through the Server-owned Provider Gateway for this visitor session. */
-export async function sendKioskConversationMessage(input: {
-  content?: string
-  signal?: AbortSignal
-  toolResults?: Array<{ content: string, name: string, toolCallId: string }>
-  tools: KioskToolDefinition[]
-  visitorSessionId: string
-}) {
-  return await request<{ answer?: string, toolCalls: KioskToolCall[] }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/messages`, {
+/**
+ * Reads one Server-owned LLM reply as SSE while preserving the device cookie
+ * and keeping provider credentials outside the browser.
+ */
+export async function streamKioskConversationMessage(
+  input: {
+    content?: string
+    signal?: AbortSignal
+    toolResults?: Array<{ content: string, name: string, toolCallId: string }>
+    tools: KioskToolDefinition[]
+    visitorSessionId: string
+  },
+  onEvent: (event: KioskConversationStreamEvent) => void,
+) {
+  const response = await fetch(`${apiBaseUrl}/api/kiosk/visitor-sessions/${input.visitorSessionId}/messages`, {
     method: 'POST',
-    body: JSON.stringify({ content: input.content, toolResults: input.toolResults ?? [], tools: input.tools }),
+    credentials: 'include',
     signal: input.signal,
+    headers: {
+      'Accept': 'text/event-stream',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ content: input.content, toolResults: input.toolResults ?? [], tools: input.tools }),
   })
+  if (!response.ok || !response.body)
+    throw new KioskDeviceRequestError(response.status, await response.text())
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finished: Extract<KioskConversationStreamEvent, { type: 'turn-finished' }> | undefined
+
+  const consumeEvent = (rawEvent: string) => {
+    const data = rawEvent.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n')
+    if (!data)
+      return
+    const event = JSON.parse(data) as KioskConversationStreamEvent
+    onEvent(event)
+    if (event.type === 'turn-finished')
+      finished = event
+    if (event.type === 'turn-failed')
+      throw new Error(event.message)
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    let eventBoundary = /\r?\n\r?\n/.exec(buffer)
+    while (eventBoundary?.index !== undefined) {
+      consumeEvent(buffer.slice(0, eventBoundary.index))
+      buffer = buffer.slice(eventBoundary.index + eventBoundary[0].length)
+      eventBoundary = /\r?\n\r?\n/.exec(buffer)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    consumeEvent(buffer)
+  if (!finished)
+    throw new Error('Kiosk reply stream ended before completion.')
+  return finished
 }
 
 /** Asks the Server Gateway to create one Profile-controlled proactive assistant turn. */
@@ -175,10 +246,12 @@ export async function sendKioskAssistantAction(input: {
 
 /** Stores the limited, non-personal result emitted by the current approved ordering service. */
 export async function recordKioskOrderResult(input: {
+  environment: 'test' | 'live'
   fulfillmentMode: 'dine-in' | 'takeout'
   id: string
   itemCount: number
-  simulated: boolean
+  posOrderId?: string
+  status: 'accepted'
   total: number
   visitorSessionId: string
 }) {
@@ -206,7 +279,11 @@ export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal
 
 /** Lets the Server decide whether a candidate utterance supersedes active work. */
 export async function decideKioskTurn(input: { activeWork: boolean, asrConfidence?: number, currentRequest?: string, presenceState?: PresenceState, text: string }) {
-  return await request<{ decision: 'continue' | 'ignore' | 'interrupt', reason: string }>('/api/kiosk/turn-decisions', {
+  return await request<{
+    decision: 'candidate' | 'continue' | 'ignore' | 'interrupt'
+    diagnostic?: { embeddingAvailable: boolean, speechGuard?: { label: string, score: number } }
+    reason: string
+  }>('/api/kiosk/turn-decisions', {
     method: 'POST',
     body: JSON.stringify(input),
   })
