@@ -223,10 +223,16 @@ may be attached to the same session without changing its lifecycle.
 ## Kiosk Agent Interaction
 
 A short-lived ordering-assistant context inside one Kiosk Customer Session. It
-stores recent recommendation and decision state only, such as displayed or
-rejected menu item IDs and a decision-guidance mode. It may become
-touch-preferred without ending the Customer Session or clearing the cart; it
-never crosses into another visitor's session.
+stores compact working state such as recently displayed menu items, the latest
+successful cart snapshot, rejected item IDs, and a decision-guidance mode. The
+snapshot supports natural references such as “the previous one”; it is not the
+authoritative cart and never replaces the Interactive Service's domain state.
+The durable transcript retains complete tool calls and results for review, while
+the model-facing working context has independent character ceilings for recent
+conversation text and oversized current tool results. Model-only compaction
+preserves ordering identifiers and state; it never rewrites the durable record.
+The interaction may become touch-preferred without ending the Customer Session
+or clearing the cart, and it never crosses into another visitor's session.
 
 ## Anonymous Kiosk Customer
 

@@ -41,6 +41,12 @@ report those results outside the Agent tool surface. After an authorized payment
 the menu binds the transaction to the exact cart total and automatically submits
 the order through its POS Bridge.
 
+After a membership scan, the adapter provides a customer-facing membership
+number rather than the raw barcode payload. The invoice-confirmation screen keeps
+that number visible so the customer can verify which membership was recognized.
+An inherited invoice carrier remains a separate value and is displayed in full
+for confirmation.
+
 ## Timeouts and safety
 
 - Membership timeout skips membership.

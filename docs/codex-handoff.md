@@ -50,7 +50,8 @@ accumulating history.
   cap continuous recording to triggered clips regardless of the Site policy.
 - Kiosk Sites persist their voice VAD settings, including probability threshold
   and speech padding. Authorized operators can adjust them in Kiosk technical
-  settings; the kiosk applies the next synchronized snapshot.
+  settings; the kiosk refreshes immediately after a local save and otherwise
+  polls the synchronized snapshot every five minutes.
 - Kiosk camera evidence supports `snapshot` in addition to off, triggered
   video, and continuous video. Snapshot captures one event-linked JPEG without
   creating `MediaRecorder`; the per-device `faceDetectionConfidence` setting
@@ -114,8 +115,23 @@ accumulating history.
   their transcript: rendered and dismissed menu subject IDs plus
   `active`/`decision_guidance`/`touch_preferred` mode. A request for other
   recommendations dismisses the preceding batch; only repeated rendering of
-  unchanged items escalates guidance. This never owns or clears the order-menu
-  cart. See `apps/server/src/services/domain/kiosk-agent-interaction/`.
+  unchanged items escalates guidance. The same context now retains recent menu
+  item names/IDs and the latest successful compact cart snapshot for natural
+  references. Full tool calls/results remain in the durable transcript for
+  review, but only the current tool exchange is sent back to the model; older
+  tool payloads are represented by the compact context. Recent conversational
+  text is additionally bounded by total characters, and an oversized current
+  tool result is reduced only in the model request while its complete durable
+  result and interaction snapshot are committed before the model continuation.
+  This never owns or clears the order-menu cart. See
+  `apps/server/src/services/domain/kiosk-agent-interaction/`.
+- Order Menu distinguishes a filtered `menu_get` lookup from a recommendation:
+  lookups replace the menu grid without a recommendation rail, while
+  `menu_recommend` and `menu_show_recommendations` use the rail and the Kiosk
+  recommendation motion. In non-production, `kiosk-tools` traces only tool
+  names/session IDs on the Server. The Kiosk forwards SSE `tool-requested`
+  events before browser execution and shows selected, running, and completed
+  steps in a fixed panel above the message composer.
 
 ## In Progress / Known Issues
 
