@@ -162,8 +162,8 @@ volumes:
   webnavior_redis_data:
 ```
 
-`webnavior_redis_data` 保存 Server 的快取、設定 KV 與 Pub/Sub。Webnavior 的 AI 服務連線、
-模型目錄與能力指派則保存在 PostgreSQL；Server 將它們編譯成短暫的執行期設定寫入 Redis。
+`webnavior_redis_data` 保存 Server 的快取、設定 KV 與 Pub/Sub。Webnavior 的 AI 能力專屬
+Provider Profile、模型目錄與啟用選擇則保存在 PostgreSQL；Server 將它們編譯成短暫的執行期設定寫入 Redis。
 更新程式不會重建或清除此 volume，但 PostgreSQL 才是需納入備份的正式資料來源；同樣不要以
 `docker compose down -v` 清除它。
 
@@ -351,13 +351,24 @@ embedding 等動態 Provider 設定保存在 PostgreSQL，並由 Server 編譯�
 
 ### Kiosk AI 服務設定
 
-登入系統管理後，從「模型與服務」建立 Ollama 或 OpenAI-compatible 服務連線、讀取 `/models`
-目錄，再分別綁定對話、視覺、ASR、TTS 與 embedding 能力，最後按「套用到 Kiosk」。這是 Kiosk
-唯一的模型設定來源；店別頁面只保留效能、VAD 與主動視覺等現場技術設定。
+登入系統管理後，從「Kiosk AI 能力」分別設定對話、視覺、ASR、TTS 與 embedding。每項能力可
+保存多個 Ollama 或 OpenAI-compatible Provider Profile；同一 URL 也必須在各能力獨立保存，不能跨能力
+共用。完成能力專屬驗證後，才能切換為啟用 Provider，最後按「套用到 Kiosk」。
+這是 Kiosk 唯一的模型設定來源；店別頁面只保留效能、VAD 與主動視覺等現場技術設定。
 
-連線網址、Key 與模型綁定儲存在 PostgreSQL，Key 以 `LLM_ROUTER_MASTER_KEY` 加密。修改 URL 或
-服務類型後，系統會清空舊模型目錄；必須重新讀取 `/models` 後才能套用，避免舊模型 ID 被送往新服務。
+新增 Provider 時，先填入名稱、URL、選填 Key 與 timeout，按「測試連線與讀取模型」。若服務提供
+`/models`，可從暫存清單選擇模型；若未提供，連線仍視為可用，系統會改讓管理者手動輸入 Model ID。
+兩種情況都必須按「驗證並儲存 Provider」：Server 會以該能力的實際請求驗證模型，成功後才寫入
+PostgreSQL。編輯既有 Provider 也遵循相同規則；驗證失敗不會覆寫已保存的設定。
+
+網址、Key、模型與 TTS voice 儲存在 PostgreSQL，Key 以 `LLM_ROUTER_MASTER_KEY` 加密。修改 URL、
+服務類型、模型、Key 或 voice 後，該 Provider 必須重新驗證；這不會改變目前已啟用的另一筆 Provider。
 按套用後的下一個 Kiosk 請求即使用新設定，不需要重啟 API。
+
+若要啟用新對話的 embedding Speech Guard，在套用 Embedding Provider 後按「建立語意防護基準」。
+Server 會批次建立並保存系統語料向量；這項作業只在建立或重新建立時呼叫 Provider，不會將模型或
+語料下載到 Kiosk。更換已套用的 Embedding Provider 或模型後，需重新建立基準；尚未建立時系統仍以
+ASR 品質、presence 與保守的點餐意圖規則過濾背景人聲。
 
 ### 更新、媒體匯出與重置
 

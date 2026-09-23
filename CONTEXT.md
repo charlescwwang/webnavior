@@ -42,6 +42,33 @@ A system-wide role responsible for integrations, provider and model policy,
 deployment configuration, account roles, and sandbox testing. It has access to
 every Site but should not be required for routine store operations.
 
+## Kiosk AI Capability
+
+One independent Kiosk responsibility: conversation, vision, speech-to-text,
+text-to-speech, or semantic embedding. Each capability is configured and
+activated independently by a System Manager.
+
+## Kiosk Capability Provider Profile
+
+One saved, encrypted Provider configuration belonging to exactly one Kiosk AI
+Capability. A profile includes its protocol family, endpoint, selected model,
+and capability-specific settings such as a TTS voice. Profiles are never shared
+across capabilities, even when their upstream endpoint happens to be the same.
+
+## Kiosk Active Provider Selection
+
+The one verified Capability Provider Profile selected for a Kiosk AI Capability.
+Changing this selection has no effect on Kiosk runtime until the System Manager
+explicitly applies the pending AI configuration.
+
+## Kiosk Speech Guard Baseline
+
+A Server-owned, persisted set of embedding vectors created from the approved
+speech-guard prototype corpus for one applied Embedding Provider Profile and
+model. It classifies the opening customer utterance without exposing vectors or
+the corpus to a Kiosk. Changing either Provider Profile or model requires a new
+baseline; until then, Kiosk uses the conservative non-embedding turn policy.
+
 ## Experience Preview
 
 A non-device, non-publishing representation of an Interactive Experience used
@@ -192,6 +219,14 @@ contains the current conversation and order state, starts when a customer
 interacts, and ends after order completion, explicit staff action, or inactivity.
 The first version always has an anonymous identity; a future membership identity
 may be attached to the same session without changing its lifecycle.
+
+## Kiosk Agent Interaction
+
+A short-lived ordering-assistant context inside one Kiosk Customer Session. It
+stores recent recommendation and decision state only, such as displayed or
+rejected menu item IDs and a decision-guidance mode. It may become
+touch-preferred without ending the Customer Session or clearing the cart; it
+never crosses into another visitor's session.
 
 ## Anonymous Kiosk Customer
 

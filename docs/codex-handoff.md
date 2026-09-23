@@ -62,6 +62,10 @@ accumulating history.
   fallback attempts. Order-menu publishes the optional Webnavior Kiosk Activity
   Manifest at `/.well-known/webnavior-kiosk-activity.json`; its customer labels
   are display-only and always have a generic Kiosk fallback.
+- Normal Kiosk conversation replies now remain Server-owned but stream a stable,
+  customer-safe SSE event contract to the browser. Assistant deltas are
+  presentation-only until completion, browser-owned tool calls retain their
+  existing execution loop, and only completed assistant text is persisted.
 - Kiosk history classifies retained sessions as interactive, greeting-only, or
   empty without deleting associated evidence. Administrators can select reviewed
   sessions and export LLM JSONL or ASR metadata plus paired audio ZIP. The
@@ -73,20 +77,90 @@ accumulating history.
   speed `1.0` unless a System Manager changes the connection setting.
 - Removed the stale `azure-speech` SSML allow-list entry and the unused MiniMax
   Speech provider registration, metadata, translations, and dedicated docs.
-- Webnavior Kiosk AI now uses a Server-owned control plane: persistent provider
-  connections, discovered catalogs, and capability bindings live in PostgreSQL;
-  the runtime compiler projects only those bindings into the existing AIRI
-  gateways. `face_only` and other presence settings remain independent. The
-  former Site `model_overrides` schema and direct Webnavior audio/embedding
-  admin endpoints were removed, so a Site cannot select a separate model.
-  System Managers use the Stage Web 「Kiosk AI 服務」 page to create/edit a
-  connection, read `/models`, bind chat/vision/ASR/TTS/embedding, then apply.
+- Webnavior Kiosk AI uses a Server-owned, capability-scoped control plane:
+  every chat, vision, ASR, TTS, and embedding capability owns multiple isolated
+  Provider Profiles and one active verified selection. Profiles do not cross
+  capability boundaries, even with the same upstream URL. The runtime compiler
+  projects only active verified profiles into existing AIRI gateways. The Stage
+  Web 「Kiosk AI 能力」 page validates a selected model with its real capability
+  endpoint before allowing activation; switching only reaches Kiosk after an
+  explicit apply. `face_only` and other presence settings remain independent.
+- A System Manager can create a persisted Kiosk Speech Guard Baseline after
+  applying an Embedding Provider. The Server batches the approved prototype
+  corpus into vectors and uses the matching Provider Profile/model baseline for
+  new-conversation ASR decisions; it never sends vectors or the corpus to the
+  Kiosk. Switching the applied embedding model/profile requires a new baseline,
+  otherwise the conservative non-embedding gate remains in force.
+- Order Menu now loads sellable items exclusively through
+  `apps/order-menu-server`'s POS Bridge. Its loopback simulator normalizes the
+  repository-root `周氏蝦捲菜單_v2.json` fixture, while the browser carries the
+  returned catalog revision with every cart. The Bridge rejects stale revisions
+  or changed prices before forwarding to the POS. The checkout now creates a
+  card/mobile terminal payment, binds an authorized payment ID and exact amount
+  to the cart, and automatically submits to POS. Rejected payments return to
+  method selection; uncertain payment or order receipts lock the flow pending
+  reconciliation. The simulator exposes independently controllable payment and
+  order outcomes. See
+  `plans/2026-09-21-order-menu-pos-bridge.md`.
+- Order Menu WebMCP now follows RMAP v0.2: explicit cart confirmation starts
+  checkout instead of submitting directly. Agent tools can skip membership,
+  choose invoice handling, display and separately confirm an eight-digit tax ID,
+  select a payment method, or cancel checkout. Physical barcode scans and
+  payment authorization remain outside WebMCP; pending/uncertain payments block
+  cancellation and new-round cart clearing. See
+  `standards/restaurant-menu-agent-protocol-v0.2.md`.
+
+- Kiosk visitor sessions now persist compact Agent interaction context beside
+  their transcript: rendered and dismissed menu subject IDs plus
+  `active`/`decision_guidance`/`touch_preferred` mode. A request for other
+  recommendations dismisses the preceding batch; only repeated rendering of
+  unchanged items escalates guidance. This never owns or clears the order-menu
+  cart. See `apps/server/src/services/domain/kiosk-agent-interaction/`.
 
 ## In Progress / Known Issues
 
-- No task-specific issue has been deliberately recorded here. Use the current
-  request and relevant plan/issue as the source of truth; do not infer work from
-  unrelated files in a dirty worktree.
+This section is the required unfinished-work index. Future Agents must read it
+before proposing the next implementation; the linked plans provide detail, but
+their existence alone does not mean an item has been implemented.
+
+### Order Menu / POS
+
+- Replace the loopback POS and payment simulator with vendor adapters after the
+  POS and operations vendors provide catalog, order, terminal, timeout, and
+  reconciliation contracts. Do not guess vendor fields or payment brands.
+- Connect physical membership and invoice-carrier scan events. A scan result
+  must come from the device adapter, never an Agent tool; an inherited carrier
+  must still be shown in full for customer confirmation.
+- Connect real cloud-invoice issuance for carrier, eight-digit tax ID, and
+  donation. The default donation recipient remains an operations-owned setting
+  and is intentionally not hard-coded.
+- Add a staff reconciliation workflow for `uncertain` payment or POS results.
+  Until reconciliation exists, these states intentionally lock payment, cart
+  clearing, and new-round actions to prevent duplicate charges or orders.
+- Run vendor-hardware acceptance tests for barcode scanners, card terminals,
+  mobile-payment QR presentation, receipt results, and the configured 30-second
+  timeouts once hardware contracts are available.
+
+### Webnavior management / Kiosk
+
+- Build the System Manager sandbox test and Store Manager on-device validation
+  workflow, including device health, execution records, and audit data. This is
+  phase 5 in
+  [`plans/2026-09-10-webnavior-management-experience.md`](plans/2026-09-10-webnavior-management-experience.md).
+- Add production account assignment for Content Managers plus submission,
+  approval/publish permissions, and audit history. Current development accounts
+  and role checks are not the final operator workflow; this is phase 6 in the
+  management plan.
+- Design a finite, validated VRMA action mapping for greeting, recommendation,
+  and order-completion one-shots. Character cards and LLM output must never
+  choose arbitrary filenames or URLs.
+
+### Validation note
+
+- Relevant package tests and typechecks have been used during development. A
+  repository-wide typecheck/build was intentionally not run; follow the scoped
+  validation policy in `AGENTS.md` and run integration gates only when preparing
+  a release, PR, or merge that requires them.
 
 ## Key Technical Decisions
 
@@ -106,5 +180,7 @@ accumulating history.
 
 ## Next Likely Work
 
-- Continue the active task from its own plan or issue, starting with its named
-  files and expanding exploration only when necessary.
+- For Order Menu, real membership, invoice, donation-recipient and payment-brand
+  adapters remain deferred until POS/operations contracts arrive. The next
+  implementation unit should begin only after those external contracts or a new
+  product requirement is available.
