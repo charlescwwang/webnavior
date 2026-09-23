@@ -82,7 +82,7 @@ describe('useKioskInteractionRecording', () => {
     if (!recording)
       throw new Error('Expected interaction recording to initialize.')
 
-    await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], undefined, undefined, onAssistantDelta)).resolves.toEqual({
+    await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], { onAssistantDelta })).resolves.toEqual({
       agentMode: 'active',
       answer: '牛肉麵可以點餐。',
     })
@@ -95,6 +95,31 @@ describe('useKioskInteractionRecording', () => {
       tools: [],
       visitorSessionId: 'visitor-1',
     }, expect.any(Function))
+    scope.stop()
+  })
+
+  it('notifies the presentation as soon as the server selects a browser tool', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockImplementation(async (_input, onEvent) => {
+      onEvent({
+        type: 'tool-requested',
+        toolCall: {
+          id: 'call-menu-get',
+          type: 'function',
+          function: { arguments: '{"query":"炸物"}', name: 'menu_get' },
+        },
+      })
+      return { agentMode: 'active', answer: undefined, toolCalls: [], type: 'turn-finished' }
+    })
+    const onToolRequested = vi.fn()
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())
+    if (!recording)
+      throw new Error('Expected interaction recording to initialize.')
+
+    await recording.send('restaurant-ordering', '想吃炸物點心', [], { onToolRequested })
+
+    expect(onToolRequested).toHaveBeenCalledWith('menu_get')
     scope.stop()
   })
 })

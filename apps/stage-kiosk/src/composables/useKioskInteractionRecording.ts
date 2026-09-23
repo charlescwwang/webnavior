@@ -8,6 +8,13 @@ import { readonly, shallowRef } from 'vue'
 
 import { appendKioskInteraction, endKioskVisitorSession, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
 
+interface ConversationPresentationCallbacks {
+  onAssistantDelta?: (text: string) => void
+  onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
+  onToolRequested?: (toolName: string) => void
+  signal?: AbortSignal
+}
+
 /**
  * Owns a device-authenticated visitor session and its ordered durable records.
  *
@@ -88,9 +95,7 @@ export function useKioskInteractionRecording() {
     serviceId: string,
     content: string,
     tools: Tool[],
-    onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void,
-    signal?: AbortSignal,
-    onAssistantDelta?: (text: string) => void,
+    callbacks: ConversationPresentationCallbacks = {},
   ) {
     const sessionId = await start(serviceId)
     if (!sessionId)
@@ -101,29 +106,33 @@ export function useKioskInteractionRecording() {
         function: tool.function,
         type: 'function',
       }))
-      let response = await streamKioskConversationMessage({ content, signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+      let response = await streamKioskConversationMessage({ content, signal: callbacks.signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
         if (event.type === 'assistant-delta')
-          onAssistantDelta?.(event.text)
+          callbacks.onAssistantDelta?.(event.text)
+        if (event.type === 'tool-requested')
+          callbacks.onToolRequested?.(event.toolCall.function.name)
       })
       // A browser-owned WebMCP tool cannot execute on the Server. Keep the
       // model credentials server-side while returning each requested call to
       // this kiosk, then resume the same persisted conversation with its result.
       for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
         const toolResults = await Promise.all(response.toolCalls.map(async (toolCall: KioskToolCall) => {
-          onToolActivity?.(toolCall.function.name, 'executing')
+          callbacks.onToolActivity?.(toolCall.function.name, 'executing')
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools })
-          onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
+          callbacks.onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
           return {
             content: serializeToolResultContent(result.message.content),
             name: toolCall.function.name,
             toolCallId: toolCall.id,
           }
         }))
-        if (signal?.aborted)
+        if (callbacks.signal?.aborted)
           return undefined
-        response = await streamKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        response = await streamKioskConversationMessage({ signal: callbacks.signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
           if (event.type === 'assistant-delta')
-            onAssistantDelta?.(event.text)
+            callbacks.onAssistantDelta?.(event.text)
+          if (event.type === 'tool-requested')
+            callbacks.onToolRequested?.(event.toolCall.function.name)
         })
       }
       return { answer: response.answer, agentMode: response.agentMode }

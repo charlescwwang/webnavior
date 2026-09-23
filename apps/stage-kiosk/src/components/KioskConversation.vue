@@ -16,6 +16,7 @@ import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
   activityStatus?: string
+  activitySteps?: readonly { label: string, state: 'done' | 'error' | 'executing' | 'selected', toolName: string }[]
   assistantPresence: {
     description: string
     mode: KioskAssistantPresenceMode
@@ -117,6 +118,9 @@ async function sendMessage() {
         auto-scroll="follow-latest"
         variant="mobile"
       />
+    </div>
+
+    <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
         <span>{{ props.pendingTranscript }}</span>
@@ -126,6 +130,12 @@ async function sendMessage() {
         <span>{{ props.activityStatus }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
+      <ol v-if="props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
+        <li v-for="step in props.activitySteps" :key="step.toolName" :class="['assistant-activity-step', `is-${step.state}`]">
+          <span class="activity-step-marker" aria-hidden="true" />
+          <span>{{ step.label }}</span>
+        </li>
+      </ol>
     </div>
 
     <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
@@ -156,8 +166,9 @@ async function sendMessage() {
 </template>
 
 <style scoped>
-.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; background: transparent; grid-template-rows: minmax(0, 1fr) auto; }
+.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; background: transparent; grid-template-rows: minmax(0, 1fr) auto auto; }
 .message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: transparent; }
+.conversation-progress { display: grid; gap: .3rem; padding: 0 .55rem .45rem; background: rgb(1 17 20 / 28%); }
 .message-history :deep([data-chat-message-role]) { display: flex; min-width: 0; max-width: 100%; }
 .message-history :deep(.ph-no-capture) { max-width: min(78%, 42rem); }
 .message-history :deep([data-chat-message-bubble]) { box-sizing: border-box; max-width: 100%; border-width: 2px; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 34%); }
@@ -176,6 +187,7 @@ async function sendMessage() {
 .message-history :deep(pre), .message-history :deep(code) { max-width: 100%; overflow-wrap: anywhere; white-space: pre-wrap; }
 .pending-transcript { display: flex; align-items: center; gap: .4rem; width: fit-content; max-width: 90%; margin: .55rem .2rem .1rem auto; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #c9fffa; background: rgb(17 81 79 / 40%); font-size: .78rem; font-style: italic; }
 .assistant-activity { display: flex; align-items: center; gap: .45rem; width: fit-content; max-width: 90%; margin: .55rem .2rem; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #b9f5ec; background: rgb(17 81 79 / 48%); font-size: .78rem; font-weight: 700; }.activity-orb { width: .55rem; height: .55rem; border-radius: 999px; background: #7ce7d8; box-shadow: 0 0 .8rem #7ce7d8; animation: activity-pulse 1.2s ease-in-out infinite; }.activity-dots { display: flex; gap: .14rem; }.activity-dots i { width: .24rem; height: .24rem; border-radius: 999px; background: currentColor; animation: activity-bounce .9s ease-in-out infinite; }.activity-dots i:nth-child(2) { animation-delay: .12s; }.activity-dots i:nth-child(3) { animation-delay: .24s; }@keyframes activity-pulse { 50% { opacity: .35; transform: scale(.75); } }@keyframes activity-bounce { 50% { opacity: .3; transform: translateY(-.18rem); } }
+.assistant-activity-steps { display: grid; gap: .3rem; margin: .1rem .2rem; padding: 0; color: #c7ebe6; font-size: .75rem; font-weight: 700; list-style: none; }.assistant-activity-step { display: flex; align-items: center; gap: .4rem; }.activity-step-marker { width: .42rem; height: .42rem; flex: none; border-radius: 50%; background: #6faaa3; }.assistant-activity-step.is-selected .activity-step-marker, .assistant-activity-step.is-executing .activity-step-marker { background: #7ce7d8; box-shadow: 0 0 .65rem #7ce7d8; }.assistant-activity-step.is-done .activity-step-marker { background: #8edb9a; }.assistant-activity-step.is-error .activity-step-marker { background: #f3b391; }
 .message-composer { display: flex; min-width: 0; gap: .5rem; border-top: 1px solid rgb(255 255 255 / 10%); padding: .55rem; background: rgb(1 17 20 / 24%); }
 .message-input { min-width: 0; flex: 1; resize: none; border: 1px solid rgb(255 255 255 / 18%); border-radius: .8rem; padding: .45rem .7rem; color: #ecfffb; background: rgb(255 255 255 / 8%); font-size: var(--conversation-font-size); outline: none; }
 .message-input::placeholder { color: rgb(217 250 246 / 60%); }

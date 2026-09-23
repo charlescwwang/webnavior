@@ -9,6 +9,8 @@ import { fetchDeviceSettings, fetchKioskBootstrap, KioskDeviceRequestError, regi
 
 export type KioskRegistrationState = 'checking' | 'registered' | 'unregistered' | 'registering' | 'error'
 
+const settingsSyncIntervalMs = 5 * 60 * 1_000
+
 /**
  * Owns the browser's kiosk enrollment state without exposing the device
  * credential itself. The browser sends that credential only as an HttpOnly
@@ -65,7 +67,7 @@ export function useKioskDeviceRegistration() {
         if (device.value)
           scheduleSync()
       }
-    }, 15000)
+    }, settingsSyncIntervalMs)
   }
 
   /** Refreshes effective device policy immediately after an authenticated local write. */

@@ -100,12 +100,12 @@ const { activeTools } = storeToRefs(useLlmToolsStore())
 const { activeCardId } = storeToRefs(useAiriCardStore())
 const conversationMessages = shallowRef<ChatHistoryItem[]>([])
 const conversationWorkStatus = shallowRef<string>()
+const conversationActivitySteps = shallowRef<Array<{ label: string, state: 'done' | 'error' | 'executing' | 'selected', toolName: string }>>([])
 const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
 const pendingTranscript = shallowRef<string>()
 const pendingSpeechCandidate = shallowRef<PendingSpeechCandidate>()
 const activeCustomerRequest = shallowRef<string>()
 const customerResetError = shallowRef<string>()
-const agentInteractionNotice = shallowRef<string>()
 const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
 let nextVoiceDiagnosticId = 0
 const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorKioskActivityManifest>>>()
@@ -254,7 +254,7 @@ const {
   startNewCustomerSession: resetForNewCustomer,
   state: customerSessionState,
 } = customerSession
-const sessionNotice = computed(() => customerResetError.value ?? notice.value ?? agentInteractionNotice.value)
+const sessionNotice = computed(() => customerResetError.value ?? notice.value)
 const customerSessionButtonLabel = computed(() => (
   customerSessionState.value === 'standby' ? '開始新交談／新訂單' : '重新開始／新訂單'
 ))
@@ -424,7 +424,7 @@ const audioInputIndicator = computed(() => {
     }
   }
 
-  if (proactiveVision.status.value === 'starting') {
+  if (cameraRequired.value && proactiveVision.status.value === 'starting') {
     return {
       icon: 'i-solar:camera-rotate-bold-duotone',
       label: '系統正在啟動偵測',
@@ -433,21 +433,12 @@ const audioInputIndicator = computed(() => {
     }
   }
 
-  if (proactiveVision.status.value === 'observing') {
+  if (cameraRequired.value && proactiveVision.status.value === 'observing') {
     return {
       icon: 'i-solar:radar-2-bold-duotone',
       label: '系統正在偵測',
       mode: 'detecting',
       title: '正在本機偵測偵測區內的人員。',
-    }
-  }
-
-  if (proactiveVision.status.value === 'failed' || proactiveVision.status.value === 'unsupported') {
-    return {
-      icon: 'i-solar:camera-slash-bold',
-      label: '系統無法偵測',
-      mode: 'detection-unavailable',
-      title: proactiveVision.error.value ?? '相機偵測目前無法使用。',
     }
   }
 
@@ -709,6 +700,7 @@ function clearConversationPresentation() {
   conversationMessages.value = []
   streamingAssistantMessage.value = undefined
   conversationWorkStatus.value = undefined
+  conversationActivitySteps.value = []
   pendingTranscript.value = undefined
   clearPendingSpeechCandidate()
   activeCustomerRequest.value = undefined
@@ -1122,43 +1114,61 @@ async function sendConversationMessage(text: string, existingTurn?: ReturnType<t
   conversationMessages.value = [...conversationMessages.value, { role: 'user', content: text }]
   streamingAssistantMessage.value = undefined
   conversationWorkStatus.value = '正在思考…'
+  conversationActivitySteps.value = []
   try {
     const reply = await interactionRecording.send(
       scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction',
       text,
       activeTools.value,
-      (toolName, state) => {
-        if (!interactionTurn.isCurrent(turn))
-          return
-        interactionTurn.advance(turn, 'using-tool')
-        conversationWorkStatus.value = describeToolActivity(toolName, state)
-        if (state === 'done' && toolName === 'menu_show_recommendations')
-          playTransientMotion('presentRecommendations')
-        if (state === 'done' && ['order_add_item', 'cart_add_item', 'cart_remove_item', 'cart_set_line_quantity', 'order_set_fulfillment'].includes(toolName))
-          playTransientMotion('acknowledge')
-      },
-      turn.signal,
-      (delta) => {
-        if (!interactionTurn.isCurrent(turn))
-          return
-        conversationWorkStatus.value = '正在回覆…'
-        const previous = streamingAssistantMessage.value?.content ?? ''
-        streamingAssistantMessage.value = {
-          role: 'assistant',
-          content: `${previous}${delta}`,
-          slices: [],
-          tool_results: [],
-        }
+      {
+        onToolRequested: (toolName) => {
+          if (!interactionTurn.isCurrent(turn))
+            return
+          interactionTurn.advance(turn, 'using-tool')
+          const label = describeToolActivity(toolName, 'selected')
+          conversationWorkStatus.value = label
+          conversationActivitySteps.value = [
+            ...conversationActivitySteps.value.filter(step => step.toolName !== toolName),
+            { label, state: 'selected' as const, toolName },
+          ].slice(-3)
+          if (import.meta.env.DEV)
+            console.info('[kiosk-tools]', { phase: 'llm-selected', toolName })
+        },
+        onToolActivity: (toolName, state) => {
+          if (!interactionTurn.isCurrent(turn))
+            return
+          interactionTurn.advance(turn, 'using-tool')
+          const label = describeToolActivity(toolName, state)
+          conversationWorkStatus.value = label
+          conversationActivitySteps.value = [
+            ...conversationActivitySteps.value.filter(step => step.toolName !== toolName),
+            { label, state, toolName },
+          ].slice(-3)
+          if (import.meta.env.DEV)
+            console.info('[kiosk-tools]', { phase: 'browser-execution', state, toolName })
+          if (state === 'done' && ['menu_recommend', 'menu_show_recommendations'].includes(toolName))
+            playTransientMotion('presentRecommendations')
+          if (state === 'done' && ['order_add_item', 'cart_add_item', 'cart_remove_item', 'cart_set_line_quantity', 'order_set_fulfillment'].includes(toolName))
+            playTransientMotion('acknowledge')
+        },
+        onAssistantDelta: (delta) => {
+          if (!interactionTurn.isCurrent(turn))
+            return
+          conversationWorkStatus.value = '正在回覆…'
+          const previous = streamingAssistantMessage.value?.content ?? ''
+          streamingAssistantMessage.value = {
+            role: 'assistant',
+            content: `${previous}${delta}`,
+            slices: [],
+            tool_results: [],
+          }
+        },
+        signal: turn.signal,
       },
     )
     if (!interactionTurn.isCurrent(turn))
       return
     const answer = reply?.answer
-    agentInteractionNotice.value = reply?.agentMode === 'decision_guidance'
-      ? '我先整理幾個不同方向的選項，您可以直接點選。'
-      : reply?.agentMode === 'touch_preferred'
-        ? '畫面點選優先；需要比較或調整時，隨時再告訴我。'
-        : undefined
     conversationMessages.value = [
       ...conversationMessages.value,
       answer
@@ -1181,7 +1191,7 @@ async function sendConversationMessage(text: string, existingTurn?: ReturnType<t
   }
 }
 
-function describeToolActivity(toolName: string, state: 'executing' | 'done' | 'error') {
+function describeToolActivity(toolName: string, state: 'executing' | 'done' | 'error' | 'selected') {
   return describeWebnaviorKioskToolActivity(toolActivityManifest.value, toolName, state)
 }
 
@@ -1324,6 +1334,7 @@ onUnmounted(() => {
       <KioskConversation
         class="conversation-region"
         :activity-status="conversationActivityStatus"
+        :activity-steps="conversationActivitySteps"
         :assistant-presence="assistantPresence"
         :messages="conversationMessages"
         :streaming-assistant-message="streamingAssistantMessage"
@@ -1397,7 +1408,10 @@ onUnmounted(() => {
 .kiosk-scene.is-portrait { grid-template-rows: minmax(0, .36fr) minmax(0, .64fr); }
 .service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1.125rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(14rem, .32fr) minmax(0, .68fr); }.service-hero.is-portrait { grid-template-columns: minmax(10rem, .35fr) minmax(0, .65fr); }
 .stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: transparent; transition: box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 7%); }.stage-region.is-processing, .stage-region.is-transcribing { box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 8%); }.stage-region.is-speaking { box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 8%); }
-.stage-model { position: relative; z-index: 1; width: 100%; height: 100%; transform: translate3d(2%, 6%, 0) scale(1.12); transform-origin: center bottom; transition: transform .3s ease; }
+/* Keep the upper-body gestures prominent in the narrow hero column. Scaling from
+   the bottom and shifting down together keeps the face at the same height while
+   letting the lower skirt fall outside the stage viewport. */
+.stage-model { position: relative; z-index: 1; width: 100%; height: 100%; transform: translate3d(2%, 10%, 0) scale(1.16); transform-origin: center bottom; transition: transform .3s ease; }
 .kiosk-admin-panel-layer { position: fixed; z-index: 90; inset: 0; display: grid; overflow: auto; padding: 1.5rem; background: rgb(1 12 15 / 72%); backdrop-filter: blur(.4rem); }
 /* Keep the administrator hold target available without exposing controls in the customer-facing composition. */
 :global(.kiosk-admin-access) { position: fixed; z-index: 100; top: 1.75rem; left: 1.75rem; display: inline-flex; height: 2.25rem; align-items: center; gap: .35rem; border: 1px solid rgb(217 250 246 / 28%); border-radius: .7rem; padding: 0 .7rem; color: #d9faf6; background: rgb(1 17 20 / 92%); box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); opacity: 0; transition: opacity .16s ease, background .16s ease; }

@@ -1,4 +1,4 @@
-export type WebnaviorKioskToolActivityState = 'done' | 'error' | 'executing'
+export type WebnaviorKioskToolActivityState = 'done' | 'error' | 'executing' | 'selected'
 
 export interface WebnaviorKioskToolActivity {
   error?: string
@@ -18,6 +18,7 @@ const fallbackActivity: Record<WebnaviorKioskToolActivityState, string> = {
   done: '已完成餐點資料處理，正在整理結果…',
   error: '正在重新確認餐點資訊…',
   executing: '正在處理餐點資料…',
+  selected: '正在準備餐點資料…',
 }
 
 function isActivityText(value: unknown): value is string {
@@ -70,6 +71,8 @@ export function describeWebnaviorKioskToolActivity(
   state: WebnaviorKioskToolActivityState,
 ) {
   const activity = manifest?.tools[toolName]
+  if (state === 'selected')
+    return activity?.running ?? fallbackActivity.selected
   if (state === 'executing')
     return activity?.running ?? fallbackActivity.executing
   if (state === 'done')
