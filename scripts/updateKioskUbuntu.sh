@@ -111,7 +111,24 @@ corepack pnpm install --frozen-lockfile
 corepack pnpm -F @proj-airi/server db:push
 corepack pnpm -F @proj-airi/server-schema build
 sudo systemctl restart webnavior-api
-curl -fsS http://127.0.0.1:5168/readyz >/dev/null
+
+# The Server loads its schema and runtime dependencies after systemd accepts the
+# restart request. Do not publish a new browser build until the replacement
+# process has proved that PostgreSQL and Redis are ready.
+api_ready=false
+for attempt in {1..15}; do
+  if curl -fsS http://127.0.0.1:5168/readyz >/dev/null; then
+    api_ready=true
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$api_ready" != true ]]; then
+  echo 'Error: webnavior-api did not become ready within 15 seconds.' >&2
+  sudo systemctl status webnavior-api --no-pager >&2 || true
+  exit 1
+fi
 
 corepack pnpm -F @proj-airi/stage-web exec vite build --base=/
 corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
