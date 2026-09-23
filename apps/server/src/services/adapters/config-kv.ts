@@ -41,6 +41,8 @@ export const keyEntrySchema = object({
 
 export const llmUpstreamSchema = object({
   baseURL: pipe(string(), nonEmpty('llm.upstreams[].baseURL must not be empty')),
+  /** llama.cpp extension; never sent to generic OpenAI-compatible upstreams. */
+  cachePrompt: optional(boolean()),
   overrideModel: optional(string()),
   keys: pipe(array(keyEntrySchema), check(v => v.length >= 1, 'llm.upstreams[].keys must contain at least 1 entry')),
   headerTemplate: optional(string(), 'Bearer {KEY}'),
@@ -78,6 +80,7 @@ export const webnaviorAudioConfigSchema = optional(object({
 export const webnaviorEmbeddingConfigSchema = optional(object({
   baseURL: pipe(string(), nonEmpty('embedding.baseURL must not be empty')),
   modelName: pipe(string(), nonEmpty('embedding.modelName must not be empty')),
+  providerProfileId: pipe(string(), nonEmpty('embedding.providerProfileId must not be empty')),
   provider: picklist(['ollama', 'openai-compatible']),
   keyCiphertext: optional(string()),
   timeoutMs: optional(number(), 5000),

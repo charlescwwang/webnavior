@@ -91,7 +91,7 @@ function makeConfigKV(config: RouterConfig | null): ConfigKVService {
 }
 
 function makeConfig(opts: {
-  upstreams?: Array<{ baseURL: string, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
+  upstreams?: Array<{ baseURL: string, cachePrompt?: boolean, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
   fallbackHttpCodes?: number[]
   fullChainTimeoutMs?: number
 }): { config: RouterConfig, ciphertextByKey: Map<string, string>, crypto: ReturnType<typeof createEnvelopeCrypto> } {
@@ -102,6 +102,7 @@ function makeConfig(opts: {
   const upstreams = opts.upstreams ?? [{ baseURL: 'https://up-a.example/v1', keyIds: ['kA1'] }]
   const upstreamConfigs = upstreams.map(u => ({
     baseURL: u.baseURL,
+    cachePrompt: u.cachePrompt,
     overrideModel: u.overrideModel,
     headerTemplate: 'Bearer {KEY}',
     timeoutMs: u.timeoutMs,
@@ -281,6 +282,25 @@ describe('createLlmRouterService', () => {
     const init = calls[0][1] as { body: string }
     expect((JSON.parse(init.body) as { model: string }).model).toBe('real/upstream-id')
     expect(ctx.upstreamModel).toBe('real/upstream-id')
+  })
+
+  it('enables prompt caching only for an upstream that opts in', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://llama.example/v1', cachePrompt: true, keyIds: ['kA1'] }] })
+    const fetchImpl: typeof fetch = vi.fn(async () => happyResponse({ ok: 1 })) as unknown as typeof fetch
+    const router = createLlmRouterService({
+      configKV: makeConfigKV(config),
+      envelopeCrypto: crypto,
+      gatewayMetrics: null,
+      fetchImpl,
+      redis: makeRedisStub(),
+      concurrencyLedger: makeLedger(),
+    })
+
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [] } })
+
+    const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls
+    const init = calls[0][1] as { body: string }
+    expect(JSON.parse(init.body)).toMatchObject({ cache_prompt: true })
   })
 
   it('multi-key fallback: k1=401 then k2=200 → returns 200 and records fallbackCount once', async () => {

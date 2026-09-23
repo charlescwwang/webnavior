@@ -32,11 +32,16 @@ configuration:
   greeting-only observations, and empty records. Greeting-only evidence remains
   retained but is excluded by the default filter. An administrator can select
   reviewed interaction records and download LLM JSONL or an ASR ZIP containing
-  `metadata.jsonl` and its paired recordings.
+  `metadata.jsonl` and its paired recordings. Opening one record also exposes
+  a per-conversation delete action; it requires confirmation and permanently
+  removes that session's transcript, events, and retained media.
 - **Kiosk 設備** is where an administrator opens one registered device's
   **裝置設定**. Camera evidence mode is configured per device there. The
   **保存天數** control appears with that device configuration, but applies to
   every device in the selected site because session retention is a site policy.
+- **互動體驗 → 服務場景** can attach one PNG, JPEG, or WebP store background
+  to the published Profile. Kiosk uses its built-in counter scene whenever the
+  Profile has no uploaded image.
 
 The admin application does not embed a Kiosk preview. Open the separately
 deployed `/kiosk/` application when an end-to-end customer-flow check is needed.

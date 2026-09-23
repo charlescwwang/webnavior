@@ -3,8 +3,7 @@ import type { Buffer } from 'node:buffer'
 import type Redis from 'ioredis'
 
 import type { Database } from '../../../libs/db'
-import type * as schema from '../../../schemas'
-import type { WebnaviorAiCapability, WebnaviorAiConnection } from '../../../schemas/webnavior-ai'
+import type { WebnaviorAiCapability, WebnaviorAiProviderProfile } from '../../../schemas/webnavior-ai'
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
 import type { ConfigKVService, LlmRouterConfig } from '../../adapters/config-kv'
 
@@ -25,10 +24,9 @@ export interface WebnaviorAiRuntimeService {
 }
 
 /**
- * Compiles durable Webnavior capability bindings into the established gateway
- * configuration. This is a clean cutover: the control plane is the only AI
- * configuration source, and applying it replaces prior Webnavior runtime
- * selections instead of retaining a compatibility fallback.
+ * Compiles the active, capability-scoped Provider profiles into the established
+ * gateway configuration. Applying replaces the prior runtime selection rather
+ * than retaining a compatibility fallback.
  */
 export function createWebnaviorAiRuntimeService(options: {
   configKV: ConfigKVService
@@ -50,29 +48,29 @@ export function createWebnaviorAiRuntimeService(options: {
   }
 
   async function applyBindings() {
-    const bindings = await options.db.query.webnaviorAiCapabilityBindings.findMany({ with: { connection: true } })
-    const byCapability = new Map(bindings.map(binding => [binding.capability, binding]))
+    const selections = await options.db.query.webnaviorAiCapabilitySelections.findMany({ with: { providerProfile: true } })
+    const byCapability = new Map(selections.map(selection => [selection.capability, selection.providerProfile]))
     const plaintextKeys = new Map<string, Buffer | undefined>()
 
     try {
-      for (const binding of bindings) {
-        if (!binding.connection.discoveredModels.some(model => model.id === binding.modelId)) {
+      for (const profile of byCapability.values()) {
+        if (!profile.verifiedAt || !profile.modelId || !profile.discoveredModels.some(model => model.id === profile.modelId)) {
           throw createBadRequestError(
-            `「${binding.connection.name}」的模型清單已變更，請重新讀取模型後再套用。`,
-            'WEBNAVIOR_AI_MODEL_NOT_DISCOVERED',
+            `「${profile.name}」尚未通過目前模型的驗證，請重新讀取、驗證後再套用。`,
+            'WEBNAVIOR_AI_PROVIDER_PROFILE_NOT_VERIFIED',
           )
         }
-        const ciphertext = binding.connection.apiKeyCiphertext
-        plaintextKeys.set(binding.connection.id, ciphertext
-          ? options.envelopeCrypto.decryptKey(ciphertext, { keyEntryId: 'default', modelName: connectionKeyLabel(binding.connection.id) })
+        const ciphertext = profile.apiKeyCiphertext
+        plaintextKeys.set(profile.id, ciphertext
+          ? options.envelopeCrypto.decryptKey(ciphertext, { keyEntryId: 'default', modelName: profileKeyLabel(profile.id) })
           : undefined)
       }
 
       const llmModels: LlmRouterConfig['llm']['models'] = {}
       const chat = byCapability.get('chat')
       const vision = byCapability.get('vision')
-      applyLlmBinding(llmModels, chat, RUNTIME_MODEL_NAMES.chat, plaintextKeys, options.envelopeCrypto)
-      applyLlmBinding(llmModels, vision, RUNTIME_MODEL_NAMES.vision, plaintextKeys, options.envelopeCrypto)
+      applyLlmProfile(llmModels, chat, RUNTIME_MODEL_NAMES.chat, plaintextKeys, options.envelopeCrypto)
+      applyLlmProfile(llmModels, vision, RUNTIME_MODEL_NAMES.vision, plaintextKeys, options.envelopeCrypto)
 
       const asr = byCapability.get('asr')
       const tts = byCapability.get('tts')
@@ -93,11 +91,11 @@ export function createWebnaviorAiRuntimeService(options: {
         tts: { models: {} },
       }
       const audioConfig = {
-        ...(asr ? { asr: compiledAudioConfig(asr.connection, asr.modelId, plaintextKeys.get(asr.connection.id), 'asr', options.envelopeCrypto) } : {}),
-        ...(tts ? { tts: compiledAudioConfig(tts.connection, tts.modelId, plaintextKeys.get(tts.connection.id), 'tts', options.envelopeCrypto, tts.voice ?? undefined) } : {}),
+        ...(asr ? { asr: compiledAudioConfig(asr, plaintextKeys.get(asr.id), 'asr', options.envelopeCrypto) } : {}),
+        ...(tts ? { tts: compiledAudioConfig(tts, plaintextKeys.get(tts.id), 'tts', options.envelopeCrypto) } : {}),
       }
       const embeddingConfig = embedding
-        ? compiledEmbeddingConfig(embedding.connection, embedding.modelId, plaintextKeys.get(embedding.connection.id), options.envelopeCrypto)
+        ? compiledEmbeddingConfig(embedding, plaintextKeys.get(embedding.id), options.envelopeCrypto)
         : undefined
 
       // Redis has no cross-key transaction. We fully assemble values before
@@ -123,53 +121,58 @@ export function createWebnaviorAiRuntimeService(options: {
   return { applyBindings, modelFor }
 }
 
-function applyLlmBinding(
+function applyLlmProfile(
   models: LlmRouterConfig['llm']['models'],
-  binding: (typeof schema.webnaviorAiCapabilityBindings.$inferSelect & { connection: WebnaviorAiConnection }) | undefined,
+  profile: WebnaviorAiProviderProfile | undefined,
   runtimeModelName: typeof RUNTIME_MODEL_NAMES.chat | typeof RUNTIME_MODEL_NAMES.vision,
   plaintextKeys: Map<string, Buffer | undefined>,
   envelopeCrypto: EnvelopeCrypto,
 ) {
-  if (!binding) {
+  if (!profile) {
     delete models[runtimeModelName]
     return
   }
-  const key = plaintextKeys.get(binding.connection.id)
+  const key = plaintextKeys.get(profile.id)
   models[runtimeModelName] = {
     fallbackTriggers: { httpCodes: [401, 402, 403, 429, 500, 502, 503, 504], onTimeout: true },
     upstreams: [{
-      baseURL: binding.connection.baseURL,
+      baseURL: profile.baseURL,
+      cachePrompt: profile.kind === 'llama-cpp',
       headerTemplate: key ? 'Bearer {KEY}' : '',
       keys: [{
         ciphertext: envelopeCrypto.encryptKey(key?.toString('utf8') ?? '', { keyEntryId: 'default', modelName: runtimeModelName }),
         id: 'default',
       }],
-      overrideModel: binding.modelId,
-      timeoutMs: binding.connection.timeoutMs,
+      overrideModel: profile.modelId!,
+      timeoutMs: profile.timeoutMs,
     }],
   }
 }
 
-function compiledAudioConfig(connection: WebnaviorAiConnection, upstreamModel: string, key: Buffer | undefined, capability: 'asr' | 'tts', envelopeCrypto: EnvelopeCrypto, voice?: string) {
+function compiledAudioConfig(profile: WebnaviorAiProviderProfile, key: Buffer | undefined, capability: 'asr' | 'tts', envelopeCrypto: EnvelopeCrypto) {
   return {
-    baseURL: connection.baseURL,
+    baseURL: profile.baseURL,
     ...(key ? { keyCiphertext: envelopeCrypto.encryptKey(key.toString('utf8'), { keyEntryId: 'default', modelName: `webnavior-audio:${capability}` }) } : {}),
     modelName: RUNTIME_MODEL_NAMES[capability],
-    upstreamModel,
-    ...(capability === 'tts' ? { voice: voice ?? 'zh-TW-HsiaoChenNeural' } : {}),
+    upstreamModel: profile.modelId!,
+    ...(capability === 'tts' ? { voice: profile.voice ?? 'zh-TW-HsiaoChenNeural' } : {}),
   }
 }
 
-function compiledEmbeddingConfig(connection: WebnaviorAiConnection, modelName: string, key: Buffer | undefined, envelopeCrypto: EnvelopeCrypto) {
+function compiledEmbeddingConfig(profile: WebnaviorAiProviderProfile, key: Buffer | undefined, envelopeCrypto: EnvelopeCrypto) {
   return {
-    baseURL: connection.baseURL,
+    baseURL: profile.baseURL,
     ...(key ? { keyCiphertext: envelopeCrypto.encryptKey(key.toString('utf8'), { keyEntryId: 'default', modelName: 'webnavior-kiosk:embedding' }) } : {}),
-    modelName,
-    provider: connection.kind,
-    timeoutMs: connection.timeoutMs,
+    modelName: profile.modelId!,
+    providerProfileId: profile.id,
+    // llama.cpp uses the same OpenAI-shaped embeddings request when an
+    // embedding-capable build is selected; its cache extension only applies
+    // to chat completions.
+    provider: profile.kind === 'llama-cpp' ? 'openai-compatible' : profile.kind,
+    timeoutMs: profile.timeoutMs,
   }
 }
 
-function connectionKeyLabel(connectionId: string) {
-  return `webnavior-ai:connection:${connectionId}`
+function profileKeyLabel(profileId: string) {
+  return `webnavior-ai:provider-profile:${profileId}`
 }

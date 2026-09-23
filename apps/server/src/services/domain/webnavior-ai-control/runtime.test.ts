@@ -1,4 +1,5 @@
 import type { Database } from '../../../libs/db'
+import type { WebnaviorAiCapability } from '../../../schemas/webnavior-ai'
 
 import { Buffer } from 'node:buffer'
 
@@ -30,13 +31,25 @@ describe('webnavior AI runtime compiler', () => {
     control = createWebnaviorAiControlService({
       db,
       envelopeCrypto,
-      fetchImpl: vi.fn(async () => new Response(JSON.stringify({ data: [
-        { id: 'chat-model' },
-        { id: 'vision-model' },
-        { id: 'asr-model' },
-        { id: 'tts-model' },
-        { id: 'embedding-model' },
-      ] }), { status: 200 })),
+      fetchImpl: vi.fn(async (url) => {
+        const endpoint = String(url)
+        if (endpoint.endsWith('/models')) {
+          return new Response(JSON.stringify({ data: [
+            { id: 'chat-model' },
+            { id: 'vision-model' },
+            { id: 'asr-model' },
+            { id: 'tts-model' },
+            { id: 'embedding-model' },
+          ] }), { status: 200 })
+        }
+        if (endpoint.endsWith('/embeddings'))
+          return new Response(JSON.stringify({ data: [{ embedding: [0.1] }] }), { status: 200 })
+        if (endpoint.endsWith('/audio/transcriptions'))
+          return new Response(JSON.stringify({ text: '' }), { status: 200 })
+        if (endpoint.endsWith('/audio/speech'))
+          return new Response(new Uint8Array([1, 2, 3]), { status: 200 })
+        return new Response(JSON.stringify({ choices: [{}] }), { status: 200 })
+      }),
     })
     runtime = createWebnaviorAiRuntimeService({
       configKV: configKV as any,
@@ -46,22 +59,22 @@ describe('webnavior AI runtime compiler', () => {
     })
   })
 
-  it('rebuilds the Kiosk runtime only from current capability bindings', async () => {
-    const connection = await control.createConnection({
-      baseURL: 'https://models.example/v1',
-      kind: 'openai-compatible',
-      name: '主要模型服務',
-      plaintextKey: 'server-secret',
-      timeoutMs: 7500,
-    })
-    await control.refreshConnectionModels(connection.id)
-    await Promise.all([
-      control.saveBinding({ capability: 'chat', connectionId: connection.id, modelId: 'chat-model' }),
-      control.saveBinding({ capability: 'vision', connectionId: connection.id, modelId: 'vision-model' }),
-      control.saveBinding({ capability: 'asr', connectionId: connection.id, modelId: 'asr-model' }),
-      control.saveBinding({ capability: 'tts', connectionId: connection.id, modelId: 'tts-model', voice: 'zh-TW-Test' }),
-      control.saveBinding({ capability: 'embedding', connectionId: connection.id, modelId: 'embedding-model' }),
-    ])
+  it('rebuilds Kiosk runtime only from active, verified capability profiles', async () => {
+    const capabilities: WebnaviorAiCapability[] = ['chat', 'vision', 'asr', 'tts', 'embedding']
+    for (const capability of capabilities) {
+      const profile = await control.createProfile(capability, {
+        baseURL: 'https://models.example/v1',
+        kind: capability === 'chat' ? 'llama-cpp' : 'openai-compatible',
+        modelId: `${capability}-model`,
+        name: `${capability} 主要 Provider`,
+        plaintextKey: 'server-secret',
+        timeoutMs: 7500,
+        ...(capability === 'tts' ? { voice: 'zh-TW-Test' } : {}),
+      })
+      await control.refreshProfileModels(capability, profile.id)
+      await control.verifyProfile(capability, profile.id)
+      await control.selectProfile(capability, profile.id)
+    }
 
     await expect(runtime.applyBindings()).resolves.toEqual({
       appliedCapabilities: expect.arrayContaining(['chat', 'vision', 'asr', 'tts', 'embedding']),
@@ -72,8 +85,8 @@ describe('webnavior AI runtime compiler', () => {
     expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({
       llm: {
         models: {
-          'webnavior/chat': { upstreams: [{ baseURL: 'https://models.example/v1', overrideModel: 'chat-model' }] },
-          'webnavior/vision': { upstreams: [{ baseURL: 'https://models.example/v1', overrideModel: 'vision-model' }] },
+          'webnavior/chat': { upstreams: [{ baseURL: 'https://models.example/v1', cachePrompt: true, overrideModel: 'chat-model', timeoutMs: 7500 }] },
+          'webnavior/vision': { upstreams: [{ baseURL: 'https://models.example/v1', overrideModel: 'vision-model', timeoutMs: 7500 }] },
         },
       },
       tts: { models: {} },

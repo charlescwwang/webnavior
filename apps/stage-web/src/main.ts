@@ -14,7 +14,7 @@ import { createApp } from 'vue'
 import { createRouter, createWebHashHistory, createWebHistory } from 'vue-router'
 import { routes } from 'vue-router/auto-routes'
 
-import App from './App.vue'
+import ServerConfigurationError from './components/ServerConfigurationError.vue'
 
 import { i18n } from './modules/i18n'
 
@@ -27,6 +27,7 @@ import './styles/main.css'
 import 'uno.css'
 
 const pinia = createPinia()
+const isServerConfigured = Boolean(import.meta.env.VITE_SERVER_URL?.trim())
 
 // TODO: vite-plugin-vue-layouts is long deprecated, replace with another layout solution
 const routeRecords = setupLayouts(routes as RouteRecordRaw[])
@@ -54,16 +55,26 @@ router.beforeEach((to) => {
     return '/admin'
 })
 
-createApp(App)
-  .use(MotionPlugin)
-  // TODO: Fix autoAnimatePlugin type error
-  .use(autoAnimatePlugin as unknown as Plugin)
-  .use(router)
-  .use(pinia)
-  .use(PiniaColada)
-  .use(i18n)
-  .use(Tres)
-  .mount('#app')
+async function bootstrap() {
+  // Keep the API-using application outside the static import graph so the
+  // configuration error can render without initializing any server clients.
+  const rootComponent = isServerConfigured
+    ? (await import('./App.vue')).default
+    : ServerConfigurationError
+
+  createApp(rootComponent)
+    .use(MotionPlugin)
+    // TODO: Fix autoAnimatePlugin type error
+    .use(autoAnimatePlugin as unknown as Plugin)
+    .use(router)
+    .use(pinia)
+    .use(PiniaColada)
+    .use(i18n)
+    .use(Tres)
+    .mount('#app')
+}
+
+void bootstrap()
 
 if (import.meta.env.DEV && !import.meta.env.SSR) {
   function captureEvents(el: HTMLElement) {

@@ -247,7 +247,11 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         }
 
         const effectiveModel = upstream.overrideModel ?? req.modelName
-        const body = JSON.stringify({ ...req.body, model: effectiveModel })
+        const body = JSON.stringify({
+          ...req.body,
+          ...(upstream.cachePrompt ? { cache_prompt: true } : {}),
+          model: effectiveModel,
+        })
 
         // NOTICE:
         // We compose two AbortSignals — per-attempt timeout and the caller's

@@ -4,54 +4,108 @@ import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { readonly, shallowRef } from 'vue'
 
 export type AiCapability = 'chat' | 'vision' | 'asr' | 'tts' | 'embedding'
-export type AiConnectionKind = 'ollama' | 'openai-compatible'
+export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
 
-export interface AiConnection {
+export interface AiProviderProfile {
   baseURL: string
+  capability: AiCapability
   discoveredModels: ReadonlyArray<{ id: string }>
   hasApiKey: boolean
   id: string
-  kind: AiConnectionKind
+  kind: AiProviderKind
   lastCheckError: string | null
+  lastVerificationError: string | null
+  modelId: string | null
   name: string
   timeoutMs: number
-}
-
-export interface AiBinding {
-  capability: AiCapability
-  connection: Pick<AiConnection, 'id' | 'kind' | 'name'>
-  connectionId: string
-  modelId: string
+  verifiedAt: string | null
   voice: string | null
 }
 
+export interface AiCapabilitySelection {
+  capability: AiCapability
+  providerProfile: AiProviderProfile
+  providerProfileId: string
+}
+
+export interface AiProviderProfileInput {
+  baseURL: string
+  clearApiKey?: boolean
+  kind: AiProviderKind
+  modelId?: string
+  name: string
+  plaintextKey?: string
+  timeoutMs: number
+  voice?: string
+}
+
+/** Result of the optional Provider model-catalog probe. */
+export interface AiModelCatalogProbe {
+  catalogAvailable: boolean
+  catalogMessage?: string
+  models: ReadonlyArray<{ id: string }>
+}
+
 interface AiControlSnapshot {
-  bindings: AiBinding[]
-  connections: AiConnection[]
+  profiles: AiProviderProfile[]
+  selections: AiCapabilitySelection[]
+  speechGuard: SpeechGuardStatus
+}
+
+export interface SpeechGuardStatus {
+  baselineCount: number
+  configurationError?: string
+  embeddingModelId?: string
+  embeddingProfileId?: string
+  ready: boolean
 }
 
 function endpoint(path = '') {
-  return new URL(`/api/admin/webnavior-ai${path}`, SERVER_URL).toString()
+  const normalizedPath = path.replace(/^\/+/, '')
+  return new URL(`/api/admin/webnavior-ai${normalizedPath ? `/${normalizedPath}` : ''}`, SERVER_URL).toString()
 }
 
-async function request(path: string, init?: RequestInit) {
+async function request(path = '', init?: RequestInit) {
   const response = await authedFetch(endpoint(path), init)
-  if (!response.ok)
-    throw new Error(await response.text() || `Request failed: ${response.status}`)
+  if (!response.ok) {
+    const body = await response.text()
+    const payload = parseErrorPayload(body)
+    if (payload?.error === 'NOT_FOUND')
+      throw new Error('找不到 Kiosk AI 設定服務。請確認 API Server 已更新並重新啟動。')
+    throw new Error(payload?.message || body || `請求失敗（${response.status}）。`)
+  }
   return response
 }
 
-/** State and actions for the Webnavior-only AI control plane. */
+function parseErrorPayload(body: string): { error?: string, message?: string } | undefined {
+  try {
+    const value: unknown = JSON.parse(body)
+    if (!value || typeof value !== 'object')
+      return undefined
+    const { error, message } = value as { error?: unknown, message?: unknown }
+    return {
+      ...(typeof error === 'string' ? { error } : {}),
+      ...(typeof message === 'string' ? { message } : {}),
+    }
+  }
+  catch {
+    return undefined
+  }
+}
+
+/** State and actions for capability-scoped Webnavior AI Provider settings. */
 export function useWebnaviorAiControl() {
-  const bindings = shallowRef<AiBinding[]>([])
-  const connections = shallowRef<AiConnection[]>([])
+  const profiles = shallowRef<AiProviderProfile[]>([])
+  const selections = shallowRef<AiCapabilitySelection[]>([])
+  const speechGuard = shallowRef<SpeechGuardStatus>({ baselineCount: 0, ready: false })
   const busy = shallowRef(false)
   const error = shallowRef<string>()
 
   async function refreshSnapshot() {
-    const snapshot = await (await request('/')).json() as AiControlSnapshot
-    bindings.value = snapshot.bindings
-    connections.value = snapshot.connections
+    const snapshot = await (await request()).json() as AiControlSnapshot
+    profiles.value = snapshot.profiles
+    selections.value = snapshot.selections
+    speechGuard.value = snapshot.speechGuard
   }
 
   async function run<T>(operation: () => Promise<T>, fallbackMessage: string) {
@@ -71,46 +125,84 @@ export function useWebnaviorAiControl() {
 
   async function load() {
     try {
-      await run(refreshSnapshot, '無法讀取 AI 服務設定。')
+      await run(refreshSnapshot, '無法讀取 AI Provider 設定。')
     }
     catch {
-      // The shared error state is rendered by the settings page.
+      // The route view presents this state both in context and as a Toast.
     }
   }
 
-  async function createConnection(input: { baseURL: string, kind: AiConnectionKind, name: string, plaintextKey?: string, timeoutMs: number }) {
+  async function createProfile(capability: AiCapability, input: AiProviderProfileInput) {
     return await run(async () => {
-      await request('/connections', { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
+      await request(`/capabilities/${capability}/providers`, { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
       await refreshSnapshot()
-    }, '無法建立 AI 服務連線。')
+    }, '無法建立 AI Provider。')
   }
 
-  async function updateConnection(connectionId: string, input: { baseURL: string, clearApiKey?: boolean, kind: AiConnectionKind, name: string, plaintextKey?: string, timeoutMs: number }) {
+  async function updateProfile(capability: AiCapability, profileId: string, input: AiProviderProfileInput) {
     return await run(async () => {
-      await request(`/connections/${encodeURIComponent(connectionId)}`, { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'PATCH' })
+      await request(`/capabilities/${capability}/providers/${encodeURIComponent(profileId)}`, { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'PATCH' })
       await refreshSnapshot()
-    }, '無法更新 AI 服務連線。')
+    }, '無法更新 AI Provider。')
   }
 
-  async function refreshModels(connectionId: string) {
+  async function refreshProfileModels(capability: AiCapability, profileId: string) {
     return await run(async () => {
-      await request(`/connections/${encodeURIComponent(connectionId)}/models:refresh`, { method: 'POST' })
+      await request(`/capabilities/${capability}/providers/${encodeURIComponent(profileId)}/models:refresh`, { method: 'POST' })
       await refreshSnapshot()
     }, '無法讀取模型清單。')
   }
 
-  async function deleteConnection(connectionId: string) {
+  async function discoverProviderModels(capability: AiCapability, input: AiProviderProfileInput, profileId?: string) {
     return await run(async () => {
-      await request(`/connections/${encodeURIComponent(connectionId)}`, { method: 'DELETE' })
-      await refreshSnapshot()
-    }, '無法移除正在使用的服務連線。')
+      const path = profileId
+        ? `/capabilities/${capability}/providers/${encodeURIComponent(profileId)}/models:discover`
+        : `/capabilities/${capability}/providers/models:discover`
+      return await (await request(path, {
+        body: JSON.stringify(input),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      })).json() as AiModelCatalogProbe
+    }, '無法連線至模型服務。')
   }
 
-  async function saveBinding(input: { capability: AiCapability, connectionId: string, modelId: string, voice?: string }) {
+  async function verifyAndSaveProvider(capability: AiCapability, input: AiProviderProfileInput, profileId?: string) {
     return await run(async () => {
-      await request(`/bindings/${input.capability}`, { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'PUT' })
+      const path = profileId
+        ? `/capabilities/${capability}/providers/${encodeURIComponent(profileId)}/verify-and-save`
+        : `/capabilities/${capability}/providers/verify-and-save`
+      await request(path, {
+        body: JSON.stringify(input),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      })
       await refreshSnapshot()
-    }, '無法儲存能力模型。')
+    }, 'Provider 驗證失敗，設定尚未儲存。')
+  }
+
+  async function verifyProfile(capability: AiCapability, profileId: string) {
+    return await run(async () => {
+      await request(`/capabilities/${capability}/providers/${encodeURIComponent(profileId)}/verify`, { method: 'POST' })
+      await refreshSnapshot()
+    }, '無法驗證 AI Provider。')
+  }
+
+  async function deleteProfile(capability: AiCapability, profileId: string) {
+    return await run(async () => {
+      await request(`/capabilities/${capability}/providers/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
+      await refreshSnapshot()
+    }, '無法移除 AI Provider。')
+  }
+
+  async function selectProfile(capability: AiCapability, providerProfileId: string) {
+    return await run(async () => {
+      await request(`/capabilities/${capability}/active-provider`, {
+        body: JSON.stringify({ providerProfileId }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'PUT',
+      })
+      await refreshSnapshot()
+    }, '無法切換啟用的 AI Provider。')
   }
 
   async function apply() {
@@ -119,17 +211,29 @@ export function useWebnaviorAiControl() {
     }, '無法套用 AI 設定。')
   }
 
+  async function initializeSpeechGuard() {
+    return await run(async () => {
+      await request('/speech-guard:initialize', { method: 'POST' })
+      await refreshSnapshot()
+    }, '無法建立語意防護基準。')
+  }
+
   return {
     apply,
-    bindings: readonly(bindings),
     busy: readonly(busy),
-    connections: readonly(connections),
-    createConnection,
-    deleteConnection,
+    createProfile,
+    deleteProfile,
+    discoverProviderModels,
     error: readonly(error),
+    initializeSpeechGuard,
     load,
-    refreshModels,
-    saveBinding,
-    updateConnection,
+    profiles: readonly(profiles),
+    refreshProfileModels,
+    selectProfile,
+    selections: readonly(selections),
+    speechGuard: readonly(speechGuard),
+    updateProfile,
+    verifyAndSaveProvider,
+    verifyProfile,
   }
 }
