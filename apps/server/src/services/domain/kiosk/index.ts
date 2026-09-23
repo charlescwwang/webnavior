@@ -11,6 +11,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzl
 import { boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
 import { createConflictError, createForbiddenError, createNotFoundError } from '../../../utils/error'
+import { defaultKioskAgentInteractionState } from '../kiosk-agent-interaction'
 import { assertDetectionZone, parseSettingsChange } from './deviceSettings'
 
 import * as schema from '../../../schemas'
@@ -398,6 +399,7 @@ export function createKioskService(db: Database): KioskService {
       throw createNotFoundError('Kiosk Site was not found')
 
     const [visitorSession] = await db.insert(schema.kioskVisitorSessions).values({
+      agentInteraction: defaultKioskAgentInteractionState,
       siteId: device.siteId,
       deviceId: device.id,
       profileReleaseId: release.id,

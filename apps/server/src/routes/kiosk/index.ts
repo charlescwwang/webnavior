@@ -2,6 +2,7 @@ import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
+import type { KioskAgentInteractionState } from '../../services/domain/kiosk-agent-interaction'
 import type { KioskEmbeddingGateway } from '../../services/domain/kiosk-embedding'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { KioskSpeechGuardRuntime } from '../../services/domain/kiosk-speech-guard/runtime'
@@ -13,7 +14,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
-import { createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults } from '../../services/domain/kiosk-agent-interaction'
+import { compactToolResultForModel, createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { calculateCosineSimilarity, evaluateKioskTurn } from '../../services/domain/kiosk-turn-decision'
 import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
@@ -114,6 +115,8 @@ export interface KioskRoutesOptions {
   /** Persisted semantic baseline used only before a new conversation begins. */
   speechGuard?: KioskSpeechGuardRuntime
   turnDecisionObserver?: { record: (input: { decision: string, embeddingAvailable: boolean, presenceState?: string, reason: string, speechGuardLabel?: string }) => void }
+  /** Development-only trace of the tool protocol; never include customer content or tool arguments. */
+  toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
 }
@@ -368,6 +371,21 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!content && result.output.toolResults.length === 0)
       throw createBadRequestError('A message or tool result is required', 'INVALID_REQUEST')
 
+    if (result.output.tools.length > 0) {
+      options.toolTraceObserver?.record({
+        phase: 'tools-provided',
+        toolNames: result.output.tools.map(tool => tool.function.name),
+        visitorSessionId: transcript.session.id,
+      })
+    }
+    if (result.output.toolResults.length > 0) {
+      options.toolTraceObserver?.record({
+        phase: 'browser-results',
+        toolNames: result.output.toolResults.map(toolResult => toolResult.name),
+        visitorSessionId: transcript.session.id,
+      })
+    }
+
     if (content) {
       await options.kioskService.appendDeviceInteraction({
         content,
@@ -407,6 +425,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         runtimeModelPolicy: options.runtimeModelPolicy,
         profile,
         signal: c.req.raw.signal,
+        toolTraceObserver: options.toolTraceObserver,
         toolResults: result.output.toolResults,
         tools: result.output.tools,
         transcript,
@@ -675,7 +694,7 @@ async function parseAssistantReply(response: Response): Promise<KioskCompletion>
 
 async function completeKioskReply(input: {
   actionPrompt?: string
-  agentInteraction?: { dismissedSubjectIds: string[], mode: 'active' | 'decision_guidance' | 'touch_preferred', noProgressCount: number, suggestedSubjectIds: string[] }
+  agentInteraction?: KioskAgentInteractionState
   abortSignal?: AbortSignal
   content?: string
   kioskService: KioskService
@@ -701,8 +720,12 @@ async function completeKioskReply(input: {
       model: modelName,
       messages: [
         { role: 'system', content: systemInstructions },
-        ...toConversationMessages(input.transcript.entries),
-        ...(input.toolResults ?? []).map(toolResult => ({ role: 'tool', content: toolResult.content, tool_call_id: toolResult.toolCallId })),
+        ...toConversationMessages(input.transcript.entries, input.toolResults?.map(result => result.toolCallId)),
+        ...(input.toolResults ?? []).map(toolResult => ({
+          role: 'tool',
+          content: compactToolResultForModel(toolResult.name, toolResult.content),
+          tool_call_id: toolResult.toolCallId,
+        })),
         ...(input.content ? [{ role: 'user', content: input.content }] : []),
         // Some OpenAI-compatible gateways reject a system-only conversation.
         // When VLM is off there is no scene-frame user turn, so represent the
@@ -734,7 +757,7 @@ type KioskReplyEvent
     | { message: string, type: 'turn-failed' }
 
 interface KioskReplyStreamInput {
-  agentInteraction: { dismissedSubjectIds: string[], mode: KioskAgentInteractionMode, noProgressCount: number, suggestedSubjectIds: string[] }
+  agentInteraction: KioskAgentInteractionState
   content?: string
   deviceId: string
   kioskService: KioskService
@@ -743,6 +766,7 @@ interface KioskReplyStreamInput {
   runtimeModelPolicy: KioskRoutesOptions['runtimeModelPolicy']
   signal: AbortSignal
   toolResults: Array<{ content: string, name: string, toolCallId: string }>
+  toolTraceObserver?: KioskRoutesOptions['toolTraceObserver']
   tools: Array<{ function: { description?: string, name: string, parameters: unknown }, type: 'function' }>
   transcript: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>
 }
@@ -764,6 +788,14 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
       try {
         emit({ type: 'turn-started' })
         const answer = await streamKioskReply(input, text => emit({ text, type: 'assistant-delta' }))
+
+        if (answer.toolCalls.length > 0) {
+          input.toolTraceObserver?.record({
+            phase: 'llm-requests',
+            toolNames: answer.toolCalls.map(toolCall => toolCall.function.name),
+            visitorSessionId: input.transcript.session.id,
+          })
+        }
 
         if (answer.content) {
           await input.kioskService.appendDeviceInteraction({
@@ -829,8 +861,12 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
       model: modelName,
       messages: [
         { role: 'system', content: createKioskSystemInstructions(input) },
-        ...toConversationMessages(input.transcript.entries),
-        ...input.toolResults.map(toolResult => ({ role: 'tool', content: toolResult.content, tool_call_id: toolResult.toolCallId })),
+        ...toConversationMessages(input.transcript.entries, input.toolResults.map(result => result.toolCallId)),
+        ...input.toolResults.map(toolResult => ({
+          role: 'tool',
+          content: compactToolResultForModel(toolResult.name, toolResult.content),
+          tool_call_id: toolResult.toolCallId,
+        })),
         ...(input.content ? [{ role: 'user', content: input.content }] : []),
       ],
       ...(input.tools.length ? { tools: input.tools } : {}),
@@ -966,21 +1002,33 @@ function createAssistantActionInstructions(prompt: string) {
   ].join('\n')
 }
 
-function toConversationMessages(entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries']) {
-  // Keep a generous recent window for natural references while bounding tool
-  // payload growth during a long-running visitor session. Durable entries are
-  // retained separately for operator review and never discarded here.
-  return entries.slice(-48).flatMap((entry) => {
+function toConversationMessages(
+  entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries'],
+  pendingToolCallIds: string[] = [],
+) {
+  // Durable tool exchanges remain available for operator review. The model
+  // receives conversational text plus only the tool call required to pair the
+  // current browser result; older tool payloads are represented by the compact
+  // Agent interaction state in the system instructions.
+  const conversationEntries = entries.flatMap((entry) => {
     if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
-      return [{ role: entry.kind === 'user_text' ? 'user' : 'assistant', content: entry.content }]
-    if (entry.kind === 'tool_call') {
-      const toolCalls = entry.metadata?.toolCalls
-      return Array.isArray(toolCalls) ? [{ role: 'assistant', content: '', tool_calls: toolCalls }] : []
-    }
-    if (entry.kind === 'tool_result' && typeof entry.metadata?.toolCallId === 'string')
-      return [{ role: 'tool', content: entry.content, tool_call_id: entry.metadata.toolCallId }]
+      return [{ kind: entry.kind, content: entry.content }]
     return []
   })
+  const conversation = selectBoundedConversationText(conversationEntries)
+  if (pendingToolCallIds.length === 0)
+    return conversation
+
+  const pendingIds = new Set(pendingToolCallIds)
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index]
+    if (entry.kind !== 'tool_call' || !Array.isArray(entry.metadata?.toolCalls))
+      continue
+    const toolCalls = (entry.metadata.toolCalls as KioskToolCall[]).filter(toolCall => pendingIds.has(toolCall.id))
+    if (toolCalls.length > 0)
+      return [...conversation, { role: 'assistant', content: '', tool_calls: toolCalls }]
+  }
+  return conversation
 }
 
 function isChatCompletion(value: unknown): value is { choices: [{ message: { content?: string | null, tool_calls?: KioskToolCall[] } }] } {

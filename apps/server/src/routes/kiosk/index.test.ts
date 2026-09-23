@@ -556,15 +556,16 @@ describe('kiosk routes', () => {
     expect(speak).toHaveBeenCalledWith({ locale: 'zh-TW', modelName: 'restaurant-tts', text: '您好，想吃什麼？' })
   })
 
-  it('keeps prior turns and browser-owned tool results in the model conversation', async () => {
+  it('keeps the current browser tool exchange but replaces historical tool payloads with compact working context', async () => {
     const complete = vi.fn()
       .mockResolvedValueOnce(Response.json({
         choices: [{ message: {
           content: null,
-          tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'find_menu_item', arguments: '{"query":"牛肉麵"}' } }],
+          tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"牛肉麵"}' } }],
         } }],
       }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: '牛肉麵目前可以點餐。' } }] }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: '剛剛找到的是牛肉麵。' } }] }))
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
       kioskService: createKioskService(db),
@@ -585,7 +586,7 @@ describe('kiosk routes', () => {
     })
     const { session } = await started.json() as { session: { id: string } }
     const tools = [{ type: 'function', function: {
-      name: 'find_menu_item',
+      name: 'menu_get',
       description: 'Find an item on the active menu.',
       parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     } }]
@@ -600,7 +601,7 @@ describe('kiosk routes', () => {
     const completedReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
       method: 'POST',
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
-      body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'find_menu_item', content: '{"available":true}' }] }),
+      body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'menu_get', content: JSON.stringify({ items: [{ id: 'beef-noodles', name: '牛肉麵' }], presentation: { itemIds: ['beef-noodles'] } }) }] }),
     })
     await expect(completedReply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: '牛肉麵目前可以點餐。', toolCalls: [] })
     expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -609,10 +610,89 @@ describe('kiosk routes', () => {
         messages: expect.arrayContaining([
           expect.objectContaining({ role: 'user', content: '我要牛肉麵' }),
           expect.objectContaining({ role: 'assistant', tool_calls: expect.any(Array) }),
-          expect.objectContaining({ role: 'tool', tool_call_id: 'call_menu', content: '{"available":true}' }),
+          expect.objectContaining({ role: 'tool', tool_call_id: 'call_menu' }),
         ]),
       }),
     }))
+
+    const followUp = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ content: '剛剛那個是什麼？', tools }),
+    })
+    await expect(followUp.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: '剛剛找到的是牛肉麵。', toolCalls: [] })
+    const followUpMessages = complete.mock.calls.at(-1)?.[0].body.messages as Array<{ content?: string, role: string, tool_calls?: unknown[] }>
+    expect(followUpMessages[0]?.content).toContain('牛肉麵（beef-noodles）')
+    expect(followUpMessages.some(message => message.role === 'tool')).toBe(false)
+    expect(followUpMessages.some(message => Array.isArray(message.tool_calls))).toBe(false)
+  })
+
+  it('persists the full successful tool result and compact interaction state when the following model call fails', async () => {
+    const complete = vi.fn()
+      .mockResolvedValueOnce(Response.json({
+        choices: [{ message: {
+          content: null,
+          tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"牛肉麵"}' } }],
+        } }],
+      }))
+      .mockRejectedValueOnce(new Error('provider timeout'))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway: { complete },
+      runtimeModelPolicy,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+    const tools = [{ type: 'function', function: {
+      name: 'menu_get',
+      description: 'Find an item on the active menu.',
+      parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    } }]
+    await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ content: '我要牛肉麵', tools }),
+    })
+    const fullToolResult = JSON.stringify({
+      customerMessage: '我找到牛肉麵。',
+      items: [{ id: 'beef-noodles', name: '牛肉麵', description: '完整菜單介紹'.repeat(2_000) }],
+      presentation: { itemIds: ['beef-noodles'], kind: 'query-results' },
+    })
+
+    const failedReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: { 'Accept': 'text/event-stream', 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'menu_get', content: fullToolResult }] }),
+    })
+
+    expect(await failedReply.text()).toContain('"type":"turn-failed"')
+    const modelMessages = complete.mock.calls.at(-1)?.[0].body.messages as Array<{ content?: string, role: string }>
+    const modelToolResult = modelMessages.find(message => message.role === 'tool')?.content ?? ''
+    expect(modelToolResult.length).toBeLessThanOrEqual(8_000)
+    expect(JSON.parse(modelToolResult)).toMatchObject({ modelContextCompacted: true, presentation: { itemIds: ['beef-noodles'] } })
+
+    const persisted = await kioskService.getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })
+    expect(persisted.entries).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: fullToolResult, kind: 'tool_result' }),
+    ]))
+    expect(persisted.session.agentInteraction).toMatchObject({
+      recentMenuSubjects: [{ id: 'beef-noodles', name: '牛肉麵' }],
+      suggestedSubjectIds: ['beef-noodles'],
+    })
   })
 
   it('streams customer-safe assistant deltas without persisting partial text', async () => {
@@ -627,12 +707,14 @@ describe('kiosk routes', () => {
       '',
     ].join('\r\n'), { headers: { 'Content-Type': 'text/event-stream' } }))
     const kioskService = createKioskService(db)
+    const toolTraces: Array<{ phase: string, toolNames: string[], visitorSessionId: string }> = []
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
       kioskService,
       llmGateway: { complete },
       runtimeModelPolicy,
       secureCookies: false,
+      toolTraceObserver: { record: trace => toolTraces.push(trace) },
     }))
     const registration = await app.request('/api/kiosk/development/register', {
       method: 'POST',
@@ -650,7 +732,13 @@ describe('kiosk routes', () => {
     const reply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
       method: 'POST',
       headers: { 'Accept': 'text/event-stream', 'Content-Type': 'application/json', 'Cookie': cookie },
-      body: JSON.stringify({ content: '我要牛肉麵' }),
+      body: JSON.stringify({
+        content: '我要牛肉麵',
+        tools: [{
+          function: { name: 'find_menu_item', parameters: { type: 'object' } },
+          type: 'function',
+        }],
+      }),
     })
 
     expect(reply.headers.get('Content-Type')).toContain('text/event-stream')
@@ -659,6 +747,10 @@ describe('kiosk routes', () => {
     expect(replyEvents).toContain('"id":"call_menu"')
     expect(replyEvents).toContain('"type":"tool-requested"')
     expect(replyEvents).toContain('"type":"turn-finished"')
+    expect(toolTraces).toEqual([
+      { phase: 'tools-provided', toolNames: ['find_menu_item'], visitorSessionId: session.id },
+      { phase: 'llm-requests', toolNames: ['find_menu_item'], visitorSessionId: session.id },
+    ])
     await expect(kioskService.getVisitorSessionForDevice({ deviceId: (await kioskService.resolveDeviceCredential(cookie.split('=')[1]))!.id, visitorSessionId: session.id })).resolves.toMatchObject({
       entries: expect.arrayContaining([
         expect.objectContaining({ content: '牛肉麵可以點餐。', kind: 'assistant_text' }),

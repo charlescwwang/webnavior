@@ -426,6 +426,9 @@ export async function buildApp(deps: AppDeps) {
       },
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
+      toolTraceObserver: process.env.NODE_ENV !== 'production'
+        ? { record: input => console.info('[kiosk-tools]', input) }
+        : undefined,
       turnDecisionObserver: {
         record: input => deps.otel?.product.events.add(1, { event: 'kiosk_turn_decision', ...input }),
       },

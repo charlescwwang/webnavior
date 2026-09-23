@@ -245,7 +245,7 @@ export const kioskVisitorSessions = pgTable('kiosk_visitor_sessions', {
   /** Allocated atomically so transcript and event entries retain a stable session order. */
   lastSequence: integer('last_sequence').notNull().default(0),
   /** Ephemeral ordering-assistant context; cart data remains in the interactive service. */
-  agentInteraction: jsonb('agent_interaction').$type<KioskAgentInteractionState>().notNull().default({ dismissedSubjectIds: [], mode: 'active', noProgressCount: 0, suggestedSubjectIds: [] }),
+  agentInteraction: jsonb('agent_interaction').$type<KioskAgentInteractionState>().notNull().default({ dismissedSubjectIds: [], mode: 'active', noProgressCount: 0, recentMenuSubjects: [], suggestedSubjectIds: [] }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, table => [
   index('kiosk_visitor_sessions_site_created_idx').on(table.siteId, table.createdAt),
