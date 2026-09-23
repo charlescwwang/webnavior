@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+
 import type { FulfillmentMode } from '../domain/order-machine'
+
+import { fulfillmentControlId } from '../webmcp'
 
 interface ReviewLine {
   id: string
@@ -23,6 +27,7 @@ const emit = defineEmits<{
   back: []
   checkout: []
   remove: [lineId: string]
+  registerControl: [id: string, element: Element | ComponentPublicInstance | null]
   setFulfillment: [mode: FulfillmentMode]
   updateQuantity: [lineId: string, quantity: number]
 }>()
@@ -81,10 +86,10 @@ const emit = defineEmits<{
         <p>請選擇內用或外帶</p>
       </div>
       <div class="fulfillment-actions">
-        <button :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === 'dine-in' }]" type="button" @click="emit('setFulfillment', 'dine-in')">
+        <button :ref="element => emit('registerControl', fulfillmentControlId('dine-in'), element)" :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === 'dine-in' }]" type="button" @click="emit('setFulfillment', 'dine-in')">
           內用
         </button>
-        <button :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === 'takeout' }]" type="button" @click="emit('setFulfillment', 'takeout')">
+        <button :ref="element => emit('registerControl', fulfillmentControlId('takeout'), element)" :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === 'takeout' }]" type="button" @click="emit('setFulfillment', 'takeout')">
           外帶
         </button>
       </div>

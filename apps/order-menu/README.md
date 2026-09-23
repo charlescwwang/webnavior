@@ -56,13 +56,18 @@ When embedded by AIRI, the service exposes its domain operations through native
 WebMCP. AIRI discovers the tools dynamically, so this service is one interactive
 service among many rather than an AIRI built-in feature.
 
-When the customer explicitly agrees to see recommendations, an Agent may call
-`menu_show_recommendations` with one to four verified menu item IDs. The menu
-renders those items as a non-blocking recommendation rail with the catalog's
-own image, name, price, and availability data; it never trusts model-generated
-product details. Returning to the regular menu automatically compacts the rail
-to a small recommendation label, so the customer does not need to close a modal
-or leave their current browsing position.
+When the customer asks what the store recommends without stating a preference,
+the Agent calls `menu_recommend` without `needs`; the catalog's default order is
+treated as the store's signature/popular order. Without an explicit `limit`, the
+menu shows one 首選 so the spoken recommendation and visible recommendation stay
+in sync. If the customer asks for several options or a comparison, the Agent
+passes `limit: 2` or `3`. The Agent should recommend first and only ask about
+rice, noodles, spice, or similar preferences after the customer rejects or
+narrows that first suggestion. For an explicit preference, `menu_recommend`
+accepts verified `needs` tags. The menu renders the returned items as a
+non-blocking recommendation view with the catalog's own data; it never trusts
+model-generated product details. `menu_show_recommendations` remains available
+when the Agent needs to display a previously verified custom set.
 
 Set `VITE_AIRI_ORIGIN` to the exact AIRI browser-visible origin when deploying
 separately. The embedded menu otherwise uses its referrer origin, including a

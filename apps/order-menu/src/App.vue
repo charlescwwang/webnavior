@@ -20,6 +20,7 @@ import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
+import { useAgentOperationIndicator } from './composables/useAgentOperationIndicator'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, returnToInvoice, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor } from './domain/order-machine'
@@ -36,10 +37,12 @@ const expectedAiriOrigin = resolveExpectedHostOrigin({
   referrer: document.referrer,
 })
 const action = shallowRef<AgentAction>({ label: '等待下一步操作' })
-const agentOperationCount = shallowRef(0)
+const agentOperationIndicator = useAgentOperationIndicator()
 const cart = shallowRef<CartSnapshot>({ fulfillmentMode: undefined, lines: [], total: 0, itemCount: 0 })
 const cursorTargetId = shallowRef<string>()
 const cursorPosition = shallowRef({ x: 44, y: 14 })
+const cursorTravelMs = shallowRef(700)
+const cursorPhase = shallowRef<'moving' | 'pressing' | 'resting'>('resting')
 const showAgentCursor = shallowRef(false)
 const cartUpdated = shallowRef(false)
 const orderStatus = shallowRef<string>()
@@ -49,10 +52,8 @@ const completedOrderEnvironment = shallowRef<SubmissionEnvironment>()
 const fulfillmentMode = shallowRef<FulfillmentMode>()
 const addingItemId = shallowRef<string>()
 const recommendations = shallowRef<RecommendationPresentation>()
-const recommendationsCollapsed = shallowRef(false)
 const activeCategory = shallowRef<string>()
 const recommendedCategoryId = '__recommendations__'
-const comparedItemIds = shallowRef<string[]>([])
 const selectedItemId = shallowRef<string>()
 const orderReviewOpen = shallowRef(false)
 const checkout = shallowRef<CheckoutSnapshot>()
@@ -84,10 +85,21 @@ const visibleMenuItems = computed(() => {
     return recommendedItems.value
   return activeCategory.value ? menuItems.value.filter(item => item.category === activeCategory.value) : menuItems.value
 })
-const activeCategoryLabel = computed(() => activeCategory.value === recommendedCategoryId ? '推薦餐點' : activeCategory.value ?? '全部餐點')
+const activeCategoryLabel = computed(() => {
+  if (activeCategory.value !== recommendedCategoryId)
+    return activeCategory.value ?? '全部餐點'
+  return recommendations.value?.kind === 'query-results'
+    ? recommendations.value.title ?? '相關餐點'
+    : '推薦餐點'
+})
+const presentationContext = computed(() => {
+  if (activeCategory.value !== recommendedCategoryId || recommendations.value?.kind !== 'query-results')
+    return undefined
+  return `已依顧客提到的品項篩選，共 ${visibleMenuItems.value.length} 項`
+})
+const presentationNavigationLabel = computed(() => recommendations.value?.kind === 'query-results' ? '相關餐點' : '推薦餐點')
 const selectedItem = computed(() => menuItems.value.find(item => item.id === selectedItemId.value))
-const comparedItems = computed(() => comparedItemIds.value.map(id => menuItems.value.find(item => item.id === id)).filter((item): item is MenuItem => item !== undefined))
-const isAgentOperating = computed(() => agentOperationCount.value > 0)
+const isAgentOperating = agentOperationIndicator.isOperating
 const reviewLines = computed(() => cart.value.lines.map(line => ({
   id: line.id,
   name: line.name,
@@ -110,6 +122,57 @@ function setCardElement(id: string, element: Element | ComponentPublicInstance |
     cardElements.delete(id)
 }
 
+function setControlElement(id: string, element: Element | ComponentPublicInstance | null) {
+  if (element instanceof HTMLElement)
+    controlElements.set(id, element)
+  else
+    controlElements.delete(id)
+}
+
+// NOTICE: Agent movement is intentionally slower than ordinary UI animation.
+// Customers need enough time to see the target, understand the intended action,
+// and observe a press before state changes; otherwise automation feels erratic.
+const agentCursorTiming = {
+  dwellMs: 520,
+  maximumTravelMs: 1_150,
+  minimumTravelMs: 650,
+  pressMs: 180,
+  scrollSettleMs: 420,
+  speedPixelsPerSecond: 720,
+} as const
+
+function waitForAgentCursor(milliseconds: number) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds))
+}
+
+async function settleAgentTarget(target: HTMLElement) {
+  const rect = target.getBoundingClientRect()
+  const needsScroll = rect.top < 0 || rect.bottom > window.innerHeight
+  target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+  if (!needsScroll)
+    return
+
+  // Prefer the browser's actual scroll completion signal. The timeout keeps
+  // older embedded WebViews usable when scrollend is not implemented.
+  await new Promise<void>((resolve) => {
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (timeout)
+        clearTimeout(timeout)
+      window.removeEventListener('scrollend', finish)
+      resolve()
+    }
+    window.addEventListener('scrollend', finish, { once: true })
+    timeout = setTimeout(finish, agentCursorTiming.scrollSettleMs)
+  })
+}
+
+function travelDuration(from: { x: number, y: number }, to: { x: number, y: number }) {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y)
+  const duration = distance / agentCursorTiming.speedPixelsPerSecond * 1_000
+  return Math.round(Math.min(agentCursorTiming.maximumTravelMs, Math.max(agentCursorTiming.minimumTravelMs, duration)))
+}
+
 async function animateAction(nextAction: AgentAction) {
   action.value = nextAction
   cursorTargetId.value = nextAction.targetId
@@ -120,19 +183,30 @@ async function animateAction(nextAction: AgentAction) {
 
   await nextTick()
   const target = nextAction.controlId
-    ? controlElements.get(nextAction.controlId)
+    ? controlElements.get(nextAction.controlId) ?? (nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined)
     : nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined
-  if (!target)
+  if (!target) {
+    cursorPhase.value = 'resting'
+    await waitForAgentCursor(agentCursorTiming.dwellMs)
     return
+  }
 
-  target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
-  // Let the browser finish positioning the target before measuring it. The
-  // cursor is fixed to the menu viewport, so measuring before scrolling would
-  // leave it pointing at the target's old screen position.
-  await new Promise(resolve => setTimeout(resolve, 360))
+  // The cursor is fixed to the menu viewport, so measure only after the
+  // browser has finished moving the target into view.
+  await settleAgentTarget(target)
   const rect = target.getBoundingClientRect()
-  cursorPosition.value = { x: rect.left + rect.width * 0.5, y: rect.top + Math.min(rect.height * 0.35, 76) }
-  await new Promise(resolve => setTimeout(resolve, 260))
+  // Use the actual control center. The old top-biased offset pointed at the
+  // image area of tall cards and missed compact dialog buttons.
+  const targetPosition = { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.5 }
+  cursorTravelMs.value = travelDuration(cursorPosition.value, targetPosition)
+  cursorPhase.value = 'moving'
+  cursorPosition.value = targetPosition
+  await waitForAgentCursor(cursorTravelMs.value)
+  cursorPhase.value = 'resting'
+  await waitForAgentCursor(agentCursorTiming.dwellMs)
+  cursorPhase.value = 'pressing'
+  await waitForAgentCursor(agentCursorTiming.pressMs)
+  cursorPhase.value = 'resting'
 }
 
 const runtime = createMenuToolRuntime({
@@ -151,8 +225,8 @@ const runtime = createMenuToolRuntime({
   gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL),
   menu: [],
   onAction: animateAction,
-  onAgentOperationStart: () => agentOperationCount.value++,
-  onAgentOperationEnd: () => agentOperationCount.value = Math.max(0, agentOperationCount.value - 1),
+  onAgentOperationStart: agentOperationIndicator.start,
+  onAgentOperationEnd: agentOperationIndicator.end,
   onCartChange: (nextCart) => {
     cart.value = nextCart
     if (submissionStatus.value !== 'accepted') {
@@ -167,14 +241,19 @@ const runtime = createMenuToolRuntime({
       cartUpdateTimer = setTimeout(() => cartUpdated.value = false, 720)
     })
   },
-  onMenuSelection: itemId => itemId && openItem(itemId),
+  onMenuSelection: (itemId) => {
+    if (itemId)
+      openItem(itemId)
+    else
+      selectedItemId.value = undefined
+  },
   onFulfillmentChange: mode => fulfillmentMode.value = mode,
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
   onOrderSubmission: handleOrderSubmission,
   onRecommendationsChange: (presentation) => {
+    returnToMenuForAdditionalItems()
     recommendations.value = presentation
-    recommendationsCollapsed.value = false
     activeCategory.value = recommendedCategoryId
   },
 })
@@ -239,34 +318,7 @@ function notifyActivity() {
   notifyHost('activity')
 }
 
-function collapseRecommendations() {
-  if (!recommendations.value || recommendationsCollapsed.value)
-    return
-
-  recommendationsCollapsed.value = true
-}
-
-function handleMenuPointerDown(event: PointerEvent) {
-  // The recommendation rail is deliberately non-blocking. Browsing the
-  // original menu compacts it, while choosing a recommended item keeps the
-  // collection available for a second choice.
-  if (event.target instanceof Element && event.target.closest('[data-recommendation-rail]'))
-    return
-
-  collapseRecommendations()
-  notifyActivity()
-}
-
-function addRecommendedItem(itemId: string) {
-  // Recommendation cards are excluded from the broad pointer handler so they
-  // do not collapse before the customer can compare them. They still count as
-  // a real customer action and must refresh the Kiosk session.
-  notifyActivity()
-  openItem(itemId)
-}
-
-function expandRecommendations() {
-  recommendationsCollapsed.value = false
+function handleMenuPointerDown() {
   notifyActivity()
 }
 
@@ -365,6 +417,16 @@ function cancelCheckout() {
 }
 
 function restartOrder() {
+  resetPaymentAttempt()
+  checkout.value = undefined
+  orderReviewOpen.value = false
+  selectedItemId.value = undefined
+}
+
+/** Returns to browsing while preserving the current cart when the customer adds more items. */
+function returnToMenuForAdditionalItems() {
+  if (paymentStatus.value === 'pending' || paymentStatus.value === 'uncertain')
+    return
   resetPaymentAttempt()
   checkout.value = undefined
   orderReviewOpen.value = false
@@ -542,12 +604,6 @@ async function addSelectedItem(itemId: string) {
   selectedItemId.value = undefined
 }
 
-function toggleComparedItem(itemId: string) {
-  comparedItemIds.value = comparedItemIds.value.includes(itemId)
-    ? comparedItemIds.value.filter(candidate => candidate !== itemId)
-    : [...comparedItemIds.value, itemId].slice(-2)
-}
-
 function optionLabel(line: CartSnapshot['lines'][number]) {
   const item = menuItems.value.find(candidate => candidate.id === line.itemId)
   return Object.entries(line.options)
@@ -598,6 +654,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  agentOperationIndicator.dispose()
   nativeWebMcpUnmounted = true
   unregisterNativeWebMcp?.()
   unregisterNativeWebMcp = undefined
@@ -619,10 +676,10 @@ onUnmounted(() => {
     @retry="loadCatalog"
   />
   <main v-else class="menu-app" @pointerdown="handleMenuPointerDown">
-    <output :class="['agent-status', { 'is-active': isAgentOperating }]" aria-live="polite">
+    <output v-if="isAgentOperating" class="agent-status is-active" aria-live="polite">
       <span class="status-dot" />
-      <span>{{ isAgentOperating ? '正在為你整理餐點' : '菜單可直接點選' }}</span>
-      <small v-if="isAgentOperating">{{ action.label }}</small>
+      <span>正在為你整理餐點</span>
+      <small>{{ action.label }}</small>
     </output>
 
     <CheckoutMembership
@@ -634,6 +691,7 @@ onUnmounted(() => {
     <CheckoutInvoice
       v-else-if="checkout?.stage === 'invoice'"
       :carrier-code="checkout.carrierCode"
+      :membership-number="checkout.membershipNumber"
       :total="currency(cart.total)"
       @back="returnToOrderReview"
       @carrier="chooseInvoice('carrier')"
@@ -668,6 +726,7 @@ onUnmounted(() => {
       @back="orderReviewOpen = false"
       @checkout="startCheckout"
       @remove="removeCartLine"
+      @register-control="setControlElement"
       @set-fulfillment="setFulfillmentMode"
       @update-quantity="updateCartLineQuantity"
     />
@@ -676,7 +735,7 @@ onUnmounted(() => {
       <div class="menu-browser">
         <nav class="category-navigation" aria-label="餐點分類">
           <button :class="['category-button', { 'is-selected': activeCategory === recommendedCategoryId }]" type="button" :disabled="recommendedItems.length === 0" @click="activeCategory = recommendedCategoryId">
-            推薦餐點 <span>{{ recommendedItems.length }}</span>
+            {{ presentationNavigationLabel }} <span>{{ recommendedItems.length }}</span>
           </button>
           <button :class="['category-button', { 'is-selected': !activeCategory }]" type="button" @click="activeCategory = undefined">
             全部 <span>{{ menuItems.length }}</span>
@@ -687,22 +746,19 @@ onUnmounted(() => {
         </nav>
         <section class="menu-section">
           <h2>{{ activeCategoryLabel }}</h2>
+          <p v-if="presentationContext" class="presentation-context">
+            <span class="i-solar:filter-bold-duotone" aria-hidden="true" />
+            {{ presentationContext }}
+          </p>
           <MenuRecommendationRail
-            v-if="activeCategory === recommendedCategoryId && recommendations && recommendedItems.length > 0"
-            :adding-item-id="addingItemId"
-            :collapsed="recommendationsCollapsed"
-            :items="recommendedItems"
+            v-if="activeCategory === recommendedCategoryId && recommendations?.kind === 'recommendation' && recommendedItems.length > 0"
             :presentation="recommendations"
-            @select="addRecommendedItem"
-            @expand="expandRecommendations"
           />
           <div class="menu-grid">
             <div v-for="item in visibleMenuItems" :key="item.id" :ref="element => setCardElement(item.id, element)">
               <MenuItemCard
-                :is-compared="comparedItemIds.includes(item.id)"
                 :is-targeted="cursorTargetId === item.id"
                 :item="item"
-                @compare="toggleComparedItem"
                 @select="openItem"
               />
             </div>
@@ -710,27 +766,14 @@ onUnmounted(() => {
         </section>
       </div>
 
-      <section v-if="comparedItems.length > 0" class="comparison-workspace" aria-label="正在比較的餐點">
-        <div class="comparison-heading">
-          <h2>正在比較</h2><button type="button" @click="comparedItemIds = []">
-            收起比較
-          </button>
-        </div>
-        <div class="comparison-grid">
-          <span>品項</span><strong v-for="item in comparedItems" :key="item.id">{{ item.name }}</strong><span>價格</span><span v-for="item in comparedItems" :key="`${item.id}:price`">{{ currency(item.price) }}</span><span>特色</span><span v-for="item in comparedItems" :key="`${item.id}:description`">{{ item.description }}</span><span>可調整</span><span v-for="item in comparedItems" :key="`${item.id}:options`">{{ item.optionGroups.map(group => group.label).join('、') || '無' }}</span><span /><button v-for="item in comparedItems" :key="`${item.id}:select`" type="button" @click="openItem(item.id)">
-            看{{ item.name }}
-          </button>
-        </div>
-      </section>
-
-      <MenuItemDialog :item="selectedItem" :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1" :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}" @add="addSelectedItem" @close="selectedItemId = undefined" @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)" @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)" />
+      <MenuItemDialog :item="selectedItem" :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1" :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}" @add="addSelectedItem" @close="selectedItemId = undefined" @register-control="setControlElement" @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)" @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)" />
 
       <div :ref="element => setCardElement('cart', element)" :class="['order-summary-container', { 'is-updated': cartUpdated, 'is-targeted': cursorTargetId === 'cart' }]">
         <OrderSummaryBar :item-count="cart.itemCount" :total="currency(cart.total)" @open="orderReviewOpen = true" />
       </div>
     </template>
 
-    <div v-if="showAgentCursor" class="agent-cursor" :style="{ left: `${cursorPosition.x}px`, top: `${cursorPosition.y}px` }" aria-hidden="true">
+    <div v-if="showAgentCursor" :class="['agent-cursor', `is-${cursorPhase}`]" :style="{ left: `${cursorPosition.x}px`, top: `${cursorPosition.y}px`, transitionDuration: `${cursorTravelMs}ms` }" aria-hidden="true">
       ✦
     </div>
   </main>

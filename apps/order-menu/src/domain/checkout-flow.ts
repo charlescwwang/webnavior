@@ -4,6 +4,8 @@ export type InvoiceMethod = 'carrier' | 'donation' | 'tax-id'
 export interface CheckoutSnapshot {
   carrierCode?: string
   invoiceMethod?: InvoiceMethod
+  /** Customer-facing membership number; never store the raw scanned barcode here. */
+  membershipNumber?: string
   stage: CheckoutStage
   taxId?: string
 }
@@ -23,6 +25,22 @@ export function skipMembership(checkout: CheckoutSnapshot): CheckoutSnapshot {
     throw new Error('Membership can only be skipped while waiting for a membership scan.')
 
   return { stage: 'invoice' }
+}
+
+/** Records a physical scanner result and advances to invoice confirmation. */
+export function identifyMembership(checkout: CheckoutSnapshot, membershipNumber: string, carrierCode?: string): CheckoutSnapshot {
+  if (checkout.stage !== 'membership')
+    throw new Error('Membership can only be identified while waiting for a membership scan.')
+
+  const visibleMembershipNumber = membershipNumber.trim()
+  if (!visibleMembershipNumber)
+    throw new Error('A customer-facing membership number is required.')
+
+  return {
+    carrierCode,
+    membershipNumber: visibleMembershipNumber,
+    stage: 'invoice',
+  }
 }
 
 export function chooseInvoiceMethod(checkout: CheckoutSnapshot, method: Exclude<InvoiceMethod, 'tax-id'>): CheckoutSnapshot {

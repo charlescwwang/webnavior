@@ -38,6 +38,7 @@ export interface AgentAction {
 
 /** A customer-facing collection chosen from the current menu catalog. */
 export interface RecommendationPresentation {
+  kind: 'query-results' | 'recommendation'
   itemIds: string[]
   reason?: string
   title?: string
@@ -56,6 +57,11 @@ export function quantityControlId(itemId: string) {
 /** Returns the DOM control identifier used to visually follow a service-mode change. */
 export function fulfillmentControlId(mode: FulfillmentMode) {
   return `order:fulfillment:${mode}`
+}
+
+/** Returns the DOM control identifier for the selected item's add action. */
+export function addItemControlId(itemId: string) {
+  return `${itemId}:add`
 }
 
 interface MenuToolDefinition {
@@ -116,9 +122,9 @@ interface ModelContextLike {
 }
 
 const toolDefinitions: MenuToolDefinition[] = [
-  { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。回傳合法的內用／外帶選項。顧客問某個分類有哪些品項時，先查詢後直接列出本次回傳、符合該分類的品項，不可只說「有幾種」後反問。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false }, readOnly: true },
-  { name: 'menu_recommend', description: '依顧客需求推薦最多三項餐點。每個 needs 標籤都必須符合：rice 為飯類、fried 為炸物、pork-free 為已確認不含豬肉。', inputSchema: { type: 'object', properties: { needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried', 'pork-free'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3 } }, required: ['needs'], additionalProperties: false }, readOnly: true },
-  { name: 'menu_show_recommendations', description: '在菜單中非阻斷地展示 1 至 4 項推薦。只可在顧客明確表示想看推薦後使用。itemIds 必須全部來自先前 menu_get 或 menu_recommend 的回傳結果；不得自行猜測品項。可附簡短標題與理由，但不得加入未提供的健康、過敏或供應資訊。', inputSchema: { type: 'object', properties: { itemIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true, description: '必要。先前菜單工具回傳的 item.id。' }, reason: { type: 'string', maxLength: 90, description: '可選。給顧客看的簡短搭配理由。' }, title: { type: 'string', maxLength: 36, description: '可選。推薦列標題。' } }, required: ['itemIds'], additionalProperties: false } },
+  { name: 'menu_get', description: '依分類或餐點名稱取得可點餐品項與 ID；未帶篩選時取得完整菜單。帶 category 或 query 的查詢會把最多四項相關餐點非阻斷地顯示在菜單上。顧客問某個分類有哪些品項時，先查詢後直接列出並口頭說明本次回傳、符合該分類的品項，不可只說「有幾種」或叫顧客自己看畫面。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, query: { type: 'string', description: '顧客說出的餐點名稱或關鍵字；未知時省略。' } }, additionalProperties: false } },
+  { name: 'menu_recommend', description: '推薦最多三項餐點並非阻斷地展示在菜單上。顧客第一次問「你推薦什麼」或只表示想看推薦時，省略 needs 與 limit，直接使用店家預設的招牌／熱門順序推薦一項首選；不要先反問想吃飯還是麵。只有顧客要求幾個選項、比較看看，才傳 limit: 2 或 3。若顧客已直接說出某一道餐點，這不是推薦情境，改用 menu_get 的 query 查該品項，畫面只展示查詢結果。顧客已明確說出偏好時才填 needs：rice 為飯類、fried 為炸物、pork-free 為已確認不含豬肉。回覆時直接說出工具回傳的品名與簡短理由，不要叫顧客「看看畫面」或自行閱讀介紹。不得只用文字自行列出餐點。', inputSchema: { type: 'object', properties: { needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried', 'pork-free'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3, description: '未指定時只展示一項首選；顧客要求多個選項時才指定 2 或 3。' } }, additionalProperties: false } },
+  { name: 'menu_show_recommendations', description: '在菜單中非阻斷地展示 1 至 4 項推薦。只可在顧客明確表示想看推薦後使用。itemIds 必須全部來自先前 menu_get 或 menu_recommend 的回傳結果；不得自行猜測品項。可附簡短標題與理由，但不得加入未提供的健康、過敏或供應資訊。回覆時直接說出實際推薦品名，不要只叫顧客看畫面。', inputSchema: { type: 'object', properties: { itemIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true, description: '必要。先前菜單工具回傳的 item.id。' }, reason: { type: 'string', maxLength: 90, description: '可選。給顧客看的簡短搭配理由。' }, title: { type: 'string', maxLength: 36, description: '可選。推薦列標題。' } }, required: ['itemIds'], additionalProperties: false } },
   { name: 'menu_select_item', description: '選擇一個餐點並建立可設定的選擇。呼叫前必須先使用 menu_get，並傳入其結果中完全相同的 item.id。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。先前 menu_get 回傳的其中一個 item.id；不得猜測、翻譯或自行建立。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'menu_set_item_option', description: '設定目前餐點的口味、辣度、甜度或冰量。groupId 與 valueId 必須來自 menu_select_item 回傳的 item.optionGroups。', inputSchema: { type: 'object', properties: { groupId: { type: 'string', description: '必要。已選餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['groupId', 'valueId'], additionalProperties: false } },
   { name: 'menu_set_quantity', description: '設定目前餐點的數量。只可在 menu_select_item 後、cart_add_item 前使用。', inputSchema: { type: 'object', properties: { quantity: { type: 'integer', minimum: 1, maximum: 20, description: '必要。顧客指定的整數數量；未指定時使用 1。' } }, required: ['quantity'], additionalProperties: false } },
@@ -257,6 +263,8 @@ function getMenuQuery(input: Record<string, unknown>) {
 function recommendationNeeds(input: Record<string, unknown>): RecommendationTag[] {
   const needs = input.needs
   const validTags: RecommendationTag[] = ['rice', 'fried', 'pork-free']
+  if (needs === undefined)
+    return []
   if (!Array.isArray(needs) || needs.length === 0 || !needs.every(tag => typeof tag === 'string' && validTags.includes(tag as RecommendationTag)))
     throw new Error('needs must contain one or more supported recommendation tags.')
 
@@ -280,6 +288,7 @@ function recommendationPresentation(input: Record<string, unknown>): Recommendat
     throw new Error('reason must be 90 characters or fewer.')
 
   return {
+    kind: 'recommendation',
     itemIds: normalizedItemIds,
     ...(reason ? { reason } : {}),
     ...(title ? { title } : {}),
@@ -340,6 +349,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
                 .some(value => value.toLocaleLowerCase().includes(query))
             })
             .map(menuItemForAgent)
+
+          // A filtered lookup reflects what the customer is discussing. Keep
+          // the visible menu synchronized with that result without depending
+          // on the model to remember a second presentation-only tool call.
+          const presentation = (category || query) && items.length > 0
+            ? {
+                kind: 'query-results' as const,
+                itemIds: items.slice(0, 4).map(item => item.id),
+                title: query ? `與「${query}」相關的餐點` : `${category}餐點`,
+              }
+            : undefined
+          if (presentation)
+            options.onRecommendationsChange?.(presentation)
           return {
             catalog: catalogInfo,
             categories,
@@ -348,20 +370,41 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               { id: 'takeout', label: '外帶' },
             ],
             items,
+            ...(items.length > 0 && (category || query)
+              ? { customerMessage: `我找到：${items.map(item => item.name).join('、')}。` }
+              : {}),
+            ...(presentation ? { presentation } : {}),
           }
         }
         case 'menu_recommend': {
           const needs = recommendationNeeds(input)
-          const limit = input.limit === undefined ? 3 : requiredNumber(input, 'limit')
+          const limit = input.limit === undefined ? 1 : requiredNumber(input, 'limit')
           if (!Number.isInteger(limit) || limit < 1 || limit > 3)
             throw new Error('limit must be an integer from 1 to 3.')
 
+          const items = machine.getMenu()
+            .filter(item => item.available !== false)
+            .filter(item => needs.every(need => item.recommendationTags.includes(need)))
+            .slice(0, limit)
+            .map(menuItemForAgent)
+          const presentation = items.length > 0
+            ? {
+                kind: 'recommendation' as const,
+                itemIds: items.map(item => item.id),
+                ...(needs.length === 0
+                  ? { reason: '先從店內招牌與熱門餐點開始，第一次點餐也很適合。', title: '店家招牌推薦' }
+                  : { title: '為你推薦' }),
+              }
+            : undefined
+          if (presentation)
+            options.onRecommendationsChange?.(presentation)
           return {
-            items: machine.getMenu()
-              .filter(item => needs.every(need => item.recommendationTags.includes(need)))
-              .slice(0, limit)
-              .map(menuItemForAgent),
+            customerMessage: items.length > 0
+              ? `推薦${items.length === 1 ? '一項' : `${items.length} 項`}：${items.map(item => item.name).join('、')}。`
+              : '目前沒有符合條件且仍在供應的推薦餐點。',
+            items,
             needs,
+            ...(presentation ? { presentation } : {}),
           }
         }
         case 'menu_show_recommendations': {
@@ -375,7 +418,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
 
           options.onRecommendationsChange?.(presentation)
           return {
-            customerMessage: '已在菜單上顯示推薦餐點。',
+            customerMessage: `我推薦：${items.map(item => item.name).join('、')}。`,
             items: items.map(menuItemForAgent),
             presentation,
           }
@@ -463,9 +506,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             options.onSelectionChange?.(selection)
           }
 
-          await announce('加入購物車', 'cart', {}, onAction)
+          await announce('加入購物車', item.id, { controlId: addItemControlId(item.id) }, onAction)
           const { cart, line } = machine.addToCart()
           options.onCartChange(cart)
+          options.onMenuSelection(undefined)
           return {
             item: menuItemForAgent(item),
             line,
@@ -476,9 +520,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
         }
         case 'cart_add_item': {
-          await announce('加入購物車', 'cart', {}, onAction)
+          const itemId = machine.getSelection()?.itemId
+          await announce('加入購物車', itemId, { controlId: itemId ? addItemControlId(itemId) : undefined }, onAction)
           const result = machine.addToCart()
           options.onCartChange(result.cart)
+          options.onMenuSelection(undefined)
           return {
             ...result,
             customerMessage: `已將${result.line.name}加入購物車，共 ${result.line.quantity} 份。`,

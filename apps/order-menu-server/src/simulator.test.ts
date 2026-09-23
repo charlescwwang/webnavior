@@ -12,10 +12,10 @@ describe('pOS simulator', () => {
     await expect(response.json()).resolves.toMatchObject({
       items: expect.arrayContaining([
         expect.objectContaining({
-          id: 'dish-ai-1789630028994-0',
+          id: 'signature-shrimp-roll-bento',
           imageUrl: expect.stringContaining('images.unsplash.com'),
-          name: '炸蝦捲(每份二條)',
-          price: 95,
+          name: '周氏蝦捲招牌便當',
+          price: 145,
         }),
       ]),
       revision: expect.stringMatching(/^source-menu-v2-/),

@@ -43,7 +43,7 @@ function imageUrlFor(item: typeof sourceMenu.items[number]) {
     return presentationImages.fried
   if (/麵|米粉/.test(item.name))
     return presentationImages.noodle
-  if (/套餐|飯|粽|米糕/.test(item.name))
+  if (/便當|套餐|飯|粽|米糕/.test(item.name))
     return presentationImages.rice
   return presentationImages.soup
 }
@@ -52,7 +52,7 @@ function recommendationTagsFor(name: string): CatalogSnapshot['items'][number]['
   const tags: CatalogSnapshot['items'][number]['recommendationTags'] = []
   if (/炸|蝦捲/.test(name))
     tags.push('fried')
-  if (/飯|粽|米糕/.test(name))
+  if (/便當|飯|粽|米糕/.test(name))
     tags.push('rice')
   return tags
 }

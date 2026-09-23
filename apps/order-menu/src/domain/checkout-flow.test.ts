@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, returnToInvoice, setTaxIdDraft, skipMembership } from './checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmTaxId, identifyMembership, requestTaxId, returnToInvoice, setTaxIdDraft, skipMembership } from './checkout-flow'
 
 describe('checkout flow', () => {
   it('moves a customer who skips membership from scanning to payment', () => {
@@ -12,6 +12,21 @@ describe('checkout flow', () => {
   it('does not allow membership to be skipped after payment begins', () => {
     expect(() => skipMembership({ stage: 'payment' }))
       .toThrow('Membership can only be skipped')
+  })
+
+  it('keeps the customer-facing membership number visible after a physical scan', () => {
+    const checkout = identifyMembership(beginCheckout(), ' M-102938 ', '/ABCD12')
+
+    expect(checkout).toEqual({
+      carrierCode: '/ABCD12',
+      membershipNumber: 'M-102938',
+      stage: 'invoice',
+    })
+  })
+
+  it('rejects a membership scan without a customer-facing number', () => {
+    expect(() => identifyMembership(beginCheckout(), '  '))
+      .toThrow('customer-facing membership number')
   })
 
   it('requires a valid tax ID before entering payment', () => {

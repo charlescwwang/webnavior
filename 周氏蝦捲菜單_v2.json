@@ -2,7 +2,7 @@
   "version": 2,
   "store": {
     "name": "周氏蝦捲",
-    "slogan": "",
+    "slogan": "七款精選主餐，快速點餐",
     "symbol": "周",
     "accent": "#315f4c",
     "minimumOrder": 0,
@@ -11,375 +11,87 @@
   },
   "categories": [
     {
-      "id": "main",
-      "name": "主食"
+      "id": "bento",
+      "name": "便當"
     },
     {
-      "id": "side",
-      "name": "小點"
+      "id": "noodles",
+      "name": "麵食"
     },
     {
-      "id": "drink",
-      "name": "飲品"
-    },
-    {
-      "id": "category-ai-1789453534881-0",
-      "name": "套餐"
-    },
-    {
-      "id": "category-ai-1789536649404-0",
-      "name": "其他"
+      "id": "dumplings",
+      "name": "點心"
     }
   ],
   "items": [
     {
-      "id": "fish-floss-minced-pork-rice-set",
-      "name": "魚鬆肉燥飯套餐",
-      "price": 380,
-      "categoryId": "category-ai-1789453534881-0",
+      "id": "signature-shrimp-roll-bento",
+      "name": "周氏蝦捲招牌便當",
+      "price": 145,
+      "categoryId": "bento",
       "symbol": "🍱",
-      "image": "",
-      "description": "周氏蝦捲、魚鬆肉燥飯、燙青菜與綜合湯的單人組合",
+      "image": "https://images.unsplash.com/photo-1515003197210-e0cd71810b5f?auto=format&fit=crop&w=720&q=80",
+      "description": "招牌蝦捲搭配米飯與當日配菜",
       "available": true
     },
     {
-      "id": "braised-pork-set",
-      "name": "東坡肉套餐",
-      "price": 250,
-      "categoryId": "category-ai-1789453534881-0",
-      "symbol": "🍱",
-      "image": "",
-      "description": "東坡肉搭配白飯、燙青菜及紅茶的飽足組合",
+      "id": "spicy-chicken-bento",
+      "name": "椒麻雞便當",
+      "price": 135,
+      "categoryId": "bento",
+      "symbol": "🍗",
+      "image": "https://images.unsplash.com/photo-1562967914-608f82629710?auto=format&fit=crop&w=720&q=80",
+      "description": "酥香雞腿佐椒麻醬，搭配米飯與當日配菜",
       "available": true
     },
     {
-      "id": "dish-ai-1789630028994-0",
-      "name": "炸蝦捲(每份二條)",
-      "price": 95,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
+      "id": "thai-sour-spicy-fish-bento",
+      "name": "泰式酸辣魚便當",
+      "price": 140,
+      "categoryId": "bento",
+      "symbol": "🐟",
+      "image": "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=720&q=80",
+      "description": "魚排佐泰式酸辣醬，搭配米飯與當日配菜",
       "available": true
     },
     {
-      "id": "dish-ai-1789630028994-1",
-      "name": "黃金海鮮派(每份二塊)",
-      "price": 95,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-2",
-      "name": "炸花枝丸(每份二粒)",
-      "price": 60,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-3",
-      "name": "台南擔仔乾麵/乾米粉",
-      "price": 65,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-4",
-      "name": "台南擔仔湯麵/湯米粉",
-      "price": 65,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-5",
-      "name": "台南肉粽",
-      "price": 65,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-6",
-      "name": "竹葉米糕",
-      "price": 65,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-7",
-      "name": "脆丸湯",
-      "price": 50,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-8",
-      "name": "蝦丸湯",
-      "price": 50,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-9",
-      "name": "綜合湯(脆丸+蝦丸+肉丸)",
-      "price": 50,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-10",
-      "name": "虱目魚皮湯",
-      "price": 90,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-11",
-      "name": "虱目魚肚湯",
+      "id": "fried-pork-chop-bento",
+      "name": "炸排骨便當",
       "price": 130,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
+      "categoryId": "bento",
+      "symbol": "🍖",
+      "image": "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=720&q=80",
+      "description": "酥炸排骨搭配米飯與當日配菜",
       "available": true
     },
     {
-      "id": "dish-ai-1789630028994-12",
-      "name": "白北魚羹",
-      "price": 70,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
+      "id": "thai-basil-pork-bento",
+      "name": "打拋豬便當",
+      "price": 125,
+      "categoryId": "bento",
+      "symbol": "🌶️",
+      "image": "https://images.unsplash.com/photo-1603133872878-684f208fb84b?auto=format&fit=crop&w=720&q=80",
+      "description": "香辣打拋豬搭配米飯與當日配菜",
       "available": true
     },
     {
-      "id": "dish-ai-1789630028994-13",
-      "name": "白北魚羹麵/米粉",
-      "price": 80,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-14",
-      "name": "燙青菜",
-      "price": 50,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-15",
-      "name": "乾燙虱目魚皮",
-      "price": 90,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-16",
-      "name": "虱目魚香腸 (一條)",
-      "price": 40,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-17",
-      "name": "虱目魚香腸 (三條)",
-      "price": 110,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-18",
-      "name": "台灣烏魚子",
-      "price": 350,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-19",
-      "name": "東坡肉",
+      "id": "beef-noodle-soup",
+      "name": "牛肉麵",
       "price": 150,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
+      "categoryId": "noodles",
+      "symbol": "🍜",
+      "image": "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=720&q=80",
+      "description": "牛肉與麵條搭配濃郁湯頭",
       "available": true
     },
     {
-      "id": "dish-ai-1789630028994-20",
-      "name": "酥炸排骨",
-      "price": 150,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-21",
-      "name": "白飯",
-      "price": 15,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-22",
-      "name": "白飯 (外帶)",
-      "price": 20,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-23",
-      "name": "魚鬆肉燥飯",
-      "price": 45,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-24",
-      "name": "魚鬆肉燥飯 (外帶)",
-      "price": 55,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-25",
-      "name": "肉燥飯",
-      "price": 35,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-26",
-      "name": "肉燥飯 (外帶)",
-      "price": 45,
-      "categoryId": "main",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-27",
-      "name": "魯蛋",
-      "price": 20,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-28",
-      "name": "油豆腐",
-      "price": 20,
-      "categoryId": "side",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-29",
-      "name": "洛神酸梅湯",
-      "price": 40,
-      "categoryId": "drink",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-30",
-      "name": "紅茶",
-      "price": 25,
-      "categoryId": "drink",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-31",
-      "name": "黃金流沙包",
+      "id": "dumplings",
+      "name": "水餃",
       "price": 80,
-      "categoryId": "category-ai-1789536649404-0",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
-      "available": true
-    },
-    {
-      "id": "dish-ai-1789630028994-32",
-      "name": "杏仁豆腐",
-      "price": 50,
-      "categoryId": "category-ai-1789536649404-0",
-      "symbol": "🍽️",
-      "image": "",
-      "description": "",
+      "categoryId": "dumplings",
+      "symbol": "🥟",
+      "image": "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=720&q=80",
+      "description": "一份十顆，現點現煮",
       "available": true
     }
   ]

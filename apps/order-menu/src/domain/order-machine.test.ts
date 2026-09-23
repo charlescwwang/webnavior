@@ -305,12 +305,13 @@ describe('createMenuToolRuntime', () => {
 
   it('adds one configured item through one agent call while preserving each visible step', async () => {
     const actions: Array<{ controlId?: string, expandCustomization?: boolean, label: string, targetId?: string }> = []
+    const menuSelections: Array<string | undefined> = []
     const runtime = createMenuToolRuntime({
       onAction: (action) => {
         actions.push(action)
       },
       onCartChange: () => {},
-      onMenuSelection: () => {},
+      onMenuSelection: itemId => menuSelections.push(itemId),
     })
 
     await expect(runtime.invoke('order_add_item', {
@@ -339,8 +340,9 @@ describe('createMenuToolRuntime', () => {
         targetId: 'chous-shrimp-roll',
       },
       { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
-      { label: '加入購物車', targetId: 'cart' },
+      { controlId: 'chous-shrimp-roll:add', label: '加入購物車', targetId: 'chous-shrimp-roll' },
     ])
+    expect(menuSelections).toEqual(['chous-shrimp-roll', undefined])
   })
 
   it('requires an explicit answer for every required customization before the high-level add', async () => {
@@ -555,7 +557,7 @@ describe('createMenuToolRuntime', () => {
         targetId: 'chous-shrimp-roll',
       },
       { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
-      { label: '加入購物車', targetId: 'cart' },
+      { controlId: 'chous-shrimp-roll:add', label: '加入購物車', targetId: 'chous-shrimp-roll' },
       { controlId: 'order:fulfillment:takeout', label: '設定為外帶', targetId: 'cart' },
     ])
     expect(carts).toEqual([150, 150])
@@ -796,10 +798,12 @@ describe('createMenuToolRuntime', () => {
   })
 
   it('recommends only catalog items that satisfy every stated customer need', async () => {
+    const presentations: unknown[] = []
     const runtime = createMenuToolRuntime({
       onAction: () => {},
       onCartChange: () => {},
       onMenuSelection: () => {},
+      onRecommendationsChange: presentation => presentations.push(presentation),
     })
 
     await expect(runtime.invoke('menu_recommend', { needs: ['fried', 'pork-free'], limit: 2 })).resolves.toMatchObject({
@@ -808,8 +812,57 @@ describe('createMenuToolRuntime', () => {
         { id: 'tofu-skin-shrimp-roll', name: '豆皮鮮蝦捲' },
       ],
       needs: ['fried', 'pork-free'],
+      presentation: {
+        kind: 'recommendation',
+        itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+        title: '為你推薦',
+      },
     })
     await expect(runtime.invoke('menu_recommend', { needs: ['rice', 'pork-free'] })).resolves.toMatchObject({ items: [] })
+    expect(presentations).toEqual([{
+      kind: 'recommendation',
+      itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+      title: '為你推薦',
+    }])
+  })
+
+  it('uses the store default recommendation order when the customer has not stated a preference', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+
+    await expect(runtime.invoke('menu_recommend')).resolves.toMatchObject({
+      items: [{ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }],
+      needs: [],
+      presentation: {
+        kind: 'recommendation',
+        itemIds: ['fish-floss-minced-pork-rice-set'],
+        reason: '先從店內招牌與熱門餐點開始，第一次點餐也很適合。',
+        title: '店家招牌推薦',
+      },
+    })
+  })
+
+  it('shows filtered menu results without requiring another model tool call', async () => {
+    const presentations: unknown[] = []
+    const runtime = createMenuToolRuntime({
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onRecommendationsChange: presentation => presentations.push(presentation),
+    })
+
+    await expect(runtime.invoke('menu_get', { query: '蝦捲' })).resolves.toMatchObject({
+      presentation: {
+        kind: 'query-results',
+        itemIds: ['fish-floss-minced-pork-rice-set', 'chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+        title: '與「蝦捲」相關的餐點',
+      },
+    })
+
+    expect(presentations).toEqual([{
+      kind: 'query-results',
+      itemIds: ['fish-floss-minced-pork-rice-set', 'chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+      title: '與「蝦捲」相關的餐點',
+    }])
   })
 
   it('shows only verified catalog items in the non-blocking recommendation rail', async () => {
@@ -826,13 +879,14 @@ describe('createMenuToolRuntime', () => {
       reason: '一碗主食配一杯飲料。',
       title: '今天想吃得剛剛好',
     })).resolves.toMatchObject({
-      customerMessage: '已在菜單上顯示推薦餐點。',
+      customerMessage: '我推薦：周氏擔仔麵、古早味冬瓜茶。',
       items: [
         { id: 'danzai-noodles', name: '周氏擔仔麵' },
         { id: 'winter-melon-tea', name: '古早味冬瓜茶' },
       ],
     })
     expect(presentations).toEqual([{
+      kind: 'recommendation',
       itemIds: ['danzai-noodles', 'winter-melon-tea'],
       reason: '一碗主食配一杯飲料。',
       title: '今天想吃得剛剛好',

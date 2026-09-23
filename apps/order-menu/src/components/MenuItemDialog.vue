@@ -1,8 +1,38 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+
 import type { MenuItem } from '../domain/order-machine'
 
+import { addItemControlId, optionControlId, quantityControlId } from '../webmcp'
+
 const props = defineProps<{ item?: MenuItem, quantity: number, selectedOptions: Record<string, string> }>()
-const emit = defineEmits<{ add: [itemId: string], close: [], updateOption: [groupId: string, valueId: string], updateQuantity: [quantity: number] }>()
+const emit = defineEmits<{
+  add: [itemId: string]
+  close: []
+  registerControl: [id: string, element: Element | ComponentPublicInstance | null]
+  updateOption: [groupId: string, valueId: string]
+  updateQuantity: [quantity: number]
+}>()
+
+function registerControl(id: string, element: Element | ComponentPublicInstance | null) {
+  emit('registerControl', id, element)
+}
+
+function optionControlRef(itemId: string, groupId: string, valueId: string) {
+  const controlId = optionControlId(itemId, groupId, valueId)
+  return (element: Element | ComponentPublicInstance | null) => registerControl(controlId, element)
+}
+
+function quantityControlRef(itemId: string) {
+  const controlId = quantityControlId(itemId)
+  return (element: Element | ComponentPublicInstance | null) => registerControl(controlId, element)
+}
+
+function addItemControlRef(itemId: string) {
+  const controlId = addItemControlId(itemId)
+  return (element: Element | ComponentPublicInstance | null) => registerControl(controlId, element)
+}
+
 function currency(amount: number) {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
 }
@@ -18,18 +48,18 @@ function currency(amount: number) {
           </button>
         </header><section v-for="group in props.item.optionGroups" :key="group.id" class="option-group">
           <div><strong>{{ group.label }}</strong><small>{{ group.required ? '必選' : '可略過' }}</small></div><div>
-            <button v-for="option in group.values" :key="option.id" type="button" :class="['option-button', { 'is-selected': props.selectedOptions[group.id] === option.id }]" @click="emit('updateOption', group.id, option.id)">
+            <button v-for="option in group.values" :key="option.id" :ref="optionControlRef(props.item.id, group.id, option.id)" type="button" :class="['option-button', { 'is-selected': props.selectedOptions[group.id] === option.id }]" @click="emit('updateOption', group.id, option.id)">
               {{ option.label }}<span v-if="option.priceDelta"> +{{ currency(option.priceDelta) }}</span>
             </button>
           </div>
         </section><div class="dialog-actions">
-          <div class="quantity-control">
+          <div :ref="quantityControlRef(props.item.id)" class="quantity-control">
             <button type="button" :disabled="props.quantity === 1" @click="emit('updateQuantity', props.quantity - 1)">
               −
             </button><output>{{ props.quantity }}</output><button type="button" @click="emit('updateQuantity', props.quantity + 1)">
               ＋
             </button>
-          </div><button type="button" class="confirm-add" @click="emit('add', props.item.id)">
+          </div><button :ref="addItemControlRef(props.item.id)" type="button" class="confirm-add" @click="emit('add', props.item.id)">
             加入購物車
           </button>
         </div>

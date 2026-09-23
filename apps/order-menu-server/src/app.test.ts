@@ -5,15 +5,15 @@ import { createInMemorySimulatorGateway } from './simulator'
 
 async function acceptedOrder(gateway = createInMemorySimulatorGateway()) {
   const catalog = await gateway.getCatalog()
-  const payment = await gateway.createPayment(95, 'card')
+  const payment = await gateway.createPayment(145, 'card')
   return {
     cart: {
       catalogRevision: catalog.revision,
       fulfillmentMode: 'takeout' as const,
       itemCount: 1,
-      lines: [{ id: 'line-1', itemId: 'dish-ai-1789630028994-0', name: '炸蝦捲(每份二條)', options: {}, quantity: 1, unitPrice: 95 }],
+      lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', options: {}, quantity: 1, unitPrice: 145 }],
       paymentId: payment.id,
-      total: 95,
+      total: 145,
     },
     idempotencyKey: 'customer-session-0001',
   }
@@ -30,13 +30,13 @@ describe('pOS Bridge contract', () => {
     const result = await response.json() as { catalog: { items: Array<{ category: string, id: string, price: number }>, revision: string, store: { name: string } } }
     expect(result.catalog.revision).toMatch(/^source-menu-v2-/)
     expect(result.catalog.store.name).toBe('周氏蝦捲')
-    expect(result.catalog.items).toHaveLength(35)
+    expect(result.catalog.items).toHaveLength(7)
     expect(Object.fromEntries(result.catalog.items.reduce((counts, item) => {
       counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
       return counts
-    }, new Map<string, number>()))).toEqual({ 主食: 11, 小點: 18, 其他: 2, 套餐: 2, 飲品: 2 })
-    expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐', price: 380 }))
-    expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'dish-ai-1789630028994-0', name: '炸蝦捲(每份二條)', price: 95 }))
+    }, new Map<string, number>()))).toEqual({ 便當: 5, 點心: 1, 麵食: 1 })
+    expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', price: 145 }))
+    expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'dumplings', name: '水餃', price: 80 }))
   })
 
   it('returns one accepted test receipt for duplicate idempotency keys', async () => {
@@ -113,7 +113,7 @@ describe('pOS Bridge contract', () => {
     })
     expect(unpaid.status).toBe(400)
 
-    const wrongAmountPayment = await gateway.createPayment(94, 'card')
+    const wrongAmountPayment = await gateway.createPayment(144, 'card')
     const wrongAmount = await app.request('/v1/orders', {
       body: JSON.stringify({ ...order, cart: { ...order.cart, paymentId: wrongAmountPayment.id }, idempotencyKey: 'wrong-amount-0001' }),
       headers: { 'Content-Type': 'application/json' },
