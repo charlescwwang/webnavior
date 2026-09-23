@@ -10,7 +10,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  add: [itemId: string]
+  select: [itemId: string]
   expand: []
 }>()
 
@@ -53,8 +53,8 @@ function currency(amount: number) {
           </div>
           <div class="recommendation-action">
             <strong>{{ currency(item.price) }}</strong>
-            <button type="button" :disabled="props.addingItemId === item.id" @click="emit('add', item.id)">
-              {{ props.addingItemId === item.id ? '加入中…' : '加入購物車' }}
+            <button type="button" :disabled="props.addingItemId === item.id" @click="emit('select', item.id)">
+              {{ props.addingItemId === item.id ? '開啟中…' : '查看餐點' }}
             </button>
           </div>
         </article>

@@ -1,4 +1,5 @@
-import type { CartSnapshot, FulfillmentMode, MenuItem, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
+import type { CheckoutSnapshot, InvoiceMethod } from './domain/checkout-flow'
+import type { CartSnapshot, FulfillmentMode, MenuItem, PosOrderGateway, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
 
 import { errorMessageFrom } from '@moeru/std'
 
@@ -15,9 +16,18 @@ export type MenuToolName
     | 'cart_add_item'
     | 'cart_remove_item'
     | 'cart_set_line_quantity'
+    | 'cart_set_line_option'
+    | 'cart_clear'
     | 'cart_get'
     | 'order_set_fulfillment'
-    | 'order_confirm'
+    | 'checkout_start'
+    | 'checkout_skip_membership'
+    | 'checkout_choose_invoice'
+    | 'checkout_request_tax_id'
+    | 'checkout_set_tax_id'
+    | 'checkout_confirm_tax_id'
+    | 'checkout_select_payment'
+    | 'checkout_cancel'
 
 export interface AgentAction {
   controlId?: string
@@ -55,7 +65,26 @@ interface MenuToolDefinition {
   readOnly?: boolean
 }
 
+export interface CheckoutToolController {
+  assertCanRestart: () => void
+  cancel: () => void
+  chooseInvoice: (method: Exclude<InvoiceMethod, 'tax-id'>) => CheckoutSnapshot
+  confirmTaxId: () => CheckoutSnapshot
+  requestTaxId: () => CheckoutSnapshot
+  restart: () => void
+  selectPayment: (method: 'card' | 'mobile') => Promise<{ customerMessage: string, status: string }>
+  setTaxId: (taxId: string) => CheckoutSnapshot
+  skipMembership: () => CheckoutSnapshot
+  start: () => CheckoutSnapshot
+}
+
 interface MenuToolRuntimeOptions {
+  /** Routes Agent checkout actions through the same state transitions as visible controls. */
+  checkout?: CheckoutToolController
+  /** Submits confirmed carts to the current ordering environment. */
+  gateway?: PosOrderGateway
+  /** Initial POS catalog. The browser must not substitute a local menu on failure. */
+  menu?: MenuItem[]
   /** Marks the beginning of a WebMCP-originated operation. */
   onAgentOperationStart?: () => void
   /** Marks the end of a WebMCP-originated operation. */
@@ -69,6 +98,8 @@ interface MenuToolRuntimeOptions {
   onSelectionChange?: (selection: Selection) => void
   /** Notifies the embedding host after the first successfully confirmed order. */
   onOrderConfirmed?: (order: SubmittedOrder) => void
+  /** Mirrors every final POS receipt into the visible customer flow. */
+  onOrderSubmission?: (order: SubmittedOrder) => void
   /** Requests a non-blocking recommendation rail in the human menu UI. */
   onRecommendationsChange?: (presentation: RecommendationPresentation) => void
 }
@@ -94,10 +125,19 @@ const toolDefinitions: MenuToolDefinition[] = [
   { name: 'order_add_item', description: '一次完成一個已確認餐點的選擇、已知客製化、數量與加入購物車。顧客指定品項與所有必要客製化後，優先使用此工具，避免逐步呼叫 menu_select_item、menu_set_item_option、menu_set_quantity、cart_add_item。itemId、options 的 groupId 與 valueId 必須來自 menu_get 的結果。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。menu_get 回傳的其中一個 item.id。' }, options: { type: 'array', description: '顧客明確指定的客製化；未指定的選項保留該品項預設值。', items: { type: 'object', properties: { groupId: { type: 'string' }, valueId: { type: 'string' } }, required: ['groupId', 'valueId'], additionalProperties: false } }, quantity: { type: 'integer', minimum: 1, maximum: 20, description: '顧客指定的數量；省略時為 1。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'cart_add_item', description: '將目前已設定的餐點加入購物車。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'cart_remove_item', description: '從購物車移除一個 cart line。先用 cart_get 取得正確的 lineId。顧客要求移除時，必須先執行本工具並確認成功，才能告知顧客已移除；不得只說會移除。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' } }, required: ['lineId'], additionalProperties: false } },
-  { name: 'cart_set_line_quantity', description: '設定購物車中一個餐點的數量。', inputSchema: { type: 'object', properties: { lineId: { type: 'string' }, quantity: { type: 'integer', minimum: 1 } }, required: ['lineId', 'quantity'], additionalProperties: false } },
+  { name: 'cart_set_line_quantity', description: '直接調整購物車中一個餐點的數量，不要先移除再重新加入。先用 cart_get 取得正確的 lineId；成功後依回傳 cart 確認數量與總額。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' }, quantity: { type: 'integer', minimum: 1, description: '必要。調整後的正整數數量。' } }, required: ['lineId', 'quantity'], additionalProperties: false } },
+  { name: 'cart_set_line_option', description: '直接修改購物車中一個餐點的單一客製選項，不要先移除再重新加入。先用 cart_get 取得 lineId；groupId 和 valueId 必須來自該餐點先前由 menu_get 回傳的 optionGroups。若修改後與另一筆選項完全相同，系統會合併數量並回傳保留的 line。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' }, groupId: { type: 'string', description: '必要。該餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['lineId', 'groupId', 'valueId'], additionalProperties: false } },
+  { name: 'cart_clear', description: '清空尚未送出的購物車。僅在顧客明確表示取消全部餐點、重新開始或等同語意時使用；先以 cart_get 確認目前內容。清空後原本的內用／外帶選擇也會移除。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true, description: '必要。只有顧客已明確要求清空時才可設為 true。' } }, required: ['confirmedByUser'], additionalProperties: false } },
   { name: 'cart_get', description: '取得目前購物車、品項數與總額。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, readOnly: true },
-  { name: 'order_set_fulfillment', description: '設定整筆訂單為內用或外帶。若顧客尚未告知，先以自然語句詢問；必須在 order_confirm 前完成。', inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['dine-in', 'takeout'], description: '必要。dine-in 為內用；takeout 為外帶。' } }, required: ['mode'], additionalProperties: false } },
-  { name: 'order_confirm', description: '顧客說「結帳」、「送出訂單」或等同語意時，即視為明確同意。已設定內用或外帶後立即確認目前訂單，不要再次詢問是否送出。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
+  { name: 'order_set_fulfillment', description: '設定整筆訂單為內用或外帶。若顧客尚未告知，先以自然語句詢問；必須在 checkout_start 前完成。', inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['dine-in', 'takeout'], description: '必要。dine-in 為內用；takeout 為外帶。' } }, required: ['mode'], additionalProperties: false } },
+  { name: 'checkout_start', description: '顧客已明確同意目前購物車內容並表示要結帳時，開啟會員掃碼步驟。確認可以是自然語意，不要求固定字句。此工具只進入結帳，不會直接送 POS。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
+  { name: 'checkout_skip_membership', description: '顧客明確表示略過、不使用會員或等同語意時，略過會員掃碼。不得代替顧客宣稱已掃描條碼。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
+  { name: 'checkout_choose_invoice', description: '依顧客意思選擇已掃描的雲端發票載具或捐贈。未實際掃描或帶入載具時不可選 carrier；顧客要統編時改用 checkout_request_tax_id。', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['carrier', 'donation'] } }, required: ['method'], additionalProperties: false } },
+  { name: 'checkout_request_tax_id', description: '顧客表示要填統編時，開啟統編輸入畫面。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+  { name: 'checkout_set_tax_id', description: '把顧客口說的完整 8 碼統編帶入畫面供顧客查看。只負責顯示，不會直接確認或前進付款。', inputSchema: { type: 'object', properties: { taxId: { type: 'string', pattern: '^\\d{8}$' } }, required: ['taxId'], additionalProperties: false } },
+  { name: 'checkout_confirm_tax_id', description: '顧客看過畫面上的 8 碼統編並以自然語意表示正確後確認；不要求逐字說出固定句子。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
+  { name: 'checkout_select_payment', description: '依顧客選擇啟動信用卡或行動支付終端。這只選擇方式並等待終端；不得宣稱付款成功，實際刷卡、掃碼與授權必須由顧客及支付終端完成。', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['card', 'mobile'] } }, required: ['method'], additionalProperties: false } },
+  { name: 'checkout_cancel', description: '顧客明確表示取消本次結帳時返回訂單內容並保留購物車。付款等待中或付款結果不明時不可取消，以免重複扣款。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
 ]
 
 function requiredString(input: Record<string, unknown>, key: string) {
@@ -112,6 +152,24 @@ function requiredNumber(input: Record<string, unknown>, key: string) {
   if (typeof value !== 'number')
     throw new Error(`${key} is required.`)
   return value
+}
+
+function checkoutControllerOrThrow(controller: CheckoutToolController | undefined) {
+  if (!controller)
+    throw new Error('Checkout controls are unavailable in this environment.')
+  return controller
+}
+
+function requiredInvoiceMethod(input: Record<string, unknown>) {
+  if (input.method !== 'carrier' && input.method !== 'donation')
+    throw new Error('method must be carrier or donation.')
+  return input.method
+}
+
+function requiredPaymentMethod(input: Record<string, unknown>) {
+  if (input.method !== 'card' && input.method !== 'mobile')
+    throw new Error('method must be card or mobile.')
+  return input.method
 }
 
 function requiredFulfillmentMode(input: Record<string, unknown>): FulfillmentMode {
@@ -164,7 +222,7 @@ function pendingCustomerChoice(cart: CartSnapshot) {
 
 function cartNextStep(cart: CartSnapshot) {
   return cart.fulfillmentMode
-    ? 'Confirm the cart with the customer. Call order_confirm only after explicit customer consent.'
+    ? 'Confirm the cart with the customer. Call checkout_start only after explicit customer consent.'
     : 'The customer still needs to choose dine-in or take-out before order confirmation. Ask when appropriate, but continue adding requested items first.'
 }
 
@@ -179,6 +237,7 @@ function cartNextStep(cart: CartSnapshot) {
  */
 function menuItemForAgent(item: MenuItem) {
   return {
+    available: item.available !== false,
     id: item.id,
     name: item.name,
     description: item.description,
@@ -232,8 +291,8 @@ function nativeInvocationFailure(name: MenuToolName, error: unknown) {
   const message = errorMessageFrom(error) ?? 'The requested menu operation could not be completed.'
   const recovery = name === 'menu_select_item' && message === 'itemId is required.'
     ? 'First call menu_get. Then call menu_select_item again with itemId set to exactly one item.id returned by menu_get.'
-    : name === 'order_confirm' && message === 'Choose dine-in or take-out before confirming the order.'
-      ? 'Ask the customer whether this order is dine-in or take-out. Then call order_set_fulfillment with the customer\'s choice before retrying order_confirm.'
+    : name === 'checkout_start' && message.includes('Choose dine-in or take-out before starting checkout.')
+      ? 'Ask the customer whether this order is dine-in or take-out. Then call order_set_fulfillment before retrying checkout_start.'
       : 'Check this tool\'s required arguments and the latest menu or cart result, then retry only with valid values.'
 
   return { ok: false, error: message, recovery }
@@ -244,7 +303,7 @@ function nativeInvocationFailure(name: MenuToolName, error: unknown) {
  * mutation announces itself before updating state.
  */
 export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
-  const machine = createOrderMachine()
+  const machine = createOrderMachine({ gateway: options.gateway, menu: options.menu })
   let nativeRegistration: AbortController | undefined
   let completedOrderId: string | undefined
 
@@ -454,6 +513,40 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             nextStep: cartNextStep(cart),
           }
         }
+        case 'cart_set_line_option': {
+          const lineId = requiredString(input, 'lineId')
+          const groupId = requiredString(input, 'groupId')
+          const valueId = requiredString(input, 'valueId')
+          const line = machine.getCart().lines.find(candidate => candidate.id === lineId)
+          const item = line && machine.getMenu().find(candidate => candidate.id === line.itemId)
+          const value = item?.optionGroups.find(group => group.id === groupId)?.values.find(candidate => candidate.id === valueId)
+          await announce(`設定購物車餐點為${value?.label ?? '指定選項'}`, 'cart', {}, onAction)
+          const result = machine.setCartLineOption(lineId, groupId, valueId)
+          options.onCartChange(result.cart)
+          return {
+            cart: result.cart,
+            line: result.line,
+            customerMessage: `已將${result.line.name}設定為${value?.label ?? '指定選項'}。`,
+            pendingCustomerChoice: pendingCustomerChoice(result.cart),
+            nextStep: cartNextStep(result.cart),
+          }
+        }
+        case 'cart_clear': {
+          if (input.confirmedByUser !== true)
+            throw new Error('Clearing the cart requires confirmedByUser: true.')
+          options.checkout?.assertCanRestart()
+          await announce('清空購物車', 'cart', {}, onAction)
+          const cart = machine.clearCart()
+          options.checkout?.restart()
+          options.onCartChange(cart)
+          options.onMenuSelection(undefined)
+          options.onFulfillmentChange?.(undefined)
+          return {
+            cart,
+            customerMessage: '已清空購物車。',
+            nextStep: 'The customer can now begin a new order.',
+          }
+        }
         case 'cart_get': {
           const cart = machine.getCart()
           return {
@@ -478,19 +571,81 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             nextStep: cartNextStep(cart),
           }
         }
-        case 'order_confirm': {
+        case 'checkout_start': {
           if (input.confirmedByUser !== true)
-            throw new Error('Order confirmation requires confirmedByUser: true.')
-          await announce('確認模擬訂單', 'cart', {}, onAction)
-          const order = await machine.confirmOrder()
-          if (completedOrderId !== order.id) {
-            completedOrderId = order.id
-            options.onOrderConfirmed?.(order)
-          }
+            throw new Error('Starting checkout requires confirmedByUser: true.')
+          await announce('進入結帳', 'cart', {}, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).start()
           return {
-            interaction: { status: 'completed' },
-            order,
-            nextStep: '訂單已確認，請勿再次呼叫 order_confirm。',
+            checkout,
+            customerMessage: '已進入結帳，請顧客掃描會員條碼或選擇略過。',
+            nextStep: 'Wait for the customer to scan their membership barcode, or call checkout_skip_membership only when the customer asks to skip it.',
+          }
+        }
+        case 'checkout_skip_membership': {
+          if (input.confirmedByUser !== true)
+            throw new Error('Skipping membership requires confirmedByUser: true.')
+          await announce('略過會員', undefined, {}, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).skipMembership()
+          return { checkout, customerMessage: '已略過會員，請選擇發票方式。' }
+        }
+        case 'checkout_choose_invoice': {
+          const method = requiredInvoiceMethod(input)
+          await announce(method === 'carrier' ? '使用雲端載具' : '捐贈發票', undefined, {}, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).chooseInvoice(method)
+          return {
+            checkout,
+            customerMessage: method === 'carrier' ? '已選擇畫面上的雲端載具。' : '已選擇捐贈發票。',
+          }
+        }
+        case 'checkout_request_tax_id': {
+          await announce('輸入統編', undefined, {}, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).requestTaxId()
+          return { checkout, customerMessage: '已開啟統編輸入畫面。' }
+        }
+        case 'checkout_set_tax_id': {
+          const taxId = requiredString(input, 'taxId')
+          if (!/^\d{8}$/.test(taxId))
+            throw new Error('taxId must contain exactly eight digits.')
+          await announce('帶入統編', undefined, {}, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).setTaxId(taxId)
+          return {
+            checkout,
+            customerMessage: `已帶入統編 ${taxId.split('').join(' ')}，請顧客確認畫面。`,
+            nextStep: 'Do not confirm automatically. Call checkout_confirm_tax_id only after the customer says the displayed number is correct.',
+          }
+        }
+        case 'checkout_confirm_tax_id': {
+          if (input.confirmedByUser !== true)
+            throw new Error('Confirming a tax ID requires confirmedByUser: true.')
+          await announce('確認統編', undefined, {}, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).confirmTaxId()
+          return { checkout, customerMessage: '已確認統編，請選擇付款方式。' }
+        }
+        case 'checkout_select_payment': {
+          const method = requiredPaymentMethod(input)
+          await announce(method === 'card' ? '選擇信用卡' : '選擇行動支付', undefined, {}, onAction)
+          const payment = await checkoutControllerOrThrow(options.checkout).selectPayment(method)
+          return {
+            customerMessage: payment.customerMessage,
+            payment: { method, status: payment.status },
+            nextStep: payment.status === 'uncertain'
+              ? 'The transaction is locked for staff reconciliation. Do not select another payment method or claim success.'
+              : payment.status === 'authorized'
+                ? 'The verified payment has already advanced to automatic POS submission. Do not retry payment or submit the order again.'
+                : payment.status === 'rejected'
+                  ? 'Explain that payment was not completed and ask the customer whether to choose another method.'
+                  : 'Wait for the physical payment terminal. Only its verified result may complete the order.',
+          }
+        }
+        case 'checkout_cancel': {
+          if (input.confirmedByUser !== true)
+            throw new Error('Cancelling checkout requires confirmedByUser: true.')
+          await announce('取消結帳', 'cart', {}, onAction)
+          checkoutControllerOrThrow(options.checkout).cancel()
+          return {
+            cart: machine.getCart(),
+            customerMessage: '已返回訂單內容，購物車仍保留。',
           }
         }
       }
@@ -508,6 +663,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     options.onMenuSelection(undefined)
     options.onFulfillmentChange?.(undefined)
     return { cart }
+  }
+
+  /** Submits only after the customer-facing payment terminal returns its verified transaction ID. */
+  async function confirmPaidOrder(paymentId: string) {
+    machine.setPaymentId(paymentId)
+    const order = await machine.confirmOrder()
+    const { receipt } = order
+    options.onOrderSubmission?.(order)
+    if (receipt.status === 'accepted' && completedOrderId !== order.id) {
+      completedOrderId = order.id
+      options.onOrderConfirmed?.(order)
+    }
+    return order
   }
 
   /**
@@ -567,5 +735,5 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     expectedRegistration.abort()
   }
 
-  return { disposeNativeWebMcp, invoke, registerNativeWebMcp, reset, toolDefinitions }
+  return { confirmPaidOrder, disposeNativeWebMcp, invoke, registerNativeWebMcp, reset, setMenu: machine.setMenu, toolDefinitions }
 }

@@ -36,15 +36,18 @@ compatibility.
 | `order_add_item` | `itemId`, optional known `options` and `quantity` | Adds one fully specified item and returns the updated cart. |
 | `cart_add_item` | None | Added cart line and updated cart. |
 | `cart_remove_item` | `lineId` | Updated cart. |
-| `cart_set_line_quantity` | `lineId`, `quantity` | Updated cart. |
+| `cart_set_line_quantity` | `lineId`, `quantity` | Directly updates a cart line's quantity. |
+| `cart_set_line_option` | `lineId`, `groupId`, `valueId` | Directly updates one cart line option; matching lines may merge. |
+| `cart_clear` | `confirmedByUser: true` | Clears an unsubmitted cart and its fulfillment choice. |
 | `cart_get` | None | Current cart and total. |
 | `order_set_fulfillment` | `mode: 'dine-in' \| 'takeout'` | The order-level service mode. |
 | `order_confirm` | `confirmedByUser: true` | Order result. |
 
 `menu_get`, `menu_recommend`, and `cart_get` are read-only. The other tools
 modify the menu's order draft. `order_confirm` requires a prior
-`order_set_fulfillment` call and, in the current MVP, creates a simulated order;
-it does not imply POS submission.
+`order_set_fulfillment` call and returns a submission receipt. The receipt
+states the environment (`test` or `live`) and outcome (`accepted`, `rejected`,
+or `uncertain`). Only an accepted live receipt implies POS submission.
 
 ## Shared concepts
 
@@ -66,6 +69,14 @@ receives and must not invent them.
 5. Call `order_confirm` only after the customer explicitly agrees.
 6. Set the customer-confirmed dine-in or take-out mode before confirming. A missing service mode is a deferrable pending choice: it must not prevent adding further requested items.
 7. Never invent unavailable menu items, option values, prices, or totals.
+8. After `order_confirm`, state only the outcome in its submission receipt. A
+   rejected or uncertain result is not an order completion, and an accepted
+   test result must not be described as reaching a real POS.
+9. Before changing or removing a cart line, call `cart_get` and use its opaque
+   `lineId`. Use `cart_set_line_quantity` and `cart_set_line_option` directly;
+   do not remove and re-add a line merely to edit it.
+10. Call `cart_clear` only after the customer clearly asks to cancel the entire
+    in-progress order. It cannot resolve an uncertain POS submission.
 
 ## Visible-operation requirement
 

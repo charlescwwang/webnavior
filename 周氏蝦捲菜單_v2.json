@@ -1,0 +1,386 @@
+{
+  "version": 2,
+  "store": {
+    "name": "周氏蝦捲",
+    "slogan": "",
+    "symbol": "周",
+    "accent": "#315f4c",
+    "minimumOrder": 0,
+    "orderingEnabled": true,
+    "slides": []
+  },
+  "categories": [
+    {
+      "id": "main",
+      "name": "主食"
+    },
+    {
+      "id": "side",
+      "name": "小點"
+    },
+    {
+      "id": "drink",
+      "name": "飲品"
+    },
+    {
+      "id": "category-ai-1789453534881-0",
+      "name": "套餐"
+    },
+    {
+      "id": "category-ai-1789536649404-0",
+      "name": "其他"
+    }
+  ],
+  "items": [
+    {
+      "id": "fish-floss-minced-pork-rice-set",
+      "name": "魚鬆肉燥飯套餐",
+      "price": 380,
+      "categoryId": "category-ai-1789453534881-0",
+      "symbol": "🍱",
+      "image": "",
+      "description": "周氏蝦捲、魚鬆肉燥飯、燙青菜與綜合湯的單人組合",
+      "available": true
+    },
+    {
+      "id": "braised-pork-set",
+      "name": "東坡肉套餐",
+      "price": 250,
+      "categoryId": "category-ai-1789453534881-0",
+      "symbol": "🍱",
+      "image": "",
+      "description": "東坡肉搭配白飯、燙青菜及紅茶的飽足組合",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-0",
+      "name": "炸蝦捲(每份二條)",
+      "price": 95,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-1",
+      "name": "黃金海鮮派(每份二塊)",
+      "price": 95,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-2",
+      "name": "炸花枝丸(每份二粒)",
+      "price": 60,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-3",
+      "name": "台南擔仔乾麵/乾米粉",
+      "price": 65,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-4",
+      "name": "台南擔仔湯麵/湯米粉",
+      "price": 65,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-5",
+      "name": "台南肉粽",
+      "price": 65,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-6",
+      "name": "竹葉米糕",
+      "price": 65,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-7",
+      "name": "脆丸湯",
+      "price": 50,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-8",
+      "name": "蝦丸湯",
+      "price": 50,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-9",
+      "name": "綜合湯(脆丸+蝦丸+肉丸)",
+      "price": 50,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-10",
+      "name": "虱目魚皮湯",
+      "price": 90,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-11",
+      "name": "虱目魚肚湯",
+      "price": 130,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-12",
+      "name": "白北魚羹",
+      "price": 70,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-13",
+      "name": "白北魚羹麵/米粉",
+      "price": 80,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-14",
+      "name": "燙青菜",
+      "price": 50,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-15",
+      "name": "乾燙虱目魚皮",
+      "price": 90,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-16",
+      "name": "虱目魚香腸 (一條)",
+      "price": 40,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-17",
+      "name": "虱目魚香腸 (三條)",
+      "price": 110,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-18",
+      "name": "台灣烏魚子",
+      "price": 350,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-19",
+      "name": "東坡肉",
+      "price": 150,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-20",
+      "name": "酥炸排骨",
+      "price": 150,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-21",
+      "name": "白飯",
+      "price": 15,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-22",
+      "name": "白飯 (外帶)",
+      "price": 20,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-23",
+      "name": "魚鬆肉燥飯",
+      "price": 45,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-24",
+      "name": "魚鬆肉燥飯 (外帶)",
+      "price": 55,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-25",
+      "name": "肉燥飯",
+      "price": 35,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-26",
+      "name": "肉燥飯 (外帶)",
+      "price": 45,
+      "categoryId": "main",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-27",
+      "name": "魯蛋",
+      "price": 20,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-28",
+      "name": "油豆腐",
+      "price": 20,
+      "categoryId": "side",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-29",
+      "name": "洛神酸梅湯",
+      "price": 40,
+      "categoryId": "drink",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-30",
+      "name": "紅茶",
+      "price": 25,
+      "categoryId": "drink",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-31",
+      "name": "黃金流沙包",
+      "price": 80,
+      "categoryId": "category-ai-1789536649404-0",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    },
+    {
+      "id": "dish-ai-1789630028994-32",
+      "name": "杏仁豆腐",
+      "price": 50,
+      "categoryId": "category-ai-1789536649404-0",
+      "symbol": "🍽️",
+      "image": "",
+      "description": "",
+      "available": true
+    }
+  ]
+}

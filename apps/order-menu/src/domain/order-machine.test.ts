@@ -1,9 +1,32 @@
+import type { CheckoutToolController } from '../webmcp'
+import type { CartSnapshot } from './order-machine'
+
 import { describe, expect, it, vi } from 'vitest'
 
 import { createMenuToolRuntime } from '../webmcp'
 import { catalogInfo, createOrderMachine, defaultOptionsFor, menu } from './order-machine'
 
 describe('createOrderMachine', () => {
+  it('keeps a sold-out catalog item visible without allowing it into a selection', () => {
+    const soldOutItem = { ...menu[0], available: false }
+    const machine = createOrderMachine({ menu: [soldOutItem] })
+
+    expect(machine.getMenu()).toEqual([soldOutItem])
+    expect(() => machine.selectMenuItem(soldOutItem.id)).toThrow('currently unavailable')
+  })
+
+  it('accepts a POS catalog before ordering and refuses to reprice an active cart', () => {
+    const posItem = { ...menu[0], id: 'pos-item', name: 'POS 餐點', price: 88 }
+    const machine = createOrderMachine({ menu: [] })
+
+    machine.setMenu([posItem])
+    expect(machine.getMenu()).toEqual([posItem])
+
+    machine.selectMenuItem(posItem.id)
+    machine.addToCart()
+    expect(() => machine.setMenu([menu[1]!])).toThrow('Cannot replace the menu while an order is in progress.')
+  })
+
   it('creates a configurable shrimp-roll cart line and submits only after the cart is populated', async () => {
     const machine = createOrderMachine()
 
@@ -21,13 +44,27 @@ describe('createOrderMachine', () => {
 
     machine.setFulfillmentMode('dine-in')
     await expect(machine.confirmOrder()).resolves.toMatchObject({
-      status: 'simulated',
       cart: { fulfillmentMode: 'dine-in' },
+      receipt: {
+        environment: 'test',
+        status: 'accepted',
+        customerMessage: '測試訂單已確認，未送往正式 POS。',
+      },
     })
   })
 
   it('returns one submitted order when confirmation is retried', async () => {
-    const submit = vi.fn(async cart => ({ id: 'pos-1', cart, status: 'simulated' as const }))
+    const submit = vi.fn(async cart => ({
+      id: 'pos-1',
+      cart,
+      receipt: {
+        customerMessage: '訂單已送往 POS。',
+        environment: 'live' as const,
+        posOrderId: 'store-42',
+        retryable: false,
+        status: 'accepted' as const,
+      },
+    }))
     const machine = createOrderMachine({ gateway: { submit } })
 
     machine.selectMenuItem('chous-shrimp-roll')
@@ -37,6 +74,59 @@ describe('createOrderMachine', () => {
     const [firstOrder, retryOrder] = await Promise.all([machine.confirmOrder(), machine.confirmOrder()])
     expect(submit).toHaveBeenCalledOnce()
     expect(retryOrder).toEqual(firstOrder)
+  })
+
+  it('binds a terminal payment to one cart snapshot and invalidates it after an order change', () => {
+    const machine = createOrderMachine()
+    machine.selectMenuItem('chous-shrimp-roll')
+    machine.addToCart()
+    machine.setFulfillmentMode('takeout')
+
+    expect(machine.setPaymentId('payment-0001')).toMatchObject({ paymentId: 'payment-0001', total: 75 })
+
+    machine.setFulfillmentMode('dine-in')
+    expect(machine.getCart().paymentId).toBeUndefined()
+  })
+
+  it('does not treat a rejected or uncertain submission as a completed order', async () => {
+    const rejected = createOrderMachine({
+      gateway: {
+        submit: async cart => ({
+          id: 'attempt-rejected',
+          cart,
+          receipt: {
+            customerMessage: '這筆訂單目前無法接受，請確認餐點後再試。',
+            environment: 'live',
+            retryable: true,
+            status: 'rejected',
+          },
+        }),
+      },
+    })
+    rejected.selectMenuItem('chous-shrimp-roll')
+    rejected.addToCart()
+    rejected.setFulfillmentMode('takeout')
+
+    await expect(rejected.confirmOrder()).resolves.toMatchObject({ receipt: { status: 'rejected' } })
+
+    const uncertainSubmit = vi.fn(async cart => ({
+      id: 'attempt-uncertain',
+      cart,
+      receipt: {
+        customerMessage: '訂單狀態尚未確認，請稍候。',
+        environment: 'live' as const,
+        retryable: false,
+        status: 'uncertain' as const,
+      },
+    }))
+    const uncertain = createOrderMachine({ gateway: { submit: uncertainSubmit } })
+    uncertain.selectMenuItem('chous-shrimp-roll')
+    uncertain.addToCart()
+    uncertain.setFulfillmentMode('takeout')
+
+    await expect(uncertain.confirmOrder()).resolves.toMatchObject({ receipt: { status: 'uncertain' } })
+    await expect(uncertain.confirmOrder()).resolves.toMatchObject({ receipt: { status: 'uncertain' } })
+    expect(uncertainSubmit).toHaveBeenCalledOnce()
   })
 
   it('clears a completed anonymous customer cart without changing the catalog', () => {
@@ -82,6 +172,22 @@ describe('createOrderMachine', () => {
 })
 
 describe('createMenuToolRuntime', () => {
+  function checkoutController(overrides: Partial<CheckoutToolController> = {}): CheckoutToolController {
+    return {
+      assertCanRestart: () => {},
+      cancel: () => {},
+      chooseInvoice: method => ({ invoiceMethod: method, stage: 'payment' }),
+      confirmTaxId: () => ({ invoiceMethod: 'tax-id', stage: 'payment', taxId: '12345678' }),
+      requestTaxId: () => ({ invoiceMethod: 'tax-id', stage: 'tax-id', taxId: '' }),
+      restart: () => {},
+      selectPayment: async method => ({ customerMessage: `等待${method}`, status: 'pending' }),
+      setTaxId: taxId => ({ invoiceMethod: 'tax-id', stage: 'tax-id', taxId }),
+      skipMembership: () => ({ stage: 'invoice' }),
+      start: () => ({ stage: 'membership' }),
+      ...overrides,
+    }
+  }
+
   it('keeps direct user-interface mutations separate from AI visual actions', async () => {
     const actions: string[] = []
     const operationEvents: string[] = []
@@ -121,10 +227,80 @@ describe('createMenuToolRuntime', () => {
       'cart_add_item',
       'cart_remove_item',
       'cart_set_line_quantity',
+      'cart_set_line_option',
+      'cart_clear',
       'cart_get',
       'order_set_fulfillment',
-      'order_confirm',
+      'checkout_start',
+      'checkout_skip_membership',
+      'checkout_choose_invoice',
+      'checkout_request_tax_id',
+      'checkout_set_tax_id',
+      'checkout_confirm_tax_id',
+      'checkout_select_payment',
+      'checkout_cancel',
     ])
+  })
+
+  it('routes Agent checkout actions through one controller without exposing physical scan or authorization tools', async () => {
+    const calls: string[] = []
+    const controller = checkoutController({
+      cancel: () => calls.push('cancel'),
+      chooseInvoice: (method) => {
+        calls.push(`invoice:${method}`)
+        return { invoiceMethod: method, stage: 'payment' }
+      },
+      confirmTaxId: () => {
+        calls.push('confirm-tax-id')
+        return { invoiceMethod: 'tax-id', stage: 'payment', taxId: '12345678' }
+      },
+      requestTaxId: () => {
+        calls.push('request-tax-id')
+        return { invoiceMethod: 'tax-id', stage: 'tax-id', taxId: '' }
+      },
+      selectPayment: async (method) => {
+        calls.push(`payment:${method}`)
+        return { customerMessage: '等待顧客操作終端。', status: 'pending' }
+      },
+      setTaxId: (taxId) => {
+        calls.push(`tax-id:${taxId}`)
+        return { invoiceMethod: 'tax-id', stage: 'tax-id', taxId }
+      },
+      skipMembership: () => {
+        calls.push('skip-membership')
+        return { stage: 'invoice' }
+      },
+      start: () => {
+        calls.push('start')
+        return { stage: 'membership' }
+      },
+    })
+    const runtime = createMenuToolRuntime({ checkout: controller, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+
+    await runtime.invoke('checkout_start', { confirmedByUser: true })
+    await runtime.invoke('checkout_skip_membership', { confirmedByUser: true })
+    await runtime.invoke('checkout_request_tax_id')
+    await runtime.invoke('checkout_set_tax_id', { taxId: '12345678' })
+    await runtime.invoke('checkout_confirm_tax_id', { confirmedByUser: true })
+    await runtime.invoke('checkout_select_payment', { method: 'card' })
+    await runtime.invoke('checkout_cancel', { confirmedByUser: true })
+
+    expect(calls).toEqual(['start', 'skip-membership', 'request-tax-id', 'tax-id:12345678', 'confirm-tax-id', 'payment:card', 'cancel'])
+    expect(runtime.toolDefinitions.map(tool => tool.name)).not.toContain('checkout_scan_membership')
+    expect(runtime.toolDefinitions.map(tool => tool.name)).not.toContain('checkout_authorize_payment')
+  })
+
+  it('checks payment safety before clearing the order for a new conversation', async () => {
+    const runtime = createMenuToolRuntime({
+      checkout: checkoutController({ assertCanRestart: () => { throw new Error('payment pending') } }),
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+    })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+
+    await expect(runtime.invoke('cart_clear', { confirmedByUser: true })).rejects.toThrow('payment pending')
+    await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { itemCount: 1 } })
   })
 
   it('adds one configured item through one agent call while preserving each visible step', async () => {
@@ -242,7 +418,7 @@ describe('createMenuToolRuntime', () => {
     }
   })
 
-  it('notifies the embedding host after a native WebMCP order confirmation', async () => {
+  it('starts checkout through native WebMCP without completing the order', async () => {
     const registeredTools: Array<{
       name: string
       execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
@@ -256,6 +432,7 @@ describe('createMenuToolRuntime', () => {
     try {
       const completedOrders: string[] = []
       const runtime = createMenuToolRuntime({
+        checkout: checkoutController(),
         onAction: () => {},
         onCartChange: () => {},
         onMenuSelection: () => {},
@@ -265,16 +442,16 @@ describe('createMenuToolRuntime', () => {
       const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
       const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
       const setFulfillment = registeredTools.find(tool => tool.name === 'order_set_fulfillment')
-      const confirmOrder = registeredTools.find(tool => tool.name === 'order_confirm')
-      if (!selectItem || !addItem || !setFulfillment || !confirmOrder)
+      const startCheckout = registeredTools.find(tool => tool.name === 'checkout_start')
+      if (!selectItem || !addItem || !setFulfillment || !startCheckout)
         throw new Error('Expected order tools to be registered.')
 
       await selectItem.execute({ itemId: 'chous-shrimp-roll' })
       await addItem.execute({})
       await setFulfillment.execute({ mode: 'dine-in' })
-      await confirmOrder.execute({ confirmedByUser: true })
+      await expect(startCheckout.execute({ confirmedByUser: true })).resolves.toMatchObject({ checkout: { stage: 'membership' } })
 
-      expect(completedOrders).toHaveLength(1)
+      expect(completedOrders).toHaveLength(0)
     }
     finally {
       vi.unstubAllGlobals()
@@ -320,17 +497,24 @@ describe('createMenuToolRuntime', () => {
     })
 
     try {
-      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      const runtime = createMenuToolRuntime({
+        checkout: checkoutController({
+          start: () => { throw new Error('Choose dine-in or take-out before starting checkout.') },
+        }),
+        onAction: () => {},
+        onCartChange: () => {},
+        onMenuSelection: () => {},
+      })
       await runtime.registerNativeWebMcp()
       const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
       const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
-      const confirmOrder = registeredTools.find(tool => tool.name === 'order_confirm')
-      if (!selectItem || !addItem || !confirmOrder)
+      const startCheckout = registeredTools.find(tool => tool.name === 'checkout_start')
+      if (!selectItem || !addItem || !startCheckout)
         throw new Error('Expected order tools to be registered.')
 
       await selectItem.execute({ itemId: 'chous-shrimp-roll' })
       await addItem.execute({})
-      await expect(confirmOrder.execute({ confirmedByUser: true })).resolves.toMatchObject({
+      await expect(startCheckout.execute({ confirmedByUser: true })).resolves.toMatchObject({
         ok: false,
         recovery: expect.stringContaining('order_set_fulfillment'),
       })
@@ -377,6 +561,44 @@ describe('createMenuToolRuntime', () => {
     expect(carts).toEqual([150, 150])
   })
 
+  it('edits cart quantities and options directly without removing and re-adding a line', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const added = await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' }) as { line: { id: string } }
+
+    await runtime.invoke('cart_set_line_quantity', { lineId: added.line.id, quantity: 4 })
+    const optionResult = await runtime.invoke('cart_set_line_option', {
+      lineId: added.line.id,
+      groupId: 'ginger',
+      valueId: 'without-ginger',
+    }) as { cart: CartSnapshot, line: { id: string } }
+
+    expect(optionResult.line.id).toBe(added.line.id)
+    expect(optionResult.cart).toMatchObject({
+      itemCount: 4,
+      lines: [{ id: added.line.id, options: { ginger: 'without-ginger' }, quantity: 4 }],
+    })
+  })
+
+  it('clears the unsubmitted cart only after the customer explicitly confirms it', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+
+    await expect(runtime.invoke('cart_clear', {})).rejects.toThrow('confirmedByUser')
+    await expect(runtime.invoke('cart_clear', { confirmedByUser: true })).resolves.toMatchObject({
+      cart: { fulfillmentMode: undefined, itemCount: 0, lines: [], total: 0 },
+    })
+  })
+
+  it('does not clear a cart after its order was accepted', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+    await runtime.confirmPaidOrder('payment-accepted')
+
+    await expect(runtime.invoke('cart_clear', { confirmedByUser: true })).rejects.toThrow('accepted')
+  })
+
   it('synchronizes WebMCP item options into the visible menu selection and emits one completion', async () => {
     const selections: Array<{ itemId: string, options: Record<string, string>, quantity: number }> = []
     const completedOrders: string[] = []
@@ -393,8 +615,8 @@ describe('createMenuToolRuntime', () => {
     await runtime.invoke('cart_add_item')
     await runtime.invoke('order_set_fulfillment', { mode: 'dine-in' })
     const [firstConfirmation, retryConfirmation] = await Promise.all([
-      runtime.invoke('order_confirm', { confirmedByUser: true }),
-      runtime.invoke('order_confirm', { confirmedByUser: true }),
+      runtime.confirmPaidOrder('payment-accepted'),
+      runtime.confirmPaidOrder('payment-accepted'),
     ])
 
     expect(selections).toEqual([
@@ -403,6 +625,106 @@ describe('createMenuToolRuntime', () => {
     ])
     expect(completedOrders).toHaveLength(1)
     expect(retryConfirmation).toMatchObject(firstConfirmation)
+  })
+
+  it('returns a review result instead of completing the kiosk flow when submission is rejected', async () => {
+    const completedOrders: string[] = []
+    const runtime = createMenuToolRuntime({
+      gateway: {
+        submit: async cart => ({
+          id: 'attempt-rejected',
+          cart,
+          receipt: {
+            customerMessage: '這筆訂單目前無法接受，請確認餐點後再試。',
+            environment: 'live',
+            retryable: true,
+            status: 'rejected',
+          },
+        }),
+      },
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onOrderConfirmed: order => completedOrders.push(order.id),
+    })
+
+    await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('cart_add_item')
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+
+    await expect(runtime.confirmPaidOrder('payment-rejected')).resolves.toMatchObject({ receipt: { status: 'rejected' } })
+    expect(completedOrders).toEqual([])
+  })
+
+  it('keeps an uncertain submission open for reconciliation instead of completing it', async () => {
+    const completedOrders: string[] = []
+    const runtime = createMenuToolRuntime({
+      gateway: {
+        submit: async cart => ({
+          id: 'attempt-uncertain',
+          cart,
+          receipt: {
+            customerMessage: '訂單狀態尚未確認，請稍候。',
+            environment: 'live',
+            retryable: false,
+            status: 'uncertain',
+          },
+        }),
+      },
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onOrderConfirmed: order => completedOrders.push(order.id),
+    })
+
+    await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('cart_add_item')
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+
+    await expect(runtime.confirmPaidOrder('payment-uncertain')).resolves.toMatchObject({ receipt: { status: 'uncertain' } })
+    expect(completedOrders).toEqual([])
+  })
+
+  it('returns the deterministic test confirmation instead of claiming a POS submission', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+
+    await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('cart_add_item')
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+
+    await expect(runtime.confirmPaidOrder('payment-test')).resolves.toMatchObject({ receipt: { environment: 'test', status: 'accepted' } })
+  })
+
+  it('submits an authorized payment ID through the same receipt callbacks as order confirmation', async () => {
+    const submittedCarts: CartSnapshot[] = []
+    const completedOrders: string[] = []
+    const runtime = createMenuToolRuntime({
+      gateway: {
+        submit: async (cart) => {
+          submittedCarts.push(cart)
+          return {
+            cart,
+            id: 'paid-order-0001',
+            receipt: {
+              customerMessage: '訂單已送往 POS。',
+              environment: 'live',
+              retryable: false,
+              status: 'accepted',
+            },
+          }
+        },
+      },
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onOrderConfirmed: order => completedOrders.push(order.id),
+    })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+
+    await expect(runtime.confirmPaidOrder('payment-0001')).resolves.toMatchObject({ receipt: { status: 'accepted' } })
+    expect(submittedCarts).toMatchObject([{ paymentId: 'payment-0001' }])
+    expect(completedOrders).toEqual(['paid-order-0001'])
   })
 
   it('merges matching cart lines while retaining separate customer choices', () => {

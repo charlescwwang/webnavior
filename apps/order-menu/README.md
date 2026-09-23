@@ -4,6 +4,17 @@
 building an order. It deliberately does not import AIRI UI, avatar, Electron,
 Pinia, speech, or model packages.
 
+On a portrait kiosk, menu browsing stays focused on the available dishes. A
+compact order summary remains at the bottom of that view; selecting it opens a
+dedicated order-review screen where customers can inspect customizations, edit
+quantities, remove items, choose dine-in or take-out, and explicitly advance to
+checkout. Checkout asks the customer to scan or skip membership, confirm the
+cloud-invoice choice, and then use the physical payment terminal. An authorized
+payment is bound to the exact cart total and automatically submitted to the POS;
+a rejected payment can be retried, while an uncertain result locks the order to
+avoid a duplicate charge. Temporary product comparison is kept in the content
+area so it never replaces the committed-order summary.
+
 ## Run locally
 
 From the repository root:
@@ -13,7 +24,9 @@ pnpm --filter @proj-airi/order-menu dev
 ```
 
 The service runs at `http://localhost:5166` by default. Opening that URL directly
-provides a fully usable menu and cart without AIRI running.
+provides a fully usable menu and cart without AIRI running. It requires
+`VITE_ORDER_MENU_SERVER_URL`; copy [`.env.example`](.env.example) to `.env.local`
+and use the local Bridge URL (`http://127.0.0.1:5170`) during development.
 
 ## Local service ports
 
@@ -25,10 +38,17 @@ The restaurant installation runs four independent processes by default:
 | Management console | `@proj-airi/stage-web` | `http://localhost:5167` | Staff and administrator configuration. |
 | Customer Kiosk | `@proj-airi/stage-kiosk` | `http://localhost:5169` | VRM character and customer conversation. |
 | Menu service | `@proj-airi/order-menu` | `http://localhost:5166` | Menu, cart, and ordering only. |
+| POS Bridge | `@proj-airi/order-menu-server` | `http://127.0.0.1:5170` | Catalog and idempotent order submission. |
+| POS simulator | `@proj-airi/order-menu-server` | `http://127.0.0.1:5171` | Development-only controllable POS upstream. |
 
 The menu service intentionally has no VRM character, chat window, microphone,
 or AIRI provider configuration. It can be opened directly, or embedded by the
 Kiosk as an interactive page.
+
+Its sellable menu is loaded only from the configured POS Bridge. A Bridge
+failure displays a retryable customer-facing error; the browser never replaces
+it with the historical hard-coded menu. The Bridge snapshot includes its source
+revision, which travels with the cart and is validated again before submission.
 
 ## AIRI integration
 
@@ -73,11 +93,21 @@ quantity, the WebMCP `order_add_item` tool performs that whole operation in one
 Agent call while the menu still visibly steps through each change. The
 `order_set_fulfillment` tool and the visible menu buttons use the same state, so
 an order cannot be confirmed before the customer chooses how it will be served.
+For cart edits, the Agent first calls `cart_get` for the opaque line ID, then
+uses `cart_set_line_quantity`, `cart_set_line_option`, or `cart_remove_item`
+directly instead of removing and re-adding a meal. `cart_clear` also requires
+an explicit customer confirmation and is unavailable after POS acceptance.
 Until then, the cart reports the choice as deferrable and customers may continue
 adding items. A real POS or kiosk integration implements the `PosOrderGateway`
-boundary passed to `createOrderMachine`.
-The current default gateway returns a simulated submitted order and does not send
-anything to an external system.
+boundary passed to `createOrderMachine`. Every submission returns a receipt with
+an explicit `environment` (`test` or `live`) and `status` (`accepted`,
+`rejected`, or `uncertain`). Only an accepted live receipt may be presented as
+an order sent to the POS. The current default gateway exists only for isolated
+domain tests. The browser app always uses its configured POS Bridge; when that
+URL is absent or catalog loading fails it displays an error instead of falling
+back to a test gateway. An `uncertain` response locks the confirmation control
+until staff reconcile the existing idempotent submission, preventing a blind
+second order.
 
 ## Extracting from AIRI
 
@@ -90,5 +120,6 @@ the allowed embedding origin with `VITE_AIRI_ORIGIN`.
 This service should not own AIRI chat, identity, avatar rendering, model keys, or
 speech settings; those remain integration concerns of the embedding application.
 
-The draft cross-vendor ordering contract is documented in
-[`docs/standards/restaurant-menu-agent-protocol-v0.1.md`](../../docs/standards/restaurant-menu-agent-protocol-v0.1.md).
+The current checkout contract is documented in
+[`docs/standards/restaurant-menu-agent-protocol-v0.2.md`](../../docs/standards/restaurant-menu-agent-protocol-v0.2.md).
+The earlier v0.1 document remains the historical cart-only draft.

@@ -45,9 +45,37 @@
       "running": "正在設定取餐方式…",
       "success": "取餐方式已設定。"
     },
-    "order_confirm": {
-      "running": "正在送出訂單…",
-      "success": "訂單已送出。"
+    "checkout_start": {
+      "running": "正在開啟結帳流程…",
+      "success": "已進入會員與發票確認。"
+    },
+    "checkout_skip_membership": {
+      "running": "正在略過會員掃碼…",
+      "success": "已略過會員。"
+    },
+    "checkout_choose_invoice": {
+      "running": "正在設定發票方式…",
+      "success": "發票方式已設定。"
+    },
+    "checkout_request_tax_id": {
+      "running": "正在開啟統編輸入…",
+      "success": "請確認統編畫面。"
+    },
+    "checkout_set_tax_id": {
+      "running": "正在帶入統編…",
+      "success": "統編已顯示，等待顧客確認。"
+    },
+    "checkout_confirm_tax_id": {
+      "running": "正在確認統編…",
+      "success": "統編已確認。"
+    },
+    "checkout_select_payment": {
+      "running": "正在啟動支付終端…",
+      "success": "請依支付終端指示完成付款。"
+    },
+    "checkout_cancel": {
+      "running": "正在返回訂單內容…",
+      "success": "已保留購物車並返回訂單。"
     }
   }
 }

@@ -17,11 +17,15 @@ export interface MenuOptionGroup {
 export type RecommendationTag = 'fried' | 'pork-free' | 'rice'
 
 export interface MenuItem {
+  /** The POS can retain an unavailable item for customer-facing explanation, but it cannot be ordered. */
+  available?: boolean
   id: string
   name: string
   description: string
   category: string
   imageUrl: string
+  /** Textual fallback supplied by a POS catalog when no product image exists. */
+  symbol?: string
   price: number
   recommendationTags: RecommendationTag[]
   optionGroups: MenuOptionGroup[]
@@ -39,21 +43,41 @@ export interface CartLine extends Selection {
   unitPrice: number
 }
 
-/** Order-level service choice required before a simulated or POS submission. */
+/** Order-level service choice required before an order submission. */
 export type FulfillmentMode = 'dine-in' | 'takeout'
 
 export interface CartSnapshot {
+  /** Revision received with the POS catalog that priced this cart. */
+  catalogRevision?: string
   /** Undefined until the customer explicitly chooses where the order is served. */
   fulfillmentMode: FulfillmentMode | undefined
   lines: CartLine[]
   total: number
   itemCount: number
+  /** POS payment transaction verified before this cart may be submitted. */
+  paymentId?: string
 }
 
+/** Identifies whether a submission was intentionally made against test or live POS infrastructure. */
+export type SubmissionEnvironment = 'test' | 'live'
+
+/** States whether the POS confirmed the order, declined it, or left its result unknown. */
+export type SubmissionStatus = 'accepted' | 'rejected' | 'uncertain'
+
+/** The supplier-neutral truth returned after an order submission attempt. */
+export interface SubmissionReceipt {
+  customerMessage: string
+  environment: SubmissionEnvironment
+  posOrderId?: string
+  retryable: boolean
+  status: SubmissionStatus
+}
+
+/** Combines the local order snapshot with the authoritative submission receipt. */
 export interface SubmittedOrder {
   id: string
   cart: CartSnapshot
-  status: 'simulated'
+  receipt: SubmissionReceipt
 }
 
 export interface PosOrderGateway {
@@ -466,12 +490,19 @@ export function defaultOptionsFor(item: MenuItem): Record<string, string> {
   }))
 }
 
-function cloneCart(cart: CartLine[], fulfillmentMode: FulfillmentMode | undefined): CartSnapshot {
+function cloneCart(
+  cart: CartLine[],
+  fulfillmentMode: FulfillmentMode | undefined,
+  catalogRevision: string | undefined,
+  paymentId?: string,
+): CartSnapshot {
   return {
+    ...(catalogRevision ? { catalogRevision } : {}),
     fulfillmentMode,
     lines: cart.map(line => ({ ...line, options: { ...line.options } })),
     total: cart.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0),
     itemCount: cart.reduce((sum, line) => sum + line.quantity, 0),
+    ...(paymentId ? { paymentId } : {}),
   }
 }
 
@@ -490,12 +521,19 @@ function hasSameOptions(left: Record<string, string>, right: Record<string, stri
 
 /** Owns order validation and offers a replaceable seam for a real POS gateway. */
 export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOrderGateway } = {}) {
-  const catalog = options.menu ?? menu
+  let catalog = [...(options.menu ?? menu)]
+  let catalogRevision: string | undefined
   const cart: CartLine[] = []
   let selection: Selection | undefined
   let fulfillmentMode: FulfillmentMode | undefined
-  let submittedOrder: SubmittedOrder | undefined
+  let paymentId: string | undefined
+  let acceptedOrder: SubmittedOrder | undefined
+  let uncertainOrder: SubmittedOrder | undefined
   let pendingSubmission: Promise<SubmittedOrder> | undefined
+
+  function invalidatePayment() {
+    paymentId = undefined
+  }
 
   function itemOrThrow(itemId: string) {
     const item = catalog.find(candidate => candidate.id === itemId)
@@ -506,6 +544,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
 
   function selectMenuItem(itemId: string) {
     const item = itemOrThrow(itemId)
+    if (item.available === false)
+      throw new Error(`${item.name} is currently unavailable.`)
     selection = { itemId, quantity: 1, options: defaultOptionsFor(item) }
     return { ...selection, options: { ...selection.options } }
   }
@@ -539,11 +579,13 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     const item = itemOrThrow(current.itemId)
     const matchingLine = cart.find(line => line.itemId === item.id && hasSameOptions(line.options, current.options))
     if (matchingLine) {
+      invalidatePayment()
       matchingLine.quantity += current.quantity
       selection = undefined
-      return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart, fulfillmentMode) }
+      return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart, fulfillmentMode, catalogRevision) }
     }
 
+    invalidatePayment()
     const line: CartLine = {
       id: `line-${crypto.randomUUID()}`,
       itemId: item.id,
@@ -554,15 +596,16 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     }
     cart.push(line)
     selection = undefined
-    return { line: { ...line, options: { ...line.options } }, cart: cloneCart(cart, fulfillmentMode) }
+    return { line: { ...line, options: { ...line.options } }, cart: cloneCart(cart, fulfillmentMode, catalogRevision) }
   }
 
   function removeFromCart(lineId: string) {
     const index = cart.findIndex(line => line.id === lineId)
     if (index < 0)
       throw new Error(`Unknown cart line: ${lineId}`)
+    invalidatePayment()
     cart.splice(index, 1)
-    return cloneCart(cart, fulfillmentMode)
+    return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
   function setCartLineQuantity(lineId: string, quantity: number) {
@@ -572,22 +615,71 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     const line = cart.find(candidate => candidate.id === lineId)
     if (!line)
       throw new Error(`Unknown cart line: ${lineId}`)
+    invalidatePayment()
     line.quantity = quantity
-    return cloneCart(cart, fulfillmentMode)
+    return cloneCart(cart, fulfillmentMode, catalogRevision)
+  }
+
+  /** Updates one completed cart line without asking the customer to re-add it. */
+  function setCartLineOption(lineId: string, groupId: string, valueId: string) {
+    const lineIndex = cart.findIndex(candidate => candidate.id === lineId)
+    if (lineIndex < 0)
+      throw new Error(`Unknown cart line: ${lineId}`)
+
+    const line = cart[lineIndex]!
+    const item = itemOrThrow(line.itemId)
+    const group = item.optionGroups.find(candidate => candidate.id === groupId)
+    if (!group?.values.some(value => value.id === valueId))
+      throw new Error(`Invalid option ${groupId}:${valueId} for ${item.name}.`)
+
+    invalidatePayment()
+    line.options = { ...line.options, [groupId]: valueId }
+    line.unitPrice = resolveUnitPrice(item, line.options)
+
+    // Preserve the one-line-per-identical-choice invariant after an edit. The
+    // remaining line keeps its stable ID so a caller can continue editing it.
+    const matchingLine = cart.find(candidate => candidate.id !== line.id && candidate.itemId === line.itemId && hasSameOptions(candidate.options, line.options))
+    if (matchingLine) {
+      matchingLine.quantity += line.quantity
+      cart.splice(lineIndex, 1)
+      return { cart: cloneCart(cart, fulfillmentMode, catalogRevision), line: { ...matchingLine, options: { ...matchingLine.options } } }
+    }
+
+    return { cart: cloneCart(cart, fulfillmentMode, catalogRevision), line: { ...line, options: { ...line.options } } }
+  }
+
+  /** Discards an unsubmitted cart and its pending selection. */
+  function clearCart() {
+    if (acceptedOrder)
+      throw new Error('Cannot clear a cart after its order was accepted.')
+
+    if (uncertainOrder)
+      throw new Error('Cannot clear a cart while its submitted order is awaiting reconciliation.')
+
+    cart.splice(0)
+    selection = undefined
+    fulfillmentMode = undefined
+    paymentId = undefined
+    return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
   function setFulfillmentMode(mode: FulfillmentMode) {
+    invalidatePayment()
     fulfillmentMode = mode
-    return cloneCart(cart, fulfillmentMode)
+    return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
   async function confirmOrder() {
-    if (submittedOrder)
-      return submittedOrder
+    if (acceptedOrder)
+      return acceptedOrder
+    // An uncertain response may represent an order already received by the POS.
+    // Keep it stable until the future Bridge reconciles by idempotency key.
+    if (uncertainOrder)
+      return uncertainOrder
     if (pendingSubmission)
       return await pendingSubmission
 
-    const snapshot = cloneCart(cart, fulfillmentMode)
+    const snapshot = cloneCart(cart, fulfillmentMode, catalogRevision, paymentId)
     if (snapshot.lines.length === 0)
       throw new Error('Cart is empty.')
     if (!snapshot.fulfillmentMode)
@@ -596,10 +688,19 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     pendingSubmission = options.gateway?.submit(snapshot) ?? Promise.resolve({
       id: `demo-${crypto.randomUUID()}`,
       cart: snapshot,
-      status: 'simulated' as const,
+      receipt: {
+        customerMessage: '測試訂單已確認，未送往正式 POS。',
+        environment: 'test' as const,
+        retryable: false,
+        status: 'accepted' as const,
+      },
     })
     try {
-      submittedOrder = await pendingSubmission
+      const submittedOrder = await pendingSubmission
+      if (submittedOrder.receipt.status === 'accepted')
+        acceptedOrder = submittedOrder
+      else if (submittedOrder.receipt.status === 'uncertain')
+        uncertainOrder = submittedOrder
       return submittedOrder
     }
     finally {
@@ -607,28 +708,55 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     }
   }
 
+  /** Binds one terminal-authorized payment to the immutable order snapshot submitted next. */
+  function setPaymentId(nextPaymentId: string) {
+    if (!nextPaymentId.trim())
+      throw new Error('Payment ID is required before submitting the order.')
+    paymentId = nextPaymentId
+    return cloneCart(cart, fulfillmentMode, catalogRevision, paymentId)
+  }
+
   /** Clears only the in-progress order so the host can begin a new customer session. */
   function reset() {
     cart.splice(0)
     selection = undefined
-    submittedOrder = undefined
+    acceptedOrder = undefined
+    uncertainOrder = undefined
     pendingSubmission = undefined
     fulfillmentMode = undefined
-    return cloneCart(cart, fulfillmentMode)
+    paymentId = undefined
+    return cloneCart(cart, fulfillmentMode, catalogRevision)
+  }
+
+  /**
+   * Replaces the active POS catalog before a customer begins an order. Keeping
+   * an active cart intact is safer than silently repricing it during refresh.
+   */
+  function setMenu(nextMenu: MenuItem[], revision?: string) {
+    if (cart.length > 0 || selection)
+      throw new Error('Cannot replace the menu while an order is in progress.')
+    if (nextMenu.length === 0)
+      throw new Error('The POS catalog has no available items.')
+    catalog = [...nextMenu]
+    catalogRevision = revision
   }
 
   return {
     addToCart,
+    clearCart,
     confirmOrder,
-    getCart: () => cloneCart(cart, fulfillmentMode),
+    getCart: () => cloneCart(cart, fulfillmentMode, catalogRevision, paymentId),
     getMenu: (category?: string) => category ? catalog.filter(item => item.category === category) : [...catalog],
     getSelection: () => selection ? { ...selection, options: { ...selection.options } } : undefined,
     removeFromCart,
     reset,
     selectMenuItem,
     setCartLineQuantity,
+    setCartLineOption,
     setFulfillmentMode,
     setItemOption,
+    setMenu,
+    setPaymentId,
     setQuantity,
   }
 }
