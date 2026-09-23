@@ -250,8 +250,36 @@
     {
       "idx": 35,
       "version": "7",
-      "when": 1789665816000,
+      "when": 1790222400000,
       "tag": "0035_webnavior_ai_control_plane",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790308800000,
+      "tag": "0036_webnavior_ai_capability_provider_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790395200000,
+      "tag": "0037_kiosk_speech_guard_baselines",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790481600000,
+      "tag": "0038_webnavior_provider_timeout_30_seconds",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790568000000,
+      "tag": "0039_kiosk_agent_interaction",
       "breakpoints": true
     }
   ]
