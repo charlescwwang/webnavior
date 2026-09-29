@@ -26,13 +26,9 @@ describe('admin Webnavior AI routes', () => {
           updateProfile: vi.fn(),
           verifyAndCreateProfile: vi.fn(),
           verifyAndUpdateProfile: vi.fn(),
-          verifyProfile,
+          verifyProfile: verifyProfile as any,
         },
-        speechGuard: {
-          classifyInitialSpeech: async () => undefined,
-          getStatus: async () => ({ baselineCount: 0, ready: false }),
-          initialize: async () => ({ baselineCount: 680, embeddingModelId: 'embeddinggemma', embeddingProfileId: 'profile-1' }),
-        },
+        systemOne: { activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
       }))
 
     const response = await app.request('/capabilities/chat/providers/RB_zw84In0eWFofqtM-9K/verify', { method: 'POST' })
@@ -59,24 +55,79 @@ describe('admin Webnavior AI routes', () => {
           selectProfile: vi.fn(),
           testProviderConnection: vi.fn(),
           updateProfile: vi.fn(),
-          verifyAndCreateProfile,
+          verifyAndCreateProfile: verifyAndCreateProfile as any,
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: vi.fn(),
         },
-        speechGuard: {
-          classifyInitialSpeech: async () => undefined,
-          getStatus: async () => ({ baselineCount: 0, ready: false }),
-          initialize: async () => ({ baselineCount: 680, embeddingModelId: 'embeddinggemma', embeddingProfileId: 'profile-1' }),
-        },
+        systemOne: { activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
       }))
 
     const response = await app.request('/capabilities/chat/providers/verify-and-save', {
-      body: JSON.stringify({ baseURL: 'https://models.example/v1', kind: 'llama-cpp', modelId: 'gemma4:26b', name: '主要模型', timeoutMs: 5000 }),
+      body: JSON.stringify({ baseURL: 'https://models.example/v1', kind: 'llama-cpp', modelId: 'gemma4:26b', name: '主要模型', timeoutMs: 60_000 }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })
 
     expect(response.status).toBe(201)
-    expect(verifyAndCreateProfile).toHaveBeenCalledWith('chat', expect.objectContaining({ kind: 'llama-cpp', modelId: 'gemma4:26b' }))
+    expect(verifyAndCreateProfile).toHaveBeenCalledWith('chat', expect.objectContaining({ kind: 'llama-cpp', modelId: 'gemma4:26b', timeoutMs: 60_000 }))
+  })
+
+  it('routes System One profile edits and deletion to the domain service', async () => {
+    const deactivate = vi.fn()
+    const update = vi.fn()
+    const savePolicy = vi.fn(async () => ({ decisionInstruction: '只選現有候選。', defaultDecisionInstruction: 'default', storeInstruction: '顧客說套餐時先開啟套餐分類。', updatedAt: new Date() }))
+    const remove = vi.fn(async () => undefined)
+    const inspectRuntimeModel = vi.fn(async () => ({ modelId: 'jev-latest' }))
+    const app = new Hono<HonoEnv>()
+      .use('*', async (c, next) => {
+        c.set('user', { id: 'admin-1', role: 'admin' } as HonoEnv['Variables']['user'])
+        await next()
+      })
+      .route('/', createAdminWebnaviorAiRoutes({
+        runtimeService: { applyBindings: async () => ({ appliedCapabilities: [] }), modelFor: async () => undefined },
+        service: {
+          createProfile: vi.fn(),
+          deleteProfile: vi.fn(),
+          listProfiles: vi.fn(),
+          listSelections: vi.fn(),
+          refreshProfileModels: vi.fn(),
+          selectProfile: vi.fn(),
+          testProviderConnection: vi.fn(),
+          updateProfile: vi.fn(),
+          verifyAndCreateProfile: vi.fn(),
+          verifyAndUpdateProfile: vi.fn(),
+          verifyProfile: vi.fn(),
+        },
+        systemOne: { activate: vi.fn(), deactivate, decide: vi.fn(), delete: remove, getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel, list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy, update },
+      }))
+
+    const updateResponse = await app.request('/system-one/profiles/system-one-1', {
+      body: JSON.stringify({ baseURL: 'http://dasein.local', implementation: 'lookski', modelId: 'gemma-3-4b-it', name: '店內 Gemma', timeoutMs: 30_000 }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH',
+    })
+    const deleteResponse = await app.request('/system-one/profiles/system-one-1', { method: 'DELETE' })
+    const deactivateResponse = await app.request('/system-one/active-profile/system-one-1', { method: 'DELETE' })
+    const policyResponse = await app.request('/system-one/policy', {
+      body: JSON.stringify({ decisionInstruction: '只選現有候選。', storeInstruction: '顧客說套餐時先開啟套餐分類。' }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'PUT',
+    })
+    const modelsResponse = await app.request('/system-one/runtime-model:inspect', {
+      body: JSON.stringify({ baseURL: 'https://system-one.example', implementation: 'dasein', timeoutMs: 5000 }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    })
+
+    expect(updateResponse.status).toBe(200)
+    expect(update).toHaveBeenCalledWith('system-one-1', expect.objectContaining({ implementation: 'lookski', timeoutMs: 30_000 }))
+    expect(deleteResponse.status).toBe(204)
+    expect(remove).toHaveBeenCalledWith('system-one-1')
+    expect(deactivateResponse.status).toBe(204)
+    expect(deactivate).toHaveBeenCalledWith('system-one-1')
+    expect(policyResponse.status).toBe(200)
+    expect(savePolicy).toHaveBeenCalledWith({ decisionInstruction: '只選現有候選。', storeInstruction: '顧客說套餐時先開啟套餐分類。' })
+    expect(modelsResponse.status).toBe(200)
+    expect(inspectRuntimeModel).toHaveBeenCalledWith({ baseURL: 'https://system-one.example', implementation: 'dasein', timeoutMs: 5000 })
   })
 })

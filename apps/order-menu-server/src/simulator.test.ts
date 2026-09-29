@@ -12,6 +12,7 @@ describe('pOS simulator', () => {
     await expect(response.json()).resolves.toMatchObject({
       items: expect.arrayContaining([
         expect.objectContaining({
+          aliases: ['招牌便當'],
           id: 'signature-shrimp-roll-bento',
           imageUrl: expect.stringContaining('images.unsplash.com'),
           name: '周氏蝦捲招牌便當',

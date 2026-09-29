@@ -38,10 +38,15 @@ const form = reactive<AiProviderProfileForm>({
   timeoutMs: 30_000,
   voice: '',
 })
+
+function defaultTimeoutMs() {
+  return props.capability === 'chat' ? 60_000 : 30_000
+}
+
+const timeoutMaximum = computed(() => props.capability === 'chat' ? 60_000 : 30_000)
 const capabilityTitles: Partial<Record<AiCapability, string>> = {
   asr: '語音辨識 ASR',
   chat: '對話 LLM',
-  embedding: '語意判斷 Embedding',
   tts: '語音回覆 TTS',
   vision: '視覺 VLM',
 }
@@ -91,7 +96,7 @@ function resetForm() {
   form.modelId = ''
   form.name = '本機 Ollama'
   form.plaintextKey = ''
-  form.timeoutMs = 30_000
+  form.timeoutMs = defaultTimeoutMs()
   form.voice = ''
   modelCatalog.value = undefined
   testedConnectionSignature.value = undefined
@@ -254,6 +259,13 @@ function verifyAndSaveProfile() {
           <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
             API Key（選填）
             <Input v-model="form.plaintextKey" :disabled="props.busy" type="password" autocomplete="new-password" :placeholder="editingProfile?.hasApiKey ? '留白代表保留原本的 Key' : '地端無驗證服務可留白'" />
+          </label>
+          <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+            等待時間（毫秒）
+            <Input v-model.number="form.timeoutMs" :disabled="props.busy" type="number" min="1000" :max="timeoutMaximum" step="1000" />
+            <p :class="['m-0 text-xs leading-5 text-slate-500 dark:text-slate-400']">
+              {{ props.capability === 'chat' ? '對話 LLM 最長 60 秒；較慢模型可設定為 60000。' : '此能力最長 30 秒。' }}
+            </p>
           </label>
           <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
             模型

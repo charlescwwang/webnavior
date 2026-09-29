@@ -102,6 +102,11 @@ For cart edits, the Agent first calls `cart_get` for the opaque line ID, then
 uses `cart_set_line_quantity`, `cart_set_line_option`, or `cart_remove_item`
 directly instead of removing and re-adding a meal. `cart_clear` also requires
 an explicit customer confirmation and is unavailable after POS acceptance.
+In Kiosk voice mode, Fast Path chooses bounded semantic intents; this menu
+resolves real targets and authorizes the resulting WebMCP operation. Native
+Main Agent mutations also pass through its current phase, target, revision,
+payment, and one-use confirmation checks. If two cart lines share a product,
+removal or editing asks which real line the customer means before changing it.
 Until then, the cart reports the choice as deferrable and customers may continue
 adding items. A real POS or kiosk integration implements the `PosOrderGateway`
 boundary passed to `createOrderMachine`. Every submission returns a receipt with
@@ -113,6 +118,10 @@ URL is absent or catalog loading fails it displays an error instead of falling
 back to a test gateway. An `uncertain` response locks the confirmation control
 until staff reconcile the existing idempotent submission, preventing a blind
 second order.
+
+The host-only `kiosk_interaction_state` tool exposes a non-sensitive phase
+summary for Kiosk conversation turns without issuing or consuming System One
+candidates; it is not available to the Main Agent as a callable tool.
 
 ## Extracting from AIRI
 

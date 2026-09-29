@@ -16,11 +16,9 @@ const RUNTIME_MODEL_NAMES = {
   vision: 'webnavior/vision',
 } as const
 
-type KioskModelCapability = Exclude<WebnaviorAiCapability, 'embedding'>
-
 export interface WebnaviorAiRuntimeService {
   applyBindings: () => Promise<{ appliedCapabilities: WebnaviorAiCapability[] }>
-  modelFor: (capability: KioskModelCapability) => Promise<string | undefined>
+  modelFor: (capability: WebnaviorAiCapability) => Promise<string | undefined>
 }
 
 /**
@@ -34,7 +32,7 @@ export function createWebnaviorAiRuntimeService(options: {
   envelopeCrypto: EnvelopeCrypto
   redis: Redis
 }): WebnaviorAiRuntimeService {
-  async function modelFor(capability: KioskModelCapability) {
+  async function modelFor(capability: WebnaviorAiCapability) {
     const config = await options.configKV.getOptional('WEBNAVIOR_AI_RUNTIME_CONFIG')
     if (!config)
       return undefined
@@ -74,7 +72,6 @@ export function createWebnaviorAiRuntimeService(options: {
 
       const asr = byCapability.get('asr')
       const tts = byCapability.get('tts')
-      const embedding = byCapability.get('embedding')
       const runtimePolicy = {
         ...(chat ? { chatModel: RUNTIME_MODEL_NAMES.chat } : {}),
         ...(vision ? { visionModel: RUNTIME_MODEL_NAMES.vision } : {}),
@@ -94,21 +91,14 @@ export function createWebnaviorAiRuntimeService(options: {
         ...(asr ? { asr: compiledAudioConfig(asr, plaintextKeys.get(asr.id), 'asr', options.envelopeCrypto) } : {}),
         ...(tts ? { tts: compiledAudioConfig(tts, plaintextKeys.get(tts.id), 'tts', options.envelopeCrypto) } : {}),
       }
-      const embeddingConfig = embedding
-        ? compiledEmbeddingConfig(embedding, plaintextKeys.get(embedding.id), options.envelopeCrypto)
-        : undefined
-
       // Redis has no cross-key transaction. We fully assemble values before
       // writing so a validation error cannot leave a partially changed policy.
       await Promise.all([
         options.configKV.set('LLM_ROUTER_CONFIG', nextRouter),
         options.configKV.set('WEBNAVIOR_AI_RUNTIME_CONFIG', runtimePolicy),
         options.configKV.set('WEBNAVIOR_AUDIO_CONFIG', audioConfig),
-        embeddingConfig
-          ? options.configKV.set('WEBNAVIOR_EMBEDDING_CONFIG', embeddingConfig)
-          : options.configKV.unset('WEBNAVIOR_EMBEDDING_CONFIG'),
       ])
-      await Promise.all(['LLM_ROUTER_CONFIG', 'WEBNAVIOR_AI_RUNTIME_CONFIG', 'WEBNAVIOR_AUDIO_CONFIG', 'WEBNAVIOR_EMBEDDING_CONFIG']
+      await Promise.all(['LLM_ROUTER_CONFIG', 'WEBNAVIOR_AI_RUNTIME_CONFIG', 'WEBNAVIOR_AUDIO_CONFIG']
         .map(async key => await options.redis.publish('configkv:invalidate', JSON.stringify({ key, publishedAt: Date.now(), version: Date.now() }))))
       return { appliedCapabilities: [...byCapability.keys()] }
     }
@@ -156,20 +146,6 @@ function compiledAudioConfig(profile: WebnaviorAiProviderProfile, key: Buffer | 
     modelName: RUNTIME_MODEL_NAMES[capability],
     upstreamModel: profile.modelId!,
     ...(capability === 'tts' ? { voice: profile.voice ?? 'zh-TW-HsiaoChenNeural' } : {}),
-  }
-}
-
-function compiledEmbeddingConfig(profile: WebnaviorAiProviderProfile, key: Buffer | undefined, envelopeCrypto: EnvelopeCrypto) {
-  return {
-    baseURL: profile.baseURL,
-    ...(key ? { keyCiphertext: envelopeCrypto.encryptKey(key.toString('utf8'), { keyEntryId: 'default', modelName: 'webnavior-kiosk:embedding' }) } : {}),
-    modelName: profile.modelId!,
-    providerProfileId: profile.id,
-    // llama.cpp uses the same OpenAI-shaped embeddings request when an
-    // embedding-capable build is selected; its cache extension only applies
-    // to chat completions.
-    provider: profile.kind === 'llama-cpp' ? 'openai-compatible' : profile.kind,
-    timeoutMs: profile.timeoutMs,
   }
 }
 

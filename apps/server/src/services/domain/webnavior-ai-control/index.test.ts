@@ -26,15 +26,15 @@ describe('webnavior AI capability Provider profiles', () => {
   })
 
   it('keeps Provider profiles scoped to one capability without exposing credentials', async () => {
-    const profile = await service.createProfile('embedding', {
+    const profile = await service.createProfile('chat', {
       baseURL: 'http://ollama.internal/v1',
       kind: 'ollama',
-      name: '店內 Embedding',
+      name: '店內對話模型',
       plaintextKey: 'secret-key',
       timeoutMs: 5000,
     })
 
-    expect(profile).toMatchObject({ capability: 'embedding', hasApiKey: true, name: '店內 Embedding' })
+    expect(profile).toMatchObject({ capability: 'chat', hasApiKey: true, name: '店內對話模型' })
     expect(profile).not.toHaveProperty('apiKeyCiphertext')
     await expect(service.listProfiles()).resolves.toEqual([expect.not.objectContaining({ apiKeyCiphertext: expect.anything() })])
 
@@ -86,58 +86,58 @@ describe('webnavior AI capability Provider profiles', () => {
   })
 
   it('does not overwrite an existing Provider when its changed settings fail verification', async () => {
-    const profile = await service.createProfile('embedding', {
+    const profile = await service.createProfile('chat', {
       baseURL: 'https://models.example/v1',
       kind: 'openai-compatible',
-      modelId: 'embeddinggemma',
+      modelId: 'gemma-3-4b-it',
       name: '原本的設定',
       timeoutMs: 5000,
     })
     fetchImpl.mockResolvedValue(new Response(JSON.stringify({ error: 'bad model' }), { status: 400 }))
 
-    await expect(service.verifyAndUpdateProfile('embedding', profile.id, {
+    await expect(service.verifyAndUpdateProfile('chat', profile.id, {
       baseURL: 'https://new-models.example/v1',
       kind: 'openai-compatible',
-      modelId: 'new-embedding',
+      modelId: 'new-gemma',
       name: '失敗的新設定',
       timeoutMs: 5000,
     })).rejects.toThrow()
 
     await expect(service.listProfiles()).resolves.toEqual([expect.objectContaining({
       baseURL: 'https://models.example/v1',
-      modelId: 'embeddinggemma',
+      modelId: 'gemma-3-4b-it',
       name: '原本的設定',
     })])
   })
 
   it('requires a capability-local verified profile before selection', async () => {
-    const profile = await service.createProfile('embedding', {
+    const profile = await service.createProfile('chat', {
       baseURL: 'https://models.example/v1',
       kind: 'openai-compatible',
-      name: '遠端 Embedding',
+      name: '遠端對話模型',
       timeoutMs: 5000,
     })
     fetchImpl.mockImplementation(async (url) => {
       if (String(url).endsWith('/models'))
-        return new Response(JSON.stringify({ data: [{ id: 'embeddinggemma' }] }), { status: 200 })
-      if (String(url).endsWith('/embeddings'))
-        return new Response(JSON.stringify({ data: [{ embedding: [0.1, 0.2] }] }), { status: 200 })
+        return new Response(JSON.stringify({ data: [{ id: 'gemma-3-4b-it' }] }), { status: 200 })
+      if (String(url).endsWith('/chat/completions'))
+        return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 })
       return new Response(null, { status: 404 })
     })
 
-    await service.refreshProfileModels('embedding', profile.id)
-    await service.updateProfile('embedding', profile.id, {
+    await service.refreshProfileModels('chat', profile.id)
+    await service.updateProfile('chat', profile.id, {
       baseURL: 'https://models.example/v1',
       kind: 'openai-compatible',
-      modelId: 'embeddinggemma',
-      name: '遠端 Embedding',
+      modelId: 'gemma-3-4b-it',
+      name: '遠端對話模型',
       timeoutMs: 5000,
     })
-    await expect(service.selectProfile('embedding', profile.id)).rejects.toThrow('只能啟用已通過驗證')
-    await service.verifyProfile('embedding', profile.id)
-    await expect(service.selectProfile('embedding', profile.id)).resolves.toMatchObject({
-      capability: 'embedding',
-      providerProfile: { id: profile.id, name: '遠端 Embedding' },
+    await expect(service.selectProfile('chat', profile.id)).rejects.toThrow('只能啟用已通過驗證')
+    await service.verifyProfile('chat', profile.id)
+    await expect(service.selectProfile('chat', profile.id)).resolves.toMatchObject({
+      capability: 'chat',
+      providerProfile: { id: profile.id, name: '遠端對話模型' },
     })
     await expect(service.selectProfile('vision', profile.id)).rejects.toThrow('找不到此 AI 能力')
   })

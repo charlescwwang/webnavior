@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import type { AiCapability, AiProviderProfileInput } from '../../composables/useWebnaviorAiControl'
+import type { AiCapability, AiProviderProfileInput, SystemOnePolicyInput, SystemOneProfile, SystemOneProfileInput, SystemOneRuntimeModel } from '../../composables/useWebnaviorAiControl'
 
 import { Button } from '@proj-airi/ui'
 import { computed, onMounted, shallowRef } from 'vue'
 
 import AiCapabilityCards from '../../components/Webnavior/AiCapabilityCards.vue'
 import AiProviderProfileDialog from '../../components/Webnavior/AiProviderProfileDialog.vue'
+import SystemOnePolicyPanel from '../../components/Webnavior/SystemOnePolicyPanel.vue'
+import SystemOneProfileDialog from '../../components/Webnavior/SystemOneProfileDialog.vue'
+import SystemOneProfilePanel from '../../components/Webnavior/SystemOneProfilePanel.vue'
 
 import { useWebnaviorAiControl } from '../../composables/useWebnaviorAiControl'
 import { useWebnaviorNotice } from '../../composables/useWebnaviorNotice'
@@ -14,6 +17,8 @@ const aiControl = useWebnaviorAiControl()
 const notice = useWebnaviorNotice()
 const isLoaded = shallowRef(false)
 const configuredCapability = shallowRef<AiCapability>()
+const editingSystemOneProfile = shallowRef<SystemOneProfile>()
+const systemOneDialogOpen = shallowRef(false)
 
 const requiredCapabilities = [
   { id: 'chat', label: '對話 LLM' },
@@ -104,13 +109,99 @@ async function apply() {
   }
 }
 
-async function initializeSpeechGuard() {
+async function saveSystemOneProfile(input: SystemOneProfileInput) {
   try {
-    await aiControl.initializeSpeechGuard()
-    notice.success(`語意防護基準已建立，共 ${aiControl.speechGuard.value.baselineCount} 筆語料。`)
+    await aiControl.saveSystemOneProfile(input)
+    systemOneDialogOpen.value = false
+    notice.success('System One profile 已儲存。請執行 readiness 後啟用。')
   }
   catch {
-    reportFailure('無法建立語意防護基準。請先套用已驗證的 Embedding Provider。')
+    reportFailure('無法儲存 System One profile。')
+  }
+}
+
+async function inspectSystemOneRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs'>): Promise<SystemOneRuntimeModel> {
+  try {
+    const runtimeModel = await aiControl.inspectSystemOneRuntimeModel(input)
+    notice.success(`目前 System One 載入的模型為 ${runtimeModel.modelId}。`)
+    return runtimeModel
+  }
+  catch {
+    reportFailure('無法讀取 System One 目前載入的模型。請確認網址與網路。')
+    throw new Error('無法讀取 System One 目前載入的模型。')
+  }
+}
+
+async function saveSystemOnePolicy(input: SystemOnePolicyInput) {
+  try {
+    await aiControl.saveSystemOnePolicy(input)
+    notice.success('System One 點餐規則已儲存。')
+  }
+  catch {
+    reportFailure('無法儲存 System One 點餐規則。')
+  }
+}
+async function updateSystemOneProfile(profileId: string, input: SystemOneProfileInput) {
+  try {
+    await aiControl.updateSystemOneProfile(profileId, input)
+    systemOneDialogOpen.value = false
+    notice.success('System One profile 已更新。請重新執行 readiness。')
+  }
+  catch {
+    reportFailure('無法更新 System One profile。')
+  }
+}
+
+function createSystemOneProfile() {
+  editingSystemOneProfile.value = undefined
+  systemOneDialogOpen.value = true
+}
+
+function editSystemOneProfile(profile: SystemOneProfile) {
+  editingSystemOneProfile.value = profile
+  systemOneDialogOpen.value = true
+}
+
+function setSystemOneDialogOpen(open: boolean) {
+  systemOneDialogOpen.value = open
+  if (!open)
+    editingSystemOneProfile.value = undefined
+}
+async function deleteSystemOneProfile(profileId: string) {
+  try {
+    await aiControl.deleteSystemOneProfile(profileId)
+    notice.success('System One profile 已移除。')
+  }
+  catch {
+    reportFailure('無法移除 System One profile。')
+  }
+}
+async function checkSystemOneReadiness(profileId: string) {
+  try {
+    await aiControl.checkSystemOneReadiness(profileId)
+    notice.success('System One backend 與模型已通過 readiness。')
+  }
+  catch {
+    reportFailure('System One readiness 檢查失敗。')
+  }
+}
+async function activateSystemOneProfile(profileId: string) {
+  try {
+    await aiControl.activateSystemOneProfile(profileId)
+    notice.success('System One Fast Path 已啟用。')
+  }
+  catch {
+    reportFailure('無法啟用 System One profile。')
+  }
+}
+
+async function deactivateSystemOneProfile(profileId: string) {
+  try {
+    await aiControl.deactivateSystemOneProfile(profileId)
+    notice.success('System One Fast Path 已停用；Kiosk 會將後續語音需求交給對話助手處理。')
+  }
+  catch {
+    reportFailure('無法停用 System One Fast Path。')
   }
 }
 
@@ -135,7 +226,7 @@ onMounted(load)
           Kiosk AI 能力
         </h1>
         <p :class="['mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-slate-300']">
-          分別管理對話、視覺、語音與語意判斷的 Provider。各能力獨立保存多個來源，可在已驗證項目間切換。
+          分別管理對話、視覺與語音 Provider；System One 另行管理快速語音操作決策。各能力可保存多個來源，並在已驗證項目間切換。
         </p>
       </div>
       <Button :disabled="aiControl.busy.value" @click="load">
@@ -163,6 +254,33 @@ onMounted(load)
       @configure="openCapability"
     />
 
+    <SystemOneProfilePanel
+      :busy="aiControl.busy.value"
+      :profiles="aiControl.systemOneProfiles.value"
+      @activate="activateSystemOneProfile"
+      @create="createSystemOneProfile"
+      @delete="deleteSystemOneProfile"
+      @deactivate="deactivateSystemOneProfile"
+      @edit="editSystemOneProfile"
+      @readiness="checkSystemOneReadiness"
+    />
+
+    <SystemOneProfileDialog
+      :busy="aiControl.busy.value"
+      :inspect-runtime-model="inspectSystemOneRuntimeModel"
+      :open="systemOneDialogOpen"
+      :profile="editingSystemOneProfile"
+      @save="saveSystemOneProfile"
+      @update:open="setSystemOneDialogOpen"
+      @update="updateSystemOneProfile"
+    />
+
+    <SystemOnePolicyPanel
+      :busy="aiControl.busy.value"
+      :policy="aiControl.systemOnePolicy.value"
+      @save="saveSystemOnePolicy"
+    />
+
     <section :class="['rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900']">
       <h2 :class="['m-0 text-lg font-semibold text-slate-950 dark:text-white']">
         套用設定
@@ -172,29 +290,6 @@ onMounted(load)
       </p>
       <Button :disabled="aiControl.busy.value || !aiControl.selections.value.length" @click="apply">
         套用到 Kiosk
-      </Button>
-    </section>
-
-    <section :class="['rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900']">
-      <h2 :class="['m-0 text-lg font-semibold text-slate-950 dark:text-white']">
-        語意防護基準
-      </h2>
-      <p :class="['mb-4 mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300']">
-        以目前已套用的 Embedding Provider 將系統語料建立成 Server 基準，用於過濾新對話的背景人聲。更換 Embedding Provider 或模型後，請重新建立。
-      </p>
-      <p :class="['mb-4 text-sm text-slate-600 dark:text-slate-300']">
-        <template v-if="aiControl.speechGuard.value.ready">
-          已就緒：{{ aiControl.speechGuard.value.baselineCount }} 筆 · {{ aiControl.speechGuard.value.embeddingModelId }}
-        </template>
-        <template v-else-if="aiControl.speechGuard.value.configurationError">
-          {{ aiControl.speechGuard.value.configurationError }} 請先按「套用到 Kiosk」，再建立基準。
-        </template>
-        <template v-else>
-          尚未建立基準；新對話會使用保守的文字與 presence 判斷。
-        </template>
-      </p>
-      <Button :disabled="aiControl.busy.value" @click="initializeSpeechGuard">
-        {{ aiControl.speechGuard.value.ready ? '重新建立語意防護基準' : '建立語意防護基準' }}
       </Button>
     </section>
 

@@ -8,6 +8,7 @@ import { BasicTextarea } from '@proj-airi/ui'
 import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import KioskAsrSimulationPanel from './KioskAsrSimulationPanel.vue'
 import KioskAssistantPresence from './KioskAssistantPresence.vue'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 
@@ -22,9 +23,14 @@ const props = defineProps<{
     mode: KioskAssistantPresenceMode
     title: string
   }
+  executionDurationMs?: number
+  fastPathSimulationBusy: boolean
+  fastPathSimulationStatus?: string
+  fastPathSimulationTrace?: string
   fontSize: number
   messages: readonly ChatHistoryItem[]
   pendingTranscript?: string
+  retryAvailable?: boolean
   sending: boolean
   streamingAssistantMessage?: ChatHistoryItem
   voiceInputLocked: boolean
@@ -33,7 +39,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   activity: []
+  retryMessage: []
   sendMessage: [text: string]
+  simulateAsr: [transcript: string]
 }>()
 
 const { t } = useI18n()
@@ -48,7 +56,9 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
 ])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
-const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && !props.sending && serviceReady.value)
+// Explicit typed input is already attributed to the current customer, so it
+// can supersede a pending model turn instead of forcing a one-question queue.
+const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && serviceReady.value)
 const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
 const voiceOnlyNotice = computed(() => (
   props.voiceInputLocked
@@ -120,7 +130,7 @@ async function sendMessage() {
       />
     </div>
 
-    <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length" class="conversation-progress">
+    <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
         <span>{{ props.pendingTranscript }}</span>
@@ -136,29 +146,46 @@ async function sendMessage() {
           <span>{{ step.label }}</span>
         </li>
       </ol>
+      <output v-if="props.executionDurationMs !== undefined" class="conversation-execution-duration" aria-label="本輪對話處理耗時">
+        <span class="i-solar:stopwatch-bold-duotone h-4 w-4" aria-hidden="true" />
+        <span>本輪對話處理</span>
+        <strong>{{ (props.executionDurationMs / 1000).toFixed(1) }} 秒</strong>
+      </output>
+      <button v-if="props.retryAvailable" type="button" class="conversation-retry" :disabled="props.sending" @click="emit('retryMessage')">
+        <span class="i-solar:restart-bold h-4 w-4" aria-hidden="true" />
+        再試一次
+      </button>
     </div>
 
     <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
       {{ voiceOnlyNotice }}
     </p>
-    <form v-else class="message-composer" @submit.prevent="sendMessage">
-      <BasicTextarea
-        v-model="messageInput"
-        :placeholder="placeholder"
-        class="message-input"
-        @submit="sendMessage"
-        @compositionstart="isComposing = true"
-        @compositionend="isComposing = false"
+    <template v-else>
+      <KioskAsrSimulationPanel
+        :busy="props.fastPathSimulationBusy"
+        :status="props.fastPathSimulationStatus"
+        :trace="props.fastPathSimulationTrace"
+        @simulate="emit('simulateAsr', $event)"
       />
-      <button
-        type="submit"
-        class="send-button"
-        :disabled="!canSend"
-        aria-label="送出訊息"
-      >
-        <div class="i-solar:arrow-up-outline h-5 w-5" />
-      </button>
-    </form>
+      <form class="message-composer" @submit.prevent="sendMessage">
+        <BasicTextarea
+          v-model="messageInput"
+          :placeholder="placeholder"
+          class="message-input"
+          @submit="sendMessage"
+          @compositionstart="isComposing = true"
+          @compositionend="isComposing = false"
+        />
+        <button
+          type="submit"
+          class="send-button"
+          :disabled="!canSend"
+          aria-label="送出訊息"
+        >
+          <div class="i-solar:arrow-up-outline h-5 w-5" />
+        </button>
+      </form>
+    </template>
     <p v-if="!serviceReady" class="service-status" role="status">
       {{ webMcpAdapter.error.value ?? '正在準備互動服務，請稍候。' }}
     </p>
@@ -166,7 +193,7 @@ async function sendMessage() {
 </template>
 
 <style scoped>
-.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; background: transparent; grid-template-rows: minmax(0, 1fr) auto auto; }
+.kiosk-conversation { display: grid; min-width: 0; min-height: 0; overflow: hidden; background: transparent; grid-template-rows: minmax(0, 1fr) auto auto auto; }
 .message-history { min-width: 0; min-height: 0; overflow: hidden; padding: 0 .55rem; background: transparent; }
 .conversation-progress { display: grid; gap: .3rem; padding: 0 .55rem .45rem; background: rgb(1 17 20 / 28%); }
 .message-history :deep([data-chat-message-role]) { display: flex; min-width: 0; max-width: 100%; }
@@ -188,6 +215,8 @@ async function sendMessage() {
 .pending-transcript { display: flex; align-items: center; gap: .4rem; width: fit-content; max-width: 90%; margin: .55rem .2rem .1rem auto; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #c9fffa; background: rgb(17 81 79 / 40%); font-size: .78rem; font-style: italic; }
 .assistant-activity { display: flex; align-items: center; gap: .45rem; width: fit-content; max-width: 90%; margin: .55rem .2rem; border: 1px solid rgb(120 225 209 / 24%); border-radius: 1rem; padding: .5rem .7rem; color: #b9f5ec; background: rgb(17 81 79 / 48%); font-size: .78rem; font-weight: 700; }.activity-orb { width: .55rem; height: .55rem; border-radius: 999px; background: #7ce7d8; box-shadow: 0 0 .8rem #7ce7d8; animation: activity-pulse 1.2s ease-in-out infinite; }.activity-dots { display: flex; gap: .14rem; }.activity-dots i { width: .24rem; height: .24rem; border-radius: 999px; background: currentColor; animation: activity-bounce .9s ease-in-out infinite; }.activity-dots i:nth-child(2) { animation-delay: .12s; }.activity-dots i:nth-child(3) { animation-delay: .24s; }@keyframes activity-pulse { 50% { opacity: .35; transform: scale(.75); } }@keyframes activity-bounce { 50% { opacity: .3; transform: translateY(-.18rem); } }
 .assistant-activity-steps { display: grid; gap: .3rem; margin: .1rem .2rem; padding: 0; color: #c7ebe6; font-size: .75rem; font-weight: 700; list-style: none; }.assistant-activity-step { display: flex; align-items: center; gap: .4rem; }.activity-step-marker { width: .42rem; height: .42rem; flex: none; border-radius: 50%; background: #6faaa3; }.assistant-activity-step.is-selected .activity-step-marker, .assistant-activity-step.is-executing .activity-step-marker { background: #7ce7d8; box-shadow: 0 0 .65rem #7ce7d8; }.assistant-activity-step.is-done .activity-step-marker { background: #8edb9a; }.assistant-activity-step.is-error .activity-step-marker { background: #f3b391; }
+.conversation-execution-duration { display: flex; align-items: center; gap: .35rem; width: fit-content; margin: .1rem .2rem; color: #a9d9d2; font-size: .72rem; }.conversation-execution-duration strong { color: #e4fffa; font-variant-numeric: tabular-nums; }
+.conversation-retry { display: flex; width: fit-content; align-items: center; gap: .35rem; margin: .1rem .2rem; border: 1px solid rgb(120 225 209 / 42%); border-radius: .7rem; padding: .42rem .6rem; color: #d9fffa; background: rgb(17 81 79 / 42%); font-size: .75rem; font-weight: 800; }.conversation-retry:disabled { cursor: default; opacity: .45; }
 .message-composer { display: flex; min-width: 0; gap: .5rem; border-top: 1px solid rgb(255 255 255 / 10%); padding: .55rem; background: rgb(1 17 20 / 24%); }
 .message-input { min-width: 0; flex: 1; resize: none; border: 1px solid rgb(255 255 255 / 18%); border-radius: .8rem; padding: .45rem .7rem; color: #ecfffb; background: rgb(255 255 255 / 8%); font-size: var(--conversation-font-size); outline: none; }
 .message-input::placeholder { color: rgb(217 250 246 / 60%); }

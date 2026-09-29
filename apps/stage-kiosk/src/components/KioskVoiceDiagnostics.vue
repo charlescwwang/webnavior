@@ -1,10 +1,6 @@
 <script setup lang="ts">
 export interface KioskVoiceDiagnosticEntry {
-  decision?: 'candidate' | 'continue' | 'ignore' | 'interrupt'
-  embeddingAvailable?: boolean
   id: number
-  reason?: string
-  speechGuard?: { label: string, score: number }
   status: 'recognizing' | 'unrecognized' | 'recognized' | 'decided' | 'failed'
   text?: string
 }
@@ -20,13 +16,7 @@ function statusLabel(entry: KioskVoiceDiagnosticEntry) {
     return '已辨識，等待判斷'
   if (entry.status === 'failed')
     return '辨識失敗'
-  return entry.decision === 'continue'
-    ? '放行'
-    : entry.decision === 'candidate'
-      ? '等待確認'
-      : entry.decision === 'interrupt'
-        ? '中斷目前工作'
-        : '忽略'
+  return '快速處理完成'
 }
 </script>
 
@@ -41,9 +31,6 @@ function statusLabel(entry: KioskVoiceDiagnosticEntry) {
       <li v-for="entry in props.entries" :key="entry.id" class="voice-diagnostics-entry">
         <strong>{{ statusLabel(entry) }}</strong>
         <span v-if="entry.text" class="voice-diagnostics-text">「{{ entry.text }}」</span>
-        <span v-if="entry.speechGuard">Speech Guard：{{ entry.speechGuard.label }} · {{ entry.speechGuard.score.toFixed(2) }}</span>
-        <span v-if="entry.decision">Turn：{{ entry.decision }} · {{ entry.reason }}</span>
-        <span v-else-if="entry.embeddingAvailable === false">Speech Guard：無可用 baseline</span>
       </li>
     </ol>
   </aside>

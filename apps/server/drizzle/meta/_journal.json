@@ -281,6 +281,41 @@
       "when": 1790568000000,
       "tag": "0039_kiosk_agent_interaction",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790654400000,
+      "tag": "0040_kiosk_system_one_profiles",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790740800000,
+      "tag": "0041_remove_kiosk_speech_guard",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790827200000,
+      "tag": "0042_kiosk_system_one_policies",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1790913600000,
+      "tag": "0043_kiosk_system_one_implementations",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0044_kiosk_system_one_decision_instruction",
+      "breakpoints": true
     }
   ]
 }

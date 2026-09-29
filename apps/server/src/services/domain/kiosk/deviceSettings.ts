@@ -34,6 +34,7 @@ const overrides = partial(strictObject({
     speechPadMs: pipe(number(), integer(), minValue(0), maxValue(10_000)),
   }),
   voiceDiagnosticsEnabled: boolean(),
+  conversationDiagnosticsEnabled: boolean(),
 }))
 const version = pipe(number(), integer(), minValue(1))
 

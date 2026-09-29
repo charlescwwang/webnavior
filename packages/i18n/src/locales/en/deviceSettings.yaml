@@ -33,10 +33,12 @@ fields:
   presenceVisionMode: Presence vision mode
   voiceVadSettings: Silero voice detection
   voiceDiagnosticsEnabled: Voice diagnostics (testing)
+  conversationDiagnosticsEnabled: Conversation duration (testing)
 fieldDescriptions:
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
   faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
   voiceDiagnosticsEnabled: Enable only while testing. The kiosk shows ASR, Speech Guard, and turn-decision results; ordinary visitors never see this information.
+  conversationDiagnosticsEnabled: Enable only while testing. The conversation shows the time from sending a request to receiving final text and browser-tool results; it excludes ASR and speech playback.
 vad:
   title: Silero voice detection
   description: Controls when recording starts and ends, and how much audio is retained around an utterance before transcription.

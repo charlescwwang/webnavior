@@ -39,11 +39,8 @@ describe('webnavior AI runtime compiler', () => {
             { id: 'vision-model' },
             { id: 'asr-model' },
             { id: 'tts-model' },
-            { id: 'embedding-model' },
           ] }), { status: 200 })
         }
-        if (endpoint.endsWith('/embeddings'))
-          return new Response(JSON.stringify({ data: [{ embedding: [0.1] }] }), { status: 200 })
         if (endpoint.endsWith('/audio/transcriptions'))
           return new Response(JSON.stringify({ text: '' }), { status: 200 })
         if (endpoint.endsWith('/audio/speech'))
@@ -60,7 +57,7 @@ describe('webnavior AI runtime compiler', () => {
   })
 
   it('rebuilds Kiosk runtime only from active, verified capability profiles', async () => {
-    const capabilities: WebnaviorAiCapability[] = ['chat', 'vision', 'asr', 'tts', 'embedding']
+    const capabilities: WebnaviorAiCapability[] = ['chat', 'vision', 'asr', 'tts']
     for (const capability of capabilities) {
       const profile = await control.createProfile(capability, {
         baseURL: 'https://models.example/v1',
@@ -77,7 +74,7 @@ describe('webnavior AI runtime compiler', () => {
     }
 
     await expect(runtime.applyBindings()).resolves.toEqual({
-      appliedCapabilities: expect.arrayContaining(['chat', 'vision', 'asr', 'tts', 'embedding']),
+      appliedCapabilities: expect.arrayContaining(['chat', 'vision', 'asr', 'tts']),
     })
     await expect(runtime.modelFor('chat')).resolves.toBe('webnavior/chat')
     await expect(runtime.modelFor('vision')).resolves.toBe('webnavior/vision')
@@ -94,11 +91,6 @@ describe('webnavior AI runtime compiler', () => {
     expect(store.get('WEBNAVIOR_AUDIO_CONFIG')).toMatchObject({
       asr: { modelName: 'webnavior:asr', upstreamModel: 'asr-model' },
       tts: { modelName: 'webnavior:tts', upstreamModel: 'tts-model', voice: 'zh-TW-Test' },
-    })
-    expect(store.get('WEBNAVIOR_EMBEDDING_CONFIG')).toMatchObject({
-      modelName: 'embedding-model',
-      provider: 'openai-compatible',
-      timeoutMs: 7500,
     })
   })
 })

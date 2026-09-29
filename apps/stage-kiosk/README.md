@@ -56,6 +56,16 @@ Each customer starts an anonymous Kiosk session when they touch the screen, type
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 
 This is intentionally separate from AIRI's general chat history. The current version has no membership identity; a later member lookup can attach an identity to the same Kiosk session lifecycle without retaining anonymous conversations.
+Successful Fast Path voice turns and compact real menu/cart results are saved in
+that same visitor session. Main Agent receives a bounded recent conversation
+and can use the read-only `kiosk_session_history` tool to page older text from
+this visitor only; System One receives only the current phase and finite
+decision context, not the conversation history.
+When an ASR turn escalates, the Main Agent receives a sanitized snapshot of the
+current menu or checkout phase and available payment methods. Typed turns read
+the same state through a host-only, read-only WebMCP tool. Tax IDs, carrier
+codes, and raw checkout objects are never included in that conversation hint;
+tool execution still checks the browser's live state.
 
 ## Customer-facing assistance state
 

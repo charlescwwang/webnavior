@@ -3,9 +3,8 @@ import type { Context } from 'hono'
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { KioskAgentInteractionState } from '../../services/domain/kiosk-agent-interaction'
-import type { KioskEmbeddingGateway } from '../../services/domain/kiosk-embedding'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
-import type { KioskSpeechGuardRuntime } from '../../services/domain/kiosk-speech-guard/runtime'
+import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
 import type { HonoEnv } from '../../types/hono'
 
 import { randomInt } from 'node:crypto'
@@ -15,7 +14,7 @@ import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
 import { compactToolResultForModel, createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
-import { calculateCosineSimilarity, evaluateKioskTurn } from '../../services/domain/kiosk-turn-decision'
+import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
@@ -32,7 +31,11 @@ const visitorSessionSchema = object({
 const interactionEntrySchema = object({
   content: pipe(string(), maxLength(32_000)),
   kind: picklist(['user_text', 'assistant_text', 'asr_transcript', 'tool_call', 'tool_result', 'service_event', 'order_result']),
-  metadata: object({}),
+  metadata: optional(object({
+    decisionRoute: optional(literal('fast_path')),
+    name: optional(pipe(string(), regex(/^[\w:-]+$/), maxLength(120))),
+    source: optional(pipe(string(), maxLength(80))),
+  })),
 })
 
 const endVisitorSessionSchema = object({
@@ -56,9 +59,22 @@ const kioskToolResultSchema = object({
 
 const conversationMessageSchema = object({
   content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
+  decisionState: optional(object({
+    allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
+    interactionState: optional(object({ lastAddedItemName: optional(pipe(string(), maxLength(120))), matchingCartLines: pipe(number(), integer(), minValue(0)), pendingAction: optional(pipe(string(), maxLength(80))), pendingIntent: optional(pipe(string(), maxLength(80))), selectedItemName: optional(pipe(string(), maxLength(120))) })),
+    paymentState: optional(pipe(string(), maxLength(40))),
+    phase: pipe(string(), regex(/^[a-z_]+$/), maxLength(60)),
+  })),
   toolResults: optional(array(kioskToolResultSchema), []),
   tools: optional(array(kioskToolSchema), []),
 })
+
+interface KioskConversationDecisionState {
+  allowedPaymentMethods?: Array<'card' | 'mobile'>
+  interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }
+  paymentState?: string
+  phase: string
+}
 
 const orderResultSchema = object({
   environment: picklist(['test', 'live']),
@@ -82,12 +98,20 @@ const speechSchema = object({
   text: pipe(string(), regex(/\S/), maxLength(8_000)),
 })
 
-const turnDecisionSchema = object({
-  activeWork: boolean(),
-  asrConfidence: optional(number()),
-  currentRequest: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
+const interactionDecisionSchema = object({
+  candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
+  decisionState: optional(object({
+    allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
+    checkoutSnapshot: optional(unknown()),
+    constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(8)) })),
+    interactionState: optional(object({ lastAddedItemName: optional(pipe(string(), maxLength(120))), matchingCartLines: pipe(number(), integer(), minValue(0)), pendingAction: optional(pipe(string(), maxLength(80))), pendingIntent: optional(pipe(string(), maxLength(80))), selectedItemName: optional(pipe(string(), maxLength(120))) })),
+    paymentState: optional(pipe(string(), maxLength(40))),
+    phase: pipe(string(), regex(/^[a-z_]+$/), maxLength(60)),
+    references: optional(pipe(array(object({ label: pipe(string(), maxLength(120)), refId: pipe(string(), maxLength(120)) })), maxLength(32))),
+  })),
+  includeTrace: optional(boolean()),
   presenceState: optional(picklist(['EMPTY', 'PASSING', 'DISTANT', 'APPROACHING', 'ENGAGED'])),
-  text: pipe(string(), regex(/\S/), maxLength(8_000)),
+  transcript: pipe(string(), regex(/\S/), maxLength(8_000)),
 })
 
 /** Dependencies that configure the kiosk device enrollment transport. */
@@ -110,11 +134,7 @@ export interface KioskRoutesOptions {
     speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
     transcribe: (input: { audio: File, modelName: string }) => Promise<string>
   }
-  /** Optional Server-only semantic enrichment for candidate speech decisions. */
-  embeddingGateway?: KioskEmbeddingGateway
-  /** Persisted semantic baseline used only before a new conversation begins. */
-  speechGuard?: KioskSpeechGuardRuntime
-  turnDecisionObserver?: { record: (input: { decision: string, embeddingAvailable: boolean, presenceState?: string, reason: string, speechGuardLabel?: string }) => void }
+  systemOne?: ReturnType<typeof createKioskSystemOneService>
   /** Development-only trace of the tool protocol; never include customer content or tool arguments. */
   toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
@@ -209,35 +229,23 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     return c.json({ text })
   })
 
-  routes.post('/turn-decisions', async (c) => {
-    const device = await resolveAuthenticatedDevice(c, options.kioskService)
-    const result = safeParse(turnDecisionSchema, await c.req.json().catch(() => null))
+  routes.post('/interaction-decisions', async (c) => {
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    const result = safeParse(interactionDecisionSchema, await c.req.json().catch(() => null))
     if (!result.success)
-      throw createBadRequestError('Invalid kiosk turn decision request', 'INVALID_REQUEST', result.issues)
-    const semanticSimilarity = await resolveSemanticSimilarity(options.embeddingGateway, result.output.currentRequest, result.output.text)
-    const speechGuard = result.output.activeWork
-      ? undefined
-      : await resolveInitialSpeechGuard(options.speechGuard, result.output.text)
-    const evaluated = evaluateKioskTurn({ ...result.output, semanticSimilarity, speechGuardLabel: speechGuard?.label })
-    options.turnDecisionObserver?.record({
-      decision: evaluated.decision,
-      embeddingAvailable: semanticSimilarity !== undefined || speechGuard !== undefined,
+      throw createBadRequestError('Invalid kiosk interaction decision request', 'INVALID_REQUEST', result.issues)
+    if (!options.systemOne)
+      return c.json({ kind: 'UNAVAILABLE' })
+    return c.json(await decideInteraction({
+      candidates: result.output.candidates,
+      decisionState: result.output.decisionState,
+      includeTrace: result.output.includeTrace,
+      invoke: options.systemOne.decide,
+      maxActionCandidates: await options.systemOne.maxActionCandidates(),
+      policy: await options.systemOne.getPolicy(),
       presenceState: result.output.presenceState,
-      reason: evaluated.reason,
-      speechGuardLabel: speechGuard?.label,
-    })
-    const voiceDiagnosticsEnabled = (await options.kioskService.getDeviceSettings(device.id)).effective.voiceDiagnosticsEnabled
-    return c.json({
-      ...evaluated,
-      ...(voiceDiagnosticsEnabled
-        ? {
-            diagnostic: {
-              embeddingAvailable: semanticSimilarity !== undefined || speechGuard !== undefined,
-              speechGuard: speechGuard && { label: speechGuard.label, score: speechGuard.score },
-            },
-          }
-        : {}),
-    })
+      transcript: result.output.transcript,
+    }))
   })
 
   routes.post('/audio/speech', async (c) => {
@@ -287,7 +295,32 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       deviceId: device.id,
       visitorSessionId: c.req.param('visitorSessionId'),
     })
+    if (entry.kind === 'tool_result' && entry.metadata?.decisionRoute === 'fast_path' && typeof entry.metadata.name === 'string') {
+      const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
+      const interaction = recordToolResults(transcript.session.agentInteraction, [{ content: entry.content, name: entry.metadata.name }])
+      if (interaction !== transcript.session.agentInteraction)
+        await options.kioskService.updateDeviceAgentInteraction({ deviceId: device.id, interaction, visitorSessionId: transcript.session.id })
+    }
     return c.json({ entry }, 201)
+  })
+
+  routes.get('/visitor-sessions/:visitorSessionId/history', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
+    if (transcript.session.state !== 'active')
+      throw createBadRequestError('Visitor session is not active', 'SESSION_INACTIVE')
+    const conversation = conversationTextEntries(transcript.entries)
+    const beforeQuery = c.req.query('before')
+    const requestedBefore = beforeQuery === undefined ? conversation.length : Number(beforeQuery)
+    if (!Number.isSafeInteger(requestedBefore) || requestedBefore < 0)
+      throw createBadRequestError('History cursor must be a non-negative integer', 'INVALID_REQUEST')
+    const before = Math.min(requestedBefore, conversation.length)
+    const start = Math.max(0, before - 16)
+    return c.json({
+      entries: conversation.slice(start, before).map((entry, index) => ({ content: entry.content.slice(0, 2_000), index: start + index, role: entry.kind === 'user_text' ? 'user' : 'assistant' })),
+      ...(start > 0 ? { nextBefore: start } : {}),
+      total: conversation.length,
+    })
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/media', async (c) => {
@@ -419,6 +452,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       return c.body(createKioskReplyEventStream({
         agentInteraction,
         content,
+        decisionState: result.output.decisionState,
         deviceId: device.id,
         kioskService: options.kioskService,
         llmGateway: options.llmGateway,
@@ -437,6 +471,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const answer = await completeKioskReply({
       agentInteraction,
       content,
+      decisionState: result.output.decisionState,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
       runtimeModelPolicy: options.runtimeModelPolicy,
@@ -585,44 +620,6 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   return routes
 }
 
-async function resolveSemanticSimilarity(
-  embeddingGateway: KioskEmbeddingGateway | undefined,
-  currentRequest: string | undefined,
-  candidateText: string,
-) {
-  if (!embeddingGateway || !currentRequest)
-    return undefined
-
-  try {
-    const embeddings = await embeddingGateway.embed([currentRequest, candidateText])
-    if (!embeddings)
-      return undefined
-    const [currentEmbedding, candidateEmbedding] = embeddings
-    if (!currentEmbedding || !candidateEmbedding)
-      return undefined
-    return calculateCosineSimilarity(currentEmbedding, candidateEmbedding)
-  }
-  catch {
-    // The turn policy retains its intent-only fallback when a remote embedding
-    // provider times out or is reconfigured. Customer ordering must not wait.
-    return undefined
-  }
-}
-
-async function resolveInitialSpeechGuard(speechGuard: KioskSpeechGuardRuntime | undefined, text: string) {
-  if (!speechGuard)
-    return undefined
-  try {
-    return await speechGuard.classifyInitialSpeech(text)
-  }
-  catch {
-    // Speech Guard is an optional semantic enrichment. A remote embedding
-    // outage must fall back to the conservative intent policy, not block a
-    // genuine customer from starting a conversation.
-    return undefined
-  }
-}
-
 function parseOptionalMediaDate(value: unknown): Date | undefined | null {
   if (value === null)
     return undefined
@@ -697,6 +694,7 @@ async function completeKioskReply(input: {
   agentInteraction?: KioskAgentInteractionState
   abortSignal?: AbortSignal
   content?: string
+  decisionState?: KioskConversationDecisionState
   kioskService: KioskService
   llmGateway: KioskRoutesOptions['llmGateway']
   runtimeModelPolicy: KioskRoutesOptions['runtimeModelPolicy']
@@ -759,6 +757,7 @@ type KioskReplyEvent
 interface KioskReplyStreamInput {
   agentInteraction: KioskAgentInteractionState
   content?: string
+  decisionState?: KioskConversationDecisionState
   deviceId: string
   kioskService: KioskService
   llmGateway: KioskRoutesOptions['llmGateway']
@@ -962,10 +961,25 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
  * Keep instructions in their original precedence order, but serialize them
  * into one leading message so the same request shape works across providers.
  */
-function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'profile'>) {
+function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile'>) {
   return [
     { content: createCharacterInstructions(input.profile.snapshot), title: '角色與店別設定' },
     input.agentInteraction ? { content: createInteractionInstructions(input.agentInteraction), title: '本次點餐互動規則' } : undefined,
+    input.decisionState
+      ? {
+          content: [
+            `目前 Kiosk 畫面：${input.decisionState.phase}`,
+            `付款狀態：${input.decisionState.paymentState ?? 'unknown'}`,
+            `目前可選付款方式：${input.decisionState.allowedPaymentMethods?.join('、') || '無'}`,
+            input.decisionState.interactionState?.selectedItemName ? `目前選取餐點：${input.decisionState.interactionState.selectedItemName}` : undefined,
+            input.decisionState.interactionState?.lastAddedItemName ? `最近加入餐點：${input.decisionState.interactionState.lastAddedItemName}` : undefined,
+            input.decisionState.interactionState?.pendingAction ? `目前等待顧客確認：${input.decisionState.interactionState.pendingAction}` : undefined,
+            input.decisionState.interactionState?.pendingIntent ? `目前等待顧客釐清：${input.decisionState.interactionState.pendingIntent}` : undefined,
+            '這是本輪開始時的畫面摘要；執行操作前仍以點餐工具的最新狀態為準。',
+          ].filter(Boolean).join('\n'),
+          title: '目前點餐畫面',
+        }
+      : undefined,
     input.profile.snapshot.characterCard?.postHistoryInstructions
       ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
       : undefined,
@@ -1010,12 +1024,7 @@ function toConversationMessages(
   // receives conversational text plus only the tool call required to pair the
   // current browser result; older tool payloads are represented by the compact
   // Agent interaction state in the system instructions.
-  const conversationEntries = entries.flatMap((entry) => {
-    if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
-      return [{ kind: entry.kind, content: entry.content }]
-    return []
-  })
-  const conversation = selectBoundedConversationText(conversationEntries)
+  const conversation = selectBoundedConversationText(conversationTextEntries(entries))
   if (pendingToolCallIds.length === 0)
     return conversation
 
@@ -1029,6 +1038,18 @@ function toConversationMessages(
       return [...conversation, { role: 'assistant', content: '', tool_calls: toolCalls }]
   }
   return conversation
+}
+
+function conversationTextEntries(entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries']) {
+  return entries.flatMap((entry) => {
+    if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
+      return [{ kind: entry.kind, content: entry.content }]
+    // Only completed Fast Path ASR turns join the Agent conversation. An ASR
+    // utterance escalated to Agent is appended again as user_text by /messages.
+    if (entry.kind === 'asr_transcript' && entry.metadata?.decisionRoute === 'fast_path')
+      return [{ kind: 'user_text' as const, content: entry.content }]
+    return []
+  })
 }
 
 function isChatCompletion(value: unknown): value is { choices: [{ message: { content?: string | null, tool_calls?: KioskToolCall[] } }] } {

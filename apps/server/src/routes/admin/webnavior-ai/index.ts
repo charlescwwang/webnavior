@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import type { GenericSchema, InferOutput } from 'valibot'
 
-import type { KioskSpeechGuardRuntime } from '../../../services/domain/kiosk-speech-guard/runtime'
+import type { createKioskSystemOneService } from '../../../services/domain/kiosk-system-one'
 import type { WebnaviorAiControlService } from '../../../services/domain/webnavior-ai-control'
 import type { WebnaviorAiRuntimeService } from '../../../services/domain/webnavior-ai-control/runtime'
 import type { HonoEnv } from '../../../types/hono'
@@ -19,7 +19,7 @@ const providerProfileSchema = object({
   modelId: optional(pipe(string(), maxLength(300))),
   name: pipe(string(), nonEmpty('name is required'), maxLength(120)),
   plaintextKey: optional(pipe(string(), maxLength(8192))),
-  timeoutMs: pipe(number(), minValue(1000), maxValue(30_000)),
+  timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
   voice: optional(pipe(string(), maxLength(200))),
 })
 
@@ -32,7 +32,32 @@ const selectionSchema = object({
   providerProfileId: pipe(string(), nonEmpty('providerProfileId is required'), maxLength(120)),
 })
 
-const capabilities = ['chat', 'vision', 'asr', 'tts', 'embedding'] as const
+const systemOneProfileSchema = object({
+  baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
+  implementation: picklist(['dasein', 'lookski']),
+  modelId: pipe(string(), nonEmpty('modelId is required'), maxLength(300)),
+  name: pipe(string(), nonEmpty('name is required'), maxLength(120)),
+  plaintextKey: optional(pipe(string(), maxLength(8192))),
+  timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
+})
+
+const systemOneRuntimeModelSchema = object({
+  baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
+  implementation: picklist(['dasein', 'lookski']),
+  timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
+})
+
+const updateSystemOneProfileSchema = object({
+  ...systemOneProfileSchema.entries,
+  clearApiKey: optional(boolean()),
+})
+
+const systemOnePolicySchema = object({
+  decisionInstruction: pipe(string(), maxLength(12_000)),
+  storeInstruction: pipe(string(), maxLength(2_000)),
+})
+
+const capabilities = ['chat', 'vision', 'asr', 'tts'] as const
 
 async function parseBody<S extends GenericSchema>(c: Context<HonoEnv>, schema: S): Promise<InferOutput<S>> {
   const body = await c.req.json().catch(() => null)
@@ -51,16 +76,17 @@ async function parseBody<S extends GenericSchema>(c: Context<HonoEnv>, schema: S
 export function createAdminWebnaviorAiRoutes(deps: {
   runtimeService: WebnaviorAiRuntimeService
   service: WebnaviorAiControlService
-  speechGuard: KioskSpeechGuardRuntime
+  systemOne: ReturnType<typeof createKioskSystemOneService>
 }) {
-  const { runtimeService, service, speechGuard } = deps
+  const { runtimeService, service, systemOne } = deps
   return new Hono<HonoEnv>()
     .use('*', authGuard)
     .use('*', adminGuard)
     .get('/', async c => c.json({
       profiles: await service.listProfiles(),
       selections: await service.listSelections(),
-      speechGuard: await speechGuard.getStatus(),
+      systemOnePolicy: await systemOne.getPolicy(),
+      systemOneProfiles: await systemOne.list(),
     }))
     .post('/capabilities/:capability/providers', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
@@ -108,7 +134,20 @@ export function createAdminWebnaviorAiRoutes(deps: {
       return c.json(await service.selectProfile(capability, input.providerProfileId))
     })
     .post('/apply', async c => c.json(await runtimeService.applyBindings()))
-    .post('/speech-guard:initialize', async c => c.json(await speechGuard.initialize()))
+    .put('/system-one/policy', async c => c.json(await systemOne.savePolicy(await parseBody(c, systemOnePolicySchema))))
+    .post('/system-one/runtime-model:inspect', async c => c.json(await systemOne.inspectRuntimeModel(await parseBody(c, systemOneRuntimeModelSchema))))
+    .post('/system-one/profiles', async c => c.json(await systemOne.save(await parseBody(c, systemOneProfileSchema)), 201))
+    .patch('/system-one/profiles/:profileId', async c => c.json(await systemOne.update(c.req.param('profileId'), await parseBody(c, updateSystemOneProfileSchema))))
+    .delete('/system-one/profiles/:profileId', async (c) => {
+      await systemOne.delete(c.req.param('profileId'))
+      return c.body(null, 204)
+    })
+    .post('/system-one/profiles/:profileId/readiness', async c => c.json(await systemOne.readiness(c.req.param('profileId'))))
+    .put('/system-one/active-profile/:profileId', async c => c.json(await systemOne.activate(c.req.param('profileId'))))
+    .delete('/system-one/active-profile/:profileId', async (c) => {
+      await systemOne.deactivate(c.req.param('profileId'))
+      return c.body(null, 204)
+    })
 }
 
 function parseCapability(value: string) {

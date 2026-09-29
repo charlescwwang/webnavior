@@ -82,6 +82,7 @@ function parseCatalog(value: unknown): PosCatalog {
 
     return {
       available: item.available,
+      aliases: Array.isArray(item.aliases) && item.aliases.every(alias => typeof alias === 'string' && alias.trim()) ? item.aliases : [],
       category: requiredString(item.category, 'category'),
       description: requiredString(item.description, 'description'),
       id: requiredString(item.id, 'id'),

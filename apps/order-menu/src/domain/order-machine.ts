@@ -17,6 +17,8 @@ export interface MenuOptionGroup {
 export type RecommendationTag = 'fried' | 'pork-free' | 'rice'
 
 export interface MenuItem {
+  /** Customer-spoken names supplied by the catalog, not inferred from categories. */
+  aliases?: string[]
   /** The POS can retain an unavailable item for customer-facing explanation, but it cannot be ordered. */
   available?: boolean
   id: string
@@ -525,11 +527,15 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   let catalogRevision: string | undefined
   const cart: CartLine[] = []
   let selection: Selection | undefined
+  let lastAddedLineId: string | undefined
   let fulfillmentMode: FulfillmentMode | undefined
   let paymentId: string | undefined
   let acceptedOrder: SubmittedOrder | undefined
   let uncertainOrder: SubmittedOrder | undefined
   let pendingSubmission: Promise<SubmittedOrder> | undefined
+  // Each successful write advances its owning domain, even when the visible
+  // snapshot later returns to an earlier value (the ABA stale-plan case).
+  const revisions = { cart: 0, menu: 0, selectedItem: 0 }
 
   function invalidatePayment() {
     paymentId = undefined
@@ -547,6 +553,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (item.available === false)
       throw new Error(`${item.name} is currently unavailable.`)
     selection = { itemId, quantity: 1, options: defaultOptionsFor(item) }
+    revisions.selectedItem += 1
     return { ...selection, options: { ...selection.options } }
   }
 
@@ -563,6 +570,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (!group?.values.some(value => value.id === valueId))
       throw new Error(`Invalid option ${groupId}:${valueId} for ${item.name}.`)
     current.options = { ...current.options, [groupId]: valueId }
+    revisions.selectedItem += 1
     return { ...current, options: { ...current.options } }
   }
 
@@ -571,6 +579,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20)
       throw new Error('Quantity must be an integer from 1 to 20.')
     current.quantity = quantity
+    revisions.selectedItem += 1
     return { ...current, options: { ...current.options } }
   }
 
@@ -581,7 +590,10 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (matchingLine) {
       invalidatePayment()
       matchingLine.quantity += current.quantity
+      lastAddedLineId = matchingLine.id
       selection = undefined
+      revisions.cart += 1
+      revisions.selectedItem += 1
       return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart, fulfillmentMode, catalogRevision) }
     }
 
@@ -595,7 +607,10 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
       unitPrice: resolveUnitPrice(item, current.options),
     }
     cart.push(line)
+    lastAddedLineId = line.id
     selection = undefined
+    revisions.cart += 1
+    revisions.selectedItem += 1
     return { line: { ...line, options: { ...line.options } }, cart: cloneCart(cart, fulfillmentMode, catalogRevision) }
   }
 
@@ -605,6 +620,9 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
       throw new Error(`Unknown cart line: ${lineId}`)
     invalidatePayment()
     cart.splice(index, 1)
+    if (lastAddedLineId === lineId)
+      lastAddedLineId = undefined
+    revisions.cart += 1
     return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
@@ -617,6 +635,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
       throw new Error(`Unknown cart line: ${lineId}`)
     invalidatePayment()
     line.quantity = quantity
+    revisions.cart += 1
     return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
@@ -635,6 +654,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     invalidatePayment()
     line.options = { ...line.options, [groupId]: valueId }
     line.unitPrice = resolveUnitPrice(item, line.options)
+    revisions.cart += 1
 
     // Preserve the one-line-per-identical-choice invariant after an edit. The
     // remaining line keeps its stable ID so a caller can continue editing it.
@@ -642,6 +662,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (matchingLine) {
       matchingLine.quantity += line.quantity
       cart.splice(lineIndex, 1)
+      if (lastAddedLineId === line.id)
+        lastAddedLineId = matchingLine.id
       return { cart: cloneCart(cart, fulfillmentMode, catalogRevision), line: { ...matchingLine, options: { ...matchingLine.options } } }
     }
 
@@ -658,14 +680,18 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
 
     cart.splice(0)
     selection = undefined
+    lastAddedLineId = undefined
     fulfillmentMode = undefined
     paymentId = undefined
+    revisions.cart += 1
+    revisions.selectedItem += 1
     return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
   function setFulfillmentMode(mode: FulfillmentMode) {
     invalidatePayment()
     fulfillmentMode = mode
+    revisions.cart += 1
     return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
@@ -713,6 +739,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (!nextPaymentId.trim())
       throw new Error('Payment ID is required before submitting the order.')
     paymentId = nextPaymentId
+    revisions.cart += 1
     return cloneCart(cart, fulfillmentMode, catalogRevision, paymentId)
   }
 
@@ -720,11 +747,14 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   function reset() {
     cart.splice(0)
     selection = undefined
+    lastAddedLineId = undefined
     acceptedOrder = undefined
     uncertainOrder = undefined
     pendingSubmission = undefined
     fulfillmentMode = undefined
     paymentId = undefined
+    revisions.cart += 1
+    revisions.selectedItem += 1
     return cloneCart(cart, fulfillmentMode, catalogRevision)
   }
 
@@ -739,6 +769,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
       throw new Error('The POS catalog has no available items.')
     catalog = [...nextMenu]
     catalogRevision = revision
+    revisions.menu += 1
   }
 
   return {
@@ -746,7 +777,11 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     clearCart,
     confirmOrder,
     getCart: () => cloneCart(cart, fulfillmentMode, catalogRevision, paymentId),
+    /** The last successfully added line, if it still exists in this cart. */
+    getLastAddedLineId: () => lastAddedLineId,
     getMenu: (category?: string) => category ? catalog.filter(item => item.category === category) : [...catalog],
+    /** Monotonic write revisions used to reject stale kiosk plans, including edit-then-undo. */
+    getRevisions: () => ({ ...revisions }),
     getSelection: () => selection ? { ...selection, options: { ...selection.options } } : undefined,
     removeFromCart,
     reset,

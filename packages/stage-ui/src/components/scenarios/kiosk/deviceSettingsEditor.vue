@@ -73,7 +73,7 @@ function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
     <p>{{ t('deviceSettings.description') }}</p>
     <div v-for="key in genericSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
-      <p v-if="key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
+      <p v-if="key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled' || key === 'conversationDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
         {{ t(`deviceSettings.fieldDescriptions.${key}`) }}
       </p>
       <label :class="['flex items-center gap-2']">

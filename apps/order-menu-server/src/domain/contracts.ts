@@ -26,6 +26,7 @@ export interface CatalogOptionGroup {
 
 export interface CatalogItem {
   available: boolean
+  aliases?: string[]
   category: string
   description: string
   id: string

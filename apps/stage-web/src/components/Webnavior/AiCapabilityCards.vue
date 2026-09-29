@@ -16,7 +16,6 @@ const capabilities: Array<{ description: string, id: AiCapability, title: string
   { id: 'vision', title: '視覺 VLM', description: '處理主動招呼或現場視覺理解。' },
   { id: 'asr', title: '語音辨識 ASR', description: '將顧客語音安全地轉成文字。' },
   { id: 'tts', title: '語音回覆 TTS', description: '將 Kiosk 的回應轉成語音播放。' },
-  { id: 'embedding', title: '語意判斷 Embedding', description: '協助 speech guard 判斷背景語音與改口。' },
 ]
 const selectionByCapability = computed(() => new Map(props.selections.map(selection => [selection.capability, selection])))
 const profilesByCapability = computed(() => new Map(capabilities.map(capability => [

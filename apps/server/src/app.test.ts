@@ -52,6 +52,7 @@ function createTestDeps() {
         format: 'vrm' as const,
       })),
     } as any,
+    kioskSystemOneService: {} as any,
     providerService: {} as any,
     fluxService: {} as any,
     fluxTransactionService: {} as any,

@@ -78,6 +78,23 @@ export interface KioskToolCall {
   type: 'function'
 }
 
+/** Safe current-screen summary supplied to Main Agent after an ASR escalation. */
+export interface KioskConversationDecisionState {
+  allowedPaymentMethods?: Array<'card' | 'mobile'>
+  interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }
+  paymentState?: string
+  phase: string
+}
+
+/** A finite decision returned by the Server-owned Dasein System One route. */
+export type KioskInteractionDecision
+  = | { actionId: string, confidence?: number, kind: 'FAST_ACTION' }
+    | { confidence?: number, kind: 'CLARIFICATION' }
+    | { confidence?: number, kind: 'INCOMPLETE' }
+    | { confidence?: number, kind: 'IGNORE' }
+    | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
+    | { kind: 'UNAVAILABLE' }
+
 /** The Server's non-destructive guidance state for the active ordering interaction. */
 export type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferred'
 
@@ -156,6 +173,12 @@ export async function appendKioskInteraction(input: {
   })
 }
 
+/** Reads a bounded page of text from the authenticated visitor's own session. */
+export async function fetchKioskSessionHistory(input: { before?: number, visitorSessionId: string }) {
+  const cursor = input.before === undefined ? '' : `?before=${input.before}`
+  return await request<{ entries: Array<{ content: string, index: number, role: 'assistant' | 'user' }>, nextBefore?: number, total: number }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/history${cursor}`)
+}
+
 /** Records the terminal reason for a visitor interaction. */
 export async function endKioskVisitorSession(input: {
   state: 'completed' | 'cancelled' | 'idle'
@@ -174,6 +197,7 @@ export async function endKioskVisitorSession(input: {
 export async function streamKioskConversationMessage(
   input: {
     content?: string
+    decisionState?: KioskConversationDecisionState
     signal?: AbortSignal
     toolResults?: Array<{ content: string, name: string, toolCallId: string }>
     tools: KioskToolDefinition[]
@@ -189,7 +213,7 @@ export async function streamKioskConversationMessage(
       'Accept': 'text/event-stream',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content: input.content, toolResults: input.toolResults ?? [], tools: input.tools }),
+    body: JSON.stringify({ content: input.content, decisionState: input.decisionState, toolResults: input.toolResults ?? [], tools: input.tools }),
   })
   if (!response.ok || !response.body)
     throw new KioskDeviceRequestError(response.status, await response.text())
@@ -277,13 +301,19 @@ export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal
   return await response.json() as { text: string }
 }
 
-/** Lets the Server decide whether a candidate utterance supersedes active work. */
-export async function decideKioskTurn(input: { activeWork: boolean, asrConfidence?: number, currentRequest?: string, presenceState?: PresenceState, text: string }) {
-  return await request<{
-    decision: 'candidate' | 'continue' | 'ignore' | 'interrupt'
-    diagnostic?: { embeddingAvailable: boolean, speechGuard?: { label: string, score: number } }
-    reason: string
-  }>('/api/kiosk/turn-decisions', {
+/**
+ * Sends only the current transcript and browser-derived action choices to
+ * System One. The caller decides whether an unavailable constrained decision
+ * should continue through the Main Agent.
+ */
+export async function decideKioskInteraction(input: {
+  candidates: Array<{ description: string, id: string, requiresHighConfidence?: boolean }>
+  decisionState?: { allowedPaymentMethods?: Array<'card' | 'mobile'>, checkoutSnapshot?: unknown, constraints?: { exclude: string[] }, interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }, paymentState?: string, phase: string, references?: Array<{ label: string, refId: string }> }
+  includeTrace?: boolean
+  presenceState?: PresenceState
+  transcript: string
+}) {
+  return await request<KioskInteractionDecision>('/api/kiosk/interaction-decisions', {
     method: 'POST',
     body: JSON.stringify(input),
   })

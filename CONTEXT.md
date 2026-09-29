@@ -44,9 +44,41 @@ every Site but should not be required for routine store operations.
 
 ## Kiosk AI Capability
 
-One independent Kiosk responsibility: conversation, vision, speech-to-text,
-text-to-speech, or semantic embedding. Each capability is configured and
-activated independently by a System Manager.
+One independent Kiosk responsibility: conversation, vision, speech-to-text, or
+text-to-speech. Each capability is configured and activated independently by a
+System Manager.
+
+## Kiosk System One Decision
+
+A Server-owned, per-utterance bounded semantic choice among phase-legal intents,
+or `IGNORE`, `INCOMPLETE`, `MULTI_ACTION` (routed to Main Agent),
+`NEEDS_ASSISTANT`, or `UNAVAILABLE`. The application
+provides the current phase and finite real domain references; System One never
+owns menu, cart, checkout, payment, POS, or WebMCP tool selection.
+
+## Fast Path Action
+
+A domain-level plan produced after the application validates a System One
+intent, target uniqueness, and slots. The application compiles and authorizes
+the corresponding WebMCP operation against current revisions before the
+Interactive Service executes it; System One supplies no tool name or arguments.
+
+## Kiosk Action Candidate Set
+
+The small set of phase-legal semantic intents that an Interactive Service
+offers for the current Kiosk Customer Session. Menu items and cart lines are
+separate bounded domain references, not a menu-by-intent Cartesian product.
+Target ambiguity is resolved from those real references after the intent is
+chosen, without granting execution until clarification and authorization pass.
+
+## Kiosk Assistant Escalation
+
+The Kiosk transition that sends one current voice transcript to the Kiosk
+Agent when System One returns `NEEDS_ASSISTANT` or `UNAVAILABLE`. `IGNORE`,
+`INCOMPLETE`, and `CLARIFICATION` never escalate automatically.
+The Main Agent receives the latest bounded conversation plus a read-only,
+session-scoped history tool for older text; System One receives neither the
+unbounded transcript nor that tool.
 
 ## Kiosk Capability Provider Profile
 
@@ -60,14 +92,6 @@ across capabilities, even when their upstream endpoint happens to be the same.
 The one verified Capability Provider Profile selected for a Kiosk AI Capability.
 Changing this selection has no effect on Kiosk runtime until the System Manager
 explicitly applies the pending AI configuration.
-
-## Kiosk Speech Guard Baseline
-
-A Server-owned, persisted set of embedding vectors created from the approved
-speech-guard prototype corpus for one applied Embedding Provider Profile and
-model. It classifies the opening customer utterance without exposing vectors or
-the corpus to a Kiosk. Changing either Provider Profile or model requires a new
-baseline; until then, Kiosk uses the conservative non-embedding turn policy.
 
 ## Experience Preview
 

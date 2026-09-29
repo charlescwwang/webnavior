@@ -17,7 +17,7 @@ import type { FluxService } from './services/domain/flux'
 import type { FluxTransactionService } from './services/domain/flux-transaction'
 import type { KioskService } from './services/domain/kiosk'
 import type { KioskCharacterAssetService } from './services/domain/kiosk-character-assets'
-import type { KioskSpeechGuardRuntime } from './services/domain/kiosk-speech-guard/runtime'
+import type { createKioskSystemOneService as CreateKioskSystemOneService } from './services/domain/kiosk-system-one'
 import type { LlmRouterService } from './services/domain/llm-router'
 import type { ProductEventService } from './services/domain/product-events'
 import type { ProviderCatalogService } from './services/domain/provider-catalog'
@@ -99,9 +99,8 @@ import { createFluxTransactionService } from './services/domain/flux-transaction
 import { createKioskService } from './services/domain/kiosk'
 import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
-import { createKioskEmbeddingGateway } from './services/domain/kiosk-embedding'
 import { createKioskMediaService } from './services/domain/kiosk-media'
-import { createKioskSpeechGuardRuntime } from './services/domain/kiosk-speech-guard/runtime'
+import { createKioskSystemOneService } from './services/domain/kiosk-system-one'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
 import { createProductEventService } from './services/domain/product-events'
@@ -147,7 +146,7 @@ interface AppDeps {
   webnaviorAiRuntimeService: WebnaviorAiRuntimeService
   kioskService: KioskService
   kioskCharacterAssetService: KioskCharacterAssetService
-  kioskSpeechGuardRuntime: KioskSpeechGuardRuntime
+  kioskSystemOneService: ReturnType<typeof CreateKioskSystemOneService>
 }
 
 export async function buildApp(deps: AppDeps) {
@@ -414,11 +413,7 @@ export async function buildApp(deps: AppDeps) {
         envelopeCrypto: deps.envelopeCrypto,
       }),
       developmentRegistrationEnabled: deps.env.KIOSK_DEVELOPMENT_REGISTRATION_ENABLED === 'true' && process.env.NODE_ENV !== 'production',
-      embeddingGateway: createKioskEmbeddingGateway({
-        configKV: deps.configKV,
-        envelopeCrypto: deps.envelopeCrypto,
-      }),
-      speechGuard: deps.kioskSpeechGuardRuntime,
+      systemOne: deps.kioskSystemOneService,
       kioskService: deps.kioskService,
       mediaService: kioskMediaService,
       llmGateway: {
@@ -429,9 +424,6 @@ export async function buildApp(deps: AppDeps) {
       toolTraceObserver: process.env.NODE_ENV !== 'production'
         ? { record: input => console.info('[kiosk-tools]', input) }
         : undefined,
-      turnDecisionObserver: {
-        record: input => deps.otel?.product.events.add(1, { event: 'kiosk_turn_decision', ...input }),
-      },
     }))
     .route('/assets/kiosk', createKioskCharacterAssetRoutes(deps.kioskCharacterAssetService))
 
@@ -530,7 +522,7 @@ export async function buildApp(deps: AppDeps) {
     .route('/api/admin/webnavior-ai', createAdminWebnaviorAiRoutes({
       runtimeService: deps.webnaviorAiRuntimeService,
       service: deps.webnaviorAiControlService,
-      speechGuard: deps.kioskSpeechGuardRuntime,
+      systemOne: deps.kioskSystemOneService,
     }))
 
     /**
@@ -897,16 +889,9 @@ export async function createApp() {
     }),
   })
 
-  const kioskSpeechGuardRuntime = injeca.provide('services:kioskSpeechGuardRuntime', {
-    dependsOn: { configKV, db, envelopeCrypto },
-    build: ({ dependsOn }) => createKioskSpeechGuardRuntime({
-      db: dependsOn.db,
-      embeddingGateway: createKioskEmbeddingGateway({
-        configKV: dependsOn.configKV,
-        envelopeCrypto: dependsOn.envelopeCrypto,
-      }),
-      embeddingRuntimeConfig: async () => await dependsOn.configKV.getOptional('WEBNAVIOR_EMBEDDING_CONFIG') ?? undefined,
-    }),
+  const kioskSystemOneService = injeca.provide('services:kioskSystemOne', {
+    dependsOn: { db, envelopeCrypto },
+    build: ({ dependsOn }) => createKioskSystemOneService({ db: dependsOn.db, envelopeCrypto: dependsOn.envelopeCrypto }),
   })
 
   // LLM router (KTD-5 in-process replacement for the knoway sidecar).
@@ -961,7 +946,7 @@ export async function createApp() {
     providerCatalogService,
     ttsConcurrencyLedger,
     kioskCharacterAssetService,
-    kioskSpeechGuardRuntime,
+    kioskSystemOneService,
     kioskRetentionSweep,
   })
   // Register the cluster-wide ObservableGauges for sessions / users. Each
@@ -989,7 +974,7 @@ export async function createApp() {
     chatService: resolved.chatService,
     kioskService: resolved.kioskService,
     kioskCharacterAssetService: resolved.kioskCharacterAssetService,
-    kioskSpeechGuardRuntime: resolved.kioskSpeechGuardRuntime,
+    kioskSystemOneService: resolved.kioskSystemOneService,
     providerService: resolved.providerService,
     fluxService: resolved.fluxService,
     fluxTransactionService: resolved.fluxTransactionService,

@@ -14,7 +14,6 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "pnpm run apply:env -- drizzle-kit push",
     "seed:test-accounts": "pnpm run apply:env -- tsx src/scripts/seed-webnavior-test-accounts.ts",
-    "evaluate:kiosk-speech-guard": "pnpm run apply:env -- tsx src/scripts/evaluate-kiosk-speech-guard.ts",
     "otel:dashboards": "tsx otel/grafana/dashboards/build.ts"
   },
   "dependencies": {

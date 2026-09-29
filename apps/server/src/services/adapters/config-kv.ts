@@ -76,16 +76,6 @@ export const webnaviorAudioConfigSchema = optional(object({
   })),
 }), {})
 
-/** Server-only semantic embedding connection for kiosk conversation policy. */
-export const webnaviorEmbeddingConfigSchema = optional(object({
-  baseURL: pipe(string(), nonEmpty('embedding.baseURL must not be empty')),
-  modelName: pipe(string(), nonEmpty('embedding.modelName must not be empty')),
-  providerProfileId: pipe(string(), nonEmpty('embedding.providerProfileId must not be empty')),
-  provider: picklist(['ollama', 'openai-compatible']),
-  keyCiphertext: optional(string()),
-  timeoutMs: optional(number(), 5000),
-}))
-
 /**
  * Kiosk-only system defaults compiled from the Webnavior AI control plane.
  * A Site's explicit model override always wins; absence here preserves the
@@ -220,9 +210,6 @@ const ConfigEntrySchemas = {
   // Webnavior's direct OpenAI-compatible speech integrations deliberately do
   // not share AIRI's unspeech adapter configuration.
   WEBNAVIOR_AUDIO_CONFIG: webnaviorAudioConfigSchema,
-  // Absent intentionally means semantic policy falls back to conservative
-  // turn handling; Kiosks never load an embedding model themselves.
-  WEBNAVIOR_EMBEDDING_CONFIG: webnaviorEmbeddingConfigSchema,
   WEBNAVIOR_AI_RUNTIME_CONFIG: webnaviorAiRuntimeConfigSchema,
 } as const
 

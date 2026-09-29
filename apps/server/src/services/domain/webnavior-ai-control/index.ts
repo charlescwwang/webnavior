@@ -37,7 +37,7 @@ export interface ManagedAiCapabilitySelection extends schema.WebnaviorAiCapabili
  * Owns Provider profiles and active selections for each Kiosk AI capability.
  *
  * Provider profiles belong to exactly one capability. This prevents an LLM
- * setting from silently becoming a VLM, speech, or embedding dependency while
+ * setting from silently becoming a VLM or speech dependency while
  * still allowing a System Manager to retain multiple tested options per role.
  */
 export interface WebnaviorAiControlService {

@@ -345,13 +345,13 @@ bash scripts/updateKioskUbuntu.sh
 ```
 
 此腳本會在發布前重啟 `webnavior-api` 並以 `/readyz` 確認 PostgreSQL 與 Redis 均可用。Kiosk
-embedding 等動態 Provider 設定保存在 PostgreSQL，並由 Server 編譯至第 2 節的 Redis 執行期
-快取；它們不在前端 `.env.production.local` 或更新腳本中。後台套用後，下一次語意判斷就會讀到
-新值，不需要為了更換服務網址再重啟 API。
+AI Provider 與 System One 等動態設定保存在 PostgreSQL；Provider 會編譯至第 2 節的 Redis 執行期
+快取，而 System One profile 與政策會在下一次 Fast Path 決策讀取。它們不在前端 `.env.production.local`
+或更新腳本中，不需要為了更換服務網址再重啟 API。
 
 ### Kiosk AI 服務設定
 
-登入系統管理後，從「Kiosk AI 能力」分別設定對話、視覺、ASR、TTS 與 embedding。每項能力可
+登入系統管理後，從「Kiosk AI 能力」分別設定對話、視覺、ASR 與 TTS。每項能力可
 保存多個 Ollama 或 OpenAI-compatible Provider Profile；同一 URL 也必須在各能力獨立保存，不能跨能力
 共用。完成能力專屬驗證後，才能切換為啟用 Provider，最後按「套用到 Kiosk」。
 這是 Kiosk 唯一的模型設定來源；店別頁面只保留效能、VAD 與主動視覺等現場技術設定。
@@ -365,10 +365,24 @@ PostgreSQL。編輯既有 Provider 也遵循相同規則；驗證失敗不會覆
 服務類型、模型、Key 或 voice 後，該 Provider 必須重新驗證；這不會改變目前已啟用的另一筆 Provider。
 按套用後的下一個 Kiosk 請求即使用新設定，不需要重啟 API。
 
-若要啟用新對話的 embedding Speech Guard，在套用 Embedding Provider 後按「建立語意防護基準」。
-Server 會批次建立並保存系統語料向量；這項作業只在建立或重新建立時呼叫 Provider，不會將模型或
-語料下載到 Kiosk。更換已套用的 Embedding Provider 或模型後，需重新建立基準；尚未建立時系統仍以
-ASR 品質、presence 與保守的點餐意圖規則過濾背景人聲。
+System One Fast Path profile 可選 Dasein open-jev 或 lookski/openjev，並各自儲存 URL、模型、timeout 與加密
+Key。管理頁可讀取各 implementation 的 `/health` 以得知實際載入模型：Dasein 回傳 `model`，lookski 回傳 `model_id`。
+兩者皆是在服務啟動時載入單一模型，不能將該欄位當作每次請求的切換器；儲存後先執行 readiness，以實際最小決策確認所選服務與模型
+可用後才能啟用。可同時保留多筆不同 implementation 的 profile，但 Kiosk 同一時間只使用一筆已啟用 profile；
+不會在兩種服務間自動 fallback。可編輯既有 profile；變更 implementation、URL、模型、timeout 或 API Key 都會
+要求重新 readiness。待驗證、失敗或未啟用的 profile 均可移除；啟用中的 profile 必須先切換至另一個已就緒 profile
+或先停用 Fast Path，才可移除。變更啟用中的連線設定也會自動停用 Fast Path，避免未驗證的新上游服務處理下一句語音。
+Fast Path 無法使用或決策逾時時，Kiosk 會保留該句 ASR 結果並自動交給 Main Agent；
+未完成語句、釐清回覆與背景語音不會自動轉交。
+
+Server 提供預設的繁體中文對比式語意邊界；System Manager 可在後台查看、覆寫或還原固定 System One prompt，
+另可填寫全店共用、最多 2,000 字的「店家補充規則」。兩者都不能放寬應用程式產生的有限候選、revision、
+付款、POS 與掃碼安全邊界。需要比較、解釋或複合操作的語句會自動交給 Main Agent，不靠擴充 System One prompt
+讓小模型自行規劃工具鏈。
+
+若 Kiosk 使用文字模式，主對話區會提供「模擬 ASR 辨識結果」輸入。該操作略過麥克風與 ASR，但仍走實際的
+System One、當前 WebMCP 候選集和瀏覽器操作，因此可在同一個舞台確認人物動作、語音回覆、菜單與購物車變化，
+也可能變更目前購物車。它在互動活動中標示為 `asr_simulation`，且不會保存假音檔；語音模式不顯示此控制。
 
 ### 更新、媒體匯出與重置
 

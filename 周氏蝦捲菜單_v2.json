@@ -27,6 +27,7 @@
     {
       "id": "signature-shrimp-roll-bento",
       "name": "周氏蝦捲招牌便當",
+      "aliases": ["招牌便當"],
       "price": 145,
       "categoryId": "bento",
       "symbol": "🍱",

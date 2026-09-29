@@ -8,7 +8,9 @@ import { nanoid } from '../utils/id'
 /** A Server-managed protocol family for one capability-specific provider profile. */
 export type WebnaviorAiConnectionKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
 /** AI responsibilities managed centrally for all Webnavior Kiosks. */
-export type WebnaviorAiCapability = 'chat' | 'vision' | 'asr' | 'tts' | 'embedding'
+export type WebnaviorAiCapability = 'chat' | 'vision' | 'asr' | 'tts'
+/** A Jev-wire-compatible System One server implementation. */
+export type KioskSystemOneImplementation = 'dasein' | 'lookski'
 
 /** A cached model record discovered from an upstream's catalog. */
 export interface WebnaviorAiDiscoveredModel {
@@ -40,32 +42,6 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
   index('webnavior_ai_provider_profiles_capability_idx').on(table.capability),
 ])
 
-/** One versioned, Server-owned embedding baseline for Kiosk speech policy. */
-export const kioskSpeechGuardSets = pgTable('kiosk_speech_guard_sets', {
-  id: text('id').primaryKey().$defaultFn(() => nanoid()),
-  embeddingProfileId: text('embedding_profile_id').notNull().references(() => webnaviorAiProviderProfiles.id, { onDelete: 'cascade' }),
-  embeddingModelId: text('embedding_model_id').notNull(),
-  sourceHash: text('source_hash').notNull(),
-  sourceVersion: text('source_version').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-}, table => [
-  uniqueIndex('kiosk_speech_guard_sets_profile_model_hash_uidx').on(table.embeddingProfileId, table.embeddingModelId, table.sourceHash),
-  index('kiosk_speech_guard_sets_profile_model_idx').on(table.embeddingProfileId, table.embeddingModelId),
-])
-
-/** One labelled prototype embedding within a Speech Guard baseline. */
-export const kioskSpeechGuardPrototypes = pgTable('kiosk_speech_guard_prototypes', {
-  id: text('id').primaryKey().$defaultFn(() => nanoid()),
-  setId: text('set_id').notNull().references(() => kioskSpeechGuardSets.id, { onDelete: 'cascade' }),
-  sourceId: text('source_id').notNull(),
-  label: text('label').notNull(),
-  requiresContext: boolean('requires_context').notNull(),
-  embedding: jsonb('embedding').$type<number[]>().notNull(),
-}, table => [
-  uniqueIndex('kiosk_speech_guard_prototypes_set_source_uidx').on(table.setId, table.sourceId),
-  index('kiosk_speech_guard_prototypes_set_idx').on(table.setId),
-])
-
 /**
  * The one Provider profile that will compile into runtime configuration for a
  * capability. Profiles are deliberately never shared across capabilities.
@@ -78,6 +54,44 @@ export const webnaviorAiCapabilitySelections = pgTable('webnavior_ai_capability_
 }, table => [
   index('webnavior_ai_capability_selections_profile_idx').on(table.providerProfileId),
 ])
+
+/**
+ * One Server-owned System One connection selectable for Kiosk Fast Path. It is
+ * deliberately separate from AI capability profiles: it scores typed decisions
+ * rather than serving chat, speech, vision, or embeddings.
+ */
+export const kioskSystemOneProfiles = pgTable('kiosk_system_one_profiles', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  name: text('name').notNull(),
+  // Existing System One profiles were Dasein-only before implementation became
+  // explicit. The database default preserves those profiles during `db:push`.
+  implementation: text('implementation').$type<KioskSystemOneImplementation>().notNull().default('dasein'),
+  baseURL: text('base_url').notNull(),
+  apiKeyCiphertext: text('api_key_ciphertext'),
+  modelId: text('model_id').notNull(),
+  timeoutMs: integer('timeout_ms').notNull().default(5_000),
+  isActive: boolean('is_active').notNull().default(false),
+  verifiedAt: timestamp('verified_at'),
+  lastCheckedAt: timestamp('last_checked_at'),
+  lastCheckError: text('last_check_error'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
+}, table => [
+  uniqueIndex('kiosk_system_one_profiles_name_uidx').on(table.name),
+  index('kiosk_system_one_profiles_active_idx').on(table.isActive),
+])
+
+/**
+ * Store-specific System One policy. An empty decision instruction means the
+ * current Server default, allowing it to evolve without rewriting every row.
+ */
+export const kioskSystemOnePolicies = pgTable('kiosk_system_one_policies', {
+  decisionInstruction: text('decision_instruction').notNull().default(''),
+  id: text('id').primaryKey(),
+  storeInstruction: text('store_instruction').notNull().default(''),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
+})
 
 export const webnaviorAiProviderProfilesRelations = relations(webnaviorAiProviderProfiles, ({ many }) => ({
   selections: many(webnaviorAiCapabilitySelections),
@@ -94,5 +108,7 @@ export type WebnaviorAiProviderProfile = InferSelectModel<typeof webnaviorAiProv
 export type NewWebnaviorAiProviderProfile = InferInsertModel<typeof webnaviorAiProviderProfiles>
 export type WebnaviorAiCapabilitySelection = InferSelectModel<typeof webnaviorAiCapabilitySelections>
 export type NewWebnaviorAiCapabilitySelection = InferInsertModel<typeof webnaviorAiCapabilitySelections>
-export type KioskSpeechGuardSet = InferSelectModel<typeof kioskSpeechGuardSets>
-export type KioskSpeechGuardPrototype = InferSelectModel<typeof kioskSpeechGuardPrototypes>
+export type KioskSystemOneProfile = InferSelectModel<typeof kioskSystemOneProfiles>
+export type NewKioskSystemOneProfile = InferInsertModel<typeof kioskSystemOneProfiles>
+export type KioskSystemOnePolicy = InferSelectModel<typeof kioskSystemOnePolicies>
+export type NewKioskSystemOnePolicy = InferInsertModel<typeof kioskSystemOnePolicies>

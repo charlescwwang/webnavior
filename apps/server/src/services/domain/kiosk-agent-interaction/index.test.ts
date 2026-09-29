@@ -28,6 +28,26 @@ describe('kiosk Agent interaction', () => {
     })
   })
 
+  it('retains every subject behind a compact multi-subject menu preview', () => {
+    const shown = recordToolResults(defaultKioskAgentInteractionState, [{
+      content: JSON.stringify({
+        presentation: {
+          itemIds: ['bento-1', 'beef-noodles', 'bento-2', 'bento-3'],
+          subjects: [
+            { id: 'query:便當', itemIds: ['bento-1', 'bento-2', 'bento-3', 'bento-4', 'bento-5'] },
+            { id: 'query:麵', itemIds: ['beef-noodles'] },
+          ],
+        },
+      }),
+      name: 'menu_get',
+    }])
+
+    expect(shown.recentAgentAction).toMatchObject({
+      name: 'menu_get',
+      subjectIds: ['bento-1', 'beef-noodles', 'bento-2', 'bento-3', 'bento-4', 'bento-5'],
+    })
+  })
+
   it('keeps a compact menu and cart working state without copying the full tool payload', () => {
     const state = recordToolResults(defaultKioskAgentInteractionState, [{
       name: 'order_add_item',

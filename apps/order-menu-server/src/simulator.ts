@@ -67,6 +67,7 @@ function catalogFromSource(): CatalogSnapshot {
   const items = sourceMenu.items
     .map(item => ({
       available: item.available,
+      aliases: 'aliases' in item ? item.aliases : [],
       category: categories.get(item.categoryId) ?? '其他',
       description: item.description.trim() || item.name,
       id: item.id,

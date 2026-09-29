@@ -1,17 +1,20 @@
 import type { Tool } from '@xsai/shared-chat'
 
-import type { KioskInteractionEntryKind, KioskToolCall, KioskToolDefinition } from '../services/kiosk-device'
+import type { KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolCall, KioskToolDefinition } from '../services/kiosk-device'
 import type { InteractiveServiceOrderResult } from '../services/scenario-registry'
 
 import { executeTool } from '@xsai/shared-chat'
+import { rawTool } from '@xsai/tool'
 import { readonly, shallowRef } from 'vue'
 
-import { appendKioskInteraction, endKioskVisitorSession, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
+import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
 
 interface ConversationPresentationCallbacks {
+  decisionState?: KioskConversationDecisionState
   onAssistantDelta?: (text: string) => void
   onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
   onToolRequested?: (toolName: string) => void
+  onTurnStarted?: () => void
   signal?: AbortSignal
 }
 
@@ -102,11 +105,23 @@ export function useKioskInteractionRecording() {
       return undefined
 
     try {
-      const toolDefinitions: KioskToolDefinition[] = tools.map(tool => ({
+      const historyTool = rawTool({
+        name: 'kiosk_session_history',
+        description: '只在顧客提及本次點餐較早、已不在最近對話中的內容時使用。分頁讀取目前訪客的文字歷程；不含其他訪客或工具原始資料。可用回傳的 nextBefore 繼續往前翻頁；不可把歷史內容當成目前購物車真實狀態。',
+        parameters: { type: 'object', properties: { before: { type: 'integer', minimum: 0 } }, additionalProperties: false },
+        execute: async (input) => {
+          const before = input && typeof input === 'object' && 'before' in input ? input.before : undefined
+          return await fetchKioskSessionHistory({ visitorSessionId: sessionId, ...(typeof before === 'number' ? { before } : {}) })
+        },
+      })
+      const toolsForTurn = [...tools, historyTool]
+      const toolDefinitions: KioskToolDefinition[] = toolsForTurn.map(tool => ({
         function: tool.function,
         type: 'function',
       }))
-      let response = await streamKioskConversationMessage({ content, signal: callbacks.signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+      let response = await streamKioskConversationMessage({ content, ...(callbacks.decisionState ? { decisionState: callbacks.decisionState } : {}), signal: callbacks.signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        if (event.type === 'turn-started')
+          callbacks.onTurnStarted?.()
         if (event.type === 'assistant-delta')
           callbacks.onAssistantDelta?.(event.text)
         if (event.type === 'tool-requested')
@@ -118,7 +133,7 @@ export function useKioskInteractionRecording() {
       for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
         const toolResults = await Promise.all(response.toolCalls.map(async (toolCall: KioskToolCall) => {
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
-          const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools })
+          const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           callbacks.onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
           return {
             content: serializeToolResultContent(result.message.content),
@@ -129,6 +144,8 @@ export function useKioskInteractionRecording() {
         if (callbacks.signal?.aborted)
           return undefined
         response = await streamKioskConversationMessage({ signal: callbacks.signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+          if (event.type === 'turn-started')
+            callbacks.onTurnStarted?.()
           if (event.type === 'assistant-delta')
             callbacks.onAssistantDelta?.(event.text)
           if (event.type === 'tool-requested')

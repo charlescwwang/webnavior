@@ -367,9 +367,19 @@ function parseToolPayload(content: string): Record<string, unknown> | undefined 
 }
 
 function recommendationIds(payload: Record<string, unknown> | undefined) {
-  if (!payload || !isRecord(payload.presentation) || !Array.isArray(payload.presentation.itemIds))
+  if (!payload || !isRecord(payload.presentation))
     return []
-  return payload.presentation.itemIds.filter((itemId): itemId is string => typeof itemId === 'string' && itemId.length > 0)
+  const itemIds = Array.isArray(payload.presentation.itemIds)
+    ? payload.presentation.itemIds.filter((itemId): itemId is string => typeof itemId === 'string' && itemId.length > 0)
+    : []
+  const subjectItemIds = Array.isArray(payload.presentation.subjects)
+    ? payload.presentation.subjects.flatMap((subject) => {
+        if (!isRecord(subject) || !Array.isArray(subject.itemIds))
+          return []
+        return subject.itemIds.filter((itemId): itemId is string => typeof itemId === 'string' && itemId.length > 0)
+      })
+    : []
+  return [...new Set([...itemIds, ...subjectItemIds])]
 }
 
 function menuSubjects(payload: Record<string, unknown> | undefined): KioskAgentMenuSubject[] {

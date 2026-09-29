@@ -6,6 +6,7 @@ import { useKioskInteractionRecording } from './useKioskInteractionRecording'
 const kioskApi = vi.hoisted(() => ({
   appendKioskInteraction: vi.fn(),
   endKioskVisitorSession: vi.fn(),
+  fetchKioskSessionHistory: vi.fn(),
   recordKioskOrderResult: vi.fn(),
   sendKioskAssistantAction: vi.fn(),
   startKioskVisitorSession: vi.fn(),
@@ -77,24 +78,44 @@ describe('useKioskInteractionRecording', () => {
       return { agentMode: 'active', answer: '牛肉麵可以點餐。', toolCalls: [], type: 'turn-finished' }
     })
     const onAssistantDelta = vi.fn()
+    const onTurnStarted = vi.fn()
     const scope = effectScope()
     const recording = scope.run(() => useKioskInteractionRecording())
     if (!recording)
       throw new Error('Expected interaction recording to initialize.')
 
-    await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], { onAssistantDelta })).resolves.toEqual({
+    await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], { onAssistantDelta, onTurnStarted })).resolves.toEqual({
       agentMode: 'active',
       answer: '牛肉麵可以點餐。',
     })
 
     expect(onAssistantDelta).toHaveBeenNthCalledWith(1, '牛肉')
     expect(onAssistantDelta).toHaveBeenNthCalledWith(2, '麵可以點餐。')
+    expect(onTurnStarted).toHaveBeenCalledOnce()
     expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledWith({
       content: '我要牛肉麵',
       signal: undefined,
-      tools: [],
+      tools: [expect.objectContaining({ function: expect.objectContaining({ name: 'kiosk_session_history' }) })],
       visitorSessionId: 'visitor-1',
     }, expect.any(Function))
+    scope.stop()
+  })
+
+  it('sends the current payment phase on the first Main Agent request only', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', answer: undefined, toolCalls: [{ id: 'call-1', type: 'function', function: { arguments: '{}', name: 'menu_get' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', answer: '請選擇付款方式。', toolCalls: [] })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())
+    if (!recording)
+      throw new Error('Expected interaction recording to initialize.')
+
+    const decisionState = { phase: 'checkout_payment_select', paymentState: 'idle', allowedPaymentMethods: ['card', 'mobile'] as Array<'card' | 'mobile'> }
+    await recording.send('restaurant-ordering', '信用卡', [], { decisionState })
+
+    expect(kioskApi.streamKioskConversationMessage.mock.calls[0]?.[0].decisionState).toEqual(decisionState)
+    expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].decisionState).toBeUndefined()
     scope.stop()
   })
 
@@ -120,6 +141,24 @@ describe('useKioskInteractionRecording', () => {
     await recording.send('restaurant-ordering', '想吃炸物點心', [], { onToolRequested })
 
     expect(onToolRequested).toHaveBeenCalledWith('menu_get')
+    scope.stop()
+  })
+
+  it('lets the Main Agent retrieve earlier text only from the current visitor session', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    kioskApi.fetchKioskSessionHistory.mockResolvedValue({ entries: [{ content: '最早說想吃水餃', index: 0, role: 'user' }], total: 60 })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', answer: undefined, toolCalls: [{ id: 'history-1', type: 'function', function: { arguments: '{}', name: 'kiosk_session_history' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', answer: '你先前提過水餃。', toolCalls: [] })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())
+    if (!recording)
+      throw new Error('Expected interaction recording to initialize.')
+
+    await expect(recording.send('restaurant-ordering', '我最早說想吃什麼？', [])).resolves.toMatchObject({ answer: '你先前提過水餃。' })
+    expect(kioskApi.fetchKioskSessionHistory).toHaveBeenCalledWith({ visitorSessionId: 'visitor-1' })
+    expect(kioskApi.streamKioskConversationMessage.mock.calls[0]?.[0].tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: 'kiosk_session_history' }) })]))
+    expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].toolResults).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'kiosk_session_history', content: expect.stringContaining('最早說想吃水餃') })]))
     scope.stop()
   })
 })

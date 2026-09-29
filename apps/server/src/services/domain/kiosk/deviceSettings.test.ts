@@ -33,6 +33,7 @@ describe('device policy authorization and concurrency', () => {
     expect(initial.effective.faceDetectionConfidence).toBe(0.6)
     expect(initial.effective.presenceVisionMode).toBe('pose_plus_conditional_face')
     expect(initial.effective.voiceDiagnosticsEnabled).toBe(false)
+    expect(initial.effective.conversationDiagnosticsEnabled).toBe(false)
     expect(initial.effective.voiceVadSettings).toEqual({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 })
     const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
@@ -86,6 +87,16 @@ describe('device policy authorization and concurrency', () => {
     } })
 
     expect(updated.effective.voiceDiagnosticsEnabled).toBe(true)
+  })
+
+  it('persists the optional conversation duration display', async () => {
+    const updated = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
+      version: 1,
+      localControls: [],
+      overrides: { conversationDiagnosticsEnabled: true },
+    } })
+
+    expect(updated.effective.conversationDiagnosticsEnabled).toBe(true)
   })
 
   it('rejects locked fields, forged delegation, invalid ranges, and cross-site operators without writes', async () => {

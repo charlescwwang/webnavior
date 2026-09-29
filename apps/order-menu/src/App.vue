@@ -4,7 +4,7 @@ import type { ComponentPublicInstance } from 'vue'
 import type { CheckoutSnapshot } from './domain/checkout-flow'
 import type { CartSnapshot, FulfillmentMode, MenuItem, Selection, SubmissionEnvironment, SubmissionStatus, SubmittedOrder } from './domain/order-machine'
 import type { PaymentMethod, PaymentStatus } from './pos-bridge'
-import type { AgentAction, MenuToolName, RecommendationPresentation } from './webmcp'
+import type { AgentAction, MenuPresentationToolName, MenuToolName, RecommendationPresentation } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch } from 'vue'
@@ -16,11 +16,12 @@ import CheckoutTaxId from './components/CheckoutTaxId.vue'
 import MenuCatalogState from './components/MenuCatalogState.vue'
 import MenuItemCard from './components/menuItemCard.vue'
 import MenuItemDialog from './components/MenuItemDialog.vue'
+import MenuPresentationSkeleton from './components/MenuPresentationSkeleton.vue'
+import MenuPresentationSubjects from './components/MenuPresentationSubjects.vue'
 import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
-import { useAgentOperationIndicator } from './composables/useAgentOperationIndicator'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, returnToInvoice, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor } from './domain/order-machine'
@@ -36,8 +37,6 @@ const expectedAiriOrigin = resolveExpectedHostOrigin({
   isEmbedded: window.parent !== window,
   referrer: document.referrer,
 })
-const action = shallowRef<AgentAction>({ label: '等待下一步操作' })
-const agentOperationIndicator = useAgentOperationIndicator()
 const cart = shallowRef<CartSnapshot>({ fulfillmentMode: undefined, lines: [], total: 0, itemCount: 0 })
 const cursorTargetId = shallowRef<string>()
 const cursorPosition = shallowRef({ x: 44, y: 14 })
@@ -52,6 +51,8 @@ const completedOrderEnvironment = shallowRef<SubmissionEnvironment>()
 const fulfillmentMode = shallowRef<FulfillmentMode>()
 const addingItemId = shallowRef<string>()
 const recommendations = shallowRef<RecommendationPresentation>()
+const menuPresentationLoadingTools = shallowRef<MenuPresentationToolName[]>([])
+const selectedPresentationSubjectId = shallowRef<string>()
 const activeCategory = shallowRef<string>()
 const recommendedCategoryId = '__recommendations__'
 const selectedItemId = shallowRef<string>()
@@ -60,6 +61,12 @@ const checkout = shallowRef<CheckoutSnapshot>()
 const paymentMethod = shallowRef<PaymentMethod>()
 const paymentStatus = shallowRef<PaymentStatus>()
 const paymentError = shallowRef<string>()
+let checkoutRevision = 0
+// Synchronous observation preserves every checkout/payment write, including
+// a change that is undone before the next System One request arrives.
+watch([checkout, paymentMethod, paymentStatus], () => {
+  checkoutRevision += 1
+}, { flush: 'sync' })
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
 let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
@@ -73,19 +80,43 @@ const expandedCustomizations = reactive<Record<string, boolean>>({})
 const selectedOptionsByItem = reactive<Record<string, Record<string, string>>>({})
 const { catalog: posCatalog, error: catalogError, load: loadPosCatalog, state: catalogState } = usePosCatalog(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
 const menuItems = computed(() => posCatalog.value?.items ?? [])
+const menuPresentationLoadingTool = computed(() => menuPresentationLoadingTools.value.at(-1))
+const menuPresentationLoading = computed(() => menuPresentationLoadingTool.value !== undefined)
+const menuPresentationLoadingLabel = computed(() => menuPresentationLoadingTool.value === 'menu_recommend' || menuPresentationLoadingTool.value === 'menu_show_recommendations'
+  ? '正在找推薦餐點…'
+  : '正在整理相關餐點…')
 
 const categories = computed(() => [...new Set(menuItems.value.map(item => item.category))])
+const presentationSubjects = computed(() => recommendations.value?.kind === 'query-results'
+  ? recommendations.value.subjects ?? []
+  : [])
+const recommendedItemIds = computed(() => {
+  const presentation = recommendations.value
+  if (!presentation)
+    return []
+  const selectedSubject = presentationSubjects.value.find(subject => subject.id === selectedPresentationSubjectId.value)
+  if (selectedSubject)
+    return selectedSubject.itemIds
+  // A single subject is a browse result, so retain all of it rather than
+  // silently applying the compact multi-subject preview limit.
+  if (presentationSubjects.value.length === 1)
+    return presentationSubjects.value[0]!.itemIds
+  return presentation.itemIds
+})
 const recommendedItems = computed(() => recommendations.value
-  ? recommendations.value.itemIds
+  ? recommendedItemIds.value
       .map(itemId => menuItems.value.find(item => item.id === itemId))
       .filter((item): item is MenuItem => item !== undefined)
   : [])
+const presentationItemCount = computed(() => new Set(presentationSubjects.value.flatMap(subject => subject.itemIds)).size || recommendedItems.value.length)
 const visibleMenuItems = computed(() => {
   if (activeCategory.value === recommendedCategoryId)
     return recommendedItems.value
   return activeCategory.value ? menuItems.value.filter(item => item.category === activeCategory.value) : menuItems.value
 })
 const activeCategoryLabel = computed(() => {
+  if (menuPresentationLoading.value)
+    return menuPresentationLoadingLabel.value
   if (activeCategory.value !== recommendedCategoryId)
     return activeCategory.value ?? '全部餐點'
   return recommendations.value?.kind === 'query-results'
@@ -95,11 +126,15 @@ const activeCategoryLabel = computed(() => {
 const presentationContext = computed(() => {
   if (activeCategory.value !== recommendedCategoryId || recommendations.value?.kind !== 'query-results')
     return undefined
-  return `已依顧客提到的品項篩選，共 ${visibleMenuItems.value.length} 項`
+  const selectedSubject = presentationSubjects.value.find(subject => subject.id === selectedPresentationSubjectId.value)
+  if (selectedSubject)
+    return `「${selectedSubject.label}」共有 ${selectedSubject.itemIds.length} 項`
+  return presentationSubjects.value.length > 1
+    ? `已保留 ${presentationSubjects.value.length} 個需求方向，先顯示 ${visibleMenuItems.value.length} 項`
+    : `已依顧客提到的品項篩選，共 ${visibleMenuItems.value.length} 項`
 })
 const presentationNavigationLabel = computed(() => recommendations.value?.kind === 'query-results' ? '相關餐點' : '推薦餐點')
 const selectedItem = computed(() => menuItems.value.find(item => item.id === selectedItemId.value))
-const isAgentOperating = agentOperationIndicator.isOperating
 const reviewLines = computed(() => cart.value.lines.map(line => ({
   id: line.id,
   name: line.name,
@@ -107,6 +142,16 @@ const reviewLines = computed(() => cart.value.lines.map(line => ({
   quantity: line.quantity,
   total: currency(line.unitPrice * line.quantity),
 })))
+const cartSummaryLines = computed(() => cart.value.lines.map((line) => {
+  const menuItem = menuItems.value.find(item => item.id === line.itemId)
+  return {
+    id: line.id,
+    imageUrl: menuItem?.imageUrl,
+    name: line.name,
+    quantity: line.quantity,
+    symbol: menuItem?.symbol,
+  }
+}))
 const completedOrderLabel = computed(() => completedOrderEnvironment.value === 'live'
   ? '訂單已送往 POS'
   : '測試訂單已確認')
@@ -174,7 +219,6 @@ function travelDuration(from: { x: number, y: number }, to: { x: number, y: numb
 }
 
 async function animateAction(nextAction: AgentAction) {
-  action.value = nextAction
   cursorTargetId.value = nextAction.targetId
   showAgentCursor.value = true
 
@@ -205,7 +249,14 @@ async function animateAction(nextAction: AgentAction) {
   cursorPhase.value = 'resting'
   await waitForAgentCursor(agentCursorTiming.dwellMs)
   cursorPhase.value = 'pressing'
+  // The menu state is already changed by the authoritative tool call. This
+  // transient class makes that action visible without dispatching a second,
+  // potentially conflicting browser click.
+  target.classList.remove('is-agent-target')
+  void target.offsetWidth
+  target.classList.add('is-agent-target')
   await waitForAgentCursor(agentCursorTiming.pressMs)
+  target.classList.remove('is-agent-target')
   cursorPhase.value = 'resting'
 }
 
@@ -215,18 +266,19 @@ const runtime = createMenuToolRuntime({
     cancel: cancelCheckout,
     chooseInvoice,
     confirmTaxId: confirmTaxIdNumber,
+    paymentStatus: () => paymentStatus.value === 'pending' || paymentStatus.value === 'uncertain' ? paymentStatus.value : undefined,
+    revision: () => checkoutRevision,
     requestTaxId: openTaxId,
     restart: restartOrder,
     selectPayment,
     setTaxId: updateTaxId,
     skipMembership: skipCheckoutMembership,
+    snapshot: () => checkout.value,
     start: startCheckout,
   },
   gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL),
   menu: [],
   onAction: animateAction,
-  onAgentOperationStart: agentOperationIndicator.start,
-  onAgentOperationEnd: agentOperationIndicator.end,
   onCartChange: (nextCart) => {
     cart.value = nextCart
     if (submissionStatus.value !== 'accepted') {
@@ -254,7 +306,24 @@ const runtime = createMenuToolRuntime({
   onRecommendationsChange: (presentation) => {
     returnToMenuForAdditionalItems()
     recommendations.value = presentation
+    selectedPresentationSubjectId.value = undefined
     activeCategory.value = recommendedCategoryId
+  },
+  onMenuPresentationActivity: async ({ state, toolName }) => {
+    if (state === 'idle') {
+      // The model may run two lookups in parallel. Remove only this completed
+      // invocation so the visible loading state remains for the other one.
+      const completedIndex = menuPresentationLoadingTools.value.lastIndexOf(toolName)
+      if (completedIndex >= 0)
+        menuPresentationLoadingTools.value = menuPresentationLoadingTools.value.filter((_, index) => index !== completedIndex)
+      return
+    }
+
+    menuPresentationLoadingTools.value = [...menuPresentationLoadingTools.value, toolName]
+    // Yield one paint before the synchronous catalog lookup replaces the grid,
+    // otherwise customers never see that the confirmed tool is doing work.
+    await nextTick()
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   },
 })
 
@@ -265,6 +334,11 @@ async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, op
 function syncSelection(selection: Selection) {
   quantities[selection.itemId] = selection.quantity
   selectedOptionsByItem[selection.itemId] = { ...selection.options }
+}
+
+function selectPresentationSubject(subjectId: string | undefined) {
+  selectedPresentationSubjectId.value = subjectId
+  activeCategory.value = recommendedCategoryId
 }
 
 function handleOrderConfirmed(order: SubmittedOrder) {
@@ -654,7 +728,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  agentOperationIndicator.dispose()
   nativeWebMcpUnmounted = true
   unregisterNativeWebMcp?.()
   unregisterNativeWebMcp = undefined
@@ -676,12 +749,6 @@ onUnmounted(() => {
     @retry="loadCatalog"
   />
   <main v-else class="menu-app" @pointerdown="handleMenuPointerDown">
-    <output v-if="isAgentOperating" class="agent-status is-active" aria-live="polite">
-      <span class="status-dot" />
-      <span>正在為你整理餐點</span>
-      <small>{{ action.label }}</small>
-    </output>
-
     <CheckoutMembership
       v-if="checkout?.stage === 'membership'"
       :total="currency(cart.total)"
@@ -734,8 +801,8 @@ onUnmounted(() => {
     <template v-else>
       <div class="menu-browser">
         <nav class="category-navigation" aria-label="餐點分類">
-          <button :class="['category-button', { 'is-selected': activeCategory === recommendedCategoryId }]" type="button" :disabled="recommendedItems.length === 0" @click="activeCategory = recommendedCategoryId">
-            {{ presentationNavigationLabel }} <span>{{ recommendedItems.length }}</span>
+          <button :class="['category-button', { 'is-selected': activeCategory === recommendedCategoryId }]" type="button" :disabled="recommendedItems.length === 0" @click="selectPresentationSubject(undefined)">
+            {{ presentationNavigationLabel }} <span>{{ presentationItemCount }}</span>
           </button>
           <button :class="['category-button', { 'is-selected': !activeCategory }]" type="button" @click="activeCategory = undefined">
             全部 <span>{{ menuItems.length }}</span>
@@ -750,11 +817,18 @@ onUnmounted(() => {
             <span class="i-solar:filter-bold-duotone" aria-hidden="true" />
             {{ presentationContext }}
           </p>
+          <MenuPresentationSubjects
+            v-if="!menuPresentationLoading && activeCategory === recommendedCategoryId && recommendations?.kind === 'query-results' && presentationSubjects.length > 1"
+            :selected-id="selectedPresentationSubjectId"
+            :subjects="presentationSubjects"
+            @select="selectPresentationSubject"
+          />
           <MenuRecommendationRail
-            v-if="activeCategory === recommendedCategoryId && recommendations?.kind === 'recommendation' && recommendedItems.length > 0"
+            v-if="!menuPresentationLoading && activeCategory === recommendedCategoryId && recommendations?.kind === 'recommendation' && recommendedItems.length > 0"
             :presentation="recommendations"
           />
-          <div class="menu-grid">
+          <MenuPresentationSkeleton v-if="menuPresentationLoading" :label="menuPresentationLoadingLabel" />
+          <div v-else class="menu-grid">
             <div v-for="item in visibleMenuItems" :key="item.id" :ref="element => setCardElement(item.id, element)">
               <MenuItemCard
                 :is-targeted="cursorTargetId === item.id"
@@ -769,7 +843,7 @@ onUnmounted(() => {
       <MenuItemDialog :item="selectedItem" :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1" :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}" @add="addSelectedItem" @close="selectedItemId = undefined" @register-control="setControlElement" @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)" @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)" />
 
       <div :ref="element => setCardElement('cart', element)" :class="['order-summary-container', { 'is-updated': cartUpdated, 'is-targeted': cursorTargetId === 'cart' }]">
-        <OrderSummaryBar :item-count="cart.itemCount" :total="currency(cart.total)" @open="orderReviewOpen = true" />
+        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="orderReviewOpen = true" />
       </div>
     </template>
 

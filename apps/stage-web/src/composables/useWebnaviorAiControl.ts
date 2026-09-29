@@ -3,8 +3,9 @@ import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { readonly, shallowRef } from 'vue'
 
-export type AiCapability = 'chat' | 'vision' | 'asr' | 'tts' | 'embedding'
+export type AiCapability = 'chat' | 'vision' | 'asr' | 'tts'
 export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
+export type SystemOneImplementation = 'dasein' | 'lookski'
 
 export interface AiProviderProfile {
   baseURL: string
@@ -49,15 +50,51 @@ export interface AiModelCatalogProbe {
 interface AiControlSnapshot {
   profiles: AiProviderProfile[]
   selections: AiCapabilitySelection[]
-  speechGuard: SpeechGuardStatus
+  systemOnePolicy: SystemOnePolicy
+  systemOneProfiles: SystemOneProfile[]
 }
 
-export interface SpeechGuardStatus {
-  baselineCount: number
-  configurationError?: string
-  embeddingModelId?: string
-  embeddingProfileId?: string
-  ready: boolean
+export interface SystemOneProfile {
+  baseURL: string
+  hasApiKey: boolean
+  id: string
+  implementation: SystemOneImplementation
+  isActive: boolean
+  lastCheckError: string | null
+  lastCheckedAt: string | null
+  modelId: string
+  name: string
+  timeoutMs: number
+  verifiedAt: string | null
+}
+
+export interface SystemOneProfileInput {
+  baseURL: string
+  clearApiKey?: boolean
+  implementation: SystemOneImplementation
+  modelId: string
+  name: string
+  plaintextKey?: string
+  timeoutMs: number
+}
+
+/** Model currently loaded by the configured local System One implementation. */
+export interface SystemOneRuntimeModel {
+  modelId: string
+}
+
+/** System One's editable semantic prompt and optional store-specific addition. */
+export interface SystemOnePolicy {
+  /** Empty when the Server's built-in prompt is active. */
+  decisionInstruction: string
+  defaultDecisionInstruction: string
+  storeInstruction: string
+  updatedAt: string | null
+}
+
+export interface SystemOnePolicyInput {
+  decisionInstruction: string
+  storeInstruction: string
 }
 
 function endpoint(path = '') {
@@ -97,7 +134,8 @@ function parseErrorPayload(body: string): { error?: string, message?: string } |
 export function useWebnaviorAiControl() {
   const profiles = shallowRef<AiProviderProfile[]>([])
   const selections = shallowRef<AiCapabilitySelection[]>([])
-  const speechGuard = shallowRef<SpeechGuardStatus>({ baselineCount: 0, ready: false })
+  const systemOnePolicy = shallowRef<SystemOnePolicy>({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null })
+  const systemOneProfiles = shallowRef<SystemOneProfile[]>([])
   const busy = shallowRef(false)
   const error = shallowRef<string>()
 
@@ -105,7 +143,8 @@ export function useWebnaviorAiControl() {
     const snapshot = await (await request()).json() as AiControlSnapshot
     profiles.value = snapshot.profiles
     selections.value = snapshot.selections
-    speechGuard.value = snapshot.speechGuard
+    systemOnePolicy.value = snapshot.systemOnePolicy
+    systemOneProfiles.value = snapshot.systemOneProfiles
   }
 
   async function run<T>(operation: () => Promise<T>, fallbackMessage: string) {
@@ -211,27 +250,87 @@ export function useWebnaviorAiControl() {
     }, '無法套用 AI 設定。')
   }
 
-  async function initializeSpeechGuard() {
+  async function saveSystemOneProfile(input: SystemOneProfileInput) {
     return await run(async () => {
-      await request('/speech-guard:initialize', { method: 'POST' })
+      await request('/system-one/profiles', { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
       await refreshSnapshot()
-    }, '無法建立語意防護基準。')
+    }, '無法儲存 System One 設定。')
+  }
+
+  async function inspectSystemOneRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs'>) {
+    return await run(async () => {
+      return await (await request('/system-one/runtime-model:inspect', {
+        body: JSON.stringify(input),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      })).json() as SystemOneRuntimeModel
+    }, '無法讀取 System One 目前載入的模型。')
+  }
+
+  async function saveSystemOnePolicy(input: SystemOnePolicyInput) {
+    return await run(async () => {
+      await request('/system-one/policy', { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'PUT' })
+      await refreshSnapshot()
+    }, '無法儲存 System One 點餐規則。')
+  }
+
+  async function updateSystemOneProfile(profileId: string, input: SystemOneProfileInput) {
+    return await run(async () => {
+      await request(`/system-one/profiles/${encodeURIComponent(profileId)}`, { body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' }, method: 'PATCH' })
+      await refreshSnapshot()
+    }, '無法更新 System One 設定。')
+  }
+
+  async function deleteSystemOneProfile(profileId: string) {
+    return await run(async () => {
+      await request(`/system-one/profiles/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
+      await refreshSnapshot()
+    }, '無法移除 System One profile。')
+  }
+
+  async function checkSystemOneReadiness(profileId: string) {
+    return await run(async () => {
+      await request(`/system-one/profiles/${encodeURIComponent(profileId)}/readiness`, { method: 'POST' })
+      await refreshSnapshot()
+    }, 'System One readiness 檢查失敗。')
+  }
+
+  async function activateSystemOneProfile(profileId: string) {
+    return await run(async () => {
+      await request(`/system-one/active-profile/${encodeURIComponent(profileId)}`, { method: 'PUT' })
+      await refreshSnapshot()
+    }, '無法啟用 System One profile。')
+  }
+
+  async function deactivateSystemOneProfile(profileId: string) {
+    return await run(async () => {
+      await request(`/system-one/active-profile/${encodeURIComponent(profileId)}`, { method: 'DELETE' })
+      await refreshSnapshot()
+    }, '無法停用 System One Fast Path。')
   }
 
   return {
     apply,
+    activateSystemOneProfile,
     busy: readonly(busy),
+    checkSystemOneReadiness,
     createProfile,
+    deleteSystemOneProfile,
+    deactivateSystemOneProfile,
     deleteProfile,
+    inspectSystemOneRuntimeModel,
     discoverProviderModels,
     error: readonly(error),
-    initializeSpeechGuard,
     load,
     profiles: readonly(profiles),
     refreshProfileModels,
     selectProfile,
     selections: readonly(selections),
-    speechGuard: readonly(speechGuard),
+    saveSystemOneProfile,
+    saveSystemOnePolicy,
+    systemOnePolicy: readonly(systemOnePolicy),
+    systemOneProfiles: readonly(systemOneProfiles),
+    updateSystemOneProfile,
     updateProfile,
     verifyAndSaveProvider,
     verifyProfile,

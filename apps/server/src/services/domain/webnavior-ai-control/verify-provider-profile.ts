@@ -16,7 +16,7 @@ export interface ProviderProfileVerificationInput {
 /**
  * Performs the smallest provider operation that proves the selected model can
  * serve its assigned Kiosk capability. Catalog discovery alone is insufficient
- * because a listed model may not implement speech, vision, or embeddings.
+ * because a listed model may not implement speech or vision.
  */
 export async function verifyProviderProfile(input: ProviderProfileVerificationInput, fetchImpl: typeof fetch) {
   const baseURL = input.baseURL.replace(/\/+$/u, '')
@@ -50,19 +50,6 @@ export async function verifyProviderProfile(input: ProviderProfileVerificationIn
     }, fetchImpl)
     if ((await response.arrayBuffer()).byteLength === 0)
       throw createBadGatewayError('TTS Provider 未回傳可播放的語音資料。')
-    return
-  }
-
-  if (input.capability === 'embedding') {
-    const response = await request(`${baseURL}/embeddings`, {
-      body: JSON.stringify({ input: 'Kiosk embedding verification.', model: input.modelId }),
-      headers,
-      method: 'POST',
-      signal: AbortSignal.timeout(15_000),
-    }, fetchImpl)
-    const payload = await response.json().catch(() => null) as { data?: Array<{ embedding?: unknown }> } | null
-    if (!Array.isArray(payload?.data) || !Array.isArray(payload.data[0]?.embedding) || payload.data[0].embedding.length === 0)
-      throw createBadGatewayError('Embedding Provider 未回傳合法向量。')
     return
   }
 
