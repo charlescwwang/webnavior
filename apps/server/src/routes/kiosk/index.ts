@@ -101,6 +101,7 @@ const speechSchema = object({
 const interactionDecisionSchema = object({
   candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
   decisionState: optional(object({
+    activeRequest: optional(object({ stage: picklist(['starting', 'thinking', 'tool_requested', 'mutating']), text: pipe(string(), regex(/\S/), maxLength(240)) })),
     allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
     checkoutSnapshot: optional(unknown()),
     constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(8)) })),

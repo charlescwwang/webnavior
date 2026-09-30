@@ -145,4 +145,41 @@ describe('kiosk System One fast path', () => {
       webMcp: { execute: async () => { throw new Error('WebMCP disconnected') }, tools: [candidateTool, executeTool] },
     })).resolves.toEqual({ kind: 'UNAVAILABLE' })
   })
+
+  it('can classify an active Agent follow-up without a legal menu action', async () => {
+    const decide = vi.fn(async () => ({ kind: 'FOLLOW_UP_ACTIVE' as const }))
+    const execute = vi.fn(async () => ({ candidates: [], phase: 'ordering' }))
+    await expect(runFastPath({
+      activeRequest: { stage: 'thinking', text: '我要招牌便當' },
+      decide,
+      transcript: '不要辣',
+      webMcp: { execute, tools: [candidateTool, executeTool] },
+    })).resolves.toMatchObject({ kind: 'FOLLOW_UP_ACTIVE' })
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ activeRequest: { stage: 'thinking', text: '我要招牌便當' } }) }))
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('defers a selected mutation when the previous Agent tool has crossed the safe interruption point', async () => {
+    const execute = vi.fn(async () => ({ candidates: [{ description: 'Add shrimp roll.', id: 'intent:add:shrimp' }] }))
+    await expect(runFastPath({
+      decide: async () => ({ actionId: 'intent:add:shrimp', kind: 'FAST_ACTION' }),
+      onActionSelected: () => 'DEFER' as const,
+      transcript: '再一份',
+      webMcp: { execute, tools: [candidateTool, executeTool] },
+    })).resolves.toMatchObject({ kind: 'DEFERRED' })
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not execute an issued browser candidate after its visitor session was reset', async () => {
+    const execute = vi.fn(async () => ({ candidates: [{ description: 'Clear the cart.', id: 'intent:clear-cart' }] }))
+    let current = true
+    await expect(runFastPath({
+      decide: async () => ({ actionId: 'intent:clear-cart', kind: 'FAST_ACTION' }),
+      isCurrent: () => current,
+      onActionSelected: () => { current = false },
+      transcript: '清空購物車',
+      webMcp: { execute, tools: [candidateTool, executeTool] },
+    })).resolves.toMatchObject({ kind: 'DEFERRED' })
+    expect(execute).toHaveBeenCalledTimes(1)
+  })
 })

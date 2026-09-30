@@ -12,6 +12,7 @@ export interface FastPathCandidate {
 }
 
 export interface FastPathDecisionState {
+  activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
   allowedPaymentMethods?: Array<'card' | 'mobile'>
   checkoutSnapshot?: unknown
   constraints?: { exclude: string[] }
@@ -26,6 +27,7 @@ export type FastPathDecision
     | { confidence?: number, kind: 'CLARIFICATION', trace?: unknown }
     | { confidence?: number, kind: 'INCOMPLETE', trace?: unknown }
     | { confidence?: number, kind: 'IGNORE', trace?: unknown }
+    | { confidence?: number, kind: 'FOLLOW_UP_ACTIVE', trace?: unknown }
     | { confidence?: number, kind: 'NEEDS_ASSISTANT', trace?: unknown }
     | { kind: 'UNAVAILABLE', trace?: unknown }
 
@@ -36,6 +38,8 @@ export type FastPathResult = {
   | { confidence?: number, kind: 'CLARIFICATION', prompt: string }
   | { confidence?: number, kind: 'INCOMPLETE' }
   | { confidence?: number, kind: 'IGNORE' }
+  | { confidence?: number, kind: 'FOLLOW_UP_ACTIVE' }
+  | { kind: 'DEFERRED' }
   | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
   | { kind: 'UNAVAILABLE' }
 )
@@ -84,17 +88,21 @@ const executeToolName = 'kiosk_fast_path_execute'
  * input arguments always come back from the browser-produced candidate set.
  */
 export async function runFastPath(input: {
+  activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
   decide: (request: { candidates: FastPathCandidate[], decisionState?: FastPathDecisionState, includeTrace?: boolean, presenceState?: PresenceState, transcript: string }) => Promise<FastPathDecision>
   onTrace?: (trace: { browserContext: unknown, decision: FastPathDecision, decisionSource?: 'application' | 'system-one', executionResult?: unknown, transcript: string }) => void
-  onActionSelected?: (action: FastPathCandidate) => Promise<void> | void
+  onActionSelected?: (action: FastPathCandidate) => Promise<'DEFER' | void> | 'DEFER' | void
+  isCurrent?: () => boolean
   presenceState?: PresenceState
   session?: IncompleteAsrSession
   transcript: string
   webMcp: WebMcpBridge
 }): Promise<FastPathResult> {
   const candidateTool = input.webMcp.tools.find(tool => tool.name === candidateToolName)
-  if (!candidateTool)
+  if (!candidateTool) {
+    input.onTrace?.({ browserContext: { error: 'Kiosk semantic context tool is unavailable.' }, decision: { kind: 'UNAVAILABLE' }, transcript: input.transcript })
     return { kind: 'UNAVAILABLE' }
+  }
 
   let browserContext: unknown
   let decisionState: FastPathDecisionState | undefined
@@ -103,8 +111,10 @@ export async function runFastPath(input: {
     browserContext = rawCandidates
     decisionState = decisionStateFrom(rawCandidates)
     const candidates = candidatesFrom(rawCandidates)
-    if (candidates.length === 0)
+    if (candidates.length === 0 && !input.activeRequest) {
+      input.onTrace?.({ browserContext: rawCandidates, decision: { kind: 'UNAVAILABLE' }, transcript: input.transcript })
       return { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
+    }
 
     const resolvedCandidateId = rawCandidates && typeof rawCandidates === 'object' && 'resolvedCandidateId' in rawCandidates
       ? (rawCandidates as Record<string, unknown>).resolvedCandidateId
@@ -114,7 +124,7 @@ export async function runFastPath(input: {
       ? { actionId: resolvedCandidateId, kind: 'FAST_ACTION' }
       : await input.decide({
           candidates,
-          decisionState,
+          decisionState: input.activeRequest ? { ...(decisionState ?? { phase: 'unknown' }), activeRequest: input.activeRequest } : decisionState,
           includeTrace: true,
           ...(input.presenceState ? { presenceState: input.presenceState } : {}),
           transcript: input.transcript,
@@ -146,7 +156,9 @@ export async function runFastPath(input: {
     // A barge-in can replace an active Main Agent turn. Let the Kiosk cancel
     // that turn before this browser mutation starts, so two planners never
     // race to modify the cart.
-    await input.onActionSelected?.(action)
+    const selectedDisposition = await input.onActionSelected?.(action)
+    if (selectedDisposition === 'DEFER' || input.isCurrent?.() === false)
+      return { kind: 'DEFERRED', ...(decisionState ? { decisionState } : {}) }
 
     const result = await input.webMcp.execute(executeTool, { candidateId: action.id })
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, executionResult: result, transcript: input.transcript })
@@ -161,9 +173,8 @@ export async function runFastPath(input: {
   }
   catch (error) {
     input.onTrace?.({ browserContext: { snapshot: browserContext, error: errorMessageFrom(error) ?? 'Fast Path unavailable' }, decision: { kind: 'UNAVAILABLE' }, transcript: input.transcript })
-    // The caller preserves this utterance and escalates it to Main Agent.
-    // Returning the browser snapshot, when available, lets that Agent see
-    // the current phase without treating a failed decision as user intent.
+    // Failure is not a semantic assistant request. The caller may report it,
+    // but must not route unfiltered ambient speech to Main Agent.
     return { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
   }
 }

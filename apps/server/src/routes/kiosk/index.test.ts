@@ -191,7 +191,7 @@ describe('kiosk routes', () => {
       headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
       body: JSON.stringify({
         candidates: [{ description: '新增餐點。', id: 'order:add:shrimp', requiresHighConfidence: true }],
-        decisionState: { allowedPaymentMethods: [], constraints: { exclude: [] }, interactionState: { matchingCartLines: 0 }, paymentState: 'idle', phase: 'ordering', references: [{ label: '蝦捲', refId: 'item:shrimp' }] },
+        decisionState: { activeRequest: { stage: 'thinking', text: '我要一份蝦捲' }, allowedPaymentMethods: [], constraints: { exclude: [] }, interactionState: { matchingCartLines: 0 }, paymentState: 'idle', phase: 'ordering', references: [{ label: '蝦捲', refId: 'item:shrimp' }] },
         includeTrace: true,
         presenceState: 'ENGAGED',
         transcript: '我要一份蝦捲',
@@ -201,6 +201,7 @@ describe('kiosk routes', () => {
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ actionId: 'order:add:shrimp', confidence: 0.91, kind: 'FAST_ACTION', trace: { decisionState: expect.stringContaining('目前 phase：ordering') } })
     expect(decide).toHaveBeenCalledOnce()
+    expect(decide).toHaveBeenCalledWith(expect.stringContaining('進行中需求：{"stage":"thinking","text":"我要一份蝦捲"}'), expect.any(Object))
     expect(complete).not.toHaveBeenCalled()
   })
 

@@ -9,6 +9,7 @@ export interface KioskActionCandidate {
 }
 
 export interface KioskDecisionState {
+  activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
   allowedPaymentMethods?: readonly string[]
   checkoutSnapshot?: unknown
   constraints?: { exclude: readonly string[] }
@@ -30,6 +31,7 @@ export type KioskInteractionDecision
     | { kind: 'FAST_ACTION', actionId: string, confidence?: number }
     | { kind: 'INCOMPLETE', confidence?: number }
     | { kind: 'IGNORE', confidence?: number }
+    | { kind: 'FOLLOW_UP_ACTIVE', confidence?: number }
     | { kind: 'NEEDS_ASSISTANT', confidence?: number }
     | { kind: 'UNAVAILABLE' }
 
@@ -61,6 +63,8 @@ export async function decideInteraction(input: DecisionInput): Promise<KioskInte
         MULTI_ACTION: '顧客這一句明確要求兩個以上獨立的狀態變更；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。',
         NEEDS_ASSISTANT: '顧客提出複雜的菜單理解、推薦、比較或限制需求；Kiosk 會保留這句已辨識語音並自動轉交 Main Agent。',
       }
+  if (!followUp && input.decisionState?.activeRequest)
+    criteria.FOLLOW_UP_ACTIVE = '顧客這句是在補充或修正目前仍由 Main Agent 處理的上一句需求；不是獨立新訂單。只選關係，不決定如何中斷工具。'
   for (const candidate of eligibleCandidates) criteria[candidate.id] = candidate.description
   try {
     const state = createDecisionState(input)
@@ -81,16 +85,17 @@ export async function decideInteraction(input: DecisionInput): Promise<KioskInte
       return { kind: 'INCOMPLETE', ...(confidence === undefined ? {} : { confidence }), ...trace }
     if (answer?.choice === 'NEEDS_ASSISTANT')
       return { kind: 'NEEDS_ASSISTANT', ...(confidence === undefined ? {} : { confidence }), ...trace }
+    if (answer?.choice === 'FOLLOW_UP_ACTIVE' && criteria.FOLLOW_UP_ACTIVE)
+      return { kind: 'FOLLOW_UP_ACTIVE', ...(confidence === undefined ? {} : { confidence }), ...trace }
     if (answer?.choice === 'MULTI_ACTION')
       return { kind: 'NEEDS_ASSISTANT', ...(confidence === undefined ? {} : { confidence }), ...trace }
     if (typeof answer?.choice === 'string') {
       const selected = eligibleCandidates.find(candidate => candidate.id === answer.choice)
       if (selected) {
-        // A low-confidence mutation goes to Main Agent for safety, even when
-        // Jev's semantic choice is correct. Do not count this as an intent
-        // classification success or silently discard the original utterance.
+        // No actor has reliably classified this utterance. Sending it to Main
+        // Agent would bypass the background-speech filter, so fail closed.
         if (selected.requiresHighConfidence && confidence !== undefined && confidence < 0.5)
-          return { kind: 'NEEDS_ASSISTANT', confidence, ...trace }
+          return { kind: 'UNAVAILABLE', ...trace }
         return { kind: 'FAST_ACTION', actionId: answer.choice, ...(confidence === undefined ? {} : { confidence }), ...trace }
       }
     }
@@ -122,5 +127,6 @@ function createDecisionState(input: Pick<DecisionInput, 'decisionState' | 'prese
     `真實 domain references：${JSON.stringify(input.decisionState?.references ?? [])}`,
     `互動焦點：${JSON.stringify(input.decisionState?.interactionState ?? {})}`,
     `已解析限制：${JSON.stringify(input.decisionState?.constraints ?? { exclude: [] })}`,
+    `進行中需求：${JSON.stringify(input.decisionState?.activeRequest ?? {})}`,
   ].join('\n')
 }

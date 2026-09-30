@@ -191,7 +191,7 @@ describe('kiosk System One interaction decision', () => {
     expect(result).toMatchObject({ actionId: 'intent:select-payment:card', kind: 'FAST_ACTION', trace: { rawAnswer: { choice: 'intent:select-payment:card', confidence: 0.89 } } })
   })
 
-  it('escalates a low-confidence state-changing choice without hiding the model answer', async () => {
+  it('does not send an untrusted low-confidence choice to Main Agent', async () => {
     const result = await decideInteraction({
       candidates: [{ description: '新增餐點。', id: 'intent:add-item', requiresHighConfidence: true }],
       decisionState: { phase: 'ordering' },
@@ -200,7 +200,21 @@ describe('kiosk System One interaction decision', () => {
       policy,
       transcript: '我想要吃招牌便當',
     })
-    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', trace: { rawAnswer: { choice: 'intent:add-item' } } })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', trace: { rawAnswer: { choice: 'intent:add-item' } } })
+  })
+
+  it('offers one bounded follow-up choice while Main Agent is handling an earlier utterance', async () => {
+    const invoke = vi.fn(async () => ({ answers: { route: { choice: 'FOLLOW_UP_ACTIVE', confidence: 0.91 } } }))
+    await expect(decideInteraction({
+      candidates: [{ description: '修改目前餐點選項。', id: 'intent:set-option' }],
+      decisionState: { activeRequest: { text: '我要招牌便當', stage: 'thinking' }, phase: 'ordering' },
+      invoke,
+      policy,
+      transcript: '不要辣',
+    })).resolves.toEqual({ confidence: 0.91, kind: 'FOLLOW_UP_ACTIVE' })
+    expect(invoke).toHaveBeenCalledWith(expect.stringContaining('我要招牌便當'), expect.objectContaining({
+      route: expect.objectContaining({ criteria: expect.objectContaining({ FOLLOW_UP_ACTIVE: expect.any(String) }) }),
+    }))
   })
 
   it('uses a target-only question for an active clarification, not the full intent prompt', async () => {

@@ -92,6 +92,7 @@ export type KioskInteractionDecision
     | { confidence?: number, kind: 'CLARIFICATION' }
     | { confidence?: number, kind: 'INCOMPLETE' }
     | { confidence?: number, kind: 'IGNORE' }
+    | { confidence?: number, kind: 'FOLLOW_UP_ACTIVE' }
     | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
     | { kind: 'UNAVAILABLE' }
 
@@ -303,12 +304,12 @@ export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal
 
 /**
  * Sends only the current transcript and browser-derived action choices to
- * System One. The caller decides whether an unavailable constrained decision
- * should continue through the Main Agent.
+ * System One. An unavailable choice is not a positive speech classification;
+ * the caller must not forward it to Main Agent automatically.
  */
 export async function decideKioskInteraction(input: {
   candidates: Array<{ description: string, id: string, requiresHighConfidence?: boolean }>
-  decisionState?: { allowedPaymentMethods?: Array<'card' | 'mobile'>, checkoutSnapshot?: unknown, constraints?: { exclude: string[] }, interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }, paymentState?: string, phase: string, references?: Array<{ label: string, refId: string }> }
+  decisionState?: { activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }, allowedPaymentMethods?: Array<'card' | 'mobile'>, checkoutSnapshot?: unknown, constraints?: { exclude: string[] }, interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }, paymentState?: string, phase: string, references?: Array<{ label: string, refId: string }> }
   includeTrace?: boolean
   presenceState?: PresenceState
   transcript: string
