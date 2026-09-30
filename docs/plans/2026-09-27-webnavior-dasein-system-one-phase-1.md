@@ -15,7 +15,7 @@ System One only selects a currently offered semantic intent, or a finite
 target choice when application-side reference resolution cannot decide.
 
 ```text
-final ASR or simulated transcript
+final ASR or simulated transcript → bounded utterance queue
   → Order Menu derives phase, real references, constraints, and a small intent set
   → Server sends phase and that bounded choice to the active System One profile
   → Order Menu resolves target and slots against its issued snapshot
@@ -25,9 +25,10 @@ final ASR or simulated transcript
 ```
 
 `IGNORE` is silent; `INCOMPLETE` retains diagnostics for at most three seconds
-without concatenating ASR strings. `NEEDS_ASSISTANT`, unavailable decisions,
-and safely unresolved operations automatically send the original transcript
-to Main Agent. A failed clarification asks the customer to use touch; it does
+without concatenating ASR strings. Only a positive `NEEDS_ASSISTANT` decision
+or a related follow-up to an active Agent request sends the original transcript
+to Main Agent. `UNAVAILABLE` fails closed because ambient speech has not been
+classified. A failed clarification asks the customer to use touch; it does
 not silently invent a target or automatically escalate.
 `MULTI_ACTION` keeps two or more independent requests together for Main Agent
 instead of executing only the first. A two-question Jev probe worked but took
@@ -92,11 +93,11 @@ Agent deletion, quantity edit, or option edit. Idle payment selection also
 offers checkout cancellation, subject to confirmation.
 
 For state-changing choices with a reported System One confidence below 0.5,
-the Server retains the raw model answer in the trace but routes to Main Agent
-instead of mutating the order. This is a common conservative guard, not a
+the Server retains the raw model answer in the trace but returns `UNAVAILABLE`
+instead of mutating the order or forwarding unclassified ambient speech. This is a
 phrase-specific rule. Qwen3.5-4B's raw `ADD_ITEM` choice for
 「我想要吃招牌便當」 was semantically correct, but its 0.392 confidence still
-escalated that turn. Low confidence is not evidence that the intent was wrong.
+left that turn unexecuted. Low confidence is not evidence that the intent was wrong.
 
 Successful Fast Path turns enter the same anonymous session as customer and
 assistant text plus compact real menu/cart results. Main Agent receives the
@@ -104,11 +105,26 @@ latest bounded conversation and can page older text on demand with the
 read-only, device-authenticated `kiosk_session_history` tool. System One never
 receives that history or tool; an old cart mention is not current cart state.
 
+Native browser WebMCP host-only context and state tools use the host invocation
+path; Agent-facing tools use the Agent invocation path. Both real ASR and the
+simulated-ASR input enter the same queue. New utterances can be captured while
+ASR or Agent work continues. Jev first classifies each utterance; `IGNORE` does
+not interrupt speech or Agent work. A related utterance can stop a still-thinking
+Agent and start a new Agent turn with both customer utterances retained in the
+same visitor session. A requested browser tool makes that Agent turn
+non-interruptible until its full tool/result loop settles; subsequent speech
+waits and is re-evaluated from current state, including checkout/payment state.
+The queue reserves a place when each recording finishes, so slower ASR for an
+earlier sentence cannot let a later sentence overtake it. It is bounded and
+reports overload instead of silently dropping speech.
+
 The simulated-ASR panel has an expandable per-turn trace with the browser
 snapshot, phase, references, candidates, System One state and raw answer
 (including confidence/probabilities if supplied), resolution, operation plan,
-and authorization. The customer-facing interface does not expose tool names to
-System One. The optional live replay test sends the eight agreed phrases to a
+and authorization. An opt-in, larger decision inspector presents the last 20
+utterances as structured phase, reference, candidate, decision, operation, and
+authorization rows without showing raw checkout identifiers. The customer-facing
+interface does not expose tool names to System One. The optional live replay test sends the eight agreed phrases to a
 configured `/v1/systemone` endpoint only when
 `KIOSK_SYSTEM_ONE_REPLAY_URL` is set. The bento case now has the correct
 `ADD_ITEM` semantic gold label, with low-confidence escalation evaluated

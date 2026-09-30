@@ -51,7 +51,7 @@ System Manager.
 ## Kiosk System One Decision
 
 A Server-owned, per-utterance bounded semantic choice among phase-legal intents,
-or `IGNORE`, `INCOMPLETE`, `MULTI_ACTION` (routed to Main Agent),
+or `IGNORE`, `INCOMPLETE`, `FOLLOW_UP_ACTIVE`, `MULTI_ACTION` (routed to Main Agent),
 `NEEDS_ASSISTANT`, or `UNAVAILABLE`. The application
 provides the current phase and finite real domain references; System One never
 owns menu, cart, checkout, payment, POS, or WebMCP tool selection.
@@ -74,8 +74,11 @@ chosen, without granting execution until clarification and authorization pass.
 ## Kiosk Assistant Escalation
 
 The Kiosk transition that sends one current voice transcript to the Kiosk
-Agent when System One returns `NEEDS_ASSISTANT` or `UNAVAILABLE`. `IGNORE`,
-`INCOMPLETE`, and `CLARIFICATION` never escalate automatically.
+Agent only when System One returns `NEEDS_ASSISTANT` or a related active-request
+follow-up. `UNAVAILABLE`, `IGNORE`, `INCOMPLETE`, and `CLARIFICATION` never
+escalate automatically. A related follow-up interrupts only a still-thinking
+Agent; once a browser tool is requested, it waits for the result and is
+reclassified against the latest state.
 The Main Agent receives the latest bounded conversation plus a read-only,
 session-scoped history tool for older text; System One receives neither the
 unbounded transcript nor that tool.

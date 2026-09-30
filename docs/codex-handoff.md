@@ -61,9 +61,10 @@ accumulating history.
   creating `MediaRecorder`; the per-device `faceDetectionConfidence` setting
   defaults to `0.60` and accepts `0.40`–`0.80` for MediaPipe detection,
   presence, and tracking thresholds.
-- Kiosk interaction now has one cancellable turn across VAD, ASR, LLM/tool,
-  TTS, and proactive work. ASR/model work gates new VAD turns; TTS remains
-  interruptible. The Router now enforces `fullChainTimeoutMs` across all LLM
+- Kiosk uses a bounded queue of independent final ASR utterances alongside its
+  cancellable Agent/presentation turn. New VAD speech can be transcribed while
+  a model or browser tool runs; Jev classifies it before any interruption or
+  escalation. The Router now enforces `fullChainTimeoutMs` across all LLM
   fallback attempts. Order-menu publishes the optional Webnavior Kiosk Activity
   Manifest at `/.well-known/webnavior-kiosk-activity.json`; its customer labels
   are display-only and always have a generic Kiosk fallback.
@@ -190,8 +191,8 @@ their existence alone does not mean an item has been implemented.
   the one active profile. The model cannot see or invent WebMCP tools, cart
   line IDs, prices, payment outcomes, or POS commands. The internal candidate
   tool is excluded from Main Agent tools. `IGNORE` retains nothing;
-  `NEEDS_ASSISTANT` and `UNAVAILABLE` automatically send the current ASR
-  transcript to the Main Agent, while `INCOMPLETE` and `CLARIFICATION` remain
+  `NEEDS_ASSISTANT` sends the current ASR transcript to Main Agent, while
+  `UNAVAILABLE`, `IGNORE`, `INCOMPLETE`, and `CLARIFICATION` remain
   on the constrained voice path. A failed decision marks the profile unready,
   and the next utterance automatically performs real readiness before
   re-enabling Fast Path. Details and present scope are in
@@ -217,7 +218,8 @@ their existence alone does not mean an item has been implemented.
   override. The default contrastive boundary treats a uniquely identified
   「想吃／想要水餃」and「我要／幫我加水餃」as `ADD_ITEM`; only explicit
   viewing or selecting without ordering uses `SELECT_ITEM`. In text-mode Kiosk, the main conversation panel provides a
-  simulated-ASR text input and expandable per-turn decision trace. It bypasses
+  simulated-ASR text input, expandable raw decision trace, and a larger
+  structured per-utterance inspector. It bypasses
   microphone/ASR only; it uses the real System One, current browser state,
   and WebMCP runtime, marks activity `asr_simulation`, and does not retain a
   fake audio recording.
@@ -249,7 +251,8 @@ their existence alone does not mean an item has been implemented.
   The simulated-ASR panel exposes a full trace: browser and checkout snapshot,
   phase, refs, intent candidates, Jev raw answer/probabilities, resolution,
   operation plan, and authorization. A state-changing choice below 0.5 reported
-  confidence is sent to Main Agent rather than executed. On 2026-09-29 the
+  confidence returns `UNAVAILABLE` rather than executing or forwarding
+  unclassified speech. On 2026-09-29 the
   configured Qwen3.5-4B openjev service passed the eight live request replay
   expectations using the default prompt, but that replay used an incorrect
   bento gold label. After correcting it to `ADD_ITEM`, the same eight cases
@@ -278,6 +281,19 @@ their existence alone does not mean an item has been implemented.
   create or consume Jev candidates. Raw checkout IDs remain browser-owned.
   Relevant targeted tests/typechecks and the corrected eight-case live replay
   pass; on-device checkout/POS integration remains to be validated.
+
+- **Kiosk continuous-ASR continuation:** Native WebMCP host-only context/state
+  calls now use the host path, and native JSON-string input schemas are parsed
+  before Main Agent tool exposure. Live and simulated ASR use one bounded
+  utterance queue that reserves capture order before asynchronous ASR returns
+  and releases a hung ASR reservation after 15 seconds. Jev filters background speech before interrupting TTS or
+  Agent work; an active Agent request can be restarted only before it requests
+  a browser tool. Later speech waits for a definitive tool/result loop and is
+  re-decided against current state. `UNAVAILABLE` fails closed, while explicit
+  `NEEDS_ASSISTANT` and related follow-ups route to Agent. The decision inspector
+  shows phase, candidates, real-reference labels, decision, operation, and
+  authorization per utterance. Targeted tests and package typechecks are the
+  implementation gate; local Server services were not running for live replay.
 
 - Build the System Manager sandbox test and Store Manager on-device validation
   workflow, including device health, execution records, and audit data. This is
