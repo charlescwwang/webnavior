@@ -47,6 +47,29 @@ describe('createWebMcpAdapter', () => {
     })
   })
 
+  it('exposes native JSON-string schemas as objects for Main Agent tools', async () => {
+    vi.stubGlobal('document', {
+      modelContext: {
+        executeTool: vi.fn(),
+        getTools: vi.fn().mockResolvedValue([{
+          description: 'Add an item.',
+          inputSchema: '{"type":"object","properties":{"quantity":{"type":"integer"}},"required":["quantity"]}',
+          name: 'cart_add_item',
+          origin: 'https://menu.example',
+        }]),
+      },
+    })
+    const adapter = createWebMcpAdapter()
+    adapter.activate('https://menu.example/ordering')
+    await adapter.refresh()
+
+    expect(adapter.tools.value[0]?.inputSchema).toEqual({
+      properties: { quantity: { type: 'integer' } },
+      required: ['quantity'],
+      type: 'object',
+    })
+  })
+
   it('keeps Stage Web mountable when the browser omits the optional toolchange event', async () => {
     vi.stubGlobal('document', {
       modelContext: {

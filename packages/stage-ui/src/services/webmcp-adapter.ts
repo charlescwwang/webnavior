@@ -23,7 +23,8 @@ export interface WebMcpToolExecution {
 }
 
 /** A browser-issued tool handle. Its `window` belongs to an iframe and must never enter Vue reactivity. */
-interface RegisteredWebMcpTool extends WebMcpTool {
+interface RegisteredWebMcpTool extends Omit<WebMcpTool, 'inputSchema'> {
+  inputSchema: string | Record<string, unknown>
   window: Window
 }
 
@@ -66,12 +67,22 @@ function toolKey(tool: Pick<WebMcpTool, 'name' | 'origin'>) {
   return `${tool.origin}\u0000${tool.name}`
 }
 
+function inputSchemaFrom(tool: RegisteredWebMcpTool): Record<string, unknown> {
+  // Native WebMCP discovery serializes schemas as JSON text. Agent tool
+  // builders need the parsed object; spreading the string creates numeric
+  // character keys instead of JSON Schema fields.
+  const schema: unknown = typeof tool.inputSchema === 'string' ? JSON.parse(tool.inputSchema) : tool.inputSchema
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema) || (schema as Record<string, unknown>).type !== 'object')
+    throw new Error(`Invalid input schema for WebMCP tool "${tool.name}".`)
+  return schema as Record<string, unknown>
+}
+
 /** Copies browser tool metadata into a Vue-safe descriptor without its cross-origin Window handle. */
 function descriptorFrom(tool: RegisteredWebMcpTool): WebMcpTool {
   return {
     annotations: tool.annotations ? { ...tool.annotations } : undefined,
     description: tool.description,
-    inputSchema: tool.inputSchema,
+    inputSchema: inputSchemaFrom(tool),
     name: tool.name,
     origin: tool.origin,
     title: tool.title,

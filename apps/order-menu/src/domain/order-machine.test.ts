@@ -754,6 +754,32 @@ describe('createMenuToolRuntime', () => {
     }
   })
 
+  it('lets the kiosk host read semantic candidates through native WebMCP', async () => {
+    const registeredTools: Array<{
+      name: string
+      execute: (input: Record<string, unknown>) => Promise<unknown>
+    }> = []
+    vi.stubGlobal('document', { modelContext: { registerTool: async (tool: typeof registeredTools[number]) => {
+      registeredTools.push(tool)
+    } } })
+
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      runtime.setMenu(menu)
+      await runtime.registerNativeWebMcp()
+      const context = registeredTools.find(tool => tool.name === 'kiosk_fast_path_context')
+      const state = registeredTools.find(tool => tool.name === 'kiosk_interaction_state')
+      if (!context || !state)
+        throw new Error('Expected Kiosk host tools to be registered.')
+
+      await expect(context.execute({ transcript: '周氏蝦捲' })).resolves.toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:add-item' })]), phase: 'ordering' })
+      await expect(state.execute({})).resolves.toMatchObject({ phase: 'ordering' })
+    }
+    finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('starts checkout through native WebMCP without completing the order', async () => {
     const registeredTools: Array<{
       name: string

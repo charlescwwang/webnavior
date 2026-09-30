@@ -36,6 +36,13 @@ export type MenuToolName
 
 export type MenuPresentationToolName = 'menu_get' | 'menu_recommend' | 'menu_show_recommendations'
 
+type KioskHostOnlyToolName = 'kiosk_interaction_state' | 'kiosk_fast_path_context' | 'kiosk_fast_path_execute'
+const kioskHostOnlyToolNames = new Set<MenuToolName>(['kiosk_interaction_state', 'kiosk_fast_path_context', 'kiosk_fast_path_execute'])
+
+function isKioskHostOnlyToolName(name: MenuToolName): name is KioskHostOnlyToolName {
+  return kioskHostOnlyToolNames.has(name)
+}
+
 export interface MenuPresentationActivity {
   state: 'idle' | 'loading'
   toolName: MenuPresentationToolName
@@ -1089,7 +1096,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
 
   /** Applies the browser-owned state policy before a conversational Agent's WebMCP call. */
   async function invokeForAgent(name: MenuToolName, input: Record<string, unknown> = {}) {
-    if (name === 'kiosk_interaction_state' || name === 'kiosk_fast_path_context' || name === 'kiosk_fast_path_execute')
+    if (isKioskHostOnlyToolName(name))
       throw new Error('Kiosk host decision tools are unavailable to the Agent.')
     if (name === 'menu_get' || name === 'cart_get')
       return await invoke(name, input)
@@ -1310,7 +1317,12 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             if (signal?.aborted)
               throw signal.reason ?? new DOMException('Tool execution aborted.', 'AbortError')
             try {
-              return await invokeForAgent(definition.name, input)
+              // Native WebMCP carries both host-only decision tools and Agent
+              // tools. The host-only tools must use the browser-owned runtime;
+              // invokeForAgent intentionally refuses them.
+              return isKioskHostOnlyToolName(definition.name)
+                ? await invoke(definition.name, input)
+                : await invokeForAgent(definition.name, input)
             }
             catch (error) {
               return nativeInvocationFailure(definition.name, error)
