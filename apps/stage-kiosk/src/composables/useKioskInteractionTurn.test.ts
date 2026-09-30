@@ -1,19 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { effectScope } from 'vue'
 
-import { canStartKioskVoiceTurn, useKioskInteractionTurn } from './useKioskInteractionTurn'
+import { useKioskInteractionTurn } from './useKioskInteractionTurn'
 
 describe('useKioskInteractionTurn', () => {
-  it('accepts a customer interruption only while listening or speaking', () => {
-    expect(canStartKioskVoiceTurn('listening')).toBe(true)
-    expect(canStartKioskVoiceTurn('speaking')).toBe(true)
-
-    expect(canStartKioskVoiceTurn('hearing-speech')).toBe(false)
-    expect(canStartKioskVoiceTurn('transcribing')).toBe(false)
-    expect(canStartKioskVoiceTurn('thinking')).toBe(false)
-    expect(canStartKioskVoiceTurn('using-tool')).toBe(false)
-  })
-
   it('supersedes an earlier turn so its response cannot update the current interaction', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())
@@ -37,7 +27,6 @@ describe('useKioskInteractionTurn', () => {
       throw new Error('Expected kiosk interaction turn to initialize.')
 
     const spokenTurn = interaction.begin('conversation', 'speaking')
-    expect(canStartKioskVoiceTurn(interaction.phase.value)).toBe(true)
 
     const voiceTurn = interaction.begin('voice', 'hearing-speech')
     expect(spokenTurn.signal.aborted).toBe(true)
@@ -46,20 +35,20 @@ describe('useKioskInteractionTurn', () => {
     scope.stop()
   })
 
-  it('lets a customer voice turn interrupt proactive analysis but not customer analysis', () => {
+  it('does not let unverified speech interrupt proactive or customer analysis', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())
     if (!interaction)
       throw new Error('Expected kiosk interaction turn to initialize.')
 
     const proactiveTurn = interaction.begin('proactive', 'thinking')
-    const voiceTurn = interaction.beginCustomerVoiceTurn()
-    expect(proactiveTurn.signal.aborted).toBe(true)
-    expect(voiceTurn).toBeDefined()
-    expect(interaction.phase.value).toBe('hearing-speech')
+    const candidate = interaction.beginCustomerVoiceCandidate()
+    expect(proactiveTurn.signal.aborted).toBe(false)
+    expect(interaction.isCurrentVoiceCandidate(candidate)).toBe(true)
 
-    interaction.begin('conversation', 'thinking')
-    expect(interaction.beginCustomerVoiceTurn()).toBeUndefined()
+    const conversation = interaction.begin('conversation', 'thinking')
+    expect(interaction.isCurrentVoiceCandidate(candidate)).toBe(true)
+    expect(interaction.isCurrent(conversation)).toBe(true)
     expect(interaction.phase.value).toBe('thinking')
     scope.stop()
   })
@@ -96,11 +85,46 @@ describe('useKioskInteractionTurn', () => {
     interaction.advance(activeTurn, 'using-tool')
     const toolCandidate = interaction.beginCustomerVoiceCandidate()
     expect(toolCandidate).toBeDefined()
+    expect(candidate!.signal.aborted).toBe(false)
+    expect(interaction.isCurrentVoiceCandidate(candidate!)).toBe(true)
     expect(interaction.isCurrent(activeTurn)).toBe(true)
     expect(interaction.isCurrentVoiceCandidate(toolCandidate!)).toBe(true)
 
     interaction.begin('voice', 'hearing-speech')
+    expect(toolCandidate!.signal.aborted).toBe(false)
+    expect(interaction.isCurrentVoiceCandidate(toolCandidate!)).toBe(true)
+    interaction.cancel()
     expect(toolCandidate!.signal.aborted).toBe(true)
+    scope.stop()
+  })
+
+  it('captures a second finished utterance while the first is still transcribing', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())
+    if (!interaction)
+      throw new Error('Expected kiosk interaction turn to initialize.')
+
+    const first = interaction.begin('voice', 'transcribing')
+    const second = interaction.beginCustomerVoiceCandidate()
+    expect(second).toBeDefined()
+    expect(interaction.isCurrent(first)).toBe(true)
+    expect(interaction.isCurrentVoiceCandidate(second!)).toBe(true)
+    scope.stop()
+  })
+
+  it('captures speech independently of an active ordering turn', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())
+    if (!interaction)
+      throw new Error('Expected kiosk interaction turn to initialize.')
+
+    const first = interaction.beginCustomerVoiceCandidate()
+    expect(first).toBeDefined()
+    expect(interaction.phase.value).toBe('listening')
+    const second = interaction.beginCustomerVoiceCandidate()
+    expect(second).toBeDefined()
+    expect(interaction.isCurrentVoiceCandidate(first!)).toBe(true)
+    expect(interaction.isCurrentVoiceCandidate(second!)).toBe(true)
     scope.stop()
   })
 })

@@ -127,12 +127,21 @@ export function useKioskInteractionRecording() {
         if (event.type === 'tool-requested')
           callbacks.onToolRequested?.(event.toolCall.function.name)
       })
+      // A follow-up may cancel a still-thinking Agent while its final stream
+      // chunk is in flight. A late tool call from that cancelled turn must not
+      // execute, even if the response itself arrived successfully.
+      if (callbacks.signal?.aborted)
+        return undefined
       // A browser-owned WebMCP tool cannot execute on the Server. Keep the
       // model credentials server-side while returning each requested call to
       // this kiosk, then resume the same persisted conversation with its result.
       for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
         const toolResults = await Promise.all(response.toolCalls.map(async (toolCall: KioskToolCall) => {
+          if (callbacks.signal?.aborted)
+            return undefined
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
+          if (callbacks.signal?.aborted)
+            return undefined
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           callbacks.onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
           return {
@@ -143,7 +152,8 @@ export function useKioskInteractionRecording() {
         }))
         if (callbacks.signal?.aborted)
           return undefined
-        response = await streamKioskConversationMessage({ signal: callbacks.signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        const completedToolResults = toolResults.filter(result => result !== undefined)
+        response = await streamKioskConversationMessage({ signal: callbacks.signal, toolResults: completedToolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
           if (event.type === 'turn-started')
             callbacks.onTurnStarted?.()
           if (event.type === 'assistant-delta')

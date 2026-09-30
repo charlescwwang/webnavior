@@ -3,7 +3,6 @@ import { BasicTextarea } from '@proj-airi/ui'
 import { computed, shallowRef } from 'vue'
 
 const props = defineProps<{
-  busy: boolean
   status?: string
   trace?: string
 }>()
@@ -11,7 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ simulate: [transcript: string] }>()
 
 const transcript = shallowRef('')
-const canSimulate = computed(() => Boolean(transcript.value.trim()) && !props.busy)
+const canSimulate = computed(() => Boolean(transcript.value.trim()))
 
 function simulate() {
   if (!canSimulate.value)
@@ -35,7 +34,7 @@ function simulate() {
         @submit="simulate"
       />
       <button type="submit" class="simulation-button" :disabled="!canSimulate">
-        {{ props.busy ? '正在測試…' : '模擬辨識並執行' }}
+        模擬辨識並執行
       </button>
     </form>
     <p v-if="props.status" class="simulation-status" role="status">

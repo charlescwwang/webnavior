@@ -1,3 +1,4 @@
+import { rawTool } from '@xsai/tool'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
@@ -141,6 +142,30 @@ describe('useKioskInteractionRecording', () => {
     await recording.send('restaurant-ordering', '想吃炸物點心', [], { onToolRequested })
 
     expect(onToolRequested).toHaveBeenCalledWith('menu_get')
+    scope.stop()
+  })
+
+  it('does not execute a browser tool delivered after a cancelled Agent turn', async () => {
+    const controller = new AbortController()
+    const execute = vi.fn(async () => ({ done: true }))
+    const tool = rawTool({
+      name: 'cart_add_item',
+      description: 'Add item',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      execute,
+    })
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockImplementation(async () => {
+      controller.abort()
+      return { agentMode: 'active', answer: undefined, toolCalls: [{ id: 'call-1', type: 'function', function: { arguments: '{}', name: 'cart_add_item' } }] }
+    })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())
+    if (!recording)
+      throw new Error('Expected interaction recording to initialize.')
+
+    await expect(recording.send('restaurant-ordering', '我要水餃', [tool], { signal: controller.signal })).resolves.toBeUndefined()
+    expect(execute).not.toHaveBeenCalled()
     scope.stop()
   })
 

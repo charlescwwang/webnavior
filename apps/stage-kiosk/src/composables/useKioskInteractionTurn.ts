@@ -22,33 +22,20 @@ export interface KioskVoiceCandidate {
 }
 
 /**
- * Determines when VAD may begin a new customer utterance.
- *
- * While ASR or the ordering model is working, accepting another utterance
- * would replace the active turn and discard its result. Speech synthesis is
- * intentionally excluded from that lock so customers can still barge in and
- * stop a spoken answer.
- */
-export function canStartKioskVoiceTurn(phase: KioskInteractionPhase) {
-  return phase === 'listening' || phase === 'speaking'
-}
-
-/**
  * Serializes customer and proactive kiosk work into one cancellable turn.
  *
- * A customer barge-in may supersede spoken output. Callers must gate ASR and
- * model phases with `canStartKioskVoiceTurn`, then check `isCurrent` after
- * every asynchronous boundary before presenting or persisting a result.
+ * A customer barge-in may supersede spoken output. ASR candidates remain
+ * independent until the decision queue decides whether to interrupt work.
  */
 export function useKioskInteractionTurn() {
   const phase = shallowRef<KioskInteractionPhase>('listening')
   let activeTurn: (KioskInteractionTurn & { controller: AbortController }) | undefined
-  let activeVoiceCandidate: (KioskVoiceCandidate & { controller: AbortController }) | undefined
+  const voiceCandidates = new Map<number, KioskVoiceCandidate & { controller: AbortController }>()
   let nextTurnId = 0
   const canProactivelySpeak = computed(() => phase.value === 'listening' && activeTurn === undefined)
 
   function begin(kind: KioskInteractionTurnKind, initialPhase: KioskInteractionPhase): KioskInteractionTurn {
-    cancel()
+    cancelActiveTurn()
 
     const controller = new AbortController()
     activeTurn = {
@@ -82,53 +69,40 @@ export function useKioskInteractionTurn() {
     return true
   }
 
-  function cancel() {
-    activeVoiceCandidate?.controller.abort()
-    activeVoiceCandidate = undefined
+  function cancelActiveTurn() {
     activeTurn?.controller.abort()
     activeTurn = undefined
     phase.value = 'listening'
   }
 
+  function cancel() {
+    for (const candidate of voiceCandidates.values())
+      candidate.controller.abort()
+    voiceCandidates.clear()
+    cancelActiveTurn()
+  }
+
   function cancelProactive() {
     if (activeTurn?.kind === 'proactive')
-      cancel()
+      cancelActiveTurn()
   }
 
-  /**
-   * Gives an actual customer utterance precedence over a background greeting,
-   * while preserving the no-interruption rule for customer work in progress.
-   */
-  function beginCustomerVoiceTurn() {
-    cancelProactive()
-    if (!canStartKioskVoiceTurn(phase.value))
-      return undefined
-    return begin('voice', 'hearing-speech')
-  }
-
-  /**
-   * Lets VAD capture a possible customer correction without pre-empting an
-   * in-flight order. The caller must ask the Server decision module before it
-   * cancels the active turn or presents the transcript.
-   */
+  /** Captures ASR independently so a model or tool turn cannot discard speech. */
   function beginCustomerVoiceCandidate() {
-    if (phase.value !== 'thinking' && phase.value !== 'using-tool')
-      return undefined
-
-    activeVoiceCandidate?.controller.abort()
     const controller = new AbortController()
-    activeVoiceCandidate = { controller, id: ++nextTurnId, signal: controller.signal }
-    return activeVoiceCandidate
+    const candidate = { controller, id: ++nextTurnId, signal: controller.signal }
+    voiceCandidates.set(candidate.id, candidate)
+    return candidate
   }
 
   function isCurrentVoiceCandidate(candidate: KioskVoiceCandidate) {
-    return activeVoiceCandidate?.id === candidate.id && !candidate.signal.aborted
+    return voiceCandidates.has(candidate.id) && !candidate.signal.aborted
   }
 
   function completeVoiceCandidate(candidate: KioskVoiceCandidate) {
     if (!isCurrentVoiceCandidate(candidate))
       return false
-    activeVoiceCandidate = undefined
+    voiceCandidates.delete(candidate.id)
     return true
   }
 
@@ -137,10 +111,10 @@ export function useKioskInteractionTurn() {
   return {
     advance,
     begin,
-    beginCustomerVoiceTurn,
     beginCustomerVoiceCandidate,
     canProactivelySpeak: readonly(canProactivelySpeak),
     cancel,
+    cancelActiveTurn,
     cancelProactive,
     complete,
     completeVoiceCandidate,

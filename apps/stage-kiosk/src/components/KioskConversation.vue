@@ -24,7 +24,6 @@ const props = defineProps<{
     title: string
   }
   executionDurationMs?: number
-  fastPathSimulationBusy: boolean
   fastPathSimulationStatus?: string
   fastPathSimulationTrace?: string
   fontSize: number
@@ -33,7 +32,6 @@ const props = defineProps<{
   retryAvailable?: boolean
   sending: boolean
   streamingAssistantMessage?: ChatHistoryItem
-  voiceInputLocked: boolean
   voiceConversationOnly: boolean
 }>()
 
@@ -60,11 +58,6 @@ const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || we
 // can supersede a pending model turn instead of forcing a one-question queue.
 const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && serviceReady.value)
 const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
-const voiceOnlyNotice = computed(() => (
-  props.voiceInputLocked
-    ? '正在處理上一句話，請稍候。'
-    : '請直接對麥克風說話。'
-))
 const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
@@ -158,11 +151,10 @@ async function sendMessage() {
     </div>
 
     <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
-      {{ voiceOnlyNotice }}
+      請直接對麥克風說話；處理中也能繼續補充。
     </p>
     <template v-else>
       <KioskAsrSimulationPanel
-        :busy="props.fastPathSimulationBusy"
         :status="props.fastPathSimulationStatus"
         :trace="props.fastPathSimulationTrace"
         @simulate="emit('simulateAsr', $event)"
