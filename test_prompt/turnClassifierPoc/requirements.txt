@@ -1,0 +1,7 @@
+# Standalone experiment pins; never part of AIRI's production dependencies.
+sentence-transformers==6.1.0
+setfit==1.2.0
+scikit-learn==1.9.1
+torch==2.14.1
+transformers==5.18.0
+numpy==2.5.3

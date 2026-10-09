@@ -1,0 +1,154 @@
+{
+  "metadata": {
+    "model": "models/gemini-3.5-flash",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "runtimeAlias": "webnavior/chat",
+    "datasetSha256": "3f02f670cadb61b8a6ce09ddfe948e70c3ba391bbb9639248e97063b5867c053",
+    "promptSha256": "ae39eaa55dae840d239eb8d9533c609e63f3a18237b437a3ff3f9af9370e23eb",
+    "baseInstructionSha256": "d07f1655664d594f1f4f0d4f3d5d576b989a51c508180d3fe680d6c065c50b6b",
+    "systemInstructions": "你是繁體中文餐飲需求抽取器，只提出需求，不回答顧客、不選商品 ID、不呼叫工具、不宣稱已完成。\n輸入 utterance 是本輪顧客原話；dialogue 與 currentQuestion 只協助理解省略回答，不能強迫顧客回答舊問題，也不能把歷史要求重新加入本輪。\n保留整句所有有效要求；同句不同商品可有多個 ADD，不能合併成擇一。提到不存在餐點或不支援客製化也照樣保留原要求，留給程式檢查。\n每個 requirement.source 必須是 utterance 的連續原文片段；targetRaw、replacementRaw、conditions 必須保留本句原文，不改別名、不校正 ASR、不從歷史填商品。\neffect：ADD 新增；QUERY 資訊詢問；RECOMMEND 首次請挑餐；RECOMMEND_NEXT 換其他推薦；VIEW 只看；MODIFY_QUANTITY 修改既有數量；MODIFY_OPTION 修改既有客製；REMOVE 刪既有餐；REPLACE 把既有餐換別餐（targetRaw 舊餐、replacementRaw 新餐、quantity 新餐數量）；FULFILLMENT 內用/自取；PARTY_SIZE 用餐人數；CHECKOUT 進入結帳而非付款授權；DECLINE 拒絕/暫緩；CHAT 無服務需求；UNFINISHED 話尚未說完/仍未決定；UNCERTAIN 無法判定有效需求。\nquantity 只填本句明示數量，沒說就 null，不能預設一份。PARTY_SIZE 的 quantity 是人數。value 只在 FULFILLMENT 填 dine-in/takeout，其他為 null。\nconditions 是餐點客製或查詢限制的原文片段，例如辣度、不要某食材、價格範圍；每個條件只附在它修飾的需求，不擅自套所有餐。queryTopics 只在 QUERY 填 AVAILABILITY/PRICE/COMPOSITION/DIET/CATEGORY/PRICE_FILTER，可多項，其他空陣列。\ncontextRequired：用序號、那個、剛剛那份、無 target 的修改，或好/對/一位等省略回答，需要前文判斷時 true；具名新需求即使打斷舊问题也 false。\ncurrentQuestion 若是單一具體操作可理解好/對；若是多品項擇一問題，對不能代表任選第一個或全選，應 UNCERTAIN 並把該回答放 unresolved。沒有有效問題時，好不能授權操作，應 CHAT。回答已完成的資訊也是 CHAT。\n撤回本句尚未執行的餐點後明確改口，只保留最後有效要求；不要刪掉本句另外已明確保留的餐。尚未決定就 UNFINISHED，不硬加入。\nunresolved 保存本句未能確定的需求片段，不能用它取代已明確的其他要求。summaryCount 只表示顧客明示「總共幾樣/幾份」的數字，不是額外餐點也不自行計算，未明示為 null。\n只輸出符合指定 schema 的 JSON，無信心分數、無工具參數、無商品 ID。格式與原文跨度不保證語意正確；這只是待驗證提案。\n\n輸出 JSON schema：{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"requirements\",\"unresolved\",\"summaryCount\"],\"properties\":{\"requirements\":{\"type\":\"array\",\"minItems\":1,\"maxItems\":16,\"items\":{\"type\":\"object\",\"additionalProperties\":false,\"required\":[\"source\",\"effect\",\"targetRaw\",\"replacementRaw\",\"quantity\",\"conditions\",\"queryTopics\",\"contextRequired\",\"value\"],\"properties\":{\"source\":{\"type\":\"string\"},\"effect\":{\"type\":\"string\",\"enum\":[\"ADD\",\"QUERY\",\"RECOMMEND\",\"RECOMMEND_NEXT\",\"VIEW\",\"MODIFY_QUANTITY\",\"MODIFY_OPTION\",\"REMOVE\",\"REPLACE\",\"FULFILLMENT\",\"PARTY_SIZE\",\"CHECKOUT\",\"DECLINE\",\"CHAT\",\"UNFINISHED\",\"UNCERTAIN\"]},\"targetRaw\":{\"type\":[\"string\",\"null\"]},\"replacementRaw\":{\"type\":[\"string\",\"null\"]},\"quantity\":{\"type\":[\"integer\",\"null\"],\"minimum\":1},\"conditions\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"queryTopics\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"enum\":[\"AVAILABILITY\",\"PRICE\",\"COMPOSITION\",\"DIET\",\"CATEGORY\",\"PRICE_FILTER\"]}},\"contextRequired\":{\"type\":\"boolean\"},\"value\":{\"anyOf\":[{\"type\":\"string\",\"enum\":[\"dine-in\",\"takeout\"]},{\"type\":\"null\"}]}}}},\"unresolved\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}},\"summaryCount\":{\"type\":[\"integer\",\"null\"],\"minimum\":1}}}",
+    "catalogSha256": "91225f3065b448fd5c2350fac3c9092a9316e44b3f49944ce0051840a7f8efdd",
+    "responseSchemaSha256": "58bb871bf908ba21c2540cd431a4c275b680de004a5bd9840fdd40e92e2878dd",
+    "startedAt": "2026-10-08T05:21:17.177Z",
+    "count": 40,
+    "requestSettings": {
+      "stream": false,
+      "temperature": 0,
+      "timeoutMs": 60000,
+      "response_format": {
+        "type": "json_object"
+      }
+    },
+    "thinking": "provider default, unchanged; residency/cold start unknown",
+    "tools": "none",
+    "goldSent": false,
+    "menuSent": false,
+    "productionWrites": false
+  },
+  "complete": false,
+  "stopped": true,
+  "attempted": 10,
+  "successful": 9,
+  "schemaAndLiteralValid": 9,
+  "exactTurns": 4,
+  "totalTurns": 40,
+  "requirementMatched": 4,
+  "requirementExpected": 50,
+  "requirementProduced": 9,
+  "precision": 0.4444444444444444,
+  "recall": 0.08,
+  "latency_ms": {
+    "mean": 3997.1755738888896,
+    "p50": 3713.9987919999985,
+    "p95": 5859.629958000001,
+    "firstRequest": 3104.382
+  },
+  "groups": {
+    "single": {
+      "total": 3,
+      "measured": 3,
+      "exact": 3
+    },
+    "query": {
+      "total": 7,
+      "measured": 6,
+      "exact": 1
+    },
+    "recommendation": {
+      "total": 2,
+      "measured": 1,
+      "exact": 0
+    },
+    "compound": {
+      "total": 6,
+      "measured": 0,
+      "exact": 0
+    },
+    "context": {
+      "total": 8,
+      "measured": 0,
+      "exact": 0
+    },
+    "reference": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "modification": {
+      "total": 4,
+      "measured": 0,
+      "exact": 0
+    },
+    "revert": {
+      "total": 3,
+      "measured": 0,
+      "exact": 0
+    },
+    "unfinished": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "chat": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "asr": {
+      "total": 1,
+      "measured": 0,
+      "exact": 0
+    }
+  },
+  "failures": [
+    {
+      "id": "g05",
+      "status": "OK",
+      "differences": [
+        "quantity"
+      ]
+    },
+    {
+      "id": "g06",
+      "status": "OK",
+      "differences": [
+        "conditions"
+      ]
+    },
+    {
+      "id": "g07",
+      "status": "OK",
+      "differences": [
+        "targetRaw",
+        "queryTopics"
+      ]
+    },
+    {
+      "id": "g08",
+      "status": "OK",
+      "differences": [
+        "queryTopics"
+      ]
+    },
+    {
+      "id": "g09",
+      "status": "OK",
+      "differences": [
+        "queryTopics"
+      ]
+    },
+    {
+      "id": "g10",
+      "status": "HTTP_ERROR"
+    }
+  ],
+  "limitations": [
+    "New extraction prompt and schema, not the existing Main Agent prompt/tool loop.",
+    "Forty synthetic challenge turns, not traffic accuracy or production safety.",
+    "Single sample per turn, no stability test, no same-model judge or retuning.",
+    "Literal evidence/schema validity is not semantic correctness; authored gold measures fields.",
+    "No domain-plan execution, ASR, session lifecycle, tool receipts, checkout/payment or UI tested.",
+    "No comparable Jev run on this schema; prior finite-question results are a different experiment.",
+    "Remote HTTP latency only. Memory, actual cold start and end-to-end latency not measured."
+  ]
+}

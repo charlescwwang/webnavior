@@ -1,0 +1,682 @@
+{
+  "scenario_sha256": "971bd9c212700dffbbd6ab2b7e5e49ddb404bce8318b1affae83f1ee5d73b45b",
+  "training_dataset": {
+    "samples": 400,
+    "classes": 8,
+    "families": 80,
+    "splits": {
+      "train": 240,
+      "validation": 80,
+      "test": 80
+    },
+    "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+  },
+  "modes": {
+    "frozen": {
+      "calibration": {
+        "temperature": 0.4265795188015928,
+        "validation_nll": 1.0712463251938558,
+        "grid_min": 0.01,
+        "grid_max": 10,
+        "grid_points": 301,
+        "selected_at_boundary": false,
+        "fit_split": "validation"
+      },
+      "records": [
+        {
+          "id": "r01",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.8891075429239185,
+            "latency_ms": 9.434540988877416
+          }
+        },
+        {
+          "id": "r02",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.3790215576134445,
+            "latency_ms": 8.583124988945201
+          }
+        },
+        {
+          "id": "r03",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.3560262775054963,
+            "latency_ms": 7.850416994187981
+          }
+        },
+        {
+          "id": "r04",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.7212873342429998,
+            "latency_ms": 8.479707990773022
+          }
+        },
+        {
+          "id": "r05",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7787445939701667,
+            "latency_ms": 8.812874992145225
+          }
+        },
+        {
+          "id": "r06",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.9221123656587985,
+            "latency_ms": 7.6550829980988055
+          }
+        },
+        {
+          "id": "r07",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.6266439737775655,
+            "latency_ms": 7.833957992261276
+          }
+        },
+        {
+          "id": "r08",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.4232338764898744,
+            "latency_ms": 7.992541010025889
+          }
+        },
+        {
+          "id": "r09",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.6319725496808696,
+            "latency_ms": 8.641833992442116
+          }
+        },
+        {
+          "id": "r10",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7507694517518082,
+            "latency_ms": 7.212625001557171
+          }
+        },
+        {
+          "id": "r11",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.37132160802006975,
+            "latency_ms": 9.155957988696173
+          }
+        },
+        {
+          "id": "r12",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.2761056731880479,
+            "latency_ms": 7.776457990985364
+          }
+        },
+        {
+          "id": "r13",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.5594481239842867,
+            "latency_ms": 7.833709008991718
+          }
+        },
+        {
+          "id": "r14",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.9701974639240682,
+            "latency_ms": 7.169791992055252
+          }
+        },
+        {
+          "id": "r15",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.9552020058786224,
+            "latency_ms": 9.028041997225955
+          }
+        },
+        {
+          "id": "r16",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.8215042584299497,
+            "latency_ms": 8.542499999748543
+          }
+        },
+        {
+          "id": "r17",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.5832579480850125,
+            "latency_ms": 7.671999977901578
+          }
+        },
+        {
+          "id": "r18",
+          "prediction": {
+            "class": "UNCERTAIN",
+            "confidence": 0.43938997989466144,
+            "latency_ms": 7.936582987895235
+          }
+        },
+        {
+          "id": "r19",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.4292787486236801,
+            "latency_ms": 8.038542000576854
+          }
+        },
+        {
+          "id": "r20",
+          "prediction": {
+            "class": "MODIFICATION",
+            "confidence": 0.34037303633271543,
+            "latency_ms": 7.844667008612305
+          }
+        },
+        {
+          "id": "r21",
+          "prediction": {
+            "class": "MODIFICATION",
+            "confidence": 0.8341910096960629,
+            "latency_ms": 8.242708980105817
+          }
+        },
+        {
+          "id": "r22",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.4328606748517319,
+            "latency_ms": 8.91983401379548
+          }
+        },
+        {
+          "id": "r23",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.9125443948320441,
+            "latency_ms": 7.7932910062372684
+          }
+        },
+        {
+          "id": "r24",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.9790595437059019,
+            "latency_ms": 9.06224999926053
+          }
+        },
+        {
+          "id": "r25",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.46390801645526175,
+            "latency_ms": 8.211542008211836
+          }
+        },
+        {
+          "id": "r26",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.40502057202375347,
+            "latency_ms": 8.25829099630937
+          }
+        },
+        {
+          "id": "r27",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.33722451607687587,
+            "latency_ms": 8.304707997012883
+          }
+        },
+        {
+          "id": "r28",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.4022952155506887,
+            "latency_ms": 7.910040993010625
+          }
+        },
+        {
+          "id": "r29",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.428955221042639,
+            "latency_ms": 8.084750006673858
+          }
+        },
+        {
+          "id": "r30",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.428955221042639,
+            "latency_ms": 8.145665982738137
+          }
+        },
+        {
+          "id": "r31",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.9820537353058623,
+            "latency_ms": 7.492791977711022
+          }
+        },
+        {
+          "id": "r32",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.8364765770340213,
+            "latency_ms": 9.3843330105301
+          }
+        },
+        {
+          "id": "r33",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7897706460033772,
+            "latency_ms": 9.049832995515317
+          }
+        },
+        {
+          "id": "r34",
+          "prediction": {
+            "class": "MODIFICATION",
+            "confidence": 0.7642387825294634,
+            "latency_ms": 7.50216597225517
+          }
+        },
+        {
+          "id": "r35",
+          "prediction": {
+            "class": "UNCERTAIN",
+            "confidence": 0.36020375550240075,
+            "latency_ms": 8.61550000263378
+          }
+        },
+        {
+          "id": "r36",
+          "prediction": {
+            "class": "CHAT",
+            "confidence": 0.9629102210820192,
+            "latency_ms": 8.729292021598667
+          }
+        },
+        {
+          "id": "r37",
+          "prediction": {
+            "class": "NOISE",
+            "confidence": 0.8780651383586899,
+            "latency_ms": 7.785124995280057
+          }
+        },
+        {
+          "id": "r38",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.32222602249401905,
+            "latency_ms": 7.969166996190324
+          }
+        },
+        {
+          "id": "r39",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.5200658523200747,
+            "latency_ms": 8.843040995998308
+          }
+        },
+        {
+          "id": "r40",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.6237229950114351,
+            "latency_ms": 7.789708994096145
+          }
+        }
+      ]
+    },
+    "setfit": {
+      "calibration": {
+        "temperature": 0.4677351412871981,
+        "validation_nll": 0.9782310063024576,
+        "grid_min": 0.01,
+        "grid_max": 10,
+        "grid_points": 301,
+        "selected_at_boundary": false,
+        "fit_split": "validation"
+      },
+      "records": [
+        {
+          "id": "r01",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.8763709719064098,
+            "latency_ms": 8.627833012724295
+          }
+        },
+        {
+          "id": "r02",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.32166788756579884,
+            "latency_ms": 9.630209009628743
+          }
+        },
+        {
+          "id": "r03",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.748023328791805,
+            "latency_ms": 8.206375001464039
+          }
+        },
+        {
+          "id": "r04",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.8336364262460629,
+            "latency_ms": 10.693375021219254
+          }
+        },
+        {
+          "id": "r05",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7535956069337796,
+            "latency_ms": 7.8048330033198
+          }
+        },
+        {
+          "id": "r06",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.9108552810311381,
+            "latency_ms": 7.842958002584055
+          }
+        },
+        {
+          "id": "r07",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.6381131627627726,
+            "latency_ms": 7.864166982471943
+          }
+        },
+        {
+          "id": "r08",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.6472836548408885,
+            "latency_ms": 9.255707991542295
+          }
+        },
+        {
+          "id": "r09",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.8189108661456492,
+            "latency_ms": 9.737167012644932
+          }
+        },
+        {
+          "id": "r10",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7847811324886894,
+            "latency_ms": 7.870208006352186
+          }
+        },
+        {
+          "id": "r11",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.38959200085723394,
+            "latency_ms": 9.599582990631461
+          }
+        },
+        {
+          "id": "r12",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.35485355545815367,
+            "latency_ms": 8.150999987265095
+          }
+        },
+        {
+          "id": "r13",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.5914844169892881,
+            "latency_ms": 8.608999982243404
+          }
+        },
+        {
+          "id": "r14",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.9596037396711499,
+            "latency_ms": 9.553291980409995
+          }
+        },
+        {
+          "id": "r15",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.9395392790888932,
+            "latency_ms": 7.675375003600493
+          }
+        },
+        {
+          "id": "r16",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.8497530002180074,
+            "latency_ms": 7.921084004919976
+          }
+        },
+        {
+          "id": "r17",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7156187959124728,
+            "latency_ms": 7.3210000118706375
+          }
+        },
+        {
+          "id": "r18",
+          "prediction": {
+            "class": "UNCERTAIN",
+            "confidence": 0.4195155827441118,
+            "latency_ms": 7.253124989802018
+          }
+        },
+        {
+          "id": "r19",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.43578322441966805,
+            "latency_ms": 7.41341698449105
+          }
+        },
+        {
+          "id": "r20",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.3326555312951376,
+            "latency_ms": 7.886750012403354
+          }
+        },
+        {
+          "id": "r21",
+          "prediction": {
+            "class": "MODIFICATION",
+            "confidence": 0.8626840554867697,
+            "latency_ms": 7.30091700097546
+          }
+        },
+        {
+          "id": "r22",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.39950670284250384,
+            "latency_ms": 7.746042014332488
+          }
+        },
+        {
+          "id": "r23",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.8866328031080463,
+            "latency_ms": 7.254708994878456
+          }
+        },
+        {
+          "id": "r24",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.9821719104665302,
+            "latency_ms": 9.695666987681761
+          }
+        },
+        {
+          "id": "r25",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.48800031586222775,
+            "latency_ms": 7.401041017146781
+          }
+        },
+        {
+          "id": "r26",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.49261357313001514,
+            "latency_ms": 9.54004199593328
+          }
+        },
+        {
+          "id": "r27",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.30953335759472783,
+            "latency_ms": 9.323957987362519
+          }
+        },
+        {
+          "id": "r28",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.4953885658336065,
+            "latency_ms": 8.892084006220102
+          }
+        },
+        {
+          "id": "r29",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.4836471183175744,
+            "latency_ms": 9.341833996586502
+          }
+        },
+        {
+          "id": "r30",
+          "prediction": {
+            "class": "REFERENCE",
+            "confidence": 0.4836471183175744,
+            "latency_ms": 9.433791972696781
+          }
+        },
+        {
+          "id": "r31",
+          "prediction": {
+            "class": "CANCEL_OR_REVERT",
+            "confidence": 0.9848255436054482,
+            "latency_ms": 9.471833996940404
+          }
+        },
+        {
+          "id": "r32",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.8378608474235353,
+            "latency_ms": 9.897000010823831
+          }
+        },
+        {
+          "id": "r33",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7511248395456471,
+            "latency_ms": 7.94745801249519
+          }
+        },
+        {
+          "id": "r34",
+          "prediction": {
+            "class": "MODIFICATION",
+            "confidence": 0.753662581024443,
+            "latency_ms": 9.548750007525086
+          }
+        },
+        {
+          "id": "r35",
+          "prediction": {
+            "class": "UNCERTAIN",
+            "confidence": 0.44826770557371215,
+            "latency_ms": 7.956000015838072
+          }
+        },
+        {
+          "id": "r36",
+          "prediction": {
+            "class": "CHAT",
+            "confidence": 0.9727313447887516,
+            "latency_ms": 8.076833008090034
+          }
+        },
+        {
+          "id": "r37",
+          "prediction": {
+            "class": "NOISE",
+            "confidence": 0.9253287156923051,
+            "latency_ms": 9.416582994163036
+          }
+        },
+        {
+          "id": "r38",
+          "prediction": {
+            "class": "UNCERTAIN",
+            "confidence": 0.28915079137562477,
+            "latency_ms": 7.81100001768209
+          }
+        },
+        {
+          "id": "r39",
+          "prediction": {
+            "class": "QUERY",
+            "confidence": 0.45685452859086906,
+            "latency_ms": 7.530582981416956
+          }
+        },
+        {
+          "id": "r40",
+          "prediction": {
+            "class": "DIRECT_ACTION",
+            "confidence": 0.7015290841218824,
+            "latency_ms": 8.24412499787286
+          }
+        }
+      ]
+    }
+  }
+}

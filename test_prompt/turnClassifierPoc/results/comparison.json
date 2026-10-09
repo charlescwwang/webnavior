@@ -1,0 +1,3169 @@
+{
+  "dataset": {
+    "samples": 400,
+    "classes": 8,
+    "families": 80,
+    "splits": {
+      "train": 240,
+      "validation": 80,
+      "test": 80
+    },
+    "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+  },
+  "scope": "turn-only synthetic classification, no resolver execution",
+  "models": [
+    {
+      "kind": "jev_eight_class_turn_only",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.5875,
+        "accuracy_including_failures": 0.5875,
+        "macro_f1": 0.574164905143166,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.7,
+            "recall": 0.7,
+            "f1": 0.7,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 1.0,
+            "recall": 0.8,
+            "f1": 0.888888888888889,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.75,
+            "recall": 0.3,
+            "f1": 0.4285714285714285,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.8333333333333334,
+            "recall": 1.0,
+            "f1": 0.9090909090909091,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6666666666666666,
+            "recall": 0.2,
+            "f1": 0.30769230769230765,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 0.7692307692307693,
+            "recall": 1.0,
+            "f1": 0.8695652173913044,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 1.0,
+            "recall": 0.1,
+            "f1": 0.18181818181818182,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.20689655172413793,
+            "recall": 0.6,
+            "f1": 0.3076923076923077,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 8,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 3,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 5,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 10,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 1,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 6,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 10,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 9,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 2,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 6,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 1682.193262536748,
+          "p50": 1660.2507920033531,
+          "p95": 2062.5435975947767
+        },
+        "confidence_ece": 0.17675875000000002,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 4,
+            "mean_confidence": 0.255175,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 7,
+            "mean_confidence": 0.3590285714285714,
+            "accuracy": 0.5714285714285714
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 8,
+            "mean_confidence": 0.4354625,
+            "accuracy": 0.125
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 18,
+            "mean_confidence": 0.5531833333333334,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 14,
+            "mean_confidence": 0.6419357142857143,
+            "accuracy": 0.2857142857142857
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 14,
+            "mean_confidence": 0.7400499999999999,
+            "accuracy": 0.8571428571428571
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 8,
+            "mean_confidence": 0.8558625,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 7,
+            "mean_confidence": 0.9351285714285714,
+            "accuracy": 1.0
+          }
+        ],
+        "multiclass_brier": 0.552184954375,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9998,
+          1.0002
+        ]
+      },
+      "metadata": {
+        "model_kind": "jev_eight_class_turn_only",
+        "endpoint": "https://openjev.aikcitri.qzz.io/v1/systemone",
+        "prompt_sha256": "0e5b2c84fda73526b208959dd4e5e8cb7f56318a0ae3da2769dc1cdd75a49deb",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "remote_cold_start_ms": null,
+        "remote_model_memory_bytes": null
+      }
+    },
+    {
+      "kind": "jev_eight_class_calibrated",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.5875,
+        "accuracy_including_failures": 0.5875,
+        "macro_f1": 0.574164905143166,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.7,
+            "recall": 0.7,
+            "f1": 0.7,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 1.0,
+            "recall": 0.8,
+            "f1": 0.888888888888889,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.75,
+            "recall": 0.3,
+            "f1": 0.4285714285714285,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.8333333333333334,
+            "recall": 1.0,
+            "f1": 0.9090909090909091,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6666666666666666,
+            "recall": 0.2,
+            "f1": 0.30769230769230765,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 0.7692307692307693,
+            "recall": 1.0,
+            "f1": 0.8695652173913044,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 1.0,
+            "recall": 0.1,
+            "f1": 0.18181818181818182,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.20689655172413793,
+            "recall": 0.6,
+            "f1": 0.3076923076923077,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 8,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 3,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 5,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 10,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 1,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 6,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 10,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 9,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 2,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 6,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 1682.193262536748,
+          "p50": 1660.2507920033531,
+          "p95": 2062.5435975947767
+        },
+        "confidence_ece": 0.12429808642028684,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 1,
+            "mean_confidence": 0.297000807038267,
+            "accuracy": 0.0
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 6,
+            "mean_confidence": 0.3625049640276999,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 11,
+            "mean_confidence": 0.44197289622997715,
+            "accuracy": 0.36363636363636365
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 18,
+            "mean_confidence": 0.5504475274618793,
+            "accuracy": 0.4444444444444444
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 22,
+            "mean_confidence": 0.6454656308259306,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 9,
+            "mean_confidence": 0.7518367690086784,
+            "accuracy": 0.8888888888888888
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 9,
+            "mean_confidence": 0.8532235106472171,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 4,
+            "mean_confidence": 0.9256457058400275,
+            "accuracy": 1.0
+          }
+        ],
+        "multiclass_brier": 0.5435492485496031,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9999999999999998,
+          1.0000000000000002
+        ]
+      },
+      "metadata": {
+        "model_kind": "jev_eight_class_calibrated",
+        "endpoint": "https://openjev.aikcitri.qzz.io/v1/systemone",
+        "prompt_sha256": "0e5b2c84fda73526b208959dd4e5e8cb7f56318a0ae3da2769dc1cdd75a49deb",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "remote_cold_start_ms": null,
+        "remote_model_memory_bytes": null,
+        "calibration": {
+          "temperature": 1.1481536214968828,
+          "validation_nll": 1.0611118583621382,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "raw_confidence_semantics": "provider confidence; not directly fitted by posterior temperature"
+      }
+    },
+    {
+      "kind": "minilm_frozen_raw",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.725,
+        "accuracy_including_failures": 0.725,
+        "macro_f1": 0.7224728487886383,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.6363636363636364,
+            "recall": 0.7,
+            "f1": 0.6666666666666666,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 1.0,
+            "recall": 0.6,
+            "f1": 0.7499999999999999,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.7,
+            "recall": 0.7,
+            "f1": 0.7,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6428571428571429,
+            "recall": 0.9,
+            "f1": 0.75,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 0.875,
+            "recall": 0.7,
+            "f1": 0.7777777777777777,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.4444444444444444,
+            "recall": 0.4,
+            "f1": 0.4210526315789474,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 9,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 6,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 2,
+            "REFERENCE": 0,
+            "MODIFICATION": 7,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 9,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 7,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 9,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 3,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 4,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 8.099967611997272,
+          "p50": 8.173686990630813,
+          "p95": 8.872240979690105
+        },
+        "confidence_ece": 0.3580862366022829,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 2,
+            "mean_confidence": 0.1920549706635069,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 24,
+            "mean_confidence": 0.2570349047201258,
+            "accuracy": 0.625
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 27,
+            "mean_confidence": 0.3442899808187763,
+            "accuracy": 0.6666666666666666
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 17,
+            "mean_confidence": 0.44786833998463993,
+            "accuracy": 0.8235294117647058
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 5,
+            "mean_confidence": 0.534974905265876,
+            "accuracy": 0.8
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 5,
+            "mean_confidence": 0.6431375258064229,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          }
+        ],
+        "multiclass_brier": 0.5991392063386191,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9999999999999998,
+          1.0000000000000002
+        ]
+      },
+      "metadata": {
+        "model_kind": "minilm_frozen_raw",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "calibration": {
+          "temperature": 0.4265795188015928,
+          "validation_nll": 1.0712463251938558,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "training": {
+          "dataset": {
+            "samples": 400,
+            "classes": 8,
+            "families": 80,
+            "splits": {
+              "train": 240,
+              "validation": 80,
+              "test": 80
+            },
+            "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+          },
+          "base": {
+            "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "versions": {
+              "torch": "2.14.1",
+              "sentence-transformers": "6.1.0",
+              "setfit": "1.2.0",
+              "scikit-learn": "1.9.1",
+              "numpy": "2.5.3",
+              "transformers": "5.18.0"
+            },
+            "download_or_cache_resolution_ms": 12299.916416988708
+          },
+          "seed": 42,
+          "train_samples": 240,
+          "training_device": "cpu",
+          "training_threads": 4,
+          "normalize_embeddings": true,
+          "head_C": 1.0,
+          "head_max_iter": 1000,
+          "mode": "frozen",
+          "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+          "training_ms": 1259.9127500143368,
+          "score_semantics": "multinomial logits"
+        },
+        "versions": {
+          "torch": "2.14.1",
+          "sentence-transformers": "6.1.0",
+          "setfit": "1.2.0",
+          "scikit-learn": "1.9.1",
+          "numpy": "2.5.3",
+          "transformers": "5.18.0"
+        },
+        "inference_device": "cpu",
+        "inference_threads": 1,
+        "latency_repeats_per_turn": 3,
+        "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+        "cached_model_process_load_ms": 3854.287124995608,
+        "first_inference_ms": 15.210207988275215,
+        "process_peak_rss_after_load_bytes": 1228341248,
+        "process_peak_rss_after_inference_bytes": 1228341248,
+        "model_parameter_bytes": 470615040,
+        "parameters": 117653760,
+        "hardware": {
+          "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+          "machine": "arm64",
+          "logical_cpus": 10
+        },
+        "cold_process_full_benchmark_wall_ms": 7216.6872920061,
+        "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+      },
+      "routing_simulation": [
+        {
+          "threshold": 0.7,
+          "counts": {
+            "jev_fallback": 80
+          },
+          "shares": {
+            "jev_fallback": 1.0
+          },
+          "accepted_class_error": null,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1690.2932301487454,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.8,
+          "counts": {
+            "jev_fallback": 80
+          },
+          "shares": {
+            "jev_fallback": 1.0
+          },
+          "accepted_class_error": null,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1690.2932301487454,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.9,
+          "counts": {
+            "jev_fallback": 80
+          },
+          "shares": {
+            "jev_fallback": 1.0
+          },
+          "accepted_class_error": null,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1690.2932301487454,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.95,
+          "counts": {
+            "jev_fallback": 80
+          },
+          "shares": {
+            "jev_fallback": 1.0
+          },
+          "accepted_class_error": null,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1690.2932301487454,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        }
+      ]
+    },
+    {
+      "kind": "minilm_frozen_calibrated",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.725,
+        "accuracy_including_failures": 0.725,
+        "macro_f1": 0.7224728487886383,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.6363636363636364,
+            "recall": 0.7,
+            "f1": 0.6666666666666666,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 1.0,
+            "recall": 0.6,
+            "f1": 0.7499999999999999,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.7,
+            "recall": 0.7,
+            "f1": 0.7,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6428571428571429,
+            "recall": 0.9,
+            "f1": 0.75,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 0.875,
+            "recall": 0.7,
+            "f1": 0.7777777777777777,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.4444444444444444,
+            "recall": 0.4,
+            "f1": 0.4210526315789474,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 9,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 6,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 2,
+            "REFERENCE": 0,
+            "MODIFICATION": 7,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 9,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 7,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 9,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 3,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 4,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 8.099967611997272,
+          "p50": 8.173686990630813,
+          "p95": 8.872240979690105
+        },
+        "confidence_ece": 0.12321661554618799,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 2,
+            "mean_confidence": 0.2642292618062839,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 9,
+            "mean_confidence": 0.3589491190472124,
+            "accuracy": 0.6666666666666666
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 10,
+            "mean_confidence": 0.4500994011125055,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 15,
+            "mean_confidence": 0.5622457117786368,
+            "accuracy": 0.6666666666666666
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 7,
+            "mean_confidence": 0.6390409781506223,
+            "accuracy": 0.8571428571428571
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 16,
+            "mean_confidence": 0.7460481583307964,
+            "accuracy": 0.75
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 10,
+            "mean_confidence": 0.855873811134974,
+            "accuracy": 0.8
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 11,
+            "mean_confidence": 0.9456662541394988,
+            "accuracy": 0.8181818181818182
+          }
+        ],
+        "multiclass_brier": 0.4891850128795323,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9999999999999998,
+          1.0000000000000002
+        ]
+      },
+      "metadata": {
+        "model_kind": "minilm_frozen_calibrated",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "calibration": {
+          "temperature": 0.4265795188015928,
+          "validation_nll": 1.0712463251938558,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "training": {
+          "dataset": {
+            "samples": 400,
+            "classes": 8,
+            "families": 80,
+            "splits": {
+              "train": 240,
+              "validation": 80,
+              "test": 80
+            },
+            "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+          },
+          "base": {
+            "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "versions": {
+              "torch": "2.14.1",
+              "sentence-transformers": "6.1.0",
+              "setfit": "1.2.0",
+              "scikit-learn": "1.9.1",
+              "numpy": "2.5.3",
+              "transformers": "5.18.0"
+            },
+            "download_or_cache_resolution_ms": 12299.916416988708
+          },
+          "seed": 42,
+          "train_samples": 240,
+          "training_device": "cpu",
+          "training_threads": 4,
+          "normalize_embeddings": true,
+          "head_C": 1.0,
+          "head_max_iter": 1000,
+          "mode": "frozen",
+          "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+          "training_ms": 1259.9127500143368,
+          "score_semantics": "multinomial logits"
+        },
+        "versions": {
+          "torch": "2.14.1",
+          "sentence-transformers": "6.1.0",
+          "setfit": "1.2.0",
+          "scikit-learn": "1.9.1",
+          "numpy": "2.5.3",
+          "transformers": "5.18.0"
+        },
+        "inference_device": "cpu",
+        "inference_threads": 1,
+        "latency_repeats_per_turn": 3,
+        "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+        "cached_model_process_load_ms": 3854.287124995608,
+        "first_inference_ms": 15.210207988275215,
+        "process_peak_rss_after_load_bytes": 1228341248,
+        "process_peak_rss_after_inference_bytes": 1228341248,
+        "model_parameter_bytes": 470615040,
+        "parameters": 117653760,
+        "hardware": {
+          "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+          "machine": "arm64",
+          "logical_cpus": 10
+        },
+        "cold_process_full_benchmark_wall_ms": 7216.6872920061,
+        "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+      },
+      "routing_simulation": [
+        {
+          "threshold": 0.7,
+          "counts": {
+            "domain_resolver": 9,
+            "jev_fallback": 47,
+            "contextual_resolver": 13,
+            "non_execution": 11
+          },
+          "shares": {
+            "domain_resolver": 0.1125,
+            "jev_fallback": 0.5875,
+            "contextual_resolver": 0.1625,
+            "non_execution": 0.1375
+          },
+          "accepted_class_error": 0.18181818181818182,
+          "contextual_or_uncertain_wrongly_direct": 2,
+          "non_direct_wrongly_direct": 2,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.2875,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1016.8844061739946,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.8,
+          "counts": {
+            "domain_resolver": 6,
+            "jev_fallback": 59,
+            "contextual_resolver": 7,
+            "non_execution": 8
+          },
+          "shares": {
+            "domain_resolver": 0.075,
+            "jev_fallback": 0.7375,
+            "contextual_resolver": 0.0875,
+            "non_execution": 0.1
+          },
+          "accepted_class_error": 0.19047619047619047,
+          "contextual_or_uncertain_wrongly_direct": 1,
+          "non_direct_wrongly_direct": 1,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.3625,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1256.0469884738268,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.9,
+          "counts": {
+            "domain_resolver": 2,
+            "jev_fallback": 69,
+            "contextual_resolver": 3,
+            "non_execution": 6
+          },
+          "shares": {
+            "domain_resolver": 0.025,
+            "jev_fallback": 0.8625,
+            "contextual_resolver": 0.0375,
+            "non_execution": 0.075
+          },
+          "accepted_class_error": 0.18181818181818182,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1464.8242139981448,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.95,
+          "counts": {
+            "jev_fallback": 74,
+            "contextual_resolver": 2,
+            "non_execution": 4
+          },
+          "shares": {
+            "jev_fallback": 0.925,
+            "contextual_resolver": 0.025,
+            "non_execution": 0.05
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.3875,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1574.4431129485747,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        }
+      ]
+    },
+    {
+      "kind": "minilm_similarity_raw",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.675,
+        "accuracy_including_failures": 0.675,
+        "macro_f1": 0.6741885964912281,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.6363636363636364,
+            "recall": 0.7,
+            "f1": 0.6666666666666666,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 0.8,
+            "recall": 0.8,
+            "f1": 0.8000000000000002,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.7777777777777778,
+            "recall": 0.7,
+            "f1": 0.7368421052631577,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.6363636363636364,
+            "recall": 0.7,
+            "f1": 0.6666666666666666,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.5333333333333333,
+            "recall": 0.8,
+            "f1": 0.64,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 1.0,
+            "recall": 0.6,
+            "f1": 0.7499999999999999,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 0.8,
+            "recall": 0.8,
+            "f1": 0.8000000000000002,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.375,
+            "recall": 0.3,
+            "f1": 0.33333333333333326,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 8,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 7,
+            "MODIFICATION": 2,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 1,
+            "REFERENCE": 0,
+            "MODIFICATION": 7,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 8,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 1,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 6,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 8,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 3,
+            "QUERY": 0,
+            "REFERENCE": 2,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 3,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 7.9929999617888825,
+          "p50": 8.019165994483046,
+          "p95": 8.622118739003781
+        },
+        "confidence_ece": 0.11783608719706536,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 1,
+            "mean_confidence": 0.5552129149436951,
+            "accuracy": 0.0
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 14,
+            "mean_confidence": 0.6580160430499485,
+            "accuracy": 0.42857142857142855
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 27,
+            "mean_confidence": 0.7410778712343287,
+            "accuracy": 0.6296296296296297
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 22,
+            "mean_confidence": 0.848814151503823,
+            "accuracy": 0.7727272727272727
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 16,
+            "mean_confidence": 0.9360272251069546,
+            "accuracy": 0.875
+          }
+        ],
+        "multiclass_brier": null,
+        "brier_valid_count": 0,
+        "posterior_sum_range": null
+      },
+      "metadata": {
+        "model_kind": "minilm_similarity_raw",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "calibration": {
+          "temperature": 0.07943282347242814,
+          "validation_nll": 1.410992259449746,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "training": {
+          "dataset": {
+            "samples": 400,
+            "classes": 8,
+            "families": 80,
+            "splits": {
+              "train": 240,
+              "validation": 80,
+              "test": 80
+            },
+            "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+          },
+          "base": {
+            "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "versions": {
+              "torch": "2.14.1",
+              "sentence-transformers": "6.1.0",
+              "setfit": "1.2.0",
+              "scikit-learn": "1.9.1",
+              "numpy": "2.5.3",
+              "transformers": "5.18.0"
+            },
+            "download_or_cache_resolution_ms": 12299.916416988708
+          },
+          "seed": 42,
+          "train_samples": 240,
+          "training_device": "cpu",
+          "training_threads": 4,
+          "normalize_embeddings": true,
+          "head_C": 1.0,
+          "head_max_iter": 1000,
+          "mode": "similarity",
+          "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+          "training_ms": 1260.2845000219531,
+          "score_semantics": "max cosine per class"
+        },
+        "versions": {
+          "torch": "2.14.1",
+          "sentence-transformers": "6.1.0",
+          "setfit": "1.2.0",
+          "scikit-learn": "1.9.1",
+          "numpy": "2.5.3",
+          "transformers": "5.18.0"
+        },
+        "inference_device": "cpu",
+        "inference_threads": 1,
+        "latency_repeats_per_turn": 3,
+        "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+        "cached_model_process_load_ms": 3351.1487920186482,
+        "first_inference_ms": 16.332957980921492,
+        "process_peak_rss_after_load_bytes": 1241006080,
+        "process_peak_rss_after_inference_bytes": 1241006080,
+        "model_parameter_bytes": 470615040,
+        "parameters": 117653760,
+        "hardware": {
+          "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+          "machine": "arm64",
+          "logical_cpus": 10
+        },
+        "cold_process_full_benchmark_wall_ms": 6635.6386249826755,
+        "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+      },
+      "routing_simulation": [
+        {
+          "threshold": 0.7,
+          "counts": {
+            "domain_resolver": 21,
+            "jev_fallback": 22,
+            "contextual_resolver": 27,
+            "non_execution": 10
+          },
+          "shares": {
+            "domain_resolver": 0.2625,
+            "jev_fallback": 0.275,
+            "contextual_resolver": 0.3375,
+            "non_execution": 0.125
+          },
+          "accepted_class_error": 0.22413793103448276,
+          "contextual_or_uncertain_wrongly_direct": 4,
+          "non_direct_wrongly_direct": 6,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.275,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 468.433639048817,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.8,
+          "counts": {
+            "domain_resolver": 14,
+            "jev_fallback": 45,
+            "contextual_resolver": 17,
+            "non_execution": 4
+          },
+          "shares": {
+            "domain_resolver": 0.175,
+            "jev_fallback": 0.5625,
+            "contextual_resolver": 0.2125,
+            "non_execution": 0.05
+          },
+          "accepted_class_error": 0.17142857142857143,
+          "contextual_or_uncertain_wrongly_direct": 3,
+          "non_direct_wrongly_direct": 3,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.2875,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 959.3669307101663,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.9,
+          "counts": {
+            "domain_resolver": 9,
+            "jev_fallback": 65,
+            "contextual_resolver": 5,
+            "non_execution": 1
+          },
+          "shares": {
+            "domain_resolver": 0.1125,
+            "jev_fallback": 0.8125,
+            "contextual_resolver": 0.0625,
+            "non_execution": 0.0125
+          },
+          "accepted_class_error": 0.13333333333333333,
+          "contextual_or_uncertain_wrongly_direct": 1,
+          "non_direct_wrongly_direct": 1,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.3625,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1372.5546661225962,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.95,
+          "counts": {
+            "domain_resolver": 2,
+            "jev_fallback": 76,
+            "contextual_resolver": 2
+          },
+          "shares": {
+            "domain_resolver": 0.025,
+            "jev_fallback": 0.95,
+            "contextual_resolver": 0.025
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.3875,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1604.2435729232238,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        }
+      ]
+    },
+    {
+      "kind": "minilm_similarity_calibrated",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.675,
+        "accuracy_including_failures": 0.675,
+        "macro_f1": 0.6741885964912281,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.6363636363636364,
+            "recall": 0.7,
+            "f1": 0.6666666666666666,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 0.8,
+            "recall": 0.8,
+            "f1": 0.8000000000000002,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.7777777777777778,
+            "recall": 0.7,
+            "f1": 0.7368421052631577,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.6363636363636364,
+            "recall": 0.7,
+            "f1": 0.6666666666666666,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.5333333333333333,
+            "recall": 0.8,
+            "f1": 0.64,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 1.0,
+            "recall": 0.6,
+            "f1": 0.7499999999999999,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 0.8,
+            "recall": 0.8,
+            "f1": 0.8000000000000002,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.375,
+            "recall": 0.3,
+            "f1": 0.33333333333333326,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 8,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 7,
+            "MODIFICATION": 2,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 1,
+            "REFERENCE": 0,
+            "MODIFICATION": 7,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 8,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 1,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 6,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 8,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 3,
+            "QUERY": 0,
+            "REFERENCE": 2,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 3,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 7.9929999617888825,
+          "p50": 8.019165994483046,
+          "p95": 8.622118739003781
+        },
+        "confidence_ece": 0.16092747348992648,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 1,
+            "mean_confidence": 0.19854738247303433,
+            "accuracy": 0.0
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 7,
+            "mean_confidence": 0.27798438227791655,
+            "accuracy": 0.2857142857142857
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 24,
+            "mean_confidence": 0.3524827224261548,
+            "accuracy": 0.4583333333333333
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 13,
+            "mean_confidence": 0.44488350981255603,
+            "accuracy": 0.7692307692307693
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 10,
+            "mean_confidence": 0.5543545105435518,
+            "accuracy": 0.8
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 8,
+            "mean_confidence": 0.6362353574523024,
+            "accuracy": 0.75
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 6,
+            "mean_confidence": 0.7533883682084971,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 5,
+            "mean_confidence": 0.8429198553639401,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 6,
+            "mean_confidence": 0.9611717350696561,
+            "accuracy": 1.0
+          }
+        ],
+        "multiclass_brier": 0.4830714221226296,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9999999999999998,
+          1.0000000000000002
+        ]
+      },
+      "metadata": {
+        "model_kind": "minilm_similarity_calibrated",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "calibration": {
+          "temperature": 0.07943282347242814,
+          "validation_nll": 1.410992259449746,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "training": {
+          "dataset": {
+            "samples": 400,
+            "classes": 8,
+            "families": 80,
+            "splits": {
+              "train": 240,
+              "validation": 80,
+              "test": 80
+            },
+            "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+          },
+          "base": {
+            "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "versions": {
+              "torch": "2.14.1",
+              "sentence-transformers": "6.1.0",
+              "setfit": "1.2.0",
+              "scikit-learn": "1.9.1",
+              "numpy": "2.5.3",
+              "transformers": "5.18.0"
+            },
+            "download_or_cache_resolution_ms": 12299.916416988708
+          },
+          "seed": 42,
+          "train_samples": 240,
+          "training_device": "cpu",
+          "training_threads": 4,
+          "normalize_embeddings": true,
+          "head_C": 1.0,
+          "head_max_iter": 1000,
+          "mode": "similarity",
+          "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+          "training_ms": 1260.2845000219531,
+          "score_semantics": "max cosine per class"
+        },
+        "versions": {
+          "torch": "2.14.1",
+          "sentence-transformers": "6.1.0",
+          "setfit": "1.2.0",
+          "scikit-learn": "1.9.1",
+          "numpy": "2.5.3",
+          "transformers": "5.18.0"
+        },
+        "inference_device": "cpu",
+        "inference_threads": 1,
+        "latency_repeats_per_turn": 3,
+        "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+        "cached_model_process_load_ms": 3351.1487920186482,
+        "first_inference_ms": 16.332957980921492,
+        "process_peak_rss_after_load_bytes": 1241006080,
+        "process_peak_rss_after_inference_bytes": 1241006080,
+        "model_parameter_bytes": 470615040,
+        "parameters": 117653760,
+        "hardware": {
+          "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+          "machine": "arm64",
+          "logical_cpus": 10
+        },
+        "cold_process_full_benchmark_wall_ms": 6635.6386249826755,
+        "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+      },
+      "routing_simulation": [
+        {
+          "threshold": 0.7,
+          "counts": {
+            "domain_resolver": 3,
+            "jev_fallback": 64,
+            "contextual_resolver": 5,
+            "non_execution": 8
+          },
+          "shares": {
+            "domain_resolver": 0.0375,
+            "jev_fallback": 0.8,
+            "contextual_resolver": 0.0625,
+            "non_execution": 0.1
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.35,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1344.2611802103784,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.8,
+          "counts": {
+            "jev_fallback": 70,
+            "domain_resolver": 2,
+            "contextual_resolver": 3,
+            "non_execution": 5
+          },
+          "shares": {
+            "jev_fallback": 0.875,
+            "domain_resolver": 0.025,
+            "contextual_resolver": 0.0375,
+            "non_execution": 0.0625
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.375,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1477.096585410618,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.9,
+          "counts": {
+            "jev_fallback": 75,
+            "domain_resolver": 1,
+            "contextual_resolver": 2,
+            "non_execution": 2
+          },
+          "shares": {
+            "jev_fallback": 0.9375,
+            "domain_resolver": 0.0125,
+            "contextual_resolver": 0.025,
+            "non_execution": 0.025
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1590.0957145859138,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.95,
+          "counts": {
+            "jev_fallback": 77,
+            "contextual_resolver": 1,
+            "non_execution": 2
+          },
+          "shares": {
+            "jev_fallback": 0.9625,
+            "contextual_resolver": 0.0125,
+            "non_execution": 0.025
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1630.907652085807,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        }
+      ]
+    },
+    {
+      "kind": "minilm_setfit_raw",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.7375,
+        "accuracy_including_failures": 0.7375,
+        "macro_f1": 0.7348581178883036,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.6666666666666666,
+            "recall": 0.8,
+            "f1": 0.7272727272727272,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.8571428571428571,
+            "recall": 0.6,
+            "f1": 0.7058823529411764,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.7777777777777778,
+            "recall": 0.7,
+            "f1": 0.7368421052631577,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6428571428571429,
+            "recall": 0.9,
+            "f1": 0.75,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 1.0,
+            "recall": 0.7,
+            "f1": 0.8235294117647058,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.4444444444444444,
+            "recall": 0.4,
+            "f1": 0.4210526315789474,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 8,
+            "QUERY": 0,
+            "REFERENCE": 1,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 9,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 6,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 2,
+            "REFERENCE": 0,
+            "MODIFICATION": 7,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 9,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 7,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 9,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 3,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 4,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 7.798308889687178,
+          "p50": 7.863166494644247,
+          "p95": 8.828747311781626
+        },
+        "confidence_ece": 0.30618787372501177,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 21,
+            "mean_confidence": 0.26537711365357586,
+            "accuracy": 0.6190476190476191
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 20,
+            "mean_confidence": 0.3530953800959883,
+            "accuracy": 0.7
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 17,
+            "mean_confidence": 0.4520694505345915,
+            "accuracy": 0.7647058823529411
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 11,
+            "mean_confidence": 0.5526146491322858,
+            "accuracy": 0.7272727272727273
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 3,
+            "mean_confidence": 0.6594381134835067,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 6,
+            "mean_confidence": 0.7466542354962301,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 2,
+            "mean_confidence": 0.823980780191549,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          }
+        ],
+        "multiclass_brier": 0.5351875853196164,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9999999999999998,
+          1.0000000000000002
+        ]
+      },
+      "metadata": {
+        "model_kind": "minilm_setfit_raw",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "calibration": {
+          "temperature": 0.4677351412871981,
+          "validation_nll": 0.9782310063024576,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "training": {
+          "dataset": {
+            "samples": 400,
+            "classes": 8,
+            "families": 80,
+            "splits": {
+              "train": 240,
+              "validation": 80,
+              "test": 80
+            },
+            "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+          },
+          "base": {
+            "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "versions": {
+              "torch": "2.14.1",
+              "sentence-transformers": "6.1.0",
+              "setfit": "1.2.0",
+              "scikit-learn": "1.9.1",
+              "numpy": "2.5.3",
+              "transformers": "5.18.0"
+            },
+            "download_or_cache_resolution_ms": 12299.916416988708
+          },
+          "seed": 42,
+          "train_samples": 240,
+          "training_device": "cpu",
+          "training_threads": 4,
+          "normalize_embeddings": true,
+          "head_C": 1.0,
+          "head_max_iter": 1000,
+          "mode": "setfit",
+          "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/models/setfit/encoder",
+          "body_learning_rate": 2e-05,
+          "training_steps": 60,
+          "requested_steps": 60,
+          "num_iterations": 2,
+          "training_ms": 18575.208166992525,
+          "training_process_peak_rss_bytes": 2645082112,
+          "score_semantics": "multinomial logits"
+        },
+        "versions": {
+          "torch": "2.14.1",
+          "sentence-transformers": "6.1.0",
+          "setfit": "1.2.0",
+          "scikit-learn": "1.9.1",
+          "numpy": "2.5.3",
+          "transformers": "5.18.0"
+        },
+        "inference_device": "cpu",
+        "inference_threads": 1,
+        "latency_repeats_per_turn": 3,
+        "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+        "cached_model_process_load_ms": 3444.5175000000745,
+        "first_inference_ms": 137.74966698838398,
+        "process_peak_rss_after_load_bytes": 1272643584,
+        "process_peak_rss_after_inference_bytes": 1272643584,
+        "model_parameter_bytes": 470615040,
+        "parameters": 117653760,
+        "hardware": {
+          "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+          "machine": "arm64",
+          "logical_cpus": 10
+        },
+        "cold_process_full_benchmark_wall_ms": 6700.178957980825,
+        "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+      },
+      "routing_simulation": [
+        {
+          "threshold": 0.7,
+          "counts": {
+            "jev_fallback": 72,
+            "contextual_resolver": 1,
+            "non_execution": 7
+          },
+          "shares": {
+            "jev_fallback": 0.9,
+            "contextual_resolver": 0.0125,
+            "non_execution": 0.0875
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.35,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1531.2776750641206,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.8,
+          "counts": {
+            "jev_fallback": 78,
+            "non_execution": 2
+          },
+          "shares": {
+            "jev_fallback": 0.975,
+            "non_execution": 0.025
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1651.6794578765257,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.9,
+          "counts": {
+            "jev_fallback": 80
+          },
+          "shares": {
+            "jev_fallback": 1.0
+          },
+          "accepted_class_error": null,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1689.9915714264353,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.95,
+          "counts": {
+            "jev_fallback": 80
+          },
+          "shares": {
+            "jev_fallback": 1.0
+          },
+          "accepted_class_error": null,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.4125,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1689.9915714264353,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        }
+      ]
+    },
+    {
+      "kind": "minilm_setfit_calibrated",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.7375,
+        "accuracy_including_failures": 0.7375,
+        "macro_f1": 0.7348581178883036,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.6666666666666666,
+            "recall": 0.8,
+            "f1": 0.7272727272727272,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.8571428571428571,
+            "recall": 0.6,
+            "f1": 0.7058823529411764,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.7777777777777778,
+            "recall": 0.7,
+            "f1": 0.7368421052631577,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6428571428571429,
+            "recall": 0.9,
+            "f1": 0.75,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 1.0,
+            "recall": 0.7,
+            "f1": 0.8235294117647058,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 0.8181818181818182,
+            "recall": 0.9,
+            "f1": 0.8571428571428572,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.4444444444444444,
+            "recall": 0.4,
+            "f1": 0.4210526315789474,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 8,
+            "QUERY": 0,
+            "REFERENCE": 1,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 9,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 6,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 2,
+            "REFERENCE": 0,
+            "MODIFICATION": 7,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 9,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 7,
+            "NOISE": 1,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 9,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 3,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 4,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 7.798308889687178,
+          "p50": 7.863166494644247,
+          "p95": 8.828747311781626
+        },
+        "confidence_ece": 0.10791667147678036,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 2,
+            "mean_confidence": 0.2854875297628306,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 5,
+            "mean_confidence": 0.36226287434021254,
+            "accuracy": 0.6
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 13,
+            "mean_confidence": 0.44505800911137017,
+            "accuracy": 0.6923076923076923
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 11,
+            "mean_confidence": 0.5547860352039052,
+            "accuracy": 0.5454545454545454
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 10,
+            "mean_confidence": 0.6562394817270129,
+            "accuracy": 0.8
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 14,
+            "mean_confidence": 0.7673060404462383,
+            "accuracy": 0.7857142857142857
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 10,
+            "mean_confidence": 0.8528298488275514,
+            "accuracy": 0.8
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 15,
+            "mean_confidence": 0.9650074517210638,
+            "accuracy": 0.8666666666666667
+          }
+        ],
+        "multiclass_brier": 0.45067990322163165,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9999999999999998,
+          1.0000000000000002
+        ]
+      },
+      "metadata": {
+        "model_kind": "minilm_setfit_calibrated",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "calibration": {
+          "temperature": 0.4677351412871981,
+          "validation_nll": 0.9782310063024576,
+          "grid_min": 0.01,
+          "grid_max": 10,
+          "grid_points": 301,
+          "selected_at_boundary": false,
+          "fit_split": "validation"
+        },
+        "training": {
+          "dataset": {
+            "samples": 400,
+            "classes": 8,
+            "families": 80,
+            "splits": {
+              "train": 240,
+              "validation": 80,
+              "test": 80
+            },
+            "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+          },
+          "base": {
+            "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+            "versions": {
+              "torch": "2.14.1",
+              "sentence-transformers": "6.1.0",
+              "setfit": "1.2.0",
+              "scikit-learn": "1.9.1",
+              "numpy": "2.5.3",
+              "transformers": "5.18.0"
+            },
+            "download_or_cache_resolution_ms": 12299.916416988708
+          },
+          "seed": 42,
+          "train_samples": 240,
+          "training_device": "cpu",
+          "training_threads": 4,
+          "normalize_embeddings": true,
+          "head_C": 1.0,
+          "head_max_iter": 1000,
+          "mode": "setfit",
+          "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/models/setfit/encoder",
+          "body_learning_rate": 2e-05,
+          "training_steps": 60,
+          "requested_steps": 60,
+          "num_iterations": 2,
+          "training_ms": 18575.208166992525,
+          "training_process_peak_rss_bytes": 2645082112,
+          "score_semantics": "multinomial logits"
+        },
+        "versions": {
+          "torch": "2.14.1",
+          "sentence-transformers": "6.1.0",
+          "setfit": "1.2.0",
+          "scikit-learn": "1.9.1",
+          "numpy": "2.5.3",
+          "transformers": "5.18.0"
+        },
+        "inference_device": "cpu",
+        "inference_threads": 1,
+        "latency_repeats_per_turn": 3,
+        "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+        "cached_model_process_load_ms": 3444.5175000000745,
+        "first_inference_ms": 137.74966698838398,
+        "process_peak_rss_after_load_bytes": 1272643584,
+        "process_peak_rss_after_inference_bytes": 1272643584,
+        "model_parameter_bytes": 470615040,
+        "parameters": 117653760,
+        "hardware": {
+          "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+          "machine": "arm64",
+          "logical_cpus": 10
+        },
+        "cold_process_full_benchmark_wall_ms": 6700.178957980825,
+        "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+      },
+      "routing_simulation": [
+        {
+          "threshold": 0.7,
+          "counts": {
+            "domain_resolver": 9,
+            "jev_fallback": 46,
+            "contextual_resolver": 14,
+            "non_execution": 11
+          },
+          "shares": {
+            "domain_resolver": 0.1125,
+            "jev_fallback": 0.575,
+            "contextual_resolver": 0.175,
+            "non_execution": 0.1375
+          },
+          "accepted_class_error": 0.14705882352941177,
+          "contextual_or_uncertain_wrongly_direct": 2,
+          "non_direct_wrongly_direct": 2,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.275,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1000.4888208892226,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.8,
+          "counts": {
+            "domain_resolver": 5,
+            "jev_fallback": 57,
+            "contextual_resolver": 9,
+            "non_execution": 9
+          },
+          "shares": {
+            "domain_resolver": 0.0625,
+            "jev_fallback": 0.7125,
+            "contextual_resolver": 0.1125,
+            "non_execution": 0.1125
+          },
+          "accepted_class_error": 0.17391304347826086,
+          "contextual_or_uncertain_wrongly_direct": 1,
+          "non_direct_wrongly_direct": 1,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.325,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1216.30078810158,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.9,
+          "counts": {
+            "jev_fallback": 65,
+            "contextual_resolver": 6,
+            "non_execution": 9
+          },
+          "shares": {
+            "jev_fallback": 0.8125,
+            "contextual_resolver": 0.075,
+            "non_execution": 0.1125
+          },
+          "accepted_class_error": 0.13333333333333333,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.3375,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1388.948997989064,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        },
+        {
+          "threshold": 0.95,
+          "counts": {
+            "jev_fallback": 69,
+            "contextual_resolver": 4,
+            "non_execution": 7
+          },
+          "shares": {
+            "jev_fallback": 0.8625,
+            "contextual_resolver": 0.05,
+            "non_execution": 0.0875
+          },
+          "accepted_class_error": 0.0,
+          "contextual_or_uncertain_wrongly_direct": 0,
+          "non_direct_wrongly_direct": 0,
+          "service_turn_wrongly_non_execution": 0,
+          "mixed_class_error_including_failures": 0.325,
+          "failure_count": 0,
+          "projected_classification_mean_ms": 1471.8879865267809,
+          "projection_valid_count": 80,
+          "resolver_latency_and_domain_correctness": "not measured"
+        }
+      ]
+    }
+  ]
+}

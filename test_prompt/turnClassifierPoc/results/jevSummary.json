@@ -1,0 +1,290 @@
+{
+  "dataset": {
+    "samples": 400,
+    "classes": 8,
+    "families": 80,
+    "splits": {
+      "train": 240,
+      "validation": 80,
+      "test": 80
+    },
+    "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+  },
+  "scope": "turn-only synthetic classification, no resolver execution",
+  "models": [
+    {
+      "kind": "jev_eight_class_turn_only",
+      "metrics": {
+        "total": 80,
+        "valid": 80,
+        "failure_ids": [],
+        "accuracy_valid_outputs": 0.5875,
+        "accuracy_including_failures": 0.5875,
+        "macro_f1": 0.574164905143166,
+        "per_class": {
+          "DIRECT_ACTION": {
+            "precision": 0.7,
+            "recall": 0.7,
+            "f1": 0.7,
+            "support": 10
+          },
+          "QUERY": {
+            "precision": 1.0,
+            "recall": 0.8,
+            "f1": 0.888888888888889,
+            "support": 10
+          },
+          "REFERENCE": {
+            "precision": 0.75,
+            "recall": 0.3,
+            "f1": 0.4285714285714285,
+            "support": 10
+          },
+          "MODIFICATION": {
+            "precision": 0.8333333333333334,
+            "recall": 1.0,
+            "f1": 0.9090909090909091,
+            "support": 10
+          },
+          "CANCEL_OR_REVERT": {
+            "precision": 0.6666666666666666,
+            "recall": 0.2,
+            "f1": 0.30769230769230765,
+            "support": 10
+          },
+          "CHAT": {
+            "precision": 0.7692307692307693,
+            "recall": 1.0,
+            "f1": 0.8695652173913044,
+            "support": 10
+          },
+          "NOISE": {
+            "precision": 1.0,
+            "recall": 0.1,
+            "f1": 0.18181818181818182,
+            "support": 10
+          },
+          "UNCERTAIN": {
+            "precision": 0.20689655172413793,
+            "recall": 0.6,
+            "f1": 0.3076923076923077,
+            "support": 10
+          }
+        },
+        "confusion_matrix": {
+          "DIRECT_ACTION": {
+            "DIRECT_ACTION": 7,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 1,
+            "FAILURE": 0
+          },
+          "QUERY": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 8,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 2,
+            "FAILURE": 0
+          },
+          "REFERENCE": {
+            "DIRECT_ACTION": 1,
+            "QUERY": 0,
+            "REFERENCE": 3,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 5,
+            "FAILURE": 0
+          },
+          "MODIFICATION": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 10,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "CANCEL_OR_REVERT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 1,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 2,
+            "CHAT": 1,
+            "NOISE": 0,
+            "UNCERTAIN": 6,
+            "FAILURE": 0
+          },
+          "CHAT": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 10,
+            "NOISE": 0,
+            "UNCERTAIN": 0,
+            "FAILURE": 0
+          },
+          "NOISE": {
+            "DIRECT_ACTION": 0,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 0,
+            "CANCEL_OR_REVERT": 0,
+            "CHAT": 0,
+            "NOISE": 1,
+            "UNCERTAIN": 9,
+            "FAILURE": 0
+          },
+          "UNCERTAIN": {
+            "DIRECT_ACTION": 2,
+            "QUERY": 0,
+            "REFERENCE": 0,
+            "MODIFICATION": 1,
+            "CANCEL_OR_REVERT": 1,
+            "CHAT": 0,
+            "NOISE": 0,
+            "UNCERTAIN": 6,
+            "FAILURE": 0
+          }
+        },
+        "latency_ms_valid_outputs": {
+          "mean": 1682.193262536748,
+          "p50": 1660.2507920033531,
+          "p95": 2062.5435975947767
+        },
+        "confidence_ece": 0.17675875000000002,
+        "reliability_bins": [
+          {
+            "range": [
+              0.0,
+              0.1
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.1,
+              0.2
+            ],
+            "count": 0,
+            "mean_confidence": null,
+            "accuracy": null
+          },
+          {
+            "range": [
+              0.2,
+              0.3
+            ],
+            "count": 4,
+            "mean_confidence": 0.255175,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.3,
+              0.4
+            ],
+            "count": 7,
+            "mean_confidence": 0.3590285714285714,
+            "accuracy": 0.5714285714285714
+          },
+          {
+            "range": [
+              0.4,
+              0.5
+            ],
+            "count": 8,
+            "mean_confidence": 0.4354625,
+            "accuracy": 0.125
+          },
+          {
+            "range": [
+              0.5,
+              0.6
+            ],
+            "count": 18,
+            "mean_confidence": 0.5531833333333334,
+            "accuracy": 0.5
+          },
+          {
+            "range": [
+              0.6,
+              0.7
+            ],
+            "count": 14,
+            "mean_confidence": 0.6419357142857143,
+            "accuracy": 0.2857142857142857
+          },
+          {
+            "range": [
+              0.7,
+              0.8
+            ],
+            "count": 14,
+            "mean_confidence": 0.7400499999999999,
+            "accuracy": 0.8571428571428571
+          },
+          {
+            "range": [
+              0.8,
+              0.9
+            ],
+            "count": 8,
+            "mean_confidence": 0.8558625,
+            "accuracy": 1.0
+          },
+          {
+            "range": [
+              0.9,
+              1.0
+            ],
+            "count": 7,
+            "mean_confidence": 0.9351285714285714,
+            "accuracy": 1.0
+          }
+        ],
+        "multiclass_brier": 0.552184954375,
+        "brier_valid_count": 80,
+        "posterior_sum_range": [
+          0.9998,
+          1.0002
+        ]
+      },
+      "metadata": {
+        "model_kind": "jev_eight_class_turn_only",
+        "endpoint": "https://openjev.aikcitri.qzz.io/v1/systemone",
+        "prompt_sha256": "0e5b2c84fda73526b208959dd4e5e8cb7f56318a0ae3da2769dc1cdd75a49deb",
+        "dataset": {
+          "samples": 400,
+          "classes": 8,
+          "families": 80,
+          "splits": {
+            "train": 240,
+            "validation": 80,
+            "test": 80
+          },
+          "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+        },
+        "split": "test",
+        "remote_cold_start_ms": null,
+        "remote_model_memory_bytes": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "model_kind": "jev_eight_class_turn_only",
+  "endpoint": "https://openjev.aikcitri.qzz.io/v1/systemone",
+  "prompt_sha256": "0e5b2c84fda73526b208959dd4e5e8cb7f56318a0ae3da2769dc1cdd75a49deb",
+  "dataset": {
+    "samples": 400,
+    "classes": 8,
+    "families": 80,
+    "splits": {
+      "train": 240,
+      "validation": 80,
+      "test": 80
+    },
+    "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+  },
+  "split": "test",
+  "remote_cold_start_ms": null,
+  "remote_model_memory_bytes": null,
+  "records": [
+    {
+      "id": "DIRECT_ACTION:test:1:1",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 795.8617499971297
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:2",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 420.3488750208635
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:3",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 581.600375007838
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:4",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 547.6067499839701
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:5",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 494.91333300829865
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:1",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 495.1928750087973
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:2",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 417.0678750087973
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:3",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 475.6956250057556
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:4",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 482.45570799917914
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:5",
+      "error": "HTTP Error 403: Forbidden",
+      "failed_latency_ms": 484.5215840032324
+    }
+  ]
+}

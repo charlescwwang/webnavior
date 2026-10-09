@@ -1,0 +1,246 @@
+{
+  "metadata": {
+    "model": "models/gemini-3.5-flash",
+    "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    "runtimeAlias": "webnavior/chat",
+    "datasetSha256": "3f02f670cadb61b8a6ce09ddfe948e70c3ba391bbb9639248e97063b5867c053",
+    "promptSha256": "d07f1655664d594f1f4f0d4f3d5d576b989a51c508180d3fe680d6c065c50b6b",
+    "catalogSha256": "91225f3065b448fd5c2350fac3c9092a9316e44b3f49944ce0051840a7f8efdd",
+    "responseSchemaSha256": "58bb871bf908ba21c2540cd431a4c275b680de004a5bd9840fdd40e92e2878dd",
+    "startedAt": "2026-10-08T05:20:25.157Z",
+    "count": 40,
+    "requestSettings": {
+      "stream": false,
+      "temperature": 0,
+      "timeoutMs": 60000,
+      "response_format": {
+        "type": "json_schema",
+        "json_schema": {
+          "name": "requirements_proposal",
+          "strict": true,
+          "schema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "requirements",
+              "unresolved",
+              "summaryCount"
+            ],
+            "properties": {
+              "requirements": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 16,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "source",
+                    "effect",
+                    "targetRaw",
+                    "replacementRaw",
+                    "quantity",
+                    "conditions",
+                    "queryTopics",
+                    "contextRequired",
+                    "value"
+                  ],
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "effect": {
+                      "type": "string",
+                      "enum": [
+                        "ADD",
+                        "QUERY",
+                        "RECOMMEND",
+                        "RECOMMEND_NEXT",
+                        "VIEW",
+                        "MODIFY_QUANTITY",
+                        "MODIFY_OPTION",
+                        "REMOVE",
+                        "REPLACE",
+                        "FULFILLMENT",
+                        "PARTY_SIZE",
+                        "CHECKOUT",
+                        "DECLINE",
+                        "CHAT",
+                        "UNFINISHED",
+                        "UNCERTAIN"
+                      ]
+                    },
+                    "targetRaw": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "replacementRaw": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "quantity": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 1
+                    },
+                    "conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "queryTopics": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "AVAILABILITY",
+                          "PRICE",
+                          "COMPOSITION",
+                          "DIET",
+                          "CATEGORY",
+                          "PRICE_FILTER"
+                        ]
+                      }
+                    },
+                    "contextRequired": {
+                      "type": "boolean"
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "dine-in",
+                            "takeout"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "unresolved": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "summaryCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "thinking": "provider default, unchanged; residency/cold start unknown",
+    "tools": "none",
+    "goldSent": false,
+    "menuSent": false,
+    "productionWrites": false
+  },
+  "complete": false,
+  "stopped": true,
+  "attempted": 1,
+  "successful": 0,
+  "schemaAndLiteralValid": 0,
+  "exactTurns": 0,
+  "totalTurns": 40,
+  "requirementMatched": 0,
+  "requirementExpected": 50,
+  "requirementProduced": 0,
+  "precision": 0,
+  "recall": 0,
+  "latency_ms": {
+    "mean": null,
+    "p50": null,
+    "p95": null,
+    "firstRequest": 1143.486833
+  },
+  "groups": {
+    "single": {
+      "total": 3,
+      "measured": 1,
+      "exact": 0
+    },
+    "query": {
+      "total": 7,
+      "measured": 0,
+      "exact": 0
+    },
+    "recommendation": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "compound": {
+      "total": 6,
+      "measured": 0,
+      "exact": 0
+    },
+    "context": {
+      "total": 8,
+      "measured": 0,
+      "exact": 0
+    },
+    "reference": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "modification": {
+      "total": 4,
+      "measured": 0,
+      "exact": 0
+    },
+    "revert": {
+      "total": 3,
+      "measured": 0,
+      "exact": 0
+    },
+    "unfinished": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "chat": {
+      "total": 2,
+      "measured": 0,
+      "exact": 0
+    },
+    "asr": {
+      "total": 1,
+      "measured": 0,
+      "exact": 0
+    }
+  },
+  "failures": [
+    {
+      "id": "g01",
+      "status": "HTTP_ERROR"
+    }
+  ],
+  "limitations": [
+    "New extraction prompt and schema, not the existing Main Agent prompt/tool loop.",
+    "Forty synthetic challenge turns, not traffic accuracy or production safety.",
+    "Single sample per turn, no stability test, no same-model judge or retuning.",
+    "Literal evidence/schema validity is not semantic correctness; authored gold measures fields.",
+    "No domain-plan execution, ASR, session lifecycle, tool receipts, checkout/payment or UI tested.",
+    "No comparable Jev run on this schema; prior finite-question results are a different experiment.",
+    "Remote HTTP latency only. Memory, actual cold start and end-to-end latency not measured."
+  ]
+}

@@ -47,6 +47,8 @@ cert*/
 
 # Test coverage
 coverage/
+# Failed browser-test attachments are local diagnostics, not screenshot baselines.
+**/.vitest-attachments/
 
 # Build
 out/

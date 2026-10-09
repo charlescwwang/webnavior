@@ -1,0 +1,3209 @@
+{
+  "model_kind": "minilm_similarity_calibrated",
+  "dataset": {
+    "samples": 400,
+    "classes": 8,
+    "families": 80,
+    "splits": {
+      "train": 240,
+      "validation": 80,
+      "test": 80
+    },
+    "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+  },
+  "split": "test",
+  "calibration": {
+    "temperature": 0.07943282347242814,
+    "validation_nll": 1.410992259449746,
+    "grid_min": 0.01,
+    "grid_max": 10,
+    "grid_points": 301,
+    "selected_at_boundary": false,
+    "fit_split": "validation"
+  },
+  "training": {
+    "dataset": {
+      "samples": 400,
+      "classes": 8,
+      "families": 80,
+      "splits": {
+        "train": 240,
+        "validation": 80,
+        "test": 80
+      },
+      "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+    },
+    "base": {
+      "model_id": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+      "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+      "versions": {
+        "torch": "2.14.1",
+        "sentence-transformers": "6.1.0",
+        "setfit": "1.2.0",
+        "scikit-learn": "1.9.1",
+        "numpy": "2.5.3",
+        "transformers": "5.18.0"
+      },
+      "download_or_cache_resolution_ms": 12299.916416988708
+    },
+    "seed": 42,
+    "train_samples": 240,
+    "training_device": "cpu",
+    "training_threads": 4,
+    "normalize_embeddings": true,
+    "head_C": 1.0,
+    "head_max_iter": 1000,
+    "mode": "similarity",
+    "encoder_path": "/Users/charleswang/Desktop/workspace/AIRI/test_prompt/turnClassifierPoc/.cache/huggingface/hub/models--sentence-transformers--paraphrase-multilingual-MiniLM-L12-v2/snapshots/e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+    "training_ms": 1260.2845000219531,
+    "score_semantics": "max cosine per class"
+  },
+  "versions": {
+    "torch": "2.14.1",
+    "sentence-transformers": "6.1.0",
+    "setfit": "1.2.0",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.3",
+    "transformers": "5.18.0"
+  },
+  "inference_device": "cpu",
+  "inference_threads": 1,
+  "latency_repeats_per_turn": 3,
+  "latency_statistic": "median of three actual single-turn calls; no embedding cache",
+  "cached_model_process_load_ms": 3351.1487920186482,
+  "first_inference_ms": 16.332957980921492,
+  "process_peak_rss_after_load_bytes": 1241006080,
+  "process_peak_rss_after_inference_bytes": 1241006080,
+  "model_parameter_bytes": 470615040,
+  "parameters": 117653760,
+  "hardware": {
+    "platform": "macOS-15.5-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "logical_cpus": 10
+  },
+  "records": [
+    {
+      "id": "DIRECT_ACTION:test:1:1",
+      "scores": [
+        0.9589732885360718,
+        0.6826833486557007,
+        0.7199617624282837,
+        0.8164674043655396,
+        0.6792091131210327,
+        0.5076274275779724,
+        0.40340447425842285,
+        0.6858603954315186
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.7619211116659109,
+        "latency_ms": 7.517667021602392
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.7619211116659109,
+        "QUERY": 0.023513124601818113,
+        "REFERENCE": 0.037594816544809284,
+        "MODIFICATION": 0.12669723111298262,
+        "CANCEL_OR_REVERT": 0.02250687290326152,
+        "CHAT": 0.0025953860791580537,
+        "NOISE": 0.0006988256744585016,
+        "UNCERTAIN": 0.02447263141760079
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.9589732885360718,
+        "latency_ms": 7.517667021602392
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.517667021602392,
+        7.46537497616373,
+        8.520250004949048
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:2",
+      "scores": [
+        0.9847643971443176,
+        0.6279261112213135,
+        0.6194537878036499,
+        0.6663554906845093,
+        0.6277706623077393,
+        0.5272101163864136,
+        0.6238070726394653,
+        0.5663617849349976
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.9349940413233209,
+        "latency_ms": 8.129916997859254
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.9349940413233209,
+        "QUERY": 0.010466841373649217,
+        "REFERENCE": 0.009407921652629296,
+        "MODIFICATION": 0.01697954729598072,
+        "CANCEL_OR_REVERT": 0.010446377942775004,
+        "CHAT": 0.0029454836853897697,
+        "NOISE": 0.009937909358380938,
+        "UNCERTAIN": 0.004821877367874018
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.9847643971443176,
+        "latency_ms": 8.129916997859254
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.123582985717803,
+        8.34954102174379,
+        8.129916997859254
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:3",
+      "scores": [
+        0.9498157501220703,
+        0.9167230129241943,
+        0.7226088047027588,
+        0.8757953643798828,
+        0.8884673118591309,
+        0.43408024311065674,
+        0.5881613492965698,
+        0.7665873765945435
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.3725896587545282,
+        "latency_ms": 8.139667013892904
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3725896587545282,
+        "QUERY": 0.2456394536964649,
+        "REFERENCE": 0.02132994022856176,
+        "MODIFICATION": 0.14673324192724294,
+        "CANCEL_OR_REVERT": 0.17211220598026813,
+        "CHAT": 0.0005642557617964359,
+        "NOISE": 0.003925597420263821,
+        "UNCERTAIN": 0.03710564623087369
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.9498157501220703,
+        "latency_ms": 8.139667013892904
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.260875009000301,
+        8.139667013892904,
+        7.704290997935459
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:4",
+      "scores": [
+        0.8077342510223389,
+        0.7884804606437683,
+        0.6732622385025024,
+        0.7319742441177368,
+        0.7283369302749634,
+        0.682244062423706,
+        0.6804656982421875,
+        0.8728427886962891
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.4203799249280068,
+        "latency_ms": 7.528167014243081
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.18521011910690408,
+        "QUERY": 0.14534352810267973,
+        "REFERENCE": 0.03407583977440326,
+        "MODIFICATION": 0.0713593928970215,
+        "CANCEL_OR_REVERT": 0.06816545505163776,
+        "CHAT": 0.03815523943128956,
+        "NOISE": 0.03731050070805737,
+        "UNCERTAIN": 0.4203799249280068
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.8728427886962891,
+        "latency_ms": 7.528167014243081
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.574082992505282,
+        7.528167014243081,
+        7.235750003019348
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:5",
+      "scores": [
+        0.8537508249282837,
+        0.7464064359664917,
+        0.7236024141311646,
+        0.7938940525054932,
+        0.7157612442970276,
+        0.4741831421852112,
+        0.46763116121292114,
+        0.6428660154342651
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.45738881672951526,
+        "latency_ms": 7.340374984778464
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.45738881672951526,
+        "QUERY": 0.11840939167261377,
+        "REFERENCE": 0.0888600282183477,
+        "MODIFICATION": 0.21528908640913014,
+        "CANCEL_OR_REVERT": 0.08050730578852214,
+        "CHAT": 0.003846100656756682,
+        "NOISE": 0.0035415881808358403,
+        "UNCERTAIN": 0.03215768234427854
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.8537508249282837,
+        "latency_ms": 7.340374984778464
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.340374984778464,
+        7.256125012645498,
+        7.614833011757582
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:1",
+      "scores": [
+        0.9373205900192261,
+        0.9078363180160522,
+        0.7704331874847412,
+        0.8558985590934753,
+        0.8607209920883179,
+        0.41504067182540894,
+        0.5833462476730347,
+        0.7212469577789307
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.3800645194393176,
+        "latency_ms": 8.302000002004206
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3800645194393176,
+        "QUERY": 0.26221270710886324,
+        "REFERENCE": 0.04649538715553955,
+        "MODIFICATION": 0.1363599919429518,
+        "CANCEL_OR_REVERT": 0.14489498267735426,
+        "CHAT": 0.0005300554874927101,
+        "NOISE": 0.004410852931577882,
+        "UNCERTAIN": 0.025031503256902943
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.9373205900192261,
+        "latency_ms": 8.302000002004206
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.401041995966807,
+        7.968457997776568,
+        8.302000002004206
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:2",
+      "scores": [
+        0.7387394905090332,
+        0.7032672166824341,
+        0.55116868019104,
+        0.6986585855484009,
+        0.642412006855011,
+        0.4028196930885315,
+        0.4576643109321594,
+        0.7565449476242065
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.3183765929225417,
+        "latency_ms": 7.588875014334917
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.2544431704586218,
+        "QUERY": 0.16279765396400278,
+        "REFERENCE": 0.023991531551660946,
+        "MODIFICATION": 0.15362104367806148,
+        "CANCEL_OR_REVERT": 0.07567034515432502,
+        "CHAT": 0.0037065362652388386,
+        "NOISE": 0.007393126005547372,
+        "UNCERTAIN": 0.3183765929225417
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.7565449476242065,
+        "latency_ms": 7.588875014334917
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.478999981889501,
+        7.588875014334917,
+        7.224749977467582
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:3",
+      "scores": [
+        0.8945460915565491,
+        0.8304492831230164,
+        0.5930452346801758,
+        0.8729552030563354,
+        0.6984213590621948,
+        0.39908069372177124,
+        0.4970453679561615,
+        0.8636934161186218
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.3330945257458129,
+        "latency_ms": 7.537625002441928
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3330945257458129,
+        "QUERY": 0.14863524749238904,
+        "REFERENCE": 0.007483910180507508,
+        "MODIFICATION": 0.25381689693105797,
+        "CANCEL_OR_REVERT": 0.028201134696899968,
+        "CHAT": 0.0006510860337606742,
+        "NOISE": 0.002234882579004135,
+        "UNCERTAIN": 0.22588231634056777
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.8945460915565491,
+        "latency_ms": 7.537625002441928
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.437791995471343,
+        7.679125003051013,
+        7.537625002441928
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:4",
+      "scores": [
+        0.7106164693832397,
+        0.4153173565864563,
+        0.5273120403289795,
+        0.6958712339401245,
+        0.5817623138427734,
+        0.5569334626197815,
+        0.45306795835494995,
+        0.6189625859260559
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.3772468762274763,
+        "latency_ms": 7.677540997974575
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3772468762274763,
+        "QUERY": 0.009164196852561365,
+        "REFERENCE": 0.03753349667463071,
+        "MODIFICATION": 0.31333355724695333,
+        "CANCEL_OR_REVERT": 0.07449426249904328,
+        "CHAT": 0.05449698567812463,
+        "NOISE": 0.014739871430056473,
+        "UNCERTAIN": 0.11899075339115388
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.7106164693832397,
+        "latency_ms": 7.677540997974575
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.1179580118041486,
+        7.677540997974575,
+        7.9449579934589565
+      ]
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:5",
+      "scores": [
+        0.5185433626174927,
+        0.34779202938079834,
+        0.5294672250747681,
+        0.4418790638446808,
+        0.6787795424461365,
+        0.41678565740585327,
+        0.3492715060710907,
+        0.5623394250869751
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6114592685296399,
+        "latency_ms": 7.2210840007755905
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.08133645825445965,
+        "QUERY": 0.009477896770061967,
+        "REFERENCE": 0.09332776364351895,
+        "MODIFICATION": 0.030983289725076222,
+        "CANCEL_OR_REVERT": 0.6114592685296399,
+        "CHAT": 0.02259075490717424,
+        "NOISE": 0.009656081653168655,
+        "UNCERTAIN": 0.14116848651690042
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6787795424461365,
+        "latency_ms": 7.2210840007755905
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.001624984899536,
+        7.2210840007755905,
+        7.110000005923212
+      ]
+    },
+    {
+      "id": "QUERY:test:1:1",
+      "scores": [
+        0.8876394033432007,
+        0.9255778789520264,
+        0.6711099147796631,
+        0.8647975921630859,
+        0.817980170249939,
+        0.31700533628463745,
+        0.3990035653114319,
+        0.701353907585144
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.40892851745887027,
+        "latency_ms": 8.304165996378288
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.2536418560708052,
+        "QUERY": 0.40892851745887027,
+        "REFERENCE": 0.016609561125789287,
+        "MODIFICATION": 0.1902543556979929,
+        "CANCEL_OR_REVERT": 0.10552685491380162,
+        "CHAT": 0.00019244708964676454,
+        "NOISE": 0.0005402963576116062,
+        "UNCERTAIN": 0.024306111285482268
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.9255778789520264,
+        "latency_ms": 8.304165996378288
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.096000005025417,
+        8.304165996378288,
+        8.561166992876679
+      ]
+    },
+    {
+      "id": "QUERY:test:1:2",
+      "scores": [
+        0.9078463315963745,
+        0.9254566431045532,
+        0.7216840386390686,
+        0.8793085813522339,
+        0.8506996035575867,
+        0.3484155237674713,
+        0.42321428656578064,
+        0.7275621294975281
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.3433026844295068,
+        "latency_ms": 8.471582987112924
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.2750387050079725,
+        "QUERY": 0.3433026844295068,
+        "REFERENCE": 0.026397450143871043,
+        "MODIFICATION": 0.19202831660452202,
+        "CANCEL_OR_REVERT": 0.13395141397918517,
+        "CHAT": 0.00024029095727807982,
+        "NOISE": 0.0006161627564435404,
+        "UNCERTAIN": 0.02842497612122094
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.9254566431045532,
+        "latency_ms": 8.471582987112924
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.465499995509163,
+        8.471582987112924,
+        8.854125015204772
+      ]
+    },
+    {
+      "id": "QUERY:test:1:3",
+      "scores": [
+        0.6474131941795349,
+        0.7044467926025391,
+        0.5154456496238708,
+        0.5504154562950134,
+        0.5322657227516174,
+        0.5139071941375732,
+        0.5021141767501831,
+        0.5804297924041748
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.4509373691772809,
+        "latency_ms": 8.617499988758937
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.21993190925227724,
+        "QUERY": 0.4509373691772809,
+        "REFERENCE": 0.041760254642446,
+        "MODIFICATION": 0.06485725797658426,
+        "CANCEL_OR_REVERT": 0.05160905885081185,
+        "CHAT": 0.040959223959453825,
+        "NOISE": 0.03530807677324175,
+        "UNCERTAIN": 0.09463684936790417
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.7044467926025391,
+        "latency_ms": 8.617499988758937
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.803500008070841,
+        8.617499988758937,
+        8.396374993026257
+      ]
+    },
+    {
+      "id": "QUERY:test:1:4",
+      "scores": [
+        0.8244224786758423,
+        0.8599921464920044,
+        0.6816854476928711,
+        0.8403117656707764,
+        0.7717975974082947,
+        0.35495078563690186,
+        0.4415989816188812,
+        0.7149605751037598
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.3308007842824408,
+        "latency_ms": 8.104707987513393
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.2113933776917859,
+        "QUERY": 0.3308007842824408,
+        "REFERENCE": 0.0350497328645848,
+        "MODIFICATION": 0.2582053035609046,
+        "CANCEL_OR_REVERT": 0.10898527090435682,
+        "CHAT": 0.0005731672627113545,
+        "NOISE": 0.0017061825707826463,
+        "UNCERTAIN": 0.053286180862433016
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.8599921464920044,
+        "latency_ms": 8.104707987513393
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        9.501166001427919,
+        7.6894169906154275,
+        8.104707987513393
+      ]
+    },
+    {
+      "id": "QUERY:test:1:5",
+      "scores": [
+        0.6215347051620483,
+        0.7437551617622375,
+        0.6059248447418213,
+        0.6683375835418701,
+        0.7679712176322937,
+        0.4550178647041321,
+        0.49740490317344666,
+        0.7226510047912598
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.34145877176728145,
+        "latency_ms": 8.242249983595684
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05403870111602517,
+        "QUERY": 0.25173195826586026,
+        "REFERENCE": 0.04439753623183316,
+        "MODIFICATION": 0.09740853221693448,
+        "CANCEL_OR_REVERT": 0.34145877176728145,
+        "CHAT": 0.006641764444347419,
+        "NOISE": 0.011324843546058042,
+        "UNCERTAIN": 0.19299789241165996
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.7679712176322937,
+        "latency_ms": 8.242249983595684
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.188832987798378,
+        9.02166700689122,
+        8.242249983595684
+      ]
+    },
+    {
+      "id": "QUERY:test:2:1",
+      "scores": [
+        0.5703569054603577,
+        0.741251528263092,
+        0.4105105996131897,
+        0.4694143533706665,
+        0.47823482751846313,
+        0.47844362258911133,
+        0.23818926513195038,
+        0.6588908433914185
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.6273958491800763,
+        "latency_ms": 8.400459017138928
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.07297681923354937,
+        "QUERY": 0.6273958491800763,
+        "REFERENCE": 0.009755157132612463,
+        "MODIFICATION": 0.020477984994775,
+        "CANCEL_OR_REVERT": 0.022882984441710743,
+        "CHAT": 0.02294321318748602,
+        "NOISE": 0.001114492352638546,
+        "UNCERTAIN": 0.22245349947715154
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.741251528263092,
+        "latency_ms": 8.400459017138928
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.400459017138928,
+        8.203875011531636,
+        9.220457985065877
+      ]
+    },
+    {
+      "id": "QUERY:test:2:2",
+      "scores": [
+        0.6646460890769958,
+        0.7411869764328003,
+        0.5436246395111084,
+        0.7095901370048523,
+        0.670769453048706,
+        0.3902890384197235,
+        0.29324138164520264,
+        0.6770743727684021
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.3321901064981693,
+        "latency_ms": 8.29925001016818
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.12673708371343817,
+        "QUERY": 0.3321901064981693,
+        "REFERENCE": 0.027620132668831412,
+        "MODIFICATION": 0.22316842916068919,
+        "CANCEL_OR_REVERT": 0.13689350923742424,
+        "CHAT": 0.004007485967211412,
+        "NOISE": 0.0011810530918241115,
+        "UNCERTAIN": 0.14820219966241202
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.7411869764328003,
+        "latency_ms": 8.29925001016818
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.75233400054276,
+        8.29925001016818,
+        8.529791986802593
+      ]
+    },
+    {
+      "id": "QUERY:test:2:3",
+      "scores": [
+        0.5874966979026794,
+        0.9310207366943359,
+        0.7154099345207214,
+        0.7333588004112244,
+        0.4590079188346863,
+        0.36340534687042236,
+        0.5077704191207886,
+        0.6581140756607056
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.8312594224075383,
+        "latency_ms": 9.11512499442324
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.011003688196182717,
+        "QUERY": 0.8312594224075383,
+        "REFERENCE": 0.055067667544218074,
+        "MODIFICATION": 0.06902892238833377,
+        "CANCEL_OR_REVERT": 0.002182896394231797,
+        "CHAT": 0.0006551359834231793,
+        "NOISE": 0.004033103277615241,
+        "UNCERTAIN": 0.0267691638084569
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.9310207366943359,
+        "latency_ms": 9.11512499442324
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        9.11512499442324,
+        8.524457982275635,
+        9.340958000393584
+      ]
+    },
+    {
+      "id": "QUERY:test:2:4",
+      "scores": [
+        0.5918325185775757,
+        0.650810956954956,
+        0.6030229926109314,
+        0.6465762853622437,
+        0.6965974569320679,
+        0.4822794795036316,
+        0.5646216869354248,
+        0.5609325766563416
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.3217102196326804,
+        "latency_ms": 8.344292000401765
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.08603367330982646,
+        "QUERY": 0.180771412353839,
+        "REFERENCE": 0.09904937775931653,
+        "MODIFICATION": 0.17138662360793577,
+        "CANCEL_OR_REVERT": 0.3217102196326804,
+        "CHAT": 0.021661743264013083,
+        "NOISE": 0.061079402339890086,
+        "UNCERTAIN": 0.05830754773249872
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6965974569320679,
+        "latency_ms": 8.344292000401765
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.344292000401765,
+        8.467167004710063,
+        7.906042010290548
+      ]
+    },
+    {
+      "id": "QUERY:test:2:5",
+      "scores": [
+        0.6465357542037964,
+        0.9201451539993286,
+        0.7478175163269043,
+        0.7914410829544067,
+        0.6478244066238403,
+        0.5233268737792969,
+        0.5464386940002441,
+        0.7621222734451294
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.6540055368525309,
+        "latency_ms": 8.17770799039863
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.020875527804668826,
+        "QUERY": 0.6540055368525309,
+        "REFERENCE": 0.07471190089807808,
+        "MODIFICATION": 0.12938954219708773,
+        "CANCEL_OR_REVERT": 0.021216957144417566,
+        "CHAT": 0.004425882303572883,
+        "NOISE": 0.005920555193070437,
+        "UNCERTAIN": 0.08945409760657358
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.9201451539993286,
+        "latency_ms": 8.17770799039863
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.17770799039863,
+        8.44875001348555,
+        8.168208005372435
+      ]
+    },
+    {
+      "id": "REFERENCE:test:1:1",
+      "scores": [
+        0.5958123803138733,
+        0.6532270908355713,
+        0.9856293201446533,
+        0.6854673624038696,
+        0.7977173328399658,
+        0.8658270835876465,
+        0.9147678017616272,
+        0.7373589277267456
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.5511563467863727,
+        "latency_ms": 8.022499998332933
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.004073546536337351,
+        "QUERY": 0.008392365182806949,
+        "REFERENCE": 0.5511563467863727,
+        "MODIFICATION": 0.01259378398040288,
+        "CANCEL_OR_REVERT": 0.0517459806169059,
+        "CHAT": 0.12197275742008319,
+        "NOISE": 0.22586215007864013,
+        "UNCERTAIN": 0.02420306939845078
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.9856293201446533,
+        "latency_ms": 8.022499998332933
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.022499998332933,
+        8.146959007717669,
+        7.98241698066704
+      ]
+    },
+    {
+      "id": "REFERENCE:test:1:2",
+      "scores": [
+        0.5968844294548035,
+        0.6553043723106384,
+        0.9841748476028442,
+        0.6824508309364319,
+        0.7905929088592529,
+        0.8927345275878906,
+        0.9178112149238586,
+        0.7390873432159424
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.5183980457588728,
+        "latency_ms": 8.039666980039328
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.003955258200899347,
+        "QUERY": 0.008252443926009847,
+        "REFERENCE": 0.5183980457588728,
+        "MODIFICATION": 0.011614601493326767,
+        "CANCEL_OR_REVERT": 0.04531740412793345,
+        "CHAT": 0.1639526964571439,
+        "NOISE": 0.22481430251661516,
+        "UNCERTAIN": 0.023695247519198683
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.9841748476028442,
+        "latency_ms": 8.039666980039328
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.287917007692158,
+        7.869416003813967,
+        8.039666980039328
+      ]
+    },
+    {
+      "id": "REFERENCE:test:1:3",
+      "scores": [
+        0.6311177015304565,
+        0.567588746547699,
+        0.6732748746871948,
+        0.6982192397117615,
+        0.5742756724357605,
+        0.5709573030471802,
+        0.6565268039703369,
+        0.5358169674873352
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.2868735432958517,
+        "latency_ms": 7.810875016730279
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.12325842740506207,
+        "QUERY": 0.05539564768207338,
+        "REFERENCE": 0.20956009604579617,
+        "MODIFICATION": 0.2868735432958517,
+        "CANCEL_OR_REVERT": 0.060260958415332966,
+        "CHAT": 0.057795368502560764,
+        "NOISE": 0.16972251429945293,
+        "UNCERTAIN": 0.03713344435386996
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.6982192397117615,
+        "latency_ms": 7.810875016730279
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.810875016730279,
+        7.915249996585771,
+        7.741082983557135
+      ]
+    },
+    {
+      "id": "REFERENCE:test:1:4",
+      "scores": [
+        0.6193278431892395,
+        0.7934732437133789,
+        0.8379393815994263,
+        0.9039890170097351,
+        0.5771149396896362,
+        0.4597811698913574,
+        0.605068564414978,
+        0.7318150997161865
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.5348649873537795,
+        "latency_ms": 7.690625003306195
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.014855089001163193,
+        "QUERY": 0.1330471000031675,
+        "REFERENCE": 0.23287427377157705,
+        "MODIFICATION": 0.5348649873537795,
+        "CANCEL_OR_REVERT": 0.00873129354274645,
+        "CHAT": 0.0019932548117191596,
+        "NOISE": 0.012414049013106835,
+        "UNCERTAIN": 0.0612199525027402
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.9039890170097351,
+        "latency_ms": 7.690625003306195
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.623500016052276,
+        7.690625003306195,
+        7.882457983214408
+      ]
+    },
+    {
+      "id": "REFERENCE:test:1:5",
+      "scores": [
+        0.5636716485023499,
+        0.494890034198761,
+        0.8471931219100952,
+        0.7208434343338013,
+        0.5809075832366943,
+        0.6500464677810669,
+        0.4835604131221771,
+        0.5918605327606201
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.7077845566672025,
+        "latency_ms": 7.352083979640156
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.019941756945651885,
+        "QUERY": 0.008388876911582863,
+        "REFERENCE": 0.7077845566672025,
+        "MODIFICATION": 0.1442418528291251,
+        "CANCEL_OR_REVERT": 0.024774215992278942,
+        "CHAT": 0.05915791664144093,
+        "NOISE": 0.007273773242414666,
+        "UNCERTAIN": 0.028437050770303007
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8471931219100952,
+        "latency_ms": 7.352083979640156
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.981791015481576,
+        7.2160410054493695,
+        7.352083979640156
+      ]
+    },
+    {
+      "id": "REFERENCE:test:2:1",
+      "scores": [
+        0.5299596786499023,
+        0.4823860228061676,
+        0.7308882474899292,
+        0.49135622382164,
+        0.5471004247665405,
+        0.5568693280220032,
+        0.5785102844238281,
+        0.7064551115036011
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.44144518720534803,
+        "latency_ms": 8.73154099099338
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.03518124219450245,
+        "QUERY": 0.019328799884110674,
+        "REFERENCE": 0.44144518720534803,
+        "MODIFICATION": 0.021639586500839546,
+        "CANCEL_OR_REVERT": 0.043654320460017194,
+        "CHAT": 0.04936716181332864,
+        "NOISE": 0.06482743945007102,
+        "UNCERTAIN": 0.3245562624917826
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.7308882474899292,
+        "latency_ms": 8.73154099099338
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        9.495958976913244,
+        8.052000019233674,
+        8.73154099099338
+      ]
+    },
+    {
+      "id": "REFERENCE:test:2:2",
+      "scores": [
+        0.5146478414535522,
+        0.6196127533912659,
+        0.8590865135192871,
+        0.5240507125854492,
+        0.6083068251609802,
+        0.44832319021224976,
+        0.4860835671424866,
+        0.49346238374710083
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8739325694451461,
+        "latency_ms": 8.256125001935288
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.011436125520768127,
+        "QUERY": 0.042871497028277,
+        "REFERENCE": 0.8739325694451461,
+        "MODIFICATION": 0.012873261192896267,
+        "CANCEL_OR_REVERT": 0.03718383027120115,
+        "CHAT": 0.004961952743637853,
+        "NOISE": 0.00798188295049181,
+        "UNCERTAIN": 0.008758880847581495
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8590865135192871,
+        "latency_ms": 8.256125001935288
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.256125001935288,
+        8.45475000096485,
+        8.038250001845881
+      ]
+    },
+    {
+      "id": "REFERENCE:test:2:3",
+      "scores": [
+        0.5530253648757935,
+        0.5167967677116394,
+        0.8664214611053467,
+        0.5947113633155823,
+        0.7855925559997559,
+        0.708572268486023,
+        0.6849164366722107,
+        0.6117152571678162
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.586472244973965,
+        "latency_ms": 7.90145801147446
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.011344150638335649,
+        "QUERY": 0.0071894252619392526,
+        "REFERENCE": 0.586472244973965,
+        "MODIFICATION": 0.01917290101012995,
+        "CANCEL_OR_REVERT": 0.2119922499951036,
+        "CHAT": 0.08039256892678821,
+        "NOISE": 0.05968689413396254,
+        "UNCERTAIN": 0.023749565059775785
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8664214611053467,
+        "latency_ms": 7.90145801147446
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.792332995450124,
+        7.90145801147446,
+        8.261292008683085
+      ]
+    },
+    {
+      "id": "REFERENCE:test:2:4",
+      "scores": [
+        0.5356202721595764,
+        0.5696917772293091,
+        0.6690801382064819,
+        0.46494388580322266,
+        0.6517283916473389,
+        0.5406308174133301,
+        0.4891926646232605,
+        0.7118791341781616
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.3922906118819536,
+        "latency_ms": 8.249416016042233
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04265034305810765,
+        "QUERY": 0.06549476088642715,
+        "REFERENCE": 0.2288794591436606,
+        "MODIFICATION": 0.017518760398481915,
+        "CANCEL_OR_REVERT": 0.1839658125265356,
+        "CHAT": 0.04542734992594212,
+        "NOISE": 0.023772902178891456,
+        "UNCERTAIN": 0.3922906118819536
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.7118791341781616,
+        "latency_ms": 8.249416016042233
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        9.104333003051579,
+        8.16558298538439,
+        8.249416016042233
+      ]
+    },
+    {
+      "id": "REFERENCE:test:2:5",
+      "scores": [
+        0.6575716733932495,
+        0.5756703615188599,
+        0.8496091365814209,
+        0.6083593368530273,
+        0.710738480091095,
+        0.6187161207199097,
+        0.5863131880760193,
+        0.7098501324653625
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.622625862486313,
+        "latency_ms": 7.894957991084084
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05549746657391931,
+        "QUERY": 0.019791666091274814,
+        "REFERENCE": 0.622625862486313,
+        "MODIFICATION": 0.029868092255756942,
+        "CANCEL_OR_REVERT": 0.10838262742472457,
+        "CHAT": 0.03402770160237078,
+        "NOISE": 0.02262931506883608,
+        "UNCERTAIN": 0.10717726849680442
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8496091365814209,
+        "latency_ms": 7.894957991084084
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.421624981565401,
+        7.894957991084084,
+        7.238332997076213
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:1:1",
+      "scores": [
+        0.6103558540344238,
+        0.512911319732666,
+        0.6619247794151306,
+        0.7765465378761292,
+        0.4418800175189972,
+        0.4464825391769409,
+        0.38192182779312134,
+        0.7111818790435791
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.5340688167164866,
+        "latency_ms": 7.5377500033937395
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06591117155607276,
+        "QUERY": 0.019327983059272094,
+        "REFERENCE": 0.12615638096901155,
+        "MODIFICATION": 0.5340688167164866,
+        "CANCEL_OR_REVERT": 0.007903635404192023,
+        "CHAT": 0.008375117823624762,
+        "NOISE": 0.003715428238943775,
+        "UNCERTAIN": 0.23454146623239633
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.7765465378761292,
+        "latency_ms": 7.5377500033937395
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.5377500033937395,
+        7.479833991965279,
+        8.966416993644089
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:1:2",
+      "scores": [
+        0.8730974197387695,
+        0.8389533758163452,
+        0.686992347240448,
+        0.9085370302200317,
+        0.9016989469528198,
+        0.38105806708335876,
+        0.4205469489097595,
+        0.8296482563018799
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.2933085139138027,
+        "latency_ms": 7.604207989061251
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.1877416360614558,
+        "QUERY": 0.12214620096444834,
+        "REFERENCE": 0.018031905039422192,
+        "MODIFICATION": 0.2933085139138027,
+        "CANCEL_OR_REVERT": 0.26911495642943767,
+        "CHAT": 0.00038314502534167927,
+        "NOISE": 0.0006298924823591267,
+        "UNCERTAIN": 0.10864375008373249
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.9085370302200317,
+        "latency_ms": 7.604207989061251
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.604207989061251,
+        7.736667001154274,
+        7.560375001048669
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:1:3",
+      "scores": [
+        0.7555142045021057,
+        0.8001980781555176,
+        0.6946333646774292,
+        0.8629430532455444,
+        0.6625984311103821,
+        0.5802192687988281,
+        0.5475125908851624,
+        0.7968569993972778
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.4174596049742813,
+        "latency_ms": 8.611957979155704
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.10795761632116271,
+        "QUERY": 0.18947845971755126,
+        "REFERENCE": 0.05016383482024462,
+        "MODIFICATION": 0.4174596049742813,
+        "CANCEL_OR_REVERT": 0.033515178502195986,
+        "CHAT": 0.011880592868811253,
+        "NOISE": 0.00787075142753068,
+        "UNCERTAIN": 0.18167396136822234
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.8629430532455444,
+        "latency_ms": 8.611957979155704
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.997124998131767,
+        8.611957979155704,
+        8.540125010767952
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:1:4",
+      "scores": [
+        0.60920250415802,
+        0.5820345878601074,
+        0.5373007655143738,
+        0.7162894010543823,
+        0.6468318700790405,
+        0.40752097964286804,
+        0.48636776208877563,
+        0.5487982034683228
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.4621925976864861,
+        "latency_ms": 8.157500007655472
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.12004150099184753,
+        "QUERY": 0.0852692351066323,
+        "REFERENCE": 0.048552625196045154,
+        "MODIFICATION": 0.4621925976864861,
+        "CANCEL_OR_REVERT": 0.192782608738255,
+        "CHAT": 0.009476523803026823,
+        "NOISE": 0.025570510199892017,
+        "UNCERTAIN": 0.05611439827781513
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.7162894010543823,
+        "latency_ms": 8.157500007655472
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.597125008236617,
+        8.157500007655472,
+        7.508416980272159
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:1:5",
+      "scores": [
+        0.5069184303283691,
+        0.5242524743080139,
+        0.48248931765556335,
+        0.8845306634902954,
+        0.5138148665428162,
+        0.4931733310222626,
+        0.4867422580718994,
+        0.5232205986976624
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.9437602016786351,
+        "latency_ms": 7.673709013033658
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.008133698571148871,
+        "QUERY": 0.010117215051657132,
+        "REFERENCE": 0.005980304232077503,
+        "MODIFICATION": 0.9437602016786351,
+        "CANCEL_OR_REVERT": 0.008871436529452345,
+        "CHAT": 0.0068412824097780845,
+        "NOISE": 0.006309224628744289,
+        "UNCERTAIN": 0.00998663689850675
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.8845306634902954,
+        "latency_ms": 7.673709013033658
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.7701249974779785,
+        7.538582984125242,
+        7.673709013033658
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:2:1",
+      "scores": [
+        0.4283120036125183,
+        0.4801376461982727,
+        0.3952229917049408,
+        0.49552199244499207,
+        0.6253533363342285,
+        0.33358004689216614,
+        0.364812433719635,
+        0.3808407187461853
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6235586796188564,
+        "latency_ms": 7.637208007508889
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05218731535944523,
+        "QUERY": 0.10021177021021901,
+        "REFERENCE": 0.03440746288446286,
+        "MODIFICATION": 0.12162749975415936,
+        "CANCEL_OR_REVERT": 0.6235586796188564,
+        "CHAT": 0.015835191736871028,
+        "NOISE": 0.02346305937397369,
+        "UNCERTAIN": 0.02870902106201249
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6253533363342285,
+        "latency_ms": 7.637208007508889
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.637208007508889,
+        7.635416986886412,
+        7.815457996912301
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:2:2",
+      "scores": [
+        0.6930084228515625,
+        0.39952540397644043,
+        0.7140098810195923,
+        0.7735983729362488,
+        0.46484842896461487,
+        0.33342722058296204,
+        0.4119308590888977,
+        0.7124485969543457
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.4270019832345882,
+        "latency_ms": 8.463666017632931
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.15481352015231248,
+        "QUERY": 0.003847751658493991,
+        "REFERENCE": 0.20166622727357256,
+        "MODIFICATION": 0.4270019832345882,
+        "CANCEL_OR_REVERT": 0.008757033046319003,
+        "CHAT": 0.0016742447455831639,
+        "NOISE": 0.004498141987142237,
+        "UNCERTAIN": 0.19774109790198843
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.7735983729362488,
+        "latency_ms": 8.463666017632931
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.7191249874886125,
+        9.030917019117624,
+        8.463666017632931
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:2:3",
+      "scores": [
+        0.6378523707389832,
+        0.37667620182037354,
+        0.40380859375,
+        0.7883304357528687,
+        0.5971696376800537,
+        0.4015912413597107,
+        0.27362751960754395,
+        0.6250235438346863
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.7187836143745615,
+        "latency_ms": 7.612791989231482
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.10811048994512437,
+        "QUERY": 0.004035541926473526,
+        "REFERENCE": 0.005678670713158017,
+        "MODIFICATION": 0.7187836143745615,
+        "CANCEL_OR_REVERT": 0.06477945460477544,
+        "CHAT": 0.005522343753829642,
+        "NOISE": 0.0011027803174859794,
+        "UNCERTAIN": 0.09198710436459158
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.7883304357528687,
+        "latency_ms": 7.612791989231482
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.5989589968230575,
+        7.896082999650389,
+        7.612791989231482
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:2:4",
+      "scores": [
+        0.6310993432998657,
+        0.6399816870689392,
+        0.5772164463996887,
+        0.6178328990936279,
+        0.5760394334793091,
+        0.34150928258895874,
+        0.6402689218521118,
+        0.5810379385948181
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.19854738247303433,
+        "latency_ms": 8.555999986128882
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.17690088778599497,
+        "QUERY": 0.197830717443738,
+        "REFERENCE": 0.08976939802888825,
+        "MODIFICATION": 0.14969127138957317,
+        "CANCEL_OR_REVERT": 0.08844902729246987,
+        "CHAT": 0.004617561516211108,
+        "NOISE": 0.19854738247303433,
+        "UNCERTAIN": 0.09419375407009037
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.6402689218521118,
+        "latency_ms": 8.555999986128882
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.155292016454041,
+        8.568249992094934,
+        8.555999986128882
+      ]
+    },
+    {
+      "id": "MODIFICATION:test:2:5",
+      "scores": [
+        0.7578293681144714,
+        0.7714344263076782,
+        0.7452569603919983,
+        0.7211321592330933,
+        0.6341856718063354,
+        0.46250706911087036,
+        0.5196579098701477,
+        0.6642490029335022
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.2783786582778608,
+        "latency_ms": 8.35345798986964
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.23455843160929674,
+        "QUERY": 0.2783786582778608,
+        "REFERENCE": 0.20022214926703252,
+        "MODIFICATION": 0.14777845759362868,
+        "CANCEL_OR_REVERT": 0.04945795027938405,
+        "CHAT": 0.005696302404068916,
+        "NOISE": 0.011696664558318736,
+        "UNCERTAIN": 0.07221138601040948
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.7714344263076782,
+        "latency_ms": 8.35345798986964
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.496916008880362,
+        8.35345798986964,
+        7.915541995316744
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:1",
+      "scores": [
+        0.4092521071434021,
+        0.7105104327201843,
+        0.5785504579544067,
+        0.7536570429801941,
+        0.8227689266204834,
+        0.5553693771362305,
+        0.6543810963630676,
+        0.665587842464447
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.4983138264449104,
+        "latency_ms": 8.082208019914106
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0027328956635589157,
+        "QUERY": 0.12126513484898185,
+        "REFERENCE": 0.02302778867272437,
+        "MODIFICATION": 0.208755348803942,
+        "CANCEL_OR_REVERT": 0.4983138264449104,
+        "CHAT": 0.017199308381833565,
+        "NOISE": 0.05982076650558422,
+        "UNCERTAIN": 0.0688849306784648
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.8227689266204834,
+        "latency_ms": 8.082208019914106
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.144875027937815,
+        8.082208019914106,
+        7.8139579854905605
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:2",
+      "scores": [
+        0.4104020595550537,
+        0.6997925639152527,
+        0.5917975902557373,
+        0.7786600589752197,
+        0.8543042540550232,
+        0.5473982095718384,
+        0.6499354839324951,
+        0.7001263499259949
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.5524463779740983,
+        "latency_ms": 8.036542014451697
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0020667118068514235,
+        "QUERY": 0.07897800878297102,
+        "REFERENCE": 0.020279150251247966,
+        "MODIFICATION": 0.2131619873864857,
+        "CANCEL_OR_REVERT": 0.5524463779740983,
+        "CHAT": 0.011595744657161662,
+        "NOISE": 0.042161437265835704,
+        "UNCERTAIN": 0.07931058187534809
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.8543042540550232,
+        "latency_ms": 8.036542014451697
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.170333981979638,
+        7.753666985081509,
+        8.036542014451697
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:3",
+      "scores": [
+        0.3925846815109253,
+        0.6678432822227478,
+        0.546172022819519,
+        0.7729119658470154,
+        0.8728048801422119,
+        0.4846670627593994,
+        0.5448408126831055,
+        0.6844941973686218
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6684933194432279,
+        "latency_ms": 8.041167020564899
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0015831432823926407,
+        "QUERY": 0.05063853068526793,
+        "REFERENCE": 0.010945871563806137,
+        "MODIFICATION": 0.1900807763491974,
+        "CANCEL_OR_REVERT": 0.6684933194432279,
+        "CHAT": 0.005046327683267559,
+        "NOISE": 0.010763958919030321,
+        "UNCERTAIN": 0.06244807207381006
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.8728048801422119,
+        "latency_ms": 8.041167020564899
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.929292012704536,
+        8.041167020564899,
+        8.303458016598597
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:4",
+      "scores": [
+        0.6063903570175171,
+        0.7387450933456421,
+        0.8224170207977295,
+        0.7082279324531555,
+        0.9233869910240173,
+        0.7200491428375244,
+        0.7964357137680054,
+        0.660474956035614
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.5619411332794045,
+        "latency_ms": 7.920083007775247
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.010387944169975115,
+        "QUERY": 0.05497581320832165,
+        "REFERENCE": 0.15763157177674797,
+        "MODIFICATION": 0.037438703985091096,
+        "CANCEL_OR_REVERT": 0.5619411332794045,
+        "CHAT": 0.043446281057565,
+        "NOISE": 0.11365587120624455,
+        "UNCERTAIN": 0.02052268131665005
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.9233869910240173,
+        "latency_ms": 7.920083007775247
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.29641698510386,
+        7.499708008253947,
+        7.920083007775247
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:5",
+      "scores": [
+        0.45534971356391907,
+        0.5921290516853333,
+        0.622700572013855,
+        0.663470447063446,
+        0.7221747040748596,
+        0.6463072299957275,
+        0.6310548782348633,
+        0.6224970817565918
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.3355549155731564,
+        "latency_ms": 7.263584004249424
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.011665759530141427,
+        "QUERY": 0.06527491816792433,
+        "REFERENCE": 0.09591673766296294,
+        "MODIFICATION": 0.16025123724312706,
+        "CANCEL_OR_REVERT": 0.3355549155731564,
+        "CHAT": 0.12911076964551677,
+        "NOISE": 0.1065543286360314,
+        "UNCERTAIN": 0.09567133354113977
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.7221747040748596,
+        "latency_ms": 7.263584004249424
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.383833988569677,
+        7.263584004249424,
+        7.120832975488156
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:1",
+      "scores": [
+        0.5895410180091858,
+        0.6639543771743774,
+        0.5852630734443665,
+        0.637802004814148,
+        0.7379521131515503,
+        0.4934264123439789,
+        0.5074852705001831,
+        0.7490838766098022
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.3562358292738217,
+        "latency_ms": 8.324916998390108
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04780199445795318,
+        "QUERY": 0.12198231216753386,
+        "REFERENCE": 0.04529566046654248,
+        "MODIFICATION": 0.08776275347739275,
+        "CANCEL_OR_REVERT": 0.3096530119721176,
+        "CHAT": 0.014254265118940325,
+        "NOISE": 0.017014173065698066,
+        "UNCERTAIN": 0.3562358292738217
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.7490838766098022,
+        "latency_ms": 8.324916998390108
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.355749985435978,
+        8.324916998390108,
+        8.396833000006154
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:2",
+      "scores": [
+        0.41549351811408997,
+        0.29685479402542114,
+        0.4520871639251709,
+        0.4704187512397766,
+        0.8390296101570129,
+        0.399997740983963,
+        0.3566005229949951,
+        0.33952969312667847
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.9695798932193032,
+        "latency_ms": 8.154874987667426
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.004687312483894018,
+        "QUERY": 0.0010526242599120308,
+        "REFERENCE": 0.0074301503442157505,
+        "MODIFICATION": 0.00935889384325979,
+        "CANCEL_OR_REVERT": 0.9695798932193032,
+        "CHAT": 0.003856573561982687,
+        "NOISE": 0.002233211101902096,
+        "UNCERTAIN": 0.0018013411855303575
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.8390296101570129,
+        "latency_ms": 8.154874987667426
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.154874987667426,
+        8.044791989959776,
+        8.357457991223782
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:3",
+      "scores": [
+        0.5497483015060425,
+        0.5034433603286743,
+        0.7750250101089478,
+        0.6377553343772888,
+        0.8134410977363586,
+        0.7190158367156982,
+        0.6402686834335327,
+        0.5217826962471008
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.44934398295580286,
+        "latency_ms": 7.704165996983647
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.016250002825447623,
+        "QUERY": 0.009071597795135482,
+        "REFERENCE": 0.2770391450588536,
+        "MODIFICATION": 0.04920700461713739,
+        "CANCEL_OR_REVERT": 0.44934398295580286,
+        "CHAT": 0.13687185146646022,
+        "NOISE": 0.05078886682550263,
+        "UNCERTAIN": 0.011427548455660247
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.8134410977363586,
+        "latency_ms": 7.704165996983647
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.260582981165498,
+        7.704165996983647,
+        7.3466249741613865
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:4",
+      "scores": [
+        0.6329137086868286,
+        0.6599594354629517,
+        0.5752187967300415,
+        0.8316110968589783,
+        0.7675978541374207,
+        0.47715020179748535,
+        0.525506317615509,
+        0.8284593820571899
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.3735027794559154,
+        "latency_ms": 8.282583992695436
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.030614493295138778,
+        "QUERY": 0.0430326470401193,
+        "REFERENCE": 0.014807556517647518,
+        "MODIFICATION": 0.3735027794559154,
+        "CANCEL_OR_REVERT": 0.16684186817304758,
+        "CHAT": 0.0043082300709970075,
+        "NOISE": 0.007919234867984027,
+        "UNCERTAIN": 0.35897319057915045
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.8316110968589783,
+        "latency_ms": 8.282583992695436
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.010624995222315,
+        8.408875000895932,
+        8.282583992695436
+      ]
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:5",
+      "scores": [
+        0.544249415397644,
+        0.6202187538146973,
+        0.5866389274597168,
+        0.6606351733207703,
+        0.6771560907363892,
+        0.4241507053375244,
+        0.4031160771846771,
+        0.6280577778816223
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.2923785651589098,
+        "latency_ms": 7.946792000439018
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05486378674885753,
+        "QUERY": 0.14277226599365325,
+        "REFERENCE": 0.09355091636164573,
+        "MODIFICATION": 0.2374752460801503,
+        "CANCEL_OR_REVERT": 0.2923785651589098,
+        "CHAT": 0.012096308563064368,
+        "NOISE": 0.009282120747657805,
+        "UNCERTAIN": 0.15758079034606126
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6771560907363892,
+        "latency_ms": 7.946792000439018
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.018833003006876,
+        7.946792000439018,
+        7.450083008734509
+      ]
+    },
+    {
+      "id": "CHAT:test:1:1",
+      "scores": [
+        0.5513510704040527,
+        0.5642545223236084,
+        0.5913859605789185,
+        0.7000003457069397,
+        0.6268765330314636,
+        0.8184566497802734,
+        0.4042350649833679,
+        0.7087042331695557
+      ],
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.5868325275662247,
+        "latency_ms": 7.216666999738663
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.020329630691053327,
+        "QUERY": 0.023915440514622917,
+        "REFERENCE": 0.03365255115928782,
+        "MODIFICATION": 0.13208728618101673,
+        "CANCEL_OR_REVERT": 0.05260907867076303,
+        "CHAT": 0.5868325275662247,
+        "NOISE": 0.003189929080414707,
+        "UNCERTAIN": 0.14738355613661683
+      },
+      "raw_prediction": {
+        "class": "CHAT",
+        "confidence": 0.8184566497802734,
+        "latency_ms": 7.216666999738663
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.318666001083329,
+        7.216666999738663,
+        7.171417004428804
+      ]
+    },
+    {
+      "id": "CHAT:test:1:2",
+      "scores": [
+        0.3447633981704712,
+        0.4345027506351471,
+        0.5145400166511536,
+        0.41483378410339355,
+        0.5209053754806519,
+        0.9320912957191467,
+        0.3249189853668213,
+        0.40700218081474304
+      ],
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.9835847960556775,
+        "latency_ms": 7.778708008117974
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0006048248905095819,
+        "QUERY": 0.0018718649110235801,
+        "REFERENCE": 0.005127123052122267,
+        "MODIFICATION": 0.0014612870589785225,
+        "CANCEL_OR_REVERT": 0.005554896622869791,
+        "CHAT": 0.9835847960556775,
+        "NOISE": 0.00047111989857672007,
+        "UNCERTAIN": 0.0013240875102419412
+      },
+      "raw_prediction": {
+        "class": "CHAT",
+        "confidence": 0.9320912957191467,
+        "latency_ms": 7.778708008117974
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.256291981320828,
+        7.778708008117974,
+        8.512667001923546
+      ]
+    },
+    {
+      "id": "CHAT:test:1:3",
+      "scores": [
+        0.2609174847602844,
+        0.240464985370636,
+        0.4676324129104614,
+        0.2840854823589325,
+        0.2795289158821106,
+        0.610492467880249,
+        0.20943012833595276,
+        0.256475567817688
+      ],
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.8082536308911966,
+        "latency_ms": 7.9822920088190585
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.009914393727575547,
+        "QUERY": 0.007663784340208274,
+        "REFERENCE": 0.13380377667481747,
+        "MODIFICATION": 0.013271984994624614,
+        "CANCEL_OR_REVERT": 0.012532078649971254,
+        "CHAT": 0.8082536308911966,
+        "NOISE": 0.005185157406243926,
+        "UNCERTAIN": 0.009375193315362318
+      },
+      "raw_prediction": {
+        "class": "CHAT",
+        "confidence": 0.610492467880249,
+        "latency_ms": 7.9822920088190585
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.360290987184271,
+        7.9822920088190585,
+        7.636167021701112
+      ]
+    },
+    {
+      "id": "CHAT:test:1:4",
+      "scores": [
+        0.6706452965736389,
+        0.7648378610610962,
+        0.6334819793701172,
+        0.7304887771606445,
+        0.6655117869377136,
+        0.5864419937133789,
+        0.8419936895370483,
+        0.7228697538375854
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.45786992075395294,
+        "latency_ms": 7.827416993677616
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.052954691270076244,
+        "QUERY": 0.17333927420660833,
+        "REFERENCE": 0.03316775676009581,
+        "MODIFICATION": 0.11248517673951351,
+        "CANCEL_OR_REVERT": 0.049640627879270004,
+        "CHAT": 0.01834541884223973,
+        "NOISE": 0.45786992075395294,
+        "UNCERTAIN": 0.1021971335482433
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.8419936895370483,
+        "latency_ms": 7.827416993677616
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.510291983839124,
+        7.827416993677616,
+        7.633875007741153
+      ]
+    },
+    {
+      "id": "CHAT:test:1:5",
+      "scores": [
+        0.35969626903533936,
+        0.3899863064289093,
+        0.40245622396469116,
+        0.3700239956378937,
+        0.42146122455596924,
+        0.8410050272941589,
+        0.3490975499153137,
+        0.39832139015197754
+      ],
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.9771873544430144,
+        "latency_ms": 8.01679099095054
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.002282702691116423,
+        "QUERY": 0.0033423999931659026,
+        "REFERENCE": 0.003910542340791397,
+        "MODIFICATION": 0.0025996543826619003,
+        "CANCEL_OR_REVERT": 0.004967590195590301,
+        "CHAT": 0.9771873544430144,
+        "NOISE": 0.0019975674463284594,
+        "UNCERTAIN": 0.003712188507331171
+      },
+      "raw_prediction": {
+        "class": "CHAT",
+        "confidence": 0.8410050272941589,
+        "latency_ms": 8.01679099095054
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.668458012631163,
+        8.786499995039776,
+        8.01679099095054
+      ]
+    },
+    {
+      "id": "CHAT:test:2:1",
+      "scores": [
+        0.5248042345046997,
+        0.5118882656097412,
+        0.6574045419692993,
+        0.5584583878517151,
+        0.6083692312240601,
+        0.7124373316764832,
+        0.5870831608772278,
+        0.5911162495613098
+      ],
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.39814671626716996,
+        "latency_ms": 7.760125008644536
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.03751196054390426,
+        "QUERY": 0.031882504637111724,
+        "REFERENCE": 0.19913814836304267,
+        "MODIFICATION": 0.05730228602049476,
+        "CANCEL_OR_REVERT": 0.10741295611594887,
+        "CHAT": 0.39814671626716996,
+        "NOISE": 0.08216299845407252,
+        "UNCERTAIN": 0.08644242959825525
+      },
+      "raw_prediction": {
+        "class": "CHAT",
+        "confidence": 0.7124373316764832,
+        "latency_ms": 7.760125008644536
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.760125008644536,
+        7.5815829914063215,
+        8.311499987030402
+      ]
+    },
+    {
+      "id": "CHAT:test:2:2",
+      "scores": [
+        0.7464186549186707,
+        0.7812906503677368,
+        0.569695234298706,
+        0.5696390867233276,
+        0.5664688348770142,
+        0.6292017102241516,
+        0.37105685472488403,
+        0.7717851996421814
+      ],
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.3458756156615518,
+        "latency_ms": 7.3680000205058604
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.2229765938882902,
+        "QUERY": 0.3458756156615518,
+        "REFERENCE": 0.02410093785856526,
+        "MODIFICATION": 0.024083907983300304,
+        "CANCEL_OR_REVERT": 0.023141621501170363,
+        "CHAT": 0.050977935513574435,
+        "NOISE": 0.001976923240141719,
+        "UNCERTAIN": 0.306866464353406
+      },
+      "raw_prediction": {
+        "class": "QUERY",
+        "confidence": 0.7812906503677368,
+        "latency_ms": 7.3680000205058604
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.569207984488457,
+        7.3680000205058604,
+        7.3488329944666475
+      ]
+    },
+    {
+      "id": "CHAT:test:2:3",
+      "scores": [
+        0.4828423857688904,
+        0.5251191854476929,
+        0.5837805271148682,
+        0.5250623822212219,
+        0.6189924478530884,
+        0.5605408549308777,
+        0.535236120223999,
+        0.5571407675743103
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.268687470186847,
+        "latency_ms": 7.946750003611669
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04840103285849904,
+        "QUERY": 0.08241393428311093,
+        "REFERENCE": 0.17247582214053936,
+        "MODIFICATION": 0.08235502030124148,
+        "CANCEL_OR_REVERT": 0.268687470186847,
+        "CHAT": 0.12872610452569194,
+        "NOISE": 0.0936083127329796,
+        "UNCERTAIN": 0.12333230297109068
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6189924478530884,
+        "latency_ms": 7.946750003611669
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.946750003611669,
+        8.289124991279095,
+        7.9431660124100745
+      ]
+    },
+    {
+      "id": "CHAT:test:2:4",
+      "scores": [
+        0.3965317904949188,
+        0.37345588207244873,
+        0.427789568901062,
+        0.331631064414978,
+        0.47221648693084717,
+        0.6817313432693481,
+        0.3751441240310669,
+        0.5099353194236755
+      ],
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.764001049594633,
+        "latency_ms": 8.079333987552673
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.021075674724649742,
+        "QUERY": 0.01576214286293348,
+        "REFERENCE": 0.031237885414904333,
+        "MODIFICATION": 0.009309801647271746,
+        "CANCEL_OR_REVERT": 0.05464913546725916,
+        "CHAT": 0.764001049594633,
+        "NOISE": 0.01610073222349965,
+        "UNCERTAIN": 0.08786357806484893
+      },
+      "raw_prediction": {
+        "class": "CHAT",
+        "confidence": 0.6817313432693481,
+        "latency_ms": 8.079333987552673
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.261707989731804,
+        8.079333987552673,
+        8.068333991104737
+      ]
+    },
+    {
+      "id": "CHAT:test:2:5",
+      "scores": [
+        0.387288898229599,
+        0.45523756742477417,
+        0.4829986095428467,
+        0.4497814476490021,
+        0.548907995223999,
+        0.42131343483924866,
+        0.4275248050689697,
+        0.5552129149436951
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.2956600367236853,
+        "latency_ms": 7.979832997079939
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.03570076620081093,
+        "QUERY": 0.08398138895509702,
+        "REFERENCE": 0.11911459679937351,
+        "MODIFICATION": 0.0784064924572034,
+        "CANCEL_OR_REVERT": 0.27309945507263766,
+        "CHAT": 0.05479043792926951,
+        "NOISE": 0.0592468258619226,
+        "UNCERTAIN": 0.2956600367236853
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5552129149436951,
+        "latency_ms": 7.979832997079939
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.787749986164272,
+        8.591290999902412,
+        7.979832997079939
+      ]
+    },
+    {
+      "id": "NOISE:test:1:1",
+      "scores": [
+        0.41565001010894775,
+        0.42301422357559204,
+        0.5184451937675476,
+        0.5327462553977966,
+        0.3588128685951233,
+        0.3621998131275177,
+        0.7194350361824036,
+        0.4441654086112976
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.7850330217544064,
+        "latency_ms": 7.59341599768959
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.01713801151872176,
+        "QUERY": 0.018802857389179518,
+        "REFERENCE": 0.06251544095699696,
+        "MODIFICATION": 0.07484754269201416,
+        "CANCEL_OR_REVERT": 0.008379277340075757,
+        "CHAT": 0.008744288810652201,
+        "NOISE": 0.7850330217544064,
+        "UNCERTAIN": 0.024539559537953295
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.7194350361824036,
+        "latency_ms": 7.59341599768959
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.59341599768959,
+        7.238499994855374,
+        7.921290991362184
+      ]
+    },
+    {
+      "id": "NOISE:test:1:2",
+      "scores": [
+        0.49162590503692627,
+        0.46491873264312744,
+        0.6566672921180725,
+        0.5367969274520874,
+        0.36823099851608276,
+        0.38297632336616516,
+        0.657319188117981,
+        0.40825536847114563
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.3959736397123238,
+        "latency_ms": 8.400416001677513
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04917536547179004,
+        "QUERY": 0.03513400329149294,
+        "REFERENCE": 0.3927372284170574,
+        "MODIFICATION": 0.08683955983121192,
+        "CANCEL_OR_REVERT": 0.010401426511015124,
+        "CHAT": 0.012523108315266755,
+        "NOISE": 0.3959736397123238,
+        "UNCERTAIN": 0.017215668449842046
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.657319188117981,
+        "latency_ms": 8.400416001677513
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.619375003036112,
+        8.400416001677513,
+        8.386792003875598
+      ]
+    },
+    {
+      "id": "NOISE:test:1:3",
+      "scores": [
+        0.5936044454574585,
+        0.4738841950893402,
+        0.5143911242485046,
+        0.6200615763664246,
+        0.3701764941215515,
+        0.4243983030319214,
+        0.5777879357337952,
+        0.42545652389526367
+      ],
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.3399408988180345,
+        "latency_ms": 8.40108300326392
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.24364109766934372,
+        "QUERY": 0.053974276734525366,
+        "REFERENCE": 0.0898785757465013,
+        "MODIFICATION": 0.3399408988180345,
+        "CANCEL_OR_REVERT": 0.01462752422536948,
+        "CHAT": 0.028948462851377272,
+        "NOISE": 0.1996524632112082,
+        "UNCERTAIN": 0.029336700743640167
+      },
+      "raw_prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.6200615763664246,
+        "latency_ms": 8.40108300326392
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.40108300326392,
+        8.475750015350059,
+        8.092667005257681
+      ]
+    },
+    {
+      "id": "NOISE:test:1:4",
+      "scores": [
+        0.7286323308944702,
+        0.6459976434707642,
+        0.6499075889587402,
+        0.6543527841567993,
+        0.4741116464138031,
+        0.42629820108413696,
+        0.6373193860054016,
+        0.5777089595794678
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.3778972428462567,
+        "latency_ms": 7.626790989888832
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3778972428462567,
+        "QUERY": 0.1335282726285778,
+        "REFERENCE": 0.14026542671305708,
+        "MODIFICATION": 0.148338707724908,
+        "CANCEL_OR_REVERT": 0.01533897138321411,
+        "CHAT": 0.008401927347253119,
+        "NOISE": 0.11970859887588621,
+        "UNCERTAIN": 0.05652085248084693
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.7286323308944702,
+        "latency_ms": 7.626790989888832
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.659083988983184,
+        7.626790989888832,
+        7.501916988985613
+      ]
+    },
+    {
+      "id": "NOISE:test:1:5",
+      "scores": [
+        0.49687767028808594,
+        0.5193153619766235,
+        0.5003871917724609,
+        0.5484973788261414,
+        0.4699621796607971,
+        0.49032294750213623,
+        0.668747067451477,
+        0.4699521064758301
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.5327685048957934,
+        "latency_ms": 7.786416012095287
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06121421838327636,
+        "QUERY": 0.08119496935934736,
+        "REFERENCE": 0.06397943776776453,
+        "MODIFICATION": 0.11724117258122525,
+        "CANCEL_OR_REVERT": 0.04362077544265439,
+        "CHAT": 0.05636567749656446,
+        "NOISE": 0.5327685048957934,
+        "UNCERTAIN": 0.043615244073374165
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.668747067451477,
+        "latency_ms": 7.786416012095287
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.505750021664426,
+        8.242499985499308,
+        7.786416012095287
+      ]
+    },
+    {
+      "id": "NOISE:test:2:1",
+      "scores": [
+        0.6003458499908447,
+        0.5914092063903809,
+        0.7186616659164429,
+        0.6267083883285522,
+        0.4326867163181305,
+        0.39955753087997437,
+        0.7261361479759216,
+        0.4943711757659912
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.37311491952057657,
+        "latency_ms": 7.626207981957123
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.07657574950422914,
+        "QUERY": 0.06842749812886512,
+        "REFERENCE": 0.3396067441622045,
+        "MODIFICATION": 0.10671536340230534,
+        "CANCEL_OR_REVERT": 0.009277359795430243,
+        "CHAT": 0.006113535621711844,
+        "NOISE": 0.37311491952057657,
+        "UNCERTAIN": 0.020168829864677232
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.7261361479759216,
+        "latency_ms": 7.626207981957123
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.347541017225012,
+        7.626207981957123,
+        7.690583006478846
+      ]
+    },
+    {
+      "id": "NOISE:test:2:2",
+      "scores": [
+        0.41529297828674316,
+        0.4917532801628113,
+        0.4248134195804596,
+        0.4626557230949402,
+        0.4841879606246948,
+        0.4730621576309204,
+        0.7205358743667603,
+        0.4676678776741028
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.7828068551942677,
+        "latency_ms": 8.032332989387214
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.016778622506989763,
+        "QUERY": 0.04393379213864914,
+        "REFERENCE": 0.018915105980787664,
+        "MODIFICATION": 0.03045856503142002,
+        "CANCEL_OR_REVERT": 0.03994254499501183,
+        "CHAT": 0.03472210393834616,
+        "NOISE": 0.7828068551942677,
+        "UNCERTAIN": 0.03244241021452766
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.7205358743667603,
+        "latency_ms": 8.032332989387214
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.194499979959801,
+        8.032332989387214,
+        8.292624988825992
+      ]
+    },
+    {
+      "id": "NOISE:test:2:3",
+      "scores": [
+        0.4040394723415375,
+        0.45420145988464355,
+        0.41469550132751465,
+        0.4484093189239502,
+        0.4752870202064514,
+        0.427299439907074,
+        0.7405853867530823,
+        0.4023617208003998
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.867765057619632,
+        "latency_ms": 7.682750001549721
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.012541698444710652,
+        "QUERY": 0.023583822187439846,
+        "REFERENCE": 0.014342260016040137,
+        "MODIFICATION": 0.02192532238180559,
+        "CANCEL_OR_REVERT": 0.030753765853878005,
+        "CHAT": 0.016808498316014484,
+        "NOISE": 0.867765057619632,
+        "UNCERTAIN": 0.012279575180479434
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.7405853867530823,
+        "latency_ms": 7.682750001549721
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.754041027510539,
+        7.240957987960428,
+        7.682750001549721
+      ]
+    },
+    {
+      "id": "NOISE:test:2:4",
+      "scores": [
+        0.34387969970703125,
+        0.41568848490715027,
+        0.381987988948822,
+        0.42237454652786255,
+        0.522392988204956,
+        0.38521045446395874,
+        0.7181657552719116,
+        0.43940892815589905
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.8333885964561872,
+        "latency_ms": 8.021540998015553
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.007489617809277601,
+        "QUERY": 0.018495673025488386,
+        "REFERENCE": 0.012100813801863277,
+        "MODIFICATION": 0.02011989935545075,
+        "CANCEL_OR_REVERT": 0.07087139678606905,
+        "CHAT": 0.01260181868914619,
+        "NOISE": 0.8333885964561872,
+        "UNCERTAIN": 0.02493218407651753
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.7181657552719116,
+        "latency_ms": 8.021540998015553
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.021540998015553,
+        7.9956669942475855,
+        8.085999987088144
+      ]
+    },
+    {
+      "id": "NOISE:test:2:5",
+      "scores": [
+        0.4529762268066406,
+        0.4107136130332947,
+        0.41962680220603943,
+        0.4507884085178375,
+        0.3455114960670471,
+        0.3459649682044983,
+        0.643738329410553,
+        0.47994354367256165
+      ],
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.6823264397221516,
+        "latency_ms": 8.289208984933794
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06180322874676915,
+        "QUERY": 0.03630301601787349,
+        "REFERENCE": 0.040613934711164604,
+        "MODIFICATION": 0.06012421112697918,
+        "CANCEL_OR_REVERT": 0.015975476124904877,
+        "CHAT": 0.016066938963317047,
+        "NOISE": 0.6823264397221516,
+        "UNCERTAIN": 0.0867867545868401
+      },
+      "raw_prediction": {
+        "class": "NOISE",
+        "confidence": 0.643738329410553,
+        "latency_ms": 8.289208984933794
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.289208984933794,
+        7.997541018994525,
+        8.46224999986589
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:1:1",
+      "scores": [
+        0.670419454574585,
+        0.5993858575820923,
+        0.6574854254722595,
+        0.6254845857620239,
+        0.704872727394104,
+        0.6284024715423584,
+        0.5751226544380188,
+        0.6988908052444458
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.23060388838845852,
+        "latency_ms": 7.902500015916303
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.14944978692808736,
+        "QUERY": 0.061111524143053715,
+        "REFERENCE": 0.12699283707501896,
+        "MODIFICATION": 0.0848821633198618,
+        "CANCEL_OR_REVERT": 0.23060388838845852,
+        "CHAT": 0.08805820236435893,
+        "NOISE": 0.04502621291842602,
+        "UNCERTAIN": 0.21387538486273455
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.704872727394104,
+        "latency_ms": 7.902500015916303
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.902500015916303,
+        7.444707996910438,
+        8.661583997309208
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:1:2",
+      "scores": [
+        0.5994560718536377,
+        0.7036799788475037,
+        0.660905122756958,
+        0.6377208232879639,
+        0.5509458780288696,
+        0.5255684852600098,
+        0.6854464411735535,
+        0.8315931558609009
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.6000179037856229,
+        "latency_ms": 7.46387499384582
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.032282547323260635,
+        "QUERY": 0.11989639609100423,
+        "REFERENCE": 0.06997405082180069,
+        "MODIFICATION": 0.052261054258009726,
+        "CANCEL_OR_REVERT": 0.017528350458063335,
+        "CHAT": 0.01273478403441968,
+        "NOISE": 0.09530491322781882,
+        "UNCERTAIN": 0.6000179037856229
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.8315931558609009,
+        "latency_ms": 7.46387499384582
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.476249990053475,
+        7.46387499384582,
+        7.27829200332053
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:1:3",
+      "scores": [
+        0.6366026997566223,
+        0.5658546090126038,
+        0.7976709008216858,
+        0.7946603894233704,
+        0.5823129415512085,
+        0.4649621248245239,
+        0.540090024471283,
+        0.7924042344093323
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.3120132287726725,
+        "latency_ms": 8.04445898393169
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04107160773003771,
+        "QUERY": 0.016855067957365917,
+        "REFERENCE": 0.3120132287726725,
+        "MODIFICATION": 0.30040918454438226,
+        "CANCEL_OR_REVERT": 0.020735547775079223,
+        "CHAT": 0.004732673470241252,
+        "NOISE": 0.01218608197183466,
+        "UNCERTAIN": 0.29199660777838665
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.7976709008216858,
+        "latency_ms": 8.04445898393169
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.38616700982675,
+        8.04445898393169,
+        9.69537501805462
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:1:4",
+      "scores": [
+        0.2540512979030609,
+        0.23204191029071808,
+        0.40712276101112366,
+        0.2235744446516037,
+        0.3325295150279999,
+        0.3798152208328247,
+        0.27311715483665466,
+        0.732492983341217
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.957924123697986,
+        "latency_ms": 8.961749990703538
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0023199476329436412,
+        "QUERY": 0.0017585029311624838,
+        "REFERENCE": 0.015936310115134546,
+        "MODIFICATION": 0.001580693639619627,
+        "CANCEL_OR_REVERT": 0.00623093767762031,
+        "CHAT": 0.011300179358754105,
+        "NOISE": 0.002949304946779204,
+        "UNCERTAIN": 0.957924123697986
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.732492983341217,
+        "latency_ms": 8.961749990703538
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.621832996141165,
+        8.961749990703538,
+        9.583458013366908
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:1:5",
+      "scores": [
+        0.6771599054336548,
+        0.6287286877632141,
+        0.6947675943374634,
+        0.6631836295127869,
+        0.5335814356803894,
+        0.4302175045013428,
+        0.46579182147979736,
+        0.5500460863113403
+      ],
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.30363190569700094,
+        "latency_ms": 8.247874997323379
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.2432642889544737,
+        "QUERY": 0.13221581567193444,
+        "REFERENCE": 0.30363190569700094,
+        "MODIFICATION": 0.20401582655734085,
+        "CANCEL_OR_REVERT": 0.03990903022029255,
+        "CHAT": 0.010862623102864318,
+        "NOISE": 0.01699946613723623,
+        "UNCERTAIN": 0.04910104365885691
+      },
+      "raw_prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.6947675943374634,
+        "latency_ms": 8.247874997323379
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.579332992667332,
+        8.247874997323379,
+        8.052042016061023
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:2:1",
+      "scores": [
+        0.9037408828735352,
+        0.7209892272949219,
+        0.7417848706245422,
+        0.8026411533355713,
+        0.5597559213638306,
+        0.33735358715057373,
+        0.4503730535507202,
+        0.7687934637069702
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.5845961201305199,
+        "latency_ms": 8.616749983048066
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.5845961201305199,
+        "QUERY": 0.058569505859072536,
+        "REFERENCE": 0.07609753111731879,
+        "MODIFICATION": 0.16371891582172385,
+        "CANCEL_OR_REVERT": 0.007693740857637238,
+        "CHAT": 0.0004679132426657987,
+        "NOISE": 0.001941301071341455,
+        "UNCERTAIN": 0.10691497189972068
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.9037408828735352,
+        "latency_ms": 8.616749983048066
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.616749983048066,
+        8.408541994867846,
+        8.617665997007862
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:2:2",
+      "scores": [
+        0.7174628376960754,
+        0.7423521876335144,
+        0.6678793430328369,
+        0.7906743288040161,
+        0.858343780040741,
+        0.48988938331604004,
+        0.4362700581550598,
+        0.9018117785453796
+      ],
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.4719373625001544,
+        "latency_ms": 7.5417500047478825
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04634116261485249,
+        "QUERY": 0.06339398345026788,
+        "REFERENCE": 0.024824011567224816,
+        "MODIFICATION": 0.11647872908776165,
+        "CANCEL_OR_REVERT": 0.2730395321300151,
+        "CHAT": 0.002640717233981396,
+        "NOISE": 0.0013445014157424707,
+        "UNCERTAIN": 0.4719373625001544
+      },
+      "raw_prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.9018117785453796,
+        "latency_ms": 7.5417500047478825
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.643250020919368,
+        7.5417500047478825,
+        7.502791995648295
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:2:3",
+      "scores": [
+        0.8280746936798096,
+        0.8152390718460083,
+        0.7089812755584717,
+        0.7398017644882202,
+        0.6396101117134094,
+        0.6177142858505249,
+        0.6023340225219727,
+        0.765393853187561
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.3246981122957801,
+        "latency_ms": 8.70987499365583
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3246981122957801,
+        "QUERY": 0.27624964295960763,
+        "REFERENCE": 0.07250086993564173,
+        "MODIFICATION": 0.10686918624575226,
+        "CANCEL_OR_REVERT": 0.03027333677832952,
+        "CHAT": 0.022979792318439815,
+        "NOISE": 0.01893456696321102,
+        "UNCERTAIN": 0.14749449250323776
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.8280746936798096,
+        "latency_ms": 8.70987499365583
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.932000007713214,
+        9.030165994772688,
+        8.70987499365583
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:2:4",
+      "scores": [
+        0.6990532875061035,
+        0.682989239692688,
+        0.6110297441482544,
+        0.6716216206550598,
+        0.7646043300628662,
+        0.4735305607318878,
+        0.468328595161438,
+        0.6770085692405701
+      ],
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.3798741827517471,
+        "latency_ms": 7.908166997367516
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.16643442157657196,
+        "QUERY": 0.13596085145445017,
+        "REFERENCE": 0.05495147987218515,
+        "MODIFICATION": 0.11783167730299526,
+        "CANCEL_OR_REVERT": 0.3798741827517471,
+        "CHAT": 0.009732185160628633,
+        "NOISE": 0.009115256828669746,
+        "UNCERTAIN": 0.12609994505275193
+      },
+      "raw_prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.7646043300628662,
+        "latency_ms": 7.908166997367516
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        7.813333999365568,
+        7.908166997367516,
+        8.712208975339308
+      ]
+    },
+    {
+      "id": "UNCERTAIN:test:2:5",
+      "scores": [
+        0.827912449836731,
+        0.6973264217376709,
+        0.5252825021743774,
+        0.7630728483200073,
+        0.6447223424911499,
+        0.2761589288711548,
+        0.3605177402496338,
+        0.7897502183914185
+      ],
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.42028653351403217,
+        "latency_ms": 7.652540982235223
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.42028653351403217,
+        "QUERY": 0.08120330995504815,
+        "REFERENCE": 0.009309648975041917,
+        "MODIFICATION": 0.18579696303871232,
+        "CANCEL_OR_REVERT": 0.041875875109126076,
+        "CHAT": 0.0004044494236329782,
+        "NOISE": 0.001169745178515766,
+        "UNCERTAIN": 0.25995347480589065
+      },
+      "raw_prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.827912449836731,
+        "latency_ms": 7.652540982235223
+      },
+      "raw_probabilities": {},
+      "latency_trials_ms": [
+        8.678541984409094,
+        7.64933301252313,
+        7.652540982235223
+      ]
+    }
+  ],
+  "cold_process_full_benchmark_wall_ms": 6635.6386249826755,
+  "cold_start_semantics": "fresh interpreter, cached model, imports+load; OS disk cache not flushed"
+}

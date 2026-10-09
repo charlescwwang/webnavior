@@ -1,0 +1,3551 @@
+{
+  "model_kind": "jev_eight_class_calibrated",
+  "endpoint": "https://openjev.aikcitri.qzz.io/v1/systemone",
+  "prompt_sha256": "0e5b2c84fda73526b208959dd4e5e8cb7f56318a0ae3da2769dc1cdd75a49deb",
+  "dataset": {
+    "samples": 400,
+    "classes": 8,
+    "families": 80,
+    "splits": {
+      "train": 240,
+      "validation": 80,
+      "test": 80
+    },
+    "sha256": "e6d7c3d213d7c2b9e426bcd485b348260964926b2bcd65d99a4a63f4cab1f6b0"
+  },
+  "split": "test",
+  "remote_cold_start_ms": null,
+  "remote_model_memory_bytes": null,
+  "records": [
+    {
+      "id": "DIRECT_ACTION:test:1:1",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.4277250958280657,
+        "latency_ms": 1855.332917009946
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.4277250958280657,
+        "QUERY": 0.10945515910726611,
+        "REFERENCE": 0.0466794944744224,
+        "MODIFICATION": 0.06504382867959002,
+        "CANCEL_OR_REVERT": 0.005972031185328327,
+        "CHAT": 0.08054074909760654,
+        "NOISE": 0.013199141080897115,
+        "UNCERTAIN": 0.2513845005468238
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.472,
+              "QUERY": 0.0987,
+              "REFERENCE": 0.0371,
+              "MODIFICATION": 0.0543,
+              "CANCEL_OR_REVERT": 0.0035,
+              "CHAT": 0.0694,
+              "NOISE": 0.0087,
+              "UNCERTAIN": 0.2564
+            },
+            "confidence": 0.3965
+          }
+        },
+        "usage": {
+          "forward_passes": 531,
+          "input_tokens": 585294,
+          "latency_ms_total": 1246816.235418053
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:2",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.7864659684982522,
+        "latency_ms": 1522.2950000024866
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.7864659684982522,
+        "QUERY": 0.06137007705907191,
+        "REFERENCE": 0.010090087005403718,
+        "MODIFICATION": 0.07220827560460492,
+        "CANCEL_OR_REVERT": 0.003336848630029169,
+        "CHAT": 0.008687438576670344,
+        "NOISE": 0.004577277134632899,
+        "UNCERTAIN": 0.05326402749133488
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.8471,
+              "QUERY": 0.0453,
+              "REFERENCE": 0.0057,
+              "MODIFICATION": 0.0546,
+              "CANCEL_OR_REVERT": 0.0016,
+              "CHAT": 0.0048,
+              "NOISE": 0.0023,
+              "UNCERTAIN": 0.0385
+            },
+            "confidence": 0.8253
+          }
+        },
+        "usage": {
+          "forward_passes": 532,
+          "input_tokens": 585826,
+          "latency_ms_total": 1247668.8892380625
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:3",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.8646017406952686,
+        "latency_ms": 1834.564542019507
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.8646017406952686,
+        "QUERY": 0.026891559403598077,
+        "REFERENCE": 0.005763304920340504,
+        "MODIFICATION": 0.04165913368694256,
+        "CANCEL_OR_REVERT": 0.002080111758554284,
+        "CHAT": 0.021430998005513763,
+        "NOISE": 0.0032457035640443515,
+        "UNCERTAIN": 0.03432744796573773
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.914,
+              "QUERY": 0.017,
+              "REFERENCE": 0.0029,
+              "MODIFICATION": 0.0281,
+              "CANCEL_OR_REVERT": 0.0009,
+              "CHAT": 0.0131,
+              "NOISE": 0.0015,
+              "UNCERTAIN": 0.0225
+            },
+            "confidence": 0.9018
+          }
+        },
+        "usage": {
+          "forward_passes": 533,
+          "input_tokens": 586357,
+          "latency_ms_total": 1248523.6492940749
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:4",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.6156747534200974,
+        "latency_ms": 1805.1815840008203
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.08078846690959379,
+        "QUERY": 0.03759604395036197,
+        "REFERENCE": 0.00763865158994241,
+        "MODIFICATION": 0.0015717185334132601,
+        "CANCEL_OR_REVERT": 0.0013742525708516423,
+        "CHAT": 0.6156747534200974,
+        "NOISE": 0.004762993622643641,
+        "UNCERTAIN": 0.25059311940309587
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0645,
+              "QUERY": 0.0268,
+              "REFERENCE": 0.0043,
+              "MODIFICATION": 0.0007,
+              "CANCEL_OR_REVERT": 0.0006,
+              "CHAT": 0.6641,
+              "NOISE": 0.0025,
+              "UNCERTAIN": 0.2366
+            },
+            "confidence": 0.6161
+          }
+        },
+        "usage": {
+          "forward_passes": 534,
+          "input_tokens": 586887,
+          "latency_ms_total": 1249445.8944481157
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:1:5",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.6068731901440619,
+        "latency_ms": 1877.424875012366
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.13151483316770676,
+        "QUERY": 0.030031965122176506,
+        "REFERENCE": 0.03200597769036259,
+        "MODIFICATION": 0.6068731901440619,
+        "CANCEL_OR_REVERT": 0.0076666529202779835,
+        "CHAT": 0.004522016030147241,
+        "NOISE": 0.008420106898239483,
+        "UNCERTAIN": 0.1789652580270274
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.115,
+              "QUERY": 0.0211,
+              "REFERENCE": 0.0227,
+              "MODIFICATION": 0.6656,
+              "CANCEL_OR_REVERT": 0.0044,
+              "CHAT": 0.0024,
+              "NOISE": 0.0049,
+              "UNCERTAIN": 0.1638
+            },
+            "confidence": 0.6178
+          }
+        },
+        "usage": {
+          "forward_passes": 535,
+          "input_tokens": 587420,
+          "latency_ms_total": 1250372.1204661124
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5052317456471115,
+        "latency_ms": 1742.2232090029866
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.1987338961860712,
+        "QUERY": 0.10714148572796599,
+        "REFERENCE": 0.08839919710436835,
+        "MODIFICATION": 0.04281003977387747,
+        "CANCEL_OR_REVERT": 0.014301767534827313,
+        "CHAT": 0.028683367309168168,
+        "NOISE": 0.014698500716610052,
+        "UNCERTAIN": 0.5052317456471115
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1929,
+              "QUERY": 0.0949,
+              "REFERENCE": 0.0761,
+              "MODIFICATION": 0.0331,
+              "CANCEL_OR_REVERT": 0.0094,
+              "CHAT": 0.0209,
+              "NOISE": 0.0097,
+              "UNCERTAIN": 0.5631
+            },
+            "confidence": 0.5007
+          }
+        },
+        "usage": {
+          "forward_passes": 536,
+          "input_tokens": 587954,
+          "latency_ms_total": 1251228.6673991184
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:2",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.5375690118875394,
+        "latency_ms": 2060.266832995694
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.5375690118875394,
+        "QUERY": 0.10156129291072774,
+        "REFERENCE": 0.03602287976563482,
+        "MODIFICATION": 0.15684064917780166,
+        "CANCEL_OR_REVERT": 0.011327655920311425,
+        "CHAT": 0.011743409371416637,
+        "NOISE": 0.008925104704160329,
+        "UNCERTAIN": 0.13600999626240806
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.5969,
+              "QUERY": 0.0881,
+              "REFERENCE": 0.0268,
+              "MODIFICATION": 0.1451,
+              "CANCEL_OR_REVERT": 0.0071,
+              "CHAT": 0.0074,
+              "NOISE": 0.0054,
+              "UNCERTAIN": 0.1232
+            },
+            "confidence": 0.5393
+          }
+        },
+        "usage": {
+          "forward_passes": 537,
+          "input_tokens": 588489,
+          "latency_ms_total": 1252154.6840241353
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:3",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.6138939535800626,
+        "latency_ms": 1500.2800840011332
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.6138939535800626,
+        "QUERY": 0.10672386430712016,
+        "REFERENCE": 0.011463216487852508,
+        "MODIFICATION": 0.13322062118721595,
+        "CANCEL_OR_REVERT": 0.005639167782359191,
+        "CHAT": 0.009585093405643648,
+        "NOISE": 0.006423564579915543,
+        "UNCERTAIN": 0.1130505186698304
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.6761,
+              "QUERY": 0.0907,
+              "REFERENCE": 0.007,
+              "MODIFICATION": 0.117,
+              "CANCEL_OR_REVERT": 0.0031,
+              "CHAT": 0.0057,
+              "NOISE": 0.0036,
+              "UNCERTAIN": 0.0969
+            },
+            "confidence": 0.6298
+          }
+        },
+        "usage": {
+          "forward_passes": 538,
+          "input_tokens": 589024,
+          "latency_ms_total": 1253010.4862351145
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:4",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.6702525423063601,
+        "latency_ms": 1467.2458749846555
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.6702525423063601,
+        "QUERY": 0.05579836939453521,
+        "REFERENCE": 0.024375996520934928,
+        "MODIFICATION": 0.025402196486298836,
+        "CANCEL_OR_REVERT": 0.01873950222395731,
+        "CHAT": 0.07590899786593219,
+        "NOISE": 0.0075562471196838855,
+        "UNCERTAIN": 0.12196614808229755
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.7413,
+              "QUERY": 0.0427,
+              "REFERENCE": 0.0165,
+              "MODIFICATION": 0.0173,
+              "CANCEL_OR_REVERT": 0.0122,
+              "CHAT": 0.0608,
+              "NOISE": 0.0043,
+              "UNCERTAIN": 0.1048
+            },
+            "confidence": 0.7044
+          }
+        },
+        "usage": {
+          "forward_passes": 539,
+          "input_tokens": 589556,
+          "latency_ms_total": 1253862.9997500975
+        }
+      }
+    },
+    {
+      "id": "DIRECT_ACTION:test:2:5",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.7446140217382858,
+        "latency_ms": 1518.398917018203
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.7446140217382858,
+        "QUERY": 0.05380737238351878,
+        "REFERENCE": 0.009181640665623346,
+        "MODIFICATION": 0.057692361108878,
+        "CANCEL_OR_REVERT": 0.006341707909204651,
+        "CHAT": 0.012337586969144098,
+        "NOISE": 0.0069867926104825555,
+        "UNCERTAIN": 0.1090385166148627
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.8088,
+              "QUERY": 0.0396,
+              "REFERENCE": 0.0052,
+              "MODIFICATION": 0.0429,
+              "CANCEL_OR_REVERT": 0.0034,
+              "CHAT": 0.0073,
+              "NOISE": 0.0038,
+              "UNCERTAIN": 0.0891
+            },
+            "confidence": 0.7815
+          }
+        },
+        "usage": {
+          "forward_passes": 540,
+          "input_tokens": 590090,
+          "latency_ms_total": 1254717.7656920685
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:1:1",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.7498213712676257,
+        "latency_ms": 1566.1424169957172
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.11562611569586939,
+        "QUERY": 0.7498213712676257,
+        "REFERENCE": 0.009930785514332496,
+        "MODIFICATION": 0.0014194395070610572,
+        "CANCEL_OR_REVERT": 0.000997120886815109,
+        "CHAT": 0.0012110244359903907,
+        "NOISE": 0.005260671758959733,
+        "UNCERTAIN": 0.11573347093334625
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0938,
+              "QUERY": 0.8024,
+              "REFERENCE": 0.0056,
+              "MODIFICATION": 0.0006,
+              "CANCEL_OR_REVERT": 0.0004,
+              "CHAT": 0.0005,
+              "NOISE": 0.0027,
+              "UNCERTAIN": 0.0939
+            },
+            "confidence": 0.7742
+          }
+        },
+        "usage": {
+          "forward_passes": 541,
+          "input_tokens": 590622,
+          "latency_ms_total": 1255571.8136520882
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:1:2",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.6845334031586128,
+        "latency_ms": 1519.1465000098106
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.09486760177127396,
+        "QUERY": 0.6845334031586128,
+        "REFERENCE": 0.02137004079704466,
+        "MODIFICATION": 0.002546690406945068,
+        "CANCEL_OR_REVERT": 0.001592568798839111,
+        "CHAT": 0.004826179033480584,
+        "NOISE": 0.007108990307253091,
+        "UNCERTAIN": 0.18315452572655072
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0764,
+              "QUERY": 0.7388,
+              "REFERENCE": 0.0138,
+              "MODIFICATION": 0.0012,
+              "CANCEL_OR_REVERT": 0.0007,
+              "CHAT": 0.0025,
+              "NOISE": 0.0039,
+              "UNCERTAIN": 0.1626
+            },
+            "confidence": 0.7015
+          }
+        },
+        "usage": {
+          "forward_passes": 542,
+          "input_tokens": 591153,
+          "latency_ms_total": 1256428.493498097
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:1:3",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.852108194702346,
+        "latency_ms": 1527.3031250108033
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04129635420977838,
+        "QUERY": 0.852108194702346,
+        "REFERENCE": 0.006644512759598853,
+        "MODIFICATION": 0.0005633611962608565,
+        "CANCEL_OR_REVERT": 0.0005633611962608565,
+        "CHAT": 0.0008019660898609933,
+        "NOISE": 0.0038185405921384945,
+        "UNCERTAIN": 0.09420370925375561
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0277,
+              "QUERY": 0.895,
+              "REFERENCE": 0.0034,
+              "MODIFICATION": 0.0002,
+              "CANCEL_OR_REVERT": 0.0002,
+              "CHAT": 0.0003,
+              "NOISE": 0.0018,
+              "UNCERTAIN": 0.0714
+            },
+            "confidence": 0.88
+          }
+        },
+        "usage": {
+          "forward_passes": 543,
+          "input_tokens": 591686,
+          "latency_ms_total": 1257285.7494050695
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:1:4",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.7577606803591969,
+        "latency_ms": 1494.8154169833288
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.07158554047779567,
+        "QUERY": 0.7577606803591969,
+        "REFERENCE": 0.00933872063075839,
+        "MODIFICATION": 0.001214754104911612,
+        "CANCEL_OR_REVERT": 0.0016283980508113043,
+        "CHAT": 0.001214754104911612,
+        "NOISE": 0.0075925379044069815,
+        "UNCERTAIN": 0.14966461436720754
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0539,
+              "QUERY": 0.8093,
+              "REFERENCE": 0.0052,
+              "MODIFICATION": 0.0005,
+              "CANCEL_OR_REVERT": 0.0007,
+              "CHAT": 0.0005,
+              "NOISE": 0.0041,
+              "UNCERTAIN": 0.1257
+            },
+            "confidence": 0.7821
+          }
+        },
+        "usage": {
+          "forward_passes": 544,
+          "input_tokens": 592220,
+          "latency_ms_total": 1258140.710338048
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:1:5",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5087825710558315,
+        "latency_ms": 1522.5142920098733
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0887831155714202,
+        "QUERY": 0.3092631729891055,
+        "REFERENCE": 0.06504246434341326,
+        "MODIFICATION": 0.0071535487394825655,
+        "CANCEL_OR_REVERT": 0.007907642977924564,
+        "CHAT": 0.0038282058138583296,
+        "NOISE": 0.009239278508964053,
+        "UNCERTAIN": 0.5087825710558315
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0739,
+              "QUERY": 0.3097,
+              "REFERENCE": 0.0517,
+              "MODIFICATION": 0.0041,
+              "CANCEL_OR_REVERT": 0.0046,
+              "CHAT": 0.002,
+              "NOISE": 0.0055,
+              "UNCERTAIN": 0.5485
+            },
+            "confidence": 0.484
+          }
+        },
+        "usage": {
+          "forward_passes": 545,
+          "input_tokens": 592754,
+          "latency_ms_total": 1258998.1996340503
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:2:1",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.8146528687148421,
+        "latency_ms": 2170.28883297462
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.018947544962906678,
+        "QUERY": 0.8146528687148421,
+        "REFERENCE": 0.005053805937469376,
+        "MODIFICATION": 0.0007972948404897792,
+        "CANCEL_OR_REVERT": 0.0007972948404897792,
+        "CHAT": 0.0007972948404897792,
+        "NOISE": 0.0032388913369778933,
+        "UNCERTAIN": 0.15571500452633463
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0114,
+              "QUERY": 0.8557,
+              "REFERENCE": 0.0025,
+              "MODIFICATION": 0.0003,
+              "CANCEL_OR_REVERT": 0.0003,
+              "CHAT": 0.0003,
+              "NOISE": 0.0015,
+              "UNCERTAIN": 0.128
+            },
+            "confidence": 0.8351
+          }
+        },
+        "usage": {
+          "forward_passes": 546,
+          "input_tokens": 593288,
+          "latency_ms_total": 1259856.6460740112
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:2:2",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.6932369089249308,
+        "latency_ms": 1527.0353750092909
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04295100925961842,
+        "QUERY": 0.6932369089249308,
+        "REFERENCE": 0.024487639297695787,
+        "MODIFICATION": 0.00400302610573493,
+        "CANCEL_OR_REVERT": 0.0027506970889310135,
+        "CHAT": 0.0018021758424572982,
+        "NOISE": 0.008268756387358375,
+        "UNCERTAIN": 0.2224997870932733
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0305,
+              "QUERY": 0.7433,
+              "REFERENCE": 0.016,
+              "MODIFICATION": 0.002,
+              "CANCEL_OR_REVERT": 0.0013,
+              "CHAT": 0.0008,
+              "NOISE": 0.0046,
+              "UNCERTAIN": 0.2016
+            },
+            "confidence": 0.7066
+          }
+        },
+        "usage": {
+          "forward_passes": 547,
+          "input_tokens": 593820,
+          "latency_ms_total": 1260712.913788011
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:2:3",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.5572280090814233,
+        "latency_ms": 2050.6828330107965
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.01010966369258449,
+        "QUERY": 0.5572280090814233,
+        "REFERENCE": 0.02362481707115023,
+        "MODIFICATION": 0.2623178360555957,
+        "CANCEL_OR_REVERT": 0.0017481963502894043,
+        "CHAT": 0.0005226583316156227,
+        "NOISE": 0.002306995905457224,
+        "UNCERTAIN": 0.142141823511884
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.006,
+              "QUERY": 0.599,
+              "REFERENCE": 0.0159,
+              "MODIFICATION": 0.2522,
+              "CANCEL_OR_REVERT": 0.0008,
+              "CHAT": 0.0002,
+              "NOISE": 0.0011,
+              "UNCERTAIN": 0.1248
+            },
+            "confidence": 0.5417
+          }
+        },
+        "usage": {
+          "forward_passes": 548,
+          "input_tokens": 594354,
+          "latency_ms_total": 1261566.5782770084
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:2:4",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.6526480726419027,
+        "latency_ms": 1758.5058329859748
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06027967664490763,
+        "QUERY": 0.11045011716982593,
+        "REFERENCE": 0.12349490711887465,
+        "MODIFICATION": 0.016295050068093706,
+        "CANCEL_OR_REVERT": 0.019658025403764556,
+        "CHAT": 0.0033648779077932274,
+        "NOISE": 0.01380927304483747,
+        "UNCERTAIN": 0.6526480726419027
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0467,
+              "QUERY": 0.0936,
+              "REFERENCE": 0.1064,
+              "MODIFICATION": 0.0104,
+              "CANCEL_OR_REVERT": 0.0129,
+              "CHAT": 0.0017,
+              "NOISE": 0.0086,
+              "UNCERTAIN": 0.7196
+            },
+            "confidence": 0.6796
+          }
+        },
+        "usage": {
+          "forward_passes": 549,
+          "input_tokens": 594886,
+          "latency_ms_total": 1262425.2784449782
+        }
+      }
+    },
+    {
+      "id": "QUERY:test:2:5",
+      "prediction": {
+        "class": "QUERY",
+        "confidence": 0.6180268977733507,
+        "latency_ms": 1723.427291988628
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.02457029491800595,
+        "QUERY": 0.6180268977733507,
+        "REFERENCE": 0.030279064301169365,
+        "MODIFICATION": 0.12887344082845326,
+        "CANCEL_OR_REVERT": 0.002492898700351626,
+        "CHAT": 0.0009575233873202301,
+        "NOISE": 0.005376163513448915,
+        "UNCERTAIN": 0.1894237165779001
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "QUERY",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0166,
+              "QUERY": 0.6733,
+              "REFERENCE": 0.0211,
+              "MODIFICATION": 0.1113,
+              "CANCEL_OR_REVERT": 0.0012,
+              "CHAT": 0.0004,
+              "NOISE": 0.0029,
+              "UNCERTAIN": 0.1732
+            },
+            "confidence": 0.6266
+          }
+        },
+        "usage": {
+          "forward_passes": 550,
+          "input_tokens": 595419,
+          "latency_ms_total": 1263282.0453149907
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:1:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.44019246231508935,
+        "latency_ms": 1814.396708010463
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.1759931411527401,
+        "QUERY": 0.04727478960073388,
+        "REFERENCE": 0.057988104828354474,
+        "MODIFICATION": 0.002050512552680788,
+        "CANCEL_OR_REVERT": 0.0016883300073812911,
+        "CHAT": 0.26901210927489383,
+        "NOISE": 0.005800550268126332,
+        "UNCERTAIN": 0.44019246231508935
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.166,
+              "QUERY": 0.0367,
+              "REFERENCE": 0.0464,
+              "MODIFICATION": 0.001,
+              "CANCEL_OR_REVERT": 0.0008,
+              "CHAT": 0.2702,
+              "NOISE": 0.0033,
+              "UNCERTAIN": 0.4756
+            },
+            "confidence": 0.4006
+          }
+        },
+        "usage": {
+          "forward_passes": 551,
+          "input_tokens": 595947,
+          "latency_ms_total": 1264207.340338995
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:1:2",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.6138224684583553,
+        "latency_ms": 1683.3905410021544
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.113118087970936,
+        "QUERY": 0.024495796395066573,
+        "REFERENCE": 0.014805766998511162,
+        "MODIFICATION": 0.000527508400622762,
+        "CANCEL_OR_REVERT": 0.000527508400622762,
+        "CHAT": 0.6138224684583553,
+        "NOISE": 0.001373360717608518,
+        "UNCERTAIN": 0.23132950265827695
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.095,
+              "QUERY": 0.0164,
+              "REFERENCE": 0.0092,
+              "MODIFICATION": 0.0002,
+              "CANCEL_OR_REVERT": 0.0002,
+              "CHAT": 0.6623,
+              "NOISE": 0.0006,
+              "UNCERTAIN": 0.216
+            },
+            "confidence": 0.6141
+          }
+        },
+        "usage": {
+          "forward_passes": 552,
+          "input_tokens": 596475,
+          "latency_ms_total": 1265064.026973996
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:1:3",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5209358135017378,
+        "latency_ms": 1489.2124999896623
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.24747681326022933,
+        "QUERY": 0.06855911206225518,
+        "REFERENCE": 0.11886777651445844,
+        "MODIFICATION": 0.006329490157679431,
+        "CANCEL_OR_REVERT": 0.0032927755292574868,
+        "CHAT": 0.0212989772758135,
+        "NOISE": 0.01323924169856892,
+        "UNCERTAIN": 0.5209358135017378
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.2423,
+              "QUERY": 0.0555,
+              "REFERENCE": 0.1044,
+              "MODIFICATION": 0.0036,
+              "CANCEL_OR_REVERT": 0.0017,
+              "CHAT": 0.0145,
+              "NOISE": 0.0084,
+              "UNCERTAIN": 0.5695
+            },
+            "confidence": 0.508
+          }
+        },
+        "usage": {
+          "forward_passes": 553,
+          "input_tokens": 597003,
+          "latency_ms_total": 1265916.8535780336
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:1:4",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.45596446334036234,
+        "latency_ms": 1727.0223750092555
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.1743776010702601,
+        "QUERY": 0.1814586820461559,
+        "REFERENCE": 0.04397685130216674,
+        "MODIFICATION": 0.11381445384556232,
+        "CANCEL_OR_REVERT": 0.0070610013099757715,
+        "CHAT": 0.009633414766429763,
+        "NOISE": 0.013713532319087098,
+        "UNCERTAIN": 0.45596446334036234
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1668,
+              "QUERY": 0.1746,
+              "REFERENCE": 0.0343,
+              "MODIFICATION": 0.1022,
+              "CANCEL_OR_REVERT": 0.0042,
+              "CHAT": 0.006,
+              "NOISE": 0.009,
+              "UNCERTAIN": 0.5029
+            },
+            "confidence": 0.4319
+          }
+        },
+        "usage": {
+          "forward_passes": 554,
+          "input_tokens": 597532,
+          "latency_ms_total": 1266771.1297929927
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:1:5",
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8705526712840296,
+        "latency_ms": 1516.535542003112
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04293224203900791,
+        "QUERY": 0.010151606957929181,
+        "REFERENCE": 0.8705526712840296,
+        "MODIFICATION": 0.0012575338470836362,
+        "CANCEL_OR_REVERT": 0.0020982283012907863,
+        "CHAT": 0.00030955816163828596,
+        "NOISE": 0.001473953101992696,
+        "UNCERTAIN": 0.07122420630702783
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "REFERENCE",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0288,
+              "QUERY": 0.0055,
+              "REFERENCE": 0.9121,
+              "MODIFICATION": 0.0005,
+              "CANCEL_OR_REVERT": 0.0009,
+              "CHAT": 0.0001,
+              "NOISE": 0.0006,
+              "UNCERTAIN": 0.0515
+            },
+            "confidence": 0.8996
+          }
+        },
+        "usage": {
+          "forward_passes": 555,
+          "input_tokens": 598062,
+          "latency_ms_total": 1267624.6841889515
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:2:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.654782767262694,
+        "latency_ms": 2105.8021249773446
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.1917349374712833,
+        "QUERY": 0.05463176189954754,
+        "REFERENCE": 0.04341662924692582,
+        "MODIFICATION": 0.006980596527888823,
+        "CANCEL_OR_REVERT": 0.013758998679994123,
+        "CHAT": 0.01030600804819893,
+        "NOISE": 0.024388300863467452,
+        "UNCERTAIN": 0.654782767262694
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.175,
+              "QUERY": 0.0414,
+              "REFERENCE": 0.0318,
+              "MODIFICATION": 0.0039,
+              "CANCEL_OR_REVERT": 0.0085,
+              "CHAT": 0.0061,
+              "NOISE": 0.0164,
+              "UNCERTAIN": 0.7169
+            },
+            "confidence": 0.6764
+          }
+        },
+        "usage": {
+          "forward_passes": 556,
+          "input_tokens": 598595,
+          "latency_ms_total": 1268481.1885349627
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:2:2",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.49489173760583965,
+        "latency_ms": 2048.718750011176
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.11942564424620858,
+        "QUERY": 0.030300112756918306,
+        "REFERENCE": 0.2980491910296163,
+        "MODIFICATION": 0.02234907632111374,
+        "CANCEL_OR_REVERT": 0.02209441318951358,
+        "CHAT": 0.0044523226079009074,
+        "NOISE": 0.008437502242889016,
+        "UNCERTAIN": 0.49489173760583965
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1048,
+              "QUERY": 0.0217,
+              "REFERENCE": 0.2995,
+              "MODIFICATION": 0.0153,
+              "CANCEL_OR_REVERT": 0.0151,
+              "CHAT": 0.0024,
+              "NOISE": 0.005,
+              "UNCERTAIN": 0.5361
+            },
+            "confidence": 0.4698
+          }
+        },
+        "usage": {
+          "forward_passes": 557,
+          "input_tokens": 599130,
+          "latency_ms_total": 1269339.4630109833
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:2:3",
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.8025245578764221,
+        "latency_ms": 1812.6380829780828
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.03351932049350822,
+        "QUERY": 0.003773214914830506,
+        "REFERENCE": 0.8025245578764221,
+        "MODIFICATION": 0.0018619730560206302,
+        "CANCEL_OR_REVERT": 0.005197627623490938,
+        "CHAT": 0.00030437914658956034,
+        "NOISE": 0.0007924468362812818,
+        "UNCERTAIN": 0.15202648005285693
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "REFERENCE",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0221,
+              "QUERY": 0.0018,
+              "REFERENCE": 0.847,
+              "MODIFICATION": 0.0008,
+              "CANCEL_OR_REVERT": 0.0026,
+              "CHAT": 0.0001,
+              "NOISE": 0.0003,
+              "UNCERTAIN": 0.1254
+            },
+            "confidence": 0.8251
+          }
+        },
+        "usage": {
+          "forward_passes": 558,
+          "input_tokens": 599661,
+          "latency_ms_total": 1270198.075024964
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:2:4",
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.7482115239414698,
+        "latency_ms": 1721.0710420040414
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0521344942770826,
+        "QUERY": 0.012982484413424585,
+        "REFERENCE": 0.7482115239414698,
+        "MODIFICATION": 0.002411308422525251,
+        "CANCEL_OR_REVERT": 0.0038813738757794832,
+        "CHAT": 0.001827242334374792,
+        "NOISE": 0.0031591505048752942,
+        "UNCERTAIN": 0.1753924222304681
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "REFERENCE",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0375,
+              "QUERY": 0.0076,
+              "REFERENCE": 0.7986,
+              "MODIFICATION": 0.0011,
+              "CANCEL_OR_REVERT": 0.0019,
+              "CHAT": 0.0008,
+              "NOISE": 0.0015,
+              "UNCERTAIN": 0.151
+            },
+            "confidence": 0.7699
+          }
+        },
+        "usage": {
+          "forward_passes": 559,
+          "input_tokens": 600196,
+          "latency_ms_total": 1271055.2265829465
+        }
+      }
+    },
+    {
+      "id": "REFERENCE:test:2:5",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.35010499324499006,
+        "latency_ms": 1718.57545900275
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.35010499324499006,
+        "QUERY": 0.06776040151246719,
+        "REFERENCE": 0.14686143103206287,
+        "MODIFICATION": 0.0786698564186292,
+        "CANCEL_OR_REVERT": 0.01759840969067667,
+        "CHAT": 0.09813856941520202,
+        "NOISE": 0.009487169066345454,
+        "UNCERTAIN": 0.23137916961962646
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.3842,
+              "QUERY": 0.0583,
+              "REFERENCE": 0.1417,
+              "MODIFICATION": 0.0692,
+              "CANCEL_OR_REVERT": 0.0124,
+              "CHAT": 0.0892,
+              "NOISE": 0.0061,
+              "UNCERTAIN": 0.2388
+            },
+            "confidence": 0.2963
+          }
+        },
+        "usage": {
+          "forward_passes": 560,
+          "input_tokens": 600730,
+          "latency_ms_total": 1271911.2460969773
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:1:1",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.5424806993249301,
+        "latency_ms": 2058.1586250045802
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.08843254169442707,
+        "QUERY": 0.021794463559752505,
+        "REFERENCE": 0.12117560091838729,
+        "MODIFICATION": 0.5424806993249301,
+        "CANCEL_OR_REVERT": 0.00330981301187294,
+        "CHAT": 0.0019021192065538314,
+        "NOISE": 0.003478755424656464,
+        "UNCERTAIN": 0.21742600685941976
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0739,
+              "QUERY": 0.0148,
+              "REFERENCE": 0.1061,
+              "MODIFICATION": 0.5931,
+              "CANCEL_OR_REVERT": 0.0017,
+              "CHAT": 0.0009,
+              "NOISE": 0.0018,
+              "UNCERTAIN": 0.2076
+            },
+            "confidence": 0.535
+          }
+        },
+        "usage": {
+          "forward_passes": 561,
+          "input_tokens": 601263,
+          "latency_ms_total": 1272769.354464981
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:1:2",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.540332192290413,
+        "latency_ms": 1455.0008339865599
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0821069757028572,
+        "QUERY": 0.0349589754716226,
+        "REFERENCE": 0.040746486329619004,
+        "MODIFICATION": 0.540332192290413,
+        "CANCEL_OR_REVERT": 0.10089772876259304,
+        "CHAT": 0.011425463269785793,
+        "NOISE": 0.011425463269785793,
+        "UNCERTAIN": 0.17810671490332367
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0693,
+              "QUERY": 0.026,
+              "REFERENCE": 0.031,
+              "MODIFICATION": 0.6029,
+              "CANCEL_OR_REVERT": 0.0878,
+              "CHAT": 0.0072,
+              "NOISE": 0.0072,
+              "UNCERTAIN": 0.1686
+            },
+            "confidence": 0.5462
+          }
+        },
+        "usage": {
+          "forward_passes": 562,
+          "input_tokens": 601795,
+          "latency_ms_total": 1273625.9538560116
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:1:3",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.6939336100924045,
+        "latency_ms": 1747.7206249895971
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.059767044723591914,
+        "QUERY": 0.019275333957586738,
+        "REFERENCE": 0.02009173510654027,
+        "MODIFICATION": 0.6939336100924045,
+        "CANCEL_OR_REVERT": 0.010911580146485309,
+        "CHAT": 0.00447492764173173,
+        "NOISE": 0.007560694358742614,
+        "UNCERTAIN": 0.18398507397291702
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0451,
+              "QUERY": 0.0123,
+              "REFERENCE": 0.0129,
+              "MODIFICATION": 0.753,
+              "CANCEL_OR_REVERT": 0.0064,
+              "CHAT": 0.0023,
+              "NOISE": 0.0042,
+              "UNCERTAIN": 0.164
+            },
+            "confidence": 0.7177
+          }
+        },
+        "usage": {
+          "forward_passes": 563,
+          "input_tokens": 602329,
+          "latency_ms_total": 1274488.7317580578
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:1:4",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.5203704008740133,
+        "latency_ms": 1492.0068749925122
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.057364907408816716,
+        "QUERY": 0.02480493767169254,
+        "REFERENCE": 0.20864673184347346,
+        "MODIFICATION": 0.5203704008740133,
+        "CANCEL_OR_REVERT": 0.012255928144190893,
+        "CHAT": 0.0015182073668353398,
+        "NOISE": 0.006625451273014042,
+        "UNCERTAIN": 0.16841343541796358
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0453,
+              "QUERY": 0.0173,
+              "REFERENCE": 0.1995,
+              "MODIFICATION": 0.5697,
+              "CANCEL_OR_REVERT": 0.0077,
+              "CHAT": 0.0007,
+              "NOISE": 0.0038,
+              "UNCERTAIN": 0.156
+            },
+            "confidence": 0.5083
+          }
+        },
+        "usage": {
+          "forward_passes": 564,
+          "input_tokens": 602860,
+          "latency_ms_total": 1275341.2388990691
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:1:5",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.3218265543008049,
+        "latency_ms": 1742.6599999889731
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0962652456629051,
+        "QUERY": 0.047371801397214405,
+        "REFERENCE": 0.04823697004329387,
+        "MODIFICATION": 0.3218265543008049,
+        "CANCEL_OR_REVERT": 0.1552758710378017,
+        "CHAT": 0.011099341057360466,
+        "NOISE": 0.007084672315400751,
+        "UNCERTAIN": 0.3128395441852188
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.086,
+              "QUERY": 0.0381,
+              "REFERENCE": 0.0389,
+              "MODIFICATION": 0.3438,
+              "CANCEL_OR_REVERT": 0.1489,
+              "CHAT": 0.0072,
+              "NOISE": 0.0043,
+              "UNCERTAIN": 0.3328
+            },
+            "confidence": 0.25
+          }
+        },
+        "usage": {
+          "forward_passes": 565,
+          "input_tokens": 603395,
+          "latency_ms_total": 1276195.8015421114
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:2:1",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.42598055137023383,
+        "latency_ms": 1484.0425830043387
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.09025192335741797,
+        "QUERY": 0.02437898064394295,
+        "REFERENCE": 0.1282862337140836,
+        "MODIFICATION": 0.42598055137023383,
+        "CANCEL_OR_REVERT": 0.05219415012754849,
+        "CHAT": 0.002374139851834079,
+        "NOISE": 0.004811100713765962,
+        "UNCERTAIN": 0.27172292022117317
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0782,
+              "QUERY": 0.0174,
+              "REFERENCE": 0.1171,
+              "MODIFICATION": 0.4645,
+              "CANCEL_OR_REVERT": 0.0417,
+              "CHAT": 0.0012,
+              "NOISE": 0.0027,
+              "UNCERTAIN": 0.2772
+            },
+            "confidence": 0.388
+          }
+        },
+        "usage": {
+          "forward_passes": 566,
+          "input_tokens": 603929,
+          "latency_ms_total": 1277050.8237981412
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:2:2",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.6867364603900273,
+        "latency_ms": 1460.9122919791844
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.042581676838855276,
+        "QUERY": 0.013198904256048898,
+        "REFERENCE": 0.10369687807769762,
+        "MODIFICATION": 0.6867364603900273,
+        "CANCEL_OR_REVERT": 0.00906968542178101,
+        "CHAT": 0.000531131375406869,
+        "NOISE": 0.0030714854089784593,
+        "UNCERTAIN": 0.14111377823120452
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0307,
+              "QUERY": 0.008,
+              "REFERENCE": 0.0853,
+              "MODIFICATION": 0.7475,
+              "CANCEL_OR_REVERT": 0.0052,
+              "CHAT": 0.0002,
+              "NOISE": 0.0015,
+              "UNCERTAIN": 0.1215
+            },
+            "confidence": 0.7115
+          }
+        },
+        "usage": {
+          "forward_passes": 567,
+          "input_tokens": 604459,
+          "latency_ms_total": 1277904.326767166
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:2:3",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.32782134119578876,
+        "latency_ms": 2190.829916013172
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.21671789267308458,
+        "QUERY": 0.06685066824185387,
+        "REFERENCE": 0.04868754469605636,
+        "MODIFICATION": 0.32782134119578876,
+        "CANCEL_OR_REVERT": 0.051474221370316174,
+        "CHAT": 0.015389249987948439,
+        "NOISE": 0.007923816548213915,
+        "UNCERTAIN": 0.265135265286738
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.2188,
+              "QUERY": 0.0567,
+              "REFERENCE": 0.0394,
+              "MODIFICATION": 0.3519,
+              "CANCEL_OR_REVERT": 0.042,
+              "CHAT": 0.0105,
+              "NOISE": 0.0049,
+              "UNCERTAIN": 0.2758
+            },
+            "confidence": 0.2593
+          }
+        },
+        "usage": {
+          "forward_passes": 568,
+          "input_tokens": 604990,
+          "latency_ms_total": 1278758.772883186
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:2:4",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.5503516028925797,
+        "latency_ms": 2157.229415985057
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05332195320543477,
+        "QUERY": 0.04642698832813831,
+        "REFERENCE": 0.05732876811516533,
+        "MODIFICATION": 0.5503516028925797,
+        "CANCEL_OR_REVERT": 0.02575975438643269,
+        "CHAT": 0.006187404765502232,
+        "NOISE": 0.010466427625473252,
+        "UNCERTAIN": 0.2501571006812738
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0415,
+              "QUERY": 0.0354,
+              "REFERENCE": 0.0451,
+              "MODIFICATION": 0.6053,
+              "CANCEL_OR_REVERT": 0.018,
+              "CHAT": 0.0035,
+              "NOISE": 0.0064,
+              "UNCERTAIN": 0.2448
+            },
+            "confidence": 0.5489
+          }
+        },
+        "usage": {
+          "forward_passes": 569,
+          "input_tokens": 605523,
+          "latency_ms_total": 1279610.9988271783
+        }
+      }
+    },
+    {
+      "id": "MODIFICATION:test:2:5",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.8992133395104993,
+        "latency_ms": 1466.069999994943
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.008617855939770575,
+        "QUERY": 0.00498453973002899,
+        "REFERENCE": 0.007437814052006896,
+        "MODIFICATION": 0.8992133395104993,
+        "CANCEL_OR_REVERT": 0.004437273392735429,
+        "CHAT": 0.0019145637028317331,
+        "NOISE": 0.002725454249850026,
+        "UNCERTAIN": 0.07066915942227689
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0045,
+              "QUERY": 0.0024,
+              "REFERENCE": 0.0038,
+              "MODIFICATION": 0.9348,
+              "CANCEL_OR_REVERT": 0.0021,
+              "CHAT": 0.0008,
+              "NOISE": 0.0012,
+              "UNCERTAIN": 0.0504
+            },
+            "confidence": 0.9255
+          }
+        },
+        "usage": {
+          "forward_passes": 570,
+          "input_tokens": 606058,
+          "latency_ms_total": 1280468.200709176
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.3960952723256898,
+        "latency_ms": 1720.358666003449
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.10598443402966294,
+        "QUERY": 0.031803077055376376,
+        "REFERENCE": 0.10206218589790735,
+        "MODIFICATION": 0.008770042239253192,
+        "CANCEL_OR_REVERT": 0.31308000971036126,
+        "CHAT": 0.029452431485626526,
+        "NOISE": 0.012752547256122489,
+        "UNCERTAIN": 0.3960952723256898
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0944,
+              "QUERY": 0.0237,
+              "REFERENCE": 0.0904,
+              "MODIFICATION": 0.0054,
+              "CANCEL_OR_REVERT": 0.3274,
+              "CHAT": 0.0217,
+              "NOISE": 0.0083,
+              "UNCERTAIN": 0.4289
+            },
+            "confidence": 0.3473
+          }
+        },
+        "usage": {
+          "forward_passes": 571,
+          "input_tokens": 606586,
+          "latency_ms_total": 1281325.370427192
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:2",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.4368297532216372,
+        "latency_ms": 2035.8001249842346
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.18858138973101204,
+        "QUERY": 0.04997464272899119,
+        "REFERENCE": 0.12051798493380876,
+        "MODIFICATION": 0.011796445399142562,
+        "CANCEL_OR_REVERT": 0.12701737048998848,
+        "CHAT": 0.047921299461745774,
+        "NOISE": 0.017361114033674054,
+        "UNCERTAIN": 0.4368297532216372
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1856,
+              "QUERY": 0.0404,
+              "REFERENCE": 0.111,
+              "MODIFICATION": 0.0077,
+              "CANCEL_OR_REVERT": 0.1179,
+              "CHAT": 0.0385,
+              "NOISE": 0.012,
+              "UNCERTAIN": 0.4869
+            },
+            "confidence": 0.4135
+          }
+        },
+        "usage": {
+          "forward_passes": 572,
+          "input_tokens": 607114,
+          "latency_ms_total": 1282180.1037701953
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:3",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5782161776535384,
+        "latency_ms": 1511.5741670015268
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.1484833434256424,
+        "QUERY": 0.027425615138162305,
+        "REFERENCE": 0.15357793335050035,
+        "MODIFICATION": 0.006044794678530789,
+        "CANCEL_OR_REVERT": 0.0626192309657387,
+        "CHAT": 0.01034378018703263,
+        "NOISE": 0.01328912460085458,
+        "UNCERTAIN": 0.5782161776535384
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1342,
+              "QUERY": 0.0193,
+              "REFERENCE": 0.1395,
+              "MODIFICATION": 0.0034,
+              "CANCEL_OR_REVERT": 0.0498,
+              "CHAT": 0.0063,
+              "NOISE": 0.0084,
+              "UNCERTAIN": 0.6392
+            },
+            "confidence": 0.5876
+          }
+        },
+        "usage": {
+          "forward_passes": 573,
+          "input_tokens": 607643,
+          "latency_ms_total": 1283032.6843341754
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:4",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.604457383246783,
+        "latency_ms": 1716.338625003118
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.11810928978139189,
+        "QUERY": 0.0398325640052271,
+        "REFERENCE": 0.07189007934211092,
+        "MODIFICATION": 0.012532857069465622,
+        "CANCEL_OR_REVERT": 0.09883686998534773,
+        "CHAT": 0.03643441086328824,
+        "NOISE": 0.017906545706385488,
+        "UNCERTAIN": 0.604457383246783
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1038,
+              "QUERY": 0.0298,
+              "REFERENCE": 0.0587,
+              "MODIFICATION": 0.0079,
+              "CANCEL_OR_REVERT": 0.0846,
+              "CHAT": 0.0269,
+              "NOISE": 0.0119,
+              "UNCERTAIN": 0.6766
+            },
+            "confidence": 0.6303
+          }
+        },
+        "usage": {
+          "forward_passes": 574,
+          "input_tokens": 608172,
+          "latency_ms_total": 1283885.2455191372
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:1:5",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.6886286158746996,
+        "latency_ms": 1663.1203749857377
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05986472230453141,
+        "QUERY": 0.02510216986745538,
+        "REFERENCE": 0.011035389650686789,
+        "MODIFICATION": 0.001181907724991385,
+        "CANCEL_OR_REVERT": 0.03616835477601487,
+        "CHAT": 0.6886286158746996,
+        "NOISE": 0.001972044127354766,
+        "UNCERTAIN": 0.17604679567426593
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0453,
+              "QUERY": 0.0167,
+              "REFERENCE": 0.0065,
+              "MODIFICATION": 0.0005,
+              "CANCEL_OR_REVERT": 0.0254,
+              "CHAT": 0.7483,
+              "NOISE": 0.0009,
+              "UNCERTAIN": 0.1563
+            },
+            "confidence": 0.7124
+          }
+        },
+        "usage": {
+          "forward_passes": 575,
+          "input_tokens": 608702,
+          "latency_ms_total": 1284739.9592051224
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.39462252301434597,
+        "latency_ms": 1501.0359169973526
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06629798660173564,
+        "QUERY": 0.03141354891296084,
+        "REFERENCE": 0.06514998246711137,
+        "MODIFICATION": 0.10409833694936313,
+        "CANCEL_OR_REVERT": 0.30896564001925103,
+        "CHAT": 0.021862628988725718,
+        "NOISE": 0.007589353046506321,
+        "UNCERTAIN": 0.39462252301434597
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0554,
+              "QUERY": 0.0235,
+              "REFERENCE": 0.0543,
+              "MODIFICATION": 0.093,
+              "CANCEL_OR_REVERT": 0.3243,
+              "CHAT": 0.0155,
+              "NOISE": 0.0046,
+              "UNCERTAIN": 0.4295
+            },
+            "confidence": 0.348
+          }
+        },
+        "usage": {
+          "forward_passes": 576,
+          "input_tokens": 609235,
+          "latency_ms_total": 1285597.997619101
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:2",
+      "prediction": {
+        "class": "REFERENCE",
+        "confidence": 0.5813893685313274,
+        "latency_ms": 1542.8295829915442
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.027746768017240533,
+        "QUERY": 0.013505708227215061,
+        "REFERENCE": 0.5813893685313274,
+        "MODIFICATION": 0.018826579675097543,
+        "CANCEL_OR_REVERT": 0.24208058001090973,
+        "CHAT": 0.001356068333683268,
+        "NOISE": 0.0024800917081071543,
+        "UNCERTAIN": 0.11261483549641924
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "REFERENCE",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0192,
+              "QUERY": 0.0084,
+              "REFERENCE": 0.6314,
+              "MODIFICATION": 0.0123,
+              "CANCEL_OR_REVERT": 0.2309,
+              "CHAT": 0.0006,
+              "NOISE": 0.0012,
+              "UNCERTAIN": 0.0959
+            },
+            "confidence": 0.5788
+          }
+        },
+        "usage": {
+          "forward_passes": 577,
+          "input_tokens": 609766,
+          "latency_ms_total": 1286449.251495098
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:3",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.4451836360015594,
+        "latency_ms": 1499.7673340258189
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06883900664338806,
+        "QUERY": 0.017672168393857712,
+        "REFERENCE": 0.10830341662416847,
+        "MODIFICATION": 0.029462497228142252,
+        "CANCEL_OR_REVERT": 0.3076259486266645,
+        "CHAT": 0.017283502236195576,
+        "NOISE": 0.005629824246024031,
+        "UNCERTAIN": 0.4451836360015594
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0567,
+              "QUERY": 0.0119,
+              "REFERENCE": 0.0954,
+              "MODIFICATION": 0.0214,
+              "CANCEL_OR_REVERT": 0.3163,
+              "CHAT": 0.0116,
+              "NOISE": 0.0032,
+              "UNCERTAIN": 0.4835
+            },
+            "confidence": 0.4097
+          }
+        },
+        "usage": {
+          "forward_passes": 578,
+          "input_tokens": 610298,
+          "latency_ms_total": 1287307.1300731099
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:4",
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.6444143075350847,
+        "latency_ms": 1503.1903749913909
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0053201627767235785,
+        "QUERY": 0.003968740670380363,
+        "REFERENCE": 0.010332560635320598,
+        "MODIFICATION": 0.24198284812738732,
+        "CANCEL_OR_REVERT": 0.6444143075350847,
+        "CHAT": 0.0011865345543437852,
+        "NOISE": 0.0011865345543437852,
+        "UNCERTAIN": 0.09160831114641584
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CANCEL_OR_REVERT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0028,
+              "QUERY": 0.002,
+              "REFERENCE": 0.006,
+              "MODIFICATION": 0.2242,
+              "CANCEL_OR_REVERT": 0.6903,
+              "CHAT": 0.0005,
+              "NOISE": 0.0005,
+              "UNCERTAIN": 0.0735
+            },
+            "confidence": 0.6461
+          }
+        },
+        "usage": {
+          "forward_passes": 579,
+          "input_tokens": 610831,
+          "latency_ms_total": 1288162.661219103
+        }
+      }
+    },
+    {
+      "id": "CANCEL_OR_REVERT:test:2:5",
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.4604072191227129,
+        "latency_ms": 1736.9051669957116
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.027502180034422993,
+        "QUERY": 0.010801558945796019,
+        "REFERENCE": 0.18865492295933067,
+        "MODIFICATION": 0.007135196526313132,
+        "CANCEL_OR_REVERT": 0.4604072191227129,
+        "CHAT": 0.001530310452432492,
+        "NOISE": 0.0027987603350333734,
+        "UNCERTAIN": 0.30116985162395826
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CANCEL_OR_REVERT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0193,
+              "QUERY": 0.0066,
+              "REFERENCE": 0.1761,
+              "MODIFICATION": 0.0041,
+              "CANCEL_OR_REVERT": 0.4905,
+              "CHAT": 0.0007,
+              "NOISE": 0.0014,
+              "UNCERTAIN": 0.3013
+            },
+            "confidence": 0.4177
+          }
+        },
+        "usage": {
+          "forward_passes": 580,
+          "input_tokens": 611364,
+          "latency_ms_total": 1289021.0175910906
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:1:1",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.8970416521805356,
+        "latency_ms": 1537.9077499965206
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.02009642639046283,
+        "QUERY": 0.00944352247536628,
+        "REFERENCE": 0.002324644751028951,
+        "MODIFICATION": 0.000312890951576747,
+        "CANCEL_OR_REVERT": 0.0005722412619425518,
+        "CHAT": 0.8970416521805356,
+        "NOISE": 0.0012710728089725873,
+        "UNCERTAIN": 0.06893754918011441
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0119,
+              "QUERY": 0.005,
+              "REFERENCE": 0.001,
+              "MODIFICATION": 0.0001,
+              "CANCEL_OR_REVERT": 0.0002,
+              "CHAT": 0.9325,
+              "NOISE": 0.0005,
+              "UNCERTAIN": 0.049
+            },
+            "confidence": 0.9228
+          }
+        },
+        "usage": {
+          "forward_passes": 581,
+          "input_tokens": 611898,
+          "latency_ms_total": 1289878.6128300999
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:1:2",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.9391083322858926,
+        "latency_ms": 1657.3812090209685
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.013515773682880252,
+        "QUERY": 0.00579735768382801,
+        "REFERENCE": 0.001064585320421804,
+        "MODIFICATION": 0.00031827911512458703,
+        "CANCEL_OR_REVERT": 0.00031827911512458703,
+        "CHAT": 0.9391083322858926,
+        "NOISE": 0.0005820955881626966,
+        "UNCERTAIN": 0.03929529720856526
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0074,
+              "QUERY": 0.0028,
+              "REFERENCE": 0.0004,
+              "MODIFICATION": 0.0001,
+              "CANCEL_OR_REVERT": 0.0001,
+              "CHAT": 0.9638,
+              "NOISE": 0.0002,
+              "UNCERTAIN": 0.0252
+            },
+            "confidence": 0.9586
+          }
+        },
+        "usage": {
+          "forward_passes": 582,
+          "input_tokens": 612430,
+          "latency_ms_total": 1290731.5305710945
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:1:3",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.5762468926576425,
+        "latency_ms": 1643.4669170121197
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06796616657795129,
+        "QUERY": 0.03728429655736349,
+        "REFERENCE": 0.012194268785272282,
+        "MODIFICATION": 0.002500636504043992,
+        "CANCEL_OR_REVERT": 0.0017566348379842059,
+        "CHAT": 0.5762468926576425,
+        "NOISE": 0.005715374978686274,
+        "UNCERTAIN": 0.29633572910105593
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0532,
+              "QUERY": 0.0267,
+              "REFERENCE": 0.0074,
+              "MODIFICATION": 0.0012,
+              "CANCEL_OR_REVERT": 0.0008,
+              "CHAT": 0.6191,
+              "NOISE": 0.0031,
+              "UNCERTAIN": 0.2885
+            },
+            "confidence": 0.5647
+          }
+        },
+        "usage": {
+          "forward_passes": 583,
+          "input_tokens": 612962,
+          "latency_ms_total": 1291585.815229133
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:1:4",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.6919979913273133,
+        "latency_ms": 1735.9866659971885
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.05385985784565109,
+        "QUERY": 0.023526318359037526,
+        "REFERENCE": 0.005857185962554424,
+        "MODIFICATION": 0.0009843274795243164,
+        "CANCEL_OR_REVERT": 0.0011954865718722155,
+        "CHAT": 0.6919979913273133,
+        "NOISE": 0.007153632409041176,
+        "UNCERTAIN": 0.21542520004500587
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0396,
+              "QUERY": 0.0153,
+              "REFERENCE": 0.0031,
+              "MODIFICATION": 0.0004,
+              "CANCEL_OR_REVERT": 0.0005,
+              "CHAT": 0.7427,
+              "NOISE": 0.0039,
+              "UNCERTAIN": 0.1945
+            },
+            "confidence": 0.706
+          }
+        },
+        "usage": {
+          "forward_passes": 584,
+          "input_tokens": 613497,
+          "latency_ms_total": 1292442.9322071665
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:1:5",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.9149157205301395,
+        "latency_ms": 1542.0780410058796
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.01618051521742471,
+        "QUERY": 0.0069731931884597885,
+        "REFERENCE": 0.0012805073465810045,
+        "MODIFICATION": 0.0003152133845869932,
+        "CANCEL_OR_REVERT": 0.0005764887225669742,
+        "CHAT": 0.9149157205301395,
+        "NOISE": 0.0010543310135207255,
+        "UNCERTAIN": 0.058704030596720504
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0092,
+              "QUERY": 0.0035,
+              "REFERENCE": 0.0005,
+              "MODIFICATION": 0.0001,
+              "CANCEL_OR_REVERT": 0.0002,
+              "CHAT": 0.9458,
+              "NOISE": 0.0004,
+              "UNCERTAIN": 0.0404
+            },
+            "confidence": 0.938
+          }
+        },
+        "usage": {
+          "forward_passes": 585,
+          "input_tokens": 614029,
+          "latency_ms_total": 1293295.3623782087
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:2:1",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.8169119465133322,
+        "latency_ms": 1742.4219579843339
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06753923101182663,
+        "QUERY": 0.015542310016717987,
+        "REFERENCE": 0.015836178568983957,
+        "MODIFICATION": 0.0007882847271130667,
+        "CANCEL_OR_REVERT": 0.001012745221779638,
+        "CHAT": 0.8169119465133322,
+        "NOISE": 0.0024442351371944627,
+        "UNCERTAIN": 0.07992506880305193
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0497,
+              "QUERY": 0.0092,
+              "REFERENCE": 0.0094,
+              "MODIFICATION": 0.0003,
+              "CANCEL_OR_REVERT": 0.0004,
+              "CHAT": 0.8697,
+              "NOISE": 0.0011,
+              "UNCERTAIN": 0.0603
+            },
+            "confidence": 0.851
+          }
+        },
+        "usage": {
+          "forward_passes": 586,
+          "input_tokens": 614562,
+          "latency_ms_total": 1294147.9212961567
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:2:2",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.38455910008458005,
+        "latency_ms": 1720.918042003177
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.3392613967728685,
+        "QUERY": 0.060357131471068665,
+        "REFERENCE": 0.0287006721460951,
+        "MODIFICATION": 0.009191244969422634,
+        "CANCEL_OR_REVERT": 0.0018701511259623933,
+        "CHAT": 0.38455910008458005,
+        "NOISE": 0.003911749943939311,
+        "UNCERTAIN": 0.17214855348606337
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.3528,
+              "QUERY": 0.0486,
+              "REFERENCE": 0.0207,
+              "MODIFICATION": 0.0056,
+              "CANCEL_OR_REVERT": 0.0009,
+              "CHAT": 0.4074,
+              "NOISE": 0.0021,
+              "UNCERTAIN": 0.1619
+            },
+            "confidence": 0.3227
+          }
+        },
+        "usage": {
+          "forward_passes": 587,
+          "input_tokens": 615095,
+          "latency_ms_total": 1295006.1606361705
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:2:3",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.5631544529312277,
+        "latency_ms": 1842.5206250103656
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.13386255621812876,
+        "QUERY": 0.03437523398320284,
+        "REFERENCE": 0.046931380274258416,
+        "MODIFICATION": 0.003655873032025421,
+        "CANCEL_OR_REVERT": 0.004642994036727029,
+        "CHAT": 0.5631544529312277,
+        "NOISE": 0.006224010611501432,
+        "UNCERTAIN": 0.2071534989129285
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1186,
+              "QUERY": 0.0249,
+              "REFERENCE": 0.0356,
+              "MODIFICATION": 0.0019,
+              "CANCEL_OR_REVERT": 0.0025,
+              "CHAT": 0.6173,
+              "NOISE": 0.0035,
+              "UNCERTAIN": 0.1958
+            },
+            "confidence": 0.5626
+          }
+        },
+        "usage": {
+          "forward_passes": 588,
+          "input_tokens": 615628,
+          "latency_ms_total": 1295860.758571158
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:2:4",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.8614046243476778,
+        "latency_ms": 1778.9552499889396
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.03673466161128155,
+        "QUERY": 0.011533912407586722,
+        "REFERENCE": 0.007991911831611433,
+        "MODIFICATION": 0.0005636971257224057,
+        "CANCEL_OR_REVERT": 0.0010309366664368314,
+        "CHAT": 0.8614046243476778,
+        "NOISE": 0.0020891524683813657,
+        "UNCERTAIN": 0.07865110354130186
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0242,
+              "QUERY": 0.0064,
+              "REFERENCE": 0.0042,
+              "MODIFICATION": 0.0002,
+              "CANCEL_OR_REVERT": 0.0004,
+              "CHAT": 0.9056,
+              "NOISE": 0.0009,
+              "UNCERTAIN": 0.058
+            },
+            "confidence": 0.8922
+          }
+        },
+        "usage": {
+          "forward_passes": 589,
+          "input_tokens": 616161,
+          "latency_ms_total": 1296717.1038431989
+        }
+      }
+    },
+    {
+      "id": "CHAT:test:2:5",
+      "prediction": {
+        "class": "CHAT",
+        "confidence": 0.6775682948033644,
+        "latency_ms": 1550.8506250043865
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.041481090113409336,
+        "QUERY": 0.014793930718905933,
+        "REFERENCE": 0.021872634854601027,
+        "MODIFICATION": 0.001398784835636594,
+        "CANCEL_OR_REVERT": 0.003286655401828253,
+        "CHAT": 0.6775682948033644,
+        "NOISE": 0.002182594712849608,
+        "UNCERTAIN": 0.23741601455940475
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CHAT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0294,
+              "QUERY": 0.009,
+              "REFERENCE": 0.0141,
+              "MODIFICATION": 0.0006,
+              "CANCEL_OR_REVERT": 0.0016,
+              "CHAT": 0.7264,
+              "NOISE": 0.001,
+              "UNCERTAIN": 0.2179
+            },
+            "confidence": 0.6873
+          }
+        },
+        "usage": {
+          "forward_passes": 590,
+          "input_tokens": 616695,
+          "latency_ms_total": 1297572.5240152387
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:1:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.6131127867335056,
+        "latency_ms": 1783.582041010959
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.14378174164603327,
+        "QUERY": 0.09469467322592831,
+        "REFERENCE": 0.06411826085550132,
+        "MODIFICATION": 0.01263428872050225,
+        "CANCEL_OR_REVERT": 0.009508012876466932,
+        "CHAT": 0.01618709745087529,
+        "NOISE": 0.04596313849118706,
+        "UNCERTAIN": 0.6131127867335056
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1289,
+              "QUERY": 0.0798,
+              "REFERENCE": 0.051,
+              "MODIFICATION": 0.0079,
+              "CANCEL_OR_REVERT": 0.0057,
+              "CHAT": 0.0105,
+              "NOISE": 0.0348,
+              "UNCERTAIN": 0.6814
+            },
+            "confidence": 0.6359
+          }
+        },
+        "usage": {
+          "forward_passes": 591,
+          "input_tokens": 617228,
+          "latency_ms_total": 1298425.8976372366
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:1:2",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.6101908108134332,
+        "latency_ms": 1510.2769999939483
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.14506165619913888,
+        "QUERY": 0.07984492600722155,
+        "REFERENCE": 0.042211648794928266,
+        "MODIFICATION": 0.01599054848869875,
+        "CANCEL_OR_REVERT": 0.013000586516404174,
+        "CHAT": 0.029611891793554296,
+        "NOISE": 0.06408793138662087,
+        "UNCERTAIN": 0.6101908108134332
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1308,
+              "QUERY": 0.0659,
+              "REFERENCE": 0.0317,
+              "MODIFICATION": 0.0104,
+              "CANCEL_OR_REVERT": 0.0082,
+              "CHAT": 0.0211,
+              "NOISE": 0.0512,
+              "UNCERTAIN": 0.6807
+            },
+            "confidence": 0.6351
+          }
+        },
+        "usage": {
+          "forward_passes": 592,
+          "input_tokens": 617761,
+          "latency_ms_total": 1299284.1529102589
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:1:3",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5767110362227491,
+        "latency_ms": 1740.2810420026071
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.16020443479417767,
+        "QUERY": 0.08500310826247376,
+        "REFERENCE": 0.04096997103452229,
+        "MODIFICATION": 0.012801166741022565,
+        "CANCEL_OR_REVERT": 0.008262811336117766,
+        "CHAT": 0.01737086239231819,
+        "NOISE": 0.09867660921661864,
+        "UNCERTAIN": 0.5767110362227491
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1474,
+              "QUERY": 0.0712,
+              "REFERENCE": 0.0308,
+              "MODIFICATION": 0.0081,
+              "CANCEL_OR_REVERT": 0.0049,
+              "CHAT": 0.0115,
+              "NOISE": 0.0845,
+              "UNCERTAIN": 0.6415
+            },
+            "confidence": 0.5903
+          }
+        },
+        "usage": {
+          "forward_passes": 593,
+          "input_tokens": 618293,
+          "latency_ms_total": 1300143.4699212841
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:1:4",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.532620224151287,
+        "latency_ms": 1553.1135410128627
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.20890996463336906,
+        "QUERY": 0.0940519700762093,
+        "REFERENCE": 0.0598644732181297,
+        "MODIFICATION": 0.015507296015873001,
+        "CANCEL_OR_REVERT": 0.01047369652619347,
+        "CHAT": 0.018382836602466635,
+        "NOISE": 0.06018953877647196,
+        "UNCERTAIN": 0.532620224151287
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.202,
+              "QUERY": 0.0808,
+              "REFERENCE": 0.0481,
+              "MODIFICATION": 0.0102,
+              "CANCEL_OR_REVERT": 0.0065,
+              "CHAT": 0.0124,
+              "NOISE": 0.0484,
+              "UNCERTAIN": 0.5916
+            },
+            "confidence": 0.5333
+          }
+        },
+        "usage": {
+          "forward_passes": 594,
+          "input_tokens": 618825,
+          "latency_ms_total": 1300997.7304262866
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:1:5",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.47129125724818066,
+        "latency_ms": 1510.4875839897431
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.21692557690702574,
+        "QUERY": 0.09311910160469382,
+        "REFERENCE": 0.04292878386169727,
+        "MODIFICATION": 0.01844433225058737,
+        "CANCEL_OR_REVERT": 0.007181547637772398,
+        "CHAT": 0.09718614888412352,
+        "NOISE": 0.05292325160591916,
+        "UNCERTAIN": 0.47129125724818066
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.2152,
+              "QUERY": 0.0815,
+              "REFERENCE": 0.0335,
+              "MODIFICATION": 0.0127,
+              "CANCEL_OR_REVERT": 0.0043,
+              "CHAT": 0.0856,
+              "NOISE": 0.0426,
+              "UNCERTAIN": 0.5245
+            },
+            "confidence": 0.4565
+          }
+        },
+        "usage": {
+          "forward_passes": 595,
+          "input_tokens": 619357,
+          "latency_ms_total": 1301855.0860702817
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:2:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5853036509814445,
+        "latency_ms": 1458.5174999956507
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.12383493278724188,
+        "QUERY": 0.10556769761881125,
+        "REFERENCE": 0.037881747556219494,
+        "MODIFICATION": 0.004145711406294545,
+        "CANCEL_OR_REVERT": 0.004472100215352598,
+        "CHAT": 0.0043093637463239715,
+        "NOISE": 0.1344847956883117,
+        "UNCERTAIN": 0.5853036509814445
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1087,
+              "QUERY": 0.0905,
+              "REFERENCE": 0.0279,
+              "MODIFICATION": 0.0022,
+              "CANCEL_OR_REVERT": 0.0024,
+              "CHAT": 0.0023,
+              "NOISE": 0.1195,
+              "UNCERTAIN": 0.6467
+            },
+            "confidence": 0.5962
+          }
+        },
+        "usage": {
+          "forward_passes": 596,
+          "input_tokens": 619892,
+          "latency_ms_total": 1302713.9202573162
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:2:2",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.6185054916116659,
+        "latency_ms": 1501.5967499930412
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.11473190888417949,
+        "QUERY": 0.046997827065525626,
+        "REFERENCE": 0.028669840934021546,
+        "MODIFICATION": 0.0019333854098569935,
+        "CANCEL_OR_REVERT": 0.004542779875241151,
+        "CHAT": 0.003016759022508276,
+        "NOISE": 0.18160200719700115,
+        "UNCERTAIN": 0.6185054916116659
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0978,
+              "QUERY": 0.0351,
+              "REFERENCE": 0.0199,
+              "MODIFICATION": 0.0009,
+              "CANCEL_OR_REVERT": 0.0024,
+              "CHAT": 0.0015,
+              "NOISE": 0.1657,
+              "UNCERTAIN": 0.6767
+            },
+            "confidence": 0.6306
+          }
+        },
+        "usage": {
+          "forward_passes": 597,
+          "input_tokens": 620425,
+          "latency_ms_total": 1303571.5091283491
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:2:3",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.5917470534765806,
+        "latency_ms": 1733.6894999898504
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.0732126179397181,
+        "QUERY": 0.021425893667356862,
+        "REFERENCE": 0.018753294532067484,
+        "MODIFICATION": 0.0009625419865181808,
+        "CANCEL_OR_REVERT": 0.0015671009507508163,
+        "CHAT": 0.010032172165865778,
+        "NOISE": 0.2822993252811421,
+        "UNCERTAIN": 0.5917470534765806
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0578,
+              "QUERY": 0.0141,
+              "REFERENCE": 0.0121,
+              "MODIFICATION": 0.0004,
+              "CANCEL_OR_REVERT": 0.0007,
+              "CHAT": 0.0059,
+              "NOISE": 0.2722,
+              "UNCERTAIN": 0.6367
+            },
+            "confidence": 0.5848
+          }
+        },
+        "usage": {
+          "forward_passes": 598,
+          "input_tokens": 620956,
+          "latency_ms_total": 1304426.348105335
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:2:4",
+      "prediction": {
+        "class": "NOISE",
+        "confidence": 0.6017502814720876,
+        "latency_ms": 1563.3723339997232
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.13881208003549453,
+        "QUERY": 0.020286172434461607,
+        "REFERENCE": 0.005743533567560816,
+        "MODIFICATION": 0.0007512987558957919,
+        "CANCEL_OR_REVERT": 0.0009652276632949594,
+        "CHAT": 0.0005277686565826117,
+        "NOISE": 0.6017502814720876,
+        "UNCERTAIN": 0.23116363741462212
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "NOISE",
+            "probabilities": {
+              "DIRECT_ACTION": 0.1201,
+              "QUERY": 0.0132,
+              "REFERENCE": 0.0031,
+              "MODIFICATION": 0.0003,
+              "CANCEL_OR_REVERT": 0.0004,
+              "CHAT": 0.0002,
+              "NOISE": 0.647,
+              "UNCERTAIN": 0.2157
+            },
+            "confidence": 0.5965
+          }
+        },
+        "usage": {
+          "forward_passes": 599,
+          "input_tokens": 621489,
+          "latency_ms_total": 1305288.025285321
+        }
+      }
+    },
+    {
+      "id": "NOISE:test:2:5",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.6452028865996712,
+        "latency_ms": 1728.9022079785354
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.10572013799616958,
+        "QUERY": 0.039159720915628304,
+        "REFERENCE": 0.025200063092545636,
+        "MODIFICATION": 0.003564991311610827,
+        "CANCEL_OR_REVERT": 0.0028641622529618424,
+        "CHAT": 0.0019492713965892363,
+        "NOISE": 0.17633876643482338,
+        "UNCERTAIN": 0.6452028865996712
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0882,
+              "QUERY": 0.0282,
+              "REFERENCE": 0.017,
+              "MODIFICATION": 0.0018,
+              "CANCEL_OR_REVERT": 0.0014,
+              "CHAT": 0.0009,
+              "NOISE": 0.1587,
+              "UNCERTAIN": 0.7037
+            },
+            "confidence": 0.6614
+          }
+        },
+        "usage": {
+          "forward_passes": 600,
+          "input_tokens": 622024,
+          "latency_ms_total": 1306143.8063932874
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:1:1",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.7965696149607401,
+        "latency_ms": 1790.8844999910798
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.06681813407241138,
+        "QUERY": 0.02222483780848365,
+        "REFERENCE": 0.058457295377920604,
+        "MODIFICATION": 0.015322678959021875,
+        "CANCEL_OR_REVERT": 0.0269591863540232,
+        "CHAT": 0.002023286985622603,
+        "NOISE": 0.011624965481776686,
+        "UNCERTAIN": 0.7965696149607401
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0499,
+              "QUERY": 0.0141,
+              "REFERENCE": 0.0428,
+              "MODIFICATION": 0.0092,
+              "CANCEL_OR_REVERT": 0.0176,
+              "CHAT": 0.0009,
+              "NOISE": 0.0067,
+              "UNCERTAIN": 0.8588
+            },
+            "confidence": 0.8386
+          }
+        },
+        "usage": {
+          "forward_passes": 601,
+          "input_tokens": 622560,
+          "latency_ms_total": 1307071.2210233032
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:1:2",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.73234866568414,
+        "latency_ms": 1516.6034169960767
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.07554782868417156,
+        "QUERY": 0.03743223608795151,
+        "REFERENCE": 0.09885133951779866,
+        "MODIFICATION": 0.0036211713236554872,
+        "CANCEL_OR_REVERT": 0.006301077200608605,
+        "CHAT": 0.02414844483877251,
+        "NOISE": 0.02174923666290161,
+        "UNCERTAIN": 0.73234866568414
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0589,
+              "QUERY": 0.0263,
+              "REFERENCE": 0.0802,
+              "MODIFICATION": 0.0018,
+              "CANCEL_OR_REVERT": 0.0034,
+              "CHAT": 0.0159,
+              "NOISE": 0.0141,
+              "UNCERTAIN": 0.7994
+            },
+            "confidence": 0.7707
+          }
+        },
+        "usage": {
+          "forward_passes": 602,
+          "input_tokens": 623095,
+          "latency_ms_total": 1307927.9865903372
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:1:3",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.9020554570717888,
+        "latency_ms": 1726.3429169834126
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.04422084273340295,
+        "QUERY": 0.017834648877001726,
+        "REFERENCE": 0.01813299878361796,
+        "MODIFICATION": 0.0014867685706545183,
+        "CANCEL_OR_REVERT": 0.005687532868239106,
+        "CHAT": 0.0014867685706545183,
+        "NOISE": 0.009094982524640426,
+        "UNCERTAIN": 0.9020554570717888
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0295,
+              "QUERY": 0.0104,
+              "REFERENCE": 0.0106,
+              "MODIFICATION": 0.0006,
+              "CANCEL_OR_REVERT": 0.0028,
+              "CHAT": 0.0006,
+              "NOISE": 0.0048,
+              "UNCERTAIN": 0.9407
+            },
+            "confidence": 0.9322
+          }
+        },
+        "usage": {
+          "forward_passes": 603,
+          "input_tokens": 623630,
+          "latency_ms_total": 1308784.6987422963
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:1:4",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.7352696547805545,
+        "latency_ms": 1619.6129159943666
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.09112142789308217,
+        "QUERY": 0.03111444999535124,
+        "REFERENCE": 0.09870681800980047,
+        "MODIFICATION": 0.007596251321734578,
+        "CANCEL_OR_REVERT": 0.008533126801350752,
+        "CHAT": 0.018816295645777976,
+        "NOISE": 0.00884197555234837,
+        "UNCERTAIN": 0.7352696547805545
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0728,
+              "QUERY": 0.0212,
+              "REFERENCE": 0.0798,
+              "MODIFICATION": 0.0042,
+              "CANCEL_OR_REVERT": 0.0048,
+              "CHAT": 0.0119,
+              "NOISE": 0.005,
+              "UNCERTAIN": 0.8004
+            },
+            "confidence": 0.7719
+          }
+        },
+        "usage": {
+          "forward_passes": 604,
+          "input_tokens": 624165,
+          "latency_ms_total": 1309643.6827493308
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:1:5",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.946503313472289,
+        "latency_ms": 1521.5753339871299
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.025476930515344855,
+        "QUERY": 0.008091637692220389,
+        "REFERENCE": 0.00470502232431659,
+        "MODIFICATION": 0.0012946066553552443,
+        "CANCEL_OR_REVERT": 0.0017354417207762509,
+        "CHAT": 0.008434356647097142,
+        "NOISE": 0.0037586909726004688,
+        "UNCERTAIN": 0.946503313472289
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0153,
+              "QUERY": 0.0041,
+              "REFERENCE": 0.0022,
+              "MODIFICATION": 0.0005,
+              "CANCEL_OR_REVERT": 0.0007,
+              "CHAT": 0.0043,
+              "NOISE": 0.0017,
+              "UNCERTAIN": 0.9711
+            },
+            "confidence": 0.967
+          }
+        },
+        "usage": {
+          "forward_passes": 605,
+          "input_tokens": 624699,
+          "latency_ms_total": 1310500.73733335
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:2:1",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.40093501294102635,
+        "latency_ms": 1543.1827080028597
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.40093501294102635,
+        "QUERY": 0.09721499803159271,
+        "REFERENCE": 0.09800491548585916,
+        "MODIFICATION": 0.08008456111618989,
+        "CANCEL_OR_REVERT": 0.013522639931530417,
+        "CHAT": 0.004474748326345112,
+        "NOISE": 0.014575370658398751,
+        "UNCERTAIN": 0.2911877535090576
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.436,
+              "QUERY": 0.0857,
+              "REFERENCE": 0.0865,
+              "MODIFICATION": 0.0686,
+              "CANCEL_OR_REVERT": 0.0089,
+              "CHAT": 0.0025,
+              "NOISE": 0.0097,
+              "UNCERTAIN": 0.302
+            },
+            "confidence": 0.3555
+          }
+        },
+        "usage": {
+          "forward_passes": 606,
+          "input_tokens": 625235,
+          "latency_ms_total": 1311359.845963394
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:2:2",
+      "prediction": {
+        "class": "CANCEL_OR_REVERT",
+        "confidence": 0.297000807038267,
+        "latency_ms": 1639.8684170271736
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.09253604712375332,
+        "QUERY": 0.032277570255718514,
+        "REFERENCE": 0.05353674210108052,
+        "MODIFICATION": 0.21384775779948478,
+        "CANCEL_OR_REVERT": 0.297000807038267,
+        "CHAT": 0.004267149937745376,
+        "NOISE": 0.009615712006583873,
+        "UNCERTAIN": 0.29691821373736665
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "CANCEL_OR_REVERT",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0821,
+              "QUERY": 0.0245,
+              "REFERENCE": 0.0438,
+              "MODIFICATION": 0.2148,
+              "CANCEL_OR_REVERT": 0.3132,
+              "CHAT": 0.0024,
+              "NOISE": 0.0061,
+              "UNCERTAIN": 0.3131
+            },
+            "confidence": 0.2151
+          }
+        },
+        "usage": {
+          "forward_passes": 607,
+          "input_tokens": 625769,
+          "latency_ms_total": 1312214.1726093541
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:2:3",
+      "prediction": {
+        "class": "DIRECT_ACTION",
+        "confidence": 0.7154694198478395,
+        "latency_ms": 1447.3969580139965
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.7154694198478395,
+        "QUERY": 0.03914404515131855,
+        "REFERENCE": 0.017318727190713555,
+        "MODIFICATION": 0.08738315615722637,
+        "CANCEL_OR_REVERT": 0.004126639566249694,
+        "CHAT": 0.013802853206945638,
+        "NOISE": 0.010594966179441674,
+        "UNCERTAIN": 0.11216019270026509
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "DIRECT_ACTION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.7815,
+              "QUERY": 0.0278,
+              "REFERENCE": 0.0109,
+              "MODIFICATION": 0.0699,
+              "CANCEL_OR_REVERT": 0.0021,
+              "CHAT": 0.0084,
+              "NOISE": 0.0062,
+              "UNCERTAIN": 0.0931
+            },
+            "confidence": 0.7503
+          }
+        },
+        "usage": {
+          "forward_passes": 608,
+          "input_tokens": 626304,
+          "latency_ms_total": 1313069.090654346
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:2:4",
+      "prediction": {
+        "class": "UNCERTAIN",
+        "confidence": 0.4023006695350412,
+        "latency_ms": 2048.936542007141
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.10664845218848451,
+        "QUERY": 0.08008318177552945,
+        "REFERENCE": 0.051672721589280754,
+        "MODIFICATION": 0.02506826780120889,
+        "CANCEL_OR_REVERT": 0.31626325172287817,
+        "CHAT": 0.007639512019140067,
+        "NOISE": 0.010323943368436896,
+        "UNCERTAIN": 0.4023006695350412
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "UNCERTAIN",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0949,
+              "QUERY": 0.0683,
+              "REFERENCE": 0.0413,
+              "MODIFICATION": 0.018,
+              "CANCEL_OR_REVERT": 0.3306,
+              "CHAT": 0.0046,
+              "NOISE": 0.0065,
+              "UNCERTAIN": 0.4358
+            },
+            "confidence": 0.3552
+          }
+        },
+        "usage": {
+          "forward_passes": 609,
+          "input_tokens": 626839,
+          "latency_ms_total": 1313924.3415773672
+        }
+      }
+    },
+    {
+      "id": "UNCERTAIN:test:2:5",
+      "prediction": {
+        "class": "MODIFICATION",
+        "confidence": 0.539384591152454,
+        "latency_ms": 1518.7603330123238
+      },
+      "probabilities": {
+        "DIRECT_ACTION": 0.09520895340431608,
+        "QUERY": 0.028556537010810845,
+        "REFERENCE": 0.06228575705828374,
+        "MODIFICATION": 0.539384591152454,
+        "CANCEL_OR_REVERT": 0.01568115774887575,
+        "CHAT": 0.0029532021264370924,
+        "NOISE": 0.01473960205897407,
+        "UNCERTAIN": 0.24119019943984843
+      },
+      "model": "openjev/Qwen/Qwen3.5-4B",
+      "raw_response": {
+        "model": "openjev/Qwen/Qwen3.5-4B",
+        "answers": {
+          "turn": {
+            "type": "choice",
+            "choice": "MODIFICATION",
+            "probabilities": {
+              "DIRECT_ACTION": 0.0809,
+              "QUERY": 0.0203,
+              "REFERENCE": 0.0497,
+              "MODIFICATION": 0.5926,
+              "CANCEL_OR_REVERT": 0.0102,
+              "CHAT": 0.0015,
+              "NOISE": 0.0095,
+              "UNCERTAIN": 0.2352
+            },
+            "confidence": 0.5344
+          }
+        },
+        "usage": {
+          "forward_passes": 610,
+          "input_tokens": 627375,
+          "latency_ms_total": 1314779.764006351
+        }
+      }
+    }
+  ],
+  "calibration": {
+    "temperature": 1.1481536214968828,
+    "validation_nll": 1.0611118583621382,
+    "grid_min": 0.01,
+    "grid_max": 10,
+    "grid_points": 301,
+    "selected_at_boundary": false,
+    "fit_split": "validation"
+  },
+  "raw_confidence_semantics": "provider confidence; not directly fitted by posterior temperature"
+}

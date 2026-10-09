@@ -1,0 +1,482 @@
+{
+  "rows": [
+    {
+      "type": "observation",
+      "id": "a04",
+      "family": "explicit-add",
+      "text": "排骨便當來一份",
+      "mode": "proposal",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {
+          "bento": 1
+        },
+        "cart": {
+          "lines": [
+            {
+              "id": "line-e65b3e7d-3a42-4247-935e-e44b941b5be6",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 91
+            }
+          ],
+          "total": 91,
+          "itemCount": 1
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [
+            {
+              "question": {
+                "questionId": "cfa36528-ad99-4f3a-adcd-cb5665de074c",
+                "purpose": "fulfillment",
+                "phase": "ordering",
+                "question": "請問要內用還是自取？",
+                "choices": [
+                  {
+                    "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+                    "id": "intent:set-fulfillment:dine-in",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "dine-in"
+                    }
+                  },
+                  {
+                    "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+                    "id": "intent:set-fulfillment:takeout",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "takeout"
+                    }
+                  }
+                ],
+                "expectedRevisions": {
+                  "cart": 1,
+                  "checkout": 0
+                },
+                "expiresAt": 1791462790021
+              },
+              "status": "pending"
+            },
+            {
+              "question": {
+                "questionId": "6a324625-9a44-4663-b147-96e12d1275a9",
+                "purpose": "fulfillment",
+                "phase": "ordering",
+                "question": "請問要內用還是自取？",
+                "choices": [
+                  {
+                    "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+                    "id": "intent:set-fulfillment:dine-in",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "dine-in"
+                    }
+                  },
+                  {
+                    "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+                    "id": "intent:set-fulfillment:takeout",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "takeout"
+                    }
+                  }
+                ],
+                "expectedRevisions": {
+                  "cart": 1,
+                  "checkout": 0
+                },
+                "expiresAt": 1791462790021
+              },
+              "status": "offered"
+            }
+          ],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "waitingFor": {
+            "questionId": "cfa36528-ad99-4f3a-adcd-cb5665de074c",
+            "purpose": "fulfillment",
+            "question": "請問要內用還是自取？",
+            "expiresAt": 1791462790021,
+            "choices": [
+              {
+                "id": "intent:set-fulfillment:dine-in",
+                "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。"
+              },
+              {
+                "id": "intent:set-fulfillment:takeout",
+                "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。"
+              }
+            ]
+          },
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0,
+            "lastAddedItemName": "炸排骨便當"
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "parsed": {
+          "valid": true,
+          "proposal": {
+            "requirements": [
+              {
+                "source": "排骨便當來一份",
+                "effect": "ADD",
+                "targetRaw": "排骨便當",
+                "replacementRaw": null,
+                "quantity": 1,
+                "conditions": [],
+                "queryTopics": [],
+                "contextRequired": false,
+                "value": null
+              }
+            ],
+            "unresolved": [],
+            "summaryCount": null
+          }
+        },
+        "binding": {
+          "blocked": [],
+          "plan": [
+            {
+              "name": "order_add_item",
+              "input": {
+                "itemId": "bento",
+                "quantity": 1
+              }
+            }
+          ],
+          "executed": true
+        }
+      },
+      "receipts": [
+        {
+          "name": "menu_get",
+          "input": {
+            "display": false
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "bento",
+                "name": "炸排骨便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 91,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "chicken",
+                "name": "椒麻雞便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 96,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "dumplings",
+                "name": "水餃",
+                "description": "人工合成，成分未知",
+                "category": "點心",
+                "price": 61,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "tea",
+                "name": "紅茶",
+                "description": "人工合成，成分未知",
+                "category": "飲料",
+                "price": 21,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": []
+          }
+        },
+        {
+          "name": "order_add_item",
+          "input": {
+            "itemId": "bento",
+            "quantity": 1
+          },
+          "result": {
+            "item": {
+              "available": true,
+              "id": "bento",
+              "name": "炸排骨便當",
+              "description": "人工合成，成分未知",
+              "category": "便當",
+              "price": 91,
+              "recommendationTags": [],
+              "optionGroups": []
+            },
+            "line": {
+              "id": "line-e65b3e7d-3a42-4247-935e-e44b941b5be6",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 91
+            },
+            "cart": {
+              "lines": [
+                {
+                  "id": "line-e65b3e7d-3a42-4247-935e-e44b941b5be6",
+                  "itemId": "bento",
+                  "name": "炸排骨便當",
+                  "quantity": 1,
+                  "options": {},
+                  "unitPrice": 91
+                }
+              ],
+              "total": 91,
+              "itemCount": 1
+            },
+            "customerMessage": "已將炸排骨便當加入購物車，共 1 份。",
+            "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+            "pendingCustomerChoice": {
+              "questionId": "cfa36528-ad99-4f3a-adcd-cb5665de074c",
+              "purpose": "fulfillment",
+              "phase": "ordering",
+              "question": "請問要內用還是自取？",
+              "choices": [
+                {
+                  "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+                  "id": "intent:set-fulfillment:dine-in",
+                  "intent": "SET_FULFILLMENT",
+                  "slots": {
+                    "mode": "dine-in"
+                  }
+                },
+                {
+                  "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+                  "id": "intent:set-fulfillment:takeout",
+                  "intent": "SET_FULFILLMENT",
+                  "slots": {
+                    "mode": "takeout"
+                  }
+                }
+              ],
+              "expectedRevisions": {
+                "cart": 1,
+                "checkout": 0
+              },
+              "expiresAt": 1791462790021
+            }
+          }
+        }
+      ],
+      "rounds": 1,
+      "wall_ms": 6688.29025,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": true,
+        "repeatedRecommendation": false
+      }
+    }
+  ],
+  "stoppedReason": "Scratch Main Agent route HTTP500",
+  "selectedIds": [
+    "a04",
+    "a05",
+    "a06",
+    "a07",
+    "a08",
+    "a09",
+    "a10",
+    "a11",
+    "a12",
+    "a13",
+    "a14",
+    "a15",
+    "a16"
+  ],
+  "complete": false,
+  "measured": 1
+}

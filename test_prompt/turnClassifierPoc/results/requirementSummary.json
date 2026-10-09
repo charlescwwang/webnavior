@@ -1,0 +1,1158 @@
+{
+  "scenario_sha256": "9e978fbb139cc89f75c40ad161a8ef89498b0456bb4406df6f1e1488b8c15689",
+  "threshold": 0.6,
+  "design": "26 blind profiles reused for 32 deliberately injected hypotheses; unchanged same-input candidate-review baseline; no classifier or upstream decision measured",
+  "turns": 26,
+  "hypotheses": 32,
+  "known_regression_ids": [
+    "n13",
+    "n16"
+  ],
+  "exact_profile_matches": 0,
+  "fresh_exact_profile_matches": 0,
+  "fresh_turns": 24,
+  "dimension_matches": {
+    "first": 20,
+    "second": 2,
+    "count": 18,
+    "information": 24,
+    "reference": 19
+  },
+  "dimension_confusion": {
+    "first": {
+      "QUERY": {
+        "QUERY": 5,
+        "FULFILLMENT": 1
+      },
+      "VIEW": {
+        "VIEW": 1
+      },
+      "ADD": {
+        "ADD": 6,
+        "CHECKOUT": 2
+      },
+      "MODIFY_QUANTITY": {
+        "MODIFY_QUANTITY": 2
+      },
+      "REMOVE": {
+        "REMOVE": 1
+      },
+      "PARTY_SIZE": {
+        "REFERENCE": 1,
+        "PARTY_SIZE": 1
+      },
+      "FULFILLMENT": {
+        "FULFILLMENT": 1
+      },
+      "DECLINE": {
+        "UNFINISHED": 1
+      },
+      "UNFINISHED": {
+        "UNFINISHED": 1
+      },
+      "MODIFY_OPTION": {
+        "FULFILLMENT": 1
+      },
+      "CHAT": {
+        "CHAT": 1
+      },
+      "RECOMMEND": {
+        "RECOMMEND": 1
+      }
+    },
+    "second": {
+      "NONE": {
+        "QUERY": 4,
+        "VIEW": 1,
+        "ADD": 7,
+        "MODIFY_QUANTITY": 1,
+        "REMOVE": 1,
+        "FULFILLMENT": 3,
+        "PARTY_SIZE": 1,
+        "UNFINISHED": 2,
+        "RECOMMEND": 1
+      },
+      "CHECKOUT": {
+        "CHECKOUT": 1
+      },
+      "ADD": {
+        "QUERY": 1,
+        "ADD": 1,
+        "CHECKOUT": 1
+      },
+      "PARTY_SIZE": {
+        "MODIFY_QUANTITY": 1
+      }
+    },
+    "count": {
+      "ONE": {
+        "ONE": 16,
+        "UNFINISHED": 2,
+        "NONE": 1
+      },
+      "TWO": {
+        "ONE": 4
+      },
+      "UNFINISHED": {
+        "UNFINISHED": 1
+      },
+      "MORE_THAN_TWO": {
+        "ONE": 1
+      },
+      "NONE": {
+        "NONE": 1
+      }
+    },
+    "information": {
+      "MENU_FACTS": {
+        "MENU_FACTS": 3
+      },
+      "NONE": {
+        "NONE": 19,
+        "MENU_FACTS": 1
+      },
+      "COMPOSITION": {
+        "NONE": 1,
+        "COMPOSITION": 1
+      },
+      "NUTRITION": {
+        "NUTRITION": 1
+      }
+    },
+    "reference": {
+      "EXPLICIT": {
+        "EXPLICIT": 17,
+        "CONTEXTUAL": 7
+      },
+      "CONTEXTUAL": {
+        "CONTEXTUAL": 2
+      }
+    }
+  },
+  "finding_reasons": {
+    "INCONSISTENT": 26
+  },
+  "comparison": {
+    "baseline": {
+      "checked": 21,
+      "supported_retained": 12,
+      "supported_total": 13,
+      "explicit_supported_retained": 11,
+      "explicit_supported_total": 12,
+      "false_admit_ids": [
+        "n01:intent:add-item",
+        "n03:intent:search-menu",
+        "n04:intent:add-item",
+        "n04:intent:start-checkout",
+        "n06:intent:add-item",
+        "n07:intent:set-quantity",
+        "n22:intent:add-item",
+        "n24:intent:add-item",
+        "n25:intent:search-menu"
+      ],
+      "explicit_false_veto_ids": [
+        "n02:intent:select-item"
+      ],
+      "unsupported_total": 19,
+      "unsupported_rejection_rate": 0.5263157894736842,
+      "contextual_checked_ids": [
+        "n16:intent:set-party-size"
+      ]
+    },
+    "blind": {
+      "checked": 0,
+      "supported_retained": 0,
+      "supported_total": 13,
+      "explicit_supported_retained": 0,
+      "explicit_supported_total": 12,
+      "false_admit_ids": [],
+      "explicit_false_veto_ids": [
+        "n01:intent:search-menu",
+        "n02:intent:select-item",
+        "n03:intent:add-item",
+        "n06:intent:set-quantity",
+        "n08:intent:remove-item",
+        "n12:intent:add-item",
+        "n13:intent:add-item",
+        "n14:intent:add-item",
+        "n17:intent:set-party-size",
+        "n18:intent:set-fulfillment:takeout",
+        "n23:intent:search-menu",
+        "n26:intent:recommend"
+      ],
+      "unsupported_total": 19,
+      "unsupported_rejection_rate": 1.0,
+      "contextual_checked_ids": []
+    }
+  },
+  "provider_calls": 57,
+  "failed_calls": 0,
+  "models": [
+    "openjev/Qwen/Qwen3.5-4B"
+  ],
+  "blind_http_latency_ms": {
+    "count": 26,
+    "mean": 4180.843722653847,
+    "p50": 4222.273771,
+    "p95": 4531.826166749999
+  },
+  "baseline_http_latency_ms": {
+    "count": 31,
+    "mean": 2494.182944870967,
+    "p50": 2820.2509999999893,
+    "p95": 3292.199832999995
+  },
+  "blind_advisory_latency_ms": {
+    "count": 26,
+    "mean": 4180.916280423078,
+    "p50": 4222.341645500001,
+    "p95": 4531.886666749997
+  },
+  "writes": 0,
+  "cases": [
+    {
+      "id": "n01",
+      "transcript": "水餃一份要付幾塊錢啊",
+      "known_regression": false,
+      "expected": {
+        "first": "QUERY",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "MENU_FACTS",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "QUERY",
+        "second": "QUERY",
+        "count": "ONE",
+        "information": "MENU_FACTS",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.5272,
+      "hypotheses": [
+        {
+          "id": "n01:intent:search-menu",
+          "turn": "n01",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        },
+        {
+          "id": "n01:intent:add-item",
+          "turn": "n01",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n02",
+      "transcript": "排骨便當先開給我看看就好",
+      "known_regression": false,
+      "expected": {
+        "first": "VIEW",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "VIEW",
+        "second": "VIEW",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.303,
+      "hypotheses": [
+        {
+          "id": "n02:intent:select-item",
+          "turn": "n02",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "LOW_CONFIDENCE"
+        },
+        {
+          "id": "n02:intent:add-item",
+          "turn": "n02",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "LOW_CONFIDENCE"
+        }
+      ]
+    },
+    {
+      "id": "n03",
+      "transcript": "幫我買兩份排骨便當啦",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.5958,
+      "hypotheses": [
+        {
+          "id": "n03:intent:add-item",
+          "turn": "n03",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        },
+        {
+          "id": "n03:intent:search-menu",
+          "turn": "n03",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n04",
+      "transcript": "水餃再來一份，接著結帳吧",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "CHECKOUT",
+        "count": "TWO",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "CHECKOUT",
+        "second": "CHECKOUT",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2425,
+      "hypotheses": [
+        {
+          "id": "n04:intent:add-item",
+          "turn": "n04",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        },
+        {
+          "id": "n04:intent:start-checkout",
+          "turn": "n04",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n05",
+      "transcript": "牛肉麵多少錢先告訴我，水餃另外加一份",
+      "known_regression": false,
+      "expected": {
+        "first": "QUERY",
+        "second": "ADD",
+        "count": "TWO",
+        "information": "MENU_FACTS",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "QUERY",
+        "second": "QUERY",
+        "count": "ONE",
+        "information": "MENU_FACTS",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.1971,
+      "hypotheses": [
+        {
+          "id": "n05:intent:search-menu",
+          "turn": "n05",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "LOW_CONFIDENCE"
+        },
+        {
+          "id": "n05:intent:add-item",
+          "turn": "n05",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "MULTIPLE_REQUESTS"
+        }
+      ]
+    },
+    {
+      "id": "n06",
+      "transcript": "購物車的水餃改成三份喔",
+      "known_regression": false,
+      "expected": {
+        "first": "MODIFY_QUANTITY",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "MODIFY_QUANTITY",
+        "second": "MODIFY_QUANTITY",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2999,
+      "hypotheses": [
+        {
+          "id": "n06:intent:set-quantity",
+          "turn": "n06",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        },
+        {
+          "id": "n06:intent:add-item",
+          "turn": "n06",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n07",
+      "transcript": "水餃改兩份，內用人數也改三位",
+      "known_regression": false,
+      "expected": {
+        "first": "MODIFY_QUANTITY",
+        "second": "PARTY_SIZE",
+        "count": "TWO",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "MODIFY_QUANTITY",
+        "second": "MODIFY_QUANTITY",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2649,
+      "hypotheses": [
+        {
+          "id": "n07:intent:set-quantity",
+          "turn": "n07",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n08",
+      "transcript": "購物車那份水餃不要了，刪掉吧",
+      "known_regression": false,
+      "expected": {
+        "first": "REMOVE",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "REMOVE",
+        "second": "REMOVE",
+        "count": "UNFINISHED",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2213,
+      "hypotheses": [
+        {
+          "id": "n08:intent:remove-item",
+          "turn": "n08",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n09",
+      "transcript": "水餃附的醬汁會放芝麻嗎",
+      "known_regression": false,
+      "expected": {
+        "first": "QUERY",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "COMPOSITION",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "FULFILLMENT",
+        "second": "FULFILLMENT",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2307,
+      "hypotheses": [
+        {
+          "id": "n09:intent:search-menu",
+          "turn": "n09",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "UNSUPPORTED_REQUEST"
+        }
+      ]
+    },
+    {
+      "id": "n10",
+      "transcript": "牛肉麵喝起來會辣嗎",
+      "known_regression": false,
+      "expected": {
+        "first": "QUERY",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "COMPOSITION",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "QUERY",
+        "second": "QUERY",
+        "count": "NONE",
+        "information": "COMPOSITION",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.482,
+      "hypotheses": [
+        {
+          "id": "n10:intent:search-menu",
+          "turn": "n10",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "UNSUPPORTED_REQUEST"
+        }
+      ]
+    },
+    {
+      "id": "n11",
+      "transcript": "排骨便當的熱量能告訴我嗎",
+      "known_regression": false,
+      "expected": {
+        "first": "QUERY",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NUTRITION",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "QUERY",
+        "second": "QUERY",
+        "count": "ONE",
+        "information": "NUTRITION",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.5237,
+      "hypotheses": [
+        {
+          "id": "n11:intent:search-menu",
+          "turn": "n11",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "UNSUPPORTED_REQUEST"
+        }
+      ]
+    },
+    {
+      "id": "n12",
+      "transcript": "便當幫我訂兩份啦",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.4216,
+      "hypotheses": [
+        {
+          "id": "n12:intent:add-item",
+          "turn": "n12",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n13",
+      "transcript": "我想吃麵，一碗",
+      "known_regression": true,
+      "expected": {
+        "first": "ADD",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.5277,
+      "hypotheses": [
+        {
+          "id": "n13:intent:add-item",
+          "turn": "n13",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n14",
+      "transcript": "想好了，我要水餃",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.4786,
+      "hypotheses": [
+        {
+          "id": "n14:intent:add-item",
+          "turn": "n14",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n15",
+      "transcript": "就點畫面上的第二個吧",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.3078,
+      "hypotheses": [
+        {
+          "id": "n15:intent:add-item",
+          "turn": "n15",
+          "supported": false,
+          "contextual": true,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "LOW_CONFIDENCE"
+        }
+      ]
+    },
+    {
+      "id": "n16",
+      "transcript": "一位",
+      "known_regression": true,
+      "expected": {
+        "first": "PARTY_SIZE",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile": {
+        "first": "REFERENCE",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2442,
+      "hypotheses": [
+        {
+          "id": "n16:intent:set-party-size",
+          "turn": "n16",
+          "supported": true,
+          "contextual": true,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n17",
+      "transcript": "內用人數兩位喔",
+      "known_regression": false,
+      "expected": {
+        "first": "PARTY_SIZE",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "PARTY_SIZE",
+        "second": "PARTY_SIZE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2889,
+      "hypotheses": [
+        {
+          "id": "n17:intent:set-party-size",
+          "turn": "n17",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n18",
+      "transcript": "今天改外帶好了",
+      "known_regression": false,
+      "expected": {
+        "first": "FULFILLMENT",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "FULFILLMENT",
+        "second": "FULFILLMENT",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2265,
+      "hypotheses": [
+        {
+          "id": "n18:intent:set-fulfillment:takeout",
+          "turn": "n18",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n19",
+      "transcript": "暫時別結帳，我還要等同事",
+      "known_regression": false,
+      "expected": {
+        "first": "DECLINE",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "UNFINISHED",
+        "second": "UNFINISHED",
+        "count": "UNFINISHED",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2902,
+      "hypotheses": [
+        {
+          "id": "n19:intent:start-checkout",
+          "turn": "n19",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "UNCERTAIN"
+        }
+      ]
+    },
+    {
+      "id": "n20",
+      "transcript": "我想點水餃……呃算了還沒決定",
+      "known_regression": false,
+      "expected": {
+        "first": "UNFINISHED",
+        "second": "NONE",
+        "count": "UNFINISHED",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "UNFINISHED",
+        "second": "UNFINISHED",
+        "count": "UNFINISHED",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2782,
+      "hypotheses": [
+        {
+          "id": "n20:intent:add-item",
+          "turn": "n20",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "UNCERTAIN"
+        }
+      ]
+    },
+    {
+      "id": "n21",
+      "transcript": "水餃不要加蒜頭喔",
+      "known_regression": false,
+      "expected": {
+        "first": "MODIFY_OPTION",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "FULFILLMENT",
+        "second": "FULFILLMENT",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "CONTEXTUAL"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2695,
+      "hypotheses": [
+        {
+          "id": "n21:intent:set-option",
+          "turn": "n21",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": false,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "DOMAIN_UNRESOLVED"
+        }
+      ]
+    },
+    {
+      "id": "n22",
+      "transcript": "水餃一份，再點紅茶兩杯",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "TWO",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.4603,
+      "hypotheses": [
+        {
+          "id": "n22:intent:add-item",
+          "turn": "n22",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n23",
+      "transcript": "紅茶有賣嗎，一杯幾元",
+      "known_regression": false,
+      "expected": {
+        "first": "QUERY",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "MENU_FACTS",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "QUERY",
+        "second": "QUERY",
+        "count": "ONE",
+        "information": "MENU_FACTS",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.6707,
+      "hypotheses": [
+        {
+          "id": "n23:intent:search-menu",
+          "turn": "n23",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n24",
+      "transcript": "加水餃一份、紅茶一杯，然後結帳",
+      "known_regression": false,
+      "expected": {
+        "first": "ADD",
+        "second": "ADD",
+        "count": "MORE_THAN_TWO",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "CHECKOUT",
+        "second": "CHECKOUT",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.323,
+      "hypotheses": [
+        {
+          "id": "n24:intent:add-item",
+          "turn": "n24",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n25",
+      "transcript": "我今天好累，想先坐著休息",
+      "known_regression": false,
+      "expected": {
+        "first": "CHAT",
+        "second": "NONE",
+        "count": "NONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "CHAT",
+        "second": "ADD",
+        "count": "NONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.2235,
+      "hypotheses": [
+        {
+          "id": "n25:intent:search-menu",
+          "turn": "n25",
+          "supported": false,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    },
+    {
+      "id": "n26",
+      "transcript": "不知道吃啥，幫我挑幾樣餐點吧",
+      "known_regression": false,
+      "expected": {
+        "first": "RECOMMEND",
+        "second": "NONE",
+        "count": "ONE",
+        "information": "NONE",
+        "reference": "EXPLICIT"
+      },
+      "profile": {
+        "first": "RECOMMEND",
+        "second": "RECOMMEND",
+        "count": "ONE",
+        "information": "MENU_FACTS",
+        "reference": "EXPLICIT"
+      },
+      "profile_match": false,
+      "finding": "INCONSISTENT",
+      "confidence": 0.3319,
+      "hypotheses": [
+        {
+          "id": "n26:intent:recommend",
+          "turn": "n26",
+          "supported": true,
+          "contextual": false,
+          "blind": false,
+          "baseline": true,
+          "comparison_reason": "INCONSISTENT",
+          "baseline_reason": "COVERED"
+        }
+      ]
+    }
+  ]
+}

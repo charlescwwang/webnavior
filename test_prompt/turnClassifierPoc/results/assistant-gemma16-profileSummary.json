@@ -1,0 +1,2681 @@
+{
+  "rows": [
+    {
+      "type": "observation",
+      "id": "a01",
+      "family": "category",
+      "text": "我想吃麵",
+      "mode": "proposal",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "parsed": {
+          "valid": true,
+          "proposal": {
+            "requirements": [
+              {
+                "source": "我想吃麵",
+                "effect": "RECOMMEND",
+                "targetRaw": null,
+                "replacementRaw": null,
+                "quantity": null,
+                "conditions": [],
+                "queryTopics": [],
+                "contextRequired": false,
+                "value": null
+              }
+            ],
+            "unresolved": [],
+            "summaryCount": null
+          }
+        },
+        "binding": {
+          "blocked": [],
+          "plan": [
+            {
+              "name": "menu_recommend",
+              "input": {
+                "category": "麵食"
+              }
+            }
+          ],
+          "executed": true
+        }
+      },
+      "receipts": [
+        {
+          "name": "menu_get",
+          "input": {
+            "display": false
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "bento",
+                "name": "炸排骨便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 91,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "chicken",
+                "name": "椒麻雞便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 96,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "dumplings",
+                "name": "水餃",
+                "description": "人工合成，成分未知",
+                "category": "點心",
+                "price": 61,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "tea",
+                "name": "紅茶",
+                "description": "人工合成，成分未知",
+                "category": "飲料",
+                "price": 21,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": []
+          }
+        },
+        {
+          "name": "menu_recommend",
+          "input": {
+            "category": "麵食"
+          },
+          "result": {
+            "customerMessage": "推薦一項：紅燒牛肉麵。",
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "needs": [],
+            "appliedPriceConditions": {},
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": [],
+            "presentation": {
+              "kind": "recommendation",
+              "itemIds": [
+                "noodle"
+              ],
+              "title": "麵食"
+            }
+          }
+        }
+      ],
+      "rounds": 1,
+      "wall_ms": 3869.9369159999997,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a01",
+      "family": "category",
+      "text": "我想吃麵",
+      "mode": "tool-agent",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "outputs": [
+          {
+            "agentInteraction": {
+              "mode": "active"
+            },
+            "answer": "<thought>The user wants to eat \"noodles\" (麵).\nI should search the menu for items related to \"noodles\".\nI will use `menu_get` with `query=\"麵\"` to find relevant items.</thought>",
+            "toolCalls": [
+              {
+                "extra_content": {
+                  "google": {
+                    "thought_signature": "EiYKJGUyNDgzMGE3LTVjZDYtNDJmZS05OThiLWVlNTM5ZTcyYjljMw=="
+                  }
+                },
+                "function": {
+                  "arguments": "{\"query\":\"麵\"}",
+                  "name": "menu_get"
+                },
+                "id": "call_609542",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "agentInteraction": {
+              "mode": "active"
+            },
+            "answer": "<thought>The user wants to eat noodles (\"我想吃麵\").\nI have already called `menu_get` with the query \"麵\" and found one item: \"紅燒牛肉麵\" (id: `noodle`).\nThe tool output shows `customerMessage: \"我找到：紅燒牛肉麵。\"`.\nI should present this to the user. Since there's only one item, I'll inform them.</thought>我找到紅燒牛肉麵，請問您要點這道嗎？",
+            "toolCalls": []
+          }
+        ],
+        "protocolComplete": true
+      },
+      "receipts": [
+        {
+          "name": "menu_get",
+          "input": {
+            "query": "麵"
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": [],
+            "customerMessage": "我找到：紅燒牛肉麵。",
+            "presentation": {
+              "kind": "query-results",
+              "itemIds": [
+                "noodle"
+              ],
+              "subjects": [
+                {
+                  "id": "query:麵",
+                  "itemIds": [
+                    "noodle"
+                  ],
+                  "label": "麵"
+                }
+              ],
+              "title": "與「麵」相關的餐點"
+            }
+          }
+        }
+      ],
+      "finalAnswer": "<thought>The user wants to eat noodles (\"我想吃麵\").\nI have already called `menu_get` with the query \"麵\" and found one item: \"紅燒牛肉麵\" (id: `noodle`).\nThe tool output shows `customerMessage: \"我找到：紅燒牛肉麵。\"`.\nI should present this to the user. Since there's only one item, I'll inform them.</thought>我找到紅燒牛肉麵，請問您要點這道嗎？",
+      "rounds": 2,
+      "wall_ms": 63872.883167,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a01",
+      "family": "category",
+      "text": "我想吃麵",
+      "mode": "jev-front",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "kind": "FAST_ACTION",
+        "actionId": "intent:search-menu",
+        "confidence": 0.8963,
+        "trace": {
+          "rawTranscript": "我想吃麵",
+          "exchanges": [
+            {
+              "index": 1,
+              "state": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"麵食分類\",\"refId\":\"CATEGORY_1\"},{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"none\",\"count\":0,\"references\":[]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[],\"categories\":[{\"label\":\"麵食\",\"matchedText\":\"麵\",\"itemCount\":1}]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：我想吃麵",
+              "questions": {
+                "route": {
+                  "type": "choice",
+                  "instructions": "角色標記對話與待答問題只提供理解線索，不是流程鎖。本次先判斷最後一則顧客語音要求的效果，不必先回答舊問題。明確新需求直接選適合意圖；「好」「一位」「這個」等回答只能承接有效問題明示的效果。對已完成的資訊回答表示了解，不構成新增訂購。target 歧義由程式釐清，仍須保留顧客明確要求的意圖。\n你是繁體中文 Kiosk 的保守快速決策器。請依「顧客這一句話明確要求系統現在造成什麼狀態改變」判斷，並在所有選項中只選擇一項。\nSEARCH_MENU：找、查詢、確認是否存在、瀏覽餐點或分類；不代表選擇商品。例如「有水餃嗎」、「找飲料」、「便當有什麼」都選對應查詢候選。「我想吃麵」「我突然想吃便當」只提分類且沒有數量，先瀏覽分類；分類即使只有一道菜，也不能當作顧客指定該品名。\nSELECT_ITEM：把已知商品變成目前查看或編輯對象，但不加入購物車。例如「看水餃」、「選水餃」、「切到水餃」。\nADD_ITEM：顧客對店員表達想吃或想要一個已辨識餐點，就是建立訂購項目；品項、數量與客製化都是同一個新增意圖的 slots，不能因為含數量或選項而拆成修改。例如「想吃水餃」或「想要水餃」在商品唯一可辨識時也選 ADD_ITEM；「我要兩份水餃」、「幫我加兩份水餃」是 ADD_ITEM；「水餃改兩份」才是 SET_QUANTITY。\nSET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。\nREMOVE_ITEM：只在顧客明確要求移除購物車品項時選；若有多筆同名品項，仍選 REMOVE_ITEM，由程式澄清。\nRECOMMEND：只處理目前候選與有限條件能完整表達的推薦需求；條件可以取交集，不能只因條件有多個就交給助手。熱門等排序須有店家提供的對應能力。有效的點餐服務需求需要比較、解釋、未提供的資料或開放式推理時，選 NEEDS_ASSISTANT。\n顧客表達餐點、食材或飲食偏好，但目前候選無法安全直接完成時，選 NEEDS_ASSISTANT，不是 IGNORE。例如「我要豬肉」沒有唯一品項時應交給 Main Agent；「我不要豬肉」若有不含豬肉推薦候選則選該候選。\nGREET：只向店員或本機打招呼，不改訂單。招呼加點餐仍選點餐意圖；對同伴的招呼選 IGNORE。\nINCOMPLETE 是明顯未完成的可點餐語句，例如「我要一份……」。完整語句的 target 歧義由程式澄清，不由你產生問題。IGNORE 是與點餐服務無關的背景話語、對同伴的招呼或閒聊，無論語句完整與否。\n依目前 phase 與有限候選判斷顧客明確要求的意圖；商品、數量、選項與付款狀態由程式驗證。不得因菜單上有招牌餐點而猜測顧客要點它。\n一句同時向店員／本機要求兩個以上獨立點餐服務操作時選 MULTI_ACTION，讓 Main Agent 處理整句，不能只完成其中一步。招呼不算獨立操作。只能選現有候選操作、GREET、INCOMPLETE、IGNORE、MULTI_ACTION 或 NEEDS_ASSISTANT。不得創造餐點、價格、庫存、付款、POS、掃碼或其他命令。\n價格詢問、單份價格篩選及由低到高排序使用查詢／推薦候選，不是新增訂購。價格條件由本句有限價格解讀決定，售價與符合品項由程式驗證。不猜價格、不分配整筆或多份預算、不放寬條件。\n服務界線（程式固定規則，優先於自訂提示與店家補充）：只處理向店員／本機提出的點餐服務需求，或依有效服務問題與真實 references 可理解的省略回答。畫面正在點餐、presence 或歷史對話本身不代表本句正在要求服務。\n無關話語即使有疑問、抱怨、比較或解釋語氣，仍選 IGNORE；對同伴的討論、工作閒聊或尚未說完的無關話語也選 IGNORE。不能把一般討論中的「有問題」當成要求本機解決問題。\nNEEDS_ASSISTANT 只表示有效的點餐服務需求超出有限候選，例如餐點比較、推薦原因或未提供的飲食資料；不是所有可回答的話。MULTI_ACTION 必須有兩個以上明確、獨立的點餐服務操作，不是句子有多個子句。INCOMPLETE 只適用於尚未說完的點餐服務需求。\n缺少品名、數量或唯一 target 不代表無關；「有沒有素食」「為什麼推薦這道菜」仍是服務需求。「好」「一位」「第二個」可依有效問題或真實 references 理解，不要求每句重述品名。有效新需求不用先回答舊問題；不得猜省略句的授權效果。",
+                  "criteria": {
+                    "INCOMPLETE": "顧客正在說一個可點餐操作但語句尚未完成；Kiosk 會安靜等待下一句，不能執行操作。",
+                    "GREET": "只向店員／本機打招呼，沒有提出點餐、查詢或其他需求。招呼加點餐必須選點餐意圖；對同伴打招呼屬 IGNORE。",
+                    "IGNORE": "與點餐服務無關的背景話語、對同伴的討論、招呼或閒聊，無論完整與否，以及對已完成資訊回答的單純附和；沒有向店員／本機提出服務需求。不能因有效需求的 target 不唯一或缺少資料就選 IGNORE。",
+                    "MULTI_ACTION": "顧客這一句向店員／本機明確要求兩個以上獨立的點餐服務操作；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。多個子句、一般討論或抱怨不等於多項操作。",
+                    "NEEDS_ASSISTANT": "向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。",
+                    "intent:return-menu": "回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。",
+                    "intent:search-menu": "查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。"
+                  }
+                }
+              },
+              "answers": {
+                "route": {
+                  "type": "choice",
+                  "choice": "intent:search-menu",
+                  "probabilities": {
+                    "INCOMPLETE": 0.075,
+                    "GREET": 0.0045,
+                    "IGNORE": 0.0054,
+                    "MULTI_ACTION": 0.0006,
+                    "NEEDS_ASSISTANT": 0.002,
+                    "intent:return-menu": 0.0013,
+                    "intent:search-menu": 0.9111
+                  },
+                  "confidence": 0.8963
+                }
+              },
+              "durationMs": 4540.445749999999,
+              "status": "answered"
+            },
+            {
+              "index": 2,
+              "state": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"麵食分類\",\"refId\":\"CATEGORY_1\"},{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"none\",\"count\":0,\"references\":[]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[],\"categories\":[{\"label\":\"麵食\",\"matchedText\":\"麵\",\"itemCount\":1}]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：我想吃麵",
+              "questions": {
+                "filterRequirement": {
+                  "type": "choice",
+                  "instructions": "只檢查本句是否要求未提供的篩選能力，不判斷商品是否符合。可用條件：本句未解析出可用條件。詢問商品售價與不要求條件的查詢或推薦也是 COVERED；整筆預算或未提供價格條件不可忽略。",
+                  "criteria": {
+                    "COVERED": "顧客沒有要求條件；或要求的條件全部是上列可用條件。餐點是否符合交給程式查詢。",
+                    "UNSUPPORTED_FILTER": "至少一項要求營養數據、過敏安全保證、更嚴格素別、其他未提供的條件，或條件互相矛盾。不可省略這項要求。"
+                  }
+                },
+                "filterPresence": {
+                  "type": "choice",
+                  "instructions": "只判斷本句是否新增或修改食材／飲食條件。歷史條件已由程式保留，不是本句的新條件。不查菜單、不選操作。",
+                  "criteria": {
+                    "REQUIRED": "本句明確新增或修改包含／排除的食材或飲食條件。",
+                    "NO_FILTER": "本句沒有新增或修改條件。查品名、分類、菜單、一般推薦及沿用原條件換批，都屬於此項。"
+                  }
+                }
+              },
+              "answers": {
+                "filterRequirement": {
+                  "type": "choice",
+                  "choice": "COVERED",
+                  "probabilities": {
+                    "COVERED": 0.9663,
+                    "UNSUPPORTED_FILTER": 0.0337
+                  },
+                  "confidence": 0.9325
+                },
+                "filterPresence": {
+                  "type": "choice",
+                  "choice": "NO_FILTER",
+                  "probabilities": {
+                    "REQUIRED": 0.052,
+                    "NO_FILTER": 0.948
+                  },
+                  "confidence": 0.8959
+                }
+              },
+              "durationMs": 1495.8248750000057,
+              "status": "answered"
+            }
+          ],
+          "candidateIntents": [
+            {
+              "description": "回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。",
+              "id": "intent:return-menu",
+              "requiresHighConfidence": true
+            },
+            {
+              "description": "查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。",
+              "id": "intent:search-menu",
+              "requiresHighConfidence": false
+            }
+          ],
+          "decisionState": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"麵食分類\",\"refId\":\"CATEGORY_1\"},{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"none\",\"count\":0,\"references\":[]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[],\"categories\":[{\"label\":\"麵食\",\"matchedText\":\"麵\",\"itemCount\":1}]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：我想吃麵",
+          "rawAnswer": {
+            "type": "choice",
+            "choice": "intent:search-menu",
+            "probabilities": {
+              "INCOMPLETE": 0.075,
+              "GREET": 0.0045,
+              "IGNORE": 0.0054,
+              "MULTI_ACTION": 0.0006,
+              "NEEDS_ASSISTANT": 0.002,
+              "intent:return-menu": 0.0013,
+              "intent:search-menu": 0.9111
+            },
+            "confidence": 0.8963
+          },
+          "transcript": "我想吃麵",
+          "filterRequirement": {
+            "type": "choice",
+            "choice": "COVERED",
+            "probabilities": {
+              "COVERED": 0.9663,
+              "UNSUPPORTED_FILTER": 0.0337
+            },
+            "confidence": 0.9325
+          },
+          "filterPresence": {
+            "type": "choice",
+            "choice": "NO_FILTER",
+            "probabilities": {
+              "REQUIRED": 0.052,
+              "NO_FILTER": 0.948
+            },
+            "confidence": 0.8959
+          }
+        },
+        "modelCalls": 2,
+        "modelQuestions": 3
+      },
+      "receipts": [
+        {
+          "name": "kiosk_fast_path_execute",
+          "input": {
+            "candidateId": "intent:search-menu"
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": [],
+            "customerMessage": "我找到：紅燒牛肉麵。",
+            "presentation": {
+              "kind": "query-results",
+              "itemIds": [
+                "noodle"
+              ],
+              "subjects": [
+                {
+                  "id": "category:麵食",
+                  "itemIds": [
+                    "noodle"
+                  ],
+                  "label": "麵食"
+                }
+              ],
+              "title": "麵食餐點"
+            },
+            "decisionTrace": {
+              "authorize": {
+                "kind": "EXECUTE"
+              },
+              "operationPlan": {
+                "expectedRevisions": {
+                  "menu": 0
+                },
+                "intent": "SEARCH_MENU",
+                "slots": {
+                  "category": "麵食"
+                },
+                "targetRef": "category:%E9%BA%B5%E9%A3%9F",
+                "input": {
+                  "category": "麵食"
+                },
+                "toolName": "menu_get"
+              },
+              "resolveIntent": {
+                "kind": "PLAN",
+                "plan": {
+                  "expectedRevisions": {
+                    "menu": 0
+                  },
+                  "intent": "SEARCH_MENU",
+                  "slots": {
+                    "category": "麵食"
+                  },
+                  "targetRef": "category:%E9%BA%B5%E9%A3%9F"
+                },
+                "targetResolution": {
+                  "constraints": {
+                    "itemIds": [],
+                    "categories": [
+                      "麵食"
+                    ],
+                    "exclude": [],
+                    "include": []
+                  },
+                  "candidates": [
+                    "category:%E9%BA%B5%E9%A3%9F"
+                  ],
+                  "eligible": [
+                    "category:%E9%BA%B5%E9%A3%9F"
+                  ],
+                  "rejected": [],
+                  "origins": {
+                    "category:%E9%BA%B5%E9%A3%9F": "category",
+                    "item:noodle": "category"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "rounds": 2,
+      "wall_ms": 6041.163333000004,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a02",
+      "family": "category-quantity",
+      "text": "我想吃麵，一碗",
+      "mode": "tool-agent",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "outputs": [
+          {
+            "agentInteraction": {
+              "mode": "active"
+            },
+            "answer": "<thought>The user wants to eat noodles (\"我想吃麵\") and wants one bowl (\"一碗\").\nI need to find noodle dishes in the menu.\nI should use `menu_get` with a query related to \"麵\" (noodles).</thought>",
+            "toolCalls": [
+              {
+                "extra_content": {
+                  "google": {
+                    "thought_signature": "EiYKJGUyNDgzMGE3LTVjZDYtNDJmZS05OThiLWVlNTM5ZTcyYjljMw=="
+                  }
+                },
+                "function": {
+                  "arguments": "{\"query\":\"麵\"}",
+                  "name": "menu_get"
+                },
+                "id": "call_520880",
+                "type": "function"
+              }
+            ]
+          },
+          {
+            "agentInteraction": {
+              "mode": "active"
+            },
+            "answer": "我找到紅燒牛肉麵，請問您要點這碗嗎？",
+            "toolCalls": []
+          }
+        ],
+        "protocolComplete": true
+      },
+      "receipts": [
+        {
+          "name": "menu_get",
+          "input": {
+            "query": "麵"
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": [],
+            "customerMessage": "我找到：紅燒牛肉麵。",
+            "presentation": {
+              "kind": "query-results",
+              "itemIds": [
+                "noodle"
+              ],
+              "subjects": [
+                {
+                  "id": "query:麵",
+                  "itemIds": [
+                    "noodle"
+                  ],
+                  "label": "麵"
+                }
+              ],
+              "title": "與「麵」相關的餐點"
+            }
+          }
+        }
+      ],
+      "finalAnswer": "我找到紅燒牛肉麵，請問您要點這碗嗎？",
+      "rounds": 2,
+      "wall_ms": 112575.63829199999,
+      "assessment": {
+        "outcomeMatches": false,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": false,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a02",
+      "family": "category-quantity",
+      "text": "我想吃麵，一碗",
+      "mode": "jev-front",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "kind": "UNAVAILABLE",
+        "trace": {
+          "rawTranscript": "我想吃麵，一碗",
+          "exchanges": [
+            {
+              "index": 1,
+              "state": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"麵食分類\",\"refId\":\"CATEGORY_1\"},{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"none\",\"count\":0,\"references\":[]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[],\"categories\":[{\"label\":\"麵食\",\"matchedText\":\"麵\",\"itemCount\":1}]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：我想吃麵，一碗",
+              "questions": {
+                "route": {
+                  "type": "choice",
+                  "instructions": "角色標記對話與待答問題只提供理解線索，不是流程鎖。本次先判斷最後一則顧客語音要求的效果，不必先回答舊問題。明確新需求直接選適合意圖；「好」「一位」「這個」等回答只能承接有效問題明示的效果。對已完成的資訊回答表示了解，不構成新增訂購。target 歧義由程式釐清，仍須保留顧客明確要求的意圖。\n你是繁體中文 Kiosk 的保守快速決策器。請依「顧客這一句話明確要求系統現在造成什麼狀態改變」判斷，並在所有選項中只選擇一項。\nSEARCH_MENU：找、查詢、確認是否存在、瀏覽餐點或分類；不代表選擇商品。例如「有水餃嗎」、「找飲料」、「便當有什麼」都選對應查詢候選。「我想吃麵」「我突然想吃便當」只提分類且沒有數量，先瀏覽分類；分類即使只有一道菜，也不能當作顧客指定該品名。\nSELECT_ITEM：把已知商品變成目前查看或編輯對象，但不加入購物車。例如「看水餃」、「選水餃」、「切到水餃」。\nADD_ITEM：顧客對店員表達想吃或想要一個已辨識餐點，就是建立訂購項目；品項、數量與客製化都是同一個新增意圖的 slots，不能因為含數量或選項而拆成修改。例如「想吃水餃」或「想要水餃」在商品唯一可辨識時也選 ADD_ITEM；「我要兩份水餃」、「幫我加兩份水餃」是 ADD_ITEM；「水餃改兩份」才是 SET_QUANTITY。\nSET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。\nREMOVE_ITEM：只在顧客明確要求移除購物車品項時選；若有多筆同名品項，仍選 REMOVE_ITEM，由程式澄清。\nRECOMMEND：只處理目前候選與有限條件能完整表達的推薦需求；條件可以取交集，不能只因條件有多個就交給助手。熱門等排序須有店家提供的對應能力。有效的點餐服務需求需要比較、解釋、未提供的資料或開放式推理時，選 NEEDS_ASSISTANT。\n顧客表達餐點、食材或飲食偏好，但目前候選無法安全直接完成時，選 NEEDS_ASSISTANT，不是 IGNORE。例如「我要豬肉」沒有唯一品項時應交給 Main Agent；「我不要豬肉」若有不含豬肉推薦候選則選該候選。\nGREET：只向店員或本機打招呼，不改訂單。招呼加點餐仍選點餐意圖；對同伴的招呼選 IGNORE。\nINCOMPLETE 是明顯未完成的可點餐語句，例如「我要一份……」。完整語句的 target 歧義由程式澄清，不由你產生問題。IGNORE 是與點餐服務無關的背景話語、對同伴的招呼或閒聊，無論語句完整與否。\n依目前 phase 與有限候選判斷顧客明確要求的意圖；商品、數量、選項與付款狀態由程式驗證。不得因菜單上有招牌餐點而猜測顧客要點它。\n一句同時向店員／本機要求兩個以上獨立點餐服務操作時選 MULTI_ACTION，讓 Main Agent 處理整句，不能只完成其中一步。招呼不算獨立操作。只能選現有候選操作、GREET、INCOMPLETE、IGNORE、MULTI_ACTION 或 NEEDS_ASSISTANT。不得創造餐點、價格、庫存、付款、POS、掃碼或其他命令。\n價格詢問、單份價格篩選及由低到高排序使用查詢／推薦候選，不是新增訂購。價格條件由本句有限價格解讀決定，售價與符合品項由程式驗證。不猜價格、不分配整筆或多份預算、不放寬條件。\n服務界線（程式固定規則，優先於自訂提示與店家補充）：只處理向店員／本機提出的點餐服務需求，或依有效服務問題與真實 references 可理解的省略回答。畫面正在點餐、presence 或歷史對話本身不代表本句正在要求服務。\n無關話語即使有疑問、抱怨、比較或解釋語氣，仍選 IGNORE；對同伴的討論、工作閒聊或尚未說完的無關話語也選 IGNORE。不能把一般討論中的「有問題」當成要求本機解決問題。\nNEEDS_ASSISTANT 只表示有效的點餐服務需求超出有限候選，例如餐點比較、推薦原因或未提供的飲食資料；不是所有可回答的話。MULTI_ACTION 必須有兩個以上明確、獨立的點餐服務操作，不是句子有多個子句。INCOMPLETE 只適用於尚未說完的點餐服務需求。\n缺少品名、數量或唯一 target 不代表無關；「有沒有素食」「為什麼推薦這道菜」仍是服務需求。「好」「一位」「第二個」可依有效問題或真實 references 理解，不要求每句重述品名。有效新需求不用先回答舊問題；不得猜省略句的授權效果。",
+                  "criteria": {
+                    "INCOMPLETE": "顧客正在說一個可點餐操作但語句尚未完成；Kiosk 會安靜等待下一句，不能執行操作。",
+                    "GREET": "只向店員／本機打招呼，沒有提出點餐、查詢或其他需求。招呼加點餐必須選點餐意圖；對同伴打招呼屬 IGNORE。",
+                    "IGNORE": "與點餐服務無關的背景話語、對同伴的討論、招呼或閒聊，無論完整與否，以及對已完成資訊回答的單純附和；沒有向店員／本機提出服務需求。不能因有效需求的 target 不唯一或缺少資料就選 IGNORE。",
+                    "MULTI_ACTION": "顧客這一句向店員／本機明確要求兩個以上獨立的點餐服務操作；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。多個子句、一般討論或抱怨不等於多項操作。",
+                    "NEEDS_ASSISTANT": "向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。",
+                    "intent:return-menu": "回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。",
+                    "intent:search-menu": "查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。",
+                    "intent:add-item": "新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。"
+                  }
+                }
+              },
+              "answers": {
+                "route": {
+                  "type": "choice",
+                  "choice": "intent:add-item",
+                  "probabilities": {
+                    "INCOMPLETE": 0.1737,
+                    "GREET": 0.0072,
+                    "IGNORE": 0.0076,
+                    "MULTI_ACTION": 0.0004,
+                    "NEEDS_ASSISTANT": 0.0014,
+                    "intent:return-menu": 0.0015,
+                    "intent:search-menu": 0.3728,
+                    "intent:add-item": 0.4354
+                  },
+                  "confidence": 0.3548
+                }
+              },
+              "durationMs": 4500.0999160000065,
+              "status": "answered"
+            }
+          ],
+          "candidateIntents": [
+            {
+              "description": "回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。",
+              "id": "intent:return-menu",
+              "requiresHighConfidence": true
+            },
+            {
+              "description": "查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。",
+              "id": "intent:search-menu",
+              "requiresHighConfidence": false
+            },
+            {
+              "description": "新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。",
+              "id": "intent:add-item",
+              "requiresHighConfidence": true
+            }
+          ],
+          "decisionState": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"麵食分類\",\"refId\":\"CATEGORY_1\"},{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"none\",\"count\":0,\"references\":[]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[],\"categories\":[{\"label\":\"麵食\",\"matchedText\":\"麵\",\"itemCount\":1}]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：我想吃麵，一碗",
+          "rawAnswer": {
+            "type": "choice",
+            "choice": "intent:add-item",
+            "probabilities": {
+              "INCOMPLETE": 0.1737,
+              "GREET": 0.0072,
+              "IGNORE": 0.0076,
+              "MULTI_ACTION": 0.0004,
+              "NEEDS_ASSISTANT": 0.0014,
+              "intent:return-menu": 0.0015,
+              "intent:search-menu": 0.3728,
+              "intent:add-item": 0.4354
+            },
+            "confidence": 0.3548
+          },
+          "transcript": "我想吃麵，一碗"
+        },
+        "modelCalls": 1,
+        "modelQuestions": 1
+      },
+      "receipts": [],
+      "rounds": 1,
+      "wall_ms": 4502.355291000014,
+      "assessment": {
+        "outcomeMatches": false,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": false,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a02",
+      "family": "category-quantity",
+      "text": "我想吃麵，一碗",
+      "mode": "proposal",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {
+          "noodle": 1
+        },
+        "cart": {
+          "lines": [
+            {
+              "id": "line-14e7ebbb-cb86-4588-8522-3ad5e5fb7dcf",
+              "itemId": "noodle",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 101
+            }
+          ],
+          "total": 101,
+          "itemCount": 1
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [
+            {
+              "question": {
+                "questionId": "3a86208d-944e-40f4-b680-3534b52730f8",
+                "purpose": "fulfillment",
+                "phase": "ordering",
+                "question": "請問要內用還是自取？",
+                "choices": [
+                  {
+                    "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+                    "id": "intent:set-fulfillment:dine-in",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "dine-in"
+                    }
+                  },
+                  {
+                    "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+                    "id": "intent:set-fulfillment:takeout",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "takeout"
+                    }
+                  }
+                ],
+                "expectedRevisions": {
+                  "cart": 1,
+                  "checkout": 0
+                },
+                "expiresAt": 1791462213921
+              },
+              "status": "pending"
+            },
+            {
+              "question": {
+                "questionId": "1bb9907e-e394-4f53-a3ec-cadbd74aae72",
+                "purpose": "fulfillment",
+                "phase": "ordering",
+                "question": "請問要內用還是自取？",
+                "choices": [
+                  {
+                    "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+                    "id": "intent:set-fulfillment:dine-in",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "dine-in"
+                    }
+                  },
+                  {
+                    "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+                    "id": "intent:set-fulfillment:takeout",
+                    "intent": "SET_FULFILLMENT",
+                    "slots": {
+                      "mode": "takeout"
+                    }
+                  }
+                ],
+                "expectedRevisions": {
+                  "cart": 1,
+                  "checkout": 0
+                },
+                "expiresAt": 1791462213922
+              },
+              "status": "offered"
+            }
+          ],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "waitingFor": {
+            "questionId": "3a86208d-944e-40f4-b680-3534b52730f8",
+            "purpose": "fulfillment",
+            "question": "請問要內用還是自取？",
+            "expiresAt": 1791462213921,
+            "choices": [
+              {
+                "id": "intent:set-fulfillment:dine-in",
+                "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。"
+              },
+              {
+                "id": "intent:set-fulfillment:takeout",
+                "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。"
+              }
+            ]
+          },
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0,
+            "lastAddedItemName": "紅燒牛肉麵"
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "parsed": {
+          "valid": true,
+          "proposal": {
+            "requirements": [
+              {
+                "source": "我想吃麵，一碗",
+                "effect": "ADD",
+                "targetRaw": "麵",
+                "replacementRaw": null,
+                "quantity": 1,
+                "conditions": [],
+                "queryTopics": [],
+                "contextRequired": false,
+                "value": null
+              }
+            ],
+            "unresolved": [],
+            "summaryCount": 1
+          }
+        },
+        "binding": {
+          "blocked": [],
+          "plan": [],
+          "contextual": true
+        }
+      },
+      "receipts": [
+        {
+          "name": "menu_get",
+          "input": {
+            "display": false
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "bento",
+                "name": "炸排骨便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 91,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "chicken",
+                "name": "椒麻雞便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 96,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "dumplings",
+                "name": "水餃",
+                "description": "人工合成，成分未知",
+                "category": "點心",
+                "price": 61,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "tea",
+                "name": "紅茶",
+                "description": "人工合成，成分未知",
+                "category": "飲料",
+                "price": 21,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": []
+          }
+        },
+        {
+          "name": "kiosk_fast_path_execute",
+          "input": {
+            "candidateId": "intent:add-item"
+          },
+          "result": {
+            "item": {
+              "available": true,
+              "id": "noodle",
+              "name": "紅燒牛肉麵",
+              "description": "人工合成，成分未知",
+              "category": "麵食",
+              "price": 101,
+              "recommendationTags": [],
+              "optionGroups": []
+            },
+            "line": {
+              "id": "line-14e7ebbb-cb86-4588-8522-3ad5e5fb7dcf",
+              "itemId": "noodle",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 101
+            },
+            "cart": {
+              "lines": [
+                {
+                  "id": "line-14e7ebbb-cb86-4588-8522-3ad5e5fb7dcf",
+                  "itemId": "noodle",
+                  "name": "紅燒牛肉麵",
+                  "quantity": 1,
+                  "options": {},
+                  "unitPrice": 101
+                }
+              ],
+              "total": 101,
+              "itemCount": 1
+            },
+            "customerMessage": "已將紅燒牛肉麵加入購物車，共 1 份。",
+            "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+            "pendingCustomerChoice": {
+              "questionId": "3a86208d-944e-40f4-b680-3534b52730f8",
+              "purpose": "fulfillment",
+              "phase": "ordering",
+              "question": "請問要內用還是自取？",
+              "choices": [
+                {
+                  "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+                  "id": "intent:set-fulfillment:dine-in",
+                  "intent": "SET_FULFILLMENT",
+                  "slots": {
+                    "mode": "dine-in"
+                  }
+                },
+                {
+                  "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+                  "id": "intent:set-fulfillment:takeout",
+                  "intent": "SET_FULFILLMENT",
+                  "slots": {
+                    "mode": "takeout"
+                  }
+                }
+              ],
+              "expectedRevisions": {
+                "cart": 1,
+                "checkout": 0
+              },
+              "expiresAt": 1791462213921
+            },
+            "decisionTrace": {
+              "authorize": {
+                "kind": "EXECUTE"
+              },
+              "operationPlan": {
+                "expectedRevisions": {
+                  "cart": 0,
+                  "selectedItem": 0,
+                  "menu": 0
+                },
+                "intent": "ADD_ITEM",
+                "slots": {
+                  "itemId": "noodle",
+                  "quantity": 1
+                },
+                "targetRef": "item:noodle",
+                "input": {
+                  "itemId": "noodle",
+                  "quantity": 1
+                },
+                "toolName": "order_add_item"
+              },
+              "resolveIntent": {
+                "kind": "PLAN",
+                "plan": {
+                  "expectedRevisions": {
+                    "cart": 0,
+                    "selectedItem": 0,
+                    "menu": 0
+                  },
+                  "intent": "ADD_ITEM",
+                  "slots": {
+                    "itemId": "noodle",
+                    "quantity": 1
+                  },
+                  "targetRef": "item:noodle"
+                },
+                "targetResolution": {
+                  "constraints": {
+                    "itemIds": [],
+                    "categories": [
+                      "麵食"
+                    ],
+                    "exclude": [],
+                    "include": []
+                  },
+                  "candidates": [
+                    "item:noodle"
+                  ],
+                  "eligible": [
+                    "item:noodle"
+                  ],
+                  "rejected": [],
+                  "origins": {
+                    "category:%E9%BA%B5%E9%A3%9F": "category",
+                    "item:noodle": "category"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "rounds": 1,
+      "wall_ms": 3665.680457999988,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": true,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a03",
+      "family": "query",
+      "text": "有牛肉麵嗎？",
+      "mode": "jev-front",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "phase": "configuration",
+          "paymentState": "idle",
+          "candidates": [
+            {
+              "id": "configure:7139b44f-8cf1-492d-8252-955f302c8f4b:cancel",
+              "description": "取消這筆尚未加入的餐點需求，保留購物車。"
+            }
+          ],
+          "catalogEvidence": {
+            "products": [],
+            "categories": []
+          },
+          "interactionState": {
+            "matchingCartLines": 0,
+            "pendingIntent": "ADD_ITEM"
+          },
+          "references": [
+            {
+              "refId": "CONFIGURING_ITEM",
+              "label": "紅燒牛肉麵"
+            }
+          ],
+          "waitingFor": {
+            "questionId": "7139b44f-8cf1-492d-8252-955f302c8f4b",
+            "purpose": "item-configuration",
+            "question": "請問紅燒牛肉麵要幾份？",
+            "expiresAt": 0,
+            "choices": [
+              {
+                "id": "configure:7139b44f-8cf1-492d-8252-955f302c8f4b:cancel",
+                "description": "取消這筆尚未加入的餐點需求，保留購物車。"
+              }
+            ]
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "kind": "FAST_ACTION",
+        "actionId": "intent:add-item",
+        "confidence": 0.6699,
+        "trace": {
+          "rawTranscript": "有牛肉麵嗎？",
+          "exchanges": [
+            {
+              "index": 1,
+              "state": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"exact\",\"count\":1,\"references\":[{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[{\"label\":\"紅燒牛肉麵\",\"matchedText\":\"牛肉麵\",\"source\":\"alias\"}],\"categories\":[]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[{\"id\":\"beef\",\"label\":\"牛肉\"}]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：有牛肉麵嗎？",
+              "questions": {
+                "route": {
+                  "type": "choice",
+                  "instructions": "角色標記對話與待答問題只提供理解線索，不是流程鎖。本次先判斷最後一則顧客語音要求的效果，不必先回答舊問題。明確新需求直接選適合意圖；「好」「一位」「這個」等回答只能承接有效問題明示的效果。對已完成的資訊回答表示了解，不構成新增訂購。target 歧義由程式釐清，仍須保留顧客明確要求的意圖。\n你是繁體中文 Kiosk 的保守快速決策器。請依「顧客這一句話明確要求系統現在造成什麼狀態改變」判斷，並在所有選項中只選擇一項。\nSEARCH_MENU：找、查詢、確認是否存在、瀏覽餐點或分類；不代表選擇商品。例如「有水餃嗎」、「找飲料」、「便當有什麼」都選對應查詢候選。「我想吃麵」「我突然想吃便當」只提分類且沒有數量，先瀏覽分類；分類即使只有一道菜，也不能當作顧客指定該品名。\nSELECT_ITEM：把已知商品變成目前查看或編輯對象，但不加入購物車。例如「看水餃」、「選水餃」、「切到水餃」。\nADD_ITEM：顧客對店員表達想吃或想要一個已辨識餐點，就是建立訂購項目；品項、數量與客製化都是同一個新增意圖的 slots，不能因為含數量或選項而拆成修改。例如「想吃水餃」或「想要水餃」在商品唯一可辨識時也選 ADD_ITEM；「我要兩份水餃」、「幫我加兩份水餃」是 ADD_ITEM；「水餃改兩份」才是 SET_QUANTITY。\nSET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。\nREMOVE_ITEM：只在顧客明確要求移除購物車品項時選；若有多筆同名品項，仍選 REMOVE_ITEM，由程式澄清。\nRECOMMEND：只處理目前候選與有限條件能完整表達的推薦需求；條件可以取交集，不能只因條件有多個就交給助手。熱門等排序須有店家提供的對應能力。有效的點餐服務需求需要比較、解釋、未提供的資料或開放式推理時，選 NEEDS_ASSISTANT。\n顧客表達餐點、食材或飲食偏好，但目前候選無法安全直接完成時，選 NEEDS_ASSISTANT，不是 IGNORE。例如「我要豬肉」沒有唯一品項時應交給 Main Agent；「我不要豬肉」若有不含豬肉推薦候選則選該候選。\nGREET：只向店員或本機打招呼，不改訂單。招呼加點餐仍選點餐意圖；對同伴的招呼選 IGNORE。\nINCOMPLETE 是明顯未完成的可點餐語句，例如「我要一份……」。完整語句的 target 歧義由程式澄清，不由你產生問題。IGNORE 是與點餐服務無關的背景話語、對同伴的招呼或閒聊，無論語句完整與否。\n依目前 phase 與有限候選判斷顧客明確要求的意圖；商品、數量、選項與付款狀態由程式驗證。不得因菜單上有招牌餐點而猜測顧客要點它。\n一句同時向店員／本機要求兩個以上獨立點餐服務操作時選 MULTI_ACTION，讓 Main Agent 處理整句，不能只完成其中一步。招呼不算獨立操作。只能選現有候選操作、GREET、INCOMPLETE、IGNORE、MULTI_ACTION 或 NEEDS_ASSISTANT。不得創造餐點、價格、庫存、付款、POS、掃碼或其他命令。\n價格詢問、單份價格篩選及由低到高排序使用查詢／推薦候選，不是新增訂購。價格條件由本句有限價格解讀決定，售價與符合品項由程式驗證。不猜價格、不分配整筆或多份預算、不放寬條件。\n服務界線（程式固定規則，優先於自訂提示與店家補充）：只處理向店員／本機提出的點餐服務需求，或依有效服務問題與真實 references 可理解的省略回答。畫面正在點餐、presence 或歷史對話本身不代表本句正在要求服務。\n無關話語即使有疑問、抱怨、比較或解釋語氣，仍選 IGNORE；對同伴的討論、工作閒聊或尚未說完的無關話語也選 IGNORE。不能把一般討論中的「有問題」當成要求本機解決問題。\nNEEDS_ASSISTANT 只表示有效的點餐服務需求超出有限候選，例如餐點比較、推薦原因或未提供的飲食資料；不是所有可回答的話。MULTI_ACTION 必須有兩個以上明確、獨立的點餐服務操作，不是句子有多個子句。INCOMPLETE 只適用於尚未說完的點餐服務需求。\n缺少品名、數量或唯一 target 不代表無關；「有沒有素食」「為什麼推薦這道菜」仍是服務需求。「好」「一位」「第二個」可依有效問題或真實 references 理解，不要求每句重述品名。有效新需求不用先回答舊問題；不得猜省略句的授權效果。",
+                  "criteria": {
+                    "INCOMPLETE": "顧客正在說一個可點餐操作但語句尚未完成；Kiosk 會安靜等待下一句，不能執行操作。",
+                    "GREET": "只向店員／本機打招呼，沒有提出點餐、查詢或其他需求。招呼加點餐必須選點餐意圖；對同伴打招呼屬 IGNORE。",
+                    "IGNORE": "與點餐服務無關的背景話語、對同伴的討論、招呼或閒聊，無論完整與否，以及對已完成資訊回答的單純附和；沒有向店員／本機提出服務需求。不能因有效需求的 target 不唯一或缺少資料就選 IGNORE。",
+                    "MULTI_ACTION": "顧客這一句向店員／本機明確要求兩個以上獨立的點餐服務操作；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。多個子句、一般討論或抱怨不等於多項操作。",
+                    "NEEDS_ASSISTANT": "向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。",
+                    "intent:return-menu": "回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。",
+                    "intent:search-menu": "查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。",
+                    "intent:select-item": "查看或編輯已解析的餐點，但不建立訂購項目。",
+                    "intent:add-item": "新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。"
+                  }
+                }
+              },
+              "answers": {
+                "route": {
+                  "type": "choice",
+                  "choice": "intent:add-item",
+                  "probabilities": {
+                    "INCOMPLETE": 0.0918,
+                    "GREET": 0.005,
+                    "IGNORE": 0.0067,
+                    "MULTI_ACTION": 0.0008,
+                    "NEEDS_ASSISTANT": 0.0029,
+                    "intent:return-menu": 0.0004,
+                    "intent:search-menu": 0.1849,
+                    "intent:select-item": 0.0008,
+                    "intent:add-item": 0.7066
+                  },
+                  "confidence": 0.6699
+                }
+              },
+              "durationMs": 4788.668208999996,
+              "status": "answered"
+            }
+          ],
+          "candidateIntents": [
+            {
+              "description": "回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。",
+              "id": "intent:return-menu",
+              "requiresHighConfidence": true
+            },
+            {
+              "description": "查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。",
+              "id": "intent:search-menu",
+              "requiresHighConfidence": false
+            },
+            {
+              "description": "查看或編輯已解析的餐點，但不建立訂購項目。",
+              "id": "intent:select-item",
+              "requiresHighConfidence": false
+            },
+            {
+              "description": "新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。",
+              "id": "intent:add-item",
+              "requiresHighConfidence": true
+            }
+          ],
+          "decisionState": "近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"exact\",\"count\":1,\"references\":[{\"label\":\"紅燒牛肉麵\",\"refId\":\"ITEM_1\"}]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[{\"label\":\"紅燒牛肉麵\",\"matchedText\":\"牛肉麵\",\"source\":\"alias\"}],\"categories\":[]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[{\"id\":\"beef\",\"label\":\"牛肉\"}]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：有牛肉麵嗎？",
+          "rawAnswer": {
+            "type": "choice",
+            "choice": "intent:add-item",
+            "probabilities": {
+              "INCOMPLETE": 0.0918,
+              "GREET": 0.005,
+              "IGNORE": 0.0067,
+              "MULTI_ACTION": 0.0008,
+              "NEEDS_ASSISTANT": 0.0029,
+              "intent:return-menu": 0.0004,
+              "intent:search-menu": 0.1849,
+              "intent:select-item": 0.0008,
+              "intent:add-item": 0.7066
+            },
+            "confidence": 0.6699
+          },
+          "transcript": "有牛肉麵嗎？"
+        },
+        "modelCalls": 1,
+        "modelQuestions": 1
+      },
+      "receipts": [
+        {
+          "name": "kiosk_fast_path_execute",
+          "input": {
+            "candidateId": "intent:add-item"
+          },
+          "result": {
+            "customerMessage": "請問紅燒牛肉麵要幾份？",
+            "pendingConfiguration": {
+              "id": "7139b44f-8cf1-492d-8252-955f302c8f4b"
+            },
+            "decisionTrace": {
+              "resolveIntent": {
+                "kind": "CONFIGURATION",
+                "plan": {
+                  "expectedRevisions": {
+                    "cart": 0,
+                    "selectedItem": 0,
+                    "menu": 0
+                  },
+                  "intent": "ADD_ITEM",
+                  "slots": {
+                    "itemId": "noodle"
+                  },
+                  "targetRef": "item:noodle"
+                },
+                "targetResolution": {
+                  "constraints": {
+                    "itemIds": [
+                      "noodle"
+                    ],
+                    "categories": [],
+                    "exclude": [],
+                    "include": []
+                  },
+                  "candidates": [
+                    "item:noodle"
+                  ],
+                  "eligible": [
+                    "item:noodle"
+                  ],
+                  "rejected": [],
+                  "origins": {
+                    "item:noodle": "utterance"
+                  }
+                }
+              },
+              "operationPlan": null,
+              "authorize": null
+            }
+          }
+        }
+      ],
+      "rounds": 1,
+      "wall_ms": 4790.775666000001,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    },
+    {
+      "type": "observation",
+      "id": "a03",
+      "family": "query",
+      "text": "有牛肉麵嗎？",
+      "mode": "proposal",
+      "before": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "after": {
+        "items": {},
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "state": {
+          "menuRevision": 0,
+          "questionHistory": [],
+          "productResolution": {
+            "status": "none",
+            "count": 0,
+            "references": []
+          },
+          "fulfillmentModes": [
+            {
+              "id": "dine-in",
+              "label": "內用"
+            },
+            {
+              "id": "takeout",
+              "label": "自取"
+            }
+          ],
+          "phase": "ordering",
+          "paymentState": "idle",
+          "allowedPaymentMethods": [],
+          "interactionState": {
+            "matchingCartLines": 0
+          }
+        },
+        "paymentAttempts": 0
+      },
+      "disposition": {
+        "parsed": {
+          "valid": true,
+          "proposal": {
+            "requirements": [
+              {
+                "source": "有牛肉麵嗎？",
+                "effect": "QUERY",
+                "targetRaw": "牛肉麵",
+                "replacementRaw": null,
+                "quantity": null,
+                "conditions": [],
+                "queryTopics": [
+                  "AVAILABILITY"
+                ],
+                "contextRequired": false,
+                "value": null
+              }
+            ],
+            "unresolved": [],
+            "summaryCount": null
+          }
+        },
+        "binding": {
+          "blocked": [],
+          "plan": [
+            {
+              "name": "menu_get",
+              "input": {
+                "query": "牛肉麵"
+              }
+            }
+          ],
+          "executed": true
+        }
+      },
+      "receipts": [
+        {
+          "name": "menu_get",
+          "input": {
+            "display": false
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "bento",
+                "name": "炸排骨便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 91,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "chicken",
+                "name": "椒麻雞便當",
+                "description": "人工合成，成分未知",
+                "category": "便當",
+                "price": 96,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "dumplings",
+                "name": "水餃",
+                "description": "人工合成，成分未知",
+                "category": "點心",
+                "price": 61,
+                "recommendationTags": [],
+                "optionGroups": []
+              },
+              {
+                "available": true,
+                "id": "tea",
+                "name": "紅茶",
+                "description": "人工合成，成分未知",
+                "category": "飲料",
+                "price": 21,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": []
+          }
+        },
+        {
+          "name": "menu_get",
+          "input": {
+            "query": "牛肉麵"
+          },
+          "result": {
+            "catalog": {
+              "isSimulated": true,
+              "sourceName": "周氏蝦捲公開產品資料",
+              "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+            },
+            "categories": [
+              "麵食",
+              "便當",
+              "點心",
+              "飲料"
+            ],
+            "ingredientDefinitions": [
+              {
+                "id": "pork",
+                "label": "豬肉",
+                "aliases": [
+                  "豬肉"
+                ]
+              },
+              {
+                "id": "beef",
+                "label": "牛肉",
+                "aliases": [
+                  "牛肉"
+                ]
+              },
+              {
+                "id": "chicken",
+                "label": "雞肉",
+                "aliases": [
+                  "雞肉"
+                ]
+              },
+              {
+                "id": "seafood",
+                "label": "海鮮",
+                "aliases": [
+                  "海鮮"
+                ]
+              },
+              {
+                "id": "shrimp",
+                "label": "蝦",
+                "aliases": [
+                  "蝦"
+                ]
+              },
+              {
+                "id": "fish",
+                "label": "魚",
+                "aliases": [
+                  "魚"
+                ]
+              },
+              {
+                "id": "egg",
+                "label": "蛋",
+                "aliases": [
+                  "雞蛋",
+                  "蛋"
+                ]
+              },
+              {
+                "id": "milk",
+                "label": "奶",
+                "aliases": [
+                  "牛奶",
+                  "奶"
+                ]
+              },
+              {
+                "id": "rice",
+                "label": "米飯",
+                "aliases": [
+                  "米飯"
+                ]
+              },
+              {
+                "id": "wheat",
+                "label": "麵粉",
+                "aliases": [
+                  "麵粉"
+                ]
+              },
+              {
+                "id": "vegetables",
+                "label": "青菜",
+                "aliases": [
+                  "青菜",
+                  "蔬菜"
+                ]
+              }
+            ],
+            "fulfillmentModes": [
+              {
+                "id": "dine-in",
+                "label": "內用"
+              },
+              {
+                "id": "takeout",
+                "label": "自取"
+              }
+            ],
+            "items": [
+              {
+                "available": true,
+                "id": "noodle",
+                "name": "紅燒牛肉麵",
+                "description": "人工合成，成分未知",
+                "category": "麵食",
+                "price": 101,
+                "recommendationTags": [],
+                "optionGroups": []
+              }
+            ],
+            "appliedFilters": {
+              "excludeIngredients": [],
+              "includeIngredients": []
+            },
+            "appliedPriceConditions": {},
+            "availability": "MATCHES",
+            "customizable": [],
+            "unknownCompositionItems": [],
+            "customerMessage": "我找到：紅燒牛肉麵。",
+            "presentation": {
+              "kind": "query-results",
+              "itemIds": [
+                "noodle"
+              ],
+              "subjects": [
+                {
+                  "id": "query:牛肉麵",
+                  "itemIds": [
+                    "noodle"
+                  ],
+                  "label": "牛肉麵"
+                }
+              ],
+              "title": "與「牛肉麵」相關的餐點"
+            }
+          }
+        }
+      ],
+      "rounds": 1,
+      "wall_ms": 48940.105625,
+      "assessment": {
+        "outcomeMatches": true,
+        "localHandoff": false,
+        "protocolComplete": true,
+        "toolErrors": 0,
+        "safetyOnly": false,
+        "completed": true,
+        "cartChanged": false,
+        "repeatedRecommendation": false
+      }
+    }
+  ],
+  "stoppedReason": "Scratch Main Agent route HTTP500",
+  "complete": false,
+  "measured": 8
+}

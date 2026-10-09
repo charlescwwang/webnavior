@@ -1,0 +1,1301 @@
+{
+  "scenario_sha256": "971bd9c212700dffbbd6ab2b7e5e49ddb404bce8318b1affae83f1ee5d73b45b",
+  "samples": 39,
+  "excluded_fixture_cases": [
+    {
+      "id": "r23",
+      "reason": "Identical items merged into one cart line; intended multi-line fixture was not established"
+    }
+  ],
+  "labels": "single-author expectations frozen before inference; challenge set, not production traffic",
+  "missing_expected_candidates": [
+    "r26"
+  ],
+  "baseline": {
+    "contract_match": 19,
+    "unsafe_cart_phase_or_party_write": 2,
+    "wrong_preparation": 2,
+    "abstained": 12,
+    "assistant_decision": 7,
+    "kinds": {
+      "NEEDS_ASSISTANT": 7,
+      "FAST_ACTION": 19,
+      "INCOMPLETE": 9,
+      "UNAVAILABLE": 4
+    },
+    "provider_failures": 0,
+    "model_calls": 54,
+    "semantic_latency_ms": {
+      "mean": 5307.422332205128,
+      "p50": 5021.1289169999945,
+      "p95": 7655.1573088999985
+    },
+    "full_replay_latency_ms": {
+      "mean": 5307.663587461538,
+      "p50": 5021.273000999994,
+      "p95": 7655.203504399996
+    }
+  },
+  "classifiers": {
+    "frozen": {
+      "total": 39,
+      "valid": 39,
+      "failure_ids": [],
+      "accuracy_valid_outputs": 0.717948717948718,
+      "accuracy_including_failures": 0.717948717948718,
+      "macro_f1": 0.7529761904761905,
+      "per_class": {
+        "DIRECT_ACTION": {
+          "precision": 0.6923076923076923,
+          "recall": 0.8181818181818182,
+          "f1": 0.7500000000000001,
+          "support": 11
+        },
+        "QUERY": {
+          "precision": 0.75,
+          "recall": 0.75,
+          "f1": 0.75,
+          "support": 8
+        },
+        "REFERENCE": {
+          "precision": 0.7142857142857143,
+          "recall": 0.7142857142857143,
+          "f1": 0.7142857142857143,
+          "support": 7
+        },
+        "MODIFICATION": {
+          "precision": 0.6666666666666666,
+          "recall": 0.6666666666666666,
+          "f1": 0.6666666666666666,
+          "support": 3
+        },
+        "CANCEL_OR_REVERT": {
+          "precision": 0.75,
+          "recall": 1.0,
+          "f1": 0.8571428571428571,
+          "support": 3
+        },
+        "CHAT": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "NOISE": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "UNCERTAIN": {
+          "precision": 0.5,
+          "recall": 0.2,
+          "f1": 0.28571428571428575,
+          "support": 5
+        }
+      },
+      "confusion_matrix": {
+        "DIRECT_ACTION": {
+          "DIRECT_ACTION": 9,
+          "QUERY": 0,
+          "REFERENCE": 2,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "QUERY": {
+          "DIRECT_ACTION": 1,
+          "QUERY": 6,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 1,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "REFERENCE": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 1,
+          "REFERENCE": 5,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 1,
+          "FAILURE": 0
+        },
+        "MODIFICATION": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 1,
+          "REFERENCE": 0,
+          "MODIFICATION": 2,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "CANCEL_OR_REVERT": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 3,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "CHAT": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 1,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "NOISE": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 1,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "UNCERTAIN": {
+          "DIRECT_ACTION": 3,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 1,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 1,
+          "FAILURE": 0
+        }
+      },
+      "latency_ms_valid_outputs": {
+        "mean": 8.25117197028027,
+        "p50": 8.145665982738137,
+        "p95": 9.178795490879565
+      },
+      "confidence_ece": 0.19170903673324843,
+      "reliability_bins": [
+        {
+          "range": [
+            0.0,
+            0.1
+          ],
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "range": [
+            0.1,
+            0.2
+          ],
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "range": [
+            0.2,
+            0.3
+          ],
+          "count": 1,
+          "mean_confidence": 0.2761056731880479,
+          "accuracy": 1.0
+        },
+        {
+          "range": [
+            0.3,
+            0.4
+          ],
+          "count": 7,
+          "mean_confidence": 0.35234239622071745,
+          "accuracy": 0.5714285714285714
+        },
+        {
+          "range": [
+            0.4,
+            0.5
+          ],
+          "count": 9,
+          "mean_confidence": 0.4282108362194367,
+          "accuracy": 0.7777777777777778
+        },
+        {
+          "range": [
+            0.5,
+            0.6
+          ],
+          "count": 3,
+          "mean_confidence": 0.5542573081297913,
+          "accuracy": 0.3333333333333333
+        },
+        {
+          "range": [
+            0.6,
+            0.7
+          ],
+          "count": 3,
+          "mean_confidence": 0.6274465061566235,
+          "accuracy": 0.6666666666666666
+        },
+        {
+          "range": [
+            0.7,
+            0.8
+          ],
+          "count": 5,
+          "mean_confidence": 0.7609621616995632,
+          "accuracy": 0.6
+        },
+        {
+          "range": [
+            0.8,
+            0.9
+          ],
+          "count": 5,
+          "mean_confidence": 0.8518689052885284,
+          "accuracy": 0.8
+        },
+        {
+          "range": [
+            0.9,
+            1.0
+          ],
+          "count": 6,
+          "mean_confidence": 0.9619225559258787,
+          "accuracy": 1.0
+        }
+      ],
+      "multiclass_brier": null,
+      "brier_valid_count": 0,
+      "posterior_sum_range": null
+    },
+    "setfit": {
+      "total": 39,
+      "valid": 39,
+      "failure_ids": [],
+      "accuracy_valid_outputs": 0.717948717948718,
+      "accuracy_including_failures": 0.717948717948718,
+      "macro_f1": 0.7427083333333333,
+      "per_class": {
+        "DIRECT_ACTION": {
+          "precision": 0.6923076923076923,
+          "recall": 0.8181818181818182,
+          "f1": 0.7500000000000001,
+          "support": 11
+        },
+        "QUERY": {
+          "precision": 0.875,
+          "recall": 0.875,
+          "f1": 0.875,
+          "support": 8
+        },
+        "REFERENCE": {
+          "precision": 0.625,
+          "recall": 0.7142857142857143,
+          "f1": 0.6666666666666666,
+          "support": 7
+        },
+        "MODIFICATION": {
+          "precision": 0.5,
+          "recall": 0.3333333333333333,
+          "f1": 0.4,
+          "support": 3
+        },
+        "CANCEL_OR_REVERT": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 3
+        },
+        "CHAT": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "NOISE": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "support": 1
+        },
+        "UNCERTAIN": {
+          "precision": 0.3333333333333333,
+          "recall": 0.2,
+          "f1": 0.25,
+          "support": 5
+        }
+      },
+      "confusion_matrix": {
+        "DIRECT_ACTION": {
+          "DIRECT_ACTION": 9,
+          "QUERY": 0,
+          "REFERENCE": 2,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "QUERY": {
+          "DIRECT_ACTION": 1,
+          "QUERY": 7,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "REFERENCE": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 5,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 2,
+          "FAILURE": 0
+        },
+        "MODIFICATION": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 1,
+          "REFERENCE": 1,
+          "MODIFICATION": 1,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "CANCEL_OR_REVERT": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 3,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "CHAT": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 1,
+          "NOISE": 0,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "NOISE": {
+          "DIRECT_ACTION": 0,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 0,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 1,
+          "UNCERTAIN": 0,
+          "FAILURE": 0
+        },
+        "UNCERTAIN": {
+          "DIRECT_ACTION": 3,
+          "QUERY": 0,
+          "REFERENCE": 0,
+          "MODIFICATION": 1,
+          "CANCEL_OR_REVERT": 0,
+          "CHAT": 0,
+          "NOISE": 0,
+          "UNCERTAIN": 1,
+          "FAILURE": 0
+        }
+      },
+      "latency_ms_valid_outputs": {
+        "mean": 8.551076974701854,
+        "p50": 8.206375001464039,
+        "p95": 9.753150312462822
+      },
+      "confidence_ece": 0.1768258293399814,
+      "reliability_bins": [
+        {
+          "range": [
+            0.0,
+            0.1
+          ],
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "range": [
+            0.1,
+            0.2
+          ],
+          "count": 0,
+          "mean_confidence": null,
+          "accuracy": null
+        },
+        {
+          "range": [
+            0.2,
+            0.3
+          ],
+          "count": 1,
+          "mean_confidence": 0.28915079137562477,
+          "accuracy": 0.0
+        },
+        {
+          "range": [
+            0.3,
+            0.4
+          ],
+          "count": 6,
+          "mean_confidence": 0.3513015059355926,
+          "accuracy": 0.6666666666666666
+        },
+        {
+          "range": [
+            0.4,
+            0.5
+          ],
+          "count": 9,
+          "mean_confidence": 0.4670797480877066,
+          "accuracy": 0.6666666666666666
+        },
+        {
+          "range": [
+            0.5,
+            0.6
+          ],
+          "count": 1,
+          "mean_confidence": 0.5914844169892881,
+          "accuracy": 0.0
+        },
+        {
+          "range": [
+            0.6,
+            0.7
+          ],
+          "count": 2,
+          "mean_confidence": 0.6426984088018306,
+          "accuracy": 1.0
+        },
+        {
+          "range": [
+            0.7,
+            0.8
+          ],
+          "count": 7,
+          "mean_confidence": 0.7440479098312457,
+          "accuracy": 0.5714285714285714
+        },
+        {
+          "range": [
+            0.8,
+            0.9
+          ],
+          "count": 6,
+          "mean_confidence": 0.8465360279044057,
+          "accuracy": 0.8333333333333334
+        },
+        {
+          "range": [
+            0.9,
+            1.0
+          ],
+          "count": 7,
+          "mean_confidence": 0.9535794020491738,
+          "accuracy": 1.0
+        }
+      ],
+      "multiclass_brier": null,
+      "brier_valid_count": 0,
+      "posterior_sum_range": null
+    }
+  },
+  "hybrid_projections": [
+    {
+      "mode": "frozen",
+      "threshold": 0.7,
+      "read_only_accepted": 2,
+      "accepted_ids": [
+        "r04",
+        "r16"
+      ],
+      "accepted_contract_matches": 2,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 4,
+      "other_jev": 33,
+      "total_jev_fallback": 37,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 20,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 11,
+        "assistant_decision": 6
+      },
+      "projected_latency_ms": {
+        "mean": 5044.667478431818,
+        "p50": 4933.073248972243,
+        "p95": 7662.951391597179
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "frozen",
+      "threshold": 0.8,
+      "read_only_accepted": 1,
+      "accepted_ids": [
+        "r16"
+      ],
+      "accepted_contract_matches": 1,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 3,
+      "other_jev": 35,
+      "total_jev_fallback": 38,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 20,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 11,
+        "assistant_decision": 6
+      },
+      "projected_latency_ms": {
+        "mean": 5184.198037201049,
+        "p50": 5028.442792992049,
+        "p95": 7662.951391597179
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "frozen",
+      "threshold": 0.9,
+      "read_only_accepted": 0,
+      "accepted_ids": [],
+      "accepted_contract_matches": 0,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 2,
+      "other_jev": 37,
+      "total_jev_fallback": 39,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 19,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 12,
+        "assistant_decision": 7
+      },
+      "projected_latency_ms": {
+        "mean": 5315.914759431818,
+        "p50": 5028.895791980089,
+        "p95": 7662.951391597179
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "frozen",
+      "threshold": 0.95,
+      "read_only_accepted": 0,
+      "accepted_ids": [],
+      "accepted_contract_matches": 0,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 2,
+      "other_jev": 37,
+      "total_jev_fallback": 39,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 19,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 12,
+        "assistant_decision": 7
+      },
+      "projected_latency_ms": {
+        "mean": 5315.914759431818,
+        "p50": 5028.895791980089,
+        "p95": 7662.951391597179
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "setfit",
+      "threshold": 0.7,
+      "read_only_accepted": 3,
+      "accepted_ids": [
+        "r03",
+        "r04",
+        "r16"
+      ],
+      "accepted_contract_matches": 3,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 4,
+      "other_jev": 32,
+      "total_jev_fallback": 36,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 20,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 11,
+        "assistant_decision": 6
+      },
+      "projected_latency_ms": {
+        "mean": 4852.048555436239,
+        "p50": 4911.108374014322,
+        "p95": 7663.225187503284
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "setfit",
+      "threshold": 0.8,
+      "read_only_accepted": 2,
+      "accepted_ids": [
+        "r04",
+        "r16"
+      ],
+      "accepted_contract_matches": 2,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 3,
+      "other_jev": 34,
+      "total_jev_fallback": 37,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 20,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 11,
+        "assistant_decision": 6
+      },
+      "projected_latency_ms": {
+        "mean": 5044.959212487522,
+        "p50": 4935.119833007513,
+        "p95": 7663.225187503284
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "setfit",
+      "threshold": 0.9,
+      "read_only_accepted": 0,
+      "accepted_ids": [],
+      "accepted_contract_matches": 0,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 2,
+      "other_jev": 37,
+      "total_jev_fallback": 39,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 19,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 12,
+        "assistant_decision": 7
+      },
+      "projected_latency_ms": {
+        "mean": 5316.21466443624,
+        "p50": 5030.826292980404,
+        "p95": 7663.225187503284
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    },
+    {
+      "mode": "setfit",
+      "threshold": 0.95,
+      "read_only_accepted": 0,
+      "accepted_ids": [],
+      "accepted_contract_matches": 0,
+      "accepted_unsafe_writes": 0,
+      "contextual_semantics": 2,
+      "other_jev": 37,
+      "total_jev_fallback": 39,
+      "mutation_bypass": 0,
+      "projected_outcomes": {
+        "contract_match": 19,
+        "unsafe_cart_phase_or_party_write": 2,
+        "wrong_preparation": 2,
+        "abstained": 12,
+        "assistant_decision": 7
+      },
+      "projected_latency_ms": {
+        "mean": 5316.21466443624,
+        "p50": 5030.826292980404,
+        "p95": 7663.225187503284
+      },
+      "semantics": "real local read-only probes; all other outcomes reuse the matched new finite-Jev baseline, not an oracle or a second hybrid live call"
+    }
+  ],
+  "cases": [
+    {
+      "id": "r01",
+      "transcript": "這家有賣牛肉麵嗎",
+      "setup": "empty",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": "UNCERTAIN_FILTER",
+      "resolution": null
+    },
+    {
+      "id": "r02",
+      "transcript": "你們水餃一盤多少錢呀",
+      "setup": "fulfillment",
+      "expected": "intent:search-menu",
+      "actual": "intent:search-menu",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r03",
+      "transcript": "排骨便當還有嗎",
+      "setup": "pickup",
+      "expected": "intent:search-menu",
+      "actual": "intent:search-menu",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r04",
+      "transcript": "便當類能看一下嗎",
+      "setup": "selected",
+      "expected": "intent:search-menu",
+      "actual": "intent:search-menu",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r05",
+      "transcript": "我比較想吃麵耶",
+      "setup": "fulfillment",
+      "expected": "intent:search-menu",
+      "actual": "intent:search-menu",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r06",
+      "transcript": "我想吃麵，先來一碗吧",
+      "setup": "fulfillment",
+      "expected": "intent:add-item",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": "UNCERTAIN_FILTER",
+      "resolution": null
+    },
+    {
+      "id": "r07",
+      "transcript": "炸排骨便當幫我點一份",
+      "setup": "empty",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r08",
+      "transcript": "給我兩份排骨便當謝謝",
+      "setup": "pickup",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r09",
+      "transcript": "我要便當，兩份就好",
+      "setup": "empty",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "CLARIFICATION"
+    },
+    {
+      "id": "r10",
+      "transcript": "幫我打開牛肉麵看看",
+      "setup": "fulfillment",
+      "expected": "intent:select-item",
+      "actual": "intent:add-item",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": true,
+      "wrong_preparation": true,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "CONFIGURATION"
+    },
+    {
+      "id": "r11",
+      "transcript": "給我看看剛剛點的清單",
+      "setup": "pickup",
+      "expected": "intent:view-cart",
+      "actual": "intent:view-cart",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r12",
+      "transcript": "請幫我開始結帳吧",
+      "setup": "pickup",
+      "expected": "intent:start-checkout",
+      "actual": "intent:start-checkout",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r13",
+      "transcript": "你幫我挑三樣適合吃的吧",
+      "setup": "empty",
+      "expected": "intent:recommend",
+      "actual": "intent:recommend",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r14",
+      "transcript": "全部有賣哪些餐點呢",
+      "setup": "empty",
+      "expected": "intent:search-menu",
+      "actual": "intent:search-menu",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r15",
+      "transcript": "有沒有不含肉的素食餐點呢",
+      "setup": "pickup",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r16",
+      "transcript": "水餃裡面會加花生嗎",
+      "setup": "fulfillment",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r17",
+      "transcript": "請給我三份月球飯",
+      "setup": "empty",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "intent:search-menu",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r18",
+      "transcript": "那第三個我要一份",
+      "setup": "recommendations",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "CLARIFICATION"
+    },
+    {
+      "id": "r19",
+      "transcript": "我就要那個好了",
+      "setup": "empty",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r20",
+      "transcript": "剛才那份改三份好了",
+      "setup": "single",
+      "expected": "intent:set-quantity",
+      "actual": "UNAVAILABLE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r21",
+      "transcript": "水餃的數量改成三份",
+      "setup": "fulfillment",
+      "expected": "intent:set-quantity",
+      "actual": "intent:set-quantity",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r22",
+      "transcript": "排骨便當那份不要了謝謝",
+      "setup": "fulfillment",
+      "expected": "intent:remove-item",
+      "actual": "intent:remove-item",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r24",
+      "transcript": "原本那樣就好，不改了",
+      "setup": "selected",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r25",
+      "transcript": "內用一位喔",
+      "setup": "party",
+      "expected": "intent:set-party-size",
+      "actual": "intent:set-party-size",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "PLAN"
+    },
+    {
+      "id": "r26",
+      "transcript": "總共一個人而已",
+      "setup": "partyIdle",
+      "expected": "intent:set-party-size",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r27",
+      "transcript": "就在這裡吃喔",
+      "setup": "party",
+      "expected": "intent:set-fulfillment:dine-in",
+      "actual": "UNAVAILABLE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": false,
+      "reason": "UNCERTAIN_OPERATION",
+      "resolution": null
+    },
+    {
+      "id": "r28",
+      "transcript": "只有一位",
+      "setup": "empty",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r29",
+      "transcript": "嗯，好喔",
+      "setup": "pickup",
+      "expected": "intent:start-checkout",
+      "actual": "UNAVAILABLE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": false,
+      "reason": "UNCERTAIN_OPERATION",
+      "resolution": null
+    },
+    {
+      "id": "r30",
+      "transcript": "嗯，好喔",
+      "setup": "empty",
+      "expected": "IGNORE",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r31",
+      "transcript": "先別結帳喔",
+      "setup": "pickup",
+      "expected": "intent:defer-question",
+      "actual": "UNAVAILABLE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": false,
+      "reason": "UNCERTAIN_OPERATION",
+      "resolution": null
+    },
+    {
+      "id": "r32",
+      "transcript": "牛肉麵多少錢，然後幫我多點水餃一份",
+      "setup": "pickup",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "intent:add-item",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": true,
+      "wrong_preparation": true,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "CLARIFICATION"
+    },
+    {
+      "id": "r33",
+      "transcript": "幫我點牛肉麵再把水餃刪掉",
+      "setup": "fulfillment",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r34",
+      "transcript": "人數改三位，紅茶也改兩杯",
+      "setup": "party",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r35",
+      "transcript": "我想要一份牛……不對等一下",
+      "setup": "empty",
+      "expected": "INCOMPLETE",
+      "actual": "INCOMPLETE",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r36",
+      "transcript": "老王你先坐，我今天累壞了",
+      "setup": "pickup",
+      "expected": "IGNORE",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r37",
+      "transcript": "（椅子摩擦聲）",
+      "setup": "party",
+      "expected": "IGNORE",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r38",
+      "transcript": "微辣就好了喔",
+      "setup": "selected",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "INCOMPLETE",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": false,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": null
+    },
+    {
+      "id": "r39",
+      "transcript": "紅茶不要辣喔",
+      "setup": "single",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "intent:set-option",
+      "contract_match": false,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": false,
+      "reason": null,
+      "resolution": "NEEDS_ASSISTANT"
+    },
+    {
+      "id": "r40",
+      "transcript": "牛肉麵來兩碗，結帳也一起弄",
+      "setup": "pickup",
+      "expected": "NEEDS_ASSISTANT",
+      "actual": "NEEDS_ASSISTANT",
+      "contract_match": true,
+      "unsafe_cart_phase_or_party_write": false,
+      "wrong_preparation": false,
+      "abstained": true,
+      "assistant_decision": true,
+      "reason": "NEW_REQUEST",
+      "resolution": null
+    }
+  ]
+}

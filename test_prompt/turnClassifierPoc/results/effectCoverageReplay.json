@@ -1,0 +1,2361 @@
+{
+  "scenario_sha256": "55f87340793c6ba4a76aa60c8c60a55c5ac885ecc918112042e22aa7f2ea3b76",
+  "threshold": 0.6,
+  "endpoint": "https://openjev.aikcitri.qzz.io",
+  "design": "deliberately injected effect hypotheses, advisory coverage check, zero execution",
+  "observations": [
+    {
+      "id": "c01",
+      "candidateId": "intent:search-menu",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9793,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9827,
+            "WRONG_EFFECT": 0.0086,
+            "MULTIPLE_REQUESTS": 0.002,
+            "UNSUPPORTED_REQUEST": 0.0009,
+            "UNRESOLVED_REFERENCE": 0.0004,
+            "UNCERTAIN": 0.0054
+          },
+          "confidence": 0.9793
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "水餃"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃一份賣多少呢\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"水餃\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5379.2017909999995,
+      "calls": [
+        {
+          "durationMs": 5379.1176669999995,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c02",
+      "candidateId": "intent:add-item",
+      "expected": "WRONG_EFFECT",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9679,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9732,
+            "WRONG_EFFECT": 0.0086,
+            "MULTIPLE_REQUESTS": 0.0022,
+            "UNSUPPORTED_REQUEST": 0.0034,
+            "UNRESOLVED_REFERENCE": 0.0008,
+            "UNCERTAIN": 0.0118
+          },
+          "confidence": 0.9679
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 0,
+              "selectedItem": 0,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃一份賣多少呢\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":0,\"selectedItem\":0,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"dumplings\",\"quantity\":1},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4639.700792000001,
+      "calls": [
+        {
+          "durationMs": 4639.491709,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c03",
+      "candidateId": "intent:select-item",
+      "expected": "COVERED",
+      "result": {
+        "kind": "REFER",
+        "reason": "WRONG_EFFECT",
+        "confidence": 0.4632,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "WRONG_EFFECT",
+          "probabilities": {
+            "COVERED": 0.3175,
+            "WRONG_EFFECT": 0.5526,
+            "MULTIPLE_REQUESTS": 0.005,
+            "UNSUPPORTED_REQUEST": 0.0116,
+            "UNRESOLVED_REFERENCE": 0.0068,
+            "UNCERTAIN": 0.1064
+          },
+          "confidence": 0.4632
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "SELECT_ITEM",
+            "slots": {
+              "itemId": "bento"
+            },
+            "targetRef": "item:bento"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "bento"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:bento"
+            ],
+            "eligible": [
+              "item:bento"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:bento": "utterance",
+              "cart:line-df16f617-1e99-4c00-9b81-db2b3d50bc4a": "cart",
+              "cart:line-127f688a-93d0-47a8-ac9f-e492cf4f140b": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"請讓我看一下排骨便當\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304934259},\"hypothesis\":{\"id\":\"intent:select-item\",\"effect\":\"SELECT_ITEM\",\"description\":\"查看或編輯已解析的餐點，但不建立訂購項目。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"selectedItem\":4,\"menu\":0},\"intent\":\"SELECT_ITEM\",\"slots\":{\"itemId\":\"bento\"},\"targetRef\":\"item:bento\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"bento\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:bento\"],\"eligible\":[\"item:bento\"],\"rejected\":[],\"origins\":{\"item:bento\":\"utterance\",\"cart:line-df16f617-1e99-4c00-9b81-db2b3d50bc4a\":\"cart\",\"cart:line-127f688a-93d0-47a8-ac9f-e492cf4f140b\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-df16f617-1e99-4c00-9b81-db2b3d50bc4a\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-127f688a-93d0-47a8-ac9f-e492cf4f140b\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5129.255959,
+      "calls": [
+        {
+          "durationMs": 5129.0688340000015,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c04",
+      "candidateId": "intent:add-item",
+      "expected": "WRONG_EFFECT",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.8792,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.8993,
+            "WRONG_EFFECT": 0.0429,
+            "MULTIPLE_REQUESTS": 0.0065,
+            "UNSUPPORTED_REQUEST": 0.0149,
+            "UNRESOLVED_REFERENCE": 0.0035,
+            "UNCERTAIN": 0.0329
+          },
+          "confidence": 0.8792
+        },
+        "resolution": {
+          "kind": "CONFIGURATION",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 2,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "bento"
+            },
+            "targetRef": "item:bento"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "bento"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:bento"
+            ],
+            "eligible": [
+              "item:bento"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:bento": "utterance",
+              "cart:line-3875574a-ab79-43c8-94b0-00ef5d7f2189": "cart",
+              "cart:line-de885d32-d522-43b8-9d8a-67bc28cf9edc": "cart"
+            }
+          }
+        },
+        "state": "{\"utterance\":\"請讓我看一下排骨便當\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304939390},\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"CONFIGURATION\",\"plan\":{\"expectedRevisions\":{\"cart\":2,\"selectedItem\":4,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"bento\"},\"targetRef\":\"item:bento\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"bento\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:bento\"],\"eligible\":[\"item:bento\"],\"rejected\":[],\"origins\":{\"item:bento\":\"utterance\",\"cart:line-3875574a-ab79-43c8-94b0-00ef5d7f2189\":\"cart\",\"cart:line-de885d32-d522-43b8-9d8a-67bc28cf9edc\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-3875574a-ab79-43c8-94b0-00ef5d7f2189\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-de885d32-d522-43b8-9d8a-67bc28cf9edc\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 7124.898917,
+      "calls": [
+        {
+          "durationMs": 7124.726500000001,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c05",
+      "candidateId": "intent:add-item",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9958,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9965,
+            "WRONG_EFFECT": 0.0012,
+            "MULTIPLE_REQUESTS": 0.0001,
+            "UNSUPPORTED_REQUEST": 0.0001,
+            "UNRESOLVED_REFERENCE": 0.0002,
+            "UNCERTAIN": 0.0019
+          },
+          "confidence": 0.9958
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 0,
+              "selectedItem": 0,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "bento",
+              "quantity": 3
+            },
+            "targetRef": "item:bento"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "bento"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:bento"
+            ],
+            "eligible": [
+              "item:bento"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:bento": "utterance"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"排骨便當給我來三份喔\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":0,\"selectedItem\":0,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"bento\",\"quantity\":3},\"targetRef\":\"item:bento\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"bento\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:bento\"],\"eligible\":[\"item:bento\"],\"rejected\":[],\"origins\":{\"item:bento\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 3704.9660829999993,
+      "calls": [
+        {
+          "durationMs": 3704.7780840000014,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c06",
+      "candidateId": "intent:search-menu",
+      "expected": "WRONG_EFFECT",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9387,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9489,
+            "WRONG_EFFECT": 0.0244,
+            "MULTIPLE_REQUESTS": 0.0016,
+            "UNSUPPORTED_REQUEST": 0.0017,
+            "UNRESOLVED_REFERENCE": 0.002,
+            "UNCERTAIN": 0.0214
+          },
+          "confidence": 0.9387
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "炸排骨便當"
+            },
+            "targetRef": "item:bento"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "bento"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:bento"
+            ],
+            "eligible": [
+              "item:bento"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:bento": "utterance"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"排骨便當給我來三份喔\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"炸排骨便當\"},\"targetRef\":\"item:bento\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"bento\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:bento\"],\"eligible\":[\"item:bento\"],\"rejected\":[],\"origins\":{\"item:bento\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4846.324875000002,
+      "calls": [
+        {
+          "durationMs": 4846.168249999999,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c07",
+      "candidateId": "intent:add-item",
+      "expected": "MULTIPLE_REQUESTS",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9607,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9673,
+            "WRONG_EFFECT": 0.0124,
+            "MULTIPLE_REQUESTS": 0.0007,
+            "UNSUPPORTED_REQUEST": 0.0004,
+            "UNRESOLVED_REFERENCE": 0.0014,
+            "UNCERTAIN": 0.0179
+          },
+          "confidence": 0.9607
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-d79b916b-60fa-4a69-a3ed-995cc0aa1560": "cart",
+              "cart:line-65c89de8-c580-464d-85ca-110d4d8bfd47": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"先點一份水餃再幫我結帳\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"要進入結帳流程嗎？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"checkout-entry\",\"phase\":\"ordering\",\"question\":\"要進入結帳流程嗎？\",\"choices\":[{\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\",\"id\":\"intent:start-checkout\",\"intent\":\"START_CHECKOUT\"}],\"expectedRevisions\":{\"cart\":3,\"checkout\":0},\"expiresAt\":1791304955069},\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3,\"selectedItem\":4,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"dumplings\",\"quantity\":1},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-d79b916b-60fa-4a69-a3ed-995cc0aa1560\":\"cart\",\"cart:line-65c89de8-c580-464d-85ca-110d4d8bfd47\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"takeout\",\"lines\":[{\"id\":\"line-d79b916b-60fa-4a69-a3ed-995cc0aa1560\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-65c89de8-c580-464d-85ca-110d4d8bfd47\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5559.371916999997,
+      "calls": [
+        {
+          "durationMs": 5559.196041999996,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c08",
+      "candidateId": "intent:start-checkout",
+      "expected": "MULTIPLE_REQUESTS",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9783,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.982,
+            "WRONG_EFFECT": 0.0065,
+            "MULTIPLE_REQUESTS": 0.0003,
+            "UNSUPPORTED_REQUEST": 0.0002,
+            "UNRESOLVED_REFERENCE": 0.0004,
+            "UNCERTAIN": 0.0107
+          },
+          "confidence": 0.9783
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "checkout": 0,
+              "seating": 0
+            },
+            "intent": "START_CHECKOUT",
+            "slots": {},
+            "questionId": "synthetic-question"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-a8d57907-10e9-4f97-a67b-465e9e0efe7d": "cart",
+              "cart:line-496a6a28-a1e3-42d9-b9ff-8291dbf7d8af": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"先點一份水餃再幫我結帳\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"要進入結帳流程嗎？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"checkout-entry\",\"phase\":\"ordering\",\"question\":\"要進入結帳流程嗎？\",\"choices\":[{\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\",\"id\":\"intent:start-checkout\",\"intent\":\"START_CHECKOUT\"}],\"expectedRevisions\":{\"cart\":3,\"checkout\":0},\"expiresAt\":1791304960629},\"hypothesis\":{\"id\":\"intent:start-checkout\",\"effect\":\"START_CHECKOUT\",\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"intent\":\"START_CHECKOUT\",\"slots\":{},\"questionId\":\"synthetic-question\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-a8d57907-10e9-4f97-a67b-465e9e0efe7d\":\"cart\",\"cart:line-496a6a28-a1e3-42d9-b9ff-8291dbf7d8af\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"takeout\",\"lines\":[{\"id\":\"line-a8d57907-10e9-4f97-a67b-465e9e0efe7d\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-496a6a28-a1e3-42d9-b9ff-8291dbf7d8af\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 6018.515417000002,
+      "calls": [
+        {
+          "durationMs": 6018.339458000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c09",
+      "candidateId": "intent:add-item",
+      "expected": "MULTIPLE_REQUESTS",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.7234,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.7695,
+            "WRONG_EFFECT": 0.0248,
+            "MULTIPLE_REQUESTS": 0.1121,
+            "UNSUPPORTED_REQUEST": 0.0226,
+            "UNRESOLVED_REFERENCE": 0.0047,
+            "UNCERTAIN": 0.0663
+          },
+          "confidence": 0.7234
+        },
+        "resolution": {
+          "candidateRefs": [
+            "item:noodle",
+            "item:dumplings"
+          ],
+          "intent": "ADD_ITEM",
+          "kind": "CLARIFICATION",
+          "prompt": "您指的是紅燒牛肉麵、水餃？",
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "noodle",
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:noodle",
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:noodle",
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:noodle": "utterance",
+              "item:dumplings": "utterance",
+              "cart:line-c8145b48-519d-42ca-b78a-8a79657d7a93": "cart",
+              "cart:line-afbb8065-d1f5-4bb7-ae29-2fceb3e6b2b6": "cart"
+            }
+          }
+        },
+        "state": "{\"utterance\":\"先問牛肉麵價錢，另外水餃給我一份\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304966649},\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"candidateRefs\":[\"item:noodle\",\"item:dumplings\"],\"intent\":\"ADD_ITEM\",\"kind\":\"CLARIFICATION\",\"prompt\":\"您指的是紅燒牛肉麵、水餃？\",\"targetResolution\":{\"constraints\":{\"itemIds\":[\"noodle\",\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:noodle\",\"item:dumplings\"],\"eligible\":[\"item:noodle\",\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:noodle\":\"utterance\",\"item:dumplings\":\"utterance\",\"cart:line-c8145b48-519d-42ca-b78a-8a79657d7a93\":\"cart\",\"cart:line-afbb8065-d1f5-4bb7-ae29-2fceb3e6b2b6\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-c8145b48-519d-42ca-b78a-8a79657d7a93\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-afbb8065-d1f5-4bb7-ae29-2fceb3e6b2b6\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5957.624583000004,
+      "calls": [
+        {
+          "durationMs": 5957.380917000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c10",
+      "candidateId": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "result": {
+        "kind": "REFER",
+        "reason": "UNSUPPORTED_REQUEST",
+        "confidence": 0.8981,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "UNSUPPORTED_REQUEST",
+          "probabilities": {
+            "COVERED": 0.0637,
+            "WRONG_EFFECT": 0.0114,
+            "MULTIPLE_REQUESTS": 0.0007,
+            "UNSUPPORTED_REQUEST": 0.9151,
+            "UNRESOLVED_REFERENCE": 0.0005,
+            "UNCERTAIN": 0.0087
+          },
+          "confidence": 0.8981
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "水餃"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-708f785b-82c1-44cd-bdd2-bd748eeaf0c0": "cart",
+              "cart:line-110047d5-ef4b-414c-94b7-34f121eab362": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃裡頭有加芝麻嗎\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304972607},\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"水餃\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-708f785b-82c1-44cd-bdd2-bd748eeaf0c0\":\"cart\",\"cart:line-110047d5-ef4b-414c-94b7-34f121eab362\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-708f785b-82c1-44cd-bdd2-bd748eeaf0c0\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-110047d5-ef4b-414c-94b7-34f121eab362\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 6269.055499999995,
+      "calls": [
+        {
+          "durationMs": 6268.914291999994,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c11",
+      "candidateId": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "result": {
+        "kind": "REFER",
+        "reason": "UNSUPPORTED_REQUEST",
+        "confidence": 0.9326,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "UNSUPPORTED_REQUEST",
+          "probabilities": {
+            "COVERED": 0.0402,
+            "WRONG_EFFECT": 0.0092,
+            "MULTIPLE_REQUESTS": 0.0004,
+            "UNSUPPORTED_REQUEST": 0.9438,
+            "UNRESOLVED_REFERENCE": 0.0003,
+            "UNCERTAIN": 0.0061
+          },
+          "confidence": 0.9326
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "水餃"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-40a99c06-9a2c-4dcb-a498-8a06b1e627f7": "cart",
+              "cart:line-5eb4d8c2-6231-4211-b0a9-4e32a98a94a1": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃的醬裡有花生嗎\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304978877},\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"水餃\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-40a99c06-9a2c-4dcb-a498-8a06b1e627f7\":\"cart\",\"cart:line-5eb4d8c2-6231-4211-b0a9-4e32a98a94a1\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-40a99c06-9a2c-4dcb-a498-8a06b1e627f7\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-5eb4d8c2-6231-4211-b0a9-4e32a98a94a1\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5447.400957999998,
+      "calls": [
+        {
+          "durationMs": 5447.269500000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c12",
+      "candidateId": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "result": {
+        "kind": "REFER",
+        "reason": "UNSUPPORTED_REQUEST",
+        "confidence": 0.9429,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "UNSUPPORTED_REQUEST",
+          "probabilities": {
+            "COVERED": 0.0385,
+            "WRONG_EFFECT": 0.0065,
+            "MULTIPLE_REQUESTS": 0.0003,
+            "UNSUPPORTED_REQUEST": 0.9524,
+            "UNRESOLVED_REFERENCE": 0.0002,
+            "UNCERTAIN": 0.0021
+          },
+          "confidence": 0.9429
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "水餃"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-29fff859-8bdf-4b3c-8ffe-5cc9d8388ccb": "cart",
+              "cart:line-fbcd7844-c9a9-4d69-8707-53645ceea715": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"這種水餃的餡會不會很辣呀\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304984326},\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"水餃\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-29fff859-8bdf-4b3c-8ffe-5cc9d8388ccb\":\"cart\",\"cart:line-fbcd7844-c9a9-4d69-8707-53645ceea715\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-29fff859-8bdf-4b3c-8ffe-5cc9d8388ccb\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-fbcd7844-c9a9-4d69-8707-53645ceea715\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 6775.186541000003,
+      "calls": [
+        {
+          "durationMs": 6775.058040999997,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c13",
+      "candidateId": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "result": {
+        "kind": "REFER",
+        "reason": "UNSUPPORTED_REQUEST",
+        "confidence": 0.8186,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "UNSUPPORTED_REQUEST",
+          "probabilities": {
+            "COVERED": 0.0905,
+            "WRONG_EFFECT": 0.0285,
+            "MULTIPLE_REQUESTS": 0.0017,
+            "UNSUPPORTED_REQUEST": 0.8488,
+            "UNRESOLVED_REFERENCE": 0.0011,
+            "UNCERTAIN": 0.0294
+          },
+          "confidence": 0.8186
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "紅燒牛肉麵"
+            },
+            "targetRef": "item:noodle"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "noodle"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:noodle"
+            ],
+            "eligible": [
+              "item:noodle"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:noodle": "utterance"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"牛肉麵大約幾大卡呢\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"紅燒牛肉麵\"},\"targetRef\":\"item:noodle\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"noodle\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:noodle\"],\"eligible\":[\"item:noodle\"],\"rejected\":[],\"origins\":{\"item:noodle\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4030.1849169999914,
+      "calls": [
+        {
+          "durationMs": 4030.0374169999996,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c14",
+      "candidateId": "intent:search-menu",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9224,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9354,
+            "WRONG_EFFECT": 0.034,
+            "MULTIPLE_REQUESTS": 0.0057,
+            "UNSUPPORTED_REQUEST": 0.0012,
+            "UNRESOLVED_REFERENCE": 0.0009,
+            "UNCERTAIN": 0.0229
+          },
+          "confidence": 0.9224
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "category": "麵"
+            },
+            "targetRef": "category:%E9%BA%B5"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [
+                "麵"
+              ],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "category:%E9%BA%B5"
+            ],
+            "eligible": [
+              "category:%E9%BA%B5"
+            ],
+            "rejected": [],
+            "origins": {
+              "category:%E9%BA%B5": "category",
+              "item:noodle": "category",
+              "cart:line-8d349d04-2e42-4a89-8fc6-ca9c091f12f7": "cart",
+              "cart:line-a63b8335-d01b-47a2-a472-7b14fdefe495": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"你們有哪些麵食可以看呢\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791304995133},\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"category\":\"麵\"},\"targetRef\":\"category:%E9%BA%B5\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[\"麵\"],\"exclude\":[],\"include\":[]},\"candidates\":[\"category:%E9%BA%B5\"],\"eligible\":[\"category:%E9%BA%B5\"],\"rejected\":[],\"origins\":{\"category:%E9%BA%B5\":\"category\",\"item:noodle\":\"category\",\"cart:line-8d349d04-2e42-4a89-8fc6-ca9c091f12f7\":\"cart\",\"cart:line-a63b8335-d01b-47a2-a472-7b14fdefe495\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-8d349d04-2e42-4a89-8fc6-ca9c091f12f7\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-a63b8335-d01b-47a2-a472-7b14fdefe495\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 6897.465583000012,
+      "calls": [
+        {
+          "durationMs": 6897.319375000006,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c15",
+      "candidateId": "intent:add-item",
+      "expected": "MISSING_EFFECT",
+      "result": {
+        "kind": "REFER",
+        "reason": "MISSING_EFFECT"
+      },
+      "durationMs": 0.017666999992798083,
+      "calls": [],
+      "changedCart": false
+    },
+    {
+      "id": "c16",
+      "candidateId": "intent:add-item",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9698,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9748,
+            "WRONG_EFFECT": 0.0081,
+            "MULTIPLE_REQUESTS": 0.0008,
+            "UNSUPPORTED_REQUEST": 0.0007,
+            "UNRESOLVED_REFERENCE": 0.0028,
+            "UNCERTAIN": 0.0127
+          },
+          "confidence": 0.9698
+        },
+        "resolution": {
+          "candidateRefs": [
+            "item:bento",
+            "item:chicken"
+          ],
+          "intent": "ADD_ITEM",
+          "kind": "CLARIFICATION",
+          "prompt": "您指的是炸排骨便當、椒麻雞便當？",
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [
+                "便當"
+              ],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:bento",
+              "item:chicken"
+            ],
+            "eligible": [
+              "item:bento",
+              "item:chicken"
+            ],
+            "rejected": [],
+            "origins": {
+              "category:%E4%BE%BF%E7%95%B6": "category",
+              "item:bento": "category",
+              "item:chicken": "category"
+            }
+          }
+        },
+        "state": "{\"utterance\":\"我想選便當吃，來兩份\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"candidateRefs\":[\"item:bento\",\"item:chicken\"],\"intent\":\"ADD_ITEM\",\"kind\":\"CLARIFICATION\",\"prompt\":\"您指的是炸排骨便當、椒麻雞便當？\",\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[\"便當\"],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:bento\",\"item:chicken\"],\"eligible\":[\"item:bento\",\"item:chicken\"],\"rejected\":[],\"origins\":{\"category:%E4%BE%BF%E7%95%B6\":\"category\",\"item:bento\":\"category\",\"item:chicken\":\"category\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4061.2847499999916,
+      "calls": [
+        {
+          "durationMs": 4061.18045900001,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c17",
+      "candidateId": "intent:add-item",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9903,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9919,
+            "WRONG_EFFECT": 0.0031,
+            "MULTIPLE_REQUESTS": 0.0002,
+            "UNSUPPORTED_REQUEST": 0.0002,
+            "UNRESOLVED_REFERENCE": 0.0003,
+            "UNCERTAIN": 0.0042
+          },
+          "confidence": 0.9903
+        },
+        "resolution": {
+          "kind": "CONFIGURATION",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 0,
+              "selectedItem": 0,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance"
+            }
+          }
+        },
+        "state": "{\"utterance\":\"那就幫我點水餃吧\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"CONFIGURATION\",\"plan\":{\"expectedRevisions\":{\"cart\":0,\"selectedItem\":0,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"dumplings\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4445.170125000004,
+      "calls": [
+        {
+          "durationMs": 4444.806417,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c18",
+      "candidateId": "intent:add-item",
+      "expected": "UNCERTAIN",
+      "result": {
+        "kind": "REFER",
+        "reason": "UNCERTAIN",
+        "confidence": 0.6603,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "UNCERTAIN",
+          "probabilities": {
+            "COVERED": 0.2623,
+            "WRONG_EFFECT": 0.0195,
+            "MULTIPLE_REQUESTS": 0.0004,
+            "UNSUPPORTED_REQUEST": 0.0003,
+            "UNRESOLVED_REFERENCE": 0.0006,
+            "UNCERTAIN": 0.7169
+          },
+          "confidence": 0.6603
+        },
+        "resolution": {
+          "kind": "CONFIGURATION",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 0,
+              "selectedItem": 0,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance"
+            }
+          }
+        },
+        "state": "{\"utterance\":\"我想要水餃……先等一下還沒想好\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"CONFIGURATION\",\"plan\":{\"expectedRevisions\":{\"cart\":0,\"selectedItem\":0,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"dumplings\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4403.634249999988,
+      "calls": [
+        {
+          "durationMs": 4403.46875,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c19",
+      "candidateId": "intent:set-quantity",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9597,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9665,
+            "WRONG_EFFECT": 0.0175,
+            "MULTIPLE_REQUESTS": 0.0013,
+            "UNSUPPORTED_REQUEST": 0.001,
+            "UNRESOLVED_REFERENCE": 0.0041,
+            "UNCERTAIN": 0.0097
+          },
+          "confidence": 0.9597
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 2
+            },
+            "intent": "SET_QUANTITY",
+            "slots": {
+              "quantity": 4
+            },
+            "targetRef": "cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4"
+            ],
+            "eligible": [
+              "cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4": "cart",
+              "cart:line-e4222208-0d36-4c25-9b3b-e5a412d0ebc9": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃幫我改四份吧\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791305014945},\"hypothesis\":{\"id\":\"intent:set-quantity\",\"effect\":\"SET_QUANTITY\",\"description\":\"修改已選或購物車現有餐點數量，不新增品項。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":2},\"intent\":\"SET_QUANTITY\",\"slots\":{\"quantity\":4},\"targetRef\":\"cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4\"],\"eligible\":[\"cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-5dc2f564-dca1-4654-b5df-1c208823bfc4\":\"cart\",\"cart:line-e4222208-0d36-4c25-9b3b-e5a412d0ebc9\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-5dc2f564-dca1-4654-b5df-1c208823bfc4\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-e4222208-0d36-4c25-9b3b-e5a412d0ebc9\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 6150.301582999993,
+      "calls": [
+        {
+          "durationMs": 6150.073208000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c20",
+      "candidateId": "intent:add-item",
+      "expected": "WRONG_EFFECT",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9824,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9854,
+            "WRONG_EFFECT": 0.0067,
+            "MULTIPLE_REQUESTS": 0.0007,
+            "UNSUPPORTED_REQUEST": 0.0004,
+            "UNRESOLVED_REFERENCE": 0.001,
+            "UNCERTAIN": 0.0059
+          },
+          "confidence": 0.9824
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 2,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 4
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-e504ad1c-aaa4-4d9f-9b0e-d4561c6e87db": "cart",
+              "cart:line-101f2628-8ba5-4a18-bd7f-941dd4054d55": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃幫我改四份吧\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791305021096},\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":2,\"selectedItem\":4,\"menu\":0},\"intent\":\"ADD_ITEM\",\"slots\":{\"itemId\":\"dumplings\",\"quantity\":4},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-e504ad1c-aaa4-4d9f-9b0e-d4561c6e87db\":\"cart\",\"cart:line-101f2628-8ba5-4a18-bd7f-941dd4054d55\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-e504ad1c-aaa4-4d9f-9b0e-d4561c6e87db\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-101f2628-8ba5-4a18-bd7f-941dd4054d55\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 6475.464208999998,
+      "calls": [
+        {
+          "durationMs": 6475.311207999999,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c21",
+      "candidateId": "intent:remove-item",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9568,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.964,
+            "WRONG_EFFECT": 0.0158,
+            "MULTIPLE_REQUESTS": 0.0007,
+            "UNSUPPORTED_REQUEST": 0.001,
+            "UNRESOLVED_REFERENCE": 0.0023,
+            "UNCERTAIN": 0.0162
+          },
+          "confidence": 0.9568
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 2
+            },
+            "intent": "REMOVE_ITEM",
+            "slots": {},
+            "targetRef": "cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997"
+            ],
+            "eligible": [
+              "cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997": "cart",
+              "cart:line-74053071-3e5a-434a-81ea-d3391a4decc0": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"已點的水餃取消掉喔\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791305027573},\"hypothesis\":{\"id\":\"intent:remove-item\",\"effect\":\"REMOVE_ITEM\",\"description\":\"移除購物車中的特定一筆餐點。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":2},\"intent\":\"REMOVE_ITEM\",\"slots\":{},\"targetRef\":\"cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997\"],\"eligible\":[\"cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-8ab20a0f-967b-4bbd-8662-e471f8cc1997\":\"cart\",\"cart:line-74053071-3e5a-434a-81ea-d3391a4decc0\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-8ab20a0f-967b-4bbd-8662-e471f8cc1997\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-74053071-3e5a-434a-81ea-d3391a4decc0\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5460.5066249999945,
+      "calls": [
+        {
+          "durationMs": 5460.322500000009,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c22",
+      "candidateId": "intent:set-quantity",
+      "expected": "MULTIPLE_REQUESTS",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.7204,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.767,
+            "WRONG_EFFECT": 0.0796,
+            "MULTIPLE_REQUESTS": 0.0162,
+            "UNSUPPORTED_REQUEST": 0.0094,
+            "UNRESOLVED_REFERENCE": 0.0372,
+            "UNCERTAIN": 0.0905
+          },
+          "confidence": 0.7204
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3
+            },
+            "intent": "SET_QUANTITY",
+            "slots": {
+              "quantity": 3
+            },
+            "targetRef": "cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359"
+            ],
+            "eligible": [
+              "cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance",
+              "cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359": "cart",
+              "cart:line-eec03a34-edc3-4472-bac0-bc51b39b4c94": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃改三份，然後用餐人數改兩位\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問幾位用餐？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"party-size\",\"phase\":\"ordering\",\"question\":\"請問幾位用餐？\",\"choices\":[],\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"expiresAt\":1791305033034},\"hypothesis\":{\"id\":\"intent:set-quantity\",\"effect\":\"SET_QUANTITY\",\"description\":\"修改已選或購物車現有餐點數量，不新增品項。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3},\"intent\":\"SET_QUANTITY\",\"slots\":{\"quantity\":3},\"targetRef\":\"cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359\"],\"eligible\":[\"cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\",\"cart:line-2981b92c-c831-4ad7-a7a7-56c3910bc359\":\"cart\",\"cart:line-eec03a34-edc3-4472-bac0-bc51b39b4c94\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"dine-in\",\"lines\":[{\"id\":\"line-2981b92c-c831-4ad7-a7a7-56c3910bc359\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-eec03a34-edc3-4472-bac0-bc51b39b4c94\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5500.537249999994,
+      "calls": [
+        {
+          "durationMs": 5500.395999999993,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c23",
+      "candidateId": "intent:start-checkout",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.976,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.98,
+            "WRONG_EFFECT": 0.0059,
+            "MULTIPLE_REQUESTS": 0.0002,
+            "UNSUPPORTED_REQUEST": 0.0001,
+            "UNRESOLVED_REFERENCE": 0.0003,
+            "UNCERTAIN": 0.0135
+          },
+          "confidence": 0.976
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "checkout": 0,
+              "seating": 0
+            },
+            "intent": "START_CHECKOUT",
+            "slots": {},
+            "questionId": "synthetic-question"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "cart:line-93b84d0a-9f18-4b4a-96c0-4ac5b0f2b89c": "cart",
+              "cart:line-d5de7c98-d588-4e60-918f-0e1aa5d12c97": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"嗯，開始吧\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"要進入結帳流程嗎？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"checkout-entry\",\"phase\":\"ordering\",\"question\":\"要進入結帳流程嗎？\",\"choices\":[{\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\",\"id\":\"intent:start-checkout\",\"intent\":\"START_CHECKOUT\"}],\"expectedRevisions\":{\"cart\":3,\"checkout\":0},\"expiresAt\":1791305038536},\"hypothesis\":{\"id\":\"intent:start-checkout\",\"effect\":\"START_CHECKOUT\",\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"intent\":\"START_CHECKOUT\",\"slots\":{},\"questionId\":\"synthetic-question\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"cart:line-93b84d0a-9f18-4b4a-96c0-4ac5b0f2b89c\":\"cart\",\"cart:line-d5de7c98-d588-4e60-918f-0e1aa5d12c97\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"takeout\",\"lines\":[{\"id\":\"line-93b84d0a-9f18-4b4a-96c0-4ac5b0f2b89c\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-d5de7c98-d588-4e60-918f-0e1aa5d12c97\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5693.702124999996,
+      "calls": [
+        {
+          "durationMs": 5693.580000000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c24",
+      "candidateId": "intent:start-checkout",
+      "expected": "WRONG_EFFECT",
+      "result": {
+        "kind": "REFER",
+        "reason": "UNCERTAIN",
+        "confidence": 0.8793,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "UNCERTAIN",
+          "probabilities": {
+            "COVERED": 0.04,
+            "WRONG_EFFECT": 0.0594,
+            "MULTIPLE_REQUESTS": 0.0005,
+            "UNSUPPORTED_REQUEST": 0.0003,
+            "UNRESOLVED_REFERENCE": 0.0005,
+            "UNCERTAIN": 0.8994
+          },
+          "confidence": 0.8793
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "checkout": 0,
+              "seating": 0
+            },
+            "intent": "START_CHECKOUT",
+            "slots": {},
+            "questionId": "synthetic-question"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "cart:line-ca44b652-e595-4bb9-8e05-5664cb2fc67f": "cart",
+              "cart:line-7cf48150-15d6-4c69-a162-6ec257db09e9": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"還不要結帳，我等朋友來\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"要進入結帳流程嗎？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"checkout-entry\",\"phase\":\"ordering\",\"question\":\"要進入結帳流程嗎？\",\"choices\":[{\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\",\"id\":\"intent:start-checkout\",\"intent\":\"START_CHECKOUT\"}],\"expectedRevisions\":{\"cart\":3,\"checkout\":0},\"expiresAt\":1791305044231},\"hypothesis\":{\"id\":\"intent:start-checkout\",\"effect\":\"START_CHECKOUT\",\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"intent\":\"START_CHECKOUT\",\"slots\":{},\"questionId\":\"synthetic-question\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"cart:line-ca44b652-e595-4bb9-8e05-5664cb2fc67f\":\"cart\",\"cart:line-7cf48150-15d6-4c69-a162-6ec257db09e9\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"takeout\",\"lines\":[{\"id\":\"line-ca44b652-e595-4bb9-8e05-5664cb2fc67f\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-7cf48150-15d6-4c69-a162-6ec257db09e9\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4491.180292000005,
+      "calls": [
+        {
+          "durationMs": 4491.061667000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c25",
+      "candidateId": "intent:set-party-size",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9537,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9614,
+            "WRONG_EFFECT": 0.0126,
+            "MULTIPLE_REQUESTS": 0.0005,
+            "UNSUPPORTED_REQUEST": 0.0005,
+            "UNRESOLVED_REFERENCE": 0.001,
+            "UNCERTAIN": 0.024
+          },
+          "confidence": 0.9537
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "checkout": 0,
+              "seating": 0
+            },
+            "intent": "SET_PARTY_SIZE",
+            "slots": {
+              "partySize": 2
+            },
+            "questionId": "synthetic-question"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "cart:line-429afea9-4657-4be3-9aaa-8a6d4b5114df": "cart",
+              "cart:line-f655fe57-074b-4ffa-a9c6-ad62c49a68a7": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"我們兩位在這裡吃喔\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問幾位用餐？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"party-size\",\"phase\":\"ordering\",\"question\":\"請問幾位用餐？\",\"choices\":[],\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"expiresAt\":1791305048723},\"hypothesis\":{\"id\":\"intent:set-party-size\",\"effect\":\"SET_PARTY_SIZE\",\"description\":\"設定本次內用為 2 位，不是餐點數量；修改人數會釋放原保留桌位。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"intent\":\"SET_PARTY_SIZE\",\"slots\":{\"partySize\":2},\"questionId\":\"synthetic-question\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"cart:line-429afea9-4657-4be3-9aaa-8a6d4b5114df\":\"cart\",\"cart:line-f655fe57-074b-4ffa-a9c6-ad62c49a68a7\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"dine-in\",\"lines\":[{\"id\":\"line-429afea9-4657-4be3-9aaa-8a6d4b5114df\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-f655fe57-074b-4ffa-a9c6-ad62c49a68a7\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5341.517541999987,
+      "calls": [
+        {
+          "durationMs": 5341.368040999994,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c26",
+      "candidateId": "intent:set-party-size",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9716,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9763,
+            "WRONG_EFFECT": 0.0067,
+            "MULTIPLE_REQUESTS": 0.0003,
+            "UNSUPPORTED_REQUEST": 0.0004,
+            "UNRESOLVED_REFERENCE": 0.0009,
+            "UNCERTAIN": 0.0154
+          },
+          "confidence": 0.9716
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "checkout": 0,
+              "seating": 0
+            },
+            "intent": "SET_PARTY_SIZE",
+            "slots": {
+              "partySize": 1
+            },
+            "questionId": "synthetic-question"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "cart:line-7eee2eb6-d34f-4748-a030-c14bba3324e8": "cart",
+              "cart:line-7d0de1bb-ecc0-4834-aef4-aa75770aedb1": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"就一位用餐\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問幾位用餐？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"party-size\",\"phase\":\"ordering\",\"question\":\"請問幾位用餐？\",\"choices\":[],\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"expiresAt\":1791305054066},\"hypothesis\":{\"id\":\"intent:set-party-size\",\"effect\":\"SET_PARTY_SIZE\",\"description\":\"設定本次內用為 1 位，不是餐點數量；修改人數會釋放原保留桌位。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":3,\"checkout\":0,\"seating\":0},\"intent\":\"SET_PARTY_SIZE\",\"slots\":{\"partySize\":1},\"questionId\":\"synthetic-question\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"cart:line-7eee2eb6-d34f-4748-a030-c14bba3324e8\":\"cart\",\"cart:line-7d0de1bb-ecc0-4834-aef4-aa75770aedb1\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"dine-in\",\"lines\":[{\"id\":\"line-7eee2eb6-d34f-4748-a030-c14bba3324e8\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-7d0de1bb-ecc0-4834-aef4-aa75770aedb1\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4686.5407089999935,
+      "calls": [
+        {
+          "durationMs": 4686.421667000002,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c27",
+      "candidateId": "intent:set-party-size",
+      "expected": "MISSING_EFFECT",
+      "result": {
+        "kind": "REFER",
+        "reason": "MISSING_EFFECT"
+      },
+      "durationMs": 0.013708000013139099,
+      "calls": [],
+      "changedCart": false
+    },
+    {
+      "id": "c28",
+      "candidateId": "intent:set-fulfillment:takeout",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.8723,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.8936,
+            "WRONG_EFFECT": 0.0332,
+            "MULTIPLE_REQUESTS": 0.001,
+            "UNSUPPORTED_REQUEST": 0.0014,
+            "UNRESOLVED_REFERENCE": 0.0013,
+            "UNCERTAIN": 0.0696
+          },
+          "confidence": 0.8723
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "cart": 2,
+              "checkout": 0,
+              "seating": 0
+            },
+            "intent": "SET_FULFILLMENT",
+            "slots": {
+              "mode": "takeout"
+            },
+            "questionId": "synthetic-question"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "cart:line-edf75603-c53d-4c40-9c36-2cf281eb6140": "cart",
+              "cart:line-1499abef-ac9e-42d0-a7fe-1ff940084ac8": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"我這次要帶走喔\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"請問要內用還是自取？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"fulfillment\",\"phase\":\"ordering\",\"question\":\"請問要內用還是自取？\",\"choices\":[{\"description\":\"這筆訂單設為內用，接著詢問用餐人數與選桌。\",\"id\":\"intent:set-fulfillment:dine-in\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"dine-in\"}},{\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\",\"id\":\"intent:set-fulfillment:takeout\",\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"}}],\"expectedRevisions\":{\"cart\":2,\"checkout\":0},\"expiresAt\":1791305058754},\"hypothesis\":{\"id\":\"intent:set-fulfillment:takeout\",\"effect\":\"SET_FULFILLMENT\",\"description\":\"這筆訂單設為自取，釋放尚未付款的暫留桌位。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"cart\":2,\"checkout\":0,\"seating\":0},\"intent\":\"SET_FULFILLMENT\",\"slots\":{\"mode\":\"takeout\"},\"questionId\":\"synthetic-question\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"cart:line-edf75603-c53d-4c40-9c36-2cf281eb6140\":\"cart\",\"cart:line-1499abef-ac9e-42d0-a7fe-1ff940084ac8\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[{\"id\":\"line-edf75603-c53d-4c40-9c36-2cf281eb6140\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-1499abef-ac9e-42d0-a7fe-1ff940084ac8\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 5704.1962080000085,
+      "calls": [
+        {
+          "durationMs": 5704.070875000005,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c29",
+      "candidateId": "intent:set-option",
+      "expected": "DOMAIN_UNRESOLVED",
+      "result": {
+        "kind": "REFER",
+        "reason": "DOMAIN_UNRESOLVED",
+        "resolution": {
+          "kind": "NEEDS_ASSISTANT"
+        }
+      },
+      "durationMs": 0.1304999999993015,
+      "calls": [],
+      "changedCart": false
+    },
+    {
+      "id": "c30",
+      "candidateId": "intent:view-cart",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9786,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9822,
+            "WRONG_EFFECT": 0.0118,
+            "MULTIPLE_REQUESTS": 0.0007,
+            "UNSUPPORTED_REQUEST": 0.0002,
+            "UNRESOLVED_REFERENCE": 0.0002,
+            "UNCERTAIN": 0.0049
+          },
+          "confidence": 0.9786
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {},
+            "intent": "VIEW_CART",
+            "slots": {}
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [],
+            "eligible": [],
+            "rejected": [],
+            "origins": {
+              "cart:line-fc80286f-ae67-45ba-b279-18df7cbfa3ab": "cart",
+              "cart:line-838367e3-d702-419e-96da-941466eecbe2": "cart"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"看一下我已經點了哪些菜吧\",\"recentDialogue\":[{\"role\":\"user\",\"content\":\"水餃一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"user\",\"content\":\"紅茶一份\"},{\"role\":\"assistant\",\"content\":\"已加入指定餐點一份。\"},{\"role\":\"assistant\",\"content\":\"要進入結帳流程嗎？\"}],\"currentQuestion\":{\"questionId\":\"synthetic-question\",\"purpose\":\"checkout-entry\",\"phase\":\"ordering\",\"question\":\"要進入結帳流程嗎？\",\"choices\":[{\"description\":\"顧客同意開始結帳；進入會員與發票步驟。\",\"id\":\"intent:start-checkout\",\"intent\":\"START_CHECKOUT\"}],\"expectedRevisions\":{\"cart\":3,\"checkout\":0},\"expiresAt\":1791305064460},\"hypothesis\":{\"id\":\"intent:view-cart\",\"effect\":\"VIEW_CART\",\"description\":\"查看目前購物車。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{},\"intent\":\"VIEW_CART\",\"slots\":{}},\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[],\"eligible\":[],\"rejected\":[],\"origins\":{\"cart:line-fc80286f-ae67-45ba-b279-18df7cbfa3ab\":\"cart\",\"cart:line-838367e3-d702-419e-96da-941466eecbe2\":\"cart\"}}},\"phase\":\"ordering\",\"cart\":{\"fulfillmentMode\":\"takeout\",\"lines\":[{\"id\":\"line-fc80286f-ae67-45ba-b279-18df7cbfa3ab\",\"itemId\":\"dumplings\",\"name\":\"水餃\",\"quantity\":1,\"options\":{},\"unitPrice\":62},{\"id\":\"line-838367e3-d702-419e-96da-941466eecbe2\",\"itemId\":\"tea\",\"name\":\"紅茶\",\"quantity\":1,\"options\":{},\"unitPrice\":22}],\"total\":84,\"itemCount\":2},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4476.917832999985,
+      "calls": [
+        {
+          "durationMs": 4476.7843750000175,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c31",
+      "candidateId": "intent:add-item",
+      "expected": "UNRESOLVED_REFERENCE",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.8191,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.8492,
+            "WRONG_EFFECT": 0.0176,
+            "MULTIPLE_REQUESTS": 0.0017,
+            "UNSUPPORTED_REQUEST": 0.0012,
+            "UNRESOLVED_REFERENCE": 0.1063,
+            "UNCERTAIN": 0.0239
+          },
+          "confidence": 0.8191
+        },
+        "resolution": {
+          "candidateRefs": [
+            "item:bento",
+            "item:dumplings",
+            "item:tea"
+          ],
+          "intent": "ADD_ITEM",
+          "kind": "CLARIFICATION",
+          "prompt": "您指的是剛展示的炸排骨便當、剛展示的水餃、剛展示的紅茶？",
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:bento",
+              "item:dumplings",
+              "item:tea"
+            ],
+            "eligible": [
+              "item:bento",
+              "item:dumplings",
+              "item:tea"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:bento": "presentation",
+              "item:dumplings": "presentation",
+              "item:tea": "presentation"
+            }
+          }
+        },
+        "state": "{\"utterance\":\"我要剛剛看到的第二個喔\",\"recentDialogue\":[{\"role\":\"assistant\",\"content\":\"依序展示：炸排骨便當、紅茶、水餃。\"}],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:add-item\",\"effect\":\"ADD_ITEM\",\"description\":\"新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\"},\"proposedResolution\":{\"candidateRefs\":[\"item:bento\",\"item:dumplings\",\"item:tea\"],\"intent\":\"ADD_ITEM\",\"kind\":\"CLARIFICATION\",\"prompt\":\"您指的是剛展示的炸排骨便當、剛展示的水餃、剛展示的紅茶？\",\"targetResolution\":{\"constraints\":{\"itemIds\":[],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:bento\",\"item:dumplings\",\"item:tea\"],\"eligible\":[\"item:bento\",\"item:dumplings\",\"item:tea\"],\"rejected\":[],\"origins\":{\"item:bento\":\"presentation\",\"item:dumplings\":\"presentation\",\"item:tea\":\"presentation\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[\"bento\",\"tea\",\"dumplings\"],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 4714.724415999983,
+      "calls": [
+        {
+          "durationMs": 4714.649124999996,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    },
+    {
+      "id": "c32",
+      "candidateId": "intent:search-menu",
+      "expected": "COVERED",
+      "result": {
+        "kind": "CHECKED_HYPOTHESIS",
+        "reason": "COVERED",
+        "confidence": 0.9728,
+        "rawAnswer": {
+          "type": "choice",
+          "choice": "COVERED",
+          "probabilities": {
+            "COVERED": 0.9773,
+            "WRONG_EFFECT": 0.0109,
+            "MULTIPLE_REQUESTS": 0.0037,
+            "UNSUPPORTED_REQUEST": 0.001,
+            "UNRESOLVED_REFERENCE": 0.0005,
+            "UNCERTAIN": 0.0066
+          },
+          "confidence": 0.9728
+        },
+        "resolution": {
+          "kind": "PLAN",
+          "plan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "query": "水餃"
+            },
+            "targetRef": "item:dumplings"
+          },
+          "targetResolution": {
+            "constraints": {
+              "itemIds": [
+                "dumplings"
+              ],
+              "categories": [],
+              "exclude": [],
+              "include": []
+            },
+            "candidates": [
+              "item:dumplings"
+            ],
+            "eligible": [
+              "item:dumplings"
+            ],
+            "rejected": [],
+            "origins": {
+              "item:dumplings": "utterance"
+            }
+          }
+        },
+        "authorization": {
+          "kind": "EXECUTE"
+        },
+        "state": "{\"utterance\":\"水餃還有嗎，一份價格是多少呀\",\"recentDialogue\":[],\"currentQuestion\":null,\"hypothesis\":{\"id\":\"intent:search-menu\",\"effect\":\"SEARCH_MENU\",\"description\":\"查詢餐點、分類、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材條件仍精確查詢，不新增訂單。\"},\"proposedResolution\":{\"kind\":\"PLAN\",\"plan\":{\"expectedRevisions\":{\"menu\":0},\"intent\":\"SEARCH_MENU\",\"slots\":{\"query\":\"水餃\"},\"targetRef\":\"item:dumplings\"},\"targetResolution\":{\"constraints\":{\"itemIds\":[\"dumplings\"],\"categories\":[],\"exclude\":[],\"include\":[]},\"candidates\":[\"item:dumplings\"],\"eligible\":[\"item:dumplings\"],\"rejected\":[],\"origins\":{\"item:dumplings\":\"utterance\"}}},\"phase\":\"ordering\",\"cart\":{\"lines\":[],\"total\":0,\"itemCount\":0},\"selection\":null,\"presentedItemIds\":[],\"menuFacts\":[{\"id\":\"noodle\",\"name\":\"紅燒牛肉麵\",\"aliases\":[\"牛肉麵\"],\"category\":\"麵\",\"price\":112,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"bento\",\"name\":\"炸排骨便當\",\"aliases\":[\"排骨便當\"],\"category\":\"便當\",\"price\":92,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"chicken\",\"name\":\"椒麻雞便當\",\"aliases\":[],\"category\":\"便當\",\"price\":97,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"dumplings\",\"name\":\"水餃\",\"aliases\":[],\"category\":\"點心\",\"price\":62,\"available\":true,\"composition\":null,\"optionGroups\":[]},{\"id\":\"tea\",\"name\":\"紅茶\",\"aliases\":[],\"category\":\"飲料\",\"price\":22,\"available\":true,\"composition\":null,\"optionGroups\":[]}],\"capabilityLimits\":\"只有提供的名稱、分類、價格、供應、成分及合法選項是事實。composition:null表示成分／口味／營養未知；空optionGroups表示沒有客製能力。計畫不是已執行結果。\"}",
+        "question": {
+          "type": "choice",
+          "instructions": "檢查最後顧客語句與候選效果，候選只是待驗證假設，不是已同意的操作。先看有無未完成／反悔或多個獨立要求，再檢查是否選錯效果、資料／能力是否足以處理整句、指定reference是否已綁定。歷史只解釋語境，不強制回答舊問題。不要維持錯誤的第一輪選擇，不因商品存在或plan合法就判COVERED。缺數量或分類多品項可以合法釐清，不等於語句未完成。你不選商品、參數或工具，也不授權付款；只能選提供的檢查結果。",
+          "criteria": {
+            "COVERED": "候選效果符合整句唯一需求。所問資訊有提供的事實支持；新增缺必要數量／品項選擇時，合法釐清仍可承接同一需求。",
+            "WRONG_EFFECT": "本句是另一個效果：查詢／查看不是新增；修改不是重複加點；拒絕不是同意。候選即使合法也不能執行。",
+            "MULTIPLE_REQUESTS": "本句有多個獨立要求，候選只處理其中一部分。一次菜單查詢能回答的價格與販售問題，不必拆成多個操作。",
+            "UNSUPPORTED_REQUEST": "本句要求未提供的資訊或能力，例如何種成分／口味／營養／客製設定；找到同名餐點不等於回答原問題。",
+            "UNRESOLVED_REFERENCE": "本句指定的指代／序號尚未綁定到實際target；若已提供序號對象，不可退化成任意品項釐清或默選。",
+            "UNCERTAIN": "語句未完成、反悔未定，或无法可靠判斷完整需求與候選效果是否一致。不要補完，不把信心不足當同意。"
+          }
+        }
+      },
+      "durationMs": 3443.9093329999887,
+      "calls": [
+        {
+          "durationMs": 3443.864042000001,
+          "model": "openjev/Qwen/Qwen3.5-4B"
+        }
+      ],
+      "changedCart": false
+    }
+  ]
+}

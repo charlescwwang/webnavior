@@ -1,0 +1,7 @@
+.venv/
+.cache/
+models/
+__pycache__/
+# Keep small synthetic benchmark evidence despite the root result* ignore rule.
+!results/
+!results/*.json

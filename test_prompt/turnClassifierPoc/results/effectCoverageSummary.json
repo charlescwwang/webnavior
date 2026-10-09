@@ -1,0 +1,416 @@
+{
+  "scenario_sha256": "55f87340793c6ba4a76aa60c8c60a55c5ac885ecc918112042e22aa7f2ea3b76",
+  "threshold": 0.6,
+  "total": 32,
+  "design": "deliberately paired good/bad application-effect hypotheses; no classifier or upstream decision is measured",
+  "supported_hypotheses": 14,
+  "unsupported_hypotheses": 18,
+  "domain_eligible": 29,
+  "domain_eligible_bad_ids": [
+    "c02",
+    "c04",
+    "c06",
+    "c07",
+    "c08",
+    "c09",
+    "c10",
+    "c11",
+    "c12",
+    "c13",
+    "c18",
+    "c20",
+    "c22",
+    "c24",
+    "c31"
+  ],
+  "checked": 22,
+  "correctly_checked": 13,
+  "false_admit_ids": [
+    "c02",
+    "c04",
+    "c06",
+    "c07",
+    "c08",
+    "c09",
+    "c20",
+    "c22",
+    "c31"
+  ],
+  "false_veto_ids": [
+    "c03"
+  ],
+  "supported_retention_rate": 0.9285714285714286,
+  "bad_rejection_rate": 0.5,
+  "provider_failures": 0,
+  "preflight_without_model": 3,
+  "semantic_exact_choice_matches": 18,
+  "semantic_cases": 29,
+  "confusion_matrix": {
+    "COVERED": {
+      "COVERED": 13,
+      "WRONG_EFFECT": 1
+    },
+    "WRONG_EFFECT": {
+      "COVERED": 4,
+      "UNCERTAIN": 1
+    },
+    "MULTIPLE_REQUESTS": {
+      "COVERED": 4
+    },
+    "UNSUPPORTED_REQUEST": {
+      "UNSUPPORTED_REQUEST": 4
+    },
+    "UNCERTAIN": {
+      "UNCERTAIN": 1
+    },
+    "UNRESOLVED_REFERENCE": {
+      "COVERED": 1
+    }
+  },
+  "reasons": {
+    "COVERED": 22,
+    "WRONG_EFFECT": 1,
+    "UNSUPPORTED_REQUEST": 4,
+    "MISSING_EFFECT": 2,
+    "UNCERTAIN": 2,
+    "DOMAIN_UNRESOLVED": 1
+  },
+  "additional_http_latency_ms": {
+    "count": 29,
+    "mean": 5269.800842068967,
+    "p50": 5379.1176669999995,
+    "p95": 6848.414841400002
+  },
+  "advisory_pipeline_latency_ms": {
+    "count": 32,
+    "mean": 4775.903217437498,
+    "p50": 5235.3867504999935,
+    "p95": 6830.212109900007
+  },
+  "models": [
+    "openjev/Qwen/Qwen3.5-4B"
+  ],
+  "writes": 0,
+  "cases": [
+    {
+      "id": "c01",
+      "transcript": "水餃一份賣多少呢",
+      "hypothesis": "intent:search-menu",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9793,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c02",
+      "transcript": "水餃一份賣多少呢",
+      "hypothesis": "intent:add-item",
+      "expected": "WRONG_EFFECT",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9679,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c03",
+      "transcript": "請讓我看一下排骨便當",
+      "hypothesis": "intent:select-item",
+      "expected": "COVERED",
+      "reason": "WRONG_EFFECT",
+      "kind": "REFER",
+      "confidence": 0.4632,
+      "raw_choice": "WRONG_EFFECT"
+    },
+    {
+      "id": "c04",
+      "transcript": "請讓我看一下排骨便當",
+      "hypothesis": "intent:add-item",
+      "expected": "WRONG_EFFECT",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.8792,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c05",
+      "transcript": "排骨便當給我來三份喔",
+      "hypothesis": "intent:add-item",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9958,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c06",
+      "transcript": "排骨便當給我來三份喔",
+      "hypothesis": "intent:search-menu",
+      "expected": "WRONG_EFFECT",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9387,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c07",
+      "transcript": "先點一份水餃再幫我結帳",
+      "hypothesis": "intent:add-item",
+      "expected": "MULTIPLE_REQUESTS",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9607,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c08",
+      "transcript": "先點一份水餃再幫我結帳",
+      "hypothesis": "intent:start-checkout",
+      "expected": "MULTIPLE_REQUESTS",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9783,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c09",
+      "transcript": "先問牛肉麵價錢，另外水餃給我一份",
+      "hypothesis": "intent:add-item",
+      "expected": "MULTIPLE_REQUESTS",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.7234,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c10",
+      "transcript": "水餃裡頭有加芝麻嗎",
+      "hypothesis": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "reason": "UNSUPPORTED_REQUEST",
+      "kind": "REFER",
+      "confidence": 0.8981,
+      "raw_choice": "UNSUPPORTED_REQUEST"
+    },
+    {
+      "id": "c11",
+      "transcript": "水餃的醬裡有花生嗎",
+      "hypothesis": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "reason": "UNSUPPORTED_REQUEST",
+      "kind": "REFER",
+      "confidence": 0.9326,
+      "raw_choice": "UNSUPPORTED_REQUEST"
+    },
+    {
+      "id": "c12",
+      "transcript": "這種水餃的餡會不會很辣呀",
+      "hypothesis": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "reason": "UNSUPPORTED_REQUEST",
+      "kind": "REFER",
+      "confidence": 0.9429,
+      "raw_choice": "UNSUPPORTED_REQUEST"
+    },
+    {
+      "id": "c13",
+      "transcript": "牛肉麵大約幾大卡呢",
+      "hypothesis": "intent:search-menu",
+      "expected": "UNSUPPORTED_REQUEST",
+      "reason": "UNSUPPORTED_REQUEST",
+      "kind": "REFER",
+      "confidence": 0.8186,
+      "raw_choice": "UNSUPPORTED_REQUEST"
+    },
+    {
+      "id": "c14",
+      "transcript": "你們有哪些麵食可以看呢",
+      "hypothesis": "intent:search-menu",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9224,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c15",
+      "transcript": "你們有哪些麵食可以看呢",
+      "hypothesis": "intent:add-item",
+      "expected": "MISSING_EFFECT",
+      "reason": "MISSING_EFFECT",
+      "kind": "REFER",
+      "confidence": null,
+      "raw_choice": null
+    },
+    {
+      "id": "c16",
+      "transcript": "我想選便當吃，來兩份",
+      "hypothesis": "intent:add-item",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9698,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c17",
+      "transcript": "那就幫我點水餃吧",
+      "hypothesis": "intent:add-item",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9903,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c18",
+      "transcript": "我想要水餃……先等一下還沒想好",
+      "hypothesis": "intent:add-item",
+      "expected": "UNCERTAIN",
+      "reason": "UNCERTAIN",
+      "kind": "REFER",
+      "confidence": 0.6603,
+      "raw_choice": "UNCERTAIN"
+    },
+    {
+      "id": "c19",
+      "transcript": "水餃幫我改四份吧",
+      "hypothesis": "intent:set-quantity",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9597,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c20",
+      "transcript": "水餃幫我改四份吧",
+      "hypothesis": "intent:add-item",
+      "expected": "WRONG_EFFECT",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9824,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c21",
+      "transcript": "已點的水餃取消掉喔",
+      "hypothesis": "intent:remove-item",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9568,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c22",
+      "transcript": "水餃改三份，然後用餐人數改兩位",
+      "hypothesis": "intent:set-quantity",
+      "expected": "MULTIPLE_REQUESTS",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.7204,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c23",
+      "transcript": "嗯，開始吧",
+      "hypothesis": "intent:start-checkout",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.976,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c24",
+      "transcript": "還不要結帳，我等朋友來",
+      "hypothesis": "intent:start-checkout",
+      "expected": "WRONG_EFFECT",
+      "reason": "UNCERTAIN",
+      "kind": "REFER",
+      "confidence": 0.8793,
+      "raw_choice": "UNCERTAIN"
+    },
+    {
+      "id": "c25",
+      "transcript": "我們兩位在這裡吃喔",
+      "hypothesis": "intent:set-party-size",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9537,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c26",
+      "transcript": "就一位用餐",
+      "hypothesis": "intent:set-party-size",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9716,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c27",
+      "transcript": "我這邊就一個人而已",
+      "hypothesis": "intent:set-party-size",
+      "expected": "MISSING_EFFECT",
+      "reason": "MISSING_EFFECT",
+      "kind": "REFER",
+      "confidence": null,
+      "raw_choice": null
+    },
+    {
+      "id": "c28",
+      "transcript": "我這次要帶走喔",
+      "hypothesis": "intent:set-fulfillment:takeout",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.8723,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c29",
+      "transcript": "水餃別放辣椒喔",
+      "hypothesis": "intent:set-option",
+      "expected": "DOMAIN_UNRESOLVED",
+      "reason": "DOMAIN_UNRESOLVED",
+      "kind": "REFER",
+      "confidence": null,
+      "raw_choice": null
+    },
+    {
+      "id": "c30",
+      "transcript": "看一下我已經點了哪些菜吧",
+      "hypothesis": "intent:view-cart",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9786,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c31",
+      "transcript": "我要剛剛看到的第二個喔",
+      "hypothesis": "intent:add-item",
+      "expected": "UNRESOLVED_REFERENCE",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.8191,
+      "raw_choice": "COVERED"
+    },
+    {
+      "id": "c32",
+      "transcript": "水餃還有嗎，一份價格是多少呀",
+      "hypothesis": "intent:search-menu",
+      "expected": "COVERED",
+      "reason": "COVERED",
+      "kind": "CHECKED_HYPOTHESIS",
+      "confidence": 0.9728,
+      "raw_choice": "COVERED"
+    }
+  ]
+}

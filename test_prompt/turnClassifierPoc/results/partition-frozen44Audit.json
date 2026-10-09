@@ -1,0 +1,36 @@
+{
+  "source": "partition-frozen44Summary.json",
+  "kind": "post-run receipt audit; raw predictions, gold and counters unchanged",
+  "baseline": {
+    "wrongCartChanges": ["p31", "p32"],
+    "wrongPreparation": ["p07", "p29", "p30"],
+    "compoundSingleEffect": ["p29", "p30", "p31", "p32"],
+    "completeServiceAsUnfinished": ["p02", "p03", "p06", "p08", "p13", "p14", "p16", "p19", "p27", "p28"],
+    "serviceContractMatches": 12,
+    "serviceLocallyCompleted": 12,
+    "serviceCases": 36
+  },
+  "partitioned": {
+    "wrongCartChanges": ["p31"],
+    "wrongPreparation": ["p29"],
+    "compoundSingleEffect": ["p29", "p31"],
+    "completeServiceAsUnfinished": [],
+    "serviceContractMatches": 8,
+    "serviceLocallyCompleted": 7,
+    "serviceCases": 36
+  },
+  "paired": {
+    "bothCorrect": ["p01", "p04", "p09", "p17", "p20", "p23", "p26", "p38", "p39"],
+    "baselineOnly": ["p12", "p21", "p22", "p25", "p33", "p41", "p42", "p44"],
+    "partitionedOnly": ["p36", "p37", "p40", "p43"]
+  },
+  "clarifications": [
+    "Raw wrongMutation counts cart OR phase changes. Configuration and clarification are preparations, not actual cart additions. Actual wrong cart-change counts are 2 versus 1, not raw 5 versus 2.",
+    "Raw wrongPreparation misses pendingClarification and includes any pendingCustomerChoice. The audit distinguishes actual wrong item configuration/clarification from a normal fulfillment question after a partial add.",
+    "Raw backgroundAdmission counts INCOMPLETE as non-IGNORE. p40 is misclassified assent, not proof of admission to Main Agent or customer dialogue; UI admission is unmeasured.",
+    "p07 can reasonably be SEARCH_MENU or SELECT_ITEM. Frozen gold remains SEARCH_MENU; baseline ADD_ITEM/quantity preparation is wrong under either interpretation, while partitioned UNAVAILABLE is abstention, not a successful read.",
+    "p24 has no party-size candidate under the existing literal slot parser. Preserving the question does not fix candidate absence.",
+    "Handoffs are routing outcomes, not measured Main Agent completions. One successful service handoff in the partitioned run is p36.",
+    "Fixture screen is unknown, not the production Kiosk menu surface. Saved merchant prompt overrides and Kiosk host lifecycle are not reproduced. These are isolated challenge results, not production accuracy."
+  ]
+}

@@ -11,6 +11,11 @@ export default defineConfig({
   vue: true,
 }, {
   ignores: [
+    // Local Python dependencies and diagnostic artifacts are not project sources.
+    '**/.venv/**',
+    '**/.cache/**',
+    '**/.vitest-attachments/**',
+    'test_prompt/turnClassifierPoc/models/**',
     'cspell.config.yaml',
     'cspell.config.yml',
     'crowdin.yaml',
