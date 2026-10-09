@@ -10,10 +10,12 @@ import type { LlmRouteContext, RouterConfig } from '../types'
 
 import { randomBytes } from 'node:crypto'
 
+import { parse } from 'valibot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createEnvelopeCrypto } from '../../../../utils/envelope-crypto'
 import { ApiError } from '../../../../utils/error'
+import { llmRouterConfigSchema } from '../../../adapters/config-kv'
 import { createLlmRouterService } from '../router'
 
 /**
@@ -154,6 +156,30 @@ function failResponse(status: number, body: object = { error: 'bad' }) {
 describe('createLlmRouterService', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it.each([false, true])('pins only configured Ollama upstreams with stream=%s and fallback isolation', async (stream) => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://ollama.example/v1', keyIds: ['ollama'] },
+      { baseURL: 'https://other.example/v1', keyIds: ['other'] },
+    ] })
+    // NOTICE: Start with the schema-parsed config to reproduce production
+    // validation: an unsupported extension would be stripped before dispatch.
+    const configured = structuredClone(config)
+    Object.assign(configured.llm.models['openai/gpt-5-mini']!.upstreams[0]!, { ollamaKeepAlive: -1 })
+    const parsed = parse(llmRouterConfigSchema, configured)
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(failResponse(500))
+      .mockResolvedValueOnce(happyResponse({ ok: 1 }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parsed), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const request = { messages: [], stream }
+    await router.route({ modelName: 'openai/gpt-5-mini', body: request })
+    const first = JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))
+    const second = JSON.parse(String(fetchImpl.mock.calls[1]![1]!.body))
+    expect(first.keep_alive).toBe(-1)
+    expect(first.stream).toBe(stream)
+    expect(second).not.toHaveProperty('keep_alive')
+    expect(request).not.toHaveProperty('keep_alive')
   })
 
   /**

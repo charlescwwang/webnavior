@@ -127,10 +127,11 @@ export const providerOllama = defineProvider<OllamaConfig>({
         const think = resolveOllamaThink(model, config.thinkingMode)
 
         // xsAI serializes provider options as snake case, so this becomes the
-        // Ollama-specific `keep_alive: 1` request field for every chat step.
+        // Ollama-specific `keep_alive: -1` disables idle unloading after each
+        // chat step. This is model residency, not HTTP connection keep-alive.
         return {
           ...chatOptions,
-          keepAlive: 1,
+          keepAlive: -1,
           ...(think === undefined ? {} : { think }),
         }
       },

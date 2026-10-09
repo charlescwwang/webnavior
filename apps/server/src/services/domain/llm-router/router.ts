@@ -250,6 +250,9 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         const body = JSON.stringify({
           ...req.body,
           ...(upstream.cachePrompt ? { cache_prompt: true } : {}),
+          // Apply residency per upstream attempt, not to the shared request;
+          // falling back to another provider must not inherit Ollama policy.
+          ...(upstream.ollamaKeepAlive !== undefined ? { keep_alive: upstream.ollamaKeepAlive } : {}),
           model: effectiveModel,
         })
 

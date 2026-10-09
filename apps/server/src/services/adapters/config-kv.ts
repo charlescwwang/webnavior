@@ -2,7 +2,7 @@ import type Redis from 'ioredis'
 import type { InferOutput } from 'valibot'
 
 import { errorMessageFrom } from '@moeru/std'
-import { any, array, boolean, check, nonEmpty, number, object, optional, parse, picklist, pipe, record, regex, string } from 'valibot'
+import { any, array, boolean, check, integer, minValue, nonEmpty, number, object, optional, parse, picklist, pipe, record, regex, string } from 'valibot'
 
 import { createServiceUnavailableError } from '../../utils/error'
 import { configRedisKey } from '../../utils/redis-keys'
@@ -43,6 +43,8 @@ export const llmUpstreamSchema = object({
   baseURL: pipe(string(), nonEmpty('llm.upstreams[].baseURL must not be empty')),
   /** llama.cpp extension; never sent to generic OpenAI-compatible upstreams. */
   cachePrompt: optional(boolean()),
+  /** Ollama-only residency in seconds; -1 disables idle unloading, 0 releases the model. */
+  ollamaKeepAlive: optional(pipe(number(), integer(), minValue(-1))),
   overrideModel: optional(string()),
   keys: pipe(array(keyEntrySchema), check(v => v.length >= 1, 'llm.upstreams[].keys must contain at least 1 entry')),
   headerTemplate: optional(string(), 'Bearer {KEY}'),

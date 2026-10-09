@@ -34,7 +34,9 @@ Ollama 是开源的本地大模型运行框架。它可以在自己的设备上�
 2. 保留默认 Base URL：`http://localhost:11434/v1/`；如果 Ollama 运行在其他设备上，填写该设备可访问的地址。
 3. 在“意识”中选择 Ollama 与刚才下载的模型。
 
-每次通过 AIRI 发送给 Ollama 的聊天请求都会带上 `keep_alive: 1`。
+每次通过 AIRI 的 Ollama Provider 发送聊天请求都会带上 `keep_alive: -1`，禁止模型因空闲超时卸载。
+这会持续占用内存或显存，不代表模型可以跨 Ollama 重启或内存压力永久保留。
+需要支持该扩展的 Ollama 版本；旧版 OpenAI 兼容接口可能忽略此字段，可在 Ollama 服务启动环境中设置 `OLLAMA_KEEP_ALIVE=-1`。
 
 ### 4. 配置校验
 

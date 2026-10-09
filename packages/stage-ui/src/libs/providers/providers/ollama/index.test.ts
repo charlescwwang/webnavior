@@ -37,7 +37,7 @@ describe('providerOllama.createProvider chat options', () => {
 
     const chatOptions = provider.chat('qwen3:8b') as Record<string, unknown>
     expect('think' in chatOptions).toBe(false)
-    expect(chatOptions.keepAlive).toBe(1)
+    expect(chatOptions.keepAlive).toBe(-1)
   })
 
   it('should set think=false for non gpt-oss when thinkingMode is disable', () => {
@@ -48,7 +48,7 @@ describe('providerOllama.createProvider chat options', () => {
 
     const chatOptions = provider.chat('qwen3:8b') as Record<string, unknown>
     expect(chatOptions.think).toBe(false)
-    expect(chatOptions.keepAlive).toBe(1)
+    expect(chatOptions.keepAlive).toBe(-1)
   })
 
   it('should set think=medium for gpt-oss when thinkingMode is enable', () => {
@@ -59,7 +59,7 @@ describe('providerOllama.createProvider chat options', () => {
 
     const chatOptions = provider.chat('gpt-oss:20b') as Record<string, unknown>
     expect(chatOptions.think).toBe('medium')
-    expect(chatOptions.keepAlive).toBe(1)
+    expect(chatOptions.keepAlive).toBe(-1)
   })
 
   it('should set think=low for gpt-oss when thinkingMode is disable', () => {
@@ -70,6 +70,6 @@ describe('providerOllama.createProvider chat options', () => {
 
     const chatOptions = provider.chat('gpt-oss:20b') as Record<string, unknown>
     expect(chatOptions.think).toBe('low')
-    expect(chatOptions.keepAlive).toBe(1)
+    expect(chatOptions.keepAlive).toBe(-1)
   })
 })
