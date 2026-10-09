@@ -66,3 +66,13 @@ options:
   face_only: Face only
   pose_only: Pose only
   pose_plus_conditional_face: Pose with conditional face attention
+
+localDiagnostics:
+  title: Development diagnostics
+  description: Off by default. Changes apply immediately and are saved in this kiosk browser; detection and idle reset continue normally.
+  idle: Show idle-reset diagnostics
+  idleDescription: Shows the customer-session state, reset countdown, and reasons the reset is paused.
+  presence: Show presence diagnostics
+  presenceDescription: Shows presence states such as engaged, pose quality, dwell time, and detection cadence. Requires active camera observation.
+  decision: Show decision flow
+  decisionDescription: Shows the per-utterance phase, candidates, model decision, operation, and authorization trace.

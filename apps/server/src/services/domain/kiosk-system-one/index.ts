@@ -44,7 +44,20 @@ export interface SystemOnePolicyInput {
   storeInstruction: string
 }
 
-export function createKioskSystemOneService(options: { db: Database, envelopeCrypto: EnvelopeCrypto, fetchImpl?: typeof fetch }) {
+/** Correlates one provider round trip without including credential headers. */
+export type SystemOneTrace = { requestId: string, endpoint: string } & (
+  | { phase: 'request', payload: { state: string, questions: Record<string, SystemOneQuestion> } }
+  | { phase: 'response', status: number, durationMs: number, payload: unknown }
+  | { phase: 'failed', durationMs: number, error: string }
+)
+
+export function createKioskSystemOneService(options: {
+  db: Database
+  envelopeCrypto: EnvelopeCrypto
+  fetchImpl?: typeof fetch
+  /** Development diagnostics at the actual provider boundary; never includes authorization headers. */
+  traceObserver?: { record: (trace: SystemOneTrace) => void }
+}) {
   const fetchImpl = options.fetchImpl ?? fetch
 
   async function list() {
@@ -214,6 +227,12 @@ export function createKioskSystemOneService(options: { db: Database, envelopeCry
    * four of its 26 safe slots for control outcomes; Dasein supports the normal
    * browser action ceiling.
    */
+  /** Reads activation only; an unhealthy active provider is still enabled. */
+  async function isEnabled() {
+    const profile = await options.db.query.kioskSystemOneProfiles.findFirst({ where: eq(schema.kioskSystemOneProfiles.isActive, true) })
+    return Boolean(profile)
+  }
+
   async function maxActionCandidates() {
     const profile = await options.db.query.kioskSystemOneProfiles.findFirst({ where: eq(schema.kioskSystemOneProfiles.isActive, true) })
     return profile?.implementation === 'lookski' ? 22 : 253
@@ -233,12 +252,42 @@ export function createKioskSystemOneService(options: { db: Database, envelopeCry
     return profile
   }
   async function invoke(profile: schema.KioskSystemOneProfile, state: string, questions: Record<string, SystemOneQuestion>) {
+    const endpoint = new URL('v1/systemone', `${profile.baseURL.replace(/\/+$/, '')}/`)
+    const correlation = { requestId: crypto.randomUUID(), endpoint: `${endpoint.origin}${endpoint.pathname}` }
+    const startedAt = performance.now()
+    let responseRecorded = false
     const key = decryptKey(profile)
     try {
-      const response = await fetchImpl(new URL('v1/systemone', `${profile.baseURL.replace(/\/+$/, '')}/`), { body: JSON.stringify({ state, questions }), headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key.toString('utf8')}` } : {}) }, method: 'POST', signal: AbortSignal.timeout(profile.timeoutMs) })
+      const payload = { state, questions }
+      // This is the fully assembled provider body, including dialogue and
+      // policy, not the smaller browser request. URL credentials/headers stay
+      // outside the diagnostic envelope.
+      options.traceObserver?.record({ ...correlation, phase: 'request', payload })
+      const response = await fetchImpl(endpoint, { body: JSON.stringify(payload), headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key.toString('utf8')}` } : {}) }, method: 'POST', signal: AbortSignal.timeout(profile.timeoutMs) })
+      const text = await response.text()
+      let responsePayload: unknown = text
+      let parseError: unknown
+      try {
+        responsePayload = JSON.parse(text)
+      }
+      catch (error) {
+        parseError = error
+      }
+      // Preserve the provider's entire body (including model/usage), not the
+      // application's later FAST_ACTION/IGNORE decision. Error HTTP bodies
+      // remain visible even when they are not JSON.
+      options.traceObserver?.record({ ...correlation, phase: 'response', status: response.status, durationMs: performance.now() - startedAt, payload: responsePayload })
+      responseRecorded = true
       if (!response.ok)
         throw new Error(`System One returned HTTP ${response.status}`)
-      return await response.json() as { answers?: Record<string, unknown> }
+      if (parseError)
+        throw parseError
+      return responsePayload as { answers?: Record<string, unknown> }
+    }
+    catch (error) {
+      if (!responseRecorded)
+        options.traceObserver?.record({ ...correlation, phase: 'failed', durationMs: performance.now() - startedAt, error: errorMessageFrom(error) ?? 'System One request failed' })
+      throw error
     }
     finally { key?.fill(0) }
   }
@@ -249,7 +298,7 @@ export function createKioskSystemOneService(options: { db: Database, envelopeCry
       verifiedAt: null,
     }).where(eq(schema.kioskSystemOneProfiles.id, profileId))
   }
-  return { activate, deactivate, decide, delete: remove, getPolicy, inspectRuntimeModel, list, maxActionCandidates, readiness, save, savePolicy, update }
+  return { activate, deactivate, decide, delete: remove, getPolicy, inspectRuntimeModel, isEnabled, list, maxActionCandidates, readiness, save, savePolicy, update }
 
   function decryptKey(profile: schema.KioskSystemOneProfile) {
     return profile.apiKeyCiphertext

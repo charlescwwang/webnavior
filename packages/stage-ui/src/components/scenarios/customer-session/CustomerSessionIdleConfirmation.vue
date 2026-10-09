@@ -29,7 +29,7 @@ const secondsRemaining = computed(() => {
       <div>
         <h2>{{ t('stage.customer-session.idle-confirmation.title') }}</h2>
         <p>{{ t('stage.customer-session.idle-confirmation.description') }}</p>
-        <p class="countdown">
+        <p v-if="props.deadlineAt !== undefined" class="countdown">
           {{ t('stage.customer-session.idle-confirmation.countdown', { seconds: secondsRemaining }) }}
         </p>
       </div>

@@ -169,9 +169,9 @@ function selectMotion(slot: MotionSlot, event: Event) {
         <Input v-model="form.snapshot.characterName" :disabled="busy || !props.capabilities?.canEditExperience" placeholder="例如：店務助手" />
       </label>
       <label v-if="props.capabilities?.canEditTechnicalSettings" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
-        店別補充指示
+        店別補充指示（選填）
         <Textarea v-model="form.snapshot.agentInstructions" :disabled="busy || !props.capabilities?.canEditExperience" :rows="5" placeholder="例如：以親切、簡潔的口吻協助顧客；不確定時主動說明限制。" />
-        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">這些內容會加在角色卡指示之後，可用來補充本店的營運規則。</span>
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">這些內容會加在角色卡指示之後，可用來補充本店的營運規則；沒有額外規則時可以留空。</span>
       </label>
     </ExperienceEditorSection>
 

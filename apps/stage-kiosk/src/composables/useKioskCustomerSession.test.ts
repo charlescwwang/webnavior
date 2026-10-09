@@ -1,8 +1,13 @@
 import type { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 
+import type { CatalogSnapshot } from '../../../order-menu-server/src/domain/contracts'
+import type { SeatingContext } from '../../../order-menu/src/domain/seating'
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope, shallowRef } from 'vue'
 
+import { createPosSimulator } from '../../../order-menu-server/src/simulator'
+import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { useKioskCustomerSession } from './useKioskCustomerSession'
 
 const { reloadScenario } = vi.hoisted(() => ({
@@ -101,16 +106,16 @@ describe('useKioskCustomerSession', () => {
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
     const releasePendingWork = session.beginPendingWork()
     expect(session.hasPendingWork.value).toBe(true)
     expect(session.idleDeadlineAt.value).toBeUndefined()
-    await vi.advanceTimersByTimeAsync(61_000)
+    await vi.advanceTimersByTimeAsync(181_000)
 
     expect(session.state.value).toBe('active')
     releasePendingWork()
     expect(session.hasPendingWork.value).toBe(false)
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
   })
 
   it('defers idle reset while high-confidence presence is engaged', async () => {
@@ -129,10 +134,10 @@ describe('useKioskCustomerSession', () => {
 
     await session.recordActivity()
     session.setPresenceIdleSuppressed(true)
-    await vi.advanceTimersByTimeAsync(61_000)
+    await vi.advanceTimersByTimeAsync(181_000)
     expect(session.state.value).toBe('active')
     session.setPresenceIdleSuppressed(false)
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
   })
 
   it('distinguishes a proactive session from a customer action', async () => {
@@ -160,6 +165,10 @@ describe('useKioskCustomerSession', () => {
 
   it('asks before clearing an inactive customer and keeps their conversation after continuing', async () => {
     vi.useFakeTimers()
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const endVisitorSession = vi.fn()
+    const resetConversation = vi.fn()
     const chatSession = {
       createSession: vi.fn().mockResolvedValue('customer-chat'),
       deleteSession: vi.fn().mockResolvedValue(undefined),
@@ -171,25 +180,58 @@ describe('useKioskCustomerSession', () => {
     const session = scope.run(() => useKioskCustomerSession({
       activeCardId: shallowRef('default'),
       chatSession,
+      endVisitorSession,
+      resetConversation,
     }))
     if (!session)
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    await vi.advanceTimersByTimeAsync(45_000)
+    const customerSessionId = session.customer.value?.sessionId
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要紅燒牛肉麵' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    await vi.advanceTimersByTimeAsync(180_000)
 
     expect(session.state.value).toBe('awaiting-idle-confirmation')
     expect(session.customer.value?.sessionId).toBeTruthy()
     expect(session.idleDeadlineAt.value).toBe(Date.now() + 15_000)
 
+    await vi.advanceTimersByTimeAsync(14_000)
+
     session.continueCurrentSession()
 
     expect(session.state.value).toBe('active')
+    expect(session.customer.value?.sessionId).toBe(customerSessionId)
     expect(chatSession.deleteSession).not.toHaveBeenCalled()
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 45_000)
+    expect(chatSession.createSession).toHaveBeenCalledOnce()
+    expect(reloadScenario).not.toHaveBeenCalled()
+    expect(endVisitorSession).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
+    await vi.advanceTimersByTimeAsync(1_000)
+    await session.end('idle')
+    expect(session.state.value).toBe('active')
+    expect(session.customer.value?.sessionId).toBe(customerSessionId)
+    expect(reloadScenario).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    const resumed = await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' }) as { candidates: Array<{ id: string, description: string }> }
+    expect(resumed).toMatchObject({ phase: 'configuration', references: [{ label: '紅燒牛肉麵' }] })
+    const choice = resumed.candidates.find(candidate => candidate.description.includes('2 份'))!
+
+    // Reloading the independent menu is the host's external reset boundary.
+    // Continuing must not call it; explicitly starting over must clear the draft.
+    reloadScenario.mockImplementationOnce(() => runtime.reset())
+    await session.end('staff')
+    expect(reloadScenario).toHaveBeenCalledOnce()
+    expect(endVisitorSession).toHaveBeenCalledOnce()
+    expect(resetConversation).toHaveBeenCalledOnce()
+    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' })).not.toMatchObject({ phase: 'configuration' })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: choice.id })).rejects.toThrow('STALE_PLAN')
   })
 
-  it('waits for the host to finish a completed order instead of using an independent reset timer', async () => {
+  it('clears the completed order and conversation when its completion screen finishes', async () => {
+    const endVisitorSession = vi.fn().mockResolvedValue(undefined)
+    const resetConversation = vi.fn()
     const chatSession = {
       createSession: vi.fn().mockResolvedValue('customer-chat'),
       deleteSession: vi.fn().mockResolvedValue(undefined),
@@ -201,22 +243,134 @@ describe('useKioskCustomerSession', () => {
     const session = scope.run(() => useKioskCustomerSession({
       activeCardId: shallowRef('default'),
       chatSession,
+      endVisitorSession,
+      resetConversation,
     }))
     if (!session)
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    expect(session.completeOrder()).toBe(true)
+    const runtime = createMenuToolRuntime({
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onOrderConfirmed: () => session.completeOrder(),
+    })
+    await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('cart_add_item')
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+    await expect(runtime.confirmPaidOrder('payment-accepted')).resolves.toMatchObject({ receipt: { status: 'accepted' } })
     expect(session.state.value).toBe('completing')
     expect(reloadScenario).not.toHaveBeenCalled()
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
 
+    reloadScenario.mockImplementationOnce(() => runtime.reset())
     await session.end('completed')
     expect(reloadScenario).toHaveBeenCalledOnce()
+    expect(endVisitorSession).toHaveBeenCalledOnce()
+    expect(resetConversation).toHaveBeenCalledOnce()
+    expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
+    expect(chatSession.createSession).toHaveBeenCalledTimes(2)
+    expect(session.customer.value).toBeUndefined()
     expect(session.state.value).toBe('standby')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0, lines: [] } })
+    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '好' })).toMatchObject({ phase: 'ordering' })
+
+    await session.recordActivity()
+    const nextCustomerId = session.customer.value?.sessionId
+    // A second dismissal from the previous screen is not another completed order.
+    await session.end('completed')
+    expect(reloadScenario).toHaveBeenCalledOnce()
+    expect(endVisitorSession).toHaveBeenCalledOnce()
+    expect(session.customer.value?.sessionId).toBe(nextCustomerId)
+    expect(session.state.value).toBe('active')
   })
 
-  it('clears the host conversation when the idle-confirmation countdown expires', async () => {
+  it('retains the presented party-size question and order when continuing near the idle deadline', async () => {
     vi.useFakeTimers()
+    let seating: SeatingContext = { revision: 0, ready: false, choices: [] }
+    const runtime = createMenuToolRuntime({
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      seating: {
+        context: () => seating,
+        refresh: async () => {},
+        release: async () => {},
+        reset: async () => {},
+        reserve: async () => {},
+        setPartySize: async (partySize) => { seating = { ...seating, partySize, revision: seating.revision + 1 } },
+      },
+    })
+    const endVisitorSession = vi.fn()
+    const resetConversation = vi.fn()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession, endVisitorSession, resetConversation }))!
+    await session.recordActivity()
+    const customer = session.customer.value
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    const dineIn = await runtime.invoke('order_set_fulfillment', { mode: 'dine-in' }) as { pendingCustomerChoice: { questionId: string, question: string } }
+    await runtime.invoke('kiosk_dialogue_presented', { content: dineIn.pendingCustomerChoice.question, questionId: dineIn.pendingCustomerChoice.questionId })
+    const before = await runtime.invoke('kiosk_interaction_state')
+    expect(before).toMatchObject({ waitingFor: { purpose: 'party-size' } })
+    await vi.advanceTimersByTimeAsync(194_999)
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    expect(await runtime.invoke('kiosk_interaction_state')).toEqual(before)
+    session.continueCurrentSession()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(session.customer.value).toBe(customer)
+    expect(session.state.value).toBe('active')
+    expect(await runtime.invoke('kiosk_interaction_state')).toEqual(before)
+    expect(reloadScenario).not.toHaveBeenCalled()
+    expect(endVisitorSession).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    expect(chatSession.deleteSession).not.toHaveBeenCalled()
+    expect(chatSession.createSession).toHaveBeenCalledOnce()
+    const resumed = await runtime.invoke('kiosk_fast_path_context', { transcript: '一位' })
+    expect(resumed).toMatchObject({ waitingFor: { purpose: 'party-size' } })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:set-party-size' })
+    expect(seating.partySize).toBe(1)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, fulfillmentMode: 'dine-in' } })
+  })
+
+  it('does not clear an active order on a completion dismissal without confirmed completion', async () => {
+    const resetConversation = vi.fn()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValue('customer-chat'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({
+      activeCardId: shallowRef('default'),
+      chatSession,
+      resetConversation,
+    }))
+    if (!session)
+      throw new Error('Expected customer-session composable to initialize.')
+
+    await session.recordActivity()
+    const customerSessionId = session.customer.value?.sessionId
+    await session.end('completed')
+    expect(reloadScenario).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    expect(chatSession.deleteSession).not.toHaveBeenCalled()
+    expect(session.customer.value?.sessionId).toBe(customerSessionId)
+    expect(session.state.value).toBe('active')
+  })
+
+  it('replaces the idle customer only after three minutes of inactivity and the 15-second countdown expire', async () => {
+    vi.useFakeTimers()
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const endVisitorSession = vi.fn().mockResolvedValue(undefined)
     const resetConversation = vi.fn()
     const chatSession = {
@@ -238,11 +392,42 @@ describe('useKioskCustomerSession', () => {
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    await vi.advanceTimersByTimeAsync(45_000)
-    await vi.advanceTimersByTimeAsync(15_000)
+    const customerSessionId = session.customer.value?.sessionId
+    const added = await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' }) as { pendingCustomerChoice: { questionId: string, question: string } }
+    await runtime.invoke('kiosk_dialogue_presented', { content: added.pendingCustomerChoice.question, questionId: added.pendingCustomerChoice.questionId })
+    reloadScenario.mockImplementationOnce(() => runtime.reset())
+    await vi.advanceTimersByTimeAsync(179_999)
+    expect(session.state.value).toBe('active')
+    expect(session.customer.value?.sessionId).toBe(customerSessionId)
+    expect(reloadScenario).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await session.end('idle')
+    expect(endVisitorSession).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    expect(reloadScenario).not.toHaveBeenCalled()
+    expect(chatSession.deleteSession).not.toHaveBeenCalled()
+    expect(chatSession.createSession).toHaveBeenCalledOnce()
+    expect(session.customer.value?.sessionId).toBe(customerSessionId)
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 15_000)
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ waitingFor: { purpose: 'fulfillment' } })
+    await vi.advanceTimersByTimeAsync(14_999)
+    expect(reloadScenario).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
 
     expect(endVisitorSession).toHaveBeenCalledOnce()
     expect(resetConversation).toHaveBeenCalledOnce()
+    expect(reloadScenario).toHaveBeenCalledOnce()
+    expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
+    expect(chatSession.createSession).toHaveBeenCalledTimes(2)
+    expect(session.customer.value).toBeUndefined()
     expect(session.state.value).toBe('standby')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor')
+
+    await session.recordActivity()
+    expect(session.customer.value?.sessionId).not.toBe(customerSessionId)
+    expect(session.state.value).toBe('active')
   })
 })

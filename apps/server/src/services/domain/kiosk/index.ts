@@ -18,6 +18,8 @@ import * as schema from '../../../schemas'
 
 /** Inputs that create persistent kiosk configuration and interaction records. */
 export interface KioskService {
+  /** Internal verifier boundary. A device transcript or LLM must never call this operation. */
+  recordVerifiedAssociation: (input: VerifiedSessionAssociation) => Promise<void>
   /** Device identity must already be authenticated by the transport. */
   getDeviceSettings: (deviceId: string) => Promise<DeviceSettingsSnapshot>
   /** Central and local writes share authorization, optimistic concurrency, and audit. */
@@ -68,6 +70,7 @@ export interface KioskService {
     userId: string
     visitorSessionId: string
   }) => Promise<{
+    associations: (typeof schema.kioskSessionAssociations.$inferSelect)[]
     entries: (typeof schema.kioskInteractionEntries.$inferSelect)[]
     session: typeof schema.kioskVisitorSessions.$inferSelect
   }>
@@ -148,8 +151,18 @@ export interface KioskService {
   /** Publishes a selected draft as a new immutable release and assigns it to every Site device. */
   publishProfileDraft: (input: { actorUserId?: string, draftId: string, siteId: string }) => Promise<typeof schema.kioskProfileReleases.$inferSelect>
   publishOwnerExperienceTemplate: (input: { ownerUserId: string }) => Promise<typeof schema.kioskOwnerExperienceReleases.$inferSelect>
-  /** Removes expired visitor sessions and their cascading interaction entries. */
-  purgeExpiredVisitorSessions: (now: Date) => Promise<number>
+  /** Releases expired operational links, retaining text, media, and verified associations in the archive. */
+  releaseExpiredVisitorLinks: (now: Date) => Promise<number>
+}
+
+/** An association established by a trusted membership/POS adapter, not speaker attribution. */
+export interface VerifiedSessionAssociation {
+  authority: string
+  evidenceReference: string
+  externalReference: string
+  kind: 'member' | 'order'
+  verifiedAt: Date
+  visitorSessionId: string
 }
 
 /** The actions a signed-in person may take for one Webnavior site. */
@@ -163,7 +176,7 @@ export interface KioskSiteManagementCapabilities {
 /** Runtime contract shared by kiosk Profile draft writes and immutable releases. */
 export const KioskProfileSnapshotSchema = object({
   assistanceReminderPrompt: pipe(string(), minLength(1), maxLength(2_000)),
-  agentInstructions: pipe(string(), minLength(1), maxLength(8_000)),
+  agentInstructions: pipe(string(), maxLength(8_000)),
   characterName: pipe(string(), minLength(1), maxLength(120)),
   characterAsset: optional(object({
     format: picklist(['live2d_zip', 'vrm']),
@@ -746,14 +759,30 @@ export function createKioskService(db: Database): KioskService {
     })
   }
 
-  async function purgeExpiredVisitorSessions(now: Date) {
-    const deleted = await db.delete(schema.kioskVisitorSessions)
-      .where(and(
-        lte(schema.kioskVisitorSessions.expiresAt, now),
-        isNotNull(schema.kioskVisitorSessions.endedAt),
-      ))
-      .returning({ id: schema.kioskVisitorSessions.id })
-    return deleted.length
+  async function releaseExpiredVisitorLinks(now: Date) {
+    return await db.transaction(async (tx) => {
+      const released = await tx.update(schema.kioskVisitorSessions)
+        .set({ accessReleasedAt: now, agentInteraction: defaultKioskAgentInteractionState })
+        .where(and(lte(schema.kioskVisitorSessions.expiresAt, now), isNotNull(schema.kioskVisitorSessions.endedAt), isNull(schema.kioskVisitorSessions.accessReleasedAt)))
+        .returning({ id: schema.kioskVisitorSessions.id })
+      if (released.length) {
+        await tx.update(schema.kioskSessionAssociations).set({ linkReleasedAt: now }).where(and(inArray(schema.kioskSessionAssociations.visitorSessionId, released.map(session => session.id)), isNull(schema.kioskSessionAssociations.linkReleasedAt)))
+      }
+      return released.length
+    })
+  }
+
+  async function recordVerifiedAssociation(input: VerifiedSessionAssociation) {
+    if (!input.authority.trim() || !input.externalReference.trim() || !input.evidenceReference.trim() || !Number.isFinite(input.verifiedAt.getTime()))
+      throw createConflictError('A verified association requires provider evidence')
+    await db.transaction(async (tx) => {
+      // Serialize association acceptance with session end/release so a
+      // verified operational link cannot be inserted after its owner expires.
+      const [session] = await tx.select().from(schema.kioskVisitorSessions).where(eq(schema.kioskVisitorSessions.id, input.visitorSessionId)).for('update')
+      if (!session || session.state !== 'active' || session.accessReleasedAt)
+        throw createNotFoundError('Active visitor session was not found')
+      await tx.insert(schema.kioskSessionAssociations).values(input).onConflictDoNothing()
+    })
   }
 
   async function deleteVisitorSessions(input: { siteId: string, userId: string, visitorSessionIds: string[] }) {
@@ -985,12 +1014,14 @@ export function createKioskService(db: Database): KioskService {
       throw createNotFoundError('Visitor session was not found')
 
     await assertCanReadTranscript(input.userId, visitorSession.siteId)
+    await db.insert(schema.kioskAuditLogs).values({ siteId: visitorSession.siteId, actorUserId: input.userId, action: 'visitor_archive.read', targetType: 'visitor_session', targetId: visitorSession.id })
 
     const entries = await db.query.kioskInteractionEntries.findMany({
       where: eq(schema.kioskInteractionEntries.visitorSessionId, visitorSession.id),
       orderBy: [asc(schema.kioskInteractionEntries.sequence)],
     })
-    return { session: visitorSession, entries }
+    const associations = await db.query.kioskSessionAssociations.findMany({ where: eq(schema.kioskSessionAssociations.visitorSessionId, visitorSession.id) })
+    return { session: visitorSession, entries, associations }
   }
 
   async function getVisitorSessionForDevice(input: { deviceId: string, visitorSessionId: string }) {
@@ -1002,6 +1033,10 @@ export function createKioskService(db: Database): KioskService {
     })
     if (!session)
       throw createNotFoundError('Visitor session was not found for this kiosk device')
+    // Completed sessions may receive a final evidence upload before expiry.
+    // After the captured deadline only authorized system archive reads remain.
+    if (session.accessReleasedAt || (session.endedAt && session.expiresAt <= new Date()))
+      throw createNotFoundError('Visitor session operational access has expired')
     const entries = await db.query.kioskInteractionEntries.findMany({
       where: eq(schema.kioskInteractionEntries.visitorSessionId, session.id),
       orderBy: [asc(schema.kioskInteractionEntries.sequence)],
@@ -1134,7 +1169,8 @@ export function createKioskService(db: Database): KioskService {
     setSiteVoiceVadSettings,
     publishProfileDraft,
     publishOwnerExperienceTemplate,
-    purgeExpiredVisitorSessions,
+    releaseExpiredVisitorLinks,
+    recordVerifiedAssociation,
   }
 }
 

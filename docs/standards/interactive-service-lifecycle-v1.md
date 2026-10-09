@@ -36,7 +36,9 @@ available.
 - `activity` means a customer manually interacted with the service UI. The host
   refreshes its anonymous-session idle timer.
 - `completed` means the service completed its customer flow. The host enters
-  its existing completion and next-customer lifecycle. A menu service may
+  its completion lifecycle; it does not itself request a session reset. Stage
+  Kiosk clears the completed order, dialogue and visitor identity when its
+  completion screen finishes after confirmed success. A menu service may
   attach the listed non-personal `orderResult`; the host validates its shape
   only after validating the current iframe source and approved origin. A
   rejected or uncertain submission must not emit `completed`.
@@ -46,8 +48,14 @@ The host accepts a message only when both the event's service origin and
 
 ## Session reset
 
-The host resets a completed or ended customer session by reloading the active
-iframe. A service does not need to expose a host-only reset Tool or any Tool
+When reset is authorized, the host reloads the active iframe. Stage Kiosk resets
+after unanswered idle-confirmation expiry (three minutes inactive, then a 15-second
+countdown), confirmed completion followed by completion-screen dismissal/expiry,
+or an explicit new-order/staff action. Showing the idle dialog or continuing
+never resets the iframe, conversation or pending questions. Presence departure
+does not itself authorize reset. Stage Web's shared lifecycle retains its default
+45-second interval and automatic-expiry policy. A service
+does not need to expose a host-only reset Tool or any Tool
 bridge endpoint. Services must therefore initialize a fresh anonymous customer
 state on page load.
 

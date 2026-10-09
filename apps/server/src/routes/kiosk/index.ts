@@ -3,18 +3,23 @@ import type { Context } from 'hono'
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { KioskAgentInteractionState } from '../../services/domain/kiosk-agent-interaction'
+import type { KioskConversationDecisionState } from '../../services/domain/kiosk-interaction-decision/contracts'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
 import type { HonoEnv } from '../../types/hono'
 
-import { randomInt } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import { array, boolean, integer, literal, maxLength, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
+import { array, boolean, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
-import { compactToolResultForModel, createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
+import { compactToolResultForModel, createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
+import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
+import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
+import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
+import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
@@ -29,10 +34,12 @@ const visitorSessionSchema = object({
 })
 
 const interactionEntrySchema = object({
-  content: pipe(string(), maxLength(32_000)),
+  content: pipe(string(), maxLength(1_000_000)),
   kind: picklist(['user_text', 'assistant_text', 'asr_transcript', 'tool_call', 'tool_result', 'service_event', 'order_result']),
   metadata: optional(object({
-    decisionRoute: optional(literal('fast_path')),
+    utteranceId: optional(pipe(number(), integer(), minValue(1))),
+    decisionRoute: optional(picklist(decisionRoutes)),
+    questionId: optional(pipe(string(), minLength(1), maxLength(120))),
     name: optional(pipe(string(), regex(/^[\w:-]+$/), maxLength(120))),
     source: optional(pipe(string(), maxLength(80))),
   })),
@@ -57,24 +64,58 @@ const kioskToolResultSchema = object({
   toolCallId: pipe(string(), minLength(1), maxLength(256)),
 })
 
+const interactionStateSchema = object({
+  screen: optional(picklist(['menu', 'cart_review', 'item_configuration', 'checkout'])),
+  lastAddedItemName: optional(pipe(string(), maxLength(120))),
+  matchingCartLines: pipe(number(), integer(), minValue(0)),
+  pendingAction: optional(pipe(string(), maxLength(80))),
+  pendingIntent: optional(pipe(string(), maxLength(80))),
+  selectedItemName: optional(pipe(string(), maxLength(120))),
+  seating: optional(object({ partySize: optional(pipe(number(), integer(), minValue(1), maxValue(20))), ready: boolean(), question: pipe(string(), maxLength(500)) })),
+})
+
+const presentedQuestionSchema = object({
+  questionId: pipe(string(), minLength(1), maxLength(120)),
+  purpose: pipe(string(), minLength(1), maxLength(60)),
+  question: pipe(string(), minLength(1), maxLength(500)),
+  expiresAt: number(),
+  choices: pipe(array(object({ id: pipe(string(), minLength(1), maxLength(120)), description: pipe(string(), maxLength(500)) })), maxLength(20)),
+})
+
+// HTTP carries browser-issued price choices; execution still compares their ID
+// with the browser's one-use ticket, so these are evidence, never tool authority.
+const priceConditionsSchema = object({
+  minPrice: optional(pipe(number(), integer(), minValue(0), maxValue(Number.MAX_SAFE_INTEGER))),
+  maxPrice: optional(pipe(number(), integer(), minValue(0), maxValue(Number.MAX_SAFE_INTEGER))),
+  minPriceExclusive: optional(boolean()),
+  maxPriceExclusive: optional(boolean()),
+  priceOrder: optional(literal('ASC')),
+})
+const priceEvidenceSchema = object({
+  amounts: pipe(array(object({ text: pipe(string(), maxLength(120)), amount: pipe(number(), integer(), minValue(0), maxValue(Number.MAX_SAFE_INTEGER)) })), maxLength(2)),
+  choices: pipe(array(object({ id: pipe(string(), regex(/^[A-Z_]+$/), maxLength(40)), description: pipe(string(), maxLength(500)), kind: picklist(['condition', 'information', 'none', 'unsupported']), conditions: optional(priceConditionsSchema) })), minLength(3), maxLength(15)),
+})
+
 const conversationMessageSchema = object({
+  utteranceId: optional(pipe(number(), integer(), minValue(1))),
   content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
   decisionState: optional(object({
+    priceEvidence: optional(priceEvidenceSchema),
+    incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: literal(true) })),
+    menuRevision: optional(pipe(number(), integer(), minValue(0))),
+    constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(9)), include: optional(pipe(array(pipe(string(), maxLength(80))), maxLength(9))), dietary: optional(literal('vegetarian')), price: optional(priceConditionsSchema), unresolvedPrice: optional(boolean()) })),
+    completedReads: optional(pipe(array(object({ toolName: pipe(string(), maxLength(80)), customerMessage: pipe(string(), maxLength(2_000)) })), maxLength(2))),
+    unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
+    fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
+    waitingFor: optional(presentedQuestionSchema),
     allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
-    interactionState: optional(object({ lastAddedItemName: optional(pipe(string(), maxLength(120))), matchingCartLines: pipe(number(), integer(), minValue(0)), pendingAction: optional(pipe(string(), maxLength(80))), pendingIntent: optional(pipe(string(), maxLength(80))), selectedItemName: optional(pipe(string(), maxLength(120))) })),
+    interactionState: optional(interactionStateSchema),
     paymentState: optional(pipe(string(), maxLength(40))),
     phase: pipe(string(), regex(/^[a-z_]+$/), maxLength(60)),
   })),
   toolResults: optional(array(kioskToolResultSchema), []),
   tools: optional(array(kioskToolSchema), []),
 })
-
-interface KioskConversationDecisionState {
-  allowedPaymentMethods?: Array<'card' | 'mobile'>
-  interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }
-  paymentState?: string
-  phase: string
-}
 
 const orderResultSchema = object({
   environment: picklist(['test', 'live']),
@@ -87,6 +128,7 @@ const orderResultSchema = object({
 })
 
 const assistantActionSchema = object({
+  invitationAllowed: optional(boolean(), false),
   // A downscaled JPEG from the live kiosk camera. It is inference-only and is
   // deliberately not persisted through the visitor-media route.
   frame: optional(pipe(string(), maxLength(700_000), regex(/^data:image\/jpeg;base64,[a-z0-9+/=]+$/i, 'frame must be a JPEG data URL'))),
@@ -99,18 +141,37 @@ const speechSchema = object({
 })
 
 const interactionDecisionSchema = object({
+  segmented: optional(boolean()),
+  visitorSessionId: optional(pipe(string(), minLength(1), maxLength(120))),
+  review: optional(object({ answer: pipe(string(), maxLength(2_000)), observation: pipe(string(), maxLength(4_000)) })),
   candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
   decisionState: optional(object({
+    priceEvidence: optional(priceEvidenceSchema),
+    incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: optional(boolean()) })),
+    productResolution: optional(object({ status: picklist(['exact', 'possible', 'none', 'overflow']), count: pipe(number(), integer(), minValue(0)), references: pipe(array(object({ label: pipe(string(), maxLength(120)), refId: pipe(string(), maxLength(120)) })), maxLength(5)) })),
+    catalogEvidence: optional(object({
+      products: pipe(array(object({ label: pipe(string(), maxLength(120)), matchedText: pipe(string(), minLength(1), maxLength(120)), source: picklist(['name', 'alias', 'fragment']) })), maxLength(5)),
+      categories: pipe(array(object({ label: pipe(string(), maxLength(120)), matchedText: pipe(string(), minLength(1), maxLength(120)), itemCount: pipe(number(), integer(), minValue(0)) })), maxLength(5)),
+    })),
+    revisions: optional(object({ cart: number(), checkout: number(), selectedItem: number(), menu: optional(number()) })),
+    completedReads: optional(pipe(array(object({ toolName: pipe(string(), maxLength(80)), customerMessage: pipe(string(), maxLength(2_000)) })), maxLength(2))),
+    unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
+    menuRevision: optional(pipe(number(), integer(), minValue(0))),
+    fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
+    waitingFor: optional(presentedQuestionSchema),
     activeRequest: optional(object({ stage: picklist(['starting', 'thinking', 'tool_requested', 'mutating']), text: pipe(string(), regex(/\S/), maxLength(240)) })),
     allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
     checkoutSnapshot: optional(unknown()),
-    constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(8)) })),
-    interactionState: optional(object({ lastAddedItemName: optional(pipe(string(), maxLength(120))), matchingCartLines: pipe(number(), integer(), minValue(0)), pendingAction: optional(pipe(string(), maxLength(80))), pendingIntent: optional(pipe(string(), maxLength(80))), selectedItemName: optional(pipe(string(), maxLength(120))) })),
+    constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(9)), include: optional(pipe(array(pipe(string(), maxLength(80))), maxLength(9))), dietary: optional(literal('vegetarian')), price: optional(priceConditionsSchema), unresolvedPrice: optional(boolean()) })),
+    ingredientReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z_-]+$/), maxLength(40)), label: pipe(string(), maxLength(40)) })), maxLength(9))),
+    dietaryReferences: optional(pipe(array(object({ id: literal('vegetarian'), label: pipe(string(), maxLength(40)) })), maxLength(1))),
+    interactionState: optional(interactionStateSchema),
     paymentState: optional(pipe(string(), maxLength(40))),
     phase: pipe(string(), regex(/^[a-z_]+$/), maxLength(60)),
     references: optional(pipe(array(object({ label: pipe(string(), maxLength(120)), refId: pipe(string(), maxLength(120)) })), maxLength(32))),
   })),
   includeTrace: optional(boolean()),
+  maxQuestions: optional(pipe(number(), integer(), minValue(1), maxValue(24))),
   presenceState: optional(picklist(['EMPTY', 'PASSING', 'DISTANT', 'APPROACHING', 'ENGAGED'])),
   transcript: pipe(string(), regex(/\S/), maxLength(8_000)),
 })
@@ -135,7 +196,7 @@ export interface KioskRoutesOptions {
     speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
     transcribe: (input: { audio: File, modelName: string }) => Promise<string>
   }
-  systemOne?: ReturnType<typeof createKioskSystemOneService>
+  systemOne?: Pick<ReturnType<typeof createKioskSystemOneService>, 'decide' | 'getPolicy' | 'isEnabled' | 'maxActionCandidates'>
   /** Development-only trace of the tool protocol; never include customer content or tool arguments. */
   toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
@@ -151,6 +212,7 @@ export interface KioskRoutesOptions {
  */
 export function createKioskRoutes(options: KioskRoutesOptions) {
   const routes = new Hono<HonoEnv>()
+  const decisionStages = createDecisionStages()
 
   routes.get('/bootstrap', async (c) => {
     const credential = getCookie(c, kioskDeviceCookieName)
@@ -230,23 +292,60 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     return c.json({ text })
   })
 
-  routes.post('/interaction-decisions', async (c) => {
+  routes.get('/interaction-decisions/status', async (c) => {
     await resolveAuthenticatedDevice(c, options.kioskService)
+    // Read on each utterance; bootstrap/browser caches must not outlive an
+    // administrator's activation change. This never probes the model.
+    c.header('Cache-Control', 'no-store')
+    return c.json({ enabled: options.systemOne ? await options.systemOne.isEnabled() : false })
+  })
+
+  routes.post('/interaction-decisions', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
     const result = safeParse(interactionDecisionSchema, await c.req.json().catch(() => null))
     if (!result.success)
       throw createBadRequestError('Invalid kiosk interaction decision request', 'INVALID_REQUEST', result.issues)
-    if (!options.systemOne)
-      return c.json({ kind: 'UNAVAILABLE' })
-    return c.json(await decideInteraction({
+    const session = result.output.visitorSessionId
+      ? await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId })
+      : undefined
+    if (session && session.session.state !== 'active')
+      throw createBadRequestError('Visitor session is not active', 'SESSION_INACTIVE')
+    if (!options.systemOne || !await options.systemOne.isEnabled())
+      return c.json({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
+    const decisionInput = {
+      conversation: session ? buildConversationContext(session.entries, result.output.review ? result.output.transcript : undefined) : undefined,
+      review: result.output.review,
       candidates: result.output.candidates,
       decisionState: result.output.decisionState,
       includeTrace: result.output.includeTrace,
+      maxQuestions: result.output.maxQuestions,
       invoke: options.systemOne.decide,
       maxActionCandidates: await options.systemOne.maxActionCandidates(),
       policy: await options.systemOne.getPolicy(),
       presenceState: result.output.presenceState,
       transcript: result.output.transcript,
-    }))
+    }
+    return c.json(result.output.segmented
+      ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, checkpoint => decideInteraction({ ...decisionInput, invoke: checkpoint(options.systemOne!.decide) }))
+      : await decideInteraction(decisionInput))
+  })
+
+  routes.post('/interaction-decisions/:id', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const body = safeParse(object({ visitorSessionId: optional(pipe(string(), minLength(1), maxLength(120))) }), await c.req.json().catch(() => null))
+    if (!body.success)
+      throw createBadRequestError('Invalid decision continuation', 'INVALID_REQUEST')
+    if (body.output.visitorSessionId) {
+      const session = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: body.output.visitorSessionId })
+      if (session.session.state !== 'active')
+        throw createBadRequestError('Visitor session is not active', 'SESSION_INACTIVE')
+    }
+    try {
+      return c.json(await decisionStages.next({ deviceId: device.id, visitorSessionId: body.output.visitorSessionId }, c.req.param('id')))
+    }
+    catch {
+      throw createBadRequestError('Decision continuation expired or unavailable', 'STALE_DECISION')
+    }
   })
 
   routes.post('/audio/speech', async (c) => {
@@ -424,6 +523,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       await options.kioskService.appendDeviceInteraction({
         content,
         kind: 'user_text',
+        metadata: result.output.utteranceId ? { utteranceId: result.output.utteranceId } : {},
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -485,7 +585,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (answer.content) {
       await options.kioskService.appendDeviceInteraction({
         content: answer.content,
-        kind: 'assistant_text',
+        // Operation prose is a draft; only the host's validated receipt is
+        // customer dialogue. Do not feed a competing question back as history.
+        kind: answer.toolCalls.length || requiresPresentedReply(result.output.toolResults, result.output.tools.map(tool => tool.function.name)) ? 'service_event' : 'assistant_text',
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -545,9 +647,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (proactiveVlmEnabled && !result.output.frame)
       throw createBadRequestError('A camera frame is required for VLM', 'INVALID_REQUEST')
     const answer = await completeKioskReply({
-      actionPrompt: result.output.kind === 'greeting'
+      actionPrompt: `${result.output.kind === 'greeting'
         ? profile.snapshot.greetingPrompt
-        : profile.snapshot.assistanceReminderPrompt,
+        : profile.snapshot.assistanceReminderPrompt}\n只寫簡短開場陳述，不提出問題、不列出餐點。Application 會在允許時附上具體推薦邀請。`,
       abortSignal: c.req.raw.signal,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
@@ -558,14 +660,21 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     })
     if (!answer.content)
       throw createBadRequestError('LLM Provider did not return a text reply', 'LLM_PROVIDER_INVALID_RESPONSE')
+    const invitation = result.output.invitationAllowed ? createRecommendationInvitation(randomUUID(), Date.now()) : undefined
+    // A generated question is not a second invitation contract. If the model
+    // ignores the opening-only instruction, present one canonical invitation.
+    let opening = answer.content
+    if (invitation && /[?？]/u.test(opening))
+      opening = result.output.kind === 'greeting' ? '您好，歡迎光臨。' : '我可以協助您繼續點餐。'
+    const customerAnswer = invitation ? `${opening} ${invitation.question}` : opening
     await options.kioskService.appendDeviceInteraction({
-      content: answer.content,
+      content: customerAnswer,
       kind: 'assistant_text',
-      metadata: { action: result.output.kind },
+      metadata: { action: result.output.kind, ...(invitation ? { questionId: invitation.questionId } : {}) },
       deviceId: device.id,
       visitorSessionId: transcript.session.id,
     })
-    return c.json({ answer: answer.content })
+    return c.json({ answer: customerAnswer, ...(invitation ? { pendingCustomerChoice: invitation } : {}) })
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/order-results', async (c) => {
@@ -800,7 +909,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
         if (answer.content) {
           await input.kioskService.appendDeviceInteraction({
             content: answer.content,
-            kind: 'assistant_text',
+            kind: answer.toolCalls.length || requiresPresentedReply(input.toolResults, input.tools.map(tool => tool.function.name)) ? 'service_event' : 'assistant_text',
             deviceId: input.deviceId,
             visitorSessionId: input.transcript.session.id,
           })
@@ -970,12 +1079,21 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? {
           content: [
             `目前 Kiosk 畫面：${input.decisionState.phase}`,
+            `本次已解析條件（不得省略或自行放寬）：${JSON.stringify(input.decisionState.constraints ?? { exclude: [] })}`,
+            input.decisionState.priceEvidence ? '本句涉及價格。只使用已解析的單份基本售價條件；未解析時先詢問明確單份上限或範圍，不自行猜預算、分配總額或忽略價格。價格以工具真實售價顯示在畫面即可，不必口頭逐項唸價。' : undefined,
+            `本次已完成的查詢（不要重複已完成操作）：${JSON.stringify(input.decisionState.completedReads ?? [])}`,
+            input.decisionState.incompleteSpeech?.related ? `本次需求承接的未完成顧客語句（與這一句是同一需求，保留兩段原文，不視為兩筆訂單）：${JSON.stringify(input.decisionState.incompleteSpeech.transcript)}` : undefined,
+            `本句提及但目前資料不能驗證的條件主題（提及不一定是要求；若確為要求，不可聲稱已符合）：${JSON.stringify(input.decisionState.unavailableConditionReferences ?? [])}`,
+            `POS 目前提供的用餐方式（只能使用這些名稱）：${JSON.stringify(input.decisionState.fulfillmentModes ?? [])}`,
             `付款狀態：${input.decisionState.paymentState ?? 'unknown'}`,
             `目前可選付款方式：${input.decisionState.allowedPaymentMethods?.join('、') || '無'}`,
+            input.decisionState.waitingFor && input.decisionState.waitingFor.expiresAt > Date.now() ? `目前真正等待顧客回答的操作問題與回答效果：${JSON.stringify(input.decisionState.waitingFor)}` : undefined,
+            input.decisionState.interactionState?.screen ? `目前可見畫面：${input.decisionState.interactionState.screen}` : undefined,
             input.decisionState.interactionState?.selectedItemName ? `目前選取餐點：${input.decisionState.interactionState.selectedItemName}` : undefined,
             input.decisionState.interactionState?.lastAddedItemName ? `最近加入餐點：${input.decisionState.interactionState.lastAddedItemName}` : undefined,
             input.decisionState.interactionState?.pendingAction ? `目前等待顧客確認：${input.decisionState.interactionState.pendingAction}` : undefined,
             input.decisionState.interactionState?.pendingIntent ? `目前等待顧客釐清：${input.decisionState.interactionState.pendingIntent}` : undefined,
+            input.decisionState.interactionState?.seating ? `內用桌位：${JSON.stringify(input.decisionState.interactionState.seating)}` : undefined,
             '這是本輪開始時的畫面摘要；執行操作前仍以點餐工具的最新狀態為準。',
           ].filter(Boolean).join('\n'),
           title: '目前點餐畫面',
@@ -985,6 +1103,7 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
       : undefined,
     input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
+    { content: '操作問題由點餐系統依 POS 與目前狀態產生。工具回傳 pendingCustomerChoice 時，不另寫或重複詢問問題，由畫面呈現該問題。用餐方式名稱必須取自最新 POS fulfillmentModes，不自行將 takeout 解讀成外帶。環境、資料來源與測試標記僅供內部紀錄，不向顧客敘述；只回報工具證實的訂單與付款狀態。pending 或 uncertain 不可宣稱付款或訂單成功。', title: '顧客回覆與操作問題分界' },
   ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }
 
@@ -1042,15 +1161,7 @@ function toConversationMessages(
 }
 
 function conversationTextEntries(entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries']) {
-  return entries.flatMap((entry) => {
-    if (entry.kind === 'user_text' || entry.kind === 'assistant_text')
-      return [{ kind: entry.kind, content: entry.content }]
-    // Only completed Fast Path ASR turns join the Agent conversation. An ASR
-    // utterance escalated to Agent is appended again as user_text by /messages.
-    if (entry.kind === 'asr_transcript' && entry.metadata?.decisionRoute === 'fast_path')
-      return [{ kind: 'user_text' as const, content: entry.content }]
-    return []
-  })
+  return conversationEntries(entries)
 }
 
 function isChatCompletion(value: unknown): value is { choices: [{ message: { content?: string | null, tool_calls?: KioskToolCall[] } }] } {

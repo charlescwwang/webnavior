@@ -21,10 +21,21 @@ Use it in an AIRI Interaction Host after an embedded interactive service emits `
 `composables/use-kiosk-customer-session` owns the disposable customer session
 used by both Stage Web and Stage Kiosk: session start, pending AI work, an idle
 confirmation before anonymous data is reset, expiry, completion, chat
-replacement, and cleanup. A host supplies only its
+replacement, and cleanup. A host supplies its reset policy and
 own `resetInteractiveSurface` action, such as reloading an embedded WebMCP
 service. Use this composable for customer-facing interactive hosts; do not put
 the lifecycle into a domain service such as a restaurant menu.
+
+Idle confirmation retains customer state and starts a 15-second reset countdown.
+Continuing cancels that countdown without resetting any host content. Unanswered
+expiry resets the customer/chat and embedded service to clean standby.
+`resetPolicy: 'confirmed-completion'` also requires a host-confirmed successful
+order before completion can reset state. `completeOrder()` marks that success;
+`end('completed')` then resets customer/chat and the embedded service after its
+completion screen finishes. A dismissal without this completion state is ignored.
+Explicit `end('staff')` (including the new-customer action) also resets context.
+Stage Kiosk uses this policy with `idleTimeoutMs: 30_000`. Stage Web retains
+its default 45-second inactivity interval and automatic policy.
 
 ## Histoire (UI storyboard)
 

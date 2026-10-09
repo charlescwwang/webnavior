@@ -20,6 +20,84 @@ async function acceptedOrder(gateway = createInMemorySimulatorGateway()) {
 }
 
 describe('pOS Bridge contract', () => {
+  it('shares one POS submission and receipt when the same order arrives concurrently', async () => {
+    const gateway = createInMemorySimulatorGateway()
+    let submitted = 0
+    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: { ...gateway, submit: async (submission) => {
+      submitted++
+      return await gateway.submit(submission)
+    } } })
+    const submission = await acceptedOrder(gateway)
+    const send = () => app.request('/v1/orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
+    const [first, second] = await Promise.all([send(), send()])
+    expect(first.status).toBe(201)
+    expect(second.status).toBe(201)
+    expect(await second.json()).toEqual(await first.json())
+    expect(submitted).toBe(1)
+  })
+  it('does not misreport an unavailable POS as an expired table hold', async () => {
+    const gateway = createInMemorySimulatorGateway()
+    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: { ...gateway, getTableHold: async () => {
+      throw new Error('POS disconnected')
+    } } })
+    expect((await app.request('/v1/seating/holds/unresolved')).status).toBe(503)
+    const available = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    expect((await available.request('/v1/seating/holds/expired')).status).toBe(404)
+  })
+  it('reserves through HTTP, locks the same hold to payment and occupies it exactly once', async () => {
+    const gateway = createInMemorySimulatorGateway()
+    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    const request = (path: string, body: unknown) => app.request(path, { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
+    const held = await request('/v1/seating/holds', { expectedRevision: 0, partySize: 5, tableIds: ['T1', 'T2'], splitApproved: true })
+    expect(held.status).toBe(201)
+    const { hold } = await held.json() as { hold: { id: string } }
+    const paymentResponse = await request('/v1/payments', { amount: 145, method: 'card', tableHoldId: hold.id })
+    expect(paymentResponse.status).toBe(201)
+    const { payment } = await paymentResponse.json() as { payment: { id: string } }
+    expect((await app.request(`/v1/seating/holds/${hold.id}`, { method: 'DELETE' })).status).toBe(409)
+    expect((await request('/v1/payments', { amount: 145, method: 'card', tableHoldId: hold.id })).status).toBe(503)
+    const order = await acceptedOrder(gateway)
+    const submission = { ...order, cart: { ...order.cart, fulfillmentMode: 'dine-in', tableHoldId: hold.id, paymentId: payment.id } }
+    const result = await request('/v1/orders', submission)
+    expect(result.status).toBe(201)
+    await expect(result.json()).resolves.toMatchObject({ order: { receipt: { status: 'accepted' } } })
+    await expect((await app.request('/v1/seating')).json()).resolves.toMatchObject({ seating: { tables: expect.arrayContaining([{ id: 'T1', label: '1 號桌', capacity: 4, status: 'occupied' }, { id: 'T2', label: '2 號桌', capacity: 4, status: 'occupied' }]) } })
+    await expect((await request('/v1/orders', submission)).json()).resolves.toMatchObject({ order: { receipt: { status: 'accepted' } } })
+  })
+
+  it('rejects a stale table snapshot and simultaneous claims, without accepting silent splitting', async () => {
+    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: createInMemorySimulatorGateway() })
+    const reserve = (body: unknown) => app.request('/v1/seating/holds', { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
+    expect((await reserve({ expectedRevision: 0, partySize: 5, tableIds: ['T1', 'T2'], splitApproved: false })).status).toBe(409)
+    const results = await Promise.all([reserve({ expectedRevision: 0, partySize: 4, tableIds: ['T1'], splitApproved: false }), reserve({ expectedRevision: 0, partySize: 4, tableIds: ['T1'], splitApproved: false })])
+    expect(results.map(response => response.status).sort()).toEqual([201, 409])
+    expect((await reserve({ expectedRevision: 0, partySize: 4, tableIds: ['T2'], splitApproved: false })).status).toBe(409)
+    expect((await reserve({ partySize: 4, tableIds: ['T2'], splitApproved: false })).status).toBe(400)
+  })
+
+  it('keeps pending and uncertain payment holds locked beyond the unpaid deadline', async () => {
+    for (const status of ['pending', 'uncertain'] as const) {
+      let now = 0
+      const gateway = createInMemorySimulatorGateway('accepted', status, () => now)
+      const hold = await gateway.reserveTables({ expectedRevision: 0, partySize: 2, tableIds: ['T1'], splitApproved: false })
+      expect((await gateway.createPayment(145, 'card', hold.id)).status).toBe(status)
+      now = 600001
+      expect((await gateway.getSeating()).tables[0]?.status).toBe('held')
+      await expect(gateway.releaseTables(hold.id)).rejects.toThrow('Payment')
+    }
+  })
+
+  it('rejects dine-in without a payment-bound hold and does not steal seats through a pickup order', async () => {
+    const gateway = createInMemorySimulatorGateway()
+    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    const order = await acceptedOrder(gateway)
+    const submit = (cart: unknown, idempotencyKey: string) => app.request('/v1/orders', { body: JSON.stringify({ cart, idempotencyKey }), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
+    await expect((await submit({ ...order.cart, fulfillmentMode: 'dine-in' }, 'dine-without-hold-0001')).json()).resolves.toMatchObject({ order: { receipt: { status: 'rejected' } } })
+    const hold = await gateway.reserveTables({ expectedRevision: 0, partySize: 2, tableIds: ['T1'], splitApproved: false })
+    const payment = await gateway.createPayment(145, 'card', hold.id)
+    await expect((await submit({ ...order.cart, tableHoldId: hold.id, paymentId: payment.id }, 'pickup-with-hold-0001')).json()).resolves.toMatchObject({ order: { receipt: { status: 'rejected' } } })
+    expect((await gateway.getTableHold(hold.id))?.status).toBe('locked')
+  })
   it('returns the simulator catalog through the browser-facing bridge', async () => {
     const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: createInMemorySimulatorGateway() })
 

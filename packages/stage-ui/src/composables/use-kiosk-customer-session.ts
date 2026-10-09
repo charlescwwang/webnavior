@@ -23,6 +23,10 @@ export interface KioskCustomerSessionOptions {
   chatSession: ReturnType<typeof useChatSessionStore>
   /** Clears or reloads the host's currently embedded interactive service. */
   resetInteractiveSurface: () => void | Promise<void>
+  /** Kiosk requires host-confirmed completion; both policies expire unanswered idle confirmation. */
+  resetPolicy?: 'automatic' | 'confirmed-completion'
+  /** Customer inactivity before the confirmation dialog; defaults to 45 seconds for Stage Web. */
+  idleTimeoutMs?: number
 }
 
 const idleTimeoutMs = 45_000
@@ -31,9 +35,8 @@ const idleConfirmationTimeoutMs = 15_000
 /**
  * Owns the anonymous customer lifecycle shared by stage-web and stage-kiosk.
  *
- * The host supplies only the interactive-surface reset action. All chat
- * replacement, idle timing, and pending-work protection remain local to this
- * module so the two stage surfaces cannot diverge in customer-session behavior.
+ * The confirmation dialog retains all customer state. Continuing cancels its
+ * reset timer; only unanswered expiry, confirmed completion or staff reset clears it.
  */
 export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
   const state = shallowRef<KioskCustomerSessionState>('standby')
@@ -83,8 +86,9 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     if (pendingWorkTokens.size > 0 || presenceIdleSuppressed.value)
       return
 
-    idleDeadlineAt.value = Date.now() + idleTimeoutMs
-    endTimer = setTimeout(requestIdleConfirmation, idleTimeoutMs)
+    const timeoutMs = options.idleTimeoutMs ?? idleTimeoutMs
+    idleDeadlineAt.value = Date.now() + timeoutMs
+    endTimer = setTimeout(requestIdleConfirmation, timeoutMs)
   }
 
   function requestIdleConfirmation() {
@@ -128,6 +132,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     if (state.value !== 'awaiting-idle-confirmation')
       return
 
+    // Resuming changes only lifecycle timing, not dialogue, menu or answer state.
     state.value = 'active'
     hasCustomerActivity.value = true
     scheduleIdleTimeout()
@@ -182,7 +187,16 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     return true
   }
 
-  async function end(_reason: 'completed' | 'idle' | 'staff') {
+  async function end(reason: 'completed' | 'idle' | 'staff') {
+    // A canceled/late idle callback has no authority over a resumed or new order.
+    if (reason === 'idle' && (state.value !== 'awaiting-idle-confirmation' || idleDeadlineAt.value === undefined || Date.now() < idleDeadlineAt.value))
+      return
+    if (options.resetPolicy === 'confirmed-completion') {
+      // Only a host-confirmed completion may clear the order. A late dismissal
+      // from an old overlay must not reset the next customer's active session.
+      if (reason === 'completed' && state.value !== 'completing' && !resetTask)
+        return
+    }
     if (resetTask)
       return await resetTask
 

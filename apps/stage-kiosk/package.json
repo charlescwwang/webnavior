@@ -44,6 +44,7 @@
     "@proj-airi/unplugin-live2d-sdk": "catalog:",
     "@unocss/reset": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
+    "@vitest/browser-playwright": "catalog:vitest",
     "@webgpu/types": "catalog:",
     "unocss": "catalog:",
     "unplugin-info": "catalog:",
@@ -51,6 +52,7 @@
     "vite": "catalog:",
     "vite-plugin-vue-layouts": "catalog:",
     "vitest": "catalog:vitest",
+    "vitest-browser-vue": "catalog:",
     "vue-tsc": "catalog:"
   }
 }

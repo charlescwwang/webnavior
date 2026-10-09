@@ -25,9 +25,9 @@ function isPayment(value: unknown): value is PaymentIntent {
 }
 
 /** Starts a customer-terminal payment without exposing that physical action as an Agent tool. */
-export async function createPayment(baseUrl: string, amount: number, method: PaymentMethod) {
+export async function createPayment(baseUrl: string, amount: number, method: PaymentMethod, tableHoldId?: string) {
   const response = await fetch(endpoint(baseUrl, 'v1/payments'), {
-    body: JSON.stringify({ amount, method }),
+    body: JSON.stringify({ amount, method, tableHoldId }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   })
@@ -78,7 +78,7 @@ function isSubmittedOrder(value: unknown): value is SubmittedOrder {
 }
 
 /** Calls the configured POS Bridge and never substitutes a browser-local demo order. */
-export function createPosBridgeGateway(baseUrl: string): PosOrderGateway {
+export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined): PosOrderGateway {
   let idempotencyKey: string | undefined
 
   return {
@@ -86,7 +86,7 @@ export function createPosBridgeGateway(baseUrl: string): PosOrderGateway {
       idempotencyKey ??= `menu-${crypto.randomUUID()}`
       try {
         const response = await fetch(endpoint(baseUrl, 'v1/orders'), {
-          body: JSON.stringify({ cart, idempotencyKey }),
+          body: JSON.stringify({ cart: { ...cart, ...(cart.fulfillmentMode === 'dine-in' ? { tableHoldId: tableHoldId() } : {}) }, idempotencyKey }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         })

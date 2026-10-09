@@ -3,6 +3,24 @@ import { describe, expect, it, vi } from 'vitest'
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 
 describe('kiosk utterance queue', () => {
+  it('processes later ASR results after an earlier handler rejects with an HTTP 500 error', async () => {
+    const failure = new Error('HTTP 500')
+    const onError = vi.fn()
+    const process = vi.fn(async (utterance) => {
+      if (utterance.text === '第一句')
+        throw failure
+    })
+    const queue = createKioskUtteranceQueue({ onError, process })
+    queue.submit({ source: 'asr', text: '第一句' })
+    queue.submit({ source: 'asr', text: '我要水餃' })
+    await queue.idle()
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ text: '第一句' }), failure)
+    expect(process).toHaveBeenCalledTimes(2)
+    expect(process).toHaveBeenNthCalledWith(2, expect.objectContaining({ text: '我要水餃' }), expect.any(Object))
+    queue.submit({ source: 'asr', text: '有便當嗎' })
+    await queue.idle()
+    expect(process).toHaveBeenCalledTimes(3)
+  })
   it('keeps completed ASR segments separate and processes them in arrival order', async () => {
     let releaseFirst: (() => void) | undefined
     const first = new Promise<void>((resolve) => {

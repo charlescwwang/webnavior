@@ -1,6 +1,7 @@
 import type { Tool } from '@xsai/shared-chat'
 
-import type { KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolCall, KioskToolDefinition } from '../services/kiosk-device'
+import type { InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
+import type { KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 import type { InteractiveServiceOrderResult } from '../services/scenario-registry'
 
 import { executeTool } from '@xsai/shared-chat'
@@ -10,6 +11,8 @@ import { readonly, shallowRef } from 'vue'
 import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
 
 interface ConversationPresentationCallbacks {
+  onToolResult?: (toolName: string, content: string) => void
+  utteranceId?: number
   decisionState?: KioskConversationDecisionState
   onAssistantDelta?: (text: string) => void
   onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
@@ -57,7 +60,7 @@ export function useKioskInteractionRecording() {
     return await pendingStart
   }
 
-  async function append(kind: KioskInteractionEntryKind, content: string, metadata?: Record<string, unknown>) {
+  async function append(kind: KioskInteractionEntryKind, content: string, metadata?: InteractionMetadata) {
     if (!visitorSessionId.value || !content.trim())
       return
 
@@ -119,7 +122,13 @@ export function useKioskInteractionRecording() {
         function: tool.function,
         type: 'function',
       }))
-      let response = await streamKioskConversationMessage({ content, ...(callbacks.decisionState ? { decisionState: callbacks.decisionState } : {}), signal: callbacks.signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+      // One deadline covers the entire Agent task, not a fresh budget per
+      // continuation. It cancels model transport only, never an accepted POS
+      // effect; browser tools settle through their own result boundary.
+      const deadline = AbortSignal.timeout(60_000)
+      const signal = callbacks.signal ? AbortSignal.any([callbacks.signal, deadline]) : deadline
+      const seenCalls = new Set<string>()
+      let response = await streamKioskConversationMessage({ content, utteranceId: callbacks.utteranceId, ...(callbacks.decisionState ? { decisionState: callbacks.decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
         if (event.type === 'turn-started')
           callbacks.onTurnStarted?.()
         if (event.type === 'assistant-delta')
@@ -136,24 +145,44 @@ export function useKioskInteractionRecording() {
       // model credentials server-side while returning each requested call to
       // this kiosk, then resume the same persisted conversation with its result.
       for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
-        const toolResults = await Promise.all(response.toolCalls.map(async (toolCall: KioskToolCall) => {
-          if (callbacks.signal?.aborted)
-            return undefined
+        if (seenCalls.size + response.toolCalls.length > 16 || signal.aborted)
+          break
+        const toolResults = []
+        let batchRejected = false
+        // A model batch can mix reads and writes. Serial execution prevents
+        // cart/checkout writes from racing one another or their preceding read.
+        for (const toolCall of response.toolCalls) {
+          if (signal.aborted)
+            return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+          if (seenCalls.has(toolCall.id))
+            return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+          seenCalls.add(toolCall.id)
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
-          if (callbacks.signal?.aborted)
+          if (signal.aborted)
             return undefined
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
-          callbacks.onToolActivity?.(toolCall.function.name, result.completionToolResult.isError ? 'error' : 'done')
-          return {
-            content: serializeToolResultContent(result.message.content),
+          const content = serializeToolResultContent(result.message.content)
+          let rejected = result.completionToolResult.isError
+          try {
+            rejected ||= JSON.parse(content)?.ok === false
+          }
+          catch {
+            // Non-JSON tool prose is allowed by xsAI; only its error bit is
+            // authoritative in that case, not a guessed success message.
+          }
+          if (!rejected)
+            callbacks.onToolResult?.(toolCall.function.name, content)
+          batchRejected ||= Boolean(rejected)
+          callbacks.onToolActivity?.(toolCall.function.name, rejected ? 'error' : 'done')
+          toolResults.push({
+            content,
             name: toolCall.function.name,
             toolCallId: toolCall.id,
-          }
-        }))
-        if (callbacks.signal?.aborted)
-          return undefined
-        const completedToolResults = toolResults.filter(result => result !== undefined)
-        response = await streamKioskConversationMessage({ signal: callbacks.signal, toolResults: completedToolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+          })
+        }
+        if (signal.aborted)
+          return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+        response = await streamKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
           if (event.type === 'turn-started')
             callbacks.onTurnStarted?.()
           if (event.type === 'assistant-delta')
@@ -161,12 +190,18 @@ export function useKioskInteractionRecording() {
           if (event.type === 'tool-requested')
             callbacks.onToolRequested?.(event.toolCall.function.name)
         })
+        // Persist the rejected receipt, but do not let generated success prose
+        // or another automatic tool round conceal an unaccepted operation.
+        if (batchRejected)
+          return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
       }
-      return { answer: response.answer, agentMode: response.agentMode }
+      if (response.toolCalls.length)
+        return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+      return { answer: response.answer, agentMode: response.agentMode, status: 'completed' as const }
     }
     catch {
       error.value = '點餐助手暫時無法回覆。'
-      return undefined
+      return { answer: undefined, agentMode: 'active', status: 'incomplete' as const }
     }
   }
 
@@ -175,14 +210,14 @@ export function useKioskInteractionRecording() {
     kind: 'greeting' | 'reminder',
     frame: string | undefined,
     signal?: AbortSignal,
+    invitationAllowed = false,
   ) {
     const sessionId = await start(serviceId)
     if (!sessionId)
       return undefined
 
     try {
-      const { answer } = await sendKioskAssistantAction({ frame, kind, signal, visitorSessionId: sessionId })
-      return answer
+      return await sendKioskAssistantAction({ frame, kind, signal, invitationAllowed, visitorSessionId: sessionId })
     }
     catch {
       if (signal?.aborted)
@@ -205,6 +240,7 @@ export function useKioskInteractionRecording() {
   }
 
   return {
+    flush: () => pendingAppend,
     append,
     end,
     error: readonly(error),

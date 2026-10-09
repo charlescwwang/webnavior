@@ -54,7 +54,7 @@ describe('createOrderMachine', () => {
       total: 150,
       lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }],
     })
-    await expect(machine.confirmOrder()).rejects.toThrow('Choose dine-in or take-out before confirming the order.')
+    await expect(machine.confirmOrder()).rejects.toThrow('Choose dine-in or self-pickup before confirming the order.')
 
     machine.setFulfillmentMode('dine-in')
     await expect(machine.confirmOrder()).resolves.toMatchObject({
@@ -175,10 +175,7 @@ describe('createOrderMachine', () => {
       ],
       price: 380,
     })
-    expect(defaultOptionsFor(menu.find(item => item.id === 'braised-pork-set')!)).toEqual({
-      'set-tea-ice': 'normal-ice',
-      'set-tea-sugar': 'no-sugar',
-    })
+    expect(defaultOptionsFor(menu.find(item => item.id === 'braised-pork-set')!)).toEqual({})
     expect(menu.find(item => item.id === 'cuttlefish-ball')?.imageUrl).toMatch(/^data:image\/svg\+xml/)
     expect(defaultOptionsFor(menu.find(item => item.id === 'chous-shrimp-roll')!)).toEqual({ ginger: 'with-ginger' })
     expect(catalogInfo).toMatchObject({ isSimulated: true, sourceName: '周氏蝦捲公開產品資料' })
@@ -186,6 +183,54 @@ describe('createOrderMachine', () => {
 })
 
 describe('createMenuToolRuntime', () => {
+  it('offers dine-in and immediate self-pickup consistently to menu and semantic decisions', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await expect(runtime.invoke('menu_get')).resolves.toMatchObject({ fulfillmentModes: [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }] })
+    await expect(runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })).resolves.toMatchObject({ pendingCustomerChoice: { question: '請問要內用還是自取？', purpose: 'fulfillment', choices: [{ slots: { mode: 'dine-in' } }, { slots: { mode: 'takeout' } }] } })
+    await expect(runtime.invoke('kiosk_fast_path_context', { transcript: '自取' })).resolves.toMatchObject({ candidates: expect.arrayContaining([{ id: 'intent:set-fulfillment:takeout', description: expect.stringContaining('設為自取'), requiresHighConfidence: true }]) })
+    await expect(runtime.invoke('order_set_fulfillment', { mode: 'takeout' })).resolves.toMatchObject({ customerMessage: '已設為自取。', cart: { fulfillmentMode: 'takeout' } })
+  })
+
+  it('preserves one revision-bound recommendation continuation for an explicit food search', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '有哪些不要豬肉的，也推薦一下' })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { customerMessage: string, continuation: { candidates: Array<{ id: string }> }, presentation: { title: string } }
+    expect(result.customerMessage).toContain('我找到')
+    expect(result.presentation.title).toBe('成分篩選：排除豬肉')
+    expect(result.continuation.candidates).toHaveLength(1)
+    const candidateId = result.continuation.candidates[0]!.id
+    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId })).resolves.toMatchObject({ customerMessage: expect.stringContaining('推薦'), decisionTrace: { authorize: { kind: 'EXECUTE' } } })
+    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId })).rejects.toThrow('already consumed')
+  })
+
+  it('invalidates an unclaimed read continuation when a new utterance arrives', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '有哪些不要豬肉的' })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { continuation: { candidates: Array<{ id: string }> } }
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '水餃多少錢' })
+    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId: result.continuation.candidates[0]!.id })).rejects.toThrow('already consumed')
+  })
+
+  it('rejects a read continuation when checkout revision changes', async () => {
+    let revision = 0
+    const runtime = createMenuToolRuntime({ checkout: checkoutController({ revision: () => revision }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '有哪些不要豬肉的' })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { continuation: { candidates: Array<{ id: string }> } }
+    revision++
+    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId: result.continuation.candidates[0]!.id })).rejects.toThrow('current state')
+  })
+
+  it('does not activate an unasked suggestion and preserves the unanswered question after a price lookup', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    const added = await runtime.invoke('cart_add_item') as { pendingCustomerChoice: { questionId: string } }
+    await expect(runtime.invoke('kiosk_fast_path_context')).resolves.not.toHaveProperty('waitingFor')
+    await runtime.invoke('kiosk_dialogue_presented', { content: '已加入，請問要內用還是自取？', questionId: added.pendingCustomerChoice.questionId })
+    await expect(runtime.invoke('kiosk_fast_path_context')).resolves.toMatchObject({ waitingFor: { question: '請問要內用還是自取？' } })
+    await runtime.invoke('menu_get', { query: '水餃' })
+    await runtime.invoke('kiosk_dialogue_presented', { content: '一份水餃 60 元。' })
+    await expect(runtime.invoke('kiosk_fast_path_context')).resolves.toMatchObject({ waitingFor: { question: '請問要內用還是自取？' } })
+  })
   function checkoutController(overrides: Partial<CheckoutToolController> = {}): CheckoutToolController {
     return {
       assertCanRestart: () => {},
@@ -247,6 +292,7 @@ describe('createMenuToolRuntime', () => {
   it('declares native WebMCP tools from the same runtime used by the menu UI', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
+      'kiosk_agent_task',
       'menu_get',
       'menu_recommend',
       'menu_show_recommendations',
@@ -261,6 +307,9 @@ describe('createMenuToolRuntime', () => {
       'cart_clear',
       'cart_get',
       'order_set_fulfillment',
+      'order_set_party_size',
+      'seating_get',
+      'seating_reserve',
       'checkout_start',
       'checkout_skip_membership',
       'checkout_choose_invoice',
@@ -272,6 +321,11 @@ describe('createMenuToolRuntime', () => {
       'kiosk_interaction_state',
       'kiosk_fast_path_context',
       'kiosk_fast_path_execute',
+      'kiosk_fast_path_continue',
+      'order_ask_question',
+      'order_defer_question',
+      'kiosk_dialogue_presented',
+      'kiosk_question_validate',
     ])
   })
 
@@ -336,9 +390,9 @@ describe('createMenuToolRuntime', () => {
       pendingClarification: { intent: 'SET_QUANTITY' },
     })
     const clarification = await runtime.invoke('kiosk_fast_path_context', { transcript: '購物車那筆' }) as { candidates: Array<{ id: string }> }
-    expect(clarification.candidates).toHaveLength(2)
-    expect(clarification.candidates.map(candidate => candidate.id)).toEqual(['clarify:0', 'clarify:1'])
-    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'clarify:1' })
+    expect(clarification.candidates).toHaveLength(3)
+    expect(clarification.candidates[2]!.id).toMatch(/^clarify:.+:cancel$/)
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: clarification.candidates[1]!.id })
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { lines: [expect.objectContaining({ quantity: 2 })] } })
   })
 
@@ -352,10 +406,10 @@ describe('createMenuToolRuntime', () => {
       pendingClarification: { candidateRefs: [expect.stringContaining('cart:'), expect.stringContaining('cart:')], intent: 'REMOVE_ITEM' },
     })
     const clarification = await runtime.invoke('kiosk_fast_path_context', { transcript: '第二筆' }) as { candidates: Array<{ id: string, description: string }> }
-    expect(clarification.candidates.map(candidate => candidate.id)).toEqual(['clarify:0', 'clarify:1'])
+    expect(clarification.candidates[1]!.id).toMatch(/^clarify:.+:1$/)
     const cart = await runtime.invoke('cart_get') as { cart: { lines: Array<{ id: string }> } }
     await runtime.invoke('cart_set_line_quantity', { lineId: cart.cart.lines[0]!.id, quantity: 2 })
-    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'clarify:1' })).rejects.toThrow('stale')
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: clarification.candidates[1]!.id })).rejects.toThrow('stale')
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { lines: [expect.any(Object), expect.any(Object)] } })
   })
 
@@ -464,6 +518,8 @@ describe('createMenuToolRuntime', () => {
       onCartChange: () => {},
       onMenuSelection: () => {},
     })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
     const issued = await runtime.invoke('kiosk_fast_path_context', { transcript: '信用卡' }) as { candidates: Array<{ id: string }> }
 
     await expect(runtime.invoke('kiosk_interaction_state')).resolves.toMatchObject({
@@ -485,6 +541,8 @@ describe('createMenuToolRuntime', () => {
       onCartChange: () => {},
       onMenuSelection: () => {},
     })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '信用卡' }) as { candidates: Array<{ id: string }>, phase: string, allowedPaymentMethods: string[] }
     expect(context.phase).toBe('checkout_payment_select')
     expect(context.allowedPaymentMethods).toEqual(['card', 'mobile'])
@@ -508,6 +566,8 @@ describe('createMenuToolRuntime', () => {
       onCartChange: () => {},
       onMenuSelection: () => {},
     })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
     await expect(runtime.invokeForAgent('order_add_item', { itemId: 'chous-shrimp-roll' })).rejects.toThrow('INVALID_PHASE')
     const proposed = await runtime.invokeForAgent('checkout_select_payment', { method: 'card' })
     expect(proposed).toMatchObject({ pendingConfirmation: { action: 'SELECT_PAYMENT' }, customerMessage: expect.stringContaining('信用卡') })
@@ -531,7 +591,7 @@ describe('createMenuToolRuntime', () => {
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { itemCount: 2 } })
 
     const clarification = await runtime.invoke('kiosk_fast_path_context', { transcript: '第一筆' }) as { resolvedCandidateId?: string }
-    expect(clarification.resolvedCandidateId).toBe('clarify:0')
+    expect(clarification.resolvedCandidateId).toMatch(/^clarify:.+:0$/)
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: clarification.resolvedCandidateId })
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { itemCount: 1 } })
   })
@@ -597,6 +657,21 @@ describe('createMenuToolRuntime', () => {
     expect(runtime.toolDefinitions.map(tool => tool.name)).not.toContain('checkout_authorize_payment')
   })
 
+  it.each(['checkout', 'payment'] as const)('does not replace %s with broad Agent menu exploration', async (phase) => {
+    const onRecommendationsChange = vi.fn()
+    const runtime = createMenuToolRuntime({
+      checkout: checkoutController({ snapshot: () => ({ stage: 'membership' }), paymentStatus: () => phase === 'payment' ? 'pending' : undefined }),
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onRecommendationsChange,
+    })
+    await expect(runtime.invokeForAgent('menu_get')).rejects.toThrow('Menu exploration is unavailable')
+    await expect(runtime.invoke('menu_get', { display: true })).rejects.toThrow('Menu exploration is unavailable')
+    expect(onRecommendationsChange).not.toHaveBeenCalled()
+    expect(await runtime.invokeForAgent('menu_get', { display: false })).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: 'chous-shrimp-roll' })]) })
+  })
+
   it('checks payment safety before clearing the order for a new conversation', async () => {
     const runtime = createMenuToolRuntime({
       checkout: checkoutController({ assertCanRestart: () => { throw new Error('payment pending') } }),
@@ -633,8 +708,8 @@ describe('createMenuToolRuntime', () => {
         lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }],
       },
       pendingCustomerChoice: {
-        id: 'fulfillment-mode',
-        canBeDeferred: true,
+        purpose: 'fulfillment',
+        questionId: expect.any(String),
       },
     })
 
@@ -847,7 +922,7 @@ describe('createMenuToolRuntime', () => {
     }
   })
 
-  it('tells an agent to ask for dine-in or take-out before retrying confirmation', async () => {
+  it('tells an agent to ask for dine-in or self-pickup before retrying confirmation', async () => {
     const registeredTools: Array<{
       name: string
       execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
@@ -861,7 +936,7 @@ describe('createMenuToolRuntime', () => {
     try {
       const runtime = createMenuToolRuntime({
         checkout: checkoutController({
-          start: () => { throw new Error('Choose dine-in or take-out before starting checkout.') },
+          start: () => { throw new Error('Choose dine-in or self-pickup before starting checkout.') },
         }),
         onAction: () => {},
         onCartChange: () => {},
@@ -918,7 +993,8 @@ describe('createMenuToolRuntime', () => {
       },
       { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
       { controlId: 'chous-shrimp-roll:add', label: '加入購物車', targetId: 'chous-shrimp-roll' },
-      { controlId: 'order:fulfillment:takeout', label: '設定為外帶', targetId: 'cart' },
+      { controlId: 'order:fulfillment:takeout', label: '設定為自取', targetId: 'cart' },
+      { controlId: 'order:view', label: '查看訂單', targetId: 'cart' },
     ])
     expect(carts).toEqual([150, 150])
   })
@@ -1175,37 +1251,37 @@ describe('createMenuToolRuntime', () => {
       onRecommendationsChange: presentation => presentations.push(presentation),
     })
 
-    await expect(runtime.invoke('menu_recommend', { needs: ['fried', 'pork-free'], limit: 2 })).resolves.toMatchObject({
+    await expect(runtime.invoke('menu_recommend', { needs: ['fried'], excludeIngredients: ['pork'], limit: 2 })).resolves.toMatchObject({
       items: [
         { id: 'chous-shrimp-roll', name: '周氏蝦捲' },
         { id: 'tofu-skin-shrimp-roll', name: '豆皮鮮蝦捲' },
       ],
-      needs: ['fried', 'pork-free'],
+      needs: ['fried'],
       presentation: {
         kind: 'recommendation',
         itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
-        title: '為你推薦',
+        title: '成分篩選：排除豬肉',
       },
     })
-    await expect(runtime.invoke('menu_recommend', { needs: ['rice', 'pork-free'] })).resolves.toMatchObject({ items: [] })
+    await expect(runtime.invoke('menu_recommend', { needs: ['rice'], excludeIngredients: ['pork'] })).resolves.toMatchObject({ items: [] })
     expect(presentations).toEqual([{
       kind: 'recommendation',
       itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
-      title: '為你推薦',
-    }])
+      title: '成分篩選：排除豬肉',
+    }, { kind: 'recommendation', itemIds: [], title: '成分篩選：排除豬肉' }])
   })
 
   it('uses the store default recommendation order when the customer has not stated a preference', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
 
     await expect(runtime.invoke('menu_recommend')).resolves.toMatchObject({
-      items: [{ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }],
+      items: [{ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }, { id: 'braised-pork-set', name: '東坡肉套餐' }, { id: 'chous-shrimp-roll', name: '周氏蝦捲' }],
       needs: [],
       presentation: {
         kind: 'recommendation',
-        itemIds: ['fish-floss-minced-pork-rice-set'],
-        reason: '先從店內招牌與熱門餐點開始，第一次點餐也很適合。',
-        title: '店家招牌推薦',
+        itemIds: ['fish-floss-minced-pork-rice-set', 'braised-pork-set', 'chous-shrimp-roll'],
+        reason: '從目前供應的餐點中提供幾個選擇。',
+        title: '為你推薦',
       },
     })
   })

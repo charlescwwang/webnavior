@@ -30,11 +30,35 @@ or a related follow-up to an active Agent request sends the original transcript
 to Main Agent. `UNAVAILABLE` fails closed because ambient speech has not been
 classified. A failed clarification asks the customer to use touch; it does
 not silently invent a target or automatically escalate.
-`MULTI_ACTION` keeps two or more independent requests together for Main Agent
-instead of executing only the first. A two-question Jev probe worked but took
-about 130 seconds at the configured endpoint, so it is not a per-turn dependency.
+Initial `NEEDS_ASSISTANT`, `MULTI_ACTION`, and `FOLLOW_UP_ACTIVE` routes require
+finite confidence in [0.6, 1]; missing or weaker scores return `UNAVAILABLE`
+without replacing questions or entering Main Agent. This admission check does
+not apply to review of an already-admitted read result. An application-owned
+service-scope rule follows editable/store instructions and also applies to active
+question routes: unrelated discussion, even questions or unfinished clauses,
+is `IGNORE`, not an open-ended assistant request. No extra classifier call or
+menu-word requirement is introduced; model accuracy still needs live evaluation.
+`MULTI_ACTION` keeps two or more independent ordering-service requests together
+for Main Agent instead of executing only the first. Active operational questions now use at
+most three bounded calls: task/background and answer/new request are independent
+questions batched in one exchange, followed by the semantic choice. Relation
+observations do not remove state-valid new actions. New requests shed the old
+question's authority; uncertain speech can
+only postpone an ordinary question. Payment authorization is never inferred
+from this postponement path. Provider latency is measured by guarded live replay,
+not treated as a guaranteed response time.
 
 ## Context shaping and reference resolution
+
+Food conditions now use actual POS composition, not absent-ingredient tags.
+Application extracts only mentioned finite ingredient references; Jev selects
+EXCLUDE/INCLUDE/NONE alongside route in one request. Search/recommendation share
+deterministic intersection and disclose simulation/customization/unknown facts.
+No ingredient condition is attached to cart removal or automatically applied
+as customization. A read continuation keeps its original conditions; a fresh
+utterance resolves conditions again. Four live ingredient replays passed using
+the current seven-dish complete simplified simulation. Merchant-confirmed data
+replaces these facts without changing this flow; this is not allergy assurance.
 
 `deriveDecisionContext` produces at most one candidate per eligible intent,
 plus finite checkout method or fulfillment choices. It does not expand the
@@ -44,13 +68,17 @@ Checkout payment selection explicitly supplies `checkout_payment_select`,
 payment state, and allowed card/mobile methods. Pending or uncertain payment
 offers no payment mutation.
 
-The Order Menu resolves full names, merchant-provided aliases, unique catalog
-name suffixes of at least three characters, categories, selected items, cart
+The Order Menu resolves full names, merchant-provided aliases, categories, selected items, cart
 lines, quantities, known option labels, and supported dietary constraints.
+Inferred name suffixes are possible discovery matches, not merchant aliases or
+mutation authority. Bounded `catalogEvidence` supplies matched text and
+name/alias/fragment provenance, plus category membership counts. Category-only
+preferences browse even a singleton category; explicit serving quantity retains
+the ordering candidate (including 「我想吃麵，一碗」).
 The reference list sent to System One uses per-turn ordinal IDs such as
 `ITEM_1` and `CART_LINE_1`; actual catalog and cart IDs stay in the issued
 application context and never appear in the model request.
-An exact item or distinctive item suffix takes precedence over a broader
+An exact item name or merchant alias takes precedence over a broader
 category such as 「便當」. A known exclusion such as 「不要豬肉」 remains a
 constraint; if the catalog has no authoritative `pork-free` recommendation
 tag, the request goes to Main Agent instead of claiming a safe recommendation.
@@ -61,8 +89,15 @@ also pass through the POS Bridge contract.
 required slots, and phase. A complete utterance with multiple eligible
 targets keeps the original intent in a 15-second, one-round clarification
 session bound to its candidate refs and relevant revisions. A uniquely spoken
-ordinal such as 「第二筆」 is resolved by application code within those refs;
-otherwise System One gets one target-only finite choice. Stale or unresolved
+bare ordinal such as 「第二筆」 is resolved by application code within those refs;
+the same words embedded in a query cannot select a target. Otherwise System One
+first establishes answer/new-request relation against the actual question, then
+chooses a target. Clarification displays eligible menu targets without selecting
+or ordering one and asks 「您指的是…？」. A relation-qualified new request
+gets one host-only reroute correlated to the same utterance/question ticket.
+Queries preserve the unadded meal; verified replacement meals inherit no old slots.
+This remains within the existing question budget and adds no Agent-facing tool.
+Stale or unresolved
 clarification cannot execute and falls back to touch.
 
 The compiler alone maps a domain plan to WebMCP. `authorize` checks relevant
@@ -95,15 +130,19 @@ offers checkout cancellation, subject to confirmation.
 For state-changing choices with a reported System One confidence below 0.5,
 the Server retains the raw model answer in the trace but returns `UNAVAILABLE`
 instead of mutating the order or forwarding unclassified ambient speech. This is a
-phrase-specific rule. Qwen3.5-4B's raw `ADD_ITEM` choice for
+confidence policy, not a phrase-specific rule. Qwen3.5-4B's raw `ADD_ITEM` choice for
 「我想要吃招牌便當」 was semantically correct, but its 0.392 confidence still
 left that turn unexecuted. Low confidence is not evidence that the intent was wrong.
 
 Successful Fast Path turns enter the same anonymous session as customer and
-assistant text plus compact real menu/cart results. Main Agent receives the
+assistant text plus complete real tool calls/results. Main Agent receives the
 latest bounded conversation and can page older text on demand with the
-read-only, device-authenticated `kiosk_session_history` tool. System One never
-receives that history or tool; an old cart mention is not current cart state.
+read-only, device-authenticated `kiosk_session_history` tool. System One receives
+only up to 12 role-labelled completed turns / 4,000 characters from this active
+session, not that history tool or permanent archives. Old dialogue never
+overrides current cart state. Context-dependent mutations and incomplete answers
+can use one additional bounded speech check; a confidently identified request
+with an uncertain operation escalates to Main Agent without executing it.
 
 Native browser WebMCP host-only context and state tools use the host invocation
 path; Agent-facing tools use the Agent invocation path. Both real ASR and the

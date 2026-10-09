@@ -13,6 +13,7 @@ import CheckoutInvoice from './components/CheckoutInvoice.vue'
 import CheckoutMembership from './components/CheckoutMembership.vue'
 import CheckoutPayment from './components/CheckoutPayment.vue'
 import CheckoutTaxId from './components/CheckoutTaxId.vue'
+import DineInSeating from './components/DineInSeating.vue'
 import MenuCatalogState from './components/MenuCatalogState.vue'
 import MenuItemCard from './components/menuItemCard.vue'
 import MenuItemDialog from './components/MenuItemDialog.vue'
@@ -22,10 +23,12 @@ import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
+import { useDineInSeating } from './composables/useDineInSeating'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, returnToInvoice, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
+import { scrollViewport } from './menuScroll'
 import { createPayment, createPosBridgeGateway, getPayment } from './pos-bridge'
 import { createMenuToolRuntime } from './webmcp'
 
@@ -47,7 +50,6 @@ const cartUpdated = shallowRef(false)
 const orderStatus = shallowRef<string>()
 const submissionStatus = shallowRef<SubmissionStatus>()
 const completedOrderId = shallowRef<string>()
-const completedOrderEnvironment = shallowRef<SubmissionEnvironment>()
 const fulfillmentMode = shallowRef<FulfillmentMode>()
 const addingItemId = shallowRef<string>()
 const recommendations = shallowRef<RecommendationPresentation>()
@@ -119,9 +121,7 @@ const activeCategoryLabel = computed(() => {
     return menuPresentationLoadingLabel.value
   if (activeCategory.value !== recommendedCategoryId)
     return activeCategory.value ?? '全部餐點'
-  return recommendations.value?.kind === 'query-results'
-    ? recommendations.value.title ?? '相關餐點'
-    : '推薦餐點'
+  return recommendations.value?.title ?? (recommendations.value?.kind === 'query-results' ? '相關餐點' : '推薦餐點')
 })
 const presentationContext = computed(() => {
   if (activeCategory.value !== recommendedCategoryId || recommendations.value?.kind !== 'query-results')
@@ -152,9 +152,7 @@ const cartSummaryLines = computed(() => cart.value.lines.map((line) => {
     symbol: menuItem?.symbol,
   }
 }))
-const completedOrderLabel = computed(() => completedOrderEnvironment.value === 'live'
-  ? '訂單已送往 POS'
-  : '測試訂單已確認')
+const completedOrderLabel = '訂單已確認'
 
 function currency(amount: number) {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
@@ -260,7 +258,19 @@ async function animateAction(nextAction: AgentAction) {
   cursorPhase.value = 'resting'
 }
 
+const seating = useDineInSeating(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => fulfillmentMode.value === 'dine-in' && !completedOrderId.value)
+const { snapshot: seatingSnapshot, partySize, hold: tableHold, busy: seatingBusy, error: seatingError, choices: seatingChoices, ready: seatingReady, locked: seatingLocked } = seating
 const runtime = createMenuToolRuntime({
+  // Match template precedence: checkout hides review, which hides the item dialog.
+  screen: () => {
+    if (checkout.value)
+      return 'checkout'
+    if (orderReviewOpen.value)
+      return 'cart_review'
+    return selectedItem.value ? 'item_configuration' : 'menu'
+  },
+  fulfillmentModes: [],
+  seating,
   checkout: {
     assertCanRestart,
     cancel: cancelCheckout,
@@ -276,9 +286,17 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL),
+  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => tableHold.value?.id),
   menu: [],
   onAction: animateAction,
+  onReviewRequested: async () => {
+    // A cart read must not replace a live checkout/payment screen.
+    if (checkout.value || completedOrderId.value)
+      return
+    selectedItemId.value = undefined
+    orderReviewOpen.value = true
+    await nextTick()
+  },
   onCartChange: (nextCart) => {
     cart.value = nextCart
     if (submissionStatus.value !== 'accepted') {
@@ -299,7 +317,13 @@ const runtime = createMenuToolRuntime({
     else
       selectedItemId.value = undefined
   },
-  onFulfillmentChange: mode => fulfillmentMode.value = mode,
+  onMenuScroll: direction => selectedItemId.value || orderReviewOpen.value
+    ? { status: 'UNAVAILABLE', position: document.scrollingElement?.scrollTop ?? 0 }
+    : scrollViewport(document.scrollingElement, direction),
+  onMenuRequested: returnToMenuForAdditionalItems,
+  onFulfillmentChange: (mode) => {
+    fulfillmentMode.value = mode
+  },
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
   onOrderSubmission: handleOrderSubmission,
@@ -346,7 +370,6 @@ function handleOrderConfirmed(order: SubmittedOrder) {
     return
 
   completedOrderId.value = order.id
-  completedOrderEnvironment.value = order.receipt.environment
   orderStatus.value = order.receipt.customerMessage
   checkout.value = undefined
   orderReviewOpen.value = true
@@ -419,7 +442,11 @@ function startCheckout() {
   if (cart.value.lines.length === 0)
     throw new Error('Cart is empty.')
   if (!fulfillmentMode.value)
-    throw new Error('Choose dine-in or take-out before starting checkout.')
+    throw new Error('Choose dine-in or self-pickup before starting checkout.')
+  if (!posCatalog.value?.store.fulfillmentModes.some(mode => mode.id === fulfillmentMode.value))
+    throw new Error('This fulfillment mode is not offered by the POS.')
+  if (fulfillmentMode.value === 'dine-in' && !seatingReady.value)
+    throw new Error('請先設定用餐人數並保留桌位，再開始結帳。')
   if (completedOrderId.value)
     throw new Error('This order has already been completed.')
 
@@ -472,7 +499,9 @@ function backToInvoice() {
   checkout.value = returnToInvoice(checkout.value)
 }
 
-function returnToOrderReview() {
+async function returnToOrderReview() {
+  assertCanRestart()
+  await seating.release()
   resetPaymentAttempt()
   checkout.value = undefined
   orderReviewOpen.value = true
@@ -483,11 +512,11 @@ function assertCanRestart() {
     throw new Error('Cannot restart while a payment is pending or awaiting reconciliation.')
 }
 
-function cancelCheckout() {
+async function cancelCheckout() {
   if (!checkout.value)
     throw new Error('Checkout has not started.')
   assertCanRestart()
-  returnToOrderReview()
+  await returnToOrderReview()
 }
 
 function restartOrder() {
@@ -524,8 +553,10 @@ async function submitAuthorizedPayment(paymentId: string, attempt: number) {
   if (attempt !== paymentAttempt)
     return undefined
   if (order.receipt.status === 'rejected') {
-    paymentStatus.value = 'rejected'
-    paymentError.value = order.receipt.customerMessage
+    // The terminal already authorized payment. A POS rejection is not proof
+    // of a refund, so keep payment/table ownership locked for reconciliation.
+    paymentStatus.value = 'uncertain'
+    paymentError.value = `${order.receipt.customerMessage} 付款已授權，請洽門市人員確認，勿重複付款。`
   }
   else if (order.receipt.status === 'uncertain') {
     paymentStatus.value = 'uncertain'
@@ -577,10 +608,15 @@ async function selectPayment(method: PaymentMethod) {
   resetPaymentAttempt()
   const attempt = paymentAttempt
   let terminalAuthorized = false
+  let terminalRequested = false
   paymentMethod.value = method
   paymentStatus.value = 'pending'
   try {
-    const payment = await createPayment(import.meta.env.VITE_ORDER_MENU_SERVER_URL, cart.value.total, method)
+    if (fulfillmentMode.value === 'dine-in')
+      await seating.refresh()
+    const holdId = fulfillmentMode.value === 'dine-in' ? seating.paymentHoldId() : undefined
+    terminalRequested = true
+    const payment = await createPayment(import.meta.env.VITE_ORDER_MENU_SERVER_URL, cart.value.total, method, holdId)
     if (attempt !== paymentAttempt)
       return { customerMessage: '付款操作已取消。', status: 'cancelled' }
     terminalAuthorized = payment.status === 'authorized'
@@ -606,15 +642,22 @@ async function selectPayment(method: PaymentMethod) {
   catch (error) {
     if (attempt !== paymentAttempt)
       return { customerMessage: '付款操作已取消。', status: 'cancelled' }
+    if (!terminalRequested) {
+      paymentMethod.value = undefined
+      paymentStatus.value = undefined
+      paymentError.value = errorMessageFrom(error) ?? '請返回訂單確認桌位，再啟動付款。'
+      return { customerMessage: paymentError.value, status: 'rejected' }
+    }
     if (terminalAuthorized) {
       paymentStatus.value = 'uncertain'
       paymentError.value = '付款已授權，但訂單結果無法確認。為避免重複扣款，此筆交易已鎖定。'
       return { customerMessage: paymentError.value, status: 'uncertain' }
     }
-    paymentMethod.value = undefined
-    paymentStatus.value = undefined
-    paymentError.value = errorMessageFrom(error) ?? '無法啟動付款終端，請稍後再試。'
-    return { customerMessage: paymentError.value, status: 'rejected' }
+    // The request could have reached the terminal before the response was
+    // lost. Unknown initiation is never authority to retry or free seats.
+    paymentStatus.value = 'uncertain'
+    paymentError.value = errorMessageFrom(error) ?? '無法確認付款終端狀態，請洽門市人員。'
+    return { customerMessage: paymentError.value, status: 'uncertain' }
   }
 }
 
@@ -715,6 +758,7 @@ async function loadCatalog() {
     return
 
   runtime.setMenu(catalog.items, catalog.revision)
+  runtime.setFulfillmentModes(catalog.store.fulfillmentModes)
   for (const item of catalog.items) {
     quantities[item.id] = 1
     expandedCustomizations[item.id] = false
@@ -786,6 +830,8 @@ onUnmounted(() => {
       :completed="!!completedOrderId"
       :completed-label="completedOrderLabel"
       :fulfillment-mode="fulfillmentMode"
+      :fulfillment-modes="posCatalog?.store.fulfillmentModes ?? []"
+      :seating-ready="fulfillmentMode !== 'dine-in' || seatingReady"
       :lines="reviewLines"
       :order-status="orderStatus"
       :submission-status="submissionStatus"
@@ -796,7 +842,24 @@ onUnmounted(() => {
       @register-control="setControlElement"
       @set-fulfillment="setFulfillmentMode"
       @update-quantity="updateCartLineQuantity"
-    />
+    >
+      <template #seating>
+        <DineInSeating
+          v-if="fulfillmentMode === 'dine-in' && !completedOrderId"
+          :snapshot="seatingSnapshot"
+          :party-size="partySize"
+          :hold="tableHold"
+          :choices="seatingChoices"
+          :busy="seatingBusy"
+          :error="seatingError"
+          :locked="seatingLocked"
+          @register-control="setControlElement"
+          @set-party-size="invoke('order_set_party_size', { partySize: $event }, { animate: false })"
+          @reserve="(choiceId, splitApproved) => invoke('seating_reserve', { choiceId, splitApproved, expectedRevision: seating.context().revision }, { animate: false })"
+          @refresh="seating.refresh"
+        />
+      </template>
+    </OrderReview>
 
     <template v-else>
       <div class="menu-browser">
@@ -828,6 +891,9 @@ onUnmounted(() => {
             :presentation="recommendations"
           />
           <MenuPresentationSkeleton v-if="menuPresentationLoading" :label="menuPresentationLoadingLabel" />
+          <p v-else-if="activeCategory === recommendedCategoryId && recommendations && visibleMenuItems.length === 0" :class="['presentation-context']">
+            目前沒有符合條件的餐點。
+          </p>
           <div v-else class="menu-grid">
             <div v-for="item in visibleMenuItems" :key="item.id" :ref="element => setCardElement(item.id, element)">
               <MenuItemCard
@@ -843,7 +909,7 @@ onUnmounted(() => {
       <MenuItemDialog :item="selectedItem" :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1" :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}" @add="addSelectedItem" @close="selectedItemId = undefined" @register-control="setControlElement" @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)" @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)" />
 
       <div :ref="element => setCardElement('cart', element)" :class="['order-summary-container', { 'is-updated': cartUpdated, 'is-targeted': cursorTargetId === 'cart' }]">
-        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="orderReviewOpen = true" />
+        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="orderReviewOpen = true" @register-control="setControlElement" />
       </div>
     </template>
 

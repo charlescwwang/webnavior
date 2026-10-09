@@ -7,11 +7,13 @@ import KioskAdminPanel from '../../components/KioskAdminPanel.vue'
 import { useKioskCameraPreview } from '../../composables/useKioskCameraPreview'
 import { useKioskConversationFontSize } from '../../composables/useKioskConversationFontSize'
 import { useKioskDeviceRegistration } from '../../composables/useKioskDeviceRegistration'
+import { useKioskDiagnostics } from '../../composables/useKioskDiagnostics'
 
 const endpoint = new URL('/api/kiosk/settings', import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').href
 const paused = shallowRef(false)
 const cameraPreviewEnabled = useKioskCameraPreview()
 const conversationFontSize = useKioskConversationFontSize()
+const { idleDiagnosticsEnabled, presenceDiagnosticsEnabled, decisionDiagnosticsEnabled } = useKioskDiagnostics()
 const { bootstrap, device } = useKioskDeviceRegistration()
 onMounted(() => void bootstrap())
 </script>
@@ -21,6 +23,9 @@ onMounted(() => void bootstrap())
     v-model:paused="paused"
     v-model:camera-preview-enabled="cameraPreviewEnabled"
     v-model:conversation-font-size="conversationFontSize"
+    v-model:decision-diagnostics-enabled="decisionDiagnosticsEnabled"
+    v-model:idle-diagnostics-enabled="idleDiagnosticsEnabled"
+    v-model:presence-diagnostics-enabled="presenceDiagnosticsEnabled"
     :device="device"
     :session-ending="false"
     @close="$router.push('/')"

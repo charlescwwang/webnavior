@@ -1,3 +1,6 @@
+import type { Composition } from '../../../order-menu-server/src/domain/composition'
+import type { RecommendationSignal } from '../../../order-menu-server/src/domain/recommendation'
+
 import cuttlefishBallImageUrl from '../assets/cuttlefish-ball.svg'
 
 export interface MenuOptionValue {
@@ -14,9 +17,12 @@ export interface MenuOptionGroup {
 }
 
 /** Describes the customer needs that the demo catalog can verify for recommendations. */
-export type RecommendationTag = 'fried' | 'pork-free' | 'rice'
+export type RecommendationTag = 'fried' | 'rice'
 
 export interface MenuItem {
+  recommendationSignals?: RecommendationSignal[]
+  /** Missing facts are unknown, never proof that an ingredient is absent. */
+  composition?: Composition
   /** Customer-spoken names supplied by the catalog, not inferred from categories. */
   aliases?: string[]
   /** The POS can retain an unavailable item for customer-facing explanation, but it cannot be ordered. */
@@ -45,7 +51,7 @@ export interface CartLine extends Selection {
   unitPrice: number
 }
 
-/** Order-level service choice required before an order submission. */
+/** Order-level service choice; this venue uses takeout for immediate self-pickup, not a reservation. */
 export type FulfillmentMode = 'dine-in' | 'takeout'
 
 export interface CartSnapshot {
@@ -171,7 +177,7 @@ export const menu: MenuItem[] = [
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=720&q=80',
     price: 75,
-    recommendationTags: ['fried', 'pork-free'],
+    recommendationTags: ['fried'],
     optionGroups: [
       {
         id: 'ginger',
@@ -191,7 +197,7 @@ export const menu: MenuItem[] = [
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 80,
-    recommendationTags: ['fried', 'pork-free'],
+    recommendationTags: ['fried'],
     optionGroups: [
       {
         id: 'sauce',
@@ -211,7 +217,7 @@ export const menu: MenuItem[] = [
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 70,
-    recommendationTags: ['fried', 'pork-free'],
+    recommendationTags: ['fried'],
     optionGroups: [
       {
         id: 'sauce',
@@ -311,7 +317,7 @@ export const menu: MenuItem[] = [
     category: '湯品',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 50,
-    recommendationTags: ['pork-free'],
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'cilantro',
@@ -331,7 +337,7 @@ export const menu: MenuItem[] = [
     category: '湯品',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 55,
-    recommendationTags: ['pork-free'],
+    recommendationTags: [],
     optionGroups: [],
   },
   {
@@ -341,7 +347,7 @@ export const menu: MenuItem[] = [
     category: '湯品',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 60,
-    recommendationTags: ['pork-free'],
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'cilantro',
@@ -361,7 +367,7 @@ export const menu: MenuItem[] = [
     category: '炸物小點',
     imageUrl: cuttlefishBallImageUrl,
     price: 65,
-    recommendationTags: ['fried', 'pork-free'],
+    recommendationTags: ['fried'],
     optionGroups: [
       {
         id: 'spice',
@@ -382,7 +388,7 @@ export const menu: MenuItem[] = [
     category: '炸物小點',
     imageUrl: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=720&q=80',
     price: 75,
-    recommendationTags: ['fried', 'pork-free'],
+    recommendationTags: ['fried'],
     optionGroups: [
       {
         id: 'sauce',
@@ -422,7 +428,7 @@ export const menu: MenuItem[] = [
     category: '甜品',
     imageUrl: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?auto=format&fit=crop&w=720&q=80',
     price: 55,
-    recommendationTags: ['pork-free'],
+    recommendationTags: [],
     optionGroups: [],
   },
   {
@@ -432,7 +438,7 @@ export const menu: MenuItem[] = [
     category: '飲品',
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=720&q=80',
     price: 40,
-    recommendationTags: ['pork-free'],
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'sugar',
@@ -463,7 +469,7 @@ export const menu: MenuItem[] = [
     category: '飲品',
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=720&q=80',
     price: 35,
-    recommendationTags: ['pork-free'],
+    recommendationTags: [],
     optionGroups: [
       {
         id: 'ice',
@@ -479,16 +485,40 @@ export const menu: MenuItem[] = [
   },
 ]
 
+// Explicit simulated recipes, not conclusions inferred from dish names or tags.
+const demoIngredients: Record<string, string[]> = {
+  'fish-floss-minced-pork-rice-set': ['pork', 'seafood', 'rice', 'vegetables'],
+  'braised-pork-set': ['pork', 'rice', 'vegetables'],
+  'chous-shrimp-roll': ['seafood', 'wheat'],
+  'tofu-skin-shrimp-roll': ['seafood'],
+  'golden-seafood-pie': ['seafood', 'wheat'],
+  'danzai-noodles': ['pork', 'seafood', 'wheat'],
+  'meat-sauce-rice': ['pork', 'rice'],
+  'cabbage-dumplings': ['pork', 'wheat', 'vegetables'],
+  'chive-dumplings': ['pork', 'wheat', 'vegetables'],
+  'milkfish-ball-soup': ['seafood'],
+  'shrimp-ball-soup': ['seafood'],
+  'floating-fish-soup': ['seafood'],
+  'cuttlefish-ball': ['seafood'],
+  'cuttlefish-shrimp-patty': ['seafood'],
+  'peanut-rice-dumpling': ['pork', 'rice'],
+  'almond-red-bean-tofu': ['milk'],
+  'roselle-plum-drink': [],
+  'winter-melon-tea': [],
+}
+for (const item of menu)
+  item.composition = { ingredients: demoIngredients[item.id]!, complete: true, source: 'simulation', revision: 'simplified-demo-1', removals: [] }
+
 /**
  * Returns the initial option selection for a menu item.
  *
- * Each option group defaults to its first declared value so a customer can add
- * an item immediately while still changing any available customization first.
+ * Required groups remain unselected until the customer chooses. Optional
+ * groups retain their declared initial value.
  */
 export function defaultOptionsFor(item: MenuItem): Record<string, string> {
   return Object.fromEntries(item.optionGroups.flatMap((group) => {
     const firstValue = group.values[0]
-    return firstValue ? [[group.id, firstValue.id]] : []
+    return !group.required && firstValue ? [[group.id, firstValue.id]] : []
   }))
 }
 
@@ -586,6 +616,10 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   function addToCart() {
     const current = selectedOrThrow()
     const item = itemOrThrow(current.itemId)
+    for (const group of item.optionGroups) {
+      if (group.required && !group.values.some(value => value.id === current.options[group.id]))
+        throw new Error(`Required option is missing: ${group.label}`)
+    }
     const matchingLine = cart.find(line => line.itemId === item.id && hasSameOptions(line.options, current.options))
     if (matchingLine) {
       invalidatePayment()
@@ -709,7 +743,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (snapshot.lines.length === 0)
       throw new Error('Cart is empty.')
     if (!snapshot.fulfillmentMode)
-      throw new Error('Choose dine-in or take-out before confirming the order.')
+      throw new Error('Choose dine-in or self-pickup before confirming the order.')
 
     pendingSubmission = options.gateway?.submit(snapshot) ?? Promise.resolve({
       id: `demo-${crypto.randomUUID()}`,

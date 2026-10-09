@@ -86,9 +86,11 @@ describe('kiosk System One profiles', () => {
     await service.activate(profile.id)
 
     await expect(service.deactivate(profile.id)).resolves.toMatchObject({ id: profile.id, isActive: false })
+    expect(await service.isEnabled()).toBe(false)
 
     await service.readiness(profile.id)
     await service.activate(profile.id)
+    expect(await service.isEnabled()).toBe(true)
     await expect(service.update(profile.id, {
       baseURL: 'http://dasein.new',
       implementation: 'lookski',
@@ -149,6 +151,31 @@ describe('kiosk System One profiles', () => {
     expect(String(fetchImpl.mock.calls[1]?.[0])).toBe('https://lookski.example/v1/systemone')
   })
 
+  it('observes the exact outgoing Jev payload without its credential headers', async () => {
+    const profile = await service.save({ baseURL: 'https://lookski.example', implementation: 'lookski', modelId: 'qwen3:4b', name: 'payload trace', plaintextKey: 'private-api-key', timeoutMs: 5000 })
+    const providerResponse = { model: 'loaded-model', answers: { ready: { noul: 1 }, route: { choice: 'GREET' } }, usage: { forward_passes: 12 } }
+    fetchImpl.mockImplementation(async () => Response.json(providerResponse))
+    await service.readiness(profile.id)
+    await service.activate(profile.id)
+    const record = vi.fn()
+    const traced = createKioskSystemOneService({ db, envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32, 4) }), fetchImpl, traceObserver: { record } })
+    const state = '近期角色標記對話：[{"role":"assistant","content":"您好"}]\n顧客語音：午安'
+    const questions = { route: { type: 'choice' as const, instructions: '只選合法意圖。', criteria: { GREET: '向店員打招呼。' } } }
+    await traced.decide(state, questions)
+    const body = JSON.parse(String(fetchImpl.mock.lastCall?.[1]?.body))
+    expect(record).toHaveBeenCalledTimes(2)
+    expect(record).toHaveBeenNthCalledWith(1, { requestId: expect.any(String), phase: 'request', endpoint: 'https://lookski.example/v1/systemone', payload: body })
+    expect(record).toHaveBeenNthCalledWith(2, { requestId: record.mock.calls[0]?.[0].requestId, phase: 'response', endpoint: 'https://lookski.example/v1/systemone', status: 200, durationMs: expect.any(Number), payload: providerResponse })
+    expect(body).toEqual({ state, questions })
+    expect(fetchImpl.mock.lastCall?.[1]?.headers).toMatchObject({ Authorization: 'Bearer private-api-key' })
+    expect(JSON.stringify(record.mock.calls)).not.toContain('private-api-key')
+    expect(JSON.stringify(record.mock.calls)).not.toContain('Authorization')
+    record.mockClear()
+    fetchImpl.mockResolvedValueOnce(new Response('provider unavailable', { status: 503 }))
+    await expect(traced.decide(state, questions)).rejects.toThrow('HTTP 503')
+    expect(record).toHaveBeenNthCalledWith(2, expect.objectContaining({ phase: 'response', status: 503, payload: 'provider unavailable' }))
+  })
+
   it('records a failed readiness instead of activating stale state', async () => {
     const profile = await service.save({ baseURL: 'http://dasein.local', implementation: 'dasein', modelId: 'gemma-3-4b-it', name: '店內 Gemma', timeoutMs: 5000 })
     fetchImpl.mockResolvedValue(new Response(JSON.stringify({ answers: {} })))
@@ -168,6 +195,7 @@ describe('kiosk System One profiles', () => {
     fetchImpl.mockResolvedValueOnce(new Response('offline', { status: 503 }))
     await expect(service.decide('Customer speech: 我要蝦捲', { route: { criteria: { YES: 'yes' }, instructions: 'Choose.', type: 'choice' } })).rejects.toThrow('HTTP 503')
     await expect(db.query.kioskSystemOneProfiles.findFirst()).resolves.toMatchObject({ verifiedAt: null })
+    expect(await service.isEnabled()).toBe(true)
 
     fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ answers: { ready: { type: 'noul', noul: 1 } } })))
     fetchImpl.mockResolvedValueOnce(new Response(JSON.stringify({ answers: { route: { choice: 'YES' } } })))

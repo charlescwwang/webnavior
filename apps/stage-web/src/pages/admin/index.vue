@@ -118,7 +118,7 @@ onMounted(() => void load())
               {{ site.name }}
             </p>
             <p :class="['mb-0 mt-1 text-sm text-slate-500 dark:text-slate-400']">
-              互動資料保存 {{ site.interactionRetentionDays }} 天
+              前台互動連結 {{ site.interactionRetentionDays }} 天，系統封存持續保留
             </p>
           </div>
           <RouterLink :to="`/admin/kiosk/profiles?site=${site.id}`" :class="['text-sm font-semibold text-cyan-700 hover:text-cyan-600 dark:text-cyan-300']">

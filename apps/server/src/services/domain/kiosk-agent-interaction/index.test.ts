@@ -1,8 +1,27 @@
 import { describe, expect, it } from 'vitest'
 
-import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '.'
+import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
 
 describe('kiosk Agent interaction', () => {
+  it('keeps competing model operation prose out of customer history but retains general answers', () => {
+    expect(requiresPresentedReply([{ name: 'order_ask_question', content: JSON.stringify({ pendingCustomerChoice: { questionId: 'Q1' } }) }])).toBe(true)
+    expect(requiresPresentedReply([{ name: 'checkout_select_payment', content: JSON.stringify({ customerMessage: '付款尚未完成。' }) }])).toBe(true)
+    expect(requiresPresentedReply([{ name: 'menu_get', content: JSON.stringify({ customerMessage: '找到水餃。' }) }])).toBe(true)
+    expect(requiresPresentedReply([{ name: 'menu_get', content: JSON.stringify({ items: [], availability: 'NONE' }) }])).toBe(true)
+    expect(requiresPresentedReply([{ name: 'order_add_item', content: 'invalid tool result' }])).toBe(false)
+    expect(requiresPresentedReply([], ['menu_get'])).toBe(true)
+    expect(requiresPresentedReply([], [])).toBe(false)
+  })
+  it('keeps environment metadata out of model dialogue while preserving uncertain payment status', () => {
+    const original = JSON.stringify({ environment: 'test', receipt: { environment: 'test', status: 'uncertain', customerMessage: '付款狀態尚未確認。' }, items: [{ id: 'dish', composition: { source: 'simulation', complete: true, ingredients: ['pork'], revision: '1' } }] })
+    const modelContent = compactToolResultForModel('checkout_select_payment', original)
+    expect(modelContent).not.toContain('simulation')
+    expect(modelContent).not.toContain('environment')
+    expect(JSON.parse(modelContent)).toMatchObject({ receipt: { status: 'uncertain', customerMessage: '付款狀態尚未確認。' }, items: [{ composition: { complete: true, ingredients: ['pork'] } }] })
+    const instructions = createInteractionInstructions({ ...defaultKioskAgentInteractionState, cartSummary: { fulfillmentMode: 'takeout', itemCount: 0, lines: [], total: 0 } })
+    expect(instructions).not.toContain('外帶')
+    expect(instructions).toContain('takeout')
+  })
   it('treats an alternative request as exploration and excludes the prior batch', () => {
     const shown = recordToolResults(defaultKioskAgentInteractionState, [{
       content: JSON.stringify({ presentation: { itemIds: ['shrimp-roll', 'minced-pork-rice'] } }),

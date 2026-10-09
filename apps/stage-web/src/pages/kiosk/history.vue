@@ -86,7 +86,7 @@ watch(historyFilter, () => {
         Kiosk 使用歷程
       </h1>
       <p :class="['mb-0 mt-2 text-sm text-slate-600 dark:text-slate-300']">
-        查看保留期間內的顧客文字對話、語音轉錄、服務事件與內部 POC 原始錄音／影像。
+        查看系統封存的顧客文字對話、語音轉錄、服務事件與原始錄音／影像。前台連結到期不會自動刪除這些紀錄。
       </p>
     </section>
 

@@ -9,17 +9,17 @@ describe('startKioskRetentionSweep', () => {
 
   it('runs immediately, repeats on its schedule, and stops after disposal', async () => {
     vi.useFakeTimers()
-    const purgeExpiredVisitorSessions = vi.fn(async () => 0)
-    const sweep = startKioskRetentionSweep({ purgeExpiredVisitorSessions }, { intervalMs: 1_000 })
+    const releaseExpiredVisitorLinks = vi.fn(async () => 0)
+    const sweep = startKioskRetentionSweep({ releaseExpiredVisitorLinks }, { intervalMs: 1_000 })
 
     await vi.runAllTicks()
-    expect(purgeExpiredVisitorSessions).toHaveBeenCalledTimes(1)
+    expect(releaseExpiredVisitorLinks).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(purgeExpiredVisitorSessions).toHaveBeenCalledTimes(2)
+    expect(releaseExpiredVisitorLinks).toHaveBeenCalledTimes(2)
 
     sweep.dispose()
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(purgeExpiredVisitorSessions).toHaveBeenCalledTimes(2)
+    expect(releaseExpiredVisitorLinks).toHaveBeenCalledTimes(2)
   })
 })

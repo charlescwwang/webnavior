@@ -1,0 +1,62 @@
+import { describe, expect, it } from 'vitest'
+
+import { menu } from './domain/order-machine'
+import { createMenuToolRuntime } from './webmcp'
+
+const dishes = [120, 80, 100, 90, 180, 70, 60].map((price, index) => ({ ...menu[0]!, id: `dish-${index}`, name: `便當${index}`, category: '便當', price, optionGroups: [] }))
+const runtimeOptions = { menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} }
+
+describe('price-qualified menu reads', () => {
+  it('intersects category and price range, sorts before limiting, and displays the actual prices', async () => {
+    const runtime = createMenuToolRuntime(runtimeOptions)
+    const result = await runtime.invoke('menu_get', { category: '便當', minPrice: 80, maxPrice: 120, priceOrder: 'ASC' })
+    expect(result).toMatchObject({ items: [{ id: 'dish-1', price: 80 }, { id: 'dish-3', price: 90 }, { id: 'dish-2', price: 100 }] })
+    expect(result).toMatchObject({ presentation: { title: expect.stringContaining('80'), itemIds: ['dish-1', 'dish-3', 'dish-2'] } })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  })
+
+  it('retains exclusive bounds, category and ordering across alternative batches without recycling', async () => {
+    const runtime = createMenuToolRuntime(runtimeOptions)
+    const first = await runtime.invoke('menu_recommend', { category: '便當', maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' })
+    expect(first).toMatchObject({ items: [{ id: 'dish-6' }, { id: 'dish-5' }, { id: 'dish-1' }] })
+    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [{ id: 'dish-3' }] })
+    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], availability: 'NONE' })
+    await expect(runtime.invoke('menu_recommend', { more: true, maxPrice: 120 })).rejects.toThrow('start a new recommendation')
+  })
+
+  it('rejects invalid ranges and does not relax an empty price filter', async () => {
+    const runtime = createMenuToolRuntime(runtimeOptions)
+    await expect(runtime.invoke('menu_get', { minPrice: 120, maxPrice: 80 })).rejects.toThrow('price')
+    expect(await runtime.invoke('menu_recommend', { maxPrice: 50 })).toMatchObject({ items: [], availability: 'NONE', presentation: { itemIds: [] } })
+  })
+
+  it('executes only browser-issued price interpretations and carries category into the plan', async () => {
+    const runtime = createMenuToolRuntime(runtimeOptions)
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '推薦100元以下的便當' })
+    expect(context).toMatchObject({ priceEvidence: { amounts: [{ amount: 100 }] } })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:recommend', priceChoiceId: 'UPPER_INCLUSIVE' })
+    expect(result).toMatchObject({ appliedPriceConditions: { maxPrice: 100 }, decisionTrace: { operationPlan: { input: { category: '便當', maxPrice: 100 } } } })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '不到100元的便當有哪些' })
+    const strict = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', priceChoiceId: 'UPPER_EXCLUSIVE' })
+    expect(strict).toMatchObject({ appliedPriceConditions: { maxPrice: 100, maxPriceExclusive: true } })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '100元以下' })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', priceChoiceId: 'fabricated', maxPrice: 1000 })).rejects.toThrow('issued')
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '100元以下' })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })).rejects.toThrow('issued')
+  })
+
+  it('guards Agent handoffs against widened prices, hallucinated recommendations and partial mutations', async () => {
+    const runtime = createMenuToolRuntime(runtimeOptions)
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '100元以下' })
+    if (!context || typeof context !== 'object' || !('menuRevision' in context))
+      throw new Error('Expected a runtime-issued catalog revision')
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'price-1', expectedMenuRevision: context.menuRevision, constraints: { maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' } })
+    expect(await runtime.invokeForAgent('menu_get', { maxPrice: 1000 })).toMatchObject({ items: [{ price: 60 }, { price: 70 }, { price: 80 }], appliedPriceConditions: { maxPrice: 100, maxPriceExclusive: true } })
+    await expect(runtime.invokeForAgent('menu_show_recommendations', { itemIds: ['dish-0'] })).rejects.toThrow('constraints')
+    await expect(runtime.invokeForAgent('order_add_item', { itemId: 'dish-0', quantity: 1 })).rejects.toThrow('price conditions')
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'price-2', expectedMenuRevision: context.menuRevision, constraints: { unresolvedPrice: true } })
+    expect(await runtime.invokeForAgent('menu_recommend')).toMatchObject({ items: [], customerMessage: expect.stringContaining('單份') })
+    expect(await runtime.invokeForAgent('order_add_item', { itemId: 'dish-0', quantity: 2 })).toMatchObject({ customerMessage: expect.stringContaining('單份') })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  })
+})

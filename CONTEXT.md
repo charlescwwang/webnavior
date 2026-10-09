@@ -50,11 +50,27 @@ System Manager.
 
 ## Kiosk System One Decision
 
+`PriceEvidence` is browser-issued literal currency evidence with finite semantic
+interpretations, not a verified budget. Jev selects `priceChoiceId`; the browser
+checks it against its one-use context. `PriceConditions` constrain a single
+dish's POS base price (bounds/exclusivity/ascending order), never quantity or a
+whole-order allocation. Read tools apply them before ranking and limiting.
+An unresolved-price handoff must clarify instead of presenting unqualified
+recommendations or performing a partial mutation.
+
 A Server-owned, per-utterance bounded semantic choice among phase-legal intents,
 or `IGNORE`, `INCOMPLETE`, `FOLLOW_UP_ACTIVE`, `MULTI_ACTION` (routed to Main Agent),
 `NEEDS_ASSISTANT`, or `UNAVAILABLE`. The application
-provides the current phase and finite real domain references; System One never
+provides the current phase, finite real domain references and bounded,
+role-labelled current-session dialogue; System One never
 owns menu, cart, checkout, payment, POS, or WebMCP tool selection.
+Route selection precedes concrete question-answer validation. A pending question is an
+understanding cue, not a prerequisite for new requests. Only a selected effect
+that depends on that question resolves its specific legal answer; being an
+answer alone does not mean consent. An uncertain answer neither consumes the
+question nor grants execution authority. Execution still needs
+current domain authorization. Host invitations can be answered or superseded by
+ID without deleting their session history.
 
 ## Fast Path Action
 
@@ -74,9 +90,14 @@ chosen, without granting execution until clarification and authorization pass.
 ## Kiosk Assistant Escalation
 
 The Kiosk transition that sends one current voice transcript to the Kiosk
-Agent only when System One returns `NEEDS_ASSISTANT` or a related active-request
-follow-up. `UNAVAILABLE`, `IGNORE`, `INCOMPLETE`, and `CLARIFICATION` never
-escalate automatically. A related follow-up interrupts only a still-thinking
+Agent when System One returns `NEEDS_ASSISTANT`, a related active-request
+follow-up, or the application identifies disabled Fast Path or a provider/
+decision-transport failure. Activation is checked uncached before any Fast Path
+candidate/direct action. Infrastructure handoff preserves the current session,
+question and completed read receipts; it is not intent or execution authority.
+Semantic `UNAVAILABLE`, `IGNORE`, `INCOMPLETE`, and `CLARIFICATION` retain their
+non-escalating policy. A lost browser mutation receipt never permits automatic
+replay. A related follow-up interrupts only a still-thinking
 Agent; once a browser tool is requested, it waits for the result and is
 reclassified against the latest state.
 The Main Agent receives the latest bounded conversation plus a read-only,
@@ -243,7 +264,11 @@ remains observed.
 
 A short-lived, customer-facing interaction owned by the Kiosk Runtime. It
 contains the current conversation and order state, starts when a customer
-interacts, and ends after order completion, explicit staff action, or inactivity.
+interacts, and ends after unanswered idle-confirmation expiry, confirmed order
+completion or an explicit new-order/staff action. Stage Kiosk prompts after
+three minutes of inactivity, then expires after a 15-second countdown; continuing
+keeps the same session and all order/dialogue state. Stage Web prompts after
+45 seconds with the same countdown.
 The first version always has an anonymous identity; a future membership identity
 may be attached to the same session without changing its lifecycle.
 
@@ -263,9 +288,56 @@ or clearing the cart, and it never crosses into another visitor's session.
 
 ## Anonymous Kiosk Customer
 
-The identity mode used by the first Kiosk Customer Session version. It stores no
-membership identifier or personally identifying customer data, and its
-conversation and cart are discarded when the session ends.
+The default customer-facing identity mode. Ending reception clears the visible
+conversation and cart for the next customer; it does not erase the restricted
+system archive. No permanent conversation link is exposed through membership.
+
+## Kiosk System Archive
+
+The restricted system record of a Visitor Session: completed dialogue,
+execution evidence, and original audio/images/video captured under the enabled
+recording policy. Operational links expire; archive data has no automatic TTL.
+Verified internal member/order associations retain their provenance after their
+operational links expire. They are never inferred from speech or model output.
+
+## Kiosk Pending Question
+
+A known operational question actually presented to the customer. Its unmet need
+survives idle, read-only queries and deferral within one order; execution tickets
+remain bounded by expiry and relevant state revisions. A recent discussed or recommended item
+is conversational focus, not an unanswered question or authorization to order.
+The question has an explicit ID, purpose, phase and finite choices describing
+what each answer will do. Only presentation of a valid receipt activates it;
+Agent prose alone cannot. Question records remain until new-order reset;
+completed/superseded questions cannot authorize an answer. High-risk confirmation
+is a separate, one-use record, not an ordinary question answer.
+
+## Dish Composition
+
+The actual ingredients of a dish within its declared recipe scope, together with
+source, completeness and revision. A simulation is not a merchant-confirmed recipe.
+
+## Ingredient Condition
+
+A requirement that a menu result contains or excludes an ingredient. Multiple
+conditions intersect; a customization-dependent result is not an unchanged match.
+
+## Unavailable Condition Reference
+
+A mentioned dietary, nutrition or safety topic that current store data cannot
+verify. Mentioning it is not necessarily requesting it; a dish name may contain
+the same word. A requested unavailable condition cannot be silently omitted.
+
+## Dine-in Party
+
+The people dining together in the current order. Party size determines the
+required table capacity; it is not a meal quantity.
+
+## Table Hold
+
+A temporary claim on specific tables for a current dine-in party, not a future
+reservation. It expires unless protected by an unresolved payment; an accepted
+order converts it into table occupancy.
 
 ## Kiosk Session Activity
 
@@ -296,10 +368,15 @@ override the policy's presence, delay, or per-session maximum-reminder limits.
 
 ## Kiosk Session Reset
 
-The transition that ends a Kiosk Customer Session, clears its menu draft and
+The unanswered idle-confirmation expiry, confirmed-completion or explicit new-order transition that ends a Kiosk Customer Session, clears its menu draft and
 cart, discards its customer conversation, and returns the Kiosk Runtime to an
 idle anonymous state. It preserves kiosk configuration, administrator settings,
 and the separate Anonymous Visitor Session observation.
+Showing an idle reminder, continuing the same session and presence departure do
+not themselves reset Stage Kiosk sessions. Unanswered countdown expiry does. Dismissing
+the completion screen after a confirmed successful order does reset them. Failed or
+uncertain submission is not completion. Stage Web's shared lifecycle uses automatic
+expiry; Stage Kiosk's confirmed-completion policy also guards completion authority.
 
 ## Kiosk Language Policy
 

@@ -93,4 +93,16 @@ describe('webnavior AI runtime compiler', () => {
       tts: { modelName: 'webnavior:tts', upstreamModel: 'tts-model', voice: 'zh-TW-Test' },
     })
   })
+
+  it.each(['ollama', 'llama-cpp', 'openai-compatible'] as const)('compiles model residency only for Ollama: %s', async (kind) => {
+    const profile = await control.createProfile('chat', { baseURL: 'https://models.example/v1', kind, modelId: 'chat-model', name: 'Chat provider', timeoutMs: 7500 })
+    await control.refreshProfileModels('chat', profile.id)
+    await control.verifyProfile('chat', profile.id)
+    await control.selectProfile('chat', profile.id)
+    await runtime.applyBindings()
+    if (kind === 'ollama')
+      expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({ llm: { models: { 'webnavior/chat': { upstreams: [{ ollamaKeepAlive: -1 }] } } } })
+    else
+      expect(JSON.stringify(store.get('LLM_ROUTER_CONFIG'))).not.toContain('ollamaKeepAlive')
+  })
 })

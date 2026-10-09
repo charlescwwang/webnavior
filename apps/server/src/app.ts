@@ -891,7 +891,14 @@ export async function createApp() {
 
   const kioskSystemOneService = injeca.provide('services:kioskSystemOne', {
     dependsOn: { db, envelopeCrypto },
-    build: ({ dependsOn }) => createKioskSystemOneService({ db: dependsOn.db, envelopeCrypto: dependsOn.envelopeCrypto }),
+    build: ({ dependsOn }) => createKioskSystemOneService({
+      db: dependsOn.db,
+      envelopeCrypto: dependsOn.envelopeCrypto,
+      // Dialogue-bearing payloads are local diagnostics, not production logs.
+      traceObserver: process.env.NODE_ENV !== 'production'
+        ? { record: trace => console.info(`[kiosk-interaction-decisions ${trace.phase === 'request' ? '->' : '<-'} Jev]`, JSON.stringify(trace, null, 2)) }
+        : undefined,
+    }),
   })
 
   // LLM router (KTD-5 in-process replacement for the knoway sidecar).

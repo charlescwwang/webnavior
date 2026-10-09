@@ -298,14 +298,14 @@ onMounted(() => void load())
     >
       <div>
         <h2 :class="['m-0 text-base font-semibold text-slate-950 dark:text-white']">
-          資料保存設定
+          互動連結期限
         </h2>
         <p :class="['mb-0 mt-1 text-sm text-slate-500 dark:text-slate-400']">
-          保存天數會套用到「{{ selectedSite.name }}」的所有設備；影像保存模式則在上方裝置設定中逐台調整。
+          期限套用到「{{ selectedSite.name }}」的新會話。到期會解除前台連結，系統仍保留對話與已錄製的原始媒體；影像錄製模式在裝置設定中調整。
         </p>
       </div>
       <label :class="['flex max-w-md flex-col gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200']">
-        保存天數
+        前台連結天數
         <div :class="['flex gap-2']">
           <input v-model.number="retentionDays" min="0" type="number" :class="['w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']">
           <Button :disabled="saving || retentionDays < 0" @click="saveInteractionRetention(retentionDays)">

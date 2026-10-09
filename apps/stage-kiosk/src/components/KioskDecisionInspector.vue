@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { FastPathTiming } from '../services/kiosk-fast-path'
+
 import { shallowRef } from 'vue'
 
 export interface KioskDecisionEntry {
@@ -13,8 +15,15 @@ export interface KioskDecisionEntry {
   operation?: string
   authorization?: string
   agentStep?: string
-  route: 'queued' | 'deciding' | 'fast_path' | 'main_agent' | 'ignored' | 'incomplete' | 'deferred' | 'unavailable' | 'clarification'
+  systemOneStep?: string
+  route: 'queued' | 'deciding' | 'fast_path' | 'greeting' | 'main_agent' | 'ignored' | 'incomplete' | 'deferred' | 'unavailable' | 'clarification' | 'execution_failed'
   startedAt: number
+  decisionStages?: Array<{ decision: string, operation?: string, authorization?: string }>
+  modelContext?: string
+  modelExchanges?: string
+  modelCalls?: number
+  timing?: FastPathTiming
+  reason?: string
 }
 
 defineProps<{
@@ -27,12 +36,14 @@ const routeLabels: Record<KioskDecisionEntry['route'], string> = {
   queued: '等待處理',
   deciding: 'System One 判斷中',
   fast_path: 'Fast Path 已操作網頁',
+  greeting: 'Fast Path 招呼回應（未操作網頁）',
   main_agent: '轉交 Main Agent',
   ignored: '背景語句已忽略',
   incomplete: '語句未完成',
   deferred: '等待前一操作',
   unavailable: '判斷不可用，未執行',
   clarification: '等待顧客釐清',
+  execution_failed: '操作未完成／結果待確認',
 }
 </script>
 
@@ -67,10 +78,34 @@ const routeLabels: Record<KioskDecisionEntry['route'], string> = {
               <dt>真實參照</dt><dd>{{ entry.references?.join('、') || '無' }}</dd>
               <dt>候選語意</dt><dd>{{ entry.candidates?.join('、') || '無' }}</dd>
               <dt>Jev 判斷</dt><dd>{{ entry.decision ?? '等待中' }}<span v-if="entry.confidence !== undefined">（{{ entry.confidence.toFixed(2) }}）</span></dd>
+              <dt v-if="entry.modelCalls !== undefined">
+                Jev 呼叫次數
+              </dt><dd v-if="entry.modelCalls !== undefined">
+                {{ entry.modelCalls }}
+              </dd>
+              <dt v-if="entry.reason">
+                轉交／拒絕原因
+              </dt><dd v-if="entry.reason">
+                {{ entry.reason }}
+              </dd>
               <dt>WebMCP 操作</dt><dd>{{ entry.operation ?? '未執行' }}</dd>
               <dt>授權結果</dt><dd>{{ entry.authorization ?? '不適用' }}</dd>
               <dt>Main Agent</dt><dd>{{ entry.agentStep ?? '未轉交' }}</dd>
+              <dt>Jev 階段</dt><dd>{{ entry.systemOneStep ?? '尚未開始' }}</dd>
+              <dt v-if="entry.decisionStages?.length">
+                本輪步驟
+              </dt><dd v-if="entry.decisionStages?.length">
+                {{ entry.decisionStages.map(step => [step.decision, step.operation, step.authorization].filter(Boolean).join(' → ')).join('；') }}
+              </dd>
             </dl>
+            <details v-if="entry.modelContext">
+              <summary>查看送給 Jev 的角色對話與情境</summary>
+              <pre :class="['max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs']">{{ entry.modelContext }}</pre>
+            </details>
+            <details v-if="entry.modelExchanges">
+              <summary>查看每次有限問題、回答與耗時</summary>
+              <pre :class="['max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs']">{{ entry.modelExchanges }}</pre>
+            </details>
           </li>
         </ol>
       </section>

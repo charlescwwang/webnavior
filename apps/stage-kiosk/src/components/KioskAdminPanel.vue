@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { KioskDevice } from '../services/kiosk-device'
 
-import { FieldRange } from '@proj-airi/ui'
+import { Checkbox, FieldRange } from '@proj-airi/ui'
+import { useI18n } from 'vue-i18n'
 
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 
@@ -16,6 +17,10 @@ const emit = defineEmits<{
   reload: []
 }>()
 
+const { t } = useI18n()
+const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
+const idleDiagnosticsEnabled = defineModel<boolean>('idleDiagnosticsEnabled', { required: true })
+const presenceDiagnosticsEnabled = defineModel<boolean>('presenceDiagnosticsEnabled', { required: true })
 const paused = defineModel<boolean>('paused', { required: true })
 const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
 const conversationFontSize = defineModel<number>('conversationFontSize', { required: true })
@@ -58,6 +63,34 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
 
       <slot name="device-settings" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
+
+      <section :class="['admin-section']">
+        <h3>{{ t('deviceSettings.localDiagnostics.title') }}</h3>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.localDiagnostics.description') }}
+        </p>
+        <label :class="['toggle-row']">
+          <Checkbox v-model="idleDiagnosticsEnabled" :aria-label="t('deviceSettings.localDiagnostics.idle')" />
+          <span>{{ t('deviceSettings.localDiagnostics.idle') }}</span>
+        </label>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.localDiagnostics.idleDescription') }}
+        </p>
+        <label :class="['toggle-row']">
+          <Checkbox v-model="presenceDiagnosticsEnabled" :aria-label="t('deviceSettings.localDiagnostics.presence')" />
+          <span>{{ t('deviceSettings.localDiagnostics.presence') }}</span>
+        </label>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.localDiagnostics.presenceDescription') }}
+        </p>
+        <label :class="['toggle-row']">
+          <Checkbox v-model="decisionDiagnosticsEnabled" :aria-label="t('deviceSettings.localDiagnostics.decision')" />
+          <span>{{ t('deviceSettings.localDiagnostics.decision') }}</span>
+        </label>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.localDiagnostics.decisionDescription') }}
+        </p>
+      </section>
 
       <section class="admin-section">
         <h3>對話顯示</h3>

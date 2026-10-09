@@ -17,6 +17,33 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  it('records a rejected tool but does not claim success or execute its requested retry', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    const calls = [{ id: 'clear-1', type: 'function', function: { name: 'cart_clear', arguments: '{}' } }]
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', answer: '', toolCalls: calls }).mockResolvedValueOnce({ agentMode: 'active', answer: '已完成', toolCalls: [{ ...calls[0], id: 'clear-2' }] })
+    const execute = vi.fn(async () => ({ ok: false, error: 'STALE_PLAN' }))
+    const tool = rawTool({ name: 'cart_clear', description: 'Clear', parameters: { type: 'object', properties: {} }, execute })
+    const onToolResult = vi.fn()
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    expect(await recording.send('restaurant-ordering', '清空', [tool], { onToolResult })).toMatchObject({ status: 'incomplete', answer: undefined })
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(onToolResult).not.toHaveBeenCalled()
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenLastCalledWith(expect.objectContaining({ toolResults: [expect.objectContaining({ content: expect.stringContaining('STALE_PLAN') })] }), expect.any(Function))
+    scope.stop()
+  })
+  it('stops a bounded Agent task without claiming its unexecuted fifth round is complete', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
+    let call = 0
+    kioskApi.streamKioskConversationMessage.mockImplementation(async () => ({ agentMode: 'active', answer: '已全部完成', toolCalls: [{ id: `read-${++call}`, type: 'function', function: { name: 'menu_get', arguments: '{}' } }] }))
+    const execute = vi.fn(async () => ({ customerMessage: '有水餃' }))
+    const tool = rawTool({ name: 'menu_get', description: 'Read menu', parameters: { type: 'object', properties: {} }, execute })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    expect(await recording.send('restaurant-ordering', '幫我查詢', [tool])).toMatchObject({ status: 'incomplete', answer: undefined })
+    expect(execute).toHaveBeenCalledTimes(4)
+    scope.stop()
+  })
   afterEach(() => vi.clearAllMocks())
 
   it('creates one device session before saving ASR, proactive output, and its terminal state', async () => {
@@ -31,7 +58,7 @@ describe('useKioskInteractionRecording', () => {
 
     await recording.start('restaurant-ordering')
     await recording.append('asr_transcript', '我想要一份蝦捲。')
-    await expect(recording.runAssistantAction('restaurant-ordering', 'greeting', 'data:image/jpeg;base64,ZmFrZQ==')).resolves.toBe('您好，請問需要協助嗎？')
+    await expect(recording.runAssistantAction('restaurant-ordering', 'greeting', 'data:image/jpeg;base64,ZmFrZQ==')).resolves.toEqual({ answer: '您好，請問需要協助嗎？' })
     await recording.end('idle')
 
     expect(kioskApi.startKioskVisitorSession).toHaveBeenCalledOnce()
@@ -44,6 +71,7 @@ describe('useKioskInteractionRecording', () => {
       frame: 'data:image/jpeg;base64,ZmFrZQ==',
       visitorSessionId: 'visitor-1',
       kind: 'greeting',
+      invitationAllowed: false,
     })
     expect(kioskApi.endKioskVisitorSession).toHaveBeenCalledWith({ visitorSessionId: 'visitor-1', state: 'idle' })
     expect(recording.visitorSessionId.value).toBeUndefined()
@@ -59,12 +87,13 @@ describe('useKioskInteractionRecording', () => {
     if (!recording)
       throw new Error('Expected interaction recording to initialize.')
 
-    await expect(recording.runAssistantAction('restaurant-ordering', 'reminder', 'data:image/jpeg;base64,ZmFrZQ==', controller.signal)).resolves.toBe('需要協助嗎？')
+    await expect(recording.runAssistantAction('restaurant-ordering', 'reminder', 'data:image/jpeg;base64,ZmFrZQ==', controller.signal)).resolves.toEqual({ answer: '需要協助嗎？' })
 
     expect(kioskApi.sendKioskAssistantAction).toHaveBeenCalledWith({
       frame: 'data:image/jpeg;base64,ZmFrZQ==',
       visitorSessionId: 'visitor-1',
       kind: 'reminder',
+      invitationAllowed: false,
       signal: controller.signal,
     })
     scope.stop()
@@ -88,6 +117,7 @@ describe('useKioskInteractionRecording', () => {
     await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], { onAssistantDelta, onTurnStarted })).resolves.toEqual({
       agentMode: 'active',
       answer: '牛肉麵可以點餐。',
+      status: 'completed',
     })
 
     expect(onAssistantDelta).toHaveBeenNthCalledWith(1, '牛肉')
@@ -95,7 +125,7 @@ describe('useKioskInteractionRecording', () => {
     expect(onTurnStarted).toHaveBeenCalledOnce()
     expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledWith({
       content: '我要牛肉麵',
-      signal: undefined,
+      signal: expect.any(AbortSignal),
       tools: [expect.objectContaining({ function: expect.objectContaining({ name: 'kiosk_session_history' }) })],
       visitorSessionId: 'visitor-1',
     }, expect.any(Function))

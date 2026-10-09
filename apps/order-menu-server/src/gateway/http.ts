@@ -1,4 +1,5 @@
 import type { CatalogSnapshot, PaymentIntent, PosGateway, SubmissionReceipt } from '../domain/contracts'
+import type { SeatingSnapshot, TableHold } from '../domain/seatingContracts'
 
 function endpoint(baseUrl: string, path: string) {
   return new URL(path, `${baseUrl.replace(/\/$/, '')}/`).toString()
@@ -17,7 +18,18 @@ export function createHttpPosGateway(options: { baseUrl: string, timeoutMs: numb
   }
 
   return {
-    createPayment: async (amount, method) => (await request<{ payment: PaymentIntent }>('v1/payments', { body: JSON.stringify({ amount, method }), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).payment,
+    getSeating: async () => (await request<{ seating: SeatingSnapshot }>('v1/seating')).seating,
+    reserveTables: async body => (await request<{ hold: TableHold }>('v1/seating/holds', { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).hold,
+    getTableHold: async (id) => {
+      const response = await fetch(endpoint(options.baseUrl, `v1/seating/holds/${encodeURIComponent(id)}`), { signal: AbortSignal.timeout(options.timeoutMs) })
+      if (response.status === 404)
+        return undefined
+      if (!response.ok)
+        throw new Error('POS could not confirm the current table hold.')
+      return (await response.json() as { hold: TableHold }).hold
+    },
+    releaseTables: async (id) => { await request(`v1/seating/holds/${encodeURIComponent(id)}`, { method: 'DELETE' }) },
+    createPayment: async (amount, method, tableHoldId) => (await request<{ payment: PaymentIntent }>('v1/payments', { body: JSON.stringify({ amount, method, tableHoldId }), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).payment,
     getPayment: async (paymentId) => {
       try {
         return (await request<{ payment: PaymentIntent }>(`v1/payments/${paymentId}`)).payment

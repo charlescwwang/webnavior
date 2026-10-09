@@ -14,6 +14,7 @@ interface ReviewLine {
 }
 
 const props = defineProps<{
+  fulfillmentModes: Array<{ id: FulfillmentMode, label: string }>
   completed: boolean
   fulfillmentMode: FulfillmentMode | undefined
   lines: ReviewLine[]
@@ -21,6 +22,7 @@ const props = defineProps<{
   submissionStatus: 'accepted' | 'rejected' | 'uncertain' | undefined
   total: string
   completedLabel: string
+  seatingReady: boolean
 }>()
 
 const emit = defineEmits<{
@@ -83,20 +85,18 @@ const emit = defineEmits<{
         <h3 id="fulfillment-heading">
           用餐方式
         </h3>
-        <p>請選擇內用或外帶</p>
+        <p>請選擇店家提供的用餐方式</p>
       </div>
       <div class="fulfillment-actions">
-        <button :ref="element => emit('registerControl', fulfillmentControlId('dine-in'), element)" :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === 'dine-in' }]" type="button" @click="emit('setFulfillment', 'dine-in')">
-          內用
-        </button>
-        <button :ref="element => emit('registerControl', fulfillmentControlId('takeout'), element)" :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === 'takeout' }]" type="button" @click="emit('setFulfillment', 'takeout')">
-          外帶
+        <button v-for="mode in props.fulfillmentModes" :key="mode.id" :ref="element => emit('registerControl', fulfillmentControlId(mode.id), element)" :class="['fulfillment-button', { 'is-selected': props.fulfillmentMode === mode.id }]" type="button" @click="emit('setFulfillment', mode.id)">
+          {{ mode.label }}
         </button>
       </div>
     </section>
 
+    <slot name="seating" />
     <footer class="review-footer">
-      <button v-if="!props.completed" class="confirm-button" type="button" :disabled="props.lines.length === 0 || !props.fulfillmentMode || props.submissionStatus === 'uncertain'" @click="emit('checkout')">
+      <button v-if="!props.completed" class="confirm-button" type="button" :disabled="props.lines.length === 0 || !props.fulfillmentMode || !props.seatingReady || props.submissionStatus === 'uncertain'" @click="emit('checkout')">
         確認訂單，進入結帳
       </button>
       <p v-if="props.orderStatus" class="order-status">

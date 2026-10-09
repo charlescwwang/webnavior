@@ -1,11 +1,15 @@
-import type { MenuItem, RecommendationTag } from './domain/order-machine'
+import type { FulfillmentMode, MenuItem, RecommendationTag } from './domain/order-machine'
 
 import { errorMessageFrom } from '@moeru/std'
+
+import { parseComposition } from '../../order-menu-server/src/domain/composition'
+import { parseRecommendationSignals } from '../../order-menu-server/src/domain/recommendation'
 
 export interface PosCatalog {
   items: MenuItem[]
   revision: string
   store: {
+    fulfillmentModes: Array<{ id: FulfillmentMode, label: string }>
     name: string
     slogan: string
     symbol: string
@@ -60,7 +64,7 @@ function optionGroups(value: unknown): MenuItem['optionGroups'] {
 }
 
 function recommendationTags(value: unknown): RecommendationTag[] {
-  const validTags: RecommendationTag[] = ['fried', 'pork-free', 'rice']
+  const validTags: RecommendationTag[] = ['fried', 'rice']
   if (!Array.isArray(value) || !value.every(tag => typeof tag === 'string' && validTags.includes(tag as RecommendationTag)))
     throw new Error('POS catalog item has invalid recommendationTags.')
   return value as RecommendationTag[]
@@ -79,8 +83,12 @@ function parseCatalog(value: unknown): PosCatalog {
   const items = rawItems.map((item) => {
     if (!isRecord(item) || typeof item.available !== 'boolean')
       throw new Error('POS catalog contains an invalid availability state.')
-
+    const groups = optionGroups(item.optionGroups)
+    const composition = parseComposition(item.composition)
+    if (composition.removals.some(removal => !groups.some(group => group.id === removal.groupId && group.values.some(value => value.id === removal.valueId))))
+      throw new Error('POS composition references an unavailable removal option.')
     return {
+      composition,
       available: item.available,
       aliases: Array.isArray(item.aliases) && item.aliases.every(alias => typeof alias === 'string' && alias.trim()) ? item.aliases : [],
       category: requiredString(item.category, 'category'),
@@ -88,19 +96,31 @@ function parseCatalog(value: unknown): PosCatalog {
       id: requiredString(item.id, 'id'),
       imageUrl: typeof item.imageUrl === 'string' ? item.imageUrl : '',
       name: requiredString(item.name, 'name'),
-      optionGroups: optionGroups(item.optionGroups),
+      optionGroups: groups,
       price: requiredNumber(item.price, 'price'),
       recommendationTags: recommendationTags(item.recommendationTags),
+      recommendationSignals: parseRecommendationSignals(item.recommendationSignals),
       symbol: typeof item.symbol === 'string' ? item.symbol : undefined,
     }
   })
   if (!items.some(item => item.available))
     throw new Error('POS catalog has no available items.')
 
+  if (!Array.isArray(store.fulfillmentModes) || !store.fulfillmentModes.length)
+    throw new Error('POS catalog must supply fulfillment capabilities.')
+  const fulfillmentModes = store.fulfillmentModes.map((value): { id: FulfillmentMode, label: string } => {
+    if (!isRecord(value) || (value.id !== 'dine-in' && value.id !== 'takeout'))
+      throw new Error('POS catalog has an unsupported fulfillment mode.')
+    return { id: value.id, label: requiredString(value.label, 'fulfillment label') }
+  })
+  if (new Set(fulfillmentModes.map(mode => mode.id)).size !== fulfillmentModes.length)
+    throw new Error('POS fulfillment modes must be unique.')
+
   return {
     items,
     revision: requiredString(catalog.revision, 'revision'),
     store: {
+      fulfillmentModes,
       name: requiredString(store.name, 'store name'),
       slogan: stringValue(store.slogan, 'store slogan'),
       symbol: requiredString(store.symbol, 'store symbol'),

@@ -159,7 +159,7 @@ watch(() => route.query.site, async (siteId) => {
             <span :class="['i-solar:monitor-smartphone-bold-duotone rounded-lg bg-slate-100 p-2 text-xl text-slate-600 dark:bg-slate-800 dark:text-slate-300', selectedSiteId === site.id && 'bg-cyan-100 text-cyan-700 dark:bg-cyan-400/20 dark:text-cyan-200']" />
             <span :class="['min-w-0']">
               <span :class="['block truncate text-sm font-semibold']">{{ site.name }}</span>
-              <span :class="['mt-1 block text-xs opacity-70']">{{ site.interactionRetentionDays }} 天互動資料保存</span>
+              <span :class="['mt-1 block text-xs opacity-70']">前台連結 {{ site.interactionRetentionDays }} 天；系統封存持續保留</span>
             </span>
             <span v-if="selectedSiteId === site.id" :class="['i-solar:check-circle-bold ml-auto text-xl text-cyan-700 dark:text-cyan-300']" />
           </button>
@@ -205,7 +205,7 @@ watch(() => route.query.site, async (siteId) => {
             </div>
             <div>
               <dt :class="['text-slate-500 dark:text-slate-400']">
-                互動資料保存
+                前台互動連結期限
               </dt>
               <dd :class="['mb-0 mt-1 font-semibold text-slate-900 dark:text-white']">
                 {{ selectedSite.interactionRetentionDays }} 天

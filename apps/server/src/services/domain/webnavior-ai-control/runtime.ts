@@ -128,6 +128,7 @@ function applyLlmProfile(
     upstreams: [{
       baseURL: profile.baseURL,
       cachePrompt: profile.kind === 'llama-cpp',
+      ...(profile.kind === 'ollama' ? { ollamaKeepAlive: -1 } : {}),
       headerTemplate: key ? 'Bearer {KEY}' : '',
       keys: [{
         ciphertext: envelopeCrypto.encryptKey(key?.toString('utf8') ?? '', { keyEntryId: 'default', modelName: runtimeModelName }),

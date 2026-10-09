@@ -66,3 +66,13 @@ options:
   face_only: 僅人臉
   pose_only: 僅姿態
   pose_plus_conditional_face: 姿態加條件式人臉注意力
+
+localDiagnostics:
+  title: 開發診斷
+  description: 預設關閉，切換後立即生效並儲存在這台 Kiosk 瀏覽器；不影響人物偵測與閒置重置。
+  idle: 顯示閒置重置診斷
+  idleDescription: 顯示顧客接待狀態、閒置倒數與暫停重置的原因。
+  presence: 顯示人物偵測診斷
+  presenceDescription: 顯示 engaged 等偵測狀態、姿態品質、停留時間與偵測頻率；需啟用本機相機觀測。
+  decision: 顯示決策流程
+  decisionDescription: 顯示每句語音的階段、候選意圖、模型決策、操作與授權流程。

@@ -247,6 +247,21 @@ describe('kiosk service', () => {
     expect(serviceEvent.sequence).toBe(2)
   })
 
+  it('saves and publishes a profile with empty optional store instructions', async () => {
+    const site = await service.createSite({ name: 'Store without extra instructions' })
+    const draft = await service.saveProfileDraft({
+      siteId: site.id,
+      name: 'Default service',
+      snapshot: { ...profileSnapshot, agentInstructions: '' },
+    })
+
+    expect(draft.snapshot.agentInstructions).toBe('')
+
+    const release = await service.publishProfileDraft({ siteId: site.id, draftId: draft.id })
+
+    expect(release.snapshot.agentInstructions).toBe('')
+  })
+
   it('publishes an immutable draft and changes the assigned Profile for every Site device', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const firstDevice = await service.createDevice({ siteId: site.id, label: 'COUNTER-01', registrationMethod: 'development' })
@@ -311,18 +326,28 @@ describe('kiosk service', () => {
     await expect(service.getDeviceProfile(device.id)).resolves.toMatchObject({ id: release.id, revision: 1 })
   })
 
-  it('removes completed visitor sessions after their captured retention deadline together with interaction entries', async () => {
+  it('releases expired operational links while retaining the archive, verified associations, and media metadata', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const device = await service.createDevice({ siteId: site.id, label: 'DEV-COUNTER-01', registrationMethod: 'development' })
     const release = await service.createProfileRelease({ siteId: site.id, name: 'Lunch menu', snapshot: profileSnapshot })
     const session = await service.startVisitorSession({ deviceId: device.id, profileReleaseId: release.id, serviceId: 'restaurant-ordering' })
     await service.appendInteractionEntry({ visitorSessionId: session.id, kind: 'user_text', content: '測試保存期。' })
+    await service.recordVerifiedAssociation({ visitorSessionId: session.id, kind: 'member', authority: 'test-verifier', externalReference: 'member-23', evidenceReference: 'scan-17', verifiedAt: new Date() })
+    await db.insert(schema.kioskVisitorMedia).values({ visitorSessionId: session.id, kind: 'audio_recording', mimeType: 'audio/wav', byteSize: 20 })
     await service.endDeviceVisitorSession({ deviceId: device.id, state: 'completed', visitorSessionId: session.id })
     await db.update(schema.kioskVisitorSessions).set({ expiresAt: new Date('2026-01-01T00:00:00.000Z') }).where(eq(schema.kioskVisitorSessions.id, session.id))
 
-    await expect(service.purgeExpiredVisitorSessions(new Date('2026-03-01T00:00:00.000Z'))).resolves.toBe(1)
-    await expect(db.query.kioskVisitorSessions.findFirst({ where: eq(schema.kioskVisitorSessions.id, session.id) })).resolves.toBeUndefined()
-    await expect(db.query.kioskInteractionEntries.findMany({ where: eq(schema.kioskInteractionEntries.visitorSessionId, session.id) })).resolves.toEqual([])
+    const now = new Date('2026-03-01T00:00:00.000Z')
+    await expect(service.releaseExpiredVisitorLinks(now)).resolves.toBe(1)
+    await expect(service.releaseExpiredVisitorLinks(now)).resolves.toBe(0)
+    await expect(db.query.kioskVisitorSessions.findFirst({ where: eq(schema.kioskVisitorSessions.id, session.id) })).resolves.toMatchObject({ accessReleasedAt: now })
+    const entries = await db.query.kioskInteractionEntries.findMany({ where: eq(schema.kioskInteractionEntries.visitorSessionId, session.id) })
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.content).toBe('測試保存期。')
+    expect(await db.query.kioskVisitorMedia.findMany()).toHaveLength(1)
+    expect(await db.query.kioskSessionAssociations.findMany()).toEqual([expect.objectContaining({ externalReference: 'member-23', linkReleasedAt: now })])
+    await expect(service.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: session.id })).rejects.toThrow('expired')
+    await expect(service.getVisitorSessionForUser({ userId: 'system-admin', visitorSessionId: session.id })).resolves.toMatchObject({ entries: [expect.objectContaining({ content: '測試保存期。' })] })
   })
 
   it('captures the Site retention policy when creating a session', async () => {

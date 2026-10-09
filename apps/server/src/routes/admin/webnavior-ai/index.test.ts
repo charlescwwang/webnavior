@@ -28,7 +28,7 @@ describe('admin Webnavior AI routes', () => {
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: verifyProfile as any,
         },
-        systemOne: { activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
       }))
 
     const response = await app.request('/capabilities/chat/providers/RB_zw84In0eWFofqtM-9K/verify', { method: 'POST' })
@@ -59,7 +59,7 @@ describe('admin Webnavior AI routes', () => {
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: vi.fn(),
         },
-        systemOne: { activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
       }))
 
     const response = await app.request('/capabilities/chat/providers/verify-and-save', {
@@ -98,7 +98,7 @@ describe('admin Webnavior AI routes', () => {
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: vi.fn(),
         },
-        systemOne: { activate: vi.fn(), deactivate, decide: vi.fn(), delete: remove, getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel, list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy, update },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate, decide: vi.fn(), delete: remove, getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel, list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy, update },
       }))
 
     const updateResponse = await app.request('/system-one/profiles/system-one-1', {

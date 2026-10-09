@@ -11,13 +11,13 @@ export interface KioskRetentionSweepOptions {
 }
 
 /**
- * Starts the server-owned sweep that removes completed visitor sessions after
+ * Starts the server-owned sweep that releases completed visitor links after
  * their captured expiry. Active sessions deliberately survive even when their
  * retention deadline has passed, because their transcript remains necessary
  * to complete the current customer interaction.
  */
 export function startKioskRetentionSweep(
-  kioskService: Pick<KioskService, 'purgeExpiredVisitorSessions'>,
+  kioskService: Pick<KioskService, 'releaseExpiredVisitorLinks'>,
   options: KioskRetentionSweepOptions = {},
 ) {
   const now = options.now ?? (() => new Date())
@@ -25,7 +25,7 @@ export function startKioskRetentionSweep(
 
   async function sweep() {
     try {
-      await kioskService.purgeExpiredVisitorSessions(now())
+      await kioskService.releaseExpiredVisitorLinks(now())
     }
     catch (error) {
       options.onError?.(error)

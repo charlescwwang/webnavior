@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { FastPathTiming } from '../services/kiosk-fast-path'
 import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import { ChatHistory } from '@proj-airi/stage-ui/components'
-import { BasicTextarea } from '@proj-airi/ui'
-import { computed, nextTick, onScopeDispose, shallowRef, useTemplateRef, watch } from 'vue'
-import { useI18n } from 'vue-i18n'
+import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
 
 import KioskAsrSimulationPanel from './KioskAsrSimulationPanel.vue'
 import KioskAssistantPresence from './KioskAssistantPresence.vue'
@@ -26,6 +25,7 @@ const props = defineProps<{
   executionDurationMs?: number
   fastPathSimulationStatus?: string
   fastPathSimulationTrace?: string
+  fastPathSimulationTiming?: FastPathTiming
   fontSize: number
   messages: readonly ChatHistoryItem[]
   pendingTranscript?: string
@@ -36,16 +36,10 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  activity: []
   retryMessage: []
-  sendMessage: [text: string]
   simulateAsr: [transcript: string]
 }>()
 
-const { t } = useI18n()
-
-const messageInput = shallowRef('')
-const isComposing = shallowRef(false)
 const assistantLabel = 'Webnavior'
 // The unfinished assistant message is display-only. KioskScene moves it into
 // durable conversation history only after the Server emits turn-finished.
@@ -54,10 +48,6 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
 ])
 const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
-// Explicit typed input is already attributed to the current customer, so it
-// can supersede a pending model turn instead of forcing a one-question queue.
-const canSend = computed(() => Boolean(messageInput.value.trim()) && !isComposing.value && serviceReady.value)
-const placeholder = computed(() => serviceReady.value ? t('stage.message') : '正在準備互動服務…')
 const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
@@ -84,16 +74,6 @@ function followLatestMessage() {
 
 watch([historyMessages, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post' })
 onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
-
-async function sendMessage() {
-  if (!canSend.value)
-    return
-
-  const text = messageInput.value.trim()
-  messageInput.value = ''
-  emit('activity')
-  emit('sendMessage', text)
-}
 </script>
 
 <template>
@@ -153,31 +133,13 @@ async function sendMessage() {
     <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
       請直接對麥克風說話；處理中也能繼續補充。
     </p>
-    <template v-else>
-      <KioskAsrSimulationPanel
-        :status="props.fastPathSimulationStatus"
-        :trace="props.fastPathSimulationTrace"
-        @simulate="emit('simulateAsr', $event)"
-      />
-      <form class="message-composer" @submit.prevent="sendMessage">
-        <BasicTextarea
-          v-model="messageInput"
-          :placeholder="placeholder"
-          class="message-input"
-          @submit="sendMessage"
-          @compositionstart="isComposing = true"
-          @compositionend="isComposing = false"
-        />
-        <button
-          type="submit"
-          class="send-button"
-          :disabled="!canSend"
-          aria-label="送出訊息"
-        >
-          <div class="i-solar:arrow-up-outline h-5 w-5" />
-        </button>
-      </form>
-    </template>
+    <KioskAsrSimulationPanel
+      v-else
+      :status="props.fastPathSimulationStatus"
+      :trace="props.fastPathSimulationTrace"
+      :timing="props.fastPathSimulationTiming"
+      @simulate="emit('simulateAsr', $event)"
+    />
     <p v-if="!serviceReady" class="service-status" role="status">
       {{ webMcpAdapter.error.value ?? '正在準備互動服務，請稍候。' }}
     </p>
@@ -209,11 +171,6 @@ async function sendMessage() {
 .assistant-activity-steps { display: grid; gap: .3rem; margin: .1rem .2rem; padding: 0; color: #c7ebe6; font-size: .75rem; font-weight: 700; list-style: none; }.assistant-activity-step { display: flex; align-items: center; gap: .4rem; }.activity-step-marker { width: .42rem; height: .42rem; flex: none; border-radius: 50%; background: #6faaa3; }.assistant-activity-step.is-selected .activity-step-marker, .assistant-activity-step.is-executing .activity-step-marker { background: #7ce7d8; box-shadow: 0 0 .65rem #7ce7d8; }.assistant-activity-step.is-done .activity-step-marker { background: #8edb9a; }.assistant-activity-step.is-error .activity-step-marker { background: #f3b391; }
 .conversation-execution-duration { display: flex; align-items: center; gap: .35rem; width: fit-content; margin: .1rem .2rem; color: #a9d9d2; font-size: .72rem; }.conversation-execution-duration strong { color: #e4fffa; font-variant-numeric: tabular-nums; }
 .conversation-retry { display: flex; width: fit-content; align-items: center; gap: .35rem; margin: .1rem .2rem; border: 1px solid rgb(120 225 209 / 42%); border-radius: .7rem; padding: .42rem .6rem; color: #d9fffa; background: rgb(17 81 79 / 42%); font-size: .75rem; font-weight: 800; }.conversation-retry:disabled { cursor: default; opacity: .45; }
-.message-composer { display: flex; min-width: 0; gap: .5rem; border-top: 1px solid rgb(255 255 255 / 10%); padding: .55rem; background: rgb(1 17 20 / 24%); }
-.message-input { min-width: 0; flex: 1; resize: none; border: 1px solid rgb(255 255 255 / 18%); border-radius: .8rem; padding: .45rem .7rem; color: #ecfffb; background: rgb(255 255 255 / 8%); font-size: var(--conversation-font-size); outline: none; }
-.message-input::placeholder { color: rgb(217 250 246 / 60%); }
-.send-button { display: flex; width: 2.5rem; height: 2.5rem; flex: none; align-items: center; justify-content: center; align-self: end; border: 0; border-radius: .75rem; color: #063437; background: #78e1d1; cursor: pointer; }
-.send-button:disabled { cursor: default; opacity: .4; }
 .service-status { margin: 0; padding: 0 .75rem .55rem; color: #9cd9d0; font-size: .75rem; }
 .voice-only-notice { margin: 0; border-top: 1px solid rgb(255 255 255 / 12%); padding: .8rem; color: #b9f5ec; background: rgb(1 17 20 / 48%); font-size: .82rem; font-weight: 700; text-align: center; }
 </style>

@@ -108,7 +108,7 @@ export const kioskSites = pgTable('kiosk_sites', {
   name: text('name').notNull(),
   /** Stable machine key for a system-created Site, such as the local POC Site. */
   slug: text('slug').unique(),
-  /** Days to retain completed interaction data; 0 removes it on the next sweep. */
+  /** Days before releasing completed sessions' operational links; archives have no automatic TTL. */
   interactionRetentionDays: integer('interaction_retention_days').notNull().default(180),
   /** Camera evidence is opt-in and independent from proactive VLM observation. */
   mediaCapturePolicy: jsonb('media_capture_policy').$type<KioskMediaCapturePolicy>().notNull().default({ mode: 'triggered' }),
@@ -242,6 +242,8 @@ export const kioskVisitorSessions = pgTable('kiosk_visitor_sessions', {
   endedAt: timestamp('ended_at'),
   /** Captured at creation so later Site policy changes do not alter existing records. */
   expiresAt: timestamp('expires_at').notNull(),
+  /** Expiry releases operational access, while this record and evidence remain in the system archive. */
+  accessReleasedAt: timestamp('access_released_at'),
   /** Allocated atomically so transcript and event entries retain a stable session order. */
   lastSequence: integer('last_sequence').notNull().default(0),
   /** Ephemeral ordering-assistant context; cart data remains in the interactive service. */
@@ -276,6 +278,8 @@ export const kioskVisitorMedia = pgTable('kiosk_visitor_media', {
   kind: text('kind').notNull().$type<KioskVisitorMediaKind>(),
   mimeType: text('mime_type').notNull(),
   byteSize: integer('byte_size').notNull(),
+  /** Integrity digest for new uploads; existing evidence is retained without claiming verified integrity. */
+  sha256: text('sha256'),
   startedAt: timestamp('started_at'),
   endedAt: timestamp('ended_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -283,6 +287,19 @@ export const kioskVisitorMedia = pgTable('kiosk_visitor_media', {
   index('kiosk_visitor_media_session_created_idx').on(table.visitorSessionId, table.createdAt),
   index('kiosk_visitor_media_entry_idx').on(table.interactionEntryId),
 ])
+
+/** Server-recorded associations survive expiry of their operational soft link. */
+export const kioskSessionAssociations = pgTable('kiosk_session_associations', {
+  id: text('id').primaryKey().$defaultFn(() => nanoid()),
+  visitorSessionId: text('visitor_session_id').notNull().references(() => kioskVisitorSessions.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull().$type<'member' | 'order'>(),
+  /** Scoped to the verifying provider, never accepted from model output. */
+  authority: text('authority').notNull(),
+  externalReference: text('external_reference').notNull(),
+  evidenceReference: text('evidence_reference').notNull(),
+  verifiedAt: timestamp('verified_at').notNull(),
+  linkReleasedAt: timestamp('link_released_at'),
+}, table => [uniqueIndex('kiosk_session_associations_verified_uidx').on(table.visitorSessionId, table.kind, table.authority, table.externalReference)])
 
 /** Append-only record of access and future kiosk-management actions. */
 export const kioskAuditLogs = pgTable('kiosk_audit_logs', {

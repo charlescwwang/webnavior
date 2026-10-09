@@ -1,5 +1,12 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
 
+import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import type { InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
+
+import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+
+export type { KioskConversationDecisionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+
 /** A registered kiosk browser installation returned by the Server bootstrap endpoint. */
 export interface KioskDevice {
   id: string
@@ -78,24 +85,6 @@ export interface KioskToolCall {
   type: 'function'
 }
 
-/** Safe current-screen summary supplied to Main Agent after an ASR escalation. */
-export interface KioskConversationDecisionState {
-  allowedPaymentMethods?: Array<'card' | 'mobile'>
-  interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }
-  paymentState?: string
-  phase: string
-}
-
-/** A finite decision returned by the Server-owned Dasein System One route. */
-export type KioskInteractionDecision
-  = | { actionId: string, confidence?: number, kind: 'FAST_ACTION' }
-    | { confidence?: number, kind: 'CLARIFICATION' }
-    | { confidence?: number, kind: 'INCOMPLETE' }
-    | { confidence?: number, kind: 'IGNORE' }
-    | { confidence?: number, kind: 'FOLLOW_UP_ACTIVE' }
-    | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
-    | { kind: 'UNAVAILABLE' }
-
 /** The Server's non-destructive guidance state for the active ordering interaction. */
 export type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferred'
 
@@ -165,7 +154,7 @@ export async function startKioskVisitorSession(serviceId: string) {
 export async function appendKioskInteraction(input: {
   content: string
   kind: KioskInteractionEntryKind
-  metadata?: Record<string, unknown>
+  metadata?: InteractionMetadata
   visitorSessionId: string
 }) {
   return await request<{ entry: { id: string } }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/entries`, {
@@ -198,6 +187,7 @@ export async function endKioskVisitorSession(input: {
 export async function streamKioskConversationMessage(
   input: {
     content?: string
+    utteranceId?: number
     decisionState?: KioskConversationDecisionState
     signal?: AbortSignal
     toolResults?: Array<{ content: string, name: string, toolCallId: string }>
@@ -214,7 +204,7 @@ export async function streamKioskConversationMessage(
       'Accept': 'text/event-stream',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content: input.content, decisionState: input.decisionState, toolResults: input.toolResults ?? [], tools: input.tools }),
+    body: JSON.stringify({ content: input.content, utteranceId: input.utteranceId, decisionState: input.decisionState, toolResults: input.toolResults ?? [], tools: input.tools }),
   })
   if (!response.ok || !response.body)
     throw new KioskDeviceRequestError(response.status, await response.text())
@@ -258,13 +248,14 @@ export async function streamKioskConversationMessage(
 /** Asks the Server Gateway to create one Profile-controlled proactive assistant turn. */
 export async function sendKioskAssistantAction(input: {
   frame?: string
+  invitationAllowed?: boolean
   kind: 'greeting' | 'reminder'
   signal?: AbortSignal
   visitorSessionId: string
 }) {
-  return await request<{ answer: string }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/assistant-actions`, {
+  return await request<{ answer: string, pendingCustomerChoice?: PresentedQuestion }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/assistant-actions`, {
     method: 'POST',
-    body: JSON.stringify({ frame: input.frame, kind: input.kind }),
+    body: JSON.stringify({ frame: input.frame, kind: input.kind, invitationAllowed: input.invitationAllowed ?? false }),
     signal: input.signal,
   })
 }
@@ -302,22 +293,46 @@ export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal
   return await response.json() as { text: string }
 }
 
-/**
- * Sends only the current transcript and browser-derived action choices to
- * System One. An unavailable choice is not a positive speech classification;
- * the caller must not forward it to Main Agent automatically.
- */
+/** Reads live activation without loading credentials, policy or the model. */
+export async function isKioskFastPathEnabled() {
+  const status = await request<{ enabled: boolean }>('/api/kiosk/interaction-decisions/status', { cache: 'no-store', signal: AbortSignal.timeout(5_000) })
+  return status.enabled
+}
+
+/** Sends bounded choices; only provider failures, not semantic refusals, allow fallback. */
 export async function decideKioskInteraction(input: {
+  onProgress?: (stage: Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }>) => void
+  maxQuestions?: number
+  isCurrent?: () => boolean
+  signal?: AbortSignal
+  visitorSessionId?: string
+  review?: { answer: string, observation: string }
   candidates: Array<{ description: string, id: string, requiresHighConfidence?: boolean }>
-  decisionState?: { activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }, allowedPaymentMethods?: Array<'card' | 'mobile'>, checkoutSnapshot?: unknown, constraints?: { exclude: string[] }, interactionState?: { lastAddedItemName?: string, matchingCartLines: number, pendingAction?: string, pendingIntent?: string, selectedItemName?: string }, paymentState?: string, phase: string, references?: Array<{ label: string, refId: string }> }
+  decisionState?: KioskDecisionState
   includeTrace?: boolean
   presenceState?: PresenceState
   transcript: string
 }) {
-  return await request<KioskInteractionDecision>('/api/kiosk/interaction-decisions', {
+  let result = await request<DecisionStageResult>('/api/kiosk/interaction-decisions', {
     method: 'POST',
-    body: JSON.stringify(input),
+    signal: input.signal,
+    body: JSON.stringify({ ...input, signal: undefined, onProgress: undefined, isCurrent: undefined, segmented: true }),
   })
+  const consumed = new Set<string>()
+  while (result.kind === 'DECISION_PROGRESS') {
+    if (input.isCurrent?.() === false)
+      throw new Error('Decision replaced before continuation')
+    if (consumed.size >= decisionQuestionBudget || consumed.has(result.continuationId) || result.expiresAt <= Date.now())
+      throw new Error('Decision continuation expired or exceeded its budget')
+    consumed.add(result.continuationId)
+    input.onProgress?.(result)
+    result = await request<DecisionStageResult>(`/api/kiosk/interaction-decisions/${encodeURIComponent(result.continuationId)}`, {
+      method: 'POST',
+      signal: input.signal,
+      body: JSON.stringify({ visitorSessionId: input.visitorSessionId }),
+    })
+  }
+  return result
 }
 
 /** Uploads private POC evidence for the active visitor session. */

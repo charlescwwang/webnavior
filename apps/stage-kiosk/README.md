@@ -51,23 +51,129 @@ changes the iframe URL.
 
 Each customer starts an anonymous Kiosk session when they touch the screen, type a message, speak, or operate the menu. The session owns only that customer's conversation and cart:
 
-- After 45 seconds without activity, it asks whether to continue. The customer can retain the current conversation and cart, or start a clean reception for the next customer. If there is no choice after a further 15 seconds, it clears the conversation and menu, then returns to standby.
-- After a simulated order is confirmed, an enabled completion survey displays a QR Code until the visitor skips it or the configured countdown ends; then the kiosk starts a clean standby session.
+- After three minutes without activity, it asks whether to continue and starts a 15-second countdown. Showing the dialog does not clear anything. **繼續點餐** cancels that countdown and keeps the same session, conversation, cart and unfinished ordering requirement (including the selected meal, known quantity/options and pending question); it does not reload the menu or repeat the question. Only unanswered countdown expiry, confirmed order completion or explicitly starting a new order/reception clears that context and ends its durable visitor session. Pending AI/tool work and high-confidence engaged presence retain their existing idle-timer protection. Lookups and deferral do not reset context. Internal answer tickets remain short-lived and are renewed on the next decision turn; financial/destructive confirmation authority is not extended by continuing.
+- After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and menu/order state are reset to clean standby. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 
-This is intentionally separate from AIRI's general chat history. The current version has no membership identity; a later member lookup can attach an identity to the same Kiosk session lifecycle without retaining anonymous conversations.
-Successful Fast Path voice turns and compact real menu/cart results are saved in
+This is intentionally separate from AIRI's general chat history. Reception reset
+clears customer-visible state, while the restricted system archive retains the
+session. Future verified identity associations remain internal, not permanent
+member-facing conversation links.
+Successful Fast Path voice turns and complete real tool calls/results are saved in
 that same visitor session. Main Agent receives a bounded recent conversation
 and can use the read-only `kiosk_session_history` tool to page older text from
-this visitor only; System One receives only the current phase and finite
-decision context, not the conversation history.
+this visitor only. System One also receives up to 12 completed, role-labelled
+current-session dialogue entries, bounded to 4,000 characters, with explicit
+phase, finite references and any actual unanswered operational question. It
+does not receive archive history, another visitor's dialogue or previous model
+decisions as facts. A discussed item is not automatically a pending question.
+Before each voice/simulation turn, Kiosk reads uncached Fast Path activation.
+An inactive System One profile bypasses all Fast Path candidates and direct
+application-resolved actions, handing the original utterance to Main Agent.
+Jev/decision-transport failures also hand off, with available pending-question
+context and completed read receipts. Neither route resets the customer session,
+conversation, cart or unfinished speech. Main Agent must still establish intent
+and pass ordinary tool validation; fallback itself grants no operation authority.
+Semantic uncertainty, ignored/incomplete speech and clarification keep their
+existing policies. Browser execution failures are separate: unknown mutation
+results require checking the screen, never automatic replay. Activation changes
+take effect on the next turn without reload; existing in-flight work is not
+retroactively canceled. If Main Agent also fails, screen ordering remains the
+fallback, not an automatic retry loop.
+Directed pure greetings return a local “您好！” reply with the configured greeting
+motion and ordinary TTS, without invoking an ordering tool or Main Agent. The
+decision inspector identifies this as a greeting rather than a webpage operation.
+It does not consume or repeat a pending operation question, and waits behind an
+existing Agent task instead of interrupting it. Background greetings stay silent;
+greeting plus ordering uses the normal ordering path.
+The ASR test panel identifies its measured utterance and reports cumulative client
+decision-request wait, actual Jev call count and cumulative Server/Jev exchange
+duration. Client wait excludes queueing, recording flush, browser actions and TTS;
+exchange duration includes network transit, not isolated GPU inference. Retries
+and optional read review accumulate within the same utterance. Missing accounting
+is shown as unknown, never zero, and does not change semantic or execution policy.
+Operational questions use explicit receipts: ID, purpose, finite choices and
+effects, expiry and state revisions. Both Fast Path and Main Agent validate the
+receipt before presentation; the displayed question is retained in role history.
+For operation results, the host uses the tool's customer outcome and the single
+application-owned question, not competing Agent prose. POS fulfillment IDs and
+labels reach both Jev and Main Agent. Customer dialogue omits environment/source
+labels while preserving accepted/rejected/pending/uncertain status.
+Main Agent text is presented only after the final receipt validation, preventing
+an earlier streaming draft from showing a competing operational question.
+Every utterance chooses its route first; an old question never gates an
+independent new request. A selected question effect then resolves a concrete
+answer among the question owner's current choices, or NEW_REQUEST/BACKGROUND/
+UNCERTAIN. This replaces the generic ANSWER relation without adding a separate
+speech classifier. Initial choices can be corrected, including consent to refusal.
+Every finite question
+uses its own Jev request and yields an authenticated one-use checkpoint to Kiosk.
+Speech qualification alone does not create a dialogue bubble. A confident route
+shows the accepted customer utterance while required conditions are still checked;
+it grants no execution authority. Uncertain concrete answers retain the question
+without executing a guessed deferral or handing the guess to Main Agent. Payment
+and destructive confirmations remain distinct one-use authorization records.
+Complete-menu lookup may ask one bounded follow-up decision: finish with the
+grounded answer, perform one offered recommendation read, or hand off to Main
+Agent. It never loops or retries a cart/payment mutation. The decision inspector
+shows these stages and the role-labelled context actually sent to System One.
+Price inquiries/filters use the existing search/recommend routes with finite,
+browser-issued price interpretation IDs, not model-authored amounts. The host
+forwards the selected ID for browser verification, and hands off verified
+single-dish bounds or an unresolved-price guard. Unsupported approximate/relative
+or total budgets clarify without cart mutation. Card prices and condition headers
+are visual; replies need not read prices aloud. The application appends this
+capability boundary even to older saved System One prompts, without rewriting
+merchant configuration.
+It also shows actual bounded-call counts, questions, answers, durations and
+refusal reasons. An optional read continuation is allowed only with a known
+remaining budget under 24 questions across the entire utterance. Verified read
+receipts are visible before optional review, which may perform at most one extra
+read and then choose only completion or Agent handoff. Rejected WebMCP envelopes
+are not success; a lost execution result is shown as unknown, without automatic
+mutation retries. Main Agent tools run serially, with four rounds, 16 calls and a
+60-second model deadline; exhaustion/rejection retains actual receipts and reports
+unfinished work. Accepted external payment effects are not cancelled by that
+deadline. A complete new request during a pending
+confirmation revokes that exact confirmation before handing off; it never
+executes the old action. Configuration/clarification topic changes instead request
+one finite reroute through the existing host context tool, using the same utterance
+and issued question ID. Queries preserve the old unadded meal; a verified new meal
+replaces it. No old quantity/options or answer authority crosses into the new route,
+and both decisions share the per-utterance question budget. Main Agent turns bind known ingredient conditions to a
+host-owned task before sending messages, and release only their matching task.
+Completed reads and their conditions accompany the handoff so the Agent does
+not restart an unfiltered search.
+Unfinished speech is retained for three seconds in the same phase/revisions. Jev
+classifies the next utterance's relation before the application resolves separate
+fragments; transcripts are never blindly joined. Background does not consume a
+clarification answer. One valid unresolved answer ends that bound session and asks
+for touch selection. Stale/expired clarification and confirmation remain rejected.
 When an ASR turn escalates, the Main Agent receives a sanitized snapshot of the
 current menu or checkout phase and available payment methods. Typed turns read
 the same state through a host-only, read-only WebMCP tool. Tax IDs, carrier
 codes, and raw checkout objects are never included in that conversation hint;
 tool execution still checks the browser's live state.
 
+## Local diagnostic overlays
+
+In **Kiosk 現場設定 → 開發診斷**, operators can independently toggle the
+idle-reset and presence diagnostics in the lower-right corner and the decision
+flow inspector in the upper-right corner. All three default to
+hidden in development and production. Changes apply immediately and persist in
+this Kiosk browser, like the camera-preview preference; no Server delegation is
+required. These switches only control the overlays, not the camera observation
+or customer-session reset policy. Presence diagnostics appear only while actual
+presence observations are available.
+
 ## Customer-facing assistance state
+
+Food constraints are finite ingredient references supplied by the ordering page.
+Jev selects inclusion, exclusion or no condition alongside the intent. Fast Path
+forwards those bounded slots to the page, which validates them against its issued
+snapshot and performs the same search as Main Agent. Trace shows the ingredient
+answers, compiled filters and operation result; cart removal never inherits food
+search filters. No ingredient-polarity regex or absent-food tags are used.
 
 The conversation surface presents a large, plain-language state tied visually to
 the avatar: listening, understanding speech, arranging a request, or speaking.
@@ -170,7 +276,36 @@ In Webnavior's published Kiosk Profile, **僅允許語音對話** hides the cust
 
 The Profile can also include an optional PNG, JPEG, or WebP **服務場景** image. It is served as an immutable versioned kiosk asset and appears behind the virtual service character after the Profile is published. When no image is configured, the kiosk deliberately uses its built-in counter scene, so a readable service setting does not require a background upload.
 
-The kiosk captures complete ASR utterances independently while model or browser work continues. Real speech and the simulated-ASR input enter the same bounded decision queue. Jev first filters background speech; an ignored utterance neither interrupts the spoken reply nor reaches Main Agent. A related follow-up may restart an Agent that has not yet requested a browser tool, preserving both user turns in the visitor session. Once a tool is requested, new speech waits for the definitive result and is re-evaluated against the latest menu/checkout state. The queue reserves speech order before ASR returns, and overload is shown rather than silently dropping a phrase. Ordering workflows remain responsible for explicit customer confirmation before submission. Development mode or the conversation diagnostic setting exposes a larger per-utterance decision inspector.
+The kiosk captures complete ASR utterances independently while model or browser work continues. Real speech and the simulated-ASR input enter the same bounded decision queue. Jev first filters background speech; an ignored utterance neither interrupts the spoken reply nor reaches Main Agent. A related follow-up may restart an Agent that has not yet requested a browser tool, preserving both user turns in the visitor session. Once a tool is requested, new speech waits for the definitive result and is re-evaluated against the latest menu/checkout state. The queue reserves speech order before ASR returns, and overload is shown rather than silently dropping a phrase. Ordering workflows remain responsible for explicit customer confirmation before submission. The local decision-flow diagnostic switch exposes a larger per-utterance decision inspector.
+
+Proactive recommendation invitations have their own structured question receipts.
+They survive idle within the same order, renew a per-decision answer ticket, and
+clear only when the customer session resets (unanswered idle expiry, confirmed
+completion or explicit new order). A service-owned pending question always
+takes priority; configuration, checkout and active Agent work cannot create or
+accept a host invitation. Acceptance asks for up to three recommendations only.
+
+Ordering Agent replies use same-turn menu/operation receipts rather than free
+model product claims. Empty vegetarian results cannot be padded with invented
+dishes; a missing lookup produces a safe explanation instead. Multiple lookups
+remain available and their base prices can be compared, but unsupported free-form
+explanations are not presented as facts. Cart-only summaries use the actual cart.
+No extra WebMCP tool or payment authority is introduced.
+
+Text mode exposes only the simulated-ASR input, with no separate ordinary chat
+composer. Typed turns use the same decision queue, validation and WebMCP path as
+speech; Main Agent remains available through escalation and retry.
+The text ASR input submits only on a deliberate Enter or button activation,
+not on IME composition commits or held Enter repeats. Each submitted draft is
+consumed before notifying the parent. This does not deduplicate matching text or
+block later utterances while an earlier request is processing.
+Browser component regressions run separately from the Node unit suite:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
+# To use an installed Chrome instead of Playwright's downloaded Chromium:
+VITEST_BROWSER_CHANNEL=chrome pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
+```
 
 Before a conversation starts, an engaged person's intelligible but semantically
 uncertain utterance becomes a short-lived browser-only candidate instead of

@@ -26,7 +26,9 @@
   "items": [
     {
       "id": "signature-shrimp-roll-bento",
+      "composition": { "ingredients": ["shrimp", "pork", "egg", "rice", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-2", "removals": [] },
       "name": "周氏蝦捲招牌便當",
+      "optionGroups": [],
       "aliases": ["招牌便當"],
       "price": 145,
       "categoryId": "bento",
@@ -37,7 +39,9 @@
     },
     {
       "id": "spicy-chicken-bento",
+      "composition": { "ingredients": ["chicken", "egg", "rice", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-1", "removals": [] },
       "name": "椒麻雞便當",
+      "optionGroups": [],
       "price": 135,
       "categoryId": "bento",
       "symbol": "🍗",
@@ -47,7 +51,9 @@
     },
     {
       "id": "thai-sour-spicy-fish-bento",
+      "composition": { "ingredients": ["fish", "egg", "rice", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-2", "removals": [] },
       "name": "泰式酸辣魚便當",
+      "optionGroups": [],
       "price": 140,
       "categoryId": "bento",
       "symbol": "🐟",
@@ -57,7 +63,10 @@
     },
     {
       "id": "fried-pork-chop-bento",
+      "composition": { "ingredients": ["pork", "egg", "rice", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-1", "removals": [] },
       "name": "炸排骨便當",
+      "aliases": ["排骨便當"],
+      "optionGroups": [],
       "price": 130,
       "categoryId": "bento",
       "symbol": "🍖",
@@ -67,7 +76,9 @@
     },
     {
       "id": "thai-basil-pork-bento",
+      "composition": { "ingredients": ["pork", "egg", "rice", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-1", "removals": [] },
       "name": "打拋豬便當",
+      "optionGroups": [],
       "price": 125,
       "categoryId": "bento",
       "symbol": "🌶️",
@@ -77,7 +88,10 @@
     },
     {
       "id": "beef-noodle-soup",
-      "name": "牛肉麵",
+      "composition": { "ingredients": ["beef", "wheat", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-1", "removals": [] },
+      "name": "紅燒牛肉麵",
+      "aliases": ["牛肉麵"],
+      "optionGroups": [],
       "price": 150,
       "categoryId": "noodles",
       "symbol": "🍜",
@@ -87,12 +101,14 @@
     },
     {
       "id": "dumplings",
+      "composition": { "ingredients": ["pork", "wheat", "vegetables"], "complete": true, "source": "simulation", "revision": "simplified-demo-1", "removals": [] },
       "name": "水餃",
+      "optionGroups": [],
       "price": 80,
       "categoryId": "dumplings",
       "symbol": "🥟",
       "image": "https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=720&q=80",
-      "description": "一份十顆，現點現煮",
+      "description": "每份10顆，80元，現點現煮",
       "available": true
     }
   ]

@@ -30,3 +30,9 @@ All defaults are deliberately off. In particular, enabling a future Vision
 feature does not open the camera by itself, and no frame or clip is stored by
 this package. A host must explicitly connect a camera, event gate, provider,
 and deployment storage policy before visual assistance can occur.
+
+Pose presence uses the same configured greeting dwell, empty reset, trigger mode
+and minimum-person policy as attention observations. Geometry classification,
+minimum sample quality and greeting cooldown remain separate gates. The current
+pose adapter supplies one anonymous candidate, so a minimum above one cannot
+qualify a greeting; it does not infer a group count from a single pose.

@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { FastPathTiming } from '../services/kiosk-fast-path'
+
 import { BasicTextarea } from '@proj-airi/ui'
 import { computed, shallowRef } from 'vue'
 
 const props = defineProps<{
   status?: string
   trace?: string
+  timing?: FastPathTiming
 }>()
 
 const emit = defineEmits<{ simulate: [transcript: string] }>()
@@ -15,8 +18,11 @@ const canSimulate = computed(() => Boolean(transcript.value.trim()))
 function simulate() {
   if (!canSimulate.value)
     return
-  emit('simulate', transcript.value.trim())
+  const text = transcript.value.trim()
+  // Consume the draft before notifying the parent; another submit must not
+  // observe the same draft, and parent processing never blocks new input.
   transcript.value = ''
+  emit('simulate', text)
 }
 </script>
 
@@ -40,6 +46,23 @@ function simulate() {
     <p v-if="props.status" class="simulation-status" role="status">
       {{ props.status }}
     </p>
+    <div v-if="props.timing" class="simulation-timing" aria-label="Jev 執行時間">
+      <p>計時語句：{{ props.timing.transcript }}</p>
+      <p>Jev 請求等待：{{ (props.timing.requestDurationMs / 1000).toFixed(2) }} 秒</p>
+      <p v-if="props.timing.firstResultDurationMs !== undefined">
+        首個判斷回來：{{ (props.timing.firstResultDurationMs / 1000).toFixed(2) }} 秒
+      </p>
+      <p v-if="props.timing.modelQuestions !== undefined">
+        已處理有限問題：{{ props.timing.modelQuestions }} 題
+      </p>
+      <p v-if="props.timing.modelCalls !== undefined && props.timing.modelDurationMs !== undefined">
+        模型呼叫：{{ props.timing.modelCalls }} 次；合計耗時：{{ (props.timing.modelDurationMs / 1000).toFixed(2) }} 秒
+      </p>
+      <p v-else>
+        模型呼叫次數／耗時：未取得完整資料
+      </p>
+      <small>等待不含排隊、網頁操作及語音播放；模型耗時包含與 Jev 的網路往返，非純推論時間。</small>
+    </div>
     <details v-if="props.trace" class="simulation-trace">
       <summary>檢視本次 System One 決策 trace</summary>
       <pre>{{ props.trace }}</pre>
@@ -57,6 +80,9 @@ function simulate() {
 .simulation-button { justify-self: start; border: 1px solid rgb(120 225 209 / 42%); border-radius: .7rem; padding: .6rem .85rem; color: #063437; background: #78e1d1; cursor: pointer; font: inherit; font-weight: 800; }
 .simulation-button:disabled { cursor: wait; opacity: .5; }
 .simulation-status { border-left: 3px solid #78e1d1; padding-left: .65rem; color: #d9fffa; font-size: .82rem; line-height: 1.5; }
+.simulation-timing { display: grid; gap: .3rem; color: #d9fffa; font-size: .82rem; }
+.simulation-timing p { margin: 0; }
+.simulation-timing small { color: rgb(217 250 246 / 74%); }
 .simulation-trace { max-width: 100%; color: #d9fffa; font-size: .78rem; }
 .simulation-trace pre { max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

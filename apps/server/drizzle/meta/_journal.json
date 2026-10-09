@@ -316,6 +316,13 @@
       "when": 1791000000000,
       "tag": "0044_kiosk_system_one_decision_instruction",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791086400000,
+      "tag": "0045_kiosk_session_archives",
+      "breakpoints": true
     }
   ]
 }

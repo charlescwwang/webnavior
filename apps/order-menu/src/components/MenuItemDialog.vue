@@ -3,6 +3,8 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { MenuItem } from '../domain/order-machine'
 
+import { computed } from 'vue'
+
 import { addItemControlId, optionControlId, quantityControlId } from '../webmcp'
 
 const props = defineProps<{ item?: MenuItem, quantity: number, selectedOptions: Record<string, string> }>()
@@ -13,6 +15,8 @@ const emit = defineEmits<{
   updateOption: [groupId: string, valueId: string]
   updateQuantity: [quantity: number]
 }>()
+
+const missingRequiredOptions = computed(() => props.item?.optionGroups.filter(group => group.required && !group.values.some(value => value.id === props.selectedOptions[group.id])) ?? [])
 
 function registerControl(id: string, element: Element | ComponentPublicInstance | null) {
   emit('registerControl', id, element)
@@ -59,10 +63,13 @@ function currency(amount: number) {
             </button><output>{{ props.quantity }}</output><button type="button" @click="emit('updateQuantity', props.quantity + 1)">
               ＋
             </button>
-          </div><button :ref="addItemControlRef(props.item.id)" type="button" class="confirm-add" @click="emit('add', props.item.id)">
+          </div><button :ref="addItemControlRef(props.item.id)" type="button" class="confirm-add" :disabled="missingRequiredOptions.length > 0" @click="emit('add', props.item.id)">
             加入購物車
           </button>
         </div>
+        <p v-if="missingRequiredOptions.length" role="status">
+          請先選擇{{ missingRequiredOptions.map(group => group.label).join('、') }}。
+        </p>
       </article>
     </section>
   </Teleport>

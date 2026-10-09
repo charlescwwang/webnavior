@@ -4,7 +4,7 @@ import { rawTool } from '@xsai/tool'
 
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
-const kioskHostOnlyToolNames = new Set(['kiosk_interaction_state', 'kiosk_fast_path_context', 'kiosk_fast_path_execute'])
+const kioskHostOnlyToolNames = new Set(['kiosk_interaction_state', 'kiosk_fast_path_context', 'kiosk_fast_path_execute', 'kiosk_fast_path_continue', 'kiosk_dialogue_presented', 'kiosk_question_validate', 'kiosk_agent_task'])
 
 /** Maps active native WebMCP tools into the tool format consumed by AIRI's LLM runtime. */
 export function createWebMcpTools(): Tool[] {

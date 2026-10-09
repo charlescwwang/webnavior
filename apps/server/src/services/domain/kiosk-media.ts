@@ -1,10 +1,11 @@
 import type { Database } from '../../libs/db'
 import type { KioskVisitorMediaKind } from '../../schemas/kiosk'
 
+import { createHash } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 
 import * as schema from '../../schemas'
 
@@ -23,7 +24,7 @@ export interface KioskMediaFile {
   media: schema.KioskVisitorMedia
 }
 
-/** Stores private POC evidence bytes separately from the relational timeline. */
+/** Stores original private evidence bytes separately from the retained relational timeline. */
 export interface KioskMediaService {
   cleanupFiles: (media: schema.KioskVisitorMedia[]) => Promise<void>
   getFile: (mediaId: string) => Promise<KioskMediaFile | undefined>
@@ -37,8 +38,14 @@ export function createKioskMediaService(db: Database, mediaDirectory: string): K
   }
 
   async function save(input: KioskMediaUpload) {
+    if (input.interactionEntryId) {
+      const entry = await db.query.kioskInteractionEntries.findFirst({ where: and(eq(schema.kioskInteractionEntries.id, input.interactionEntryId), eq(schema.kioskInteractionEntries.visitorSessionId, input.visitorSessionId)) })
+      if (!entry)
+        throw new Error('Media evidence must reference an entry in the same visitor session.')
+    }
     const [media] = await db.insert(schema.kioskVisitorMedia).values({
       byteSize: input.data.byteLength,
+      sha256: createHash('sha256').update(input.data).digest('hex'),
       endedAt: input.endedAt,
       interactionEntryId: input.interactionEntryId,
       kind: input.kind,
@@ -61,15 +68,12 @@ export function createKioskMediaService(db: Database, mediaDirectory: string): K
     const media = await db.query.kioskVisitorMedia.findFirst({ where: eq(schema.kioskVisitorMedia.id, mediaId) })
     if (!media)
       return
-    try {
-      return { data: await readFile(filePath(media.id)), media }
-    }
-    catch (cause) {
-      if (!isMissingFileError(cause))
-        throw cause
-      await db.delete(schema.kioskVisitorMedia).where(eq(schema.kioskVisitorMedia.id, media.id))
-      throw cause
-    }
+    // Reads never remove metadata, including missing or corrupt evidence.
+    // Operators need that manifest to diagnose and restore an archive.
+    const data = await readFile(filePath(media.id))
+    if (data.byteLength !== media.byteSize || (media.sha256 && createHash('sha256').update(data).digest('hex') !== media.sha256))
+      throw new Error('Archived media failed its integrity check.')
+    return { data, media }
   }
 
   async function listVisitorSessionMedia(visitorSessionId: string) {
@@ -84,8 +88,4 @@ export function createKioskMediaService(db: Database, mediaDirectory: string): K
   }
 
   return { cleanupFiles, getFile, listVisitorSessionMedia, save }
-}
-
-function isMissingFileError(cause: unknown): cause is NodeJS.ErrnoException {
-  return typeof cause === 'object' && cause !== null && (cause as NodeJS.ErrnoException).code === 'ENOENT'
 }

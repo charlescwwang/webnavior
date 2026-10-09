@@ -59,6 +59,16 @@ const maximumConversationMessages = 48
 const maximumModelToolResultCharacters = 8_000
 const renderedMenuToolNames = new Set(['menu_get', 'menu_recommend', 'menu_show_recommendations'])
 
+/** Commerce drafts require host presentation, including replies that skip a required lookup. */
+export function requiresPresentedReply(results: readonly { name: string, content: string }[], offeredToolNames: readonly string[] = []) {
+  if (offeredToolNames.some(name => renderedMenuToolNames.has(name)))
+    return true
+  return results.some((result) => {
+    const payload = parseToolPayload(result.content)
+    return Boolean(payload?.pendingCustomerChoice || (renderedMenuToolNames.has(result.name) && Array.isArray(payload?.items)) || (typeof payload?.customerMessage === 'string' && !['cart_get', 'kiosk_session_history'].includes(result.name)))
+  })
+}
+
 /**
  * Keeps the latest complete conversational turns within a provider-independent
  * character ceiling. The newest single turn is truncated only when that turn
@@ -104,6 +114,11 @@ export function selectBoundedConversationText(entries: KioskConversationTextEntr
  * The caller must persist the original result before applying this policy.
  */
 export function compactToolResultForModel(name: string, content: string) {
+  // Persisted receipts retain environment/provenance. The model only needs
+  // actual ingredients and operation status, not deployment labels to narrate.
+  const parsed = parseToolPayload(content)
+  if (parsed)
+    content = JSON.stringify(parsed, (key, value) => key === 'environment' || key === 'simulated' || (key === 'source' && (value === 'simulation' || value === 'merchant')) ? undefined : value)
   if (content.length <= maximumModelToolResultCharacters)
     return content
 
@@ -146,6 +161,7 @@ export function createInteractionInstructions(state: KioskAgentInteractionState)
   const instructions = [
     '這是單一訪客、僅在本次點餐有效的互動摘要；不可向顧客提及摘要、session 或內部規則。',
     '購物車、金額、選項與取餐方式不是此摘要的真實來源；回答前如有需要，必須使用點餐工具查詢。',
+    '查詢與推薦必須完整保留顧客條件，不能因沒有符合結果而改查全部或放寬條件。工具 availability=NONE 就回答沒有；UNKNOWN 表示無法確認，CUSTOMIZATION_REQUIRED 不代表已符合。未支援或有歧義的條件先說明或澄清，不使用無條件查詢代替。素食只採用 POS 明確標示，不從缺少肉類成分自行推論；換一批沿用原條件，只有顧客明確修改需求才可變更。',
   ]
   if (state.suggestedSubjectIds.length > 0)
     instructions.push(`已展示但尚未選擇的餐點 ID：${state.suggestedSubjectIds.join(', ')}。除非顧客主動提起，不可再次推薦這些餐點。`)
@@ -154,15 +170,11 @@ export function createInteractionInstructions(state: KioskAgentInteractionState)
   if (state.recentMenuSubjects?.length)
     instructions.push(`最近顯示或操作的餐點：${state.recentMenuSubjects.map(item => `${item.name}（${item.id}）`).join('、')}。可用於理解「剛剛那個」等指涉。`)
   if (state.cartSummary) {
-    const serviceMode = state.cartSummary.fulfillmentMode === 'dine-in'
-      ? '內用'
-      : state.cartSummary.fulfillmentMode === 'takeout'
-        ? '外帶'
-        : '尚未選擇'
+    const serviceMode = state.cartSummary.fulfillmentMode ?? '尚未選擇'
     const lines = state.cartSummary.lines.length > 0
       ? state.cartSummary.lines.map(line => `${line.name}（lineId=${line.lineId}，${line.quantity} 份${formatOptions(line.options)}）`).join('、')
       : '空購物車'
-    instructions.push(`最近一次成功工具結果的購物車快照：${lines}；共 ${state.cartSummary.itemCount} 份，總額 ${state.cartSummary.total} 元，用餐方式：${serviceMode}。此快照用於延續對話；修改或結帳前仍以點餐工具的最新結果為準。`)
+    instructions.push(`最近一次成功工具結果的購物車快照：${lines}；共 ${state.cartSummary.itemCount} 份，總額 ${state.cartSummary.total} 元，用餐方式 ID：${serviceMode}（對顧客使用最新 POS fulfillmentModes 的 label，不自行翻譯 ID）。此快照用於延續對話；修改或結帳前仍以點餐工具的最新結果為準。`)
   }
   if (state.mode === 'decision_guidance') {
     instructions.push('顧客尚未做出決定。請停止重複開放式提問，改為展示 2 至 3 個尚未展示的可點選選項，或只問一個可直接回答的二選一問題。')

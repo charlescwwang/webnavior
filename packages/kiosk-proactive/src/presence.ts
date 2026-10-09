@@ -1,6 +1,7 @@
 import type { PresenceCandidate, PresenceSettings, PresenceState, ProactiveGreetingTrigger, ProactiveInteractionSettings } from './types'
 
 import { isInsideDetectionZone } from './observation'
+import { createInteractionWindow } from './session'
 
 /** Conservative installation-independent defaults; values are normalized to the camera frame. */
 export const defaultPresenceSettings: PresenceSettings = {
@@ -48,6 +49,10 @@ export function createPresenceWindow(settings: PresenceSettings, greeting: Proac
   let lastObservedAtMs = -Infinity
   let greetedAtMs: number | undefined
   let lastReason = 'initial'
+  // Geometry owns presence; the existing interaction policy owns configured
+  // trigger, dwell and absence reset. A pending trigger is claimed by the host.
+  const interactionWindow = createInteractionWindow(greeting)
+  let pendingTrigger: ProactiveGreetingTrigger | undefined
   const history: Array<{ at: number, candidate: PresenceCandidate }> = []
 
   function decide(observedAtMs: number, candidate?: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'>, interaction = false): PresenceDecision {
@@ -94,19 +99,25 @@ export function createPresenceWindow(settings: PresenceSettings, greeting: Proac
     else
       transition('DISTANT', observedAtMs, enriched.poseQuality < 0.5 ? 'low quality candidate' : 'present without approach evidence')
 
-    const trigger = greetingTrigger(enriched)
-    const greetingEligible = state !== 'ENGAGED'
-      && Boolean(trigger)
+    const observable = enriched.poseQuality >= 0.5 && enriched.greetingRoiHit
+    const policy = interactionWindow.decide({ observedAtMs, presencePeople: observable ? 1 : 0, attendingPeople: observable && enriched.attention === true ? 1 : 0 })
+    if (policy.shouldGreet)
+      pendingTrigger = policy.greetingTrigger
+    if (!observable || policy.reason === 'no-attention' || policy.reason === 'window-reset' || policy.reason === 'disabled')
+      pendingTrigger = undefined
+    const greetingEligible = Boolean(pendingTrigger)
       && enriched.greetingRoiHit
       // A fast passer must still survive more than one local inference, but
       // should not have to wait for a third sample after the scheduler boosts.
       && history.length >= settings.greetingMinSamples
-      && (!greetedAtMs || observedAtMs - greetedAtMs >= settings.greetingCooldownMs)
+      && (greetedAtMs == null || observedAtMs - greetedAtMs >= settings.greetingCooldownMs)
 
-    return decision(previousState, enriched, dwellMs, velocityX, scaleVelocity, greetingEligible, trigger)
+    return decision(previousState, enriched, dwellMs, velocityX, scaleVelocity, greetingEligible, pendingTrigger)
   }
 
   function decideMissing(observedAtMs: number): PresenceDecision {
+    interactionWindow.decide({ observedAtMs, presencePeople: 0, attendingPeople: 0 })
+    pendingTrigger = undefined
     const previousState = state
     const lastSeenAgeMs = lastSeenAtMs == null ? Infinity : observedAtMs - lastSeenAtMs
     if (lastSeenAgeMs > settings.lostGraceMs) {
@@ -140,16 +151,6 @@ export function createPresenceWindow(settings: PresenceSettings, greeting: Proac
       velocityX: (last.candidate.centre.x - first.candidate.centre.x) / seconds,
       scaleVelocity: (last.candidate.bodyScale - first.candidate.bodyScale) / seconds,
     }
-  }
-
-  function greetingTrigger(candidate: PresenceCandidate): ProactiveGreetingTrigger | undefined {
-    if (!greeting.enabled)
-      return undefined
-    if (greeting.triggerMode === 'attention')
-      return candidate.attention === true ? 'attention' : undefined
-    if (greeting.triggerMode === 'presence')
-      return 'presence'
-    return candidate.attention === true ? 'attention' : 'presence'
   }
 
   function transition(next: PresenceState, observedAtMs: number, reason: string) {
@@ -186,6 +187,7 @@ export function createPresenceWindow(settings: PresenceSettings, greeting: Proac
   /** Claims the cooldown only after the caller has successfully started the greeting turn. */
   function claimGreeting() {
     greetedAtMs = lastObservedAtMs
+    pendingTrigger = undefined
   }
 
   return { claimGreeting, decide }
