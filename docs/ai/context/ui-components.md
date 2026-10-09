@@ -249,6 +249,9 @@ Two-column input for key-value pairs.
 
 Auto-resizing textarea with submit and paste-file events.
 
+Enter used to commit IME composition does not submit. Held-key repeat events
+do not submit or insert a newline; Shift+Enter still inserts a newline.
+
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | `defaultHeight` | `string?` | — | Initial height when empty |

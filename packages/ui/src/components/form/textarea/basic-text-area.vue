@@ -19,13 +19,23 @@ const input = defineModel<string>({
 
 const textareaRef = ref<HTMLTextAreaElement>()
 const textareaHeight = ref('auto')
+const isComposing = ref(false)
 
 function onKeyDown(e: KeyboardEvent) {
   if (!props.submitOnEnter)
     return
 
+  // NOTICE: IME commit Enter belongs to text input, not submission. Some browsers
+  // emit compositionend before that keydown, leaving only keyCode 229.
+  // https://developer.mozilla.org/en-US/docs/Web/API/Element/keydown_event#keydown_events_with_ime
+  if (isComposing.value || e.isComposing || e.keyCode === 229)
+    return
+
   if (e.code === 'Enter' && !e.shiftKey) { // just block Enter is enough, Shift+Enter by default generates a newline
     e.preventDefault()
+    // A held key must neither submit again nor insert a newline.
+    if (e.repeat)
+      return
     events('submit', input.value)
   }
 }
@@ -69,6 +79,8 @@ watch(input, () => {
     v-model="input"
     :style="{ height: textareaHeight }"
     @keydown="onKeyDown"
+    @compositionstart="isComposing = true"
+    @compositionend="isComposing = false"
     @paste="onPaste"
   />
 </template>
