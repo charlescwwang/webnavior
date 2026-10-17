@@ -29,7 +29,7 @@ interface RegisteredWebMcpTool extends Omit<WebMcpTool, 'inputSchema'> {
 }
 
 interface ModelContextLike {
-  executeTool: (tool: RegisteredWebMcpTool, inputArguments: string, options?: { signal?: AbortSignal }) => Promise<string | null>
+  executeTool: (tool: RegisteredWebMcpTool, inputObject: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<string | null>
   getTools: (options?: { fromOrigins?: string[] }) => Promise<RegisteredWebMcpTool[]>
   /** Some WebMCP implementations notify hosts when a frame changes its tools. */
   addEventListener?: (type: 'toolchange', listener: () => void) => void
@@ -180,9 +180,9 @@ export function createWebMcpAdapter() {
       throw new Error(`WebMCP tool "${tool.name}" is no longer available from ${tool.origin}.`)
     publishExecution({ input, phase: 'called', tool })
     try {
-      // Chrome's native API accepts JSON text even though the registered page
-      // callback receives a structured object.
-      const result = resultFromWebMcp(await context.executeTool(registeredTool, JSON.stringify(input)))
+      // Chrome 155 serializes object input at the native boundary. Passing JSON
+      // text here fails validation before the registered page tool runs.
+      const result = resultFromWebMcp(await context.executeTool(registeredTool, input))
       if (isCompletionResult(result))
         completionRevision.value += 1
       publishExecution({ input, phase: 'resolved', result, tool })

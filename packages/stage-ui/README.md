@@ -16,6 +16,12 @@ Use it in an AIRI Interaction Host after an embedded interactive service emits `
 
 `services/webmcp-adapter` is the shared host-side adapter for an approved iframe. A host activates it after iframe load; it discovers tools only from that iframe origin, converts the tool metadata into Vue-safe descriptors, and executes them through native WebMCP. It intentionally has no `postMessage` tool bridge fallback.
 
+The adapter targets Chrome 155's object-input execution contract:
+`document.modelContext.executeTool(registeredTool, inputObject)`. Arguments are
+passed as objects; the browser serializes them before invoking the service.
+Older JSON-string execution APIs are unsupported. Results remain JSON text at
+the native boundary and are parsed by the adapter.
+
 ## Anonymous customer lifecycle
 
 `composables/use-kiosk-customer-session` owns the disposable customer session

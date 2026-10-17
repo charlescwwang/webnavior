@@ -7,12 +7,12 @@ describe('createWebMcpAdapter', () => {
     vi.unstubAllGlobals()
   })
 
-  it('serializes structured arguments before executing a discovered native WebMCP tool', async () => {
-    const executeTool = vi.fn().mockResolvedValue('{"cart":{"itemCount":1}}')
+  it('passes transcript objects to the native kiosk_fast_path_context tool', async () => {
+    const executeTool = vi.fn().mockResolvedValue('{"candidates":[]}')
     const registeredTool = {
-      description: 'Add an item to the cart.',
+      description: 'Read semantic ordering context.',
       inputSchema: { type: 'object' },
-      name: 'cart_add_item',
+      name: 'kiosk_fast_path_context',
       origin: 'https://menu.example',
     }
     vi.stubGlobal('document', {
@@ -29,8 +29,9 @@ describe('createWebMcpAdapter', () => {
     if (!tool)
       throw new Error('Expected a discovered WebMCP tool.')
 
-    await expect(adapter.execute(tool, { quantity: 1 })).resolves.toEqual({ cart: { itemCount: 1 } })
+    await expect(adapter.execute(tool, { transcript: '有麵嗎' })).resolves.toEqual({ candidates: [] })
     expect(tool).not.toBe(registeredTool)
-    expect(executeTool).toHaveBeenCalledWith(registeredTool, '{"quantity":1}')
+    expect(executeTool).toHaveBeenCalledWith(registeredTool, { transcript: '有麵嗎' })
+    expect(executeTool).toHaveBeenCalledTimes(1)
   })
 })

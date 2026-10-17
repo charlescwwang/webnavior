@@ -8,7 +8,13 @@ describe('createWebMcpAdapter', () => {
   })
 
   it('executes discovered cross-origin tools through the browser handle rather than a postMessage bridge', async () => {
-    const executeTool = vi.fn().mockResolvedValue('{"cart":{"itemCount":1}}')
+    // NOTICE: Chrome 155 rejects JSON strings before invoking the page tool.
+    // https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/webmcp/agentic-javascript-tools.md#invoking-tools-with-executetool
+    const executeTool = vi.fn(async (_tool: object, input: unknown) => {
+      if (!input || typeof input !== 'object' || Array.isArray(input))
+        throw new TypeError('Failed to execute \'executeTool\' on \'ModelContext\': invalid input object: value is not an object')
+      return '{"cart":{"itemCount":1}}'
+    })
     const registeredTool = {
       description: 'Add an item to the cart.',
       inputSchema: { type: 'object' },
@@ -33,7 +39,8 @@ describe('createWebMcpAdapter', () => {
 
     await expect(adapter.execute(tool, { quantity: 1 })).resolves.toEqual({ cart: { itemCount: 1 } })
     expect(tool).not.toBe(registeredTool)
-    expect(executeTool).toHaveBeenCalledWith(registeredTool, '{"quantity":1}')
+    expect(executeTool).toHaveBeenCalledWith(registeredTool, { quantity: 1 })
+    expect(executeTool).toHaveBeenCalledTimes(1)
     expect(executions).toHaveBeenNthCalledWith(1, {
       input: { quantity: 1 },
       phase: 'called',
