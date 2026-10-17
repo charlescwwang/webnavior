@@ -47,6 +47,97 @@ that `serviceUrl` is the exact iframe URL and takes precedence over this variabl
 `VITE_AIRI_ORIGIN` belongs to the embedded service's WebMCP allowlist; it never
 changes the iframe URL.
 
+The interactive iframe delegates geolocation to its source origin so embedded
+services can request location with the user's permission. Production pages must
+use HTTPS. If the deployment sets a `Permissions-Policy` header, its geolocation
+allowlist must also include the embedded service's origin; the iframe cannot
+override a restrictive response header.
+
+Assistant control and iframe rendering are separate capabilities. When tools
+are unavailable, Kiosk leaves the service screen mounted and tells customers to
+use it directly; it does not treat missing tools as proof of a failed menu load.
+Reloading, changing the configured URL, or unmounting the surface revokes old
+assistant handles immediately. Pending discovery waiters reject on document
+replacement, and removal of the last discovered tool revokes readiness.
+
+Embedding a third-party site does not give the Agent access to its DOM or
+business state. The current native WebMCP path requires that site's tools; this
+host does not implement a general browser-control bridge. A third-party checkout
+screen also cannot automatically report completion to the host unless an
+integration supplies a validated result. Manual iframe checkout alone therefore
+does not certify Agent operation or Kiosk session completion.
+
+### Third-party iframe compatibility checks
+
+Run the real-browser loading check before adopting an interactive service:
+
+```bash
+agent-browser skills get core
+python3 scripts/checkInteractiveServices.py \
+  --expect-text '大腸臭臭鍋' \
+  --output /tmp/airi-compatibility-report
+```
+
+Run from the repository root with Python 3 and the installed `agent-browser` CLI.
+Set `AGENT_BROWSER_BIN` when the CLI is not on `PATH`; `--chrome` can select an
+installed Chrome executable. The defaults check the two Damai demonstration
+URLs; repeat `--url` to check other explicitly approved services and choose menu
+content for `--expect-text`. Use a new output directory for each run.
+
+The check owns a temporary loopback fixture and an isolated browser per service.
+It uses headed Chrome by default: on 2026-10-16, Damai's API preflight returned
+CloudFront 403 for a HeadlessChrome User-Agent and 204 for a regular Chrome
+User-Agent. Do not infer a customer-browser failure from a headless-only result.
+`--headless` is a diagnostic control, not the acceptance baseline.
+
+The report separates visible menu content, HTTP failures and incomplete network
+observations. A loaded iframe alone does not prove its internal requests work.
+Reports omit request credentials, response bodies and URL queries; raw HAR files
+are deleted unless `--retain-raw-har` is explicitly supplied. Review screenshots
+before sharing them. Verify the report analyzer with
+`python3 scripts/checkInteractiveServices.test.py`.
+
+This is a loading check, not checkout or Agent acceptance. The script never
+clicks service controls, signs in, grants location consent or submits orders.
+Test the actual production HTTPS origin separately, including third-party
+storage, authentication redirects, payment windows and completion behavior.
+Cross-origin iframe content and failed API responses cannot be inspected or
+repaired by ordinary parent-page JavaScript. Native WebMCP also requires tools
+registered by the embedded document; menu visibility does not establish Agent
+control. No automatic order retry is safe after an uncertain submission.
+
+### Debugging iframe input with DevTools
+
+When manual clicks stop reaching a third-party iframe, keep DevTools open and
+turn off **Toggle device toolbar** (the phone/tablet button, or **Cmd+Shift+M**
+with DevTools focused on macOS). This disables device emulation while retaining
+the Console, Network and Elements panels. See
+[Chrome's device mode documentation](https://developer.chrome.com/docs/devtools/device-mode/).
+
+On 2026-10-16, native macOS mouse clicks reproduced this failure in the user's
+original Chrome Kiosk tab: device toolbar enabled, Responsive/Desktop, Sensors
+Touch set to Device-based. Turning off only the device toolbar allowed guest
+entry and announcement dismissal with DevTools still open. Re-enabling it
+reproduced failed category clicks; 100% preview zoom and Desktop (touch) did not
+resolve them. After restoring the page, native clicks also passed Go, guest
+entry, announcement dismissal and category selection with device mode disabled.
+The user also confirmed that a physical click switched to the vegetables category
+in that final state, with DevTools still open and device mode disabled.
+
+This is a debugging workaround, not a production iframe fix or proof of vendor
+anti-debugging. Direct automation aimed at the child frame can work while manual
+input fails, so it is not sufficient acceptance evidence. Test the actual Kiosk
+browser and touch input separately; device emulation does not establish behavior
+on the deployed hardware. Do not broaden iframe security permissions to repair
+this input symptom.
+
+Compare the same child content through a same-site and a cross-site host before
+attributing the failure to a service provider. Different localhost ports are
+cross-origin but can remain same-site. A minimal HTML reproduction also showed
+device-mode input failing with an iframe wrapper's `overflow: hidden` and
+recovering with `overflow: visible`; that change alone did not fix the complete
+Kiosk. Preserve the full-page manual-input check when evaluating any CSS fix.
+
 ## Anonymous customer sessions
 
 Main Agent accepts both direct requests with Fast Path disabled and Jev handoffs

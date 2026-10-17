@@ -23,6 +23,12 @@ The iframe URL comes from the enabled service's saved **互動服務** `serviceU
 already saved URL. `VITE_AIRI_ORIGIN` is an embedded service's WebMCP allowlist
 setting and does not alter the iframe `src`.
 
+The interactive iframe delegates geolocation to its source origin so embedded
+services can request location with the user's permission. Production pages must
+use HTTPS. If the deployment sets a `Permissions-Policy` header, its geolocation
+allowlist must also include the embedded service's origin; the iframe cannot
+override a restrictive response header.
+
 ## Webnavior Kiosk management
 
 The Webnavior admin Kiosk pages separate retained customer records from device

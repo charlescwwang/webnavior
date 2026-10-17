@@ -103,7 +103,7 @@ onUnmounted(() => {
       ref="menuFrame"
       :key="`${activeService?.id ?? 'none'}:${resetRevision}`"
       :src="activeService?.serviceUrl"
-      allow="tools"
+      allow="tools; geolocation"
       :title="activeService?.title ?? 'AIRI 互動服務'"
       @load="attachFrame"
     />
