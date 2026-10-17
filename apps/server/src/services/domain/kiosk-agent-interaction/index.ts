@@ -1,8 +1,6 @@
-/**
- * Per-visitor, short-lived context used to keep an ordering conversation
- * coherent. This deliberately stores compact references and the latest
- * successful cart summary; the order-menu remains the source of truth.
- */
+/** Stable, customer-safe failure categories shared by the reply stream and host. */
+export type KioskReplyFailureReason = 'timeout' | 'provider-error'
+
 export type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferred'
 
 export interface KioskAgentMenuSubject {
@@ -23,6 +21,11 @@ export interface KioskAgentCartSummary {
   total: number
 }
 
+/**
+ * Per-visitor, short-lived context used to keep an ordering conversation
+ * coherent. This deliberately stores compact references and the latest
+ * successful cart summary; the order-menu remains the source of truth.
+ */
 export interface KioskAgentInteractionState {
   cartSummary?: KioskAgentCartSummary
   dismissedSubjectIds: string[]
@@ -59,14 +62,11 @@ const maximumConversationMessages = 48
 const maximumModelToolResultCharacters = 8_000
 const renderedMenuToolNames = new Set(['menu_get', 'menu_recommend', 'menu_show_recommendations'])
 
-/** Commerce drafts require host presentation, including replies that skip a required lookup. */
-export function requiresPresentedReply(results: readonly { name: string, content: string }[], offeredToolNames: readonly string[] = []) {
-  if (offeredToolNames.some(name => renderedMenuToolNames.has(name)))
-    return true
-  return results.some((result) => {
-    const payload = parseToolPayload(result.content)
-    return Boolean(payload?.pendingCustomerChoice || (renderedMenuToolNames.has(result.name) && Array.isArray(payload?.items)) || (typeof payload?.customerMessage === 'string' && !['cart_get', 'kiosk_session_history'].includes(result.name)))
-  })
+/** Actual commerce receipts require host presentation; offering tools does not make a greeting a commerce draft. */
+export function requiresPresentedReply(results: readonly { name: string, content: string }[]) {
+  // Even a rejected or malformed commerce receipt makes generated success
+  // prose untrusted. Only the paged text-history tool leaves dialogue natural.
+  return results.some(result => result.name !== 'kiosk_session_history')
 }
 
 /**

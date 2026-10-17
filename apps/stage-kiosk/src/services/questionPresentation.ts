@@ -1,4 +1,5 @@
 import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
@@ -59,6 +60,7 @@ export function createMenuReplyWindow() {
       else
         messages.add(names.length ? `我查到：${names.slice(0, 3).join('、')}。` : '目前沒有查到符合條件的餐點。')
     },
+    hasReceipts: () => reads > 0 || cartReply !== undefined,
     reply() {
       // Without evidence, generated dish claims cannot become customer dialogue.
       if (!reads)
@@ -69,6 +71,29 @@ export function createMenuReplyWindow() {
       return `${[...messages].join(' ')}${prices}`
     },
   }
+}
+
+/**
+ * Resolves one Agent task for display: no-tool dialogue stays natural, while
+ * commerce attempts use current-turn receipts even if the model claims success.
+ * Transport failures without receipts are errors, never a fabricated menu reply.
+ */
+export function replyFromConversation(result: ConversationTurnResult, options: {
+  menu: ReturnType<typeof createMenuReplyWindow>
+  outcome?: string
+  question?: PresentedQuestion
+  failureMessage: string
+}) {
+  // A history lookup supplies conversation context, not a new commerce result.
+  const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
+  const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
+  if (result.status !== 'completed') {
+    return receiptReply
+      ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
+      : { role: 'error' as const, content: options.failureMessage }
+  }
+  const content = receiptReply || (commerceAttempted ? options.menu.reply() : result.answer)
+  return content ? { role: 'assistant' as const, content } : { role: 'error' as const, content: options.failureMessage }
 }
 
 /** Retains host invitation history for this order; service questions always take foreground priority. */

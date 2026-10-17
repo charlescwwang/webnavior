@@ -729,7 +729,44 @@ describe('kiosk routes', () => {
     expect(followUpMessages.some(message => Array.isArray(message.tool_calls))).toBe(false)
   })
 
-  it('persists the full successful tool result and compact interaction state when the following model call fails', async () => {
+  // Report: this chat, 2026-10-14 — successful greetings were hidden whenever menu tools were offered.
+  it.each([undefined, { phase: 'ordering' as const }])('persists a streamed greeting as dialogue with menu tools offered: %j', async (decisionState) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '您好！需要什麼協助？' } }] }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({
+      developmentRegistrationEnabled: true,
+      kioskService,
+      llmGateway: { complete },
+      runtimeModelPolicy,
+      secureCookies: false,
+    }))
+    const registration = await app.request('/api/kiosk/development/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ registrationCode: '483920' }),
+    })
+    const cookie = registration.headers.get('Set-Cookie')!.split(';')[0]
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
+    const started = await app.request('/api/kiosk/visitor-sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ serviceId: 'development-ordering-service' }),
+    })
+    const { session } = await started.json() as { session: { id: string } }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: { 'Accept': 'text/event-stream', 'Content-Type': 'application/json', 'Cookie': cookie },
+      body: JSON.stringify({ content: '嗨', decisionState, tools: [{ type: 'function', function: { name: 'menu_get', parameters: { type: 'object', properties: {} } } }] }),
+    })
+    const events = await response.text()
+    expect(events).toContain('您好！需要什麼協助？')
+    expect(events).toContain('"type":"turn-finished"')
+    const transcript = await kioskService.getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })
+    expect(transcript.entries.filter(entry => entry.kind === 'assistant_text').map(entry => entry.content)).toEqual(['您好！需要什麼協助？'])
+    expect(complete.mock.calls[0]?.[0].body.messages).toContainEqual({ role: 'user', content: '嗨' })
+  })
+
+  it.each([['timeout', 504], ['provider-error', 503]] as const)('preserves successful tool receipts and reports %s when the model continuation fails', async (reason, statusCode) => {
     const complete = vi.fn()
       .mockResolvedValueOnce(Response.json({
         choices: [{ message: {
@@ -737,7 +774,7 @@ describe('kiosk routes', () => {
           tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"牛肉麵"}' } }],
         } }],
       }))
-      .mockRejectedValueOnce(new Error('provider timeout'))
+      .mockRejectedValueOnce(new ApiError(statusCode, 'TEST_MODEL_FAILURE', 'model failure'))
     const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
       developmentRegistrationEnabled: true,
@@ -781,7 +818,9 @@ describe('kiosk routes', () => {
       body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'menu_get', content: fullToolResult }] }),
     })
 
-    expect(await failedReply.text()).toContain('"type":"turn-failed"')
+    const failedEvents = await failedReply.text()
+    expect(failedEvents).toContain('"type":"turn-failed"')
+    expect(failedEvents).toContain(`"reason":"${reason}"`)
     const modelMessages = complete.mock.calls.at(-1)?.[0].body.messages as Array<{ content?: string, role: string }>
     const modelToolResult = modelMessages.find(message => message.role === 'tool')?.content ?? ''
     expect(modelToolResult.length).toBeLessThanOrEqual(8_000)
@@ -947,7 +986,8 @@ describe('kiosk routes', () => {
     expect(olderPage.entries[0]).toMatchObject({ content: '我要一份水餃' })
   })
 
-  it('keeps a successful fast-path cart result as the Agent working snapshot', async () => {
+  // Report: this chat, 2026-10-14 — accepted receipts must survive manual takeover.
+  it.each([{ decisionRoute: 'fast_path' }, { source: 'manual_control' }])('keeps a browser cart receipt as the Agent working snapshot: %j', async (origin) => {
     const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false }))
     const registration = await app.request('/api/kiosk/development/register', {
@@ -967,14 +1007,14 @@ describe('kiosk routes', () => {
     const saved = await app.request(`/api/kiosk/visitor-sessions/${session.id}/entries`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
-      body: JSON.stringify({ content: JSON.stringify({ cart, line: cart.lines[0] }), kind: 'tool_result', metadata: { decisionRoute: 'fast_path', name: 'order_add_item' } }),
+      body: JSON.stringify({ content: JSON.stringify({ cart, line: cart.lines[0] }), kind: 'tool_result', metadata: { ...origin, name: 'order_add_item' } }),
     })
 
     expect(saved.status).toBe(201)
     const menuSaved = await app.request(`/api/kiosk/visitor-sessions/${session.id}/entries`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Cookie': cookie },
-      body: JSON.stringify({ content: JSON.stringify({ items: [{ id: 'dumplings', name: '水餃' }], presentation: { itemIds: ['dumplings'] } }), kind: 'tool_result', metadata: { decisionRoute: 'fast_path', name: 'menu_get' } }),
+      body: JSON.stringify({ content: JSON.stringify({ items: [{ id: 'dumplings', name: '水餃' }], presentation: { itemIds: ['dumplings'] } }), kind: 'tool_result', metadata: { ...origin, name: 'menu_get' } }),
     })
     expect(menuSaved.status).toBe(201)
     const transcript = await kioskService.getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })

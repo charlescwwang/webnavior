@@ -23,10 +23,12 @@ import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/
 import { useMouse, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import KioskAdminAccess from './KioskAdminAccess.vue'
 import KioskAdminPanel from './KioskAdminPanel.vue'
+import KioskAgentControl from './KioskAgentControl.vue'
 import KioskAssistantThoughtBubble from './KioskAssistantThoughtBubble.vue'
 import KioskAudioStatusOverlay from './KioskAudioStatusOverlay.vue'
 import KioskCameraPreview from './KioskCameraPreview.vue'
@@ -59,20 +61,10 @@ import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { isKioskConversationRetrySafeTool } from '../services/kioskConversationRetry'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
-import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromOperation, replyWithQuestion } from '../services/questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
-
-type KioskOrientation = 'landscape' | 'portrait'
-type KioskMotionName = 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking'
-
-interface FastPathInput {
-  id?: number
-  recording?: Blob
-  source: 'asr' | 'simulation'
-  text: string
-}
 
 const props = defineProps<{
   device?: KioskDevice
@@ -86,7 +78,20 @@ const props = defineProps<{
   voiceConversationOnly: boolean
   voiceVadSettings: KioskVoiceVadSettings
 }>()
+
 const emit = defineEmits<{ deviceSettingsUpdated: [] }>()
+
+const { t } = useI18n()
+
+type KioskOrientation = 'landscape' | 'portrait'
+type KioskMotionName = 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking'
+
+interface FastPathInput {
+  id?: number
+  recording?: Blob
+  source: 'asr' | 'simulation'
+  text: string
+}
 
 const conversationLongWaitMs = 5_000
 const asrSimulationStatus = shallowRef<string>()
@@ -296,6 +301,17 @@ const conversationActivityStatus = computed(() => {
   return undefined
 })
 const interactionRecording = useKioskInteractionRecording()
+const agentOrderOwner = shallowRef<string>()
+const manualControlPending = shallowRef(false)
+function requestManualOrderControl() {
+  manualControlPending.value = true
+  utteranceQueue.reset()
+  // Keep this turn current so its last accepted receipt can still be presented.
+  // Speech may not replace it while ownership is being returned.
+  if (activeAgentRequest)
+    activeAgentRequest.stage = 'mutating'
+  interactionRecording.requestManualControl()
+}
 const customerSession = useKioskCustomerSession({
   activeCardId,
   chatSession: chatSessionStore,
@@ -1539,10 +1555,21 @@ async function sendConversationMessage(
   let questionReceipt: ReturnType<typeof questionReceiptFrom>
   let operationReply: string | undefined
   const menuReply = createMenuReplyWindow()
-  const menuScoped = activeTools.value.some(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations'].includes(tool.function.name))
   const taskTool = webMcpAdapter.tools.value.find(tool => tool.name === 'kiosk_agent_task')
   const taskId = `agent:${turn.id}`
   let taskBound = false
+  const releaseOrderControl = async () => {
+    if (!taskBound || !taskTool)
+      return
+    const released = await webMcpAdapter.execute(taskTool, { action: 'END', taskId })
+    if (!released || typeof released !== 'object' || !('ok' in released) || released.ok !== true)
+      throw new Error('The browser did not acknowledge returning order control.')
+    taskBound = false
+    if (agentOrderOwner.value === taskId) {
+      agentOrderOwner.value = undefined
+      manualControlPending.value = false
+    }
+  }
   const updateExecutionDuration = () => {
     if (startedAt === undefined || !interactionTurn.isCurrent(turn))
       return
@@ -1592,6 +1619,8 @@ async function sendConversationMessage(
       if (!binding || typeof binding !== 'object' || !('ok' in binding) || binding.ok !== true)
         throw new Error('Agent task could not be bound to the current menu.')
       taskBound = true
+      agentOrderOwner.value = taskId
+      manualControlPending.value = false
       if (!interactionTurn.isCurrent(turn))
         return
     }
@@ -1682,24 +1711,42 @@ async function sendConversationMessage(
       },
     )
     finishExecutionDuration()
+    // Release after the tool loop settles, before question presentation or TTS.
+    await releaseOrderControl()
     if (!interactionTurn.isCurrent(turn))
       return
     questionReceipt = await validatedQuestionReceipt({ pendingCustomerChoice: questionReceipt })
     if (!interactionTurn.isCurrent(turn))
       return
-    const completedAnswer = replyFromOperation(menuScoped ? menuReply.reply() : reply?.answer ?? '', operationReply, questionReceipt) || undefined
-    const answer = reply?.status === 'incomplete'
-      ? `${completedAnswer ? `${completedAnswer} ` : ''}其餘需求尚未完成，請確認畫面後再補充需求或使用螢幕操作。`
-      : completedAnswer
+    if (!reply)
+      return
+    if (reply.reason === 'manual-control') {
+      finishConversationProgress(turn.id)
+      conversationWorkStatus.value = undefined
+      conversationActivitySteps.value = []
+      streamingAssistantMessage.value = undefined
+      const message = [operationReply, t('stage.kiosk-agent.manual-control')].filter(Boolean).join(' ')
+      conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: message, slices: [], tool_results: [] }]
+      await interactionRecording.append('assistant_text', message, { source: 'verified_reply' })
+      updateAgentStep(message)
+      return
+    }
+    const presented = replyFromConversation(reply, {
+      menu: menuReply,
+      outcome: operationReply,
+      question: questionReceipt,
+      failureMessage: t(`stage.kiosk-agent.${reply.reason ?? 'no-reply'}`),
+    })
+    const answer = presented.role === 'assistant' ? presented.content : undefined
     conversationMessages.value = [
       ...conversationMessages.value,
       answer
         ? { role: 'assistant', content: answer, slices: [], tool_results: [] }
-        : { role: 'error', content: mutationToolAttempted ? '暫時無法確認這次操作結果，請先確認畫面上的購物車或訂單。' : '這次處理時間較久，您可以再試一次或使用螢幕操作。' },
+        : { role: 'error', content: presented.content },
     ]
     if (!answer && !mutationToolAttempted)
       retryableConversationRequest.value = text
-    updateAgentStep(reply?.status === 'incomplete' ? 'Main Agent 已達處理上限，保留已完成操作' : answer ? 'Main Agent 已完成' : 'Main Agent 未能完成')
+    updateAgentStep(reply.status === 'completed' && answer ? 'Main Agent 已完成' : presented.content)
     streamingAssistantMessage.value = undefined
     request.resolveDone()
     if (activeAgentRequest === request)
@@ -1708,7 +1755,7 @@ async function sendConversationMessage(
       interactionTurn.advance(turn, 'speaking')
       // The server keeps operation prose only as an internal draft. Record
       // the validated customer reply once, even if the draft used the same words.
-      if (menuScoped || operationReply || questionReceipt)
+      if (reply.requestedTools.some(name => name !== 'kiosk_session_history') || operationReply || questionReceipt)
         await interactionRecording.append('assistant_text', answer, { questionId: questionReceipt?.questionId, source: 'verified_reply' })
       await acknowledgePresentedReply(answer, questionReceipt?.questionId)
       await speakAssistantReply(answer, turn)
@@ -1723,11 +1770,11 @@ async function sendConversationMessage(
   finally {
     if (taskBound && taskTool) {
       try {
-        await webMcpAdapter.execute(taskTool, { action: 'END', taskId })
+        await releaseOrderControl()
       }
       catch {
-        // A closed iframe cannot be cleaned up remotely. Its task expires and
-        // a later BEGIN replaces it; the old task ID never clears a new turn.
+        // A closed iframe cannot acknowledge release. Keep the lock visible;
+        // restart replaces the document, and old END cannot clear a new task.
         updateAgentStep('Main Agent 已結束；網頁任務連線已中斷')
       }
     }
@@ -1743,6 +1790,7 @@ async function sendConversationMessage(
     if (interactionTurn.isCurrent(turn)) {
       interactionTurn.complete(turn)
       conversationWorkStatus.value = undefined
+      conversationActivitySteps.value = []
     }
   }
 }
@@ -1920,6 +1968,11 @@ onUnmounted(() => {
     </section>
 
     <ScenarioSurface class="menu-region" />
+    <KioskAgentControl
+      v-if="agentOrderOwner"
+      :releasing="manualControlPending"
+      @manual="requestManualOrderControl"
+    />
 
     <button
       v-if="customerSessionState === 'active' || customerSessionState === 'standby'"

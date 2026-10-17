@@ -1,7 +1,8 @@
 import type { Tool } from '@xsai/shared-chat'
 
+import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
-import type { KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
+import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 import type { InteractiveServiceOrderResult } from '../services/scenario-registry'
 
 import { executeTool } from '@xsai/shared-chat'
@@ -9,6 +10,16 @@ import { rawTool } from '@xsai/tool'
 import { readonly, shallowRef } from 'vue'
 
 import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
+
+/** Outcome of one bounded Agent task, including accepted work before a failure. */
+export interface ConversationTurnResult {
+  answer?: string
+  agentMode: KioskAgentInteractionMode
+  /** Tools submitted for execution in this turn, including rejected attempts; never historical receipts. */
+  requestedTools: string[]
+  status: 'completed' | 'incomplete' | 'failed'
+  reason?: KioskReplyFailureReason | 'tool-rejected' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
+}
 
 interface ConversationPresentationCallbacks {
   onToolResult?: (toolName: string, content: string) => void
@@ -31,6 +42,17 @@ export function useKioskInteractionRecording() {
   const error = shallowRef<string>()
   const visitorSessionId = shallowRef<string>()
   const starting = shallowRef(false)
+  const controlState = shallowRef<'idle' | 'agent' | 'releasing'>('idle')
+  let activeControl: { controller: AbortController, manual: boolean } | undefined
+  function requestManualControl() {
+    if (!activeControl)
+      return
+    activeControl.manual = true
+    controlState.value = 'releasing'
+    // Abort model transport only. An accepted browser tool is awaited below;
+    // releasing the UI before its receipt would allow conflicting cart writes.
+    activeControl.controller.abort()
+  }
   let pendingStart: Promise<string | undefined> | undefined
   let pendingAppend: Promise<unknown> = Promise.resolve()
 
@@ -102,10 +124,32 @@ export function useKioskInteractionRecording() {
     content: string,
     tools: Tool[],
     callbacks: ConversationPresentationCallbacks = {},
-  ) {
+  ): Promise<ConversationTurnResult | undefined> {
+    const control = { controller: new AbortController(), manual: false }
+    activeControl = control
+    controlState.value = 'agent'
     const sessionId = await start(serviceId)
-    if (!sessionId)
-      return undefined
+    if (!sessionId) {
+      if (activeControl === control) {
+        activeControl = undefined
+        controlState.value = 'idle'
+      }
+      return { answer: undefined, agentMode: 'active', requestedTools: [], status: 'failed', reason: 'session-error' }
+    }
+
+    const requestedTools: string[] = []
+    let agentMode: KioskAgentInteractionMode = 'active'
+    let deadline: AbortSignal | undefined
+    let transportReason: KioskReplyFailureReason = 'provider-error'
+    // Transport failure before any tool differs from a task that may have
+    // changed browser state. Neither case grants permission to replay writes.
+    const unfinished = (reason: NonNullable<ConversationTurnResult['reason']>): ConversationTurnResult => ({
+      answer: undefined,
+      agentMode,
+      requestedTools: [...requestedTools],
+      reason,
+      status: requestedTools.length === 0 && (reason === 'provider-error' || reason === 'timeout') ? 'failed' : 'incomplete',
+    })
 
     try {
       const historyTool = rawTool({
@@ -125,10 +169,14 @@ export function useKioskInteractionRecording() {
       // One deadline covers the entire Agent task, not a fresh budget per
       // continuation. It cancels model transport only, never an accepted POS
       // effect; browser tools settle through their own result boundary.
-      const deadline = AbortSignal.timeout(60_000)
-      const signal = callbacks.signal ? AbortSignal.any([callbacks.signal, deadline]) : deadline
+      deadline = AbortSignal.timeout(60_000)
+      const signal = AbortSignal.any([control.controller.signal, deadline, ...(callbacks.signal ? [callbacks.signal] : [])])
+      if (control.manual)
+        return unfinished('manual-control')
       const seenCalls = new Set<string>()
       let response = await streamKioskConversationMessage({ content, utteranceId: callbacks.utteranceId, ...(callbacks.decisionState ? { decisionState: callbacks.decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        if (event.type === 'turn-failed')
+          transportReason = event.reason
         if (event.type === 'turn-started')
           callbacks.onTurnStarted?.()
         if (event.type === 'assistant-delta')
@@ -136,6 +184,9 @@ export function useKioskInteractionRecording() {
         if (event.type === 'tool-requested')
           callbacks.onToolRequested?.(event.toolCall.function.name)
       })
+      agentMode = response.agentMode
+      if (control.manual)
+        return unfinished('manual-control')
       // A follow-up may cancel a still-thinking Agent while its final stream
       // chunk is in flight. A late tool call from that cancelled turn must not
       // execute, even if the response itself arrived successfully.
@@ -152,14 +203,19 @@ export function useKioskInteractionRecording() {
         // A model batch can mix reads and writes. Serial execution prevents
         // cart/checkout writes from racing one another or their preceding read.
         for (const toolCall of response.toolCalls) {
+          if (control.manual)
+            break
           if (signal.aborted)
-            return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+            return unfinished('timeout')
           if (seenCalls.has(toolCall.id))
-            return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+            return unfinished('duplicate-tool-call')
           seenCalls.add(toolCall.id)
+          requestedTools.push(toolCall.function.name)
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
+          if (control.manual)
+            break
           if (signal.aborted)
-            return undefined
+            return callbacks.signal?.aborted ? undefined : unfinished('timeout')
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           const content = serializeToolResultContent(result.message.content)
           let rejected = result.completionToolResult.isError
@@ -180,9 +236,18 @@ export function useKioskInteractionRecording() {
             toolCallId: toolCall.id,
           })
         }
+        if (control.manual) {
+          // The cancelled continuation cannot persist these receipts. Preserve
+          // accepted effects in this visitor's history without another model call.
+          for (const result of toolResults)
+            await append('tool_result', result.content, { name: result.name, source: 'manual_control' })
+          return unfinished('manual-control')
+        }
         if (signal.aborted)
-          return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+          return unfinished('timeout')
         response = await streamKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+          if (event.type === 'turn-failed')
+            transportReason = event.reason
           if (event.type === 'turn-started')
             callbacks.onTurnStarted?.()
           if (event.type === 'assistant-delta')
@@ -190,18 +255,32 @@ export function useKioskInteractionRecording() {
           if (event.type === 'tool-requested')
             callbacks.onToolRequested?.(event.toolCall.function.name)
         })
+        agentMode = response.agentMode
+        if (control.manual)
+          return unfinished('manual-control')
         // Persist the rejected receipt, but do not let generated success prose
         // or another automatic tool round conceal an unaccepted operation.
         if (batchRejected)
-          return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
+          return unfinished('tool-rejected')
       }
       if (response.toolCalls.length)
-        return { answer: undefined, agentMode: response.agentMode, status: 'incomplete' as const }
-      return { answer: response.answer, agentMode: response.agentMode, status: 'completed' as const }
+        return unfinished(control.manual ? 'manual-control' : signal.aborted ? 'timeout' : 'tool-limit')
+      return { answer: response.answer, agentMode, requestedTools, status: 'completed' }
     }
     catch {
+      if (control.manual)
+        return unfinished('manual-control')
+      if (callbacks.signal?.aborted)
+        return undefined
       error.value = '點餐助手暫時無法回覆。'
-      return { answer: undefined, agentMode: 'active', status: 'incomplete' as const }
+      return unfinished(deadline?.aborted ? 'timeout' : transportReason)
+    }
+    finally {
+      // An older cancelled turn cannot release its replacement's controls.
+      if (activeControl === control) {
+        activeControl = undefined
+        controlState.value = 'idle'
+      }
     }
   }
 
@@ -245,6 +324,8 @@ export function useKioskInteractionRecording() {
     end,
     error: readonly(error),
     recordOrderResult,
+    requestManualControl,
+    controlState: readonly(controlState),
     runAssistantAction,
     send,
     start,

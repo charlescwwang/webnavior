@@ -128,3 +128,14 @@ kiosk-agent:
   service-browser-unsupported: 此瀏覽器不支援助手代操作，請直接操作服務畫面。
   service-check-missing: 此服務尚未提供助手相容性檢查，請直接操作服務畫面，並請工作人員更新服務。
   service-check-failed: 瀏覽器與服務未通過助手相容性檢查，請直接操作服務畫面，並請工作人員檢查更新。
+  control-active: 助手正在處理您的點餐，請稍候。
+  control-releasing: 正在確認最後一項操作，稍後交還螢幕操作。
+  control-manual: 改用手動操作
+  manual-control: 已交還螢幕操作，已完成的變更仍保留，後續操作已停止。
+  timeout: 助手等待模型回覆逾時，請先確認畫面上的操作結果再重試。
+  provider-error: 助手無法連線至模型或取得回覆，請稍後再試。
+  tool-rejected: 點餐系統未接受這次操作，請確認畫面後再繼續。
+  tool-limit: 助手已達本次處理上限，請確認畫面上已完成的步驟後再繼續。
+  duplicate-tool-call: 助手重複要求同一操作，已停止以避免重複執行，請確認畫面。
+  session-error: 無法建立交談，請確認 Kiosk 連線狀態。
+  no-reply: 助手沒有回傳可用的回答，請再試一次。

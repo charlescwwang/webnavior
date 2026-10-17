@@ -8,9 +8,9 @@ describe('kiosk Agent interaction', () => {
     expect(requiresPresentedReply([{ name: 'checkout_select_payment', content: JSON.stringify({ customerMessage: '付款尚未完成。' }) }])).toBe(true)
     expect(requiresPresentedReply([{ name: 'menu_get', content: JSON.stringify({ customerMessage: '找到水餃。' }) }])).toBe(true)
     expect(requiresPresentedReply([{ name: 'menu_get', content: JSON.stringify({ items: [], availability: 'NONE' }) }])).toBe(true)
-    expect(requiresPresentedReply([{ name: 'order_add_item', content: 'invalid tool result' }])).toBe(false)
-    expect(requiresPresentedReply([], ['menu_get'])).toBe(true)
-    expect(requiresPresentedReply([], [])).toBe(false)
+    expect(requiresPresentedReply([{ name: 'order_add_item', content: 'invalid tool result' }])).toBe(true)
+    expect(requiresPresentedReply([])).toBe(false)
+    expect(requiresPresentedReply([{ name: 'kiosk_session_history', content: 'older dialogue' }])).toBe(false)
   })
   it('keeps environment metadata out of model dialogue while preserving uncertain payment status', () => {
     const original = JSON.stringify({ environment: 'test', receipt: { environment: 'test', status: 'uncertain', customerMessage: '付款狀態尚未確認。' }, items: [{ id: 'dish', composition: { source: 'simulation', complete: true, ingredients: ['pork'], revision: '1' } }] })

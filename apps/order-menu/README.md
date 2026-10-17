@@ -162,7 +162,16 @@ revision, which travels with the cart and is validated again before submission.
 ## AIRI integration
 
 When embedded by AIRI, the service exposes its domain operations through native
-WebMCP. AIRI discovers the tools dynamically, so this service is one interactive
+WebMCP. Host-only `kiosk_agent_task` BEGIN/END also owns temporary customer
+control: manual tool admission and visible controls (including the teleported
+item dialog) stay locked until the matching task ends. A task cannot begin while
+an admitted customer tool is still settling. Checkout auto-advance is paused
+while Agent control is active. Expired model constraints do not unlock a possible
+in-flight write; host completion or an explicit fresh-session reset releases it.
+The menu remains visible for reading and scrolling while interactive controls
+are locked.
+
+AIRI discovers the tools dynamically, so this service is one interactive
 service among many rather than an AIRI built-in feature.
 
 `menu_get` and `menu_recommend` publish current POS categories as schema enums.

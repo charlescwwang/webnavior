@@ -211,6 +211,8 @@ interface MenuToolRuntimeOptions {
   gateway?: PosOrderGateway
   /** Initial POS catalog. The browser must not substitute a local menu on failure. */
   menu?: MenuItem[]
+  /** Locks customer writes until the matching host task has settled. */
+  onAgentControlChange?: (locked: boolean) => void
   onAction: (action: AgentAction) => Promise<void> | void
   onCartChange: (cart: CartSnapshot) => void
   /** Reveals review controls and waits for their DOM registration before cursor animation. */
@@ -519,6 +521,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   let pendingFastPathClarification: PendingFastPathClarification | undefined
   let pendingConfiguration: PendingConfiguration | undefined
   let issuedFastPathContext: IssuedFastPathContext | undefined
+  // Admitted customer calls must settle before an Agent can acquire ownership.
+  let manualOperations = 0
   // Host-owned, per Agent turn. A new task replaces this record; END from an
   // interrupted older turn cannot clear its successor's verified conditions.
   let agentTask: { taskId: string, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, menuRevision: number, expiresAt: number } | undefined
@@ -1289,12 +1293,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'kiosk_agent_task': {
           const taskId = requiredString(input, 'taskId')
           if (input.action === 'END') {
-            if (agentTask?.taskId === taskId)
+            if (agentTask?.taskId === taskId) {
               agentTask = undefined
+              options.onAgentControlChange?.(false)
+            }
             return { ok: true }
           }
           if (input.action !== 'BEGIN')
             throw new Error('Invalid Agent task transition.')
+          if (manualOperations > 0)
+            throw new Error('MANUAL_CONTROL: A customer operation is still settling.')
           const revision = machine.getRevisions().menu
           if (input.expectedMenuRevision !== revision)
             throw new Error('STALE_PLAN: Agent task menu changed before handoff.')
@@ -1303,6 +1311,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             throw new Error('Agent task requires explicit bounded constraints.')
           const bounded = constraints as Record<string, unknown>
           agentTask = { taskId, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, menuRevision: revision, expiresAt: Date.now() + 300_000 }
+          options.onAgentControlChange?.(true)
           return { ok: true }
         }
         case 'kiosk_interaction_state': {
@@ -1895,6 +1904,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     await options.seating?.reset()
     recommendationBatch = undefined
     agentTask = undefined
+    options.onAgentControlChange?.(false)
     recommendationRevision++
     pendingFastPathConfirmation = undefined
     pendingFastPathClarification = undefined
@@ -2005,6 +2015,20 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     disposeNativeWebMcp,
     invoke,
     invokeForAgent,
+    /** Customer admission is separate from host/Agent execution, including animated writes. */
+    invokeManual: async (name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction) => {
+      // Expiry invalidates model conditions; it cannot prove an in-flight write settled.
+      // Only a matching END or an explicit host reset releases customer control.
+      if (agentTask)
+        throw new Error('AGENT_CONTROL: Wait for the active operation to settle.')
+      manualOperations++
+      try {
+        return await invoke(name, input, onAction)
+      }
+      finally {
+        manualOperations--
+      }
+    },
     registerNativeWebMcp,
     reset,
     setMenu: machine.setMenu,

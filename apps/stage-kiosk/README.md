@@ -49,6 +49,23 @@ changes the iframe URL.
 
 ## Anonymous customer sessions
 
+Main Agent accepts both direct requests with Fast Path disabled and Jev handoffs
+through the same conversation loop. A completed turn without commerce tools can
+present natural model dialogue (for example, a greeting). Offering menu tools
+alone does not require a menu receipt or discard the answer. History-only reads
+also retain conversational replies. Once commerce tools are attempted, the host
+presents accepted current-turn menu/cart/operation/question receipts rather than
+model success prose. Rejected tools are not automatically replayed. No-tool
+prose relies on the model instructions to avoid unsupported commerce claims;
+this path does not perform a second semantic classification or guarantee that
+all model-written factual claims are grounded.
+
+Model/provider failure before tools, task timeout, tool rejection, duplicate
+calls, and processing limits have distinct presentation reasons. If a later model
+call fails after accepted work, the host retains that work's receipt alongside
+the failure explanation. A greeting is stored once as dialogue, while model
+operation drafts stay out of customer history until the host presents receipts.
+
 System administrators can configure **Main Agent Thinking** in **Kiosk AI 能力 →
 對話 LLM → OpenAI-compatible Provider**. It is saved per provider and defaults to
 Off. Verify and save the provider, then choose **套用到 Kiosk**. Every subsequent
@@ -344,3 +361,14 @@ An approved interactive service can optionally serve `/.well-known/webnavior-kio
 The manifest must be served with CORS allowing the kiosk origin to fetch it. Labels are display-only: each non-empty label is capped at 160 characters and malformed entries are ignored individually. New tools without an entry continue to work and display the generic progress message.
 
 `VITE_KIOSK_ADMIN_PIN` is an on-device guard against accidental customer access, not a replacement for server-side administrator authentication: Vite exposes `VITE_` values to the browser bundle. Production deployment should place provider credentials in a protected management service rather than relying on this PIN alone.
+
+During a bound Main Agent task, the ordering page temporarily locks customer
+controls and shows **Use manual controls**. Switching aborts model transport,
+stops later tools, waits for the already-dispatched tool receipt, and then ends
+the matching browser task. Accepted changes and receipts are retained; the demand
+is never replayed. Pending captured utterances are dropped on this explicit
+switch. The same cart stays in use. Normal completion returns control before
+question presentation or speech playback. A disconnected browser cannot prove
+release; restart the session to replace that document rather than unlocking on
+a timer. This control currently applies to Main Agent tasks; Fast Path retains
+its existing execution flow.

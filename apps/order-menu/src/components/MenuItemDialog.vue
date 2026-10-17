@@ -7,7 +7,7 @@ import { computed } from 'vue'
 
 import { addItemControlId, optionControlId, quantityControlId } from '../webmcp'
 
-const props = defineProps<{ item?: MenuItem, quantity: number, selectedOptions: Record<string, string> }>()
+const props = defineProps<{ locked?: boolean, item?: MenuItem, quantity: number, selectedOptions: Record<string, string> }>()
 const emit = defineEmits<{
   add: [itemId: string]
   close: []
@@ -44,7 +44,7 @@ function currency(amount: number) {
 
 <template>
   <Teleport to="body">
-    <section v-if="props.item" class="item-dialog-backdrop" role="presentation" @click.self="emit('close')">
+    <section v-if="props.item" :inert="props.locked" class="item-dialog-backdrop" role="presentation" @click.self="emit('close')">
       <article class="item-dialog" role="dialog" aria-modal="true" :aria-label="`選擇${props.item.name}`">
         <header>
           <div><p>選擇餐點</p><h2>{{ props.item.name }}</h2><strong>{{ currency(props.item.price) }}</strong></div><button type="button" aria-label="關閉" @click="emit('close')">

@@ -128,3 +128,14 @@ kiosk-agent:
   service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.
   service-check-missing: This service does not provide the assistant compatibility check. Please use the service screen directly and ask staff to update it.
   service-check-failed: The browser and service did not pass the assistant compatibility check. Please use the service screen directly and ask staff to check for updates.
+  control-active: The assistant is working on your order. Please wait.
+  control-releasing: Waiting for the current operation to finish before returning control.
+  control-manual: Use manual controls
+  manual-control: Manual controls are ready. Completed changes are kept; remaining operations have stopped.
+  timeout: The assistant took too long to respond. Check the screen before trying again.
+  provider-error: The assistant could not reach the model or receive its reply. Please try again later.
+  tool-rejected: The ordering system did not accept this operation. Check the screen before continuing.
+  tool-limit: The assistant reached its processing limit. Check the completed steps on screen before continuing.
+  duplicate-tool-call: The assistant requested a duplicate operation. It was stopped to avoid executing it twice. Please check the screen.
+  session-error: The conversation could not be started. Please check the kiosk connection.
+  no-reply: The assistant did not return a usable reply. Please try again.

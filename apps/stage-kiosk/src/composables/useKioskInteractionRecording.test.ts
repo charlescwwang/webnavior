@@ -2,6 +2,7 @@ import { rawTool } from '@xsai/tool'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
+import { createMenuReplyWindow, replyFromConversation } from '../services/questionPresentation'
 import { useKioskInteractionRecording } from './useKioskInteractionRecording'
 
 const kioskApi = vi.hoisted(() => ({
@@ -17,6 +18,154 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  it('aborts model thinking on manual takeover without dispatching a late tool', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'thinking', state: 'active' } })
+    let started!: () => void
+    const thinking = new Promise<void>(resolve => started = resolve)
+    kioskApi.streamKioskConversationMessage.mockImplementationOnce(({ signal }) => {
+      started()
+      return new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }))
+    })
+    const recording = useKioskInteractionRecording()
+    const pending = recording.send('ordering', '幫我點餐', [])
+    await thinking
+    recording.requestManualControl()
+    expect((await pending)?.reason).toBe('manual-control')
+    expect(recording.controlState.value).toBe('idle')
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+  })
+  // Report: this chat, 2026-10-14 — switch to manual while a cart write is pending.
+  it('waits for the accepted tool receipt and stops the rest of the batch on manual takeover', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'manual', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValue({ agentMode: 'active', toolCalls: [
+      { id: 'one', type: 'function', function: { name: 'cart_add_item', arguments: '{}' } },
+      { id: 'two', type: 'function', function: { name: 'cart_add_item', arguments: '{}' } },
+    ] })
+    let settle!: (value: object) => void
+    let started!: () => void
+    const executing = new Promise<void>(resolve => started = resolve)
+    const execute = vi.fn(() => {
+      started()
+      return new Promise<object>(resolve => settle = resolve)
+    })
+    const tool = rawTool({ name: 'cart_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    const recording = useKioskInteractionRecording()
+    kioskApi.appendKioskInteraction.mockResolvedValue({ entry: { id: 'receipt' } })
+    const receipt = vi.fn()
+    const pending = recording.send('ordering', '加兩種餐點', [tool], { onToolResult: receipt })
+    await executing
+    recording.requestManualControl()
+    expect(recording.controlState.value).toBe('releasing')
+    expect(receipt).not.toHaveBeenCalled()
+    settle({ ok: true, customerMessage: '已加入一份水餃。' })
+    const result = await pending
+    expect(result?.reason).toBe('manual-control')
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(receipt).toHaveBeenCalledTimes(1)
+    expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'tool_result', metadata: { name: 'cart_add_item', source: 'manual_control' } }))
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+    expect(recording.controlState.value).toBe('idle')
+  })
+  // Report: this chat, 2026-10-14 — 「嗨」 cannot reply with Fast Path disabled.
+  it.each([undefined, { phase: 'ordering' as const }])('presents a successful no-tool greeting for direct or handed-off context: %j', async (decisionState) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-greeting', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValue({ agentMode: 'active', answer: '您好！需要什麼協助？', toolCalls: [] })
+    const execute = vi.fn()
+    const tool = rawTool({ name: 'menu_get', description: 'Menu', parameters: { type: 'object', properties: {} }, execute })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      const result = await recording.send('restaurant-ordering', '嗨', [tool], { decisionState })
+      expect(result?.status).toBe('completed')
+      expect(execute).not.toHaveBeenCalled()
+      expect(replyFromConversation(result!, { menu: createMenuReplyWindow(), failureMessage: '失敗' })).toEqual({ role: 'assistant', content: '您好！需要什麼協助？' })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[0][0].content).toBe('嗨')
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[0][0].decisionState).toEqual(decisionState)
+    }
+    finally { scope.stop() }
+  })
+
+  it('reports a provider failure before any tool execution as failed, not incomplete', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-failure', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockRejectedValue(new Error('upstream unavailable'))
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      const result = await recording.send('restaurant-ordering', '嗨', [])
+      expect(result?.status).toBe('failed')
+      expect(result?.reason).toBe('provider-error')
+      expect(replyFromConversation(result!, { menu: createMenuReplyWindow(), failureMessage: '模型連線失敗，請稍後再試。' })).toEqual({ role: 'error', content: '模型連線失敗，請稍後再試。' })
+    }
+    finally { scope.stop() }
+  })
+
+  it('retains successful reads when the model continuation fails without claiming a cart change', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-partial', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'read-1', type: 'function', function: { name: 'menu_get', arguments: '{}' } }] })
+      .mockRejectedValueOnce(new Error('connection lost'))
+    const menu = createMenuReplyWindow()
+    const tool = rawTool({ name: 'menu_get', description: 'Menu', parameters: { type: 'object', properties: {} }, execute: async () => ({ customerMessage: '找到水餃。', items: [{ id: 'dumplings', name: '水餃', price: 80 }] }) })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      const result = await recording.send('restaurant-ordering', '我要水餃', [tool], { onToolResult: (name, content) => menu.record(name, content) })
+      expect(result?.status).toBe('incomplete')
+      expect(result?.reason).toBe('provider-error')
+      expect(result?.requestedTools).toEqual(['menu_get'])
+      expect(replyFromConversation(result!, { menu, failureMessage: '模型連線失敗。' })).toEqual({ role: 'assistant', content: '找到水餃。 模型連線失敗。' })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+    }
+    finally { scope.stop() }
+  })
+
+  it('preserves a tool-owned quantity question over the model final answer', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-question', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'add-1', type: 'function', function: { name: 'order_add_item', arguments: '{}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', answer: '已加入兩份。', toolCalls: [] })
+    const question = { questionId: 'quantity-1', purpose: 'quantity', question: '需要幾份水餃？', expiresAt: Date.now() + 30000, choices: [] }
+    const tool = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute: async () => ({ pendingCustomerChoice: question }) })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      const result = await recording.send('restaurant-ordering', '我要水餃', [tool])
+      expect(replyFromConversation(result!, { menu: createMenuReplyWindow(), question, failureMessage: '失敗。' })).toEqual({ role: 'assistant', content: '需要幾份水餃？' })
+    }
+    finally { scope.stop() }
+  })
+
+  it('retains an accepted cart edit receipt over invented model completion prose', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-edit', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'edit-1', type: 'function', function: { name: 'cart_set_line_quantity', arguments: '{}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', answer: '已付款成功。', toolCalls: [] })
+    const execute = vi.fn(async () => ({ customerMessage: '水餃已改成兩份。' }))
+    const tool = rawTool({ name: 'cart_set_line_quantity', description: 'Edit', parameters: { type: 'object', properties: {} }, execute })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      const result = await recording.send('restaurant-ordering', '改兩份', [tool])
+      expect(replyFromConversation(result!, { menu: createMenuReplyWindow(), outcome: '水餃已改成兩份。', failureMessage: '失敗。' })).toEqual({ role: 'assistant', content: '水餃已改成兩份。' })
+      expect(execute).toHaveBeenCalledOnce()
+    }
+    finally { scope.stop() }
+  })
+
+  it('reports a server timeout before tools distinctly', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-timeout', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockImplementation(async (_input, onEvent) => {
+      onEvent({ type: 'turn-failed', reason: 'timeout', message: 'model timeout' })
+      throw new Error('model timeout')
+    })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      expect(await recording.send('restaurant-ordering', '嗨', [])).toMatchObject({ status: 'failed', reason: 'timeout', requestedTools: [] })
+    }
+    finally { scope.stop() }
+  })
+
   it('records a rejected tool but does not claim success or execute its requested retry', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
     const calls = [{ id: 'clear-1', type: 'function', function: { name: 'cart_clear', arguments: '{}' } }]
@@ -118,6 +267,7 @@ describe('useKioskInteractionRecording', () => {
       agentMode: 'active',
       answer: '牛肉麵可以點餐。',
       status: 'completed',
+      requestedTools: [],
     })
 
     expect(onAssistantDelta).toHaveBeenNthCalledWith(1, '牛肉')

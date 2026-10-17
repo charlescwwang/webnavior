@@ -2,7 +2,7 @@ import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { KioskService } from '../../services/domain/kiosk'
-import type { KioskAgentInteractionState } from '../../services/domain/kiosk-agent-interaction'
+import type { KioskAgentInteractionState, KioskReplyFailureReason } from '../../services/domain/kiosk-agent-interaction'
 import type { KioskConversationDecisionState } from '../../services/domain/kiosk-interaction-decision/contracts'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
@@ -20,7 +20,7 @@ import { buildConversationContext, conversationEntries } from '../../services/do
 import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
-import { createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
+import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
 export const kioskDeviceCookieName = 'airi_kiosk_device'
@@ -395,7 +395,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       deviceId: device.id,
       visitorSessionId: c.req.param('visitorSessionId'),
     })
-    if (entry.kind === 'tool_result' && entry.metadata?.decisionRoute === 'fast_path' && typeof entry.metadata.name === 'string') {
+    // Manual takeover skips model continuation, but its last settled receipt
+    // must refresh the same working state as any other accepted browser result.
+    if (entry.kind === 'tool_result' && (entry.metadata?.decisionRoute === 'fast_path' || entry.metadata?.source === 'manual_control') && typeof entry.metadata.name === 'string') {
       const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
       const interaction = recordToolResults(transcript.session.agentInteraction, [{ content: entry.content, name: entry.metadata.name }])
       if (interaction !== transcript.session.agentInteraction)
@@ -587,7 +589,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         content: answer.content,
         // Operation prose is a draft; only the host's validated receipt is
         // customer dialogue. Do not feed a competing question back as history.
-        kind: answer.toolCalls.length || requiresPresentedReply(result.output.toolResults, result.output.tools.map(tool => tool.function.name)) ? 'service_event' : 'assistant_text',
+        kind: answer.toolCalls.length || requiresPresentedReply(result.output.toolResults) ? 'service_event' : 'assistant_text',
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -862,7 +864,7 @@ type KioskReplyEvent
     | { text: string, type: 'assistant-delta' }
     | { toolCall: KioskToolCall, type: 'tool-requested' }
     | { agentMode: KioskAgentInteractionMode, answer?: string, toolCalls: KioskToolCall[], type: 'turn-finished' }
-    | { message: string, type: 'turn-failed' }
+    | { message: string, reason: KioskReplyFailureReason, type: 'turn-failed' }
 
 interface KioskReplyStreamInput {
   agentInteraction: KioskAgentInteractionState
@@ -909,7 +911,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
         if (answer.content) {
           await input.kioskService.appendDeviceInteraction({
             content: answer.content,
-            kind: answer.toolCalls.length || requiresPresentedReply(input.toolResults, input.tools.map(tool => tool.function.name)) ? 'service_event' : 'assistant_text',
+            kind: answer.toolCalls.length || requiresPresentedReply(input.toolResults) ? 'service_event' : 'assistant_text',
             deviceId: input.deviceId,
             visitorSessionId: input.transcript.session.id,
           })
@@ -946,9 +948,11 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
           emit({ toolCall, type: 'tool-requested' })
         emit({ agentMode: agentInteraction.mode, answer: answer.content, toolCalls: answer.toolCalls, type: 'turn-finished' })
       }
-      catch {
-        if (!input.signal.aborted)
-          emit({ message: '點餐助手暫時無法回覆。', type: 'turn-failed' })
+      catch (error) {
+        if (!input.signal.aborted) {
+          const reason = error instanceof ApiError && error.statusCode === 504 ? 'timeout' : 'provider-error'
+          emit({ message: '點餐助手暫時無法回覆。', reason, type: 'turn-failed' })
+        }
       }
       finally {
         controller.close()
@@ -1103,6 +1107,7 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
       : undefined,
     input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
+    { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清可直接用自然語言回答，不需要為了回覆招呼而查菜單。餐點、價格、庫存與訂單狀態必須先查詢工具；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
     { content: '操作問題由點餐系統依 POS 與目前狀態產生。工具回傳 pendingCustomerChoice 時，不另寫或重複詢問問題，由畫面呈現該問題。用餐方式名稱必須取自最新 POS fulfillmentModes，不自行將 takeout 解讀成外帶。環境、資料來源與測試標記僅供內部紀錄，不向顧客敘述；只回報工具證實的訂單與付款狀態。pending 或 uncertain 不可宣稱付款或訂單成功。', title: '顧客回覆與操作問題分界' },
   ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }

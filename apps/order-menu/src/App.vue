@@ -260,7 +260,9 @@ async function animateAction(nextAction: AgentAction) {
 
 const seating = useDineInSeating(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => fulfillmentMode.value === 'dine-in' && !completedOrderId.value)
 const { snapshot: seatingSnapshot, partySize, hold: tableHold, busy: seatingBusy, error: seatingError, choices: seatingChoices, ready: seatingReady, locked: seatingLocked } = seating
+const agentControlsOrder = shallowRef(false)
 const runtime = createMenuToolRuntime({
+  onAgentControlChange: locked => agentControlsOrder.value = locked,
   // Match template precedence: checkout hides review, which hides the item dialog.
   screen: () => {
     if (checkout.value)
@@ -352,7 +354,7 @@ const runtime = createMenuToolRuntime({
 })
 
 async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, options: { animate?: boolean } = {}) {
-  return await runtime.invoke(name, args, options.animate === false ? () => {} : undefined)
+  return await runtime.invokeManual(name, args, options.animate === false ? () => {} : undefined)
 }
 
 function syncSelection(selection: Selection) {
@@ -661,10 +663,10 @@ async function selectPayment(method: PaymentMethod) {
   }
 }
 
-watch(checkout, (nextCheckout) => {
+watch([checkout, agentControlsOrder], ([nextCheckout, locked]) => {
   if (checkoutTimeoutTimer)
     clearTimeout(checkoutTimeoutTimer)
-  if (!nextCheckout)
+  if (locked || !nextCheckout)
     return
 
   checkoutTimeoutTimer = setTimeout(() => {
@@ -792,7 +794,7 @@ onUnmounted(() => {
     :state="catalogState"
     @retry="loadCatalog"
   />
-  <main v-else class="menu-app" @pointerdown="handleMenuPointerDown">
+  <main v-else :inert="agentControlsOrder" class="menu-app" @pointerdown="handleMenuPointerDown">
     <CheckoutMembership
       v-if="checkout?.stage === 'membership'"
       :total="currency(cart.total)"
@@ -906,7 +908,17 @@ onUnmounted(() => {
         </section>
       </div>
 
-      <MenuItemDialog :item="selectedItem" :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1" :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}" @add="addSelectedItem" @close="selectedItemId = undefined" @register-control="setControlElement" @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)" @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)" />
+      <MenuItemDialog
+        :item="selectedItem"
+        :locked="agentControlsOrder"
+        :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1"
+        :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}"
+        @add="addSelectedItem"
+        @close="selectedItemId = undefined"
+        @register-control="setControlElement"
+        @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)"
+        @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)"
+      />
 
       <div :ref="element => setCardElement('cart', element)" :class="['order-summary-container', { 'is-updated': cartUpdated, 'is-targeted': cursorTargetId === 'cart' }]">
         <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="orderReviewOpen = true" @register-control="setControlElement" />
