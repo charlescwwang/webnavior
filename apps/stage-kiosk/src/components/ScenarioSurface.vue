@@ -10,9 +10,17 @@ function attachFrame() {
   webMcpAdapter.activate(scenarioRegistry.activeScenario.value?.serviceUrl)
 }
 
-watch(scenarioRegistry.activeScenarioId, () => webMcpAdapter.activate(undefined), { immediate: true })
+// Reloads and URL edits can replace the document without changing its service
+// ID. Revoke the old tool handles before the new iframe starts loading.
+watch([scenarioRegistry.activeScenarioId, scenarioRegistry.iframeRevision], () => {
+  scenarioRegistry.attachActiveFrame(null)
+  webMcpAdapter.activate(undefined)
+}, { immediate: true, flush: 'sync' })
 
-onUnmounted(() => scenarioRegistry.attachActiveFrame(null))
+onUnmounted(() => {
+  scenarioRegistry.attachActiveFrame(null)
+  webMcpAdapter.activate(undefined)
+})
 </script>
 
 <template>
@@ -21,7 +29,7 @@ onUnmounted(() => scenarioRegistry.attachActiveFrame(null))
       ref="scenarioFrame"
       :key="`${scenarioRegistry.activeScenario.value?.id ?? 'none'}:${scenarioRegistry.iframeRevision.value}`"
       :src="scenarioRegistry.activeScenario.value?.serviceUrl"
-      allow="tools; camera 'none'; microphone 'none'; display-capture 'none'"
+      allow="tools; geolocation; camera 'none'; microphone 'none'; display-capture 'none'"
       :title="scenarioRegistry.activeScenario.value?.title ?? '互動服務'"
       @load="attachFrame"
     />

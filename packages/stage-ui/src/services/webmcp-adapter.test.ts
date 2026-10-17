@@ -4,6 +4,7 @@ import { createWebMcpAdapter } from './webmcp-adapter'
 
 describe('createWebMcpAdapter', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -111,5 +112,39 @@ describe('createWebMcpAdapter', () => {
     await adapter.execute(tool, {})
 
     expect(adapter.completionRevision.value).toBe(1)
+  })
+  it('revokes ready state when the active document removes its tools', async () => {
+    const getTools = vi.fn().mockResolvedValue([{
+      name: 'cart_read',
+      description: 'Read cart',
+      origin: 'https://menu.example',
+      inputSchema: { type: 'object' },
+    }])
+    vi.stubGlobal('document', { modelContext: { getTools, executeTool: vi.fn() } })
+    const adapter = createWebMcpAdapter()
+    adapter.activate('https://menu.example')
+    await adapter.refresh()
+    expect(adapter.availability.value).toBe('ready')
+
+    getTools.mockResolvedValue([])
+    await adapter.refresh()
+
+    expect(adapter.tools.value).toEqual([])
+    expect(adapter.availability.value).toBe('unavailable')
+  })
+
+  it('settles readiness waiters when their document is deactivated', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('document', { modelContext: { getTools: vi.fn().mockResolvedValue([]), executeTool: vi.fn() } })
+    const adapter = createWebMcpAdapter()
+    adapter.activate('https://menu.example')
+    const settled = vi.fn()
+    const waiting = adapter.waitUntilReady().then(() => settled('ready'), () => settled('cancelled'))
+
+    adapter.activate(undefined)
+    await vi.advanceTimersByTimeAsync(5_001)
+
+    expect(settled).toHaveBeenCalledWith('cancelled')
+    await waiting
   })
 })

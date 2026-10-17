@@ -104,7 +104,9 @@ export function createWebMcpAdapter() {
   const executionListeners = new Set<(execution: WebMcpToolExecution) => void>()
   let allowedOrigin: string | undefined
   let timeoutId: ReturnType<typeof setTimeout> | undefined
-  let generation = 0
+  // Each activation owns its discovery and readiness waiters. Changing pages
+  // invalidates both, even when the replacement has the same origin.
+  const generation = shallowRef(0)
 
   function clearTimeoutState() {
     if (timeoutId)
@@ -113,7 +115,7 @@ export function createWebMcpAdapter() {
   }
 
   async function refresh() {
-    const currentGeneration = generation
+    const currentGeneration = generation.value
     const context = modelContext()
     if (!context || !allowedOrigin) {
       tools.value = []
@@ -125,7 +127,7 @@ export function createWebMcpAdapter() {
 
     try {
       const discovered = await context.getTools({ fromOrigins: [allowedOrigin] })
-      if (currentGeneration !== generation)
+      if (currentGeneration !== generation.value)
         return
       const availableTools = discovered.filter(tool => tool.origin === allowedOrigin)
       registeredTools.clear()
@@ -137,9 +139,15 @@ export function createWebMcpAdapter() {
         availability.value = 'ready'
         error.value = undefined
       }
+      else if (availability.value !== 'loading') {
+        // A toolchange can remove the last tool after readiness. Keep the
+        // initial discovery grace period, but revoke a stale ready state.
+        availability.value = 'unavailable'
+        error.value = '互動服務尚未提供 WebMCP tools。'
+      }
     }
     catch (caught) {
-      if (currentGeneration !== generation)
+      if (currentGeneration !== generation.value)
         return
       clearTimeoutState()
       tools.value = []
@@ -150,7 +158,7 @@ export function createWebMcpAdapter() {
   }
 
   function activate(serviceUrl: string | undefined) {
-    generation++
+    generation.value++
     clearTimeoutState()
     tools.value = []
     registeredTools.clear()
@@ -213,8 +221,14 @@ export function createWebMcpAdapter() {
       return
     if (availability.value === 'unavailable')
       throw new Error(error.value ?? '互動服務無法使用。')
+    const waitingGeneration = generation.value
     await new Promise<void>((resolve, reject) => {
-      const stop = watch(availability, (next) => {
+      const stop = watch([availability, generation], ([next, nextGeneration]) => {
+        if (nextGeneration !== waitingGeneration || next === 'idle') {
+          stop()
+          reject(new Error('互動服務頁面已切換，請重新確認目前畫面。'))
+          return
+        }
         if (next === 'ready') {
           stop()
           resolve()
@@ -223,7 +237,7 @@ export function createWebMcpAdapter() {
           stop()
           reject(new Error(error.value ?? '互動服務無法使用。'))
         }
-      })
+      }, { flush: 'sync' })
     })
   }
 
