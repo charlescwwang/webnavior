@@ -7,6 +7,36 @@ accumulating history.
 
 ## Current State
 
+- Oct17: master now includes the three existing WebMCP commits from
+  `to_damai_website`: object-input native API, iframe lifecycle/geolocation,
+  and health-check admission. Host and own menu must deploy together. Services
+  without the version/challenge probe remain manual-only; there is no generic
+  cross-origin DOM automation bridge or automatic retry of ordering writes.
+- Remaining work is grouped by behavior: per-provider Main Agent Thinking
+  (migration0046, OpenAI-compatible chat only); exact POS category validation;
+  Main Agent/customer control handoff with retained settled receipts and distinct
+  failure reasons; third-party iframe loading diagnostics; research documents.
+  Runtime/setup contracts live in the affected app READMEs.
+- Browser evidence: user confirmed physical clicks in Firefox responsive mode
+  at1080x1920 with MaiFood. Chrome155/macOS15.5 Device Toolbar cross-site iframe
+  input remains unresolved: native coordinates sometimes reach parent IFRAME
+  while child receives none; stable rect samples and outer DOM hit stack do not
+  establish compositor routing. Device Toolbar OFF with DevTools ON works.
+  Minimal wrapper overflow change helped only the minimal reproduction. No
+  high-z-index/fixed workaround was shipped; no Windows Edge/hardware acceptance.
+  Further browser tests must use trusted coordinate/physical input and isolated
+  fixtures; do not inspect the user's Google meeting or submit another order.
+- Validation for this batch: Server87, Kiosk recording18/presentation11, menu21
+  and Python HAR analyzer5 tests pass. Server, Kiosk and menu scoped typechecks
+  pass. Commit hooks run
+  changed-file lint. Full repository lint/typecheck from the earlier attempt did
+  not complete; do not report a clean full-project gate. Prior broader menu tests
+  had known failures (see existing validation notes), not repaired in this batch.
+- The System One behavior discussion and model options remain proposals, not
+  approved production behavior or measured improvement. Keep frozen experiments
+  separate from current application acceptance. Temporary browser target/session
+  IDs and raw diagnostic paths are deliberately omitted here.
+
 - Oct9 cross-machine Git baseline saved as four local commits on master, no push.
   User authorizes separate local snapshot commits despite recorded check failures.
   Completed: be4e15c IME (2 files), 68fcf84 Ollama (6), 010bc24 Kiosk (144).

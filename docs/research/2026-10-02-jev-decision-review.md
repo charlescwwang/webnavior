@@ -969,3 +969,120 @@ threshold追逐本批結果。測試不執行工具／訂單／付款；詳見
 這說明多道finite choice不是一次共同的結構化需求提取；不代表部署版本已核對，
 也不能斷言instructions被忽略或單靠換模型必能解決。正式Kiosk完全不改，
 詳見[PoC報告第四階段](../../test_prompt/turnClassifierPoc/report.md)。
+
+## 13. WebMCP／Jev 語意介面檢視（2026-10-09）
+
+本輪只檢查手動輸入後的決策，不評估 ASR。未修改 production code、prompt、
+模型或部署設定，也未向 Jev 做 live replay。以下區分可重現的程式行為與
+尚待模型回放驗證的誤判風險，不把資訊缺口直接當作模型誤判的已證明原因。
+
+### 13.1 已追查的責任鏈
+
+`currentFastPathContext` → `deriveDecisionContext` → `publicReferences` →
+`kiosk_fast_path_context` → Server `interactionDecisionSchema` →
+`createDecisionState`／route criteria → `/v1/systemone` →
+`resolveIntent` → `compileOperationPlan` → `authorize` → 業務工具。
+
+| 語意效果 | 實際工具／狀態 | 目前介面結論 |
+|---|---|---|
+| 查詢／推薦 | `menu_get`、`menu_recommend`、`menu_show_recommendations` | 不改 cart，但查詢全菜單會編譯為最多三項推薦；需要把商品查詢、全菜單展示與推薦批次的產品契約固定 |
+| 選取 | `menu_select_item` | 建立 selected draft，數量重設為 1，選項回到該商品預設；不是純粹查看 |
+| 新增 | `order_add_item`／`cart_add_item` | 最後寫入 cart，清除 selected draft；Jev 不選底層工具 |
+| 修改數量／規格 | `menu_set_*`／`cart_set_line_*` | 前者改未加入 draft，後者改已加入 line；domain ref 決定實際工具 |
+| 移除／清空 | `cart_remove_item`／`cart_clear` | 單筆與全單不同；全單需一次性確認 |
+| 用餐方式／桌位 | `order_set_fulfillment`、`order_set_party_size`、`seating_reserve` | 與餐點數量分開；切換方式／人數可能釋放桌位，候選描述已提及 |
+| 結帳／發票 | `checkout_start`、會員與發票工具 | phase 限制與工具分工存在；進入結帳不等於付款或 POS 送單 |
+| 付款／取消 | `checkout_select_payment`／`checkout_cancel` | 付款選擇經確認後啟動終端；pending／uncertain 鎖定。需補完整確認語意摘要 |
+
+### 13.2 可重現的候選與目標缺口
+
+**A. 展示對象可供新增，卻不一定可供查看。**
+
+`kiosk-intents.ts` 以 `presentationItemIds` 建立 focus refs，但 SELECT_ITEM
+候選只在 `itemRefs.length` 非零時加入，沒有包含 focus refs。
+單一展示水餃、沒有 selected、輸入「看第一個」時，有 item ref 與 ADD_ITEM，
+卻沒有 SELECT_ITEM。這不是調 confidence 或 fine-tune 能補出的候選。
+多項展示的 ordinal 也未在一般 resolveIntent 路徑解析；目前 deterministic
+ordinal resolution 只用於已建立的 clarification。
+
+建議先定義展示與 selected 的查看／重選契約，再讓合法查看意圖保留到
+target resolution，不應以本句有無正式品名作為唯一候選條件。
+
+**B. 同名 cart line 的份數／規格未進入 references。**
+
+`deriveDecisionContext` 只產生「購物車第1筆水餃」「購物車第2筆水餃」；
+未帶 quantity、option labels。`interactionState` 也只保留名稱、
+matchingCartLines、最近加入名稱；HTTP schema 沒有結構化 line 規格欄位。
+「十五顆那份不要了」即使規格存在於 cart，仍對兩筆進入 CLARIFICATION；
+澄清候選沿用同樣缺少規格的 labels，模型無法只靠本輪 state 分辨哪筆十五顆。
+歷史對話可能補線索，但不是完整當前 cart 的可靠替代品。
+
+建議提供非敏感的 draft／cart facts：每回合 ordinal、品名、目前份數、
+規格 labels、是否最近加入。保留真實 IDs 在 browser，不需向 Jev 揭露。
+`matchingCartLines` 是「名稱匹配到的筆數」，不是 cart 總筆數；無名稱的
+規格指稱可以回 0，欄位語意應明示。
+
+**C. 明確否定／更正的商品仍被當作並列目標。**
+
+「不是水餃，是牛肉麵，一份」會把水餃與牛肉麵都放入 itemIds；
+即使 Jev 正確選 ADD_ITEM，resolution 仍要求從兩者澄清。
+literal name matching 只證明商品被提到，未表示該商品是肯定訂購目標。
+目前 route 沒有回傳這類目標關係，單純 fine-tune route label 無法修復。
+
+建議明訂更正語意如何傳到 domain resolution；用成對案例驗證否定、
+更正與多品項新增，不可把有兩個名字直接等同兩個訂購對象。
+
+### 13.3 已確認的資訊／契約差異，仍需回放評估影響
+
+**D. SELECT_ITEM 的「查看」描述帶有 draft 重設效果。**
+
+Jev 預設提示把「看水餃」歸 SELECT_ITEM；工具呼叫 machine.selectMenuItem，
+會將 quantity 設為 1 並重建預設 options。即使重新選同一商品，也沒有保留
+先前 draft 設定。候選描述沒有明示覆蓋既有 draft。
+需討論「查看」是否應建立／重設 draft；若保留此政策，應在資訊與回放中
+清楚區分查看、新選取與替換未加入餐點，不直接假設現有行為必須更改。
+
+**E. 未指定份數的政策在不同路徑不同。**
+
+`order_add_item` schema 描述省略 quantity 為 1，執行亦如此；但 Fast Path
+對正式品名 ADD_ITEM 缺 quantity 時回 CONFIGURATION 問幾份。
+對 selected draft 的 ADD_ITEM 則繼承 draft quantity。
+這三者可以是刻意政策，但應明訂；否則相同需求經 Main Agent 或 Fast Path
+會出現不同完成輪數，也會影響回放的預期結果。
+
+**F. 待確認 state 缺少確認 payload 的語意。**
+
+普通付款選擇有 card／mobile，確認階段卻只提供「確認 SELECT_PAYMENT 操作」
+和 `pendingAction: SELECT_PAYMENT`；沒有結構化付款方式，也沒有該次
+`confirmationMessage` 作為 waitingFor。統編確認同樣只帶 action。
+使用者「信用卡對，確認」「不是信用卡，要行動支付」可能需要從近期對話
+重建正在確認什麼。browser 的 one-use record 綁定完整 slots 能防篡改，
+但不會補足 Jev 的語意理解。
+
+建議把同一確認紀錄的顧客可讀效果摘要傳入 Jev，例如付款方式、統編、
+清空範圍；不傳終端／訂單授權 IDs。驗證同意、拒絕、重述、改選與新需求。
+
+**G. 商品來源資訊未完整穿過模型介面。**
+
+browser 的 `referenceOrigins` 有 utterance／continuation／category／
+presentation／selection／cart，但一般 context 回傳沒有此欄位。
+模型靠 ordinal prefix、部分 labels 與對話理解來源；`ITEM_1` 本身不能區分
+本句明示與上一片段承接。catalogEvidence 可補本句 name／alias 線索，
+卻不完整取代來源與 freshness。應以最小 facts 保留必要來源，並驗證
+新商品是否能覆蓋舊焦點，不把完整 browser context 全量傳給模型。
+
+### 13.4 驗證與建議順序
+
+臨時 test-only reproduction 共四案：展示商品缺 SELECT_ITEM；同名 line
+缺規格；品名新增缺份數與 selected 繼承份數的差異；否定更正仍保留兩個 target。
+全部以正常 production import、Vitest 公開函式呼叫確認，沒有 mocks 或
+新增 production exports。臨時測試於完成後移除。
+
+執行 `pnpm -F @proj-airi/order-menu exec vitest run src/semanticAudit.test.ts src/kiosk-intents.test.ts`：
+2 files／42 tests 通過（4 個 audit reproduction + 38 個既有測試）。
+這表示目前行為可重現，不表示缺口已修復或 Jev 正確率已提高。
+未執行 full-project typecheck、實機付款、Jev live replay。
+
+優先討論 A／B／F 的候選與資訊補足，以及 C／D／E 的产品契約。
+契約固定後才建立 baseline、prompt 對照與 fine-tune 對照；歷史 0.001
+案例仍需原始 payload／候選／回傳才能歸因，不從本輪 static audit 推断原因。
