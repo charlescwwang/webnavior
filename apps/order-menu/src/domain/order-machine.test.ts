@@ -771,7 +771,7 @@ describe('createMenuToolRuntime', () => {
       const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
       await runtime.registerNativeWebMcp()
       await expect(runtime.registerNativeWebMcp()).resolves.toBeTypeOf('function')
-      expect(registeredNames.size).toBe(runtime.toolDefinitions.length)
+      expect(registeredNames.size).toBe(runtime.toolDefinitions.length + 1)
     }
     finally {
       vi.unstubAllGlobals()
@@ -798,7 +798,7 @@ describe('createMenuToolRuntime', () => {
       await firstRuntime.registerNativeWebMcp()
 
       await expect(replacementRuntime.registerNativeWebMcp()).resolves.toBeTypeOf('function')
-      expect(registeredNames.size).toBe(replacementRuntime.toolDefinitions.length)
+      expect(registeredNames.size).toBe(replacementRuntime.toolDefinitions.length + 1)
     }
     finally {
       vi.unstubAllGlobals()

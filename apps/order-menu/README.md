@@ -4,6 +4,14 @@
 building an order. It deliberately does not import AIRI UI, avatar, Electron,
 Pinia, speech, or model packages.
 
+Native WebMCP registration includes the side-effect-free `webmcp_health_check`
+contract from `@proj-airi/stage-shared/webmcp`. It only echoes a host challenge;
+it never enters the ordering runtime, reads a cart, changes UI, or calls a server.
+It shares the service origin allowlist and registration abort signal. The host
+must validate this probe before enabling assistant tools. Deploy the updated
+host and service together; older services without the probe remain manually usable
+but do not pass assistant admission.
+
 On a portrait kiosk, menu browsing stays focused on the available dishes. A
 compact order summary remains fixed at the bottom, aligned with the dish-card
 column so the category column leaves room for the kiosk’s lower-left new-session

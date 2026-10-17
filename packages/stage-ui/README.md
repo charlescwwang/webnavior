@@ -22,6 +22,20 @@ passed as objects; the browser serializes them before invoking the service.
 Older JSON-string execution APIs are unsupported. Results remain JSON text at
 the native boundary and are parsed by the adapter.
 
+Discovery alone does not enable assistant control. The approved service must
+register `webMcpHealthTool` from `@proj-airi/stage-shared/webmcp` with the same
+origin allowlist and lifetime as its domain tools. The adapter calls this
+side-effect-free probe with a per-discovery challenge and validates its versioned
+echo before exposing any domain tools. The probe is never exposed to the Agent
+or recorded as a customer operation. Every refresh revokes admission until a new
+check passes; iframe replacement cancels pending checks and invalidates old replies.
+Discovery and probing have a five-second deadline, including implementations
+that ignore cancellation. Missing APIs, missing probes, rejected input, malformed
+replies and timeouts leave the adapter unavailable, with a diagnostic `error`
+and a stable `unavailableReason`. Hosts must retain manual interaction. This
+checks native argument/result transport, not individual business tools, payment
+providers, authentication, or physical iframe input delivery.
+
 ## Anonymous customer lifecycle
 
 `composables/use-kiosk-customer-session` owns the disposable customer session

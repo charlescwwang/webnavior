@@ -121,3 +121,10 @@ websocket-status:
   connected: 已連線
   disconnected: 未連線
   open-settings: 開啟連線設定
+
+kiosk-agent:
+  service-connecting: 正在連接助手操作功能，您也可直接操作服務畫面。
+  service-manual: 助手目前無法代操作此服務，請直接操作服務畫面；結果以該畫面為準。
+  service-browser-unsupported: 此瀏覽器不支援助手代操作，請直接操作服務畫面。
+  service-check-missing: 此服務尚未提供助手相容性檢查，請直接操作服務畫面，並請工作人員更新服務。
+  service-check-failed: 瀏覽器與服務未通過助手相容性檢查，請直接操作服務畫面，並請工作人員檢查更新。

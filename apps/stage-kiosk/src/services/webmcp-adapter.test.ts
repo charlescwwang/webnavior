@@ -8,7 +8,15 @@ describe('createWebMcpAdapter', () => {
   })
 
   it('passes transcript objects to the native kiosk_fast_path_context tool', async () => {
-    const executeTool = vi.fn().mockResolvedValue('{"candidates":[]}')
+    const healthTool = {
+      name: 'webmcp_health_check',
+      description: 'Transport probe',
+      inputSchema: { type: 'object' },
+      origin: 'https://menu.example',
+    }
+    const executeTool = vi.fn(async (tool, input) => tool.name === healthTool.name
+      ? JSON.stringify({ version: 1, challenge: input.challenge })
+      : '{"candidates":[]}')
     const registeredTool = {
       description: 'Read semantic ordering context.',
       inputSchema: { type: 'object' },
@@ -19,7 +27,7 @@ describe('createWebMcpAdapter', () => {
       modelContext: {
         addEventListener: vi.fn(),
         executeTool,
-        getTools: vi.fn().mockResolvedValue([registeredTool]),
+        getTools: vi.fn().mockResolvedValue([healthTool, registeredTool]),
       },
     })
     const adapter = createWebMcpAdapter()
@@ -32,6 +40,6 @@ describe('createWebMcpAdapter', () => {
     await expect(adapter.execute(tool, { transcript: '有麵嗎' })).resolves.toEqual({ candidates: [] })
     expect(tool).not.toBe(registeredTool)
     expect(executeTool).toHaveBeenCalledWith(registeredTool, { transcript: '有麵嗎' })
-    expect(executeTool).toHaveBeenCalledTimes(1)
+    expect(executeTool.mock.calls.filter(([handle]) => handle.name === registeredTool.name)).toHaveLength(1)
   })
 })

@@ -6,6 +6,7 @@ import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import KioskAsrSimulationPanel from './KioskAsrSimulationPanel.vue'
 import KioskAssistantPresence from './KioskAssistantPresence.vue'
@@ -40,6 +41,7 @@ const emit = defineEmits<{
   simulateAsr: [transcript: string]
 }>()
 
+const { t } = useI18n()
 const assistantLabel = 'Webnavior'
 // The unfinished assistant message is display-only. KioskScene moves it into
 // durable conversation history only after the Server emits turn-finished.
@@ -47,7 +49,22 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
   ...props.messages,
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
 ])
-const serviceReady = computed(() => !scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
+// Tool discovery describes assistant control, not whether the embedded menu
+// loaded successfully. Keep the service usable while that capability is absent.
+const serviceStatus = computed(() => {
+  if (!scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
+    return undefined
+  const reason = webMcpAdapter.unavailableReason.value
+  if (reason === 'unsupported-browser')
+    return t('stage.kiosk-agent.service-browser-unsupported')
+  if (reason === 'missing-health-check')
+    return t('stage.kiosk-agent.service-check-missing')
+  if (reason === 'compatibility-check-failed')
+    return t('stage.kiosk-agent.service-check-failed')
+  return t(webMcpAdapter.availability.value === 'unavailable'
+    ? 'stage.kiosk-agent.service-manual'
+    : 'stage.kiosk-agent.service-connecting')
+})
 const orderToolCallRenderers = computed(() => Object.fromEntries(
   webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
@@ -140,8 +157,8 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       :timing="props.fastPathSimulationTiming"
       @simulate="emit('simulateAsr', $event)"
     />
-    <p v-if="!serviceReady" class="service-status" role="status">
-      {{ webMcpAdapter.error.value ?? '正在準備互動服務，請稍候。' }}
+    <p v-if="serviceStatus" class="service-status" role="status">
+      {{ serviceStatus }}
     </p>
   </section>
 </template>

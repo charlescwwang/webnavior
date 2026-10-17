@@ -1,6 +1,9 @@
+import { webMcpHealthTool } from '@proj-airi/stage-shared/webmcp'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createWebMcpAdapter } from './webmcp-adapter'
+
+const healthTool = { ...webMcpHealthTool, origin: 'https://menu.example' }
 
 describe('createWebMcpAdapter', () => {
   afterEach(() => {
@@ -11,7 +14,9 @@ describe('createWebMcpAdapter', () => {
   it('executes discovered cross-origin tools through the browser handle rather than a postMessage bridge', async () => {
     // NOTICE: Chrome 155 rejects JSON strings before invoking the page tool.
     // https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/webmcp/agentic-javascript-tools.md#invoking-tools-with-executetool
-    const executeTool = vi.fn(async (_tool: object, input: unknown) => {
+    const executeTool = vi.fn(async (tool: { name: string }, input: Record<string, unknown>) => {
+      if (tool.name === webMcpHealthTool.name)
+        return JSON.stringify(await webMcpHealthTool.execute(input))
       if (!input || typeof input !== 'object' || Array.isArray(input))
         throw new TypeError('Failed to execute \'executeTool\' on \'ModelContext\': invalid input object: value is not an object')
       return '{"cart":{"itemCount":1}}'
@@ -26,7 +31,7 @@ describe('createWebMcpAdapter', () => {
       modelContext: {
         addEventListener: vi.fn(),
         executeTool,
-        getTools: vi.fn().mockResolvedValue([registeredTool]),
+        getTools: vi.fn().mockResolvedValue([healthTool, registeredTool]),
       },
     })
     const adapter = createWebMcpAdapter()
@@ -41,7 +46,7 @@ describe('createWebMcpAdapter', () => {
     await expect(adapter.execute(tool, { quantity: 1 })).resolves.toEqual({ cart: { itemCount: 1 } })
     expect(tool).not.toBe(registeredTool)
     expect(executeTool).toHaveBeenCalledWith(registeredTool, { quantity: 1 })
-    expect(executeTool).toHaveBeenCalledTimes(1)
+    expect(executeTool.mock.calls.filter(([handle]) => handle.name === registeredTool.name)).toHaveLength(1)
     expect(executions).toHaveBeenNthCalledWith(1, {
       input: { quantity: 1 },
       phase: 'called',
@@ -58,8 +63,8 @@ describe('createWebMcpAdapter', () => {
   it('exposes native JSON-string schemas as objects for Main Agent tools', async () => {
     vi.stubGlobal('document', {
       modelContext: {
-        executeTool: vi.fn(),
-        getTools: vi.fn().mockResolvedValue([{
+        executeTool: vi.fn(async (_tool, input) => JSON.stringify(await webMcpHealthTool.execute(input))),
+        getTools: vi.fn().mockResolvedValue([healthTool, {
           description: 'Add an item.',
           inputSchema: '{"type":"object","properties":{"quantity":{"type":"integer"}},"required":["quantity"]}',
           name: 'cart_add_item',
@@ -98,8 +103,10 @@ describe('createWebMcpAdapter', () => {
     }
     vi.stubGlobal('document', {
       modelContext: {
-        executeTool: vi.fn().mockResolvedValue('{"interaction":{"status":"completed"}}'),
-        getTools: vi.fn().mockResolvedValue([registeredTool]),
+        executeTool: vi.fn(async (tool, input) => tool.name === healthTool.name
+          ? JSON.stringify(await webMcpHealthTool.execute(input))
+          : '{"interaction":{"status":"completed"}}'),
+        getTools: vi.fn().mockResolvedValue([healthTool, registeredTool]),
       },
     })
     const adapter = createWebMcpAdapter()
@@ -114,13 +121,13 @@ describe('createWebMcpAdapter', () => {
     expect(adapter.completionRevision.value).toBe(1)
   })
   it('revokes ready state when the active document removes its tools', async () => {
-    const getTools = vi.fn().mockResolvedValue([{
+    const getTools = vi.fn().mockResolvedValue([healthTool, {
       name: 'cart_read',
       description: 'Read cart',
       origin: 'https://menu.example',
       inputSchema: { type: 'object' },
     }])
-    vi.stubGlobal('document', { modelContext: { getTools, executeTool: vi.fn() } })
+    vi.stubGlobal('document', { modelContext: { getTools, executeTool: vi.fn(async (_tool, input) => JSON.stringify(await webMcpHealthTool.execute(input))) } })
     const adapter = createWebMcpAdapter()
     adapter.activate('https://menu.example')
     await adapter.refresh()

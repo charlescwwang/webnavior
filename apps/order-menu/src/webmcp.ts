@@ -9,6 +9,7 @@ import type { DecisionContext, DomainPlan, DomainReference, IntentCandidate, Kio
 import type { ScrollDirection, ScrollResult } from './menuScroll'
 
 import { errorMessageFrom } from '@moeru/std'
+import { webMcpHealthTool } from '@proj-airi/stage-shared/webmcp'
 
 import { ingredientDefinitions, vegetarianIngredients } from '../../order-menu-server/src/domain/composition'
 import { currentRecommendationSignal } from '../../order-menu-server/src/domain/recommendation'
@@ -1933,6 +1934,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__ = controller
 
     try {
+      // The host probes this transport-only tool before exposing domain tools.
+      // It shares registration cleanup and never enters the ordering runtime.
+      await modelContext.registerTool(webMcpHealthTool, { exposedTo: options.exposedTo, signal: controller.signal })
       await Promise.all(availableToolDefinitions().map(async (definition) => {
         const { readOnly, ...tool } = definition
         await modelContext.registerTool({

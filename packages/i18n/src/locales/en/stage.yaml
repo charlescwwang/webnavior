@@ -121,3 +121,10 @@ websocket-status:
   connected: Connected
   disconnected: No connection
   open-settings: Open connection settings
+
+kiosk-agent:
+  service-connecting: Connecting assistant controls. You can also use the service screen directly.
+  service-manual: Assistant controls are unavailable for this service. Please use the service screen directly and check the result there.
+  service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.
+  service-check-missing: This service does not provide the assistant compatibility check. Please use the service screen directly and ask staff to update it.
+  service-check-failed: The browser and service did not pass the assistant compatibility check. Please use the service screen directly and ask staff to check for updates.
