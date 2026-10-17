@@ -27,6 +27,8 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
   apiKeyCiphertext: text('api_key_ciphertext'),
   timeoutMs: integer('timeout_ms').notNull().default(30_000),
   modelId: text('model_id'),
+  /** Chat OpenAI-compatible profiles only; forwarded to the model chat template. */
+  enableThinking: boolean('enable_thinking').notNull().default(false),
   /** TTS only; omitted for every other capability. */
   voice: text('voice'),
   discoveredModels: jsonb('discovered_models').$type<WebnaviorAiDiscoveredModel[]>().notNull().default([]),

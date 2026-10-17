@@ -49,6 +49,16 @@ changes the iframe URL.
 
 ## Anonymous customer sessions
 
+System administrators can configure **Main Agent Thinking** in **Kiosk AI 能力 →
+對話 LLM → OpenAI-compatible Provider**. It is saved per provider and defaults to
+Off. Verify and save the provider, then choose **套用到 Kiosk**. Every subsequent
+chat request, including tool continuations, sends
+`chat_template_kwargs.enable_thinking` as the selected boolean. The model's chat
+template must support this option; this controls generation rather than merely
+hiding reasoning output. Ollama, llama.cpp, and other capabilities do not receive
+this option. Migration `0046_webnavior_chat_thinking` adds the persisted choice;
+existing profiles receive Off when settings are next applied.
+
 Each customer starts an anonymous Kiosk session when they touch the screen, type a message, speak, or operate the menu. The session owns only that customer's conversation and cart:
 
 - After three minutes without activity, it asks whether to continue and starts a 15-second countdown. Showing the dialog does not clear anything. **繼續點餐** cancels that countdown and keeps the same session, conversation, cart and unfinished ordering requirement (including the selected meal, known quantity/options and pending question); it does not reload the menu or repeat the question. Only unanswered countdown expiry, confirmed order completion or explicitly starting a new order/reception clears that context and ends its durable visitor session. Pending AI/tool work and high-confidence engaged presence retain their existing idle-timer protection. Lookups and deferral do not reset context. Internal answer tickets remain short-lived and are renewed on the next decision turn; financial/destructive confirmation authority is not extended by continuing.

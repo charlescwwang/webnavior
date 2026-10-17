@@ -128,6 +128,7 @@ function applyLlmProfile(
     upstreams: [{
       baseURL: profile.baseURL,
       cachePrompt: profile.kind === 'llama-cpp',
+      ...(profile.capability === 'chat' && profile.kind === 'openai-compatible' ? { enableThinking: profile.enableThinking } : {}),
       ...(profile.kind === 'ollama' ? { ollamaKeepAlive: -1 } : {}),
       headerTemplate: key ? 'Bearer {KEY}' : '',
       keys: [{

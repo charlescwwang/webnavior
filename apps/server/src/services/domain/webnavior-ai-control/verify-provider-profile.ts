@@ -8,6 +8,7 @@ export interface ProviderProfileVerificationInput {
   baseURL: string
   capability: WebnaviorAiCapability
   kind: WebnaviorAiConnectionKind
+  enableThinking?: boolean
   modelId: string
   plaintextKey?: string
   voice?: string
@@ -57,7 +58,9 @@ export async function verifyProviderProfile(input: ProviderProfileVerificationIn
     ? [{ type: 'text', text: 'Reply with OK.' }, { type: 'image_url', image_url: { url: transparentPixelDataUrl } }]
     : 'Reply with OK.'
   const response = await request(`${baseURL}/chat/completions`, {
-    body: JSON.stringify({ max_tokens: 4, messages: [{ content, role: 'user' }], model: input.modelId }),
+    body: JSON.stringify({ max_tokens: 4, messages: [{ content, role: 'user' }], model: input.modelId, ...(input.capability === 'chat' && input.kind === 'openai-compatible'
+      ? { chat_template_kwargs: { enable_thinking: input.enableThinking ?? false } }
+      : {}) }),
     headers,
     method: 'POST',
     signal: AbortSignal.timeout(15_000),

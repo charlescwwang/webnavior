@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { AiCapability, AiModelCatalogProbe, AiProviderProfile, AiProviderProfileInput } from '../../composables/useWebnaviorAiControl'
 
-import { Button, Input } from '@proj-airi/ui'
+import { Button, Checkbox, Input } from '@proj-airi/ui'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { computed, reactive, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
-type AiProviderProfileForm = Omit<AiProviderProfileInput, 'modelId' | 'plaintextKey' | 'voice'> & {
+type AiProviderProfileForm = Omit<AiProviderProfileInput, 'enableThinking' | 'modelId' | 'plaintextKey' | 'voice'> & {
+  enableThinking: boolean
   modelId: string
   plaintextKey: string
   voice: string
@@ -27,11 +29,14 @@ const emit = defineEmits<{
   'verifyAndSave': [capability: AiCapability, input: AiProviderProfileInput, profileId?: string]
 }>()
 
+const { t } = useI18n()
+
 const editingProfile = shallowRef<AiProviderProfile>()
 const showForm = shallowRef(false)
 const form = reactive<AiProviderProfileForm>({
   baseURL: 'http://localhost:11434/v1',
   kind: 'ollama',
+  enableThinking: false,
   modelId: '',
   name: '本機 Ollama',
   plaintextKey: '',
@@ -79,6 +84,7 @@ function openNewProfile() {
 function openEditor(profile: AiProviderProfile) {
   editingProfile.value = profile
   form.baseURL = profile.baseURL
+  form.enableThinking = profile.enableThinking
   form.kind = profile.kind
   form.modelId = profile.modelId ?? ''
   form.name = profile.name
@@ -92,6 +98,7 @@ function openEditor(profile: AiProviderProfile) {
 
 function resetForm() {
   form.baseURL = 'http://localhost:11434/v1'
+  form.enableThinking = false
   form.kind = 'ollama'
   form.modelId = ''
   form.name = '本機 Ollama'
@@ -161,6 +168,7 @@ function verifyAndSaveProfile() {
   const input: AiProviderProfileInput = {
     baseURL: form.baseURL.trim(),
     kind: form.kind,
+    ...(props.capability === 'chat' && form.kind === 'openai-compatible' ? { enableThinking: form.enableThinking } : {}),
     ...(form.modelId.trim() ? { modelId: form.modelId.trim() } : {}),
     name: form.name.trim(),
     ...(form.plaintextKey.trim() ? { plaintextKey: form.plaintextKey.trim() } : {}),
@@ -278,6 +286,15 @@ function verifyAndSaveProfile() {
               {{ modelCatalog.catalogMessage }}
             </p>
           </label>
+          <div v-if="props.capability === 'chat' && form.kind === 'openai-compatible'" :class="['flex items-center justify-between gap-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700']">
+            <div>
+              <label for="provider-thinking" :class="['text-sm font-semibold']">{{ t('settings.kiosk-thinking.title') }}</label>
+              <p id="provider-thinking-description" :class="['mb-0 mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400']">
+                {{ t('settings.kiosk-thinking.description') }}
+              </p>
+            </div>
+            <Checkbox id="provider-thinking" v-model="form.enableThinking" :disabled="props.busy" aria-describedby="provider-thinking-description" />
+          </div>
           <label v-if="props.capability === 'tts'" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
             Voice ID（選填）
             <Input v-model="form.voice" :disabled="props.busy" placeholder="預設 zh-TW-HsiaoChenNeural" />

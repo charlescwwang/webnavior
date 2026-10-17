@@ -25,6 +25,21 @@ describe('webnavior AI capability Provider profiles', () => {
     })
   })
 
+  it('persists and verifies the thinking choice when editing an OpenAI-compatible chat provider', async () => {
+    fetchImpl.mockImplementation(async () => new Response(JSON.stringify({ choices: [{}] }), { status: 200 }))
+    const input = { baseURL: 'https://vllm.example/v1', kind: 'openai-compatible' as const, modelId: 'qwen', name: 'vLLM', timeoutMs: 5000 }
+    const profile = await service.verifyAndCreateProfile('chat', input)
+    expect(profile.enableThinking).toBe(false)
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).chat_template_kwargs).toEqual({ enable_thinking: false })
+    const updated = await service.verifyAndUpdateProfile('chat', profile.id, { ...input, enableThinking: true })
+    expect(updated.enableThinking).toBe(true)
+    expect(JSON.parse(String(fetchImpl.mock.calls[1][1]?.body)).chat_template_kwargs).toEqual({ enable_thinking: true })
+    await service.verifyProfile('chat', profile.id)
+    expect(JSON.parse(String(fetchImpl.mock.calls[2][1]?.body)).chat_template_kwargs).toEqual({ enable_thinking: true })
+    const profiles = await service.listProfiles()
+    expect(profiles[0].enableThinking).toBe(true)
+  })
+
   it('keeps Provider profiles scoped to one capability without exposing credentials', async () => {
     const profile = await service.createProfile('chat', {
       baseURL: 'http://ollama.internal/v1',

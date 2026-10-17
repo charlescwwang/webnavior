@@ -93,7 +93,7 @@ function makeConfigKV(config: RouterConfig | null): ConfigKVService {
 }
 
 function makeConfig(opts: {
-  upstreams?: Array<{ baseURL: string, cachePrompt?: boolean, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
+  upstreams?: Array<{ baseURL: string, cachePrompt?: boolean, enableThinking?: boolean, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
   fallbackHttpCodes?: number[]
   fullChainTimeoutMs?: number
 }): { config: RouterConfig, ciphertextByKey: Map<string, string>, crypto: ReturnType<typeof createEnvelopeCrypto> } {
@@ -105,6 +105,7 @@ function makeConfig(opts: {
   const upstreamConfigs = upstreams.map(u => ({
     baseURL: u.baseURL,
     cachePrompt: u.cachePrompt,
+    enableThinking: u.enableThinking,
     overrideModel: u.overrideModel,
     headerTemplate: 'Bearer {KEY}',
     timeoutMs: u.timeoutMs,
@@ -327,6 +328,50 @@ describe('createLlmRouterService', () => {
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls
     const init = calls[0][1] as { body: string }
     expect(JSON.parse(init.body)).toMatchObject({ cache_prompt: true })
+  })
+
+  it.each([true, false])('sends the provider thinking choice on tool continuations: %s', async (enableThinking) => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://vllm.example/v1', enableThinking, keyIds: ['k1'] }] })
+    const fetchImpl = vi.fn<typeof fetch>(async () => happyResponse({ ok: 1 }))
+    const router = createLlmRouterService({
+      configKV: makeConfigKV(config),
+      envelopeCrypto: crypto,
+      gatewayMetrics: null,
+      fetchImpl,
+      redis: makeRedisStub(),
+      concurrencyLedger: makeLedger(),
+    })
+    await router.route({ modelName: 'openai/gpt-5-mini', body: {
+      messages: [{ role: 'tool', content: 'menu', tool_call_id: 'call-1' }],
+      chat_template_kwargs: { enable_thinking: !enableThinking, custom_template_option: true },
+      stream: true,
+    } })
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))
+    expect(body.chat_template_kwargs.enable_thinking).toBe(enableThinking)
+    expect(body.chat_template_kwargs.custom_template_option).toBe(true)
+    expect(body.stream).toBe(true)
+    expect(body.messages[0].tool_call_id).toBe('call-1')
+  })
+
+  it('does not carry thinking policy into an unconfigured fallback provider', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://vllm.example/v1', enableThinking: false, keyIds: ['k1'] },
+      { baseURL: 'https://generic.example/v1', keyIds: ['k2'] },
+    ] })
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(failResponse(500))
+      .mockResolvedValueOnce(happyResponse({ ok: 1 }))
+    const router = createLlmRouterService({
+      configKV: makeConfigKV(config),
+      envelopeCrypto: crypto,
+      gatewayMetrics: null,
+      fetchImpl,
+      redis: makeRedisStub(),
+      concurrencyLedger: makeLedger(),
+    })
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [] } })
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1]?.body)).chat_template_kwargs).toEqual({ enable_thinking: false })
+    expect(JSON.parse(String(fetchImpl.mock.calls[1][1]?.body))).not.toHaveProperty('chat_template_kwargs')
   })
 
   it('multi-key fallback: k1=401 then k2=200 → returns 200 and records fallbackCount once', async () => {

@@ -14,6 +14,7 @@ import { authGuard } from '../../../middlewares/auth'
 import { createBadRequestError } from '../../../utils/error'
 
 const providerProfileSchema = object({
+  enableThinking: optional(boolean(), false),
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
   kind: picklist(['llama-cpp', 'ollama', 'openai-compatible']),
   modelId: optional(pipe(string(), maxLength(300))),

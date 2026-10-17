@@ -323,6 +323,13 @@
       "when": 1791086400000,
       "tag": "0045_kiosk_session_archives",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791849600000,
+      "tag": "0046_webnavior_chat_thinking",
+      "breakpoints": true
     }
   ]
 }

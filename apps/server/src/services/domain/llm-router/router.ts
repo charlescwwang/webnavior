@@ -253,6 +253,14 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
           // Apply residency per upstream attempt, not to the shared request;
           // falling back to another provider must not inherit Ollama policy.
           ...(upstream.ollamaKeepAlive !== undefined ? { keep_alive: upstream.ollamaKeepAlive } : {}),
+          // Apply the selected provider's thinking policy on every attempt,
+          // including tool continuations; caller values cannot override it.
+          ...(upstream.enableThinking !== undefined
+            ? { chat_template_kwargs: {
+                ...(req.body.chat_template_kwargs as Record<string, unknown> | undefined),
+                enable_thinking: upstream.enableThinking,
+              } }
+            : {}),
           model: effectiveModel,
         })
 

@@ -16,6 +16,7 @@ const CONNECTION_KEY_ENTRY_ID = 'default'
 export interface AiProviderProfileInput {
   baseURL: string
   kind: WebnaviorAiConnectionKind
+  enableThinking?: boolean
   modelId?: string
   name: string
   plaintextKey?: string
@@ -77,6 +78,7 @@ export function createWebnaviorAiControlService(options: {
       kind: input.kind,
       modelId: input.modelId?.trim() || null,
       name: input.name,
+      enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
       timeoutMs: input.timeoutMs,
       voice: capability === 'tts' ? input.voice?.trim() || null : null,
     }).returning()
@@ -108,7 +110,7 @@ export function createWebnaviorAiControlService(options: {
     const sourceChanged = current.baseURL !== input.baseURL || current.kind !== input.kind
     const selectedModelId = input.modelId?.trim() || null
     const selectedVoice = capability === 'tts' ? input.voice?.trim() || null : null
-    const requiresRevalidation = sourceChanged || current.modelId !== selectedModelId || apiKeyCiphertext !== current.apiKeyCiphertext || current.voice !== selectedVoice
+    const requiresRevalidation = sourceChanged || current.modelId !== selectedModelId || apiKeyCiphertext !== current.apiKeyCiphertext || current.voice !== selectedVoice || current.enableThinking !== (input.enableThinking ?? false)
     const [updated] = await options.db.update(schema.webnaviorAiProviderProfiles).set({
       apiKeyCiphertext,
       baseURL: input.baseURL,
@@ -117,6 +119,7 @@ export function createWebnaviorAiControlService(options: {
       kind: input.kind,
       modelId: selectedModelId,
       name: input.name,
+      enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
       timeoutMs: input.timeoutMs,
       voice: selectedVoice,
     }).where(eq(schema.webnaviorAiProviderProfiles.id, current.id)).returning()
@@ -217,6 +220,7 @@ export function createWebnaviorAiControlService(options: {
         lastVerificationError: null,
         modelId,
         name: input.name,
+        enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
         timeoutMs: input.timeoutMs,
         verifiedAt: new Date(),
         voice: capability === 'tts' ? input.voice?.trim() || null : null,
@@ -232,6 +236,7 @@ export function createWebnaviorAiControlService(options: {
     await verifyProviderProfile({
       baseURL: input.baseURL,
       capability,
+      enableThinking: input.enableThinking ?? false,
       kind: input.kind,
       modelId,
       ...(plaintextKey ? { plaintextKey } : {}),
@@ -249,6 +254,7 @@ export function createWebnaviorAiControlService(options: {
       await verifyProviderProfile({
         baseURL: profile.baseURL,
         capability,
+        enableThinking: profile.enableThinking,
         kind: profile.kind,
         modelId: profile.modelId,
         ...(key ? { plaintextKey: key.toString('utf8') } : {}),

@@ -40,6 +40,8 @@ export const keyEntrySchema = object({
 })
 
 export const llmUpstreamSchema = object({
+  /** Optional model-template policy; absence leaves the provider default unchanged. */
+  enableThinking: optional(boolean()),
   baseURL: pipe(string(), nonEmpty('llm.upstreams[].baseURL must not be empty')),
   /** llama.cpp extension; never sent to generic OpenAI-compatible upstreams. */
   cachePrompt: optional(boolean()),

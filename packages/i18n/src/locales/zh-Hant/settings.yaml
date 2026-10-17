@@ -1696,3 +1696,7 @@ wip:
   title: 正在開發中
   description: >-
     此功能正在開發中，尚未公開發佈。請在未來的更新中再次查看此功能。
+
+kiosk-thinking:
+  title: Main Agent 思考模式（Thinking）
+  description: 控制支援此設定的模型（例如 vLLM 模型）是否進行思考，預設關閉。驗證並儲存後，按「套用到 Kiosk」生效。

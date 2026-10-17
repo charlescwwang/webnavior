@@ -8,6 +8,7 @@ export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
 export type SystemOneImplementation = 'dasein' | 'lookski'
 
 export interface AiProviderProfile {
+  enableThinking: boolean
   baseURL: string
   capability: AiCapability
   discoveredModels: ReadonlyArray<{ id: string }>
@@ -30,6 +31,7 @@ export interface AiCapabilitySelection {
 }
 
 export interface AiProviderProfileInput {
+  enableThinking?: boolean
   baseURL: string
   clearApiKey?: boolean
   kind: AiProviderKind

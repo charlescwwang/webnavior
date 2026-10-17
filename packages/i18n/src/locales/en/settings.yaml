@@ -1768,3 +1768,7 @@ wip:
   description: >-
     This feature is currently under development and not yet publicly available.
     Check back in future updates for this functionality.
+
+kiosk-thinking:
+  title: Main Agent Thinking
+  description: Enable or disable thinking for models that support it (such as vLLM models). Off by default. Verify and save, then apply to Kiosk.

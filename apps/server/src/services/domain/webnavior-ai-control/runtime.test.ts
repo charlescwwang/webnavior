@@ -94,6 +94,22 @@ describe('webnavior AI runtime compiler', () => {
     })
   })
 
+  it.each([true, false])('applies the saved chat thinking choice: %s', async (enableThinking) => {
+    const profile = await control.verifyAndCreateProfile('chat', {
+      baseURL: 'https://vllm.example/v1',
+      kind: 'openai-compatible',
+      modelId: 'chat-model',
+      name: 'vLLM',
+      timeoutMs: 7500,
+      enableThinking,
+    })
+    await control.selectProfile('chat', profile.id)
+    await runtime.applyBindings()
+    expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({
+      llm: { models: { 'webnavior/chat': { upstreams: [{ enableThinking }] } } },
+    })
+  })
+
   it.each(['ollama', 'llama-cpp', 'openai-compatible'] as const)('compiles model residency only for Ollama: %s', async (kind) => {
     const profile = await control.createProfile('chat', { baseURL: 'https://models.example/v1', kind, modelId: 'chat-model', name: 'Chat provider', timeoutMs: 7500 })
     await control.refreshProfileModels('chat', profile.id)
@@ -104,5 +120,7 @@ describe('webnavior AI runtime compiler', () => {
       expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({ llm: { models: { 'webnavior/chat': { upstreams: [{ ollamaKeepAlive: -1 }] } } } })
     else
       expect(JSON.stringify(store.get('LLM_ROUTER_CONFIG'))).not.toContain('ollamaKeepAlive')
+    if (kind !== 'openai-compatible')
+      expect(JSON.stringify(store.get('LLM_ROUTER_CONFIG'))).not.toContain('enableThinking')
   })
 })
