@@ -8,6 +8,42 @@ import { menu } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
 describe('composition-grounded menu filtering', () => {
+  // Report: this chat, 2026-10-14 — category 「麵類」 silently returned no dishes.
+  it.each(['menu_get', 'menu_recommend'] as const)('rejects an invented category instead of presenting an empty menu: %s', async (name) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let presentations = 0
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: () => presentations++ })
+    await expect(runtime.invokeForAgent(name, { category: '麵類', display: true })).rejects.toThrow('UNKNOWN_CATEGORY')
+    expect(presentations).toBe(0)
+    expect(await runtime.invokeForAgent(name, { category: '麵食' })).toMatchObject({ items: [{ name: '紅燒牛肉麵' }] })
+    const definition = runtime.toolDefinitions.find(tool => tool.name === name)!
+    expect(definition.inputSchema.properties).toMatchObject({ category: { enum: ['便當', '麵食', '點心'] } })
+    runtime.setMenu(catalog.items.filter(item => item.category === '點心'))
+    expect(runtime.toolDefinitions.find(tool => tool.name === name)!.inputSchema.properties).toMatchObject({ category: { enum: ['點心'] } })
+  })
+  it('refuses Agent takeover while an admitted customer operation is still settling', async () => {
+    let settle!: () => void
+    const runtime = createMenuToolRuntime({ menu, onAction: () => new Promise<void>(resolve => settle = resolve), onCartChange: () => {}, onMenuSelection: () => {} })
+    const snapshot = await runtime.invoke('kiosk_interaction_state') as { menuRevision: number }
+    const manual = runtime.invokeManual('menu_select_item', { itemId: menu[0]!.id })
+    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'agent', expectedMenuRevision: snapshot.menuRevision, constraints: {} })).rejects.toThrow('MANUAL_CONTROL')
+    settle()
+    await manual
+    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'agent', expectedMenuRevision: snapshot.menuRevision, constraints: {} })).resolves.toEqual({ ok: true })
+  })
+  // Report: this chat, 2026-10-14 — manual edits race an active Agent task.
+  it('keeps manual operations locked until the matching task ends', async () => {
+    const ownership: boolean[] = []
+    const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onAgentControlChange: locked => ownership.push(locked) })
+    const snapshot = await runtime.invoke('kiosk_interaction_state') as { menuRevision: number }
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'new', expectedMenuRevision: snapshot.menuRevision, constraints: {} })
+    await expect(runtime.invokeManual('cart_set_line_quantity', { lineId: 'line', quantity: 2 })).rejects.toThrow('AGENT_CONTROL')
+    await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'old' })
+    expect(ownership).toEqual([true])
+    await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'new' })
+    expect(ownership).toEqual([true, false])
+    await expect(runtime.invokeManual('cart_get')).resolves.toBeDefined()
+  })
   it('does not infer shrimp absence from a broad seafood fact and only offers verified removals', () => {
     const broad = { ...menu[0]!, composition: { ingredients: ['seafood'], complete: true, source: 'merchant' as const, revision: '1', removals: [] } }
     expect(filterIngredients([broad], { excludeIngredients: ['shrimp'], includeIngredients: [] })).toMatchObject({ matches: [], unknown: [broad] })

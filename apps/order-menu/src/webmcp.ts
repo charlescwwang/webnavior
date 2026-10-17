@@ -537,15 +537,20 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   // Native WebMCP and embedded-host discovery must expose the same POS
   // capabilities, not a static enum containing unavailable service modes.
   function availableToolDefinitions(): MenuToolDefinition[] {
+    const categories = [...new Set(machine.getMenu().map(item => item.category))]
+    const category = { type: 'string', ...(categories.length ? { enum: categories } : {}), description: '只可使用目前 POS 的精確分類名稱；不要自行改寫分類。未知時省略，使用 query 查找餐點。' }
     return toolDefinitions.flatMap((definition) => {
       if (definition.name === 'menu_open' && !options.onMenuRequested)
         return []
       if (definition.name === 'menu_scroll' && !options.onMenuScroll)
         return []
+      if (definition.name === 'menu_get')
+        return [{ ...definition, inputSchema: { ...definition.inputSchema, properties: { ...(definition.inputSchema.properties as Record<string, unknown>), category } } }]
       if (definition.name === 'menu_recommend') {
         const strategies = (['POPULAR', 'NEW_ARRIVAL', 'CHEF_SPECIAL'] as const).filter(strategy => machine.getMenu().some(item => item.available !== false && currentRecommendationSignal(item.recommendationSignals, strategy, Date.now())))
         return [{ ...definition, inputSchema: { ...definition.inputSchema, required: [], properties: {
           ...(definition.inputSchema.properties as Record<string, unknown>),
+          category,
           ...(strategies.length ? { strategy: { type: 'string', enum: strategies, description: '只可使用 POS 有當前排序資料的策略；不得把菜單順序當熱銷。' } } : {}),
         } } }]
       }
@@ -713,6 +718,14 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   }
 
   async function invoke(name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction): Promise<unknown> {
+    if (name === 'menu_get' || name === 'menu_recommend') {
+      const { category } = getMenuQuery(input)
+      const categories = [...new Set(machine.getMenu().map(item => item.category))]
+      // An invented label is an invalid query, not evidence of unavailable food.
+      // Validate before replacing the customer's visible recommendation batch.
+      if (category && !categories.includes(category))
+        throw new Error(`UNKNOWN_CATEGORY: Use an exact POS category from ${JSON.stringify(categories)}; do not infer availability from this rejected query.`)
+    }
     if (name === 'menu_get' && input.display === true) {
       const { category, queries } = getMenuQuery(input)
       const filters = ingredientFilters(input)

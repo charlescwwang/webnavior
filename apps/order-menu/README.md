@@ -165,6 +165,12 @@ When embedded by AIRI, the service exposes its domain operations through native
 WebMCP. AIRI discovers the tools dynamically, so this service is one interactive
 service among many rather than an AIRI built-in feature.
 
+`menu_get` and `menu_recommend` publish current POS categories as schema enums.
+The runtime rejects unknown category labels before changing the visible results;
+a rejected query does not mean that the store has no matching dishes. Use the
+exact category or search with `query`; category synonyms are not invented by the
+browser.
+
 When the customer asks what the store recommends without stating a preference,
 the Agent calls `menu_recommend` without `needs`. The default is up to three
 distinct available dishes in POS catalog order; this is not a popularity claim.
