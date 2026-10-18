@@ -123,6 +123,7 @@ export interface KioskProfileSnapshot {
     systemPrompt: string
   }
   greetingPrompt: string
+  greetingPhrases?: string[]
   interactiveService: {
     description: string
     id: string

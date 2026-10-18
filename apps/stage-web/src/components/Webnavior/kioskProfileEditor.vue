@@ -1,19 +1,26 @@
 <script setup lang="ts">
 import type { KioskProfileDraft, KioskSiteManagementCapabilities } from '../../composables/useKioskManagement'
 
-import { Button, FieldCheckbox, Input, Textarea } from '@proj-airi/ui'
-import { reactive, watch } from 'vue'
+import { Button, FieldCheckbox, Input, Select, Textarea } from '@proj-airi/ui'
+import { computed, reactive, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import ExperienceEditorSection from './experienceEditorSection.vue'
 
+import { greetingPhraseLimits } from '../../../../server/src/services/domain/kiosk/interactionContracts'
+
 type MotionSlot = 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   allowAssetUpload?: boolean
   busy: boolean
   capabilities?: KioskSiteManagementCapabilities
   draft: KioskProfileDraft
-}>()
+  proactiveVlmEnabled?: boolean
+}>(), {
+  // Templates edit both banks before a Site exists to own a mode setting.
+  proactiveVlmEnabled: undefined,
+})
 
 const emit = defineEmits<{
   save: [input: { draft: KioskProfileDraft, publish: boolean }]
@@ -21,6 +28,7 @@ const emit = defineEmits<{
   uploadBackground: [file: File]
   uploadMotion: [input: { file: File, slot: MotionSlot }]
   uploadRoleCard: [file: File]
+  updateProactiveVlm: [enabled: boolean]
 }>()
 
 const motionSlots: Array<{ description: string, key: MotionSlot, label: string }> = [
@@ -42,12 +50,34 @@ function cloneDraft(draft: KioskProfileDraft): KioskProfileDraft {
       ...(draft.snapshot.idleMotion ? { idleMotion: { ...draft.snapshot.idleMotion } } : {}),
       ...(draft.snapshot.motionPack ? { motionPack: { ...draft.snapshot.motionPack } } : {}),
       ...(draft.snapshot.characterCard ? { characterCard: { ...draft.snapshot.characterCard } } : {}),
+      ...(draft.snapshot.greetingPhrases ? { greetingPhrases: [...draft.snapshot.greetingPhrases] } : {}),
       interactiveService: { ...draft.snapshot.interactiveService },
     },
   }
 }
 
 const form = reactive<KioskProfileDraft>(cloneDraft(props.draft))
+const { t } = useI18n()
+const greetingPhrases = computed({
+  get: () => (form.snapshot.greetingPhrases ?? [
+    t('stage.kiosk.welcome.first'),
+    t('stage.kiosk.welcome.second'),
+    t('stage.kiosk.welcome.third'),
+  ]).join('\n'),
+  set: (value: string) => {
+    const phrases = value.split('\n').map(line => line.trim()).filter(Boolean)
+    form.snapshot.greetingPhrases = phrases.length ? phrases : undefined
+  },
+})
+
+const greetingPhraseCount = computed(() => greetingPhrases.value.split('\n').length)
+const greetingPhraseError = computed(() => {
+  if (greetingPhraseCount.value > greetingPhraseLimits.count)
+    return t('stage.kiosk.welcome.too-many', { count: greetingPhraseCount.value, limit: greetingPhraseLimits.count })
+  if (greetingPhrases.value.split('\n').some(phrase => phrase.length > greetingPhraseLimits.characters))
+    return t('stage.kiosk.welcome.too-long', { limit: greetingPhraseLimits.characters })
+  return undefined
+})
 
 watch(() => props.draft, draft => Object.assign(form, cloneDraft(draft)))
 
@@ -194,12 +224,39 @@ function selectMotion(slot: MotionSlot, event: Event) {
         description="啟用後，已設定 ASR 與 TTS 的 Kiosk 不會顯示文字輸入欄，顧客只能透過麥克風說話。"
       />
       <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
-        開場招呼
-        <Textarea v-model="form.snapshot.greetingPrompt" :disabled="busy || !props.capabilities?.canEditExperience" :rows="3" />
-      </label>
-      <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
         停留提醒
         <Textarea v-model="form.snapshot.assistanceReminderPrompt" :disabled="busy || !props.capabilities?.canEditExperience" :rows="3" />
+      </label>
+    </ExperienceEditorSection>
+
+    <ExperienceEditorSection initially-open :title="t('stage.kiosk.welcome.section-title')" :description="props.proactiveVlmEnabled === undefined ? t('stage.kiosk.welcome.content-description') : t('stage.kiosk.welcome.section-description')">
+      <label v-if="props.proactiveVlmEnabled !== undefined" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+        {{ t('stage.kiosk.welcome.mode-label') }}
+        <Select
+          :model-value="props.proactiveVlmEnabled ? 'vlm' : 'fixed'"
+          :options="[
+            { label: t('stage.kiosk.welcome.mode-fixed'), value: 'fixed' },
+            { label: t('stage.kiosk.welcome.mode-vlm'), value: 'vlm' },
+          ]"
+          :disabled="busy || !props.capabilities?.canEditTechnicalSettings"
+          @update:model-value="emit('updateProactiveVlm', $event === 'vlm')"
+        />
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ t('stage.kiosk.welcome.mode-save-hint') }}</span>
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ t('stage.kiosk.welcome.vlm-description') }}</span>
+      </label>
+      <label v-if="props.proactiveVlmEnabled !== true" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+        {{ t('stage.kiosk.welcome.editor-label') }}
+        <Textarea v-model="greetingPhrases" :disabled="busy || !props.capabilities?.canEditExperience" :rows="4" />
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ t('stage.kiosk.welcome.count', { count: greetingPhraseCount, limit: greetingPhraseLimits.count }) }}</span>
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ t('stage.kiosk.welcome.editor-hint', { limit: greetingPhraseLimits.count, characters: greetingPhraseLimits.characters }) }}</span>
+      </label>
+      <p v-if="greetingPhraseError" role="alert" :class="['m-0 text-sm text-red-600 dark:text-red-400']">
+        {{ greetingPhraseError }}
+      </p>
+      <label v-if="props.proactiveVlmEnabled !== false" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+        {{ t('stage.kiosk.welcome.vlm-prompt-label') }}
+        <Textarea v-model="form.snapshot.greetingPrompt" :disabled="busy || !props.capabilities?.canEditExperience" :rows="3" />
+        <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ t('stage.kiosk.welcome.vlm-prompt-hint') }}</span>
       </label>
     </ExperienceEditorSection>
 
@@ -226,10 +283,10 @@ function selectMotion(slot: MotionSlot, event: Event) {
     </ExperienceEditorSection>
 
     <div v-if="props.capabilities?.canEditExperience" :class="['flex flex-wrap gap-3 border-t border-slate-200 pt-6 dark:border-slate-800']">
-      <Button :disabled="busy" @click="save(false)">
+      <Button :disabled="busy || Boolean(greetingPhraseError)" @click="save(false)">
         儲存草稿
       </Button>
-      <Button v-if="props.capabilities?.canPublishExperience" :disabled="busy" @click="save(true)">
+      <Button v-if="props.capabilities?.canPublishExperience" :disabled="busy || Boolean(greetingPhraseError)" @click="save(true)">
         發布到此店別
       </Button>
     </div>

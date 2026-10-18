@@ -42,6 +42,38 @@ describe('kiosk service', () => {
     ])
   })
 
+  it('retains fixed welcome phrases through content edits and immutable publication', async () => {
+    const site = await service.createSite({ name: 'POC Store' })
+    const draft = await service.saveProfileDraft({ siteId: site.id, name: 'Welcome', snapshot: profileSnapshot })
+    const greetings = ['歡迎光臨周氏蝦捲！需要的話，我可以幫您介紹餐點。', '您好，歡迎來到周氏蝦捲！']
+    const updated = await service.saveContentProfileDraft({ siteId: site.id, snapshot: { ...draft.snapshot, greetingPhrases: greetings } })
+    const release = await service.publishProfileDraft({ siteId: site.id, draftId: updated.id })
+    expect(release.snapshot.greetingPhrases).toEqual(greetings)
+    expect(release.snapshot.interactiveService).toEqual(profileSnapshot.interactiveService)
+  })
+
+  // Report: user-provided profile-draft log in this chat, Oct 18; 12 phrases
+  // were rejected by the initial five-phrase limit before any draft was saved.
+  it('saves and publishes twelve welcome phrases entered by an administrator', async () => {
+    const site = await service.createSite({ name: 'Welcome test' })
+    await service.saveProfileDraft({ siteId: site.id, name: 'Welcome', snapshot: profileSnapshot })
+    const greetings = Array.from({ length: 12 }, (_, index) => `歡迎光臨，第 ${index + 1} 組歡迎詞。`)
+    const draft = await service.saveContentProfileDraft({ siteId: site.id, snapshot: { ...profileSnapshot, greetingPhrases: greetings } })
+    const release = await service.publishProfileDraft({ siteId: site.id, draftId: draft.id })
+    expect(draft.snapshot.greetingPhrases).toEqual(greetings)
+    expect(release.snapshot.greetingPhrases).toEqual(greetings)
+  })
+
+  it('accepts fifty welcome phrases and rejects a bank above the supported limit', async () => {
+    const site = await service.createSite({ name: 'Welcome limits' })
+    const phrases = Array.from({ length: 50 }, (_, index) => `Welcome ${index + 1}`)
+    const draft = await service.saveProfileDraft({ siteId: site.id, name: 'Welcome', snapshot: { ...profileSnapshot, greetingPhrases: phrases } })
+    expect(draft.snapshot.greetingPhrases).toEqual(phrases)
+    await expect(service.saveProfileDraft({ id: draft.id, siteId: site.id, name: draft.name, snapshot: { ...draft.snapshot, greetingPhrases: [...phrases, 'One too many'] } })).rejects.toThrow('Kiosk Profile snapshot is invalid')
+    const profile = await service.getSiteProfile(site.id)
+    expect(profile.drafts[0]?.snapshot.greetingPhrases).toEqual(phrases)
+  })
+
   it('allows a site administrator to read complete transcripts for their site', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     await service.addMember({ siteId: site.id, userId: 'site-admin', role: 'site_admin' })

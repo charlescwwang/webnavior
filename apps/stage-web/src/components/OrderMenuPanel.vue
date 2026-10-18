@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
+
+import { readInteractionLifecycle } from '@proj-airi/stage-shared/interaction-lifecycle'
 import { useChatDiagnosticsStore } from '@proj-airi/stage-ui/stores/chat/diagnostics'
 import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 
@@ -13,7 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   activity: []
-  completed: []
+  completed: [orderContinuationUrl?: string]
 }>()
 
 const visible = shallowRef(true)
@@ -22,10 +25,10 @@ const chatDiagnostics = useChatDiagnosticsStore()
 const activeService = activeInteractiveService
 const webMcpUnavailable = computed(() => webMcpAdapter.availability.value === 'unavailable')
 
-function reportCompleted() {
+function reportCompleted(orderContinuationUrl?: string) {
   if (import.meta.env.DEV)
     console.info('[DEBUG-feedback-lifecycle] Stage Web accepted interaction completion')
-  emit('completed')
+  emit('completed', orderContinuationUrl)
 }
 
 function openPanel() {
@@ -36,7 +39,7 @@ function attachFrame() {
   webMcpAdapter.activate(activeService.value?.serviceUrl)
 }
 
-function onInteractionLifecycleMessage(event: MessageEvent<{ source?: string, type?: string }>) {
+function onInteractionLifecycleMessage(event: MessageEvent<Partial<InteractionLifecycleMessage>>) {
   const service = activeService.value
   const frameWindow = menuFrame.value?.contentWindow
   if (!service || !frameWindow || event.source !== frameWindow) {
@@ -49,16 +52,17 @@ function onInteractionLifecycleMessage(event: MessageEvent<{ source?: string, ty
       console.info('[DEBUG-feedback-lifecycle] Stage Web ignored lifecycle event because origin did not match', { actualOrigin: event.origin, serviceUrl: service.serviceUrl })
     return
   }
-  if (event.data?.source !== 'airi-interaction-lifecycle')
+  const message = readInteractionLifecycle(event.data)
+  if (!message)
     return
 
-  if (event.data.type === 'activity') {
+  if (message.type === 'activity') {
     emit('activity')
     return
   }
 
-  if (event.data.type === 'completed')
-    reportCompleted()
+  if (message.type === 'completed')
+    reportCompleted(message.orderContinuationUrl)
 }
 
 watch(activeService, () => webMcpAdapter.activate(undefined), { immediate: true })

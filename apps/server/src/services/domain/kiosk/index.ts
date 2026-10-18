@@ -8,11 +8,12 @@ import { createHash, randomBytes } from 'node:crypto'
 
 import { defaultDeviceSettingsValues, resolveDeviceSettings } from '@proj-airi/kiosk-proactive'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
-import { boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
+import { array, boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
 import { createConflictError, createForbiddenError, createNotFoundError } from '../../../utils/error'
 import { defaultKioskAgentInteractionState } from '../kiosk-agent-interaction'
 import { assertDetectionZone, parseSettingsChange } from './deviceSettings'
+import { greetingPhraseLimits } from './interactionContracts'
 
 import * as schema from '../../../schemas'
 
@@ -212,6 +213,7 @@ export const KioskProfileSnapshotSchema = object({
     thinking: optional(object({ format: literal('vrma'), id: pipe(string(), minLength(1), maxLength(120)), name: pipe(string(), minLength(1), maxLength(255)), sha256: pipe(string(), minLength(64), maxLength(64)) })),
   })),
   greetingPrompt: pipe(string(), minLength(1), maxLength(2_000)),
+  greetingPhrases: optional(pipe(array(pipe(string(), minLength(1), maxLength(greetingPhraseLimits.characters))), minLength(1), maxLength(greetingPhraseLimits.count))),
   interactiveService: object({
     description: pipe(string(), maxLength(500)),
     id: pipe(string(), minLength(1), maxLength(120)),
@@ -665,6 +667,7 @@ export function createKioskService(db: Database): KioskService {
         assistanceReminderPrompt: input.snapshot.assistanceReminderPrompt,
         characterName: input.snapshot.characterName,
         greetingPrompt: input.snapshot.greetingPrompt,
+        greetingPhrases: input.snapshot.greetingPhrases,
         interactiveService: {
           ...source.snapshot.interactiveService,
           description: input.snapshot.interactiveService.description,

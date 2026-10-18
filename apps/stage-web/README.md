@@ -10,6 +10,11 @@
 
 Stage Web can mirror the customer-facing Kiosk completion flow while testing an embedded interactive service. Configure **設定 → 系統 → 完成後問卷** with a fixed HTTP(S) survey URL, then an embedded service's validated `completed` lifecycle event opens a locally generated QR Code invitation. Skipping it or reaching the countdown resets the current interaction chat session and reloads the iframe.
 
+The owned menu emits completion immediately after a paid order is accepted.
+When it supplies an order-continuation URL, the completion screen shows a separate
+order QR and desktop link alongside the configured survey. The static survey URL
+is unchanged; order capabilities are transient UI state and clear on session end.
+
 This is host behavior, not a menu-service feature or WebMCP tool. Stage Web and
 Stage Kiosk share the same Interaction Profile when they use the same browser
 origin.
@@ -48,6 +53,20 @@ configuration:
 - **互動體驗 → 服務場景** can attach one PNG, JPEG, or WebP store background
   to the published Profile. Kiosk uses its built-in counter scene whenever the
   Profile has no uploaded image.
+- **互動體驗 → 開場招呼 → 固定歡迎詞** edits 1–50 spoken openings, one per line.
+  Include the store name in these phrases. The optional-phone explanation is
+  appended by the Kiosk only on its entry screen. Publish and reload registered
+  kiosks to prepare reusable speech; reload after changing the TTS model/voice
+  too. **開場招呼 → 開場招呼方式** selects fixed phrases or VLM
+  generation through the existing VLM policy, subject to device overrides.
+  Both phrase banks and **VLM 開場指引** are retained. Fixed welcomes bypass
+  LLM/VLM generation; VLM welcomes use the current frame and configured vision
+  model before synthesis. The same policy determines whether generated
+  assistance reminders include images. Reload Kiosk for immediate application.
+  Mode and its content now share one section; switching modes retains unsaved
+  text. Owner templates can edit both banks before a Site owns a mode setting.
+  A live count and shared Server/editor limits prevent submitting more than 50
+  phrases or a phrase longer than 500 characters, with an inline explanation.
 
 The admin application does not embed a Kiosk preview. Open the separately
 deployed `/kiosk/` application when an end-to-end customer-flow check is needed.

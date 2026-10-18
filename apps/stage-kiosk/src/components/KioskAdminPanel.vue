@@ -5,6 +5,9 @@ import { Checkbox, FieldRange } from '@proj-airi/ui'
 import { useI18n } from 'vue-i18n'
 
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
+import MenuSimulationPanel from './menuSimulationPanel.vue'
+
+import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
   device?: KioskDevice
@@ -18,6 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const development = import.meta.env.DEV
 const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
 const idleDiagnosticsEnabled = defineModel<boolean>('idleDiagnosticsEnabled', { required: true })
 const presenceDiagnosticsEnabled = defineModel<boolean>('presenceDiagnosticsEnabled', { required: true })
@@ -62,6 +66,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
       </section>
 
       <slot name="device-settings" />
+      <MenuSimulationPanel v-if="development" :bridge="webMcpAdapter" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
 
       <section :class="['admin-section']">

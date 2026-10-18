@@ -88,7 +88,17 @@ const {
 } = customerSession
 let releaseChatPendingWork: (() => void) | undefined
 
-async function handleInteractiveServiceCompleted() {
+const orderContinuationUrl = shallowRef<string>()
+watch(customerSessionState, (state) => {
+  if (state === 'standby')
+    orderContinuationUrl.value = undefined
+})
+
+async function handleInteractiveServiceCompleted(continuationUrl?: string) {
+  if (continuationUrl)
+    orderContinuationUrl.value = continuationUrl
+  if (customerSessionState.value === 'completing')
+    return
   // A direct iframe click may emit `activity` and `completed` back-to-back.
   // Establish the anonymous session here as well so completion cannot outrun
   // the asynchronous activity handler and disappear without a customer screen.
@@ -280,6 +290,7 @@ const cursorPosition = computed(() => ({
       <CustomerSessionCompletion
         v-if="customerSessionState === 'completing'"
         :settings="feedbackInvitationSettings"
+        :order-continuation-url="orderContinuationUrl"
         @finish="finishCustomerSessionCompletion"
       />
       <CustomerSessionIdleConfirmation

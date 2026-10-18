@@ -243,6 +243,8 @@ watch(() => route.query.site, async (siteId) => {
           :busy="saving || loading"
           :capabilities="capabilities"
           :draft="profileDraft"
+          :proactive-vlm-enabled="siteTechnicalSettings?.proactiveVlmEnabled"
+          @update-proactive-vlm="saveProactiveVlmEnabled"
           @save="save($event.draft, $event.publish)"
           @upload-avatar="handleAvatarUpload"
           @upload-background="handleBackgroundUpload"
@@ -253,7 +255,6 @@ watch(() => route.query.site, async (siteId) => {
           v-if="siteTechnicalSettings && capabilities?.canEditTechnicalSettings"
           :busy="saving || loading"
           :settings="siteTechnicalSettings"
-          @update-proactive-vlm="saveProactiveVlmEnabled"
           @update-performance-profile="savePerformanceProfile"
           @update-voice-vad-settings="saveVoiceVadSettings"
         />

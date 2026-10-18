@@ -3,7 +3,7 @@ import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import type { KioskSiteTechnicalSettings } from '../../composables/useKioskManagement'
 
-import { Button, Checkbox } from '@proj-airi/ui'
+import { Button } from '@proj-airi/ui'
 
 import ExperienceEditorSection from './experienceEditorSection.vue'
 
@@ -13,7 +13,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  updateProactiveVlm: [enabled: boolean]
   updatePerformanceProfile: [profile: KioskSiteTechnicalSettings['performanceProfile']]
   updateVoiceVadSettings: [settings: KioskVoiceVadSettings]
 }>()
@@ -33,18 +32,6 @@ function updateVoiceVadSettings(event: Event) {
 
 <template>
   <ExperienceEditorSection initially-open title="Kiosk 現場技術設定" description="調整現場影像與語音偵測行為。AI 模型與服務連線由系統「模型與服務」統一管理。">
-    <div :class="['flex items-center justify-between gap-4 rounded-xl border border-slate-200 p-4 dark:border-slate-700']">
-      <div>
-        <h3 :class="['m-0 text-sm font-semibold']">
-          VLM 情境台詞生成
-        </h3>
-        <p :class="['mb-0 mt-1 text-xs text-slate-500']">
-          MediaPipe 觸發後會主動招呼或提醒。開啟時會將當下畫面送往已綁定的影像模型生成情境台詞；關閉時不傳送影像，改依場域指引由對話模型生成台詞。
-        </p>
-      </div>
-      <Checkbox :model-value="props.settings.proactiveVlmEnabled" :disabled="busy" @update:model-value="emit('updateProactiveVlm', $event)" />
-    </div>
-
     <label :class="['grid gap-2 rounded-xl border border-slate-200 p-4 text-sm font-semibold dark:border-slate-700']">
       Kiosk 效能設定檔
       <select :value="props.settings.performanceProfile" :disabled="busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900']" @change="emit('updatePerformanceProfile', ($event.target as HTMLSelectElement).value as KioskSiteTechnicalSettings['performanceProfile'])">
