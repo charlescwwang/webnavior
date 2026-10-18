@@ -13,9 +13,11 @@
   "dependencies": {
     "@moeru/std": "catalog:",
     "@proj-airi/stage-shared": "workspace:^",
+    "qrcode": "catalog:",
     "vue": "catalog:"
   },
   "devDependencies": {
+    "@types/qrcode": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:vitest",

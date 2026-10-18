@@ -8,6 +8,12 @@ Shared core for stage
 
 Use it in an AIRI Interaction Host after an embedded interactive service emits `completed`. Do not use it inside a domain service, as a WebMCP tool, or to encode customer data into the survey URL.
 
+`components/scenarios/customer-session/CustomerSessionCompletion.vue` combines
+the thank-you screen with that configured invitation. An optional
+`orderContinuationUrl` prop adds a separate order QR and desktop link, so carrying
+away an order does not delay the reward. Pass only a host-validated capability
+and clear it when the session ends; never append it to the static survey URL.
+
 ## Same-origin Interaction Profile
 
 `composables/use-interaction-profile` owns the first non-secret configuration profile for AIRI Interaction Hosts. It keeps approved embedded services, Agent instructions, and completion-survey settings in one `localStorage` record shared by Stage Web and Stage Kiosk when they are served from the same browser origin. It deliberately starts from a new profile and does not migrate legacy host-specific storage keys. It is not cross-device configuration or secret storage.

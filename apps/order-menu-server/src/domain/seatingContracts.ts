@@ -19,3 +19,6 @@ export interface HoldRequest {
   tableIds: string[]
   splitApproved: boolean
 }
+
+/** Reservation and post-order scan binding are separate supported seating policies. */
+export type TableAssignment = 'reservation' | 'after-order'

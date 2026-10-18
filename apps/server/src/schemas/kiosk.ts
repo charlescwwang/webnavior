@@ -88,6 +88,8 @@ export interface KioskProfileSnapshot {
   /** Character identity and behavioural context imported from Character Card v3. */
   characterCard?: KioskCharacterCard
   greetingPrompt: string
+  /** Fixed spoken openings; omitted selects the host's localized welcome bank. */
+  greetingPhrases?: string[]
   interactiveService: {
     description: string
     id: string

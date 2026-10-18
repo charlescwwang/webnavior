@@ -22,6 +22,59 @@ chat:
     processing-step: Processing your request
     step-complete: Service step completed
     failed: This service step could not be completed right now
+kiosk:
+  wait:
+    recognizing: Understanding your request…
+    confirming: Checking your request…
+    spoken: Let me check that for you. One moment, please.
+  decision-trace:
+    copy: Copy full trace
+    copying: Copying…
+    copied: Copied
+    failed: Could not copy. Please select the text below and copy it manually.
+  menu-test:
+    title: Ordering experience scenarios
+    description: Development test page only. Changes page behavior without asserting live inventory. Reload to restore. Use before checkout.
+    item: Test dish
+    available: Selectable
+    sold-out: Sold out
+    unknown: Unknown
+    selection-failure: Reject selection
+    refresh: Refresh current state
+    failed: Could not apply the scenario. Return to ordering or reload the test page.
+  customer-entry:
+    title: Enter your phone or start ordering
+    description: Your phone is optional and used for this transaction record. You can skip without joining a membership.
+    phone: Phone number
+    confirm: Confirm phone and start ordering
+    skip: Skip phone and start ordering
+    voice-hint: You can also tell the assistant “skip”. Entering a phone does not sign in to the external ordering site.
+    test-phone-hint: 'For testing, you can enter: 0912345678'
+    query-reminder: Your phone is optional. To start ordering, enter a phone number or select Skip. For testing, you can enter 0912345678.
+    complete-first: Please enter a phone number or select Skip first. Then I can recommend dishes or help you order. For testing, you can enter 0912345678.
+    failed: We could not confirm completion. Please choose again or ask the assistant to skip.
+    invalid: Enter a 10-digit phone number starting with 09.
+  welcome:
+    preparing: Preparing your welcome…
+    first: Welcome! I can introduce our menu whenever you need.
+    second: Hello and welcome! I can help you choose your meal.
+    third: Welcome! Feel free to ask me about the menu.
+    phone-hint: Your phone number is optional. You can also skip this step and start ordering.
+    editor-label: Fixed welcome phrases (one per line)
+    editor-hint: Add 1–{limit} openings, up to {characters} characters each, including your store name if needed. They play in order. The optional-phone explanation is appended on the entry screen. Reload the Kiosk after publishing or changing the speech model or voice to prepare fresh audio.
+    count: '{count} phrases, up to {limit} allowed.'
+    too-many: 'There are {count} fixed welcome phrases. Remove some to meet the limit of {limit} before saving.'
+    too-long: 'Each fixed welcome phrase allows up to {limit} characters. Shorten it before saving.'
+    mode-label: Welcome mode
+    section-title: Welcome
+    section-description: Choose a welcome mode and edit its phrases or VLM guidance here. Switching modes preserves both configurations.
+    content-description: Edit fixed welcome phrases and VLM guidance. An authorized administrator selects the mode for each site.
+    mode-save-hint: Mode changes save immediately. Phrase and guidance changes must be saved and published. Reload Kiosk to apply the current settings.
+    mode-fixed: Fixed phrases (prepared speech)
+    mode-vlm: VLM generation (live image)
+    vlm-description: Fixed mode prepares welcome audio in advance. VLM mode sends the current image to the configured vision model, generates an opening from the character and welcome guidance, then synthesizes speech. Both configurations are retained. This setting also controls whether reminders use images; reminders in fixed mode still use the chat model. Device overrides take precedence over the site default. Reload the Kiosk to fetch the current settings immediately.
+    vlm-prompt-label: VLM welcome guidance
+    vlm-prompt-hint: Generates an opening from the current image and this guidance. Save and publish changes.
 customer-session:
   completion:
     title: Order submitted
@@ -32,6 +85,12 @@ customer-session:
     qr-alt: Survey QR code
     qr-loading: Preparing the survey QR code…
     qr-error: The survey QR code could not be generated right now.
+    order-title: Take your order to your phone
+    order-description: Scan this order code first, then scan your table code and confirm the delivery table.
+    order-qr-alt: Order continuation QR code
+    order-qr-loading: Preparing the order code…
+    order-qr-error: The order code could not be generated. Please use the link below.
+    order-link: Open the order continuation page on this computer
   idle-confirmation:
     title: Would you like to continue?
     description: Your current conversation and selections are still here. Choose continue to keep going, or clear the current content and start over.
@@ -139,3 +198,4 @@ kiosk-agent:
   duplicate-tool-call: The assistant requested a duplicate operation. It was stopped to avoid executing it twice. Please check the screen.
   session-error: The conversation could not be started. Please check the kiosk connection.
   no-reply: The assistant did not return a usable reply. Please try again.
+  decision-uncertain: Your meaning could not be confirmed. Please clarify or use the screen.

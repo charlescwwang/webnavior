@@ -11,6 +11,12 @@ export interface CatalogMentionEvidence {
 
 /** Safe application-owned interaction facts shared by Jev and Agent requests. */
 export interface KioskDecisionState {
+  /** Host response guard for a semantically admitted food query, never order authority. */
+  requireMenuRead?: boolean
+  /** This Agent task may read menu information, never change the order or pending question. */
+  readOnly?: boolean
+  /** A browser-issued, short-lived proposal; it can only create a question. */
+  clarificationOffer?: { id: string, label: string }
   priceEvidence?: PriceEvidence
   catalogEvidence?: CatalogMentionEvidence
   /** Bounded catalog evidence; possible matches are not verified customer targets. */
@@ -40,7 +46,7 @@ export interface KioskDecisionState {
 }
 
 /** Safe handoff facts; completed reads do not authorize any later mutation. */
-export type KioskConversationDecisionState = Pick<KioskDecisionState, 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence'>
+export type KioskConversationDecisionState = Pick<KioskDecisionState, 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence'>
 
 /** A finite semantic outcome. Food slots are chosen from application-issued references. */
 export type KioskInteractionDecision = {
@@ -56,15 +62,17 @@ export type KioskInteractionDecision = {
   /** Questions actually evaluated; one HTTP exchange can contain several forwards. */
   modelQuestions?: number
   /** Mechanical refusal cause; never a second interpretation of the utterance. */
-  reason?: 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
+  reason?: 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
 } & (
   | { kind: 'COMPLETE', confidence?: number }
   | { kind: 'CONTINUE_INCOMPLETE' }
   | { kind: 'CLARIFICATION', confidence?: number }
+  | { kind: 'NEEDS_CLARIFICATION', confidence?: number }
   | { kind: 'FAST_ACTION', actionId: string, confidence?: number, searchInterpretation?: 'product' | 'filter', ingredientFilters?: { excludeIngredients: string[], includeIngredients: string[], dietary?: 'vegetarian' } }
   | { kind: 'INCOMPLETE', confidence?: number }
   | { kind: 'IGNORE', confidence?: number }
   | { kind: 'GREET', confidence?: number }
+  | { kind: 'CUSTOMER_ENTRY_REQUIRED', confidence?: number }
   | { kind: 'FOLLOW_UP_ACTIVE', confidence?: number }
   | { kind: 'NEEDS_ASSISTANT', confidence?: number }
   | { kind: 'UNAVAILABLE' }
@@ -95,7 +103,7 @@ export interface InteractionState {
 }
 
 /** Browser-owned screen identity, not inferred from selected items or model prose. */
-export type KioskScreen = 'menu' | 'cart_review' | 'item_configuration' | 'checkout'
+export type KioskScreen = 'customer_entry' | 'menu' | 'cart_review' | 'item_configuration' | 'request_confirmation' | 'checkout'
 
 /** Presented application-owned question; choices describe effects, never tool arguments. */
 export interface PresentedQuestion {

@@ -24,7 +24,8 @@
     "./electron-renderer": "./src/electron-renderer.d.ts",
     "./composables": "./src/composables/index.ts",
     "./webgpu": "./src/webgpu/index.ts",
-    "./webmcp": "./src/webmcp.ts"
+    "./webmcp": "./src/webmcp.ts",
+    "./interaction-lifecycle": "./src/interactionLifecycle.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

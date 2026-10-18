@@ -2,6 +2,17 @@
 
 Shared runtime-neutral contracts and Stage helpers. Import the owning subpath
 instead of a renderer or Electron entrypoint when consuming a neutral contract.
+Resolve these subpaths through the package's `exports`. A Vite prefix alias to
+`src/` bypasses that map and breaks subpaths whose public and file names differ.
+
+## Interactive-service lifecycle
+
+`@proj-airi/stage-shared/interaction-lifecycle` owns the iframe completion envelope
+and `readInteractionLifecycle` validation shared by the owned menu, Stage Web and
+Stage Kiosk. Hosts must check the active iframe window and approved origin before
+parsing it. `orderResult` contains archivable non-personal metadata; the optional
+HTTP(S) `orderContinuationUrl` is a bearer capability for the completion UI only.
+Do not put that URL in chat, recording metadata, or the configured survey URL.
 
 ## WebMCP compatibility contract
 

@@ -5,7 +5,7 @@ import type { HoldRequest, SeatingSnapshot, TableHold } from './seatingContracts
 export type FulfillmentMode = 'dine-in' | 'takeout'
 export type SubmissionEnvironment = 'test' | 'live'
 export type SubmissionStatus = 'accepted' | 'rejected' | 'uncertain'
-export type PaymentMethod = 'card' | 'mobile'
+export type PaymentMethod = 'card' | 'mobile' | 'linepay' | 'jkopay'
 export type PaymentStatus = 'authorized' | 'pending' | 'rejected' | 'uncertain'
 
 export interface PaymentIntent {

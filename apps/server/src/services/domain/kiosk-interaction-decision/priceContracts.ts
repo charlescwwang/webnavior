@@ -15,7 +15,7 @@ export interface PriceChoice {
   conditions?: PriceConditions
 }
 
-/** Literal money evidence does not establish intent, polarity or order authority. */
+/** Literal currency/comparison evidence does not establish intent, polarity or order authority. */
 export interface PriceEvidence {
   amounts: Array<{ text: string, amount: number }>
   choices: PriceChoice[]

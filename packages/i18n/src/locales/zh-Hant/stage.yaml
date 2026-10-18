@@ -22,6 +22,59 @@ chat:
     processing-step: 正在處理您的需求
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
+kiosk:
+  wait:
+    recognizing: 正在辨識您的需求…
+    confirming: 正在確認您的需求…
+    spoken: 我幫您確認一下，請稍候。
+  decision-trace:
+    copy: 複製完整 trace
+    copying: 複製中…
+    copied: 已複製
+    failed: 無法複製，請手動選取下方內容。
+  menu-test:
+    title: 點餐體驗情境測試
+    description: 僅限開發測試頁。切換指定餐點的畫面狀態，不代表即時庫存；重新載入還原。請在結帳前操作。
+    item: 測試餐點
+    available: 可點
+    sold-out: 售完
+    unknown: 狀態不明
+    selection-failure: 選取時失敗
+    refresh: 更新目前狀態
+    failed: 無法套用情境。請確認仍在點餐階段，或重新載入測試頁。
+  customer-entry:
+    title: 留下手機，或直接開始點餐
+    description: 手機號碼可選填，用於本次交易記錄。也可以略過，不需要加入會員。
+    phone: 手機號碼
+    confirm: 確認手機，開始點餐
+    skip: 略過電話，直接點餐
+    voice-hint: 也可以告訴助手「略過」。填寫手機不會登入第三方點餐會員。
+    test-phone-hint: 測試時可輸入：0912345678
+    query-reminder: 手機可以選填；要開始點餐，請填寫手機或按略過。測試時可輸入 0912345678。
+    complete-first: 請先填寫手機號碼，或選擇「略過」；完成後就能為您推薦或點餐。測試時可輸入 0912345678。
+    failed: 無法確認是否已完成，請再選擇一次或使用語音略過。
+    invalid: 請輸入 09 開頭的 10 碼手機號碼。
+  welcome:
+    preparing: 正在準備歡迎…
+    first: 歡迎光臨！需要的話，我可以幫您介紹餐點。
+    second: 您好，歡迎光臨！我可以協助您挑選餐點。
+    third: 歡迎光臨！想了解餐點時，隨時可以問我。
+    phone-hint: 手機號碼可以選填，也可以直接略過開始點餐。
+    editor-label: 固定歡迎詞（每行一組）
+    editor-hint: 設定 1 至 {limit} 組，可寫入店名，每組最多 {characters} 字，依序輪播。電話頁會自動加上選填或略過說明，這裡只填開場。發布後重新載入 Kiosk，會預先準備語音；更換語音模型或聲線後也請重新載入。
+    count: 目前 {count} 組，最多 {limit} 組。
+    too-many: 固定歡迎詞目前有 {count} 組，最多可儲存 {limit} 組，請刪減後再儲存。
+    too-long: 每組固定歡迎詞最多 {limit} 字，請縮短後再儲存。
+    mode-label: 開場招呼方式
+    section-title: 開場招呼
+    section-description: 在這裡選擇開場方式，並編輯對應的歡迎詞或 VLM 指引；切換時會保留另一種模式的內容。
+    content-description: 編輯固定歡迎詞與 VLM 開場指引。店別的開場方式由有權限的管理者設定。
+    mode-save-hint: 開場方式選擇後會立即儲存；台詞及指引修改需儲存並發布。重新載入 Kiosk 後套用目前設定。
+    mode-fixed: 固定歡迎詞（預先準備語音）
+    mode-vlm: VLM 情境生成（使用現場影像）
+    vlm-description: 固定模式會預先準備歡迎詞語音；VLM 模式會傳送現場影像，依角色與開場指引生成台詞，再合成語音，需要已綁定影像模型。兩種模式的內容都會保留。此選項也決定停留提醒是否使用影像；固定模式下，停留提醒仍由對話模型生成。個別設備設定可覆寫店別預設；重新載入 Kiosk 可立即取得目前設定。
+    vlm-prompt-label: VLM 開場指引
+    vlm-prompt-hint: 依現場影像及此指引生成開場台詞。修改後需儲存並發布。
 customer-session:
   completion:
     title: 訂單已送出
@@ -32,6 +85,12 @@ customer-session:
     qr-alt: 問卷 QR Code
     qr-loading: 正在準備問卷 QR Code…
     qr-error: 問卷 QR Code 暫時無法產生。
+    order-title: 把訂單帶到手機
+    order-description: 先掃訂單接續碼，入座後再掃桌碼並確認送餐桌號。
+    order-qr-alt: 訂單接續 QR Code
+    order-qr-loading: 正在準備訂單接續碼…
+    order-qr-error: 訂單接續碼暫時無法產生，請使用下方連結。
+    order-link: 在電腦開啟訂單接續頁
   idle-confirmation:
     title: 要繼續目前操作嗎？
     description: 目前的對話與選擇都會保留。您可以繼續操作，或清除內容後重新開始。
@@ -139,3 +198,4 @@ kiosk-agent:
   duplicate-tool-call: 助手重複要求同一操作，已停止以避免重複執行，請確認畫面。
   session-error: 無法建立交談，請確認 Kiosk 連線狀態。
   no-reply: 助手沒有回傳可用的回答，請再試一次。
+  decision-uncertain: 暫時無法確認您的意思，請再說清楚一點或使用螢幕操作。
