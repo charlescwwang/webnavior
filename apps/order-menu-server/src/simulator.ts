@@ -1,4 +1,5 @@
 import type { CatalogSnapshot, PaymentIntent, PaymentStatus, PosGateway, PosSubmission, SubmissionReceipt } from './domain/contracts'
+import type { TableAssignment } from './domain/seatingContracts'
 
 import { createHash, randomUUID } from 'node:crypto'
 
@@ -134,10 +135,10 @@ function receiptFor(mode: SimulatorMode): SubmissionReceipt {
 }
 
 /** A loopback-only controllable upstream that emulates the future POS HTTP API. */
-export function createPosSimulator(initialMode: SimulatorMode = 'accepted', initialPaymentMode: SimulatorPaymentMode = 'authorized') {
+export function createPosSimulator(initialMode: SimulatorMode = 'accepted', initialPaymentMode: SimulatorPaymentMode = 'authorized', tableAssignment: TableAssignment = 'reservation') {
   let mode = initialMode
   let paymentMode = initialPaymentMode
-  const gateway = createSimulatorGateway(() => mode, () => paymentMode)
+  const gateway = createSimulatorGateway(() => mode, () => paymentMode, Date.now, tableAssignment)
   const app = new Hono()
 
   app.get('/v1/catalog', c => c.json(simulatorCatalog))
@@ -182,7 +183,7 @@ export function createPosSimulator(initialMode: SimulatorMode = 'accepted', init
   })
   app.post('/v1/payments', async (c) => {
     const body = await c.req.json().catch(() => null) as { amount?: unknown, method?: unknown, tableHoldId?: unknown } | null
-    if ((body?.method !== 'card' && body?.method !== 'mobile') || typeof body.amount !== 'number' || body.amount < 0)
+    if ((!body || (body.method !== 'card' && body.method !== 'mobile' && body.method !== 'linepay' && body.method !== 'jkopay')) || typeof body.amount !== 'number' || body.amount < 0)
       return c.json({ error: 'amount and method are required' }, 400)
     if (body.tableHoldId !== undefined && typeof body.tableHoldId !== 'string')
       return c.json({ error: 'Invalid hold.' }, 400)
@@ -226,13 +227,14 @@ export function createInMemorySimulatorGateway(
   initialMode: SimulatorMode = 'accepted',
   initialPaymentMode: SimulatorPaymentMode = 'authorized',
   now: () => number = () => Date.now(),
+  tableAssignment: TableAssignment = 'reservation',
 ): PosGateway {
-  return createSimulatorGateway(() => initialMode, () => initialPaymentMode, now)
+  return createSimulatorGateway(() => initialMode, () => initialPaymentMode, now, tableAssignment)
 }
 
 // Both HTTP and in-process simulation use the same inventory/payment state
 // machine so tests cannot pass against a seating model absent in the live API.
-function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => SimulatorPaymentMode, now: () => number = () => Date.now()): PosGateway & { depart: (tableId: string, expectedRevision: number) => void } {
+function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => SimulatorPaymentMode, now: () => number = () => Date.now(), tableAssignment: TableAssignment = 'reservation'): PosGateway & { depart: (tableId: string, expectedRevision: number) => void } {
   const receiptsByKey = new Map<string, SubmissionReceipt>()
   const payments = new Map<string, PaymentIntent>()
   const seating = createSeating(now)
@@ -260,7 +262,7 @@ function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => Si
       const holdId = submission.cart?.tableHoldId
       if (submission.cart?.fulfillmentMode === 'takeout' && (holdId || payments.get(submission.cart.paymentId)?.tableHoldId))
         return { customerMessage: '自取訂單不可占用內用桌位。', environment: 'test', retryable: false, status: 'rejected' }
-      if (submission.cart?.fulfillmentMode === 'dine-in') {
+      if (submission.cart?.fulfillmentMode === 'dine-in' && tableAssignment === 'reservation') {
         const payment = payments.get(submission.cart.paymentId)
         if (!holdId || payment?.tableHoldId !== holdId || payment.status !== 'authorized' || seating.get(holdId).status !== 'locked')
           return { customerMessage: '內用桌位與付款不符，請洽門市人員。', environment: 'test', retryable: false, status: 'rejected' }

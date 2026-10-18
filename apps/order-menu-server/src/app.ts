@@ -1,10 +1,12 @@
 import type { PaymentMethod, PosGateway } from './domain/contracts'
+import type { TableAssignment } from './domain/seatingContracts'
 
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { array, boolean, integer, maxValue, minLength, minValue, number, object, optional, picklist, pipe, record, regex, safeParse, string } from 'valibot'
 
 import { createBridge } from './domain/bridge'
+import { createOrderContinuations } from './domain/orderContinuation'
 
 const orderSubmissionSchema = object({
   cart: object({
@@ -23,15 +25,17 @@ const orderSubmissionSchema = object({
     })), minLength(1)),
     total: pipe(number(), minValue(0)),
   }),
+  customerPhone: optional(pipe(string(), regex(/^09\d{8}$/))),
   idempotencyKey: pipe(string(), regex(/^[\w-]+$/), minLength(16)),
 })
 
 /**
  * Browser-facing vendor-neutral catalog, seating, payment and order contracts.
  */
-export function createPosBridgeApp(options: { allowedOrigin: string, gateway: PosGateway }) {
+export function createPosBridgeApp(options: { allowedOrigin: string, gateway: PosGateway, tableAssignment?: TableAssignment }) {
   const app = new Hono()
-  const bridge = createBridge(options.gateway)
+  const bridge = createBridge(options.gateway, options.tableAssignment)
+  const continuations = createOrderContinuations()
 
   app.use('/v1/*', cors({ origin: options.allowedOrigin }))
   app.get('/health', c => c.json({ status: 'ok' }))
@@ -67,7 +71,7 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
   })
   app.post('/v1/payments', async (c) => {
     const body = await c.req.json().catch(() => null) as { amount?: unknown, method?: unknown, tableHoldId?: unknown } | null
-    if ((body?.method !== 'card' && body?.method !== 'mobile') || typeof body.amount !== 'number' || body.amount < 0)
+    if ((!body || (body.method !== 'card' && body.method !== 'mobile' && body.method !== 'linepay' && body.method !== 'jkopay')) || typeof body.amount !== 'number' || body.amount < 0)
       return c.json({ error: 'Invalid payment request.' }, 400)
     if (body.tableHoldId !== undefined && typeof body.tableHoldId !== 'string')
       return c.json({ error: 'Invalid table hold.' }, 400)
@@ -89,8 +93,37 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
     if (!result.success)
       return c.json({ error: 'Invalid order submission.' }, 400)
 
-    return c.json({ order: await bridge.submit(result.output) }, 201)
+    const order = await bridge.submit(result.output)
+    const continuation = continuations.issue(order, result.output.customerPhone)
+    return c.json({ order, ...(continuation ? { continuation } : {}) }, 201)
   })
 
+  app.get('/v1/continuations/:token', (c) => {
+    c.header('Cache-Control', 'no-store')
+    const snapshot = continuations.read(c.req.param('token'))
+    return snapshot ? c.json(snapshot) : c.json({ error: '接續連結已失效，請返回機台或洽門市人員。' }, 404)
+  })
+  app.post('/v1/continuations/:token/table', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const body = await c.req.json().catch(() => null)
+    if (!body || typeof body.tableCode !== 'string')
+      return c.json({ error: '請先掃描桌上的 QR Code。' }, 400)
+    const snapshot = continuations.read(c.req.param('token'))
+    if (!snapshot)
+      return c.json({ error: '接續連結已失效。' }, 404)
+    if (snapshot.fulfillmentMode !== 'dine-in')
+      return c.json({ error: '此測試訂單已改為自取，無法綁定桌號。' }, 409)
+    try {
+      return c.json(continuations.bind(c.req.param('token'), body.tableCode))
+    }
+    catch { return c.json({ error: '無法辨識此門市桌碼，請重新掃描。' }, 400) }
+  })
+  app.post('/v1/continuations/:token/takeout', async (c) => {
+    const body = await c.req.json().catch(() => null)
+    if (body?.confirmed !== true)
+      return c.json({ error: '請先確認是否改為自取。' }, 400)
+    const snapshot = continuations.changeToTakeout(c.req.param('token'))
+    return snapshot ? c.json(snapshot) : c.json({ error: '接續連結已失效。' }, 404)
+  })
   return app
 }

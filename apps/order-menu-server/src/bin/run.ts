@@ -14,9 +14,10 @@ function portFromEnvironment(name: string, fallback: number) {
 const host = '127.0.0.1'
 const bridgePort = portFromEnvironment('ORDER_MENU_SERVER_PORT', 5170)
 const simulatorPort = portFromEnvironment('ORDER_MENU_POS_SIMULATOR_PORT', 5171)
-const simulator = createPosSimulator()
+const simulator = createPosSimulator('accepted', 'authorized', 'after-order')
 const simulatorServer = serve({ fetch: simulator.app.fetch, hostname: host, port: simulatorPort })
 const bridge = createPosBridgeApp({
+  tableAssignment: 'after-order',
   allowedOrigin: process.env.ORDER_MENU_ALLOWED_ORIGIN ?? 'http://localhost:5166',
   gateway: createHttpPosGateway({
     baseUrl: process.env.ORDER_MENU_POS_UPSTREAM_URL ?? `http://${host}:${simulatorPort}`,

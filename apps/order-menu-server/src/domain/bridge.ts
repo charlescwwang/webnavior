@@ -1,4 +1,5 @@
 import type { CatalogSnapshot, PaymentMethod, PosGateway, PosSubmission, SubmittedOrder } from './contracts'
+import type { TableAssignment } from './seatingContracts'
 
 import { randomUUID } from 'node:crypto'
 
@@ -7,7 +8,7 @@ import { randomUUID } from 'node:crypto'
  * own receipt format. An uncertain outcome stays stable because submitting the
  * same customer order again could create a duplicate order in the real POS.
  */
-export function createBridge(gateway: PosGateway) {
+export function createBridge(gateway: PosGateway, tableAssignment: TableAssignment = 'reservation') {
   const submittedByKey = new Map<string, SubmittedOrder>()
   const pendingByKey = new Map<string, Promise<SubmittedOrder>>()
 
@@ -56,7 +57,7 @@ export function createBridge(gateway: PosGateway) {
           }
         : payment?.status !== 'authorized' || payment.amount !== submission.cart.total
           ? paymentReceipt(payment?.status)
-          : (submission.cart.fulfillmentMode === 'dine-in' && (!submission.cart.tableHoldId || submission.cart.tableHoldId !== payment.tableHoldId)) || (submission.cart.fulfillmentMode === 'takeout' && (submission.cart.tableHoldId || payment.tableHoldId))
+          : (submission.cart.fulfillmentMode === 'dine-in' && tableAssignment === 'reservation' && (!submission.cart.tableHoldId || submission.cart.tableHoldId !== payment.tableHoldId)) || (submission.cart.fulfillmentMode === 'takeout' && (submission.cart.tableHoldId || payment.tableHoldId))
               ? { customerMessage: '內用訂單必須綁定已保留的桌位與同一筆付款。', environment: 'test' as const, retryable: false, status: 'rejected' as const }
               : validateCartAgainstCatalog(submission, catalog) ?? await gateway.submit(submission)
     const order: SubmittedOrder = {

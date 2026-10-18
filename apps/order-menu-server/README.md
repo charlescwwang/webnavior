@@ -50,10 +50,11 @@ Replace those temporary records with the POS source once its menu API is ready.
 
 - `GET /v1/catalog` returns the normalized catalog snapshot.
 - `POST /v1/payments` creates a supplier-neutral payment attempt for an exact
-  amount and method (`card` or `mobile`). `GET /v1/payments/:paymentId` returns
+  amount and method (`card`, `mobile`, `linepay` or `jkopay`). `GET /v1/payments/:paymentId` returns
   its stable terminal result.
 - `POST /v1/orders` accepts `{ idempotencyKey, cart }` and returns a submitted
-  order with a receipt. The cart must include an authorized `paymentId` for the
+  order with a receipt. The optional `customerPhone` is format-checked and
+  exposed only as a masked label on the test continuation. The cart must include an authorized `paymentId` for the
   same total; reusing a key returns the original result.
 - `POST /__simulator/mode` changes the simulator's next unseen order to
   `accepted`, `rejected`, or `uncertain`. It is development-only and is bound
@@ -84,7 +85,35 @@ order, the Bridge compares that revision and each order-line price against the
 latest catalog. A stale or changed item returns a reviewable rejection instead
 of silently changing the customer's order.
 
-## Simulated current seating
+## Test order continuation
+
+The development runner uses `tableAssignment: 'after-order'` in both Bridge and
+simulator. A paid dine-in order may be accepted before a physical table is known.
+Only accepted **test** dine-in receipts receive `{ continuation: { token,
+expiresAt } }` alongside `order`; uncertain/rejected/live receipts receive none.
+The same accepted receipt reuses its capability without extending the expiry.
+
+- `GET /v1/continuations/:token` reads the customer-facing order snapshot.
+  Its required `fulfillmentMode` is the current test fulfillment choice.
+- `POST /v1/continuations/:token/table` accepts a scanned `tableCode`. The current
+  fixture recognizes only `demo-a08`, binds A08 to `demo-destination-a08`, and
+  rejects arbitrary labels. Repeating the same binding is idempotent.
+- `POST /v1/continuations/:token/takeout` requires `{ confirmed: true }` and
+  atomically sets the test continuation to pickup and removes its table. It
+  works before or after binding, preserves the order ID/items/total/phone/expiry,
+  and is idempotent. Further table-binding requests return 409. Missing consent
+  returns 400; expired or unknown capabilities return 404.
+
+Capabilities expire after 30 minutes, are stored in memory only, and return 404
+on expiry or process restart. Expired receipt replays do not issue a new token.
+These routes simulate order-to-table association; they do not authenticate a
+member, issue invoices or dispatch robots. The browser confirmation precedes
+the binding write; merely reading a table URL never binds an order. Pickup
+changes update this test record only. The accepted POS receipt and payment are
+immutable, and these routes never resubmit an order, charge again, or modify an
+external POS. Receipt replay cannot revert pickup or restore its cleared table.
+
+## Reservation-policy simulator
 
 The simulator owns five tables (`T1`–`T5`), each with four seats. It atomically
 claims free tables for the current party only; no future bookings are supported.
