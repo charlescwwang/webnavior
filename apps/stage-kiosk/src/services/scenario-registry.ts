@@ -1,5 +1,8 @@
+import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
+
 import type { KioskInteractiveService } from '../composables/useKioskInteractiveServices'
 
+import { readInteractionLifecycle } from '@proj-airi/stage-shared/interaction-lifecycle'
 import { computed, nextTick, readonly, shallowRef } from 'vue'
 
 /** A customer-facing web application explicitly approved for one kiosk deployment. */
@@ -16,39 +19,9 @@ export interface RegisteredScenario {
 
 export type InteractiveServiceEvent = 'activity' | 'completed'
 
-/** Non-personal order outcome emitted by the approved demonstration ordering service. */
-export interface InteractiveServiceOrderResult {
-  environment: 'test' | 'live'
-  fulfillmentMode: 'dine-in' | 'takeout'
-  id: string
-  itemCount: number
-  posOrderId?: string
-  status: 'accepted'
-  total: number
-}
-
 /** Injectable browser event boundary used to test iframe lifecycle isolation. */
 export interface CreateScenarioRegistryOptions {
   messageTarget?: Pick<EventTarget, 'addEventListener'>
-}
-
-interface InteractiveServiceEventMessage {
-  orderResult?: InteractiveServiceOrderResult
-  source: 'airi-interaction-lifecycle'
-  type: InteractiveServiceEvent
-}
-
-function hasValidOrderResult(value: unknown): value is InteractiveServiceOrderResult {
-  if (!value || typeof value !== 'object' || Array.isArray(value))
-    return false
-  const result = value as Record<string, unknown>
-  return (result.environment === 'test' || result.environment === 'live')
-    && typeof result.id === 'string'
-    && typeof result.itemCount === 'number'
-    && result.status === 'accepted'
-    && typeof result.total === 'number'
-    && (result.posOrderId === undefined || typeof result.posOrderId === 'string')
-    && (result.fulfillmentMode === 'dine-in' || result.fulfillmentMode === 'takeout')
 }
 
 function isRegisteredScenario(scenario: RegisteredScenario): boolean {
@@ -72,7 +45,7 @@ function isRegisteredScenario(scenario: RegisteredScenario): boolean {
  */
 export function createScenarioRegistry(options: CreateScenarioRegistryOptions = {}) {
   const registeredScenarios = shallowRef<readonly RegisteredScenario[]>([])
-  const eventListeners = new Set<(event: InteractiveServiceEvent, orderResult?: InteractiveServiceOrderResult) => void>()
+  const eventListeners = new Set<(message: InteractionLifecycleMessage) => void>()
   const activeScenarioId = shallowRef<string>()
   const revision = shallowRef(0)
   const iframeRevision = shallowRef(0)
@@ -82,15 +55,14 @@ export function createScenarioRegistry(options: CreateScenarioRegistryOptions = 
 
   const messageTarget = options.messageTarget ?? (typeof window === 'undefined' ? new EventTarget() : window)
   messageTarget.addEventListener('message', (event) => {
-    const message = event as MessageEvent<InteractiveServiceEventMessage>
+    const message = event as MessageEvent<unknown>
     const scenario = activeScenario.value
     if (!scenario || message.source !== activeFrameWindow || message.origin !== new URL(scenario.serviceUrl).origin)
       return
-    if (message.data?.source !== 'airi-interaction-lifecycle' || (message.data.type !== 'activity' && message.data.type !== 'completed'))
+    const envelope = readInteractionLifecycle(message.data)
+    if (!envelope)
       return
-    if (message.data.orderResult !== undefined && !hasValidOrderResult(message.data.orderResult))
-      return
-    eventListeners.forEach(listener => listener(message.data.type, message.data.orderResult))
+    eventListeners.forEach(listener => listener(envelope))
   })
 
   function setServices(services: readonly KioskInteractiveService[]) {
@@ -135,10 +107,10 @@ export function createScenarioRegistry(options: CreateScenarioRegistryOptions = 
     activeFrameWindow = frameSource
   }
 
-  function on(event: InteractiveServiceEvent, listener: (orderResult?: InteractiveServiceOrderResult) => void) {
-    const wrappedListener = (received: InteractiveServiceEvent, orderResult?: InteractiveServiceOrderResult) => {
-      if (received === event)
-        listener(orderResult)
+  function on(event: InteractiveServiceEvent, listener: (message: InteractionLifecycleMessage) => void) {
+    const wrappedListener = (message: InteractionLifecycleMessage) => {
+      if (message.type === event)
+        listener(message)
     }
     eventListeners.add(wrappedListener)
     return () => eventListeners.delete(wrappedListener)

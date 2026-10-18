@@ -1,9 +1,9 @@
+import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { Tool } from '@xsai/shared-chat'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
-import type { InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
+import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
-import type { InteractiveServiceOrderResult } from '../services/scenario-registry'
 
 import { executeTool } from '@xsai/shared-chat'
 import { rawTool } from '@xsai/tool'
@@ -245,7 +245,10 @@ export function useKioskInteractionRecording() {
         }
         if (signal.aborted)
           return unfinished('timeout')
-        response = await streamKioskConversationMessage({ signal, toolResults, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        // Inquiry authority survives its read receipts. Mutation tasks keep the
+        // existing first-request-only snapshot: their tools may change checkout
+        // phase, so replaying that old snapshot would reintroduce stale state.
+        response = await streamKioskConversationMessage({ signal, toolResults, ...(callbacks.decisionState?.readOnly ? { decisionState: callbacks.decisionState } : {}), tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
           if (event.type === 'turn-failed')
             transportReason = event.reason
           if (event.type === 'turn-started')
@@ -290,13 +293,14 @@ export function useKioskInteractionRecording() {
     frame: string | undefined,
     signal?: AbortSignal,
     invitationAllowed = false,
+    phase?: GreetingPhase,
   ) {
     const sessionId = await start(serviceId)
     if (!sessionId)
       return undefined
 
     try {
-      return await sendKioskAssistantAction({ frame, kind, signal, invitationAllowed, visitorSessionId: sessionId })
+      return await sendKioskAssistantAction({ frame, kind, signal, invitationAllowed, ...(phase ? { phase } : {}), visitorSessionId: sessionId })
     }
     catch {
       if (signal?.aborted)

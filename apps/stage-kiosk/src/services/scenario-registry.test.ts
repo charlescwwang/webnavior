@@ -67,12 +67,16 @@ describe('createScenarioRegistry', () => {
     }))
 
     expect(completed).toHaveBeenCalledWith({
-      id: 'demo-1',
-      fulfillmentMode: 'takeout',
-      itemCount: 2,
-      environment: 'test',
-      status: 'accepted',
-      total: 180,
+      source: 'airi-interaction-lifecycle',
+      type: 'completed',
+      orderResult: {
+        id: 'demo-1',
+        fulfillmentMode: 'takeout',
+        itemCount: 2,
+        environment: 'test',
+        status: 'accepted',
+        total: 180,
+      },
     })
   })
 
@@ -116,5 +120,26 @@ describe('createScenarioRegistry', () => {
     expect(registry.registeredScenarios.value).toEqual([
       expect.objectContaining({ id: 'restaurant-ordering', serviceUrl: 'https://menu.example/order' }),
     ])
+  })
+
+  it('keeps the order continuation capability outside the archivable result and rejects unsafe links', () => {
+    const messageTarget = new EventTarget()
+    const registry = createScenarioRegistry({ messageTarget })
+    const frame = new MessageChannel().port1
+    const completed = vi.fn()
+    registry.setServices([{ id: 'ordering', title: '點餐', description: '測試', serviceUrl: 'https://menu.example', enabled: true }])
+    registry.attachActiveFrame(frame)
+    registry.on('completed', completed)
+    const orderResult = { environment: 'test', fulfillmentMode: 'dine-in', id: 'order-1', itemCount: 1, status: 'accepted', total: 145 }
+    const data = { source: 'airi-interaction-lifecycle', type: 'completed', orderResult, orderContinuationUrl: 'https://menu.example/?continuation=test-token' }
+    messageTarget.dispatchEvent(new MessageEvent('message', { data, source: frame, origin: 'https://menu.example' }))
+
+    expect(completed).toHaveBeenCalledWith(data)
+    expect(completed.mock.calls[0]![0].orderResult).not.toHaveProperty('orderContinuationUrl')
+    completed.mockClear()
+    messageTarget.dispatchEvent(new MessageEvent('message', { data: { ...data, orderContinuationUrl: 'javascript:alert(1)' }, source: frame, origin: 'https://menu.example' }))
+    expect(completed).not.toHaveBeenCalled()
+    messageTarget.dispatchEvent(new MessageEvent('message', { data, source: frame, origin: 'https://other.example' }))
+    expect(completed).not.toHaveBeenCalled()
   })
 })

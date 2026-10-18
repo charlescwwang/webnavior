@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { KioskConversationProgress } from '../composables/useKioskConversationProgress'
 
-const props = defineProps<{ progress?: KioskConversationProgress }>()
+const props = defineProps<{ progress?: Pick<KioskConversationProgress, 'phase' | 'message'> }>()
 </script>
 
 <template>

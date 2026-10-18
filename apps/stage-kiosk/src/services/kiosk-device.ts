@@ -2,7 +2,7 @@ import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } fro
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
-import type { InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
+import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
@@ -56,6 +56,7 @@ export interface KioskProfile {
       systemPrompt: string
     }
     greetingPrompt: string
+    greetingPhrases?: readonly string[]
     interactiveService: { description: string, id: string, title: string, url: string }
     surveyUrl: string
     version: 1
@@ -251,12 +252,13 @@ export async function sendKioskAssistantAction(input: {
   frame?: string
   invitationAllowed?: boolean
   kind: 'greeting' | 'reminder'
+  phase?: GreetingPhase
   signal?: AbortSignal
   visitorSessionId: string
 }) {
   return await request<{ answer: string, pendingCustomerChoice?: PresentedQuestion }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/assistant-actions`, {
     method: 'POST',
-    body: JSON.stringify({ frame: input.frame, kind: input.kind, invitationAllowed: input.invitationAllowed ?? false }),
+    body: JSON.stringify({ frame: input.frame, kind: input.kind, phase: input.phase, invitationAllowed: input.invitationAllowed ?? false }),
     signal: input.signal,
   })
 }

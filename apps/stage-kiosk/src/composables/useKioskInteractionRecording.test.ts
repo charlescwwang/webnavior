@@ -18,6 +18,26 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  it('carries inquiry authority through tool continuations without applying it to the next customer request', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'inquiry', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'query-1', type: 'function', function: { name: 'menu_get', arguments: '{}' } }] })
+      .mockResolvedValue({ agentMode: 'active', answer: '水餃目前可以點。', toolCalls: [] })
+    const tool = rawTool({ name: 'menu_get', description: 'Menu', parameters: { type: 'object', properties: {} }, execute: async () => ({ items: [{ id: 'dumplings', name: '水餃' }] }) })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const decisionState = { phase: 'ordering', requireMenuRead: true, readOnly: true }
+      await recording.send('ordering', '有水餃嗎？', [tool], { decisionState })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[0]![0]).toMatchObject({ decisionState })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0]).toMatchObject({ decisionState, toolResults: [{ name: 'menu_get' }] })
+      await recording.send('ordering', '我要水餃一份', [tool], { decisionState: { phase: 'ordering' } })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[2]![0]).toMatchObject({ decisionState: { phase: 'ordering' } })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[2]![0].decisionState).not.toHaveProperty('readOnly')
+    }
+    finally { scope.stop() }
+  })
+
   it('aborts model thinking on manual takeover without dispatching a late tool', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'thinking', state: 'active' } })
     let started!: () => void
@@ -224,6 +244,22 @@ describe('useKioskInteractionRecording', () => {
     })
     expect(kioskApi.endKioskVisitorSession).toHaveBeenCalledWith({ visitorSessionId: 'visitor-1', state: 'idle' })
     expect(recording.visitorSessionId.value).toBeUndefined()
+    scope.stop()
+  })
+
+  it('forwards the entry phase to VLM welcome generation without a recommendation invitation', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'vlm-entry', state: 'active' } })
+    kioskApi.sendKioskAssistantAction.mockResolvedValue({ answer: '歡迎光臨！手機號碼可選填。' })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    await recording.runAssistantAction('restaurant-ordering', 'greeting', 'data:image/jpeg;base64,ZmFrZQ==', undefined, false, 'customer_entry')
+    expect(kioskApi.sendKioskAssistantAction).toHaveBeenCalledWith({
+      frame: 'data:image/jpeg;base64,ZmFrZQ==',
+      kind: 'greeting',
+      phase: 'customer_entry',
+      invitationAllowed: false,
+      visitorSessionId: 'vlm-entry',
+    })
     scope.stop()
   })
 

@@ -31,6 +31,106 @@ The Server omits this endpoint unless the flag is exactly `true`, and always
 omits it when `NODE_ENV=production`. A production kiosk will replace this
 screen with the QR-code enrollment flow.
 
+## Meal clarification
+
+The owned menu supports a small yes/no meal-clarification flow. The host requests
+it only after service admission, renders/speaks the exact browser-issued question,
+and leaves the same Yes/No controls available on the menu. A second unclear reply
+uses the controls without a repeated spoken question. Other service queries can
+interrupt confirmation while retaining unadded meals. Background or uncertain
+recipient speech stays silent; model/transport failures remain separate. Deploy
+Server, Kiosk and Order Menu together for the new clarification tool and phase.
+
+Availability follow-ups such as **我想問還有沒有** can read the dish in the
+current confirmation without buying it, guessing quantity or asking the same
+purchase question again. This read has an additional recipient check; ordinary
+Yes/No answers still take one Jev call. Companion speech and uncertain recipients
+remain silent. Named alternatives, categories and filters use normal routing.
+
+## Menu acceptance trials
+
+In development mode, open Kiosk administrator mode and **點餐體驗情境測試**.
+Choose a dish and set **可點**, **售完**, **狀態不明**, or **選取時失敗**.
+The embedded owned menu must also run in development mode. These controls call
+its host-only `kiosk_test_menu` tool and never become Agent tools. They are
+absent in production builds and do not save/publish device settings.
+
+Touch cards and voice reads use the same page state. Sold-out/unknown controls
+are disabled; a selectable-looking failure refuses the selection, preserves
+the cart and becomes unknown until the operator changes it again. Refresh the
+panel to read the latest state after an interaction. Reloading the menu restores
+its catalog states. These trials test audience acceptance without remaining
+inventory counts; they do not implement control of a third-party ordering page.
+
+## Owned-menu checkout test
+
+When the owned menu exposes its phone-entry capability, the Kiosk renders the
+optional phone form as a local overlay in the host ordering region, above the
+iframe. A 25% dark mask leaves the menu visible; its scrollable dialog stays
+inside that region. Upper avatar and conversation controls remain interactive. It does not use document-wide modal
+blocking.
+Touch submit uses host-only `kiosk_customer_phone`; voice and touch skip share
+`customer_skip_phone`. The modal closes only after reading the ordering phase;
+errors retain its controls. Discovery replacement/unmount drops the local draft
+and ignores old reads. Phone input is not an Agent tool or model context. The
+old full-page Menu entry is removed. Standalone Menu opens the catalog directly;
+`kiosk_customer_entry_start` offers phone entry once for a fresh Kiosk order,
+without reopening after a choice or cart activity. The menu remains inert while
+entry is pending. Deploy Menu and Kiosk together.
+
+The phone choice allows factual menu queries, but recommendation and ordering
+requests such as **推薦一下** or **我想吃飯** return a fixed localized prompt
+to fill or skip first (`CUSTOMER_ENTRY_REQUIRED`). That reply starts neither
+Main Agent generation nor a meal/skip operation. Filling or explicitly skipping
+is required before recommending, selecting a dish or changing the order.
+After the first successful menu reply while entry is still pending, the host
+adds one fixed reminder to fill or skip the phone. It rereads the current phase
+before presentation, so a choice made during the lookup suppresses the reminder;
+new-customer reset clears its once-only state. Identity replies and operation
+questions do not consume it. The acceptance-test UI and reminder currently offer
+`0912345678` as an example number; the input remains empty until the customer types.
+After an Agent fallback, the host rereads the phase before presenting any
+recommendation or order-tool result. Pending entry uses the same fixed prompt,
+including for empty recommendations or rejected operations; completed entry
+keeps its real result. Identity dialogue and factual lookups remain available.
+An admitted factual `MENU_QUERY` may use read-only recommendation/display tools
+to render price matches. With fresh menu receipts, those internal tool names do
+not trigger the phone prerequisite; actual selection/order edits still do.
+
+Food requests admitted as `MENU_QUERY`, and other ordering handoffs with current
+product/category matches, carry a host-owned `requireMenuRead` guard. Old cart
+references alone do not force identity dialogue through menu tools. Phone entry
+still admits only its explicit factual-query route through this guard.
+Pure factual inquiries and unresolved filter/price handoffs also carry
+`readOnly:true`. Kiosk binds that capability to the owned menu task and keeps
+the read-task snapshot on every model continuation; receiving a menu result
+does not authorize an order edit or answer the pending fulfillment question.
+Ordinary mutation tasks keep their initial snapshot only, since their own tools
+may advance checkout. A new customer turn receives fresh task authority.
+The Server requires a fresh menu tool call before an Agent final answer;
+Kiosk rejects no-receipt prose even if a provider ignores the tool requirement.
+Ordinary identity/phone conversation remains natural. A disputed recommendation
+uses named `menu_get` verification and presents its concrete correction/result.
+During quantity collection, correcting “不是要點，只是問有沒有” abandons that
+unadded draft and reads its dish, without another quantity prompt. Plain
+“不要水餃” cancels only that draft, preserving the cart.
+
+The owned Order Menu offers invoice inputs without a paper option, and uses
+LINE Pay/街口支付 method selection followed by an explicit simulation button.
+Dine-in does not ask customers to select a table. Accepted
+dine-in receipts retain the continuation QR and clickable desktop link until
+the customer acknowledges carrying away the order; table binding is then
+confirmed on that independent page. See the Order Menu README for expiry,
+public-URL setup and the fixed A08 desktop scan simulation.
+
+Jev admits questions directly addressed to the assistant about identity/name/
+capabilities through the shared service policy. A plain Main Agent reply without
+a new question receipt tells the owned menu to revoke older answer tickets;
+financial confirmation remains one-use and must be asked again after a side
+conversation. The Server scopes checkout dialogue independently from earlier
+ordering chat without deleting its durable transcript. Deploy host and menu
+together for the `interruptsQuestion` presentation field.
+
 ## Registered interactive pages
 
 The Kiosk can host multiple customer interaction pages while keeping ordering as
@@ -171,6 +271,7 @@ Each customer starts an anonymous Kiosk session when they touch the screen, type
 
 - After three minutes without activity, it asks whether to continue and starts a 15-second countdown. Showing the dialog does not clear anything. **繼續點餐** cancels that countdown and keeps the same session, conversation, cart and unfinished ordering requirement (including the selected meal, known quantity/options and pending question); it does not reload the menu or repeat the question. Only unanswered countdown expiry, confirmed order completion or explicitly starting a new order/reception clears that context and ends its durable visitor session. Pending AI/tool work and high-confidence engaged presence retain their existing idle-timer protection. Lookups and deferral do not reset context. Internal answer tickets remain short-lived and are renewed on the next decision turn; financial/destructive confirmation authority is not extended by continuing.
 - After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and menu/order state are reset to clean standby. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
+- The owned menu reports completion immediately after payment and accepted submission. Its transient order-continuation URL is displayed as a separate QR and desktop link alongside the configured reward/survey; the customer need not acknowledge the order QR before the reward appears. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 
 This is intentionally separate from AIRI's general chat history. Reception reset
@@ -210,6 +311,9 @@ duration. Client wait excludes queueing, recording flush, browser actions and TT
 exchange duration includes network transit, not isolated GPU inference. Retries
 and optional read review accumulate within the same utterance. Missing accounting
 is shown as unknown, never zero, and does not change semantic or execution policy.
+Expand **檢視本次 System One 決策 trace** and select **複製完整 trace**
+to copy the full displayed JSON, including scroll-hidden content. Copy success
+is acknowledged; clipboard failures leave the trace selectable for manual copy.
 Operational questions use explicit receipts: ID, purpose, finite choices and
 effects, expiry and state revisions. Both Fast Path and Main Agent validate the
 receipt before presentation; the displayed question is retained in role history.
@@ -295,11 +399,30 @@ search filters. No ingredient-polarity regex or absent-food tags are used.
 
 The conversation surface presents a large, plain-language state tied visually to
 the avatar: listening, understanding speech, arranging a request, or speaking.
-Normal customer replies stream through the device-authenticated Server route, so
-the conversation displays customer-safe assistant text as it is generated and
-switches to the interactive service's tool status when browser-owned work begins.
-Only the completed assistant reply is retained in the visitor transcript; an
-interrupted partial reply remains presentation-only.
+Customer replies stream through the device-authenticated Server route. Draft
+text does not clear the customer progress display or claim an operation result;
+the host publishes the final reply after validating the actual tool receipts.
+Only that completed customer reply is retained in the visitor transcript.
+
+An idle Kiosk shows localized neutral progress as soon as an ASR/test utterance
+starts classification, even when the first Jev route is weak. This display does
+not admit speech or take ownership of an interaction turn. It gives way to the
+existing tool-progress bubble during Main Agent work; a continuation preserves
+the latest tool status rather than resetting it to understanding after each SSE
+round. Background/unfinished/uncertain utterances never trigger waiting speech.
+
+An admitted Agent handoff starts one fixed, localized acknowledgement through
+the existing live TTS route in parallel with model work. It plays only if the
+request is still pending after one second and audio is ready. Quick final
+results cancel pending audio; final replies, cancellations, manual handover,
+new turns and scene disposal stop any waiting audio through its own abort
+signal. They never abort an order merely to stop this optional output. Disabled
+Fast Path/provider-fault fallbacks do not establish a recipient and therefore
+have text progress only. Failed/disabled TTS also leaves text progress and order
+execution intact, with no within-turn retry. Waiting audio is not dialogue or a
+customer choice, does not change the order's interaction phase, and shares the
+normal output player. No new settings, provider or prerecorded bank is required
+for this trial. It uses the site's existing TTS model, voice and locale.
 It starts with “直接告訴我想吃什麼” and always leaves the menu touchable. The old
 draggable technical audio-status card is available only in development
 diagnostics; camera, microphone, and model failures are not customer-facing
@@ -320,6 +443,47 @@ In administrator mode, open **完成後問卷邀請** to enable the optional sur
 The invitation, approved interactive services, and their AIRI instructions are stored in the same-origin Interaction Profile shared with Stage Web. Other browser origins and devices remain independent until a future device-management service provides central settings.
 
 ## Administrator mode
+
+### Welcome mode and prepared speech
+
+Choose **固定歡迎詞** or **VLM 情境生成** under **互動體驗 → 開場招呼 →
+開場招呼方式**. This uses the existing Server-owned `proactiveVlmEnabled` policy:
+false selects fixed openings; true selects vision generation. Device overrides
+retain their existing precedence over the Site default. Reload the Kiosk to
+fetch the current effective setting immediately.
+
+Proactive welcomes rotate through the published Profile's `greetingPhrases`
+(1–50 openings, up to 500 characters each). Configure them under **互動體驗 →
+開場招呼 → 固定歡迎詞**. Unset phrases deliberately select three shared localized
+openings. On the optional-phone screen, Kiosk appends the localized explanation
+that the customer may enter a phone number or skip directly to ordering. Do not
+include that explanation in each configured opening.
+
+In fixed mode, registered kiosks with greetings enabled prepare these audio variants through
+the existing device-authenticated TTS route, sequentially, when the scene loads.
+Playback reuses in-memory audio across visitors without an LLM/VLM request or
+a fresh synthesis request. If preparation has not finished, playback shares
+that pending request; failed synthesis is retried on demand. This is not an
+offline or persistent audio cache. Reload after publishing phrases or changing
+the Server-side TTS model/voice. Changing locale, phrases or device identity
+invalidates the bank; disabling greetings, choosing VLM, or leaving the scene
+aborts warmup.
+
+In VLM mode the current camera frame, role and published `greetingPrompt`
+(**VLM 開場指引**) go to the configured vision model, then its reply is synthesized
+for playback. Phone-entry context is included in the generated request.
+Missing camera frames/models and provider failures do not silently select fixed
+welcomes. Fixed phrases and VLM guidance are both retained when switching modes.
+The editor displays the selected mode's content in the same section and retains
+unsaved edits across switches. Owner templates without a Site show both banks.
+
+Welcomes are permitted on `customer_entry` and `ordering`, with no unresolved
+question or active customer turn. The host rechecks the browser phase after
+cold synthesis; actual touch activity cancels a pending or spoken welcome.
+The spoken text is retained in the current visitor transcript. Neither welcome
+mode appends a recommendation invitation. The same VLM policy also controls
+whether contextual assistance reminders use images; reminders retain their
+generated-text path and use the chat model when the policy is off.
 
 ### Per-device operational settings
 
@@ -424,6 +588,18 @@ pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 # To use an installed Chrome instead of Playwright's downloaded Chromium:
 VITEST_BROWSER_CHANNEL=chrome pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 ```
+
+The paid-order reward regression is opt-in and uses an isolated loopback Bridge.
+Start it with `ORDER_MENU_SERVER_PORT=5182 ORDER_MENU_POS_SIMULATOR_PORT=5183
+ORDER_MENU_ALLOWED_ORIGIN=http://localhost:63315 pnpm -F @proj-airi/order-menu-server
+exec tsx src/bin/run.ts`, then run:
+
+```sh
+VITEST_BROWSER_CHANNEL=chrome VITE_ORDER_MENU_COMPLETION_TEST=true VITE_ORDER_MENU_SERVER_URL=http://localhost:5182 VITE_ORDER_MENU_PUBLIC_URL=http://localhost:5166 pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts src/components/OrderCompletionFlow.browser.test.ts
+```
+
+This exercises the actual menu in an iframe through test payment and acceptance,
+then checks the configured completion reward and separate order-continuation link.
 
 Before a conversation starts, an engaged person's intelligible but semantically
 uncertain utterance becomes a short-lived browser-only candidate instead of

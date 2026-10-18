@@ -1,7 +1,7 @@
 import type { PresenceState } from '@proj-airi/kiosk-proactive'
 import type { WebMcpTool } from '@proj-airi/stage-ui/services/webmcp-adapter'
 
-import type { KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState, InteractionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import type { KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState, InteractionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { KioskConversationDecisionState } from './kiosk-device'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -37,10 +37,11 @@ export type FastPathResult = {
   reason?: FastPathDecision['reason']
 } & (
   | { action: FastPathCandidate, kind: 'FAST_ACTION', result: unknown }
-  | { confidence?: number, kind: 'CLARIFICATION', prompt: string }
+  | { confidence?: number, kind: 'CLARIFICATION', prompt: string, question?: PresentedQuestion, silent?: boolean }
   | { confidence?: number, kind: 'INCOMPLETE' }
   | { confidence?: number, kind: 'IGNORE' }
   | { confidence?: number, kind: 'GREET' }
+  | { confidence?: number, kind: 'CUSTOMER_ENTRY_REQUIRED' }
   | { confidence?: number, kind: 'FOLLOW_UP_ACTIVE' }
   | { kind: 'DEFERRED' }
   | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
@@ -255,7 +256,7 @@ export async function runFastPath(input: {
     if (decision.kind === 'CLARIFICATION')
       return { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
     // Any complete turn replaces, rather than extends, unfinished speech.
-    const needsNewDecision = decision.kind === 'NEEDS_ASSISTANT' && decision.reason === 'NEW_REQUEST' && ['configuration', 'clarification'].includes(decisionState?.phase ?? '')
+    const needsNewDecision = decision.kind === 'NEEDS_ASSISTANT' && decision.reason === 'NEW_REQUEST' && ['configuration', 'clarification', 'meal_confirmation'].includes(decisionState?.phase ?? '')
     if (decision.kind !== 'IGNORE' && !needsNewDecision)
       input.session?.discard()
     if (needsNewDecision) {
@@ -268,7 +269,7 @@ export async function runFastPath(input: {
       // Queries leave the old draft intact; only a verified new meal replaces it.
       rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript, newRequestQuestionId: question.questionId })
       decisionState = decisionStateFrom(rawCandidates)
-      if (!decisionState || ['configuration', 'clarification', 'pending_confirmation'].includes(decisionState.phase))
+      if (!decisionState || ['configuration', 'clarification', 'meal_confirmation', 'pending_confirmation'].includes(decisionState.phase))
         return { kind: 'UNAVAILABLE', decisionState }
       candidates = candidatesFrom(rawCandidates)
       decision = await decide({ transcript: input.transcript, candidates, decisionState, includeTrace: true, ...(input.presenceState ? { presenceState: input.presenceState } : {}), maxQuestions: decisionQuestionBudget - spent })
@@ -301,6 +302,19 @@ export async function runFastPath(input: {
         return { kind: 'UNAVAILABLE', decisionState }
       input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource: 'application', executionResult: revoked, transcript: input.transcript })
       decisionState = decisionStateFrom(await input.webMcp.execute(stateTool, {}))
+    }
+    if (decision.kind === 'NEEDS_CLARIFICATION') {
+      const clarifyTool = input.webMcp.tools.find(tool => tool.name === 'kiosk_fast_path_clarify')
+      const questionId = decisionState?.phase === 'meal_confirmation' ? decisionState.waitingFor?.questionId : decisionState?.clarificationOffer?.id
+      if (!clarifyTool || !questionId || input.isCurrent?.() === false)
+        return { kind: 'UNAVAILABLE', decisionState }
+      const receipt = await input.webMcp.execute(clarifyTool, { questionId })
+      const question = receipt && typeof receipt === 'object' ? presentedQuestionFrom((receipt as Record<string, unknown>).pendingCustomerChoice) : undefined
+      if (!question)
+        return { kind: 'UNAVAILABLE', decisionState }
+      input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource: 'system-one', executionResult: receipt, transcript: input.transcript })
+      await notifyExecuted(receipt)
+      return { kind: 'CLARIFICATION', prompt: question.question, question, silent: Boolean(receipt && typeof receipt === 'object' && 'silent' in receipt && receipt.silent === true), decisionState }
     }
     if (decision.kind !== 'FAST_ACTION')
       return decision.kind === 'COMPLETE' ? { kind: 'UNAVAILABLE', decisionState } : { ...decision, ...(decisionState ? { decisionState } : {}) }
@@ -435,13 +449,29 @@ function completedReadState(state: FastPathDecisionState | undefined, result: un
 }
 
 /** Projects a browser-owned state snapshot into a non-sensitive conversation hint. */
-export function conversationDecisionStateFrom(value: unknown): KioskConversationDecisionState | undefined {
+export function conversationDecisionStateFrom(value: unknown, decision?: Pick<FastPathDecision, 'reason'>): KioskConversationDecisionState | undefined {
   const state = decisionStateFrom(value)
   if (!state)
     return undefined
   const interactionState = state.interactionState
+  // A catalog-grounded meal handoff still needs menu evidence when its reason
+  // is replacement, ambiguity or compound work rather than MENU_QUERY. Cart
+  // references/recent focus alone are not current-utterance food evidence.
+  const hasMealEvidence = (Array.isArray(state.catalogEvidence?.products) && state.catalogEvidence.products.length > 0)
+    || (Array.isArray(state.catalogEvidence?.categories) && state.catalogEvidence.categories.length > 0)
+  // Phone-stage ordering keeps its independent fill/skip prerequisite; only
+  // its explicitly admitted factual MENU_QUERY uses this read contract.
+  // An unresolved read can have no catalog match at all. Its fallback still
+  // needs a lookup; absence of a known product is not permission for free prose.
+  const unresolvedQuery = ['MENU_QUERY', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER'].includes(decision?.reason ?? '')
+  const requireMenuRead = unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && hasMealEvidence)
+  // Filter/price uncertainty permits clarification and factual lookup, never
+  // a partial order edit. Keep that restriction through Agent continuations.
+  const readOnly = ['MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
     phase: state.phase,
+    ...(requireMenuRead ? { requireMenuRead: true } : {}),
+    ...(readOnly || state.readOnly === true ? { readOnly: true } : {}),
     ...(state.priceEvidence ? { priceEvidence: state.priceEvidence } : {}),
     ...(state.incompleteSpeech?.related ? { incompleteSpeech: state.incompleteSpeech } : {}),
     ...(state.menuRevision !== undefined ? { menuRevision: state.menuRevision } : {}),
@@ -455,7 +485,7 @@ export function conversationDecisionStateFrom(value: unknown): KioskConversation
     ...(interactionState && Number.isInteger(interactionState.matchingCartLines) && interactionState.matchingCartLines >= 0
       ? { interactionState: {
           matchingCartLines: interactionState.matchingCartLines,
-          ...(['menu', 'cart_review', 'item_configuration', 'checkout'].includes(interactionState.screen ?? '') ? { screen: interactionState.screen } : {}),
+          ...(['menu', 'cart_review', 'item_configuration', 'request_confirmation', 'checkout'].includes(interactionState.screen ?? '') ? { screen: interactionState.screen } : {}),
           ...(typeof interactionState.lastAddedItemName === 'string' ? { lastAddedItemName: interactionState.lastAddedItemName } : {}),
           ...(typeof interactionState.selectedItemName === 'string' ? { selectedItemName: interactionState.selectedItemName } : {}),
           ...(typeof interactionState.pendingAction === 'string' ? { pendingAction: interactionState.pendingAction } : {}),
@@ -475,6 +505,8 @@ function decisionStateFrom(value: unknown) {
   const waitingFor = presentedQuestionFrom(state.waitingFor)
   return {
     phase: state.phase,
+    ...(state.readOnly === true ? { readOnly: true } : {}),
+    ...(state.clarificationOffer && typeof state.clarificationOffer === 'object' && 'id' in state.clarificationOffer && typeof state.clarificationOffer.id === 'string' && 'label' in state.clarificationOffer && typeof state.clarificationOffer.label === 'string' ? { clarificationOffer: { id: state.clarificationOffer.id, label: state.clarificationOffer.label } } : {}),
     ...(state.priceEvidence && typeof state.priceEvidence === 'object' ? { priceEvidence: state.priceEvidence as FastPathDecisionState['priceEvidence'] } : {}),
     ...(state.catalogEvidence && typeof state.catalogEvidence === 'object' ? { catalogEvidence: state.catalogEvidence as FastPathDecisionState['catalogEvidence'] } : {}),
     ...(state.productResolution && typeof state.productResolution === 'object' ? { productResolution: state.productResolution as FastPathDecisionState['productResolution'] } : {}),

@@ -1,6 +1,24 @@
 import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
+/** Adds one optional-phone reminder per customer, after a verified menu reply. */
+export function createCustomerEntryReminder() {
+  let reminded = false
+  return {
+    // The caller reads the phase immediately before presentation: the customer
+    // may have filled/skipped the phone while the menu lookup was in flight.
+    append(content: string, phase: KioskDecisionState['phase'] | undefined, reminder: string) {
+      if (reminded || phase !== 'customer_entry' || !content.trim() || !reminder.trim())
+        return content
+      reminded = true
+      return `${content} ${reminder}`
+    },
+    reset() {
+      reminded = false
+    },
+  }
+}
+
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
  * Keep all distinct lookup results: a second lookup may be a comparison, not a
@@ -83,7 +101,16 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   outcome?: string
   question?: PresentedQuestion
   failureMessage: string
+  requireMenuRead?: boolean
+  /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
+  customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
 }) {
+  // A factual MENU_QUERY can use the recommendation batch to render its price
+  // matches. Its semantic scope permits reads, never a phone skip or order edit;
+  // tool names alone must not turn those results into an entry prerequisite.
+  const entryRequired = result.requestedTools.some(name => (!options.requireMenuRead && ['menu_recommend', 'menu_show_recommendations'].includes(name)) || name === 'menu_select_item' || name.startsWith('menu_set_') || name.startsWith('order_') || name.startsWith('checkout_') || (name.startsWith('cart_') && name !== 'cart_get'))
+  if (options.customerEntry?.phase === 'customer_entry' && entryRequired)
+    return { role: 'assistant' as const, content: options.customerEntry.prompt }
   // A history lookup supplies conversation context, not a new commerce result.
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
   const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
@@ -92,7 +119,9 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
       ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
       : { role: 'error' as const, content: options.failureMessage }
   }
-  const content = receiptReply || (commerceAttempted ? options.menu.reply() : result.answer)
+  if (options.requireMenuRead && !receiptReply)
+    return { role: 'error' as const, content: options.failureMessage }
+  const content = receiptReply || (commerceAttempted || options.requireMenuRead ? options.menu.reply() : result.answer)
   return content ? { role: 'assistant' as const, content } : { role: 'error' as const, content: options.failureMessage }
 }
 

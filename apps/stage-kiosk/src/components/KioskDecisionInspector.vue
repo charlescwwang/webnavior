@@ -16,7 +16,7 @@ export interface KioskDecisionEntry {
   authorization?: string
   agentStep?: string
   systemOneStep?: string
-  route: 'queued' | 'deciding' | 'fast_path' | 'greeting' | 'main_agent' | 'ignored' | 'incomplete' | 'deferred' | 'unavailable' | 'clarification' | 'execution_failed'
+  route: 'queued' | 'deciding' | 'fast_path' | 'greeting' | 'main_agent' | 'ignored' | 'incomplete' | 'deferred' | 'unavailable' | 'clarification' | 'customer_entry' | 'execution_failed'
   startedAt: number
   decisionStages?: Array<{ decision: string, operation?: string, authorization?: string }>
   modelContext?: string
@@ -43,6 +43,7 @@ const routeLabels: Record<KioskDecisionEntry['route'], string> = {
   deferred: '等待前一操作',
   unavailable: '判斷不可用，未執行',
   clarification: '等待顧客釐清',
+  customer_entry: '等待填寫或略過電話',
   execution_failed: '操作未完成／結果待確認',
 }
 </script>

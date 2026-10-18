@@ -2,9 +2,98 @@ import { describe, expect, it } from 'vitest'
 
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
-import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromOperation, replyWithQuestion } from './questionPresentation'
+import { createCustomerEntryReminder, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyWithQuestion } from './questionPresentation'
+
+describe('optional phone reminder after a verified menu reply', () => {
+  const hint = '手機可以選填；要開始點餐，請填寫手機或按略過。'
+
+  it('appends once per customer while keeping menu queries and the phone choice available', async () => {
+    let ready = false
+    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const reminder = createCustomerEntryReminder()
+    const menu = createMenuReplyWindow()
+    menu.record('menu_get', await runtime.invokeForAgent('menu_get', { display: true }))
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))
+    expect(reminder.append(menu.reply(), state?.phase, hint)).toBe(`${menu.reply()} ${hint}`)
+    expect(reminder.append('水餃目前可以點。', state?.phase, hint)).toBe('水餃目前可以點。')
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'customer_entry' })
+    await runtime.invokeManual('customer_skip_phone', { confirmedByUser: true })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    reminder.reset()
+    expect(reminder.append('推薦三樣餐點。', state?.phase, hint)).toBe(`推薦三樣餐點。 ${hint}`)
+  })
+
+  it('uses the current phase when the customer skipped during a menu query', async () => {
+    let ready = false
+    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const reminder = createCustomerEntryReminder()
+    await runtime.invokeForAgent('menu_get', { query: '水餃' })
+    await runtime.invokeManual('customer_skip_phone', { confirmedByUser: true })
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))
+    expect(reminder.append('水餃目前可以點。', state?.phase, hint)).toBe('水餃目前可以點。')
+    expect(reminder.append('查詢結果。', undefined, hint)).toBe('查詢結果。')
+    expect(reminder.append('', 'customer_entry', hint)).toBe('')
+    expect(reminder.append('推薦三樣餐點。', 'customer_entry', hint)).toBe(`推薦三樣餐點。 ${hint}`)
+  })
+})
 
 describe('question presentation receipts', () => {
+  it('presents a verified factual price lookup at phone entry even when the Agent uses recommendation read tools', () => {
+    const menu = createMenuReplyWindow()
+    menu.record('menu_recommend', { items: [{ id: 'bento', name: '炸排骨便當', price: 130 }], customerMessage: '推薦一項：炸排骨便當。' })
+    const customerEntry = { phase: 'customer_entry', prompt: '請先填寫手機或選擇略過。' }
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend', 'menu_show_recommendations'] }, { menu, requireMenuRead: true, failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: '推薦一項：炸排骨便當。' })
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend', 'order_add_item'] }, { menu, requireMenuRead: true, failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: customerEntry.prompt })
+  })
+
+  it('explains pending phone entry instead of an empty recommendation or blocked order result', () => {
+    const menu = createMenuReplyWindow()
+    menu.record('menu_recommend', { items: [], customerMessage: '目前沒有查到符合條件的餐點。' })
+    const customerEntry = { phase: 'customer_entry', prompt: '請先填寫手機或選擇略過。' }
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend'] }, { menu, failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: customerEntry.prompt })
+    expect(replyFromConversation({ status: 'failed', agentMode: 'active', requestedTools: ['order_add_item'] }, { menu: createMenuReplyWindow(), failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: customerEntry.prompt })
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend'] }, { menu, failureMessage: '失敗。', customerEntry: { ...customerEntry, phase: 'ordering' } })).toEqual({ role: 'assistant', content: '目前沒有查到符合條件的餐點。' })
+  })
+
+  // Report: this chat, session McJ8clPpBKvNt_XMYWFRq, 2026-10-18.
+  it('requires fresh menu evidence for a catalog-grounded replacement handoff before publishing dish examples', () => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }], categories: [] }, references: [{ label: '購物車水餃', refId: 'CART_LINE_1' }] }, { reason: 'NEW_REQUEST' })
+    expect(state).toMatchObject({ requireMenuRead: true })
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '請提供牛肉麵名稱，例如紅燒或清燉牛肉麵。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, failureMessage: '查詢未完成。' })).toEqual({ role: 'error', content: '查詢未完成。' })
+  })
+
+  it('does not reinterpret a phone-stage provider fallback as an admitted factual menu query', () => {
+    const state = conversationDecisionStateFrom({ phase: 'customer_entry', catalogEvidence: { products: [{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }], categories: [] } }, { reason: 'PROVIDER_FAILURE' })
+    expect(state).not.toHaveProperty('requireMenuRead')
+  })
+
+  it('keeps identity dialogue natural when only old cart references remain', () => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] }, references: [{ label: '購物車水餃', refId: 'CART_LINE_1' }], interactionState: { matchingCartLines: 0, lastAddedItemName: '水餃', screen: 'menu' } }, { reason: 'NEW_REQUEST' })
+    expect(state).not.toHaveProperty('requireMenuRead')
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '我是點餐助手。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, failureMessage: '查詢未完成。' })).toEqual({ role: 'assistant', content: '我是點餐助手。' })
+  })
+
+  it('does not publish a no-tool fabricated recommendation for a turn requiring menu evidence', () => {
+    const menu = createMenuReplyWindow()
+    const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '推薦3 項：香菜肉絲乾麵、韭菜盒、甜不辣。' }, { menu, requireMenuRead: true, failureMessage: '查詢失敗。' })
+    expect(result).toEqual({ role: 'error', content: '查詢失敗。' })
+    expect(result.content).not.toContain('韭菜盒')
+  })
+  it.each(['MENU_QUERY', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_FILTER', 'UNSUPPORTED_PRICE'] as const)('keeps %s handoffs read-only while retaining ordinary mutation tasks', (reason) => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [{ label: '便當', matchedText: '便當', itemCount: 5 }] } }, { reason })
+    expect(state).toMatchObject({ readOnly: true, requireMenuRead: true })
+    expect(conversationDecisionStateFrom(state)).toMatchObject({ readOnly: true })
+    expect(conversationDecisionStateFrom({ phase: 'ordering' }, { reason: 'NEW_REQUEST' })).not.toHaveProperty('readOnly')
+  })
+
+  it.each(['MENU_QUERY', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER'] as const)('requires a lookup for %s even when an unfamiliar subject has no catalog evidence', (reason) => {
+    expect(conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] } }, { reason })).toMatchObject({ readOnly: true, requireMenuRead: true })
+  })
+
+  it('carries a food-query handoff into a required read without blocking ordinary conversation', () => {
+    expect(conversationDecisionStateFrom({ phase: 'customer_entry' }, { reason: 'MENU_QUERY' })).toMatchObject({ requireMenuRead: true })
+    expect(conversationDecisionStateFrom({ phase: 'customer_entry' })).not.toHaveProperty('requireMenuRead')
+  })
   // Report: local customer attachment 9b8c37b5-50d8-4d5c-a928-0dcaa0712dab, no public URL.
   it('uses current-turn receipts rather than the previously displayed dumplings to answer a new order', () => {
     const previous = createMenuReplyWindow()

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 
-import { BasicTextarea } from '@proj-airi/ui'
-import { computed, shallowRef } from 'vue'
+import { BasicTextarea, Button } from '@proj-airi/ui'
+import { computed, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   status?: string
@@ -11,9 +12,33 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{ simulate: [transcript: string] }>()
+const { t } = useI18n()
 
 const transcript = shallowRef('')
 const canSimulate = computed(() => Boolean(transcript.value.trim()))
+const copyState = shallowRef<'copy' | 'copying' | 'copied' | 'failed'>('copy')
+
+watch(() => props.trace, () => {
+  // Keep one clipboard write in flight even when a new decision arrives.
+  if (copyState.value !== 'copying')
+    copyState.value = 'copy'
+})
+
+async function copyTrace() {
+  const trace = props.trace
+  if (!trace || copyState.value === 'copying')
+    return
+  copyState.value = 'copying'
+  try {
+    // Reuse the native clipboard path used by the shared ContainerError panel.
+    // Copy the entire source, independent of the scrollable preview's height.
+    await navigator.clipboard.writeText(trace)
+    copyState.value = props.trace === trace ? 'copied' : 'copy'
+  }
+  catch {
+    copyState.value = props.trace === trace ? 'failed' : 'copy'
+  }
+}
 
 function simulate() {
   if (!canSimulate.value)
@@ -65,6 +90,10 @@ function simulate() {
     </div>
     <details v-if="props.trace" class="simulation-trace">
       <summary>檢視本次 System One 決策 trace</summary>
+      <Button type="button" size="sm" variant="secondary" :disabled="copyState === 'copying'" :label="t(`stage.kiosk.decision-trace.${copyState === 'failed' ? 'copy' : copyState}`)" :class="['mt-3']" @click="copyTrace" />
+      <p v-if="copyState === 'failed'" role="alert">
+        {{ t('stage.kiosk.decision-trace.failed') }}
+      </p>
       <pre>{{ props.trace }}</pre>
     </details>
   </section>

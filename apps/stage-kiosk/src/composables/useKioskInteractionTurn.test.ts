@@ -4,6 +4,25 @@ import { effectScope } from 'vue'
 import { useKioskInteractionTurn } from './useKioskInteractionTurn'
 
 describe('useKioskInteractionTurn', () => {
+  it('cancels a welcome for touch activity without cancelling customer work', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())
+    if (!interaction)
+      throw new Error('Expected kiosk interaction turn to initialize.')
+
+    const welcome = interaction.begin('proactive', 'speaking')
+    interaction.cancelProactive()
+    expect(welcome.signal.aborted).toBe(true)
+    expect(interaction.phase.value).toBe('listening')
+
+    const customer = interaction.begin('conversation', 'using-tool')
+    interaction.cancelProactive()
+    expect(customer.signal.aborted).toBe(false)
+    expect(interaction.isCurrent(customer)).toBe(true)
+    expect(interaction.phase.value).toBe('using-tool')
+    scope.stop()
+  })
+
   it('supersedes an earlier turn so its response cannot update the current interaction', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())
