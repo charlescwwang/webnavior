@@ -50,8 +50,9 @@ System Manager.
 
 ## Kiosk System One Decision
 
-`PriceEvidence` is browser-issued literal currency evidence with finite semantic
-interpretations, not a verified budget. Jev selects `priceChoiceId`; the browser
+`PriceEvidence` is browser-issued literal currency, price/comparison amounts or
+unitless numeric ranges with finite semantic interpretations, not a verified
+budget. Jev selects `priceChoiceId`; the browser
 checks it against its one-use context. `PriceConditions` constrain a single
 dish's POS base price (bounds/exclusivity/ascending order), never quantity or a
 whole-order allocation. Read tools apply them before ranking and limiting.
@@ -60,7 +61,7 @@ recommendations or performing a partial mutation.
 
 A Server-owned, per-utterance bounded semantic choice among phase-legal intents,
 or `IGNORE`, `INCOMPLETE`, `FOLLOW_UP_ACTIVE`, `MULTI_ACTION` (routed to Main Agent),
-`NEEDS_ASSISTANT`, or `UNAVAILABLE`. The application
+`NEEDS_ASSISTANT`, `NEEDS_CLARIFICATION`, or `UNAVAILABLE`. The application
 provides the current phase, finite real domain references and bounded,
 role-labelled current-session dialogue; System One never
 owns menu, cart, checkout, payment, POS, or WebMCP tool selection.
@@ -71,6 +72,12 @@ answer alone does not mean consent. An uncertain answer neither consumes the
 question nor grants execution authority. Execution still needs
 current domain authorization. Host invitations can be answered or superseded by
 ID without deleting their session history.
+
+`NEEDS_CLARIFICATION` asks an application-issued, short-lived meal question only
+after service admission. It is separate from Main Agent escalation and grants
+no cart or payment authority. Uncertain service recipients remain silent. The
+browser owns the proposed real item, Yes/No answers, revisions and expiry;
+confirmation resumes missing-slot collection while retaining suspended meals.
 
 ## Fast Path Action
 

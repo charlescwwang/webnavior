@@ -384,6 +384,28 @@ Server 提供預設的繁體中文對比式語意邊界；System Manager 可在�
 System One、當前 WebMCP 候選集和瀏覽器操作，因此可在同一個舞台確認人物動作、語音回覆、菜單與購物車變化，
 也可能變更目前購物車。它在互動活動中標示為 `asr_simulation`，且不會保存假音檔；語音模式不顯示此控制。
 
+### 點餐體驗測試版的部署設定
+
+這一版仍使用測試付款與 POS 模擬器：付款 QR 畫面會在五秒後模擬完成，沒有實際收款。
+手機登記用於本次交易記錄，不代表登入第三方會員；掃碼綁桌與改自取目前只修改測試訂單。
+
+既有部署腳本會建置與複製三個前端，但**不會啟動 Order Menu Bridge**。
+測試站還需要依 `apps/order-menu-server/README.md` 啟動並管理這個服務，並設定：
+
+- Bridge 的 `ORDER_MENU_ALLOWED_ORIGIN` 使用顧客實際開啟的 HTTPS origin。
+- 建置菜單時，`VITE_ORDER_MENU_SERVER_URL` 指向顧客可連到的 Bridge HTTPS URL。
+- `VITE_ORDER_MENU_PUBLIC_URL` 使用顧客手機可開啟的完整菜單網址，例如 `https://kiosk.example.com/menu/`。
+- Kiosk 的互動服務網址與允許的 iframe origin 使用測試站網址，不沿用開發機的 `localhost`。
+
+若 Bridge 由同一台 Nginx 代理，可另設 `/order-api/` 轉送至 `127.0.0.1:5170/`，
+並讓 `VITE_ORDER_MENU_SERVER_URL` 使用 `https://kiosk.example.com/order-api`。
+不要只更新靜態檔案：需先確認 Bridge 常駐服務、proxy 與 HTTPS 網址均可用。
+現有腳本會重寫 Nginx site，新增的 proxy 必須納入部署設定後再發布。
+
+接續連結目前保存於 Bridge 記憶體，期限三十分鐘；重啟 Bridge 會讓既有連結失效。
+更新後先完成一筆測試訂單，檢查付款倒數、獎勵頁、訂單接續連結與入座後掃桌碼。
+歡迎詞及開場方式修改後需儲存／發布，並重新載入 Kiosk。
+
 ### 更新、媒體匯出與重置
 
 `scripts/updateKioskUbuntu.sh` 是**就地更新**：它會套用 schema、重啟 API 與替換三個前端

@@ -7,6 +7,480 @@ accumulating history.
 
 ## Current State
 
+- Oct18 test-release commit cut: current work is grouped into shared contracts,
+  continuation Bridge, ordering/Jev core, welcome administration, Kiosk host,
+  and deployment documentation. User explicitly authorized these commits; no
+  push or deployment was requested. Full root typecheck passed once. Root lint
+  fails on pre-existing unmodified research/other-module files; every commit
+  still runs the normal staged-file hook. Menu626, Bridge37 and Kiosk162 unit
+  tests pass. Server profile/HTTP53 pass after updating old recipient/price mocks
+  and verifying the staged route's four actual questions. Old experiments now
+  follow current payment-method selection and bounded query contracts rather
+  than expecting removed confirmation behavior or unsafe partial actions.
+  Broad parallel checks caused substantial load and database-test timeouts;
+  subsequent checks use one worker/package at a time. No check remains running
+  after completion. Python cache and unused phone-modal screenshots are left
+  untracked. Before deploying, read the test-release section in
+  docs/ubuntu-webnavior-kiosk-server-deployment.md: static deployment scripts
+  do not start the Order Menu Bridge or preserve an additional proxy by magic.
+  Configure its service, allowed origin and public HTTPS URLs first. Payments,
+  post-order table binding and pickup changes remain simulated/test-only;
+  continuation tokens remain in memory for30min and vanish on Bridge restart.
+
+- Oct18 unfamiliar menu-query recovery (attachment a4c50e1a): 有魚排便當？
+  while fulfillment was pending chose NEEDS_ASSISTANT .3454; recipient KIOSK
+  .9987 still hit the unconditional weak-handoff refusal. Ordering now separately
+  qualifies a pure menu inquiry after recipient verification; weak mutations,
+  compound operations, unrelated speech and invalid/weak verification still
+  receive no operation authority. No dish-name branches or threshold changes.
+  Product-resolution none now distinguishes UNRESOLVED_SUBJECT from category,
+  general recommendations, price numbers and ingredient requirements. An
+  unfamiliar named dish must retain its literal subject for Agent lookup.
+  MENU_QUERY and unresolved filter reads require fresh menu evidence even with
+  no known product/category match. Query/filter/price handoffs carry readOnly;
+  Kiosk binds it to the existing Agent task and resends inquiry context on every
+  continuation. Ordinary mutation/checkout snapshots remain first-request-only
+  to avoid stale phases. Server offers read tools only; owned Menu independently
+  blocks writes, fulfillment and question effects, even after successful lookup.
+  Its read-only cart snapshot creates no new question; new customer tasks reset
+  authority. Tests first reproduced the refusal, missing task guard and dropped
+  continuation context. Actual configured Jev/Main replay passes four unfamiliar
+  queries with/without old fulfillment and four category/general/price/ingredient
+  controls; each unfamiliar reply says 查不到 the original name, cart unchanged.
+  Server domain267, focused HTTP/coverage50, Kiosk97 plus3 no-evidence guard cases,
+  and Menu43 pass; scoped Server/Menu/Kiosk types and changed-file lint checked.
+  Live commands use a90s whole-process watchdog, not unbounded provider waits.
+  No browser/hardware/voice test, root typecheck, dependency or commit. Routing
+  remains probabilistic; the read-only task boundary is enforced independently.
+
+- Oct18 first-order regression correction: attachment aa9a2bda's 水餃一份
+  correctly chose ADD .9676, then the combined read/coverage guard misread it as
+  READ_ONLY .5171 and refused. Prior live replays seeded carts directly through
+  tools, so their claimed coverage missed the first spoken Jev order. Split
+  literal requestPurpose (inquiry/operation) from original four-way cartRequest
+  coverage. Browser-matched subject supplies balanced purchase/query examples;
+  quantities and word order are contrasted without dish-specific code/settings.
+  Weak purpose grants no authority and does not veto independently reliable
+  route+coverage checks; a weak original route still only hands off after verified
+  recipient/coverage. This preserves cancellation and replacement support. Thresholds stay
+  unchanged. The extra binary question costs 0.29–0.74s in this replay; twelve
+  first orders total1.63–2.24s Jev, excluding TTS. New opt-in provider tests now
+  actually skip phone then run the first speech through Jev and inspect the cart,
+  with realistic menu candidates and both default/current saved prompt policies.
+  All22 first-order/inquiry cases pass (three dishes, one/two/three/five servings,
+  Chinese/Arabic numbers, reversed order, explicit 我要, price and variety queries).
+  Server252 unit tests pass;
+  Kiosk31/Menu81 targeted tests, Server scoped types and changed-file lint pass.
+  Final eight-case cart replay also passes: plain add/quantity/remove, whole
+  swaps, unknown target preserving original, and companion speech. Actual Main
+  completes both swap phrasings; browser guard blocks its attempted deletion
+  after missing pizza. One earlier run correctly handed off 水餃換牛肉麵一份
+  but Main only queried menus and retained dumplings; the final replay passed
+  without Main production changes. Keep this probabilistic execution limitation
+  visible; routed requests and mocked tests do not prove completed swaps. No browser/hardware/voice test,
+  full-project typecheck or commit.
+
+- Oct18 menu-query / hallucinated-variety repair: reported session
+  McJ8clPpBKvNt_XMYWFRq had no-tool invented noodle examples; its later variety
+  question was a weak refusal, not literal IGNORE. All current-product/category
+  ordering handoffs now project requireMenuRead, beyond MENU_QUERY; old cart
+  references alone and non-factual phone fallbacks do not. Shared intent rules
+  distinguish dish mention from purchase, and names from extra ingredient filters.
+  Proposed ADD/REMOVE/quantity/option effects now check whole-request authority
+  even for the first item. READ_ONLY recovers through existing search/conditions,
+  never a quantity draft. Recipient qualification uses isolated literal speech;
+  conditions retain their original contextual state (isolating prices too caused
+  live regressions). Valid question answers/recovered reads do not repeat scope.
+  Weak handoff scope may only silence companion speech, never promote a weak
+  action; relation NEW_REQUEST verifies recipient before admission. No thresholds
+  lowered, per-dish branches, dependencies or merchant settings. Extra finite
+  checks add latency (first-item guard superseded by the correction above); reads add
+  recipient qualification before conditions. Main also once removed an old dish
+  after a failed replacement lookup: existing browser Agent task now latches a
+  missing/unavailable named subject and blocks partial order edits until the next
+  customer task; late old reads cannot latch a successor. Runtime tests cover
+  mixed queries, sold-out targets, fresh-task release and task replacement.
+  Live synthetic replay passes30 Jev cases across four tests (including14 prices,
+  food varieties with/without history/cart, companion speech and cart changes),
+  with six real Main/SSE/owned-Menu flows. Provider replay now initializes accepted
+  Fast Path receipts through the actual entries endpoint and binds Agent tasks,
+  matching the real host. Targeted Server247, Menu81 and Kiosk31 pass; scoped types
+  and lint checked. Browser automation remains disabled; no hardware/voice test,
+  full-project typecheck or commit. Arbitrary model wording remains probabilistic;
+  the browser guard prevents the reproduced partial deletion independently.
+
+- Oct18 waiting-feedback trial: Kiosk now shows neutral localized progress as
+  soon as idle ASR/simulated speech enters Jev, including weak first routes.
+  This is display-only; it never admits speech, takes a turn or displaces an
+  active Agent/spoken reply. Main progress takes over and retains real tool
+  status across SSE continuations/drafts until receipt-grounded presentation.
+  useKioskWaitSpeech starts fixed-copy live TTS concurrently for admitted Agent
+  work (and deliberate typed retries); playback requires one second still
+  pending plus ready audio, once per turn. Fault/disabled-System-One fallbacks
+  have no verified recipient and stay text-only. Optional output owns a child
+  abort signal, not the order signal: final results, cancellation, new turns,
+  manual handover and disposal cancel stale synthesis/playback without touching
+  order phase/authority. TTS failure leaves text and execution intact, no retry
+  within the turn. Shared existing player now settles/cleans on interruption;
+  final audio takes priority. No new settings, dependencies, model calls for
+  wording, prepared audio bank or service startup; uses current Site TTS voice.
+  User says TTS service is OFF and wants live synthesis once enabled. Unit35,
+  scoped Kiosk types and changed-file lint pass; existing Vite scene transform
+  HTTP200. Browser UI automation remains disabled; no actual voice/hardware test
+  or root typecheck/commit. To preview, refresh Kiosk :5169, skip phone, add
+  水餃一份 then say/simulate 水餃不要，改牛肉麵. Visual feedback works with TTS
+  off; enabling the existing speech service enables the optional phrase.
+
+- Oct18 cart replacement: attachment 8a3a6bcd's 水餃不要，改牛肉麵 chose
+  ADD .3114 while dumplings were already in cart. Previous tests covered draft
+  switching, not this whole-request gap; Oct7's similar diagnosis is superseded.
+  Existing-cart ADD/REMOVE/quantity/option routes now check single-effect coverage
+  before execution, adding one small Jev call. Verified replacement/weak-route
+  handoffs additionally isolate recipient (one call); thresholds stay unchanged,
+  background speech stays silent, original trace and fulfillment survive. First
+  item originally added no calls (superseded by the first-order guard above). Real Jev needed explicit effect descriptions and contrast
+  examples: generic proposal descriptions misread 換 as SINGLE; combined recipient
+  scope admitted 小王. Final eight synthetic Jev contrasts pass, including pronoun,
+  unknown replacement, plain add/edit/remove and companion speech. Main initially
+  exhausted the existing host budget because only the latest tool result survived.
+  Server now retains paired compact tool exchanges of the latest customer turn
+  (four batches/sixteen calls), clearing payloads on a new utterance. Prompt-only
+  add-before-remove still failed, so existing order_add_item gained replaceLineId:
+  validates both targets/options, retains omitted quantity, synchronously commits
+  once and merges matching destination lines. Missing/unavailable/selection-failed
+  replacements, invalid config, stale cart/menu/checkout or ambiguous old variants
+  cannot remove the original. Receipt contains replacedLine; no extra Jev intent
+  or new tool, round-budget increase, third-party transaction guarantee or commit.
+  Actual Jev/Main/SSE/owned-Menu replay passes two swap phrasings and absent pizza
+  (original retained); one earlier run hit a transient Jev provider failure, then
+  the full eight-case replay passed. Server services235, HTTP context regression1,
+  Menu85 + machine9, scoped Server/Menu types and changed-file lint pass. Broader
+  HTTP suite has an unrelated old price assertion expecting maxPrice in initial
+  state although the current contract carries literal amounts; not changed. No
+  full-project typecheck, browser/voice/hardware test. Arbitrary compound commands
+  remain probabilistic; this fixes bounded routing plus owned-page whole-line swaps.
+
+- Oct18 continuation pickup change: the order-continuation page now offers
+  改為自取 before/after table binding, with explicit confirmation and 保留內用.
+  POST /v1/continuations/:token/takeout requires confirmed:true and atomically
+  changes the test snapshot's required fulfillmentMode to takeout, clearing its
+  table. Original POS receipt/payment/order ID/items/total/expiry stay intact;
+  this is explicitly a test-only override, with no external POS mutation or
+  additional submission/payment. Replays retain pickup; stale table writes get
+  409, expired/unknown tokens404. UI updates only after success, clears its own
+  pending table-scan token, hides binding controls and keeps pickup on reload.
+  Lifespan stays30min/in-memory. Client/SSR9 and backend22 tests, Menu/Bridge
+  scoped types and changed-file lint pass. Browser access remains disabled;
+  no real DOM interaction test, dependencies, commits or full-project typecheck.
+
+- Oct18 missing table-binding QR after repeated demos: browser gateway kept one
+  idempotency key for its entire lifetime, so a later paid dine-in received an
+  earlier pickup/expired receipt, showed rewards but got no continuation. Keys
+  now correlate with payment IDs and retain late-retry identity. Real in-memory
+  Bridge/simulator regressions cover pickup→dine-in, expired dine-in→new dine-in,
+  and lost accepted response/replay without duplicate POS submission. Targeted17
+  and Menu scoped types/lint pass. Browser completion test now waits for the
+  automatic five-second payment and asserts both reward and order QR; browser
+  access is disabled, so it was not run. Pickup intentionally has no table QR.
+  User later confirmed their reported order was pickup, so its display was
+  expected; the independently reproduced repeated-order bug was still fixed.
+
+- Oct18 order-item display focus: 「炸排骨便當2份」 → fulfillment question →
+  「還要一份水餃」 added correctly but retained the old visible lookup. Shared
+  revealItem now validates operability, focuses the actual catalog card before
+  cursor movement and retains it after adding; visible-dialog continuations
+  still skip reopening. Display focus updates conversational references without
+  resetting recommendation filters/seen history or answering fulfillment.
+  Voice/Agent/stepwise contrasts cover dumplings and noodles. Targeted80, Menu
+  scoped types and lint pass. Broader recommendationFlow still has the known
+  review cursor assertion omitting order:view; unrelated to this change. No
+  extra model requests, dependencies, browser/hardware verification or commits.
+
+- Oct18 direct payment-method selection: LINE Pay / 街口支付 now select
+  immediately through voice or Agent, without a second confirmation. Latest
+  demo shows a genuine QR encoding plain TEST ONLY metadata (no payment URL),
+  labels it non-payment, then counts five seconds after image generation and
+  requests the existing simulator automatically. No physical scan/button is
+  needed. usePaymentSimulation owns cancellation on method/amount changes,
+  ineligibility or scope disposal; stale QR work cannot restart it. QR failure
+  does not pay; rejected/uncertain results do not auto-retry. Only verified
+  simulator/order results advance completion/rewards. Selection still returns
+  `selected`, retires the method question and preserves execution/phase locks.
+  Follow-up14 (including real QR generation), total targeted96, scoped Menu
+  types and changed-file lint pass. Earlier configured-Jev2/host69 also passed.
+  Checkout's separate 30s timer returns only an unselected payment page to
+  review; invoice/tax-ID never auto-skip. Kiosk idle is 3min then 15s confirmation;
+  question-ticket30s expiry grants no choice. Known broader Menu expectations
+  still omit clarify/order:view and use the old ingredient-filter title. No
+  browser UI, real scanner/payment/hardware test, dependencies or commits.
+
+- Oct18 price evidence and semantic scope: unitless comparisons such as
+  `有價格130以下的嗎？` now issue literals alongside unitless ranges; Jev still
+  owns interpretation, and the browser owns amounts/execution. Coverage includes
+  inclusive/exclusive upper/lower bounds, exact price, independent range ends,
+  ascending order, currency/Chinese/full-width forms, new budgets and empty
+  batches. Quantity/clock literals remain excluded. Approximation, relative/total
+  budgets and unsupported descending order cannot supply executable conditions.
+  Key model failure: repeating proposed price descriptions in customer state
+  made 不到 choose the inclusive proposal confidently. State now carries literal
+  amounts only; alternatives belong to their own question, and food capability
+  checks do not repeat them. Food-filter presence explicitly excludes pure
+  prices. Exact/range/sorting contrasts use clear finite criteria; thresholds
+  were not lowered. A factual phone MENU_QUERY qualifies prices before handoff,
+  and host presentation permits its read-only recommendation tools while still
+  blocking order edits/skip authority. Configured Jev/Main replay passes14 cases
+  through actual runtime and fresh-phase host presentation; Menu123, decision207
+  (75 opt-in skips), host68, scoped Menu/Server/Kiosk types and changed-file lint
+  pass. Browser UI access is disabled; verified presentation IDs/replies, not DOM
+  automation. No voice/hardware, dependencies, commits or root typecheck.
+
+- Oct18 reactive phone-stage greetings: the entry scope now distinguishes
+  HELLO_ONLY / REQUEST / BACKGROUND. Reliable HELLO_ONLY maps to existing GREET
+  and fixed host “您好！” after one Jev call, without phone skip, question
+  acknowledgement or Main Agent. Mixed greetings follow their request. Small
+  contrast examples were necessary: adding GREET to the later phone classifier
+  diluted order confidence, and broad greeting criteria confused identity
+  questions/companions. Final configured-Jev replay passes 22 synthetic phone
+  cases, including identity, recommendation, factual menu, skip and companion
+  contrasts. A companion may also fail closed as UNCERTAIN_RECIPIENT; the test
+  accepts only this quiet refusal, never provider errors or greeting responses.
+  Phone unit14, host51, scoped Server types and changed-file lint pass. No voice
+  or hardware testing, dependency changes, commits or full-project typecheck.
+
+- Oct18 phone recommendation/ordering prerequisite: phone classification now
+  separates factual MENU from ORDER (recommendation, more recommendations or
+  ordering). ORDER returns CUSTOMER_ENTRY_REQUIRED, and Kiosk presents fixed
+  localized fill/skip guidance plus test number0912345678 without Main Agent or
+  WebMCP execution. Explicit skip remains its own authorized transition; factual
+  food/identity/phone queries remain available. Agent fallbacks reread live entry
+  phase before presentation: recommendation/order tools while pending show the
+  same hint, including empty recommendations and blocked writes, not “no matching
+  dishes”. Completed entry retains its real result. New diagnostic route labels
+  entry waiting explicitly. Jev12 synthetic contrasts, decision199 (75 skips),
+  host67 and Server/Kiosk scoped types/lint pass; no voice/hardware test.
+
+- Oct18 category ellipsis / unfinished speech repaired: shared scope understands
+  category names with 呢／的有嗎／之類的 as complete browsing. In ordinary
+  ordering, an INCOMPLETE with weak confidence or current category evidence
+  gets small recipient then speech checks. Only a reliable QUERY can rejoin the
+  existing SEARCH/filter/price path; background/unknown recipient grants no
+  read, admitted unclear/complete needs reach Agent, and reliable unfinished
+  speech still waits. Original route remains rawAnswer; semanticCheck/exchanges
+  explain recovery. No fulfillment answer, cart mutation or changed thresholds.
+  The first recovery prompt overlapped REQUEST with genuine unfinished speech;
+  tightening the mutually exclusive criteria fixed its live contrast. Six real
+  Jev category cases plus background/unfinished and three recorded-first-route
+  recovery contrasts pass (11 cases total) through the owned runtime. Cart and
+  pending fulfillment are retained. Server decision195 (75 opt-in skips), host50,
+  Server scoped types and changed-file lint pass. A background contrast can
+  take the existing UNCERTAIN_OPERATION refusal instead of IGNORE; both forbid
+  read/Agent/old-question effects. The test checks that safety contract without
+  lowering thresholds. No ASR/TTS/hardware test.
+
+- Oct18 simulated-ASR trace copy: its expandable System One trace offers
+  localized full-source copying with success/failure feedback, following the
+  shared error panel's native clipboard pattern. New trace clears old status;
+  an in-flight write cannot label a replacement trace copied. Existing panel
+  browser10 and Kiosk scoped types pass. No dependency change.
+
+- Oct18 optional phone query reminder: the Kiosk appends fixed localized copy
+  once after a verified successful factual menu reply if a fresh service-state read still
+  reports customer_entry. Fast Path and Main Agent share this presentation
+  policy; identity replies, pending operation questions and failed lookups do
+  not consume it. Customer reset clears it; skipped/filled entry during a lookup
+  suppresses stale reminders. Acceptance-test modal and reminder now offer
+  0912345678 without pre-filling or submitting it. Unit15 and Phone browser9 pass;
+  no new model request or voice/hardware testing.
+
+- Oct18 hallucinated menu / ignored corrections: a scoped read of the reported
+  local test session confirmed that its second recommendation had NO tool call;
+  Main Agent invented three names. A completed no-tool answer was previously
+  trusted as dialogue. Phone routing now distinguishes MENU from ordinary ASK;
+  normal ordering also admits a MENU_QUERY handoff for disputed menu claims.
+  Host projection carries requireMenuRead, JSON/SSE gateway requests require a
+  fresh menu_get/menu_recommend call, drafts stay service events, and Kiosk
+  rejects no-receipt food prose as a retryable error. Identity/phone FAQs remain
+  natural. menu_get verifyClaim with named queries gives an explicit correction
+  for absent names or real page availability for present ones; copy is in i18n.
+  Current-meal “不要水餃” and “不是要點，只是問有沒有” were both wrongly
+  rejected as background by the clerk-context recipient prompt. Classification
+  now isolates customerUtterance; current-meal purpose choices are mutually
+  exclusive CANCEL/INQUIRY/CONFIRM/NEW_REQUEST. configure:<id>:inquiry consumes
+  the live answer, drops only that unadded draft, reads the same dish and never
+  revives its quantity question. Other cart lines/drafts remain intact.
+  Seven correction/subject-switch contrasts and ten phone/menu/identity live
+  contrasts pass with synthetic data, without lowered thresholds. Menu74,
+  host82, browser12, Server decision112 (3 skips) and related HTTP cases pass.
+  Older route/flow provider mocks were updated to the existing service/purpose
+  and phone question contract. Scoped Menu/Kiosk/Server types and changed-file
+  lint pass. Configured-provider replay now passes six synthetic cases through
+  actual Jev, Main Agent (webnavior/chat -> qwen36), SSE route, owned Menu tools
+  and host reply validation. Alternatives call menu_recommend(more:true), disputed
+  names call menu_get(verifyClaim:true), and corrections/cancellation leave cart
+  empty without returning to quantity. Initial four menu turns took 2.5–4.6s.
+  A fresh timing replay separates phone-stage Jev flow (two service/phone calls,
+  1.18–1.54s), Main Agent (two SSE round trips, 1.32–2.71s), local tools (1–4ms)
+  and total (2.69–4.27s). These include network/application time, exclude speech,
+  and are individual samples rather than a latency SLA. Opt-in replay is documented in
+  Server README; cross-app fixture belongs in tests/experiments, not Node-only
+  src. User excluded voice testing; ASR/TTS/hardware remain unverified. No
+  dependency changes, commits or full-project typecheck.
+
+- Oct18 page-availability acceptance trials: development Kiosk admin now has
+  **點餐體驗情境測試**, using host-only `kiosk_test_menu` on the development
+  owned Menu. Four in-memory states share touch and voice evidence: available,
+  sold-out, unknown, selection-failure. No counts or inventory/POS integration.
+  Selection failure keeps other cart lines, becomes unknown and produces a known
+  item-selection receipt; Kiosk speaks that explanation rather than an uncertain
+  write-failure message. Unavailable names remain valid read targets.
+  Meal-confirmation availability follow-ups use `inquire-meal:<questionId>`;
+  Jev classifies READ and the browser consumes only that live revision-bound
+  proposal for a lookup, without purchase/quantity prompts. Different named
+  items/categories and conditions cannot inherit this shortcut. A combined
+  prompt misread corrections as NO and companion questions as queries. Corrective
+  wording now routes correctly; READ additionally verifies recipient using only
+  customerUtterance (two calls); ordinary YES/NO stays one call. Background/weak
+  recipient results stay silent without lowered thresholds. Synthetic live
+  contrasts9, Menu104, Server124 (3 skipped), browser11, Menu/Server/Kiosk scoped
+  types and changed-file lint pass. The broader order-machine suite exposed three
+  older expectation mismatches (clarification tool list, review cursor action,
+  recommendation title); not changed here. Real microphone/ASR/TTS acceptance and
+  third-party pages without WebMCP remain unverified/deferred. Reload Menu to
+  reset fixture states; admin refresh only rereads them. No new dependencies,
+  commits or full-project typecheck.
+
+- Oct18 phone entry now renders as a local host overlay in Stage Kiosk's
+  ScenarioSurface ordering region, not a restyled Menu page. Document-wide
+  showModal blocked the upper controls; nonmodal show plus a region-local mask
+  now keeps avatar/conversation interactive. The 25% mask has no blur and keeps
+  the underlying catalog visible/inert. Old Menu phone page is removed; standalone
+  Menu opens catalog directly. Host-only kiosk_customer_entry_start offers entry
+  for an untouched order, never reopening after phone choice/cart activity.
+  The dialog scrolls within short regions. Browser regressions8 cover bounds at
+  500/240px and upper clicks. useKioskCustomerEntry observes
+  admitted WebMCP discovery/execution and reads phase; submit/skip close only
+  after entry advances. Replaced documents/disposal revoke old reads and drafts.
+  Host-only kiosk_customer_phone uses phase/10-digit validation
+  and callback to its existing transaction phone storage; no phone is echoed
+  into decision state. Kiosk and Web exclude this tool from Agent tools.
+  Deploy Menu/Kiosk/Server together; no original full-page entry remains.
+  Phone-stage food queries now allow Agent menu_get/menu_recommend/
+  menu_show_recommendations without consuming the phone choice. A reported
+  identity question worked but “我想吃飯” failed: both the broad-exploration
+  guard and the entry tool/authorization gates blocked reads after a correct
+  NEEDS_ASSISTANT handoff. All those gates now admit menu browsing only;
+  selection/cart/checkout still require explicit phone/skip choice. Regression
+  covers broad/named queries, recommendations and presentation, preserved phase
+  and rejected order writes. Synthetic Jev handoff and phone browser regression
+  pass; no model prompt/threshold change or automatic skip.
+  Live reproduction: generic entry routing classified a short skip as INCOMPLETE;
+  single combined phone classifiers also misread negation/companion speech.
+  Final entry uses separate small recipient and SKIP/ENTER/ASK/MENU questions, with
+  only customerUtterance as classification data so the clerk's invitation cannot
+  be mistaken for consent. Existing confidence gates are not lowered. Seven
+  synthetic Jev contrasts pass, including permission questions and negation;
+  phone modal browser cases8 plus existing meal cases2, Menu49, Kiosk45 and
+  Server107 pass. Physical microphone/ASR-to-TTS acceptance remains unverified.
+
+- Oct18 owned-menu simple clarification implemented: browser issues a unique
+  real-item proposal, host-only kiosk_fast_path_clarify creates a 30-second
+  confirm-meal question, and voice/touch consume the same revision-bound ticket.
+  YES/NO only resolves that item and continues slot collection; no payment or
+  guessed quantity. Jev's subject-switch/fragment path separates service admission
+  and purpose; ambiguous recipient stays silent. Confirm-meal uses short YES/NO
+  in one call. This replaced an unsuccessful broad new-choice prompt in synthetic
+  tests; no confidence thresholds were lowered. Normal price evidence stays on
+  its bounded path. Unadded meals suspend/resume with their own slots, including
+  returning to an already queued item; reset/clear/checkout revoke confirmation.
+  Repeated unclear replies stop speaking after one repeat, keeping controls.
+  Agent writes cannot bypass an active meal confirmation. New standalone copy
+  lives in packages/i18n/src/orderingMessages.ts. Synthetic Jev contrasts and
+  touch browser tests passed; real customer histories were not exported.
+  Physical kiosk/complete ASR-to-TTS acceptance remains unverified. No new
+  dependency, model changes, commits, or full-project typecheck.
+
+- Oct18 welcome modes: existing effective `proactiveVlmEnabled` now selects
+  fixed (false) or VLM-generated (true) welcomes, exposed as an explicit admin
+  selection alongside its text under **互動體驗 → 開場招呼**. Device overrides
+  keep precedence. The selected bank is shown; switching preserves unsaved text.
+  Fixed bank and VLM guidance remain independently editable/retained.
+  Profile `greetingPhrases` contains 1–50 spoken openings, 500 characters each;
+  shared Server/editor constraints show an inline count and block invalid saves.
+  A reported 12-phrase save reproduced the former five-phrase limit; its original
+  payload was restored to the local draft only, without publishing. Profile
+  persistence/boundary tests21 and welcome editor browser tests3 pass.
+  Dashboard content editing/publication retains them. Unset uses localized
+  generic openings. Kiosk prepares entry/menu audio sequentially and reuses a
+  scene-owned in-memory bank across visitors; locale/phrase/device changes or
+  disabling/VLM selection/unmounting abort prior preparation. Reload after Server
+  TTS changes. Fixed entry welcomes append optional-phone/skip guidance. VLM
+  welcomes use the current frame, published `greetingPrompt` and entry/menu phase
+  through assistant-actions. Neither mode appends recommendation invitations;
+  reminder image policy remains controlled by the same setting.
+  Entry/menu/question guards are checked before session start and again after
+  cold TTS; real touch cancels proactive work. No persistent/offline audio cache.
+  The local test Site has a new immutable release with three 周氏蝦捲 openings;
+  its other published settings and prior drafts were preserved. Existing Kiosk
+  tabs need reload to fetch this assignment and prepare audio. Current effective
+  policy remains fixed on all local test devices; no mode settings were changed.
+  Fixed/cache/turn/recording tests31, Server route tests28 and the admin mode
+  selector browser tests2 pass (including retained drafts/template banks);
+  Server/Web/Kiosk scoped types and changed-file
+  lint pass. Prior Profile persistence tests19 and real Vite transforms passed.
+
+- Oct18 ordering presentation now animates before opening the item dialog and
+  uses the actual visible item identity to avoid replaying its selection after
+  quantity/options answers. Review entry animates **查看訂單** before opening
+  fulfillment controls; existing review/checkout reads preserve their surface.
+  Synthetic runtime regressions70 and Menu scoped types pass; live Jev/voice
+  replay was not performed for this presentation fix.
+
+- Oct18 owned-menu kiosk test: optional phone entry/explicit skip precedes ordering;
+  `customer_entry` phase/screen and `customer_skip_phone` support both Jev and
+  Main Agent; skipped phone stays absent and host reset restores entry. Invoice input has
+  mobile/citizen carriers, tax ID and donation, no paper or timeout donation.
+  Donation is now an explicit **略過，捐贈發票** action: touch/Jev/Main Agent
+  proceed to payment selection without code input and clear prior personal
+  invoice identifiers. Actual recipient/issuance belongs to the future POS
+  integration; this fixture does not invent a code or claim an issued invoice.
+  Donation/checkout/question regressions74 and embedded mock-payment browser
+  cases2 pass (carrier and skip/donation); Menu scoped types and changed-file
+  lint pass. The prior label-only change left the code-required state unchanged;
+  the domain transition now advances directly, and donation has no input form.
+  LINE Pay/街口支付 selection is separate from explicit mock payment. Default
+  dev runner uses after-order table binding in Bridge and simulator; reservation
+  policy remains separately testable. Accepted test dine-in receipts issue an
+  in-memory 30-minute bearer continuation; QR and desktop link share its URL.
+  Phone confirms fixed demo A08 after simulated scan; neither UI has a table
+  picker. No real camera/POS membership/invoice/payment/robot integration.
+  Native-camera tab handoff uses an expiring same-origin pending capability.
+  Paid acceptance immediately notifies the embedding host: configured reward/
+  survey and a separate continuation QR/link share the completion screen.
+  Standalone menu retains its receipt until acknowledgement. The transient
+  continuation URL stays outside archived order metadata and clears on session end.
+  Jev common scope admits assistant identity/capability questions; plain Agent
+  side replies revoke old answer tickets via host-only interruptsQuestion.
+  Checkout model context excludes prior chat, preserving durable history and
+  current structured cart/browser evidence. Third-party DOM hiding is deferred.
+  Focused tests: menu73, Bridge33, Server126 (2 skips), Kiosk54 pass;
+  four affected package typechecks and changed-file lint pass. Expanded menu
+  suite retains the known recommendation-title mismatch (107 pass/1 fail).
+  Browser verified phone entry, both payment brands, QR/link continuation,
+  cross-tab table scan confirmation and refresh after binding. Live Jev/model
+  and physical-device acceptance remain unverified; no full-project typecheck.
+  Reward timing regression reproduced before the fix and passes with the actual
+  embedded menu + isolated test payment Bridge. Lifecycle/session tests15 and
+  Menu/Kiosk/Web/StageShared scoped types plus changed-file lint pass. Both hosts
+  validate the shared interaction-lifecycle envelope; deploy with the updated menu.
+  Kiosk/Web Vite now use StageShared package exports, without the old prefix-to-src
+  alias. Actual dev-server lifecycle imports reproduced500 before and return200
+  after this fix; Vitest alone did not exercise those app-specific aliases.
+  Optional-entry regressions: Menu65, Server38, browser2 pass; Menu/Server/Kiosk
+  scoped types and changed-file lint pass. Active Jev correctly selected the
+  synthetic phone-skip candidate. A synthetic no-history recommendation replay
+  used three segmented provider calls (route/filterRequirement/filterPresence);
+  keep provider round-trip measurements separate from UI/animation latency.
+
 - Oct17: master now includes the three existing WebMCP commits from
   `to_damai_website`: object-input native API, iframe lifecycle/geolocation,
   and health-check admission. Host and own menu must deploy together. Services
@@ -160,27 +634,14 @@ accumulating history.
   loop, not prior new extraction prompt. Do not add more same-model gates from
   this negative result or silently treat assistant handoff as completed service.
 
-- Oct8 missing-dish complaints DIAGNOSED, NOT FIXED. Attachments600f4a56 /
-  a6f483f0 retain original multi-dish dialogue, beef alias evidence, ADD candidate,
-  pork-only cart and fulfillment question. 牛肉麵沒點到 -> INCOMPLETE confidence
-  .3286; 你沒有點到我的牛肉麵 -> ADD .2836 -> UNAVAILABLE. Both one6.07s exchange,
-  no relation/tool call. INCOMPLETE returns without confidence validation while
-  high-risk ADD below.5 refuses; UI does not escalate either result (simulation
-  wait/unavailable status, ASR refusal notice for UNAVAILABLE). Local fixed-choice
-  replay reproduces without history/question; this tests application admission,
-  NOT why live4B chose those labels. Follow-up98897f0e: 想吃麵 -> INCOMPLETE .7969,
-  category 麵食/itemCount1 + explicit category-browse SEARCH candidate + dialogue
-  all present; ADD absent is consistent with category/no-quantity browse policy.
-  One5.88s exchange. High-confidence counterexample means adding a.6 confidence
-  check alone cannot repair this family. Correct SEARCH fixed-choice control
-  passes existing read pipeline; not a live prompt/model fix.
-  incompleteDiagnosis.test.ts:10 diagnostics pass,2 expected-safe probes known
-  red with KIOSK_INCOMPLETE_DIAGNOSIS=1; scoped
-  lint pass, no full typecheck/live provider/production change. Fits earlier
-  lost multi-demand / no per-demand completion ledger finding, not proof that
-  context disappeared or missing ADD candidate. Avoid phrase exceptions, lower
-  mutation thresholds, or automatic ADD from mention; need safe uncertainty
-  recovery and grounded reconciliation of intended vs executed requirements.
+- Oct8 missing-dish complaint reconciliation remains PARTIAL. Attachments600f4a56
+  /a6f483f0 retained original multi-dish dialogue, beef alias evidence, pork-only
+  cart and fulfillment question. Oct18 now recovers the weak INCOMPLETE family;
+  corresponding fixed-choice cases are permanent regressions, not live complaint
+  accuracy evidence. A low-confidence ADD (.2836) still refuses safely, and no
+  per-demand completion ledger reconciles all requested versus added dishes.
+  Do not infer missing items were added, lower mutation thresholds or repair the
+  cart from a mention. Live multi-demand complaint recovery remains unverified.
 
 - Oct8 Gemma4 26B extraction follow-up COMPLETE, NOT ADOPTED. Explicit test-only
   override `models/gemma-4-26b-a4b-it`; same frozen40-case prompt/gold hashes as
@@ -309,16 +770,6 @@ accumulating history.
   measure the changed prompt's real accuracy. Do not claim a Gemini defect or
   fix this by clearing session context or adding same-model review untested.
 
-- Oct 7 cart meal replacement DIAGNOSED, NOT FIXED. Attachment addd9b21:
-  排骨便當一份 already added; 改水餃一份 sees exact 水餃, recent pork cart line
-  and fulfillment waitingFor, but Jev chooses ADD confidence.6223. Local recorded-
-  choice replay passes Server decision, resolver/compiler/authorize and adds
-  dumplings without removing pork. Trace itself has no execution receipt.
-  Finite intent/compiler has no cart-meal replacement effect; quantity/option
-  edits and unadded-draft replacement are distinct supported cases. Existing
-  guard checks validity of chosen operation, not whole-request semantic coverage.
-  cartChangeDiagnosis.test.ts:2 local probes pass; expected-safe replay is known
-  red under KIOSK_CART_CHANGE_DIAGNOSIS=1. No production change or live Jev call.
 
 - Oct 7 ASR dish typo DIAGNOSED, NOT FIXED. 蕉麻雞便當來一份 discovers
   椒麻雞便當 only as fragment 麻雞便當; possible evidence suppresses ADD before
