@@ -16,6 +16,16 @@ const dishes = Array.from({ length: 7 }, (_, index) => ({
 }))
 
 describe('recommendation batches', () => {
+  it('retains the recommendation conditions and seen history when ordering a different dish', async () => {
+    const shown: string[][] = []
+    const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: presentation => shown.push(presentation.itemIds) })
+    await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'], limit: 1 })
+    expect(shown.at(-1)).toEqual(['dish-1'])
+    await runtime.invokeForAgent('order_add_item', { itemId: 'dish-6', quantity: 1 })
+    expect(shown.at(-1)).toEqual(['dish-6'])
+    expect(await runtime.invoke('menu_recommend', { more: true, limit: 1 })).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] }, items: [{ id: 'dish-2' }] })
+  })
+
   it.skipIf(!process.env.KIOSK_RECOMMENDATION_DIAGNOSIS)('does not repeat recommendations when replaying the reported high-confidence route', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const first = await runtime.invoke('menu_recommend') as { customerMessage: string, items: Array<{ id: string }> }
@@ -170,10 +180,10 @@ describe('order review presentation', () => {
     await runtime.invoke('order_add_item', { itemId: 'dish-1', quantity: 1 })
     events.length = 0
     await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
-    expect(events).toEqual(['review', 'order:fulfillment:takeout'])
+    expect(events).toEqual(['order:view', 'review', 'order:fulfillment:takeout'])
     events.length = 0
     await runtime.invoke('order_set_fulfillment', { mode: 'dine-in' })
-    expect(events).toEqual(['review', 'order:fulfillment:dine-in'])
+    expect(events).toEqual(['order:view', 'review', 'order:fulfillment:dine-in'])
   })
 
   it('shows the cart on request but permits a read without changing the screen', async () => {

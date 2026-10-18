@@ -7,6 +7,33 @@ import { createOrderMachine } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
 describe('current POS menu without customization options', () => {
+  it('checks disputed meal names and explicitly corrects a nonexistent recommendation', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const result = await runtime.invokeForAgent('menu_get', { queries: ['香菜肉絲乾麵', '韭菜盒', '甜不辣'], verifyClaim: true })
+    expect(result).toMatchObject({ items: [], customerMessage: '您說得對，剛才的介紹有誤。目前菜單查不到「香菜肉絲乾麵、韭菜盒、甜不辣」。' })
+    const actual = await runtime.invokeForAgent('menu_get', { query: '水餃', verifyClaim: true })
+    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。' })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    await expect(runtime.invokeForAgent('menu_get', { verifyClaim: true })).rejects.toThrow('Specify the meal names')
+  })
+
+  it('retains an abbreviated fish-bento name as discovery evidence without authorizing a purchase', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('menu_recommend')
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要酸辣魚便當' }) as { candidates: Array<{ id: string }> }
+    expect(context).toMatchObject({
+      productResolution: { status: 'possible', count: 1, references: [{ label: '泰式酸辣魚便當' }] },
+      catalogEvidence: { products: [{ label: '泰式酸辣魚便當', matchedText: '酸辣魚便當', source: 'fragment' }] },
+    })
+    expect(context.candidates.some(candidate => candidate.id === 'intent:add-item')).toBe(false)
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).rejects.toThrow()
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    const exact = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要泰式酸辣魚便當' }) as { candidates: Array<{ id: string }> }
+    expect(exact.candidates.some(candidate => candidate.id === 'intent:add-item')).toBe(true)
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).toMatchObject({ customerMessage: '請問泰式酸辣魚便當要幾份？' })
+  })
   it('recognizes 排骨便當 as a declared alias and adds one serving', async () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })

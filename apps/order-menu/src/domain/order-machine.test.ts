@@ -26,7 +26,7 @@ describe('createOrderMachine', () => {
     const machine = createOrderMachine({ menu: [soldOutItem] })
 
     expect(machine.getMenu()).toEqual([soldOutItem])
-    expect(() => machine.selectMenuItem(soldOutItem.id)).toThrow('currently unavailable')
+    expect(() => machine.selectMenuItem(soldOutItem.id)).toThrow('目前售完')
   })
 
   it('accepts a POS catalog before ordering and refuses to reprice an active cart', () => {
@@ -241,7 +241,7 @@ describe('createMenuToolRuntime', () => {
       revision: () => 0,
       requestTaxId: () => ({ invoiceMethod: 'tax-id', stage: 'tax-id', taxId: '' }),
       restart: () => {},
-      selectPayment: async method => ({ customerMessage: `等待${method}`, status: 'pending' }),
+      selectPayment: async method => ({ customerMessage: `等待${method}`, status: 'selected' }),
       setTaxId: taxId => ({ invoiceMethod: 'tax-id', stage: 'tax-id', taxId }),
       skipMembership: () => ({ stage: 'invoice' }),
       snapshot: () => undefined,
@@ -292,6 +292,7 @@ describe('createMenuToolRuntime', () => {
   it('declares native WebMCP tools from the same runtime used by the menu UI', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
+      'kiosk_fast_path_clarify',
       'kiosk_agent_task',
       'menu_get',
       'menu_recommend',
@@ -307,9 +308,6 @@ describe('createMenuToolRuntime', () => {
       'cart_clear',
       'cart_get',
       'order_set_fulfillment',
-      'order_set_party_size',
-      'seating_get',
-      'seating_reserve',
       'checkout_start',
       'checkout_skip_membership',
       'checkout_choose_invoice',
@@ -342,7 +340,10 @@ describe('createMenuToolRuntime', () => {
 
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     const afterAdding = await runtime.invoke('kiosk_fast_path_context') as { candidates: Array<{ id: string }>, references: Array<{ refId: string }> }
-    expect(afterAdding.references).toEqual([{ label: expect.stringContaining('周氏蝦捲'), refId: 'CART_LINE_1' }])
+    expect(afterAdding.references).toEqual([
+      { label: '剛展示的周氏蝦捲', refId: 'ITEM_1' },
+      { label: expect.stringContaining('周氏蝦捲'), refId: 'CART_LINE_1' },
+    ])
     expect(afterAdding).toMatchObject({
       candidates: expect.arrayContaining([
         expect.objectContaining({ id: 'intent:remove-item' }),
@@ -533,51 +534,57 @@ describe('createMenuToolRuntime', () => {
     await expect(runtime.invokeForAgent('kiosk_interaction_state')).rejects.toThrow('unavailable to the Agent')
   })
 
-  it('replays a spoken card choice only in payment selection and confirms that exact method once', async () => {
-    const selectPayment = vi.fn(async (method: 'card' | 'mobile') => ({ customerMessage: `等待${method}`, status: 'pending' as const }))
-    const runtime = createMenuToolRuntime({
-      checkout: checkoutController({ selectPayment, snapshot: () => ({ stage: 'payment' }) }),
-      onAction: () => {},
-      onCartChange: () => {},
-      onMenuSelection: () => {},
-    })
+  it.each([
+    { method: 'linepay', source: 'voice' },
+    { method: 'jkopay', source: 'voice' },
+    { method: 'linepay', source: 'agent' },
+    { method: 'jkopay', source: 'agent' },
+  ] as const)('selects $method through $source without asking for confirmation or starting payment', async ({ method, source }) => {
+    const selectPayment = vi.fn(async () => ({ customerMessage: '已選擇，尚未付款。', status: 'selected' as const }))
+    let payment: 'pending' | 'uncertain' | undefined
+    const runtime = createMenuToolRuntime({ checkout: checkoutController({ selectPayment, snapshot: () => ({ stage: 'payment' }), paymentMethods: ['linepay', 'jkopay'], paymentStatus: () => payment }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
-    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '信用卡' }) as { candidates: Array<{ id: string }>, phase: string, allowedPaymentMethods: string[] }
-    expect(context.phase).toBe('checkout_payment_select')
-    expect(context.allowedPaymentMethods).toEqual(['card', 'mobile'])
-    expect(context.candidates.map(candidate => candidate.id)).toEqual(['intent:select-payment:card', 'intent:select-payment:mobile', 'intent:cancel-checkout'])
-    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:select-payment:card' })).resolves.toMatchObject({
-      customerMessage: expect.stringContaining('信用卡'),
-      decisionTrace: { authorize: { kind: 'REQUIRE_CONFIRMATION' }, operationPlan: { input: { method: 'card' } } },
-    })
-    const confirmation = await runtime.invoke('kiosk_fast_path_context', { transcript: '確認' }) as { candidates: Array<{ id: string }> }
-    const confirmationId = confirmation.candidates.find(candidate => candidate.id.startsWith('intent:confirm:'))?.id
-    await runtime.invoke('kiosk_fast_path_execute', { candidateId: confirmationId })
-    expect(selectPayment).toHaveBeenCalledExactlyOnceWith('card')
-    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: confirmationId })).rejects.toThrow('expired')
+    await runtime.invoke('kiosk_fast_path_context', { transcript: `使用${method}` })
+    const result = source === 'voice'
+      ? await runtime.invoke('kiosk_fast_path_execute', { candidateId: `intent:select-payment:${method}` })
+      : await runtime.invokeForAgent('checkout_select_payment', { method })
+    expect(result).toMatchObject({ payment: { method, status: 'selected' }, customerMessage: '已選擇，尚未付款。' })
+    expect(result).not.toHaveProperty('pendingConfirmation')
+    expect(selectPayment).toHaveBeenCalledExactlyOnceWith(method)
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'checkout_payment_select', paymentState: 'idle' })
+    payment = 'pending'
+    await expect(runtime.invokeForAgent('checkout_select_payment', { method })).rejects.toThrow('PAYMENT_IN_PROGRESS')
+    payment = 'uncertain'
+    await expect(runtime.invokeForAgent('checkout_select_payment', { method })).rejects.toThrow('PAYMENT_IN_PROGRESS')
+    expect(selectPayment).toHaveBeenCalledTimes(1)
   })
 
-  it('applies the same payment phase and one-use confirmation to Agent WebMCP calls', async () => {
-    const selectPayment = vi.fn(async (method: 'card' | 'mobile') => ({ customerMessage: `等待${method}`, status: 'pending' as const }))
-    const runtime = createMenuToolRuntime({
-      checkout: checkoutController({ selectPayment, snapshot: () => ({ stage: 'payment' }) }),
-      onAction: () => {},
-      onCartChange: () => {},
-      onMenuSelection: () => {},
-    })
+  it('selects a spoken method once per issued execution ticket', async () => {
+    const selectPayment = vi.fn(async () => ({ customerMessage: '已選擇信用卡，尚未付款。', status: 'selected' as const }))
+    const runtime = createMenuToolRuntime({ checkout: checkoutController({ selectPayment, snapshot: () => ({ stage: 'payment' }) }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '信用卡' })
+    expect(context).toMatchObject({ phase: 'checkout_payment_select', allowedPaymentMethods: ['card', 'mobile'] })
+    const selected = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:select-payment:card' })
+    expect(selected).toMatchObject({ payment: { method: 'card', status: 'selected' }, decisionTrace: { authorize: { kind: 'EXECUTE' } } })
+    expect(selected).not.toHaveProperty('pendingConfirmation')
+    expect(selectPayment).toHaveBeenCalledExactlyOnceWith('card')
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:select-payment:card' })).rejects.toThrow('expired')
+    expect(selectPayment).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies the same phase validation and direct method selection to Agent calls', async () => {
+    const selectPayment = vi.fn(async () => ({ customerMessage: '已選擇信用卡，尚未付款。', status: 'selected' as const }))
+    const runtime = createMenuToolRuntime({ checkout: checkoutController({ selectPayment, snapshot: () => ({ stage: 'payment' }) }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
     await expect(runtime.invokeForAgent('order_add_item', { itemId: 'chous-shrimp-roll' })).rejects.toThrow('INVALID_PHASE')
-    const proposed = await runtime.invokeForAgent('checkout_select_payment', { method: 'card' })
-    expect(proposed).toMatchObject({ pendingConfirmation: { action: 'SELECT_PAYMENT' }, customerMessage: expect.stringContaining('信用卡') })
-    expect(selectPayment).not.toHaveBeenCalled()
-
-    const confirmation = await runtime.invoke('kiosk_fast_path_context', { transcript: '確認' }) as { candidates: Array<{ id: string }> }
-    const confirmationId = confirmation.candidates.find(candidate => candidate.id.startsWith('intent:confirm:'))?.id
-    await runtime.invoke('kiosk_fast_path_execute', { candidateId: confirmationId })
+    const selected = await runtime.invokeForAgent('checkout_select_payment', { method: 'card' })
+    expect(selected).toMatchObject({ payment: { method: 'card', status: 'selected' } })
+    expect(selected).not.toHaveProperty('pendingConfirmation')
     expect(selectPayment).toHaveBeenCalledExactlyOnceWith('card')
-    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: confirmationId })).rejects.toThrow('expired')
   })
 
   it('clarifies an Agent removal when multiple cart lines refer to the same item', async () => {
@@ -627,7 +634,7 @@ describe('createMenuToolRuntime', () => {
       },
       selectPayment: async (method) => {
         calls.push(`payment:${method}`)
-        return { customerMessage: '等待顧客操作終端。', status: 'pending' }
+        return { customerMessage: '等待顧客操作終端。', status: 'selected' }
       },
       setTaxId: (taxId) => {
         calls.push(`tax-id:${taxId}`)
@@ -749,7 +756,7 @@ describe('createMenuToolRuntime', () => {
     const removeItem = runtime.toolDefinitions.find(tool => tool.name === 'cart_remove_item')
 
     expect(menuGet?.description).toContain('直接列出')
-    expect(removeItem?.description).toContain('先執行')
+    expect(removeItem?.description).toContain('執行成功後')
     expect(removeItem?.description).toContain('cart_get')
   })
 
@@ -993,6 +1000,7 @@ describe('createMenuToolRuntime', () => {
       },
       { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
       { controlId: 'chous-shrimp-roll:add', label: '加入購物車', targetId: 'chous-shrimp-roll' },
+      { controlId: 'order:view', label: '查看訂單', targetId: 'cart' },
       { controlId: 'order:fulfillment:takeout', label: '設定為自取', targetId: 'cart' },
       { controlId: 'order:view', label: '查看訂單', targetId: 'cart' },
     ])
@@ -1260,15 +1268,15 @@ describe('createMenuToolRuntime', () => {
       presentation: {
         kind: 'recommendation',
         itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
-        title: '成分篩選：排除豬肉',
+        title: '排除豬肉',
       },
     })
     await expect(runtime.invoke('menu_recommend', { needs: ['rice'], excludeIngredients: ['pork'] })).resolves.toMatchObject({ items: [] })
     expect(presentations).toEqual([{
       kind: 'recommendation',
       itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
-      title: '成分篩選：排除豬肉',
-    }, { kind: 'recommendation', itemIds: [], title: '成分篩選：排除豬肉' }])
+      title: '排除豬肉',
+    }, { kind: 'recommendation', itemIds: [], title: '排除豬肉' }])
   })
 
   it('uses the store default recommendation order when the customer has not stated a preference', async () => {

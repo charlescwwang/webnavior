@@ -65,7 +65,7 @@ const kioskToolResultSchema = object({
 })
 
 const interactionStateSchema = object({
-  screen: optional(picklist(['menu', 'cart_review', 'item_configuration', 'checkout'])),
+  screen: optional(picklist(['customer_entry', 'menu', 'cart_review', 'item_configuration', 'request_confirmation', 'checkout'])),
   lastAddedItemName: optional(pipe(string(), maxLength(120))),
   matchingCartLines: pipe(number(), integer(), minValue(0)),
   pendingAction: optional(pipe(string(), maxLength(80))),
@@ -100,6 +100,8 @@ const conversationMessageSchema = object({
   utteranceId: optional(pipe(number(), integer(), minValue(1))),
   content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
   decisionState: optional(object({
+    requireMenuRead: optional(boolean()),
+    readOnly: optional(boolean()),
     priceEvidence: optional(priceEvidenceSchema),
     incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: literal(true) })),
     menuRevision: optional(pipe(number(), integer(), minValue(0))),
@@ -128,6 +130,7 @@ const orderResultSchema = object({
 })
 
 const assistantActionSchema = object({
+  phase: optional(picklist(['customer_entry', 'ordering'])),
   invitationAllowed: optional(boolean(), false),
   // A downscaled JPEG from the live kiosk camera. It is inference-only and is
   // deliberately not persisted through the visitor-media route.
@@ -146,6 +149,7 @@ const interactionDecisionSchema = object({
   review: optional(object({ answer: pipe(string(), maxLength(2_000)), observation: pipe(string(), maxLength(4_000)) })),
   candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
   decisionState: optional(object({
+    clarificationOffer: optional(object({ id: pipe(string(), maxLength(120)), label: pipe(string(), maxLength(120)) })),
     priceEvidence: optional(priceEvidenceSchema),
     incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: optional(boolean()) })),
     productResolution: optional(object({ status: picklist(['exact', 'possible', 'none', 'overflow']), count: pipe(number(), integer(), minValue(0)), references: pipe(array(object({ label: pipe(string(), maxLength(120)), refId: pipe(string(), maxLength(120)) })), maxLength(5)) })),
@@ -589,7 +593,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         content: answer.content,
         // Operation prose is a draft; only the host's validated receipt is
         // customer dialogue. Do not feed a competing question back as history.
-        kind: answer.toolCalls.length || requiresPresentedReply(result.output.toolResults) ? 'service_event' : 'assistant_text',
+        kind: answer.toolCalls.length || result.output.decisionState?.requireMenuRead || requiresPresentedReply(result.output.toolResults) ? 'service_event' : 'assistant_text',
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -659,6 +663,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       ...(proactiveVlmEnabled ? { modelCapability: 'vision' as const, sceneFrame: result.output.frame } : {}),
       profile,
       transcript,
+      decisionState: result.output.phase ? { phase: result.output.phase } : undefined,
     })
     if (!answer.content)
       throw createBadRequestError('LLM Provider did not return a text reply', 'LLM_PROVIDER_INVALID_RESPONSE')
@@ -830,7 +835,7 @@ async function completeKioskReply(input: {
       model: modelName,
       messages: [
         { role: 'system', content: systemInstructions },
-        ...toConversationMessages(input.transcript.entries, input.toolResults?.map(result => result.toolCallId)),
+        ...toConversationMessages(input.transcript.entries, input.toolResults?.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content)),
         ...(input.toolResults ?? []).map(toolResult => ({
           role: 'tool',
           content: compactToolResultForModel(toolResult.name, toolResult.content),
@@ -853,7 +858,7 @@ async function completeKioskReply(input: {
             }]
           : []),
       ],
-      ...(input.tools?.length ? { tools: input.tools } : {}),
+      ...replyToolPolicy(input),
     },
   })
   return await parseAssistantReply(response)
@@ -911,7 +916,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
         if (answer.content) {
           await input.kioskService.appendDeviceInteraction({
             content: answer.content,
-            kind: answer.toolCalls.length || requiresPresentedReply(input.toolResults) ? 'service_event' : 'assistant_text',
+            kind: answer.toolCalls.length || input.decisionState?.requireMenuRead || requiresPresentedReply(input.toolResults) ? 'service_event' : 'assistant_text',
             deviceId: input.deviceId,
             visitorSessionId: input.transcript.session.id,
           })
@@ -974,7 +979,7 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
       model: modelName,
       messages: [
         { role: 'system', content: createKioskSystemInstructions(input) },
-        ...toConversationMessages(input.transcript.entries, input.toolResults.map(result => result.toolCallId)),
+        ...toConversationMessages(input.transcript.entries, input.toolResults.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content)),
         ...input.toolResults.map(toolResult => ({
           role: 'tool',
           content: compactToolResultForModel(toolResult.name, toolResult.content),
@@ -982,11 +987,27 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
         })),
         ...(input.content ? [{ role: 'user', content: input.content }] : []),
       ],
-      ...(input.tools.length ? { tools: input.tools } : {}),
+      ...replyToolPolicy(input),
       stream: true,
     },
   })
   return await parseKioskReplyStream(response, onTextDelta)
+}
+
+// A semantic food handoff must obtain a fresh read before any generated
+// final answer or order change. Continuations already carry that tool receipt.
+function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
+  // A qualified inquiry stays read-only across every continuation. A fresh
+  // customer request creates a new task; a menu receipt cannot grant writes.
+  const available = input.decisionState?.readOnly
+    ? input.tools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(tool.function.name))
+    : input.tools
+  if (!input.decisionState?.requireMenuRead || input.toolResults?.length)
+    return available?.length ? { tools: available } : {}
+  const tools = available?.filter(tool => ['menu_get', 'menu_recommend'].includes(tool.function.name)) ?? []
+  if (!tools.length)
+    throw createBadRequestError('目前無法查詢菜單。', 'KIOSK_MENU_LOOKUP_UNAVAILABLE')
+  return { tools, tool_choice: 'required' as const }
 }
 
 async function parseKioskReplyStream(response: Response, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
@@ -1078,12 +1099,15 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
 function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile'>) {
   return [
     { content: createCharacterInstructions(input.profile.snapshot), title: '角色與店別設定' },
-    input.agentInteraction ? { content: createInteractionInstructions(input.agentInteraction), title: '本次點餐互動規則' } : undefined,
+    input.agentInteraction ? { content: createInteractionInstructions(input.agentInteraction, conversationScope(input.decisionState)), title: '本次點餐互動規則' } : undefined,
     input.decisionState
       ? {
           content: [
             `目前 Kiosk 畫面：${input.decisionState.phase}`,
+            input.decisionState.phase === 'customer_entry' ? '目前是自願電話登記頁，不要求會員。顧客可觸控填寫，也可明確略過。顧客要求推薦、換推薦或點餐時，先請他填寫手機或選擇略過；不呼叫推薦／訂購工具，不把這個流程限制說成沒有符合條件的餐點。單純問有沒有、價格或成分仍可用 menu_get 查詢。不得猜填電話或替顧客略過。' : undefined,
             `本次已解析條件（不得省略或自行放寬）：${JSON.stringify(input.decisionState.constraints ?? { exclude: [] })}`,
+            input.decisionState.requireMenuRead ? '本輪是餐點需求：先查菜單再回答。換其他推薦使用 menu_recommend more:true，保留原條件。顧客質疑先前品項不存在或是否真的有時，用 menu_get 的 query／queries 核對具體品名並指定 verifyClaim:true，不以換推薦或請顧客自行看畫面代替。確實介紹錯就明確承認、更正，依回傳品項回答。' : undefined,
+            input.decisionState.readOnly ? '本輪僅授權查詢菜單資訊，不能新增、刪除、更換餐點、變更用餐方式、回答舊問題或進入結帳。依顧客原品名查證，不把其他相近餐點說成顧客問的品項。' : undefined,
             input.decisionState.priceEvidence ? '本句涉及價格。只使用已解析的單份基本售價條件；未解析時先詢問明確單份上限或範圍，不自行猜預算、分配總額或忽略價格。價格以工具真實售價顯示在畫面即可，不必口頭逐項唸價。' : undefined,
             `本次已完成的查詢（不要重複已完成操作）：${JSON.stringify(input.decisionState.completedReads ?? [])}`,
             input.decisionState.incompleteSpeech?.related ? `本次需求承接的未完成顧客語句（與這一句是同一需求，保留兩段原文，不視為兩筆訂單）：${JSON.stringify(input.decisionState.incompleteSpeech.transcript)}` : undefined,
@@ -1141,28 +1165,60 @@ function createAssistantActionInstructions(prompt: string) {
   ].join('\n')
 }
 
+// Use the browser phase for both typed and ASR turns; quoted dialogue cannot
+// move a customer into checkout or revive a former confirmation.
+function conversationScope(state: KioskConversationDecisionState | undefined): 'ordering' | 'checkout' {
+  return state?.phase.startsWith('checkout_') || state?.phase === 'payment_locked' || state?.interactionState?.screen === 'checkout' ? 'checkout' : 'ordering'
+}
+
 function toConversationMessages(
   entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries'],
   pendingToolCallIds: string[] = [],
+  scope: 'ordering' | 'checkout' = 'ordering',
+  hasCurrentInput = false,
 ) {
-  // Durable tool exchanges remain available for operator review. The model
-  // receives conversational text plus only the tool call required to pair the
-  // current browser result; older tool payloads are represented by the compact
-  // Agent interaction state in the system instructions.
-  const conversation = selectBoundedConversationText(conversationTextEntries(entries))
-  if (pendingToolCallIds.length === 0)
+  // New customer input starts a fresh task: past tool payloads remain durable
+  // for audit, while only their compact working summary reaches the model.
+  const conversation = scope === 'checkout' && hasCurrentInput ? [] : selectBoundedConversationText(conversationTextEntries(entries), scope)
+  if (hasCurrentInput || pendingToolCallIds.length === 0)
     return conversation
 
+  // A continuation needs every completed exchange of THIS request, not only
+  // the newest receipt. Otherwise a cart read erases the preceding menu lookup
+  // and the Agent repeats reads or loses track of a multi-effect correction.
+  // Pair by toolCallId within the latest customer turn; never borrow results
+  // from another task or send an unresolved historical tool call to a provider.
+  const taskEntries = entries.slice(entries.findLastIndex(entry => entry.kind === 'user_text') + 1)
   const pendingIds = new Set(pendingToolCallIds)
-  for (let index = entries.length - 1; index >= 0; index--) {
-    const entry = entries[index]
+  const results = new Map(taskEntries.filter(entry => entry.kind === 'tool_result' && typeof entry.metadata?.toolCallId === 'string').map(entry => [entry.metadata!.toolCallId as string, entry]))
+  const batches = taskEntries.flatMap((entry) => {
     if (entry.kind !== 'tool_call' || !Array.isArray(entry.metadata?.toolCalls))
-      continue
-    const toolCalls = (entry.metadata.toolCalls as KioskToolCall[]).filter(toolCall => pendingIds.has(toolCall.id))
-    if (toolCalls.length > 0)
-      return [...conversation, { role: 'assistant', content: '', tool_calls: toolCalls }]
+      return []
+    const calls = entry.metadata.toolCalls as KioskToolCall[]
+    if (!calls.length || calls.some(call => !pendingIds.has(call.id) && !results.has(call.id)))
+      return []
+    return [calls]
+  }).slice(-4)
+  const exchanges: Array<
+    | { content: string, role: 'assistant', tool_calls: KioskToolCall[] }
+    | { content: string, role: 'tool', tool_call_id: string }
+  > = []
+  // Match the host's four tool batches and sixteen-call budget, keeping each
+  // selected batch intact so a provider never receives an orphaned result.
+  let callCount = 0
+  for (const calls of batches.toReversed()) {
+    callCount += calls.length
+    if (callCount > 16)
+      break
+    const batch: typeof exchanges = [{ role: 'assistant', content: '', tool_calls: calls }]
+    for (const call of calls) {
+      const result = results.get(call.id)
+      if (!pendingIds.has(call.id) && result)
+        batch.push({ role: 'tool', content: compactToolResultForModel(call.function.name, result.content), tool_call_id: call.id })
+    }
+    exchanges.unshift(...batch)
   }
-  return conversation
+  return [...conversation, ...exchanges]
 }
 
 function conversationTextEntries(entries: Awaited<ReturnType<KioskService['getVisitorSessionForDevice']>>['entries']) {

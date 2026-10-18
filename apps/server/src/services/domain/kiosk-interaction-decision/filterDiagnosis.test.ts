@@ -14,10 +14,7 @@ function replay(confidence: number) {
     },
     invoke: async (_state: string, questions: Record<string, unknown>) => questions.route
       ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.9657 } } }
-      : { answers: {
-          filterRequirement: { choice: 'COVERED', confidence: 0.9523 },
-          filterPresence: { choice: 'NO_FILTER', probabilities: { REQUIRED: 0.254, NO_FILTER: 0.746 }, confidence },
-        } },
+      : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.9523 }, filterPresence: { choice: 'NO_FILTER', probabilities: { REQUIRED: 0.254, NO_FILTER: 0.746 }, confidence } } },
   })
 }
 
@@ -33,7 +30,7 @@ describe('recorded plain dish query filter diagnosis', () => {
     const result = await replay(confidence)
     expect(result).toHaveProperty('trace.rawAnswer', expect.objectContaining({ choice: 'intent:search-menu', confidence: 0.9657 }))
     expect(result).toMatchObject({ trace: { filterPresence: { choice: 'NO_FILTER', probabilities: { NO_FILTER: 0.746 }, confidence } } })
-    expect(result.modelQuestions).toBe(3)
+    expect(result.modelQuestions).toBe(4)
     if (confidence < 0.5)
       expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER' })
     else

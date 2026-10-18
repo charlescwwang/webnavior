@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 
 import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
 
+it('isolates checkout language from earlier ordering chat without altering the durable entries', () => {
+  const entries = [
+    { kind: 'user_text' as const, content: '剛才聊的故事' },
+    { kind: 'assistant_text' as const, content: '先前推薦的餐點' },
+    { kind: 'user_text' as const, content: '我要街口支付' },
+  ]
+  expect(selectBoundedConversationText(entries, 'checkout')).toEqual([{ role: 'user', content: '我要街口支付' }])
+  expect(entries).toHaveLength(3)
+})
+
 describe('kiosk Agent interaction', () => {
   it('keeps competing model operation prose out of customer history but retains general answers', () => {
     expect(requiresPresentedReply([{ name: 'order_ask_question', content: JSON.stringify({ pendingCustomerChoice: { questionId: 'Q1' } }) }])).toBe(true)

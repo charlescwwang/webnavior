@@ -170,6 +170,7 @@ async function execute(fixture: Awaited<ReturnType<typeof prepare>>, decision: K
     try {
       receipt = await fixture.runtime.invoke('kiosk_fast_path_execute', {
         candidateId: decision.actionId,
+        ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}),
         ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}),
         ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}),
       }) as Receipt
@@ -249,12 +250,11 @@ describe('isolated resolver challenge contracts', () => {
     expect(result.receipt?.decisionTrace?.resolveIntent?.kind).toBe('CONFIGURATION')
     expect(result.after.itemCount).toBe(0)
   })
-  it('shows that legal target and slots cannot repair a wrong query-to-add decision', async () => {
+  it('rejects a query-to-add proposal without a validated price interpretation', async () => {
     const fixture = await prepare('empty', '水餃一份多少錢呢')
     const result = await execute(fixture, { kind: 'FAST_ACTION', actionId: 'intent:add-item' })
-    expect(result.receipt?.decisionTrace?.authorize?.kind).toBe('EXECUTE')
-    expect(result.after.itemCount).toBe(1)
-    expect(result.receipt?.decisionTrace?.operationPlan?.slots.quantity).toBe(1)
+    expect(result.error).toContain('Price evidence requires an issued, resolved price choice')
+    expect(result.after).toEqual(result.before)
   })
   it('shows that a legal single plan can silently consume part of a compound demand', async () => {
     const fixture = await prepare('pickup', '水餃來兩份，再幫我結帳')
@@ -263,15 +263,10 @@ describe('isolated resolver challenge contracts', () => {
     expect(result.after.itemCount).toBe(result.before.itemCount + 2)
     expect(result.phaseAfter).toBe('ordering')
   })
-  it('exposes why read-only singleton eligibility is insufficient for an unknown food fact', async () => {
+  it('refuses singleton recovery for an ingredient question outside the experimental eligibility contract', async () => {
     const fixture = await prepare('fulfillment', '水餃裡面會加花生嗎')
     const candidateId = readOnlyCandidate({ class: 'QUERY', confidence: 1, latency_ms: 0 }, 0.7, fixture.snapshot)
-    expect(candidateId).toBe('intent:search-menu')
-    const result = await execute(fixture, { kind: 'FAST_ACTION', actionId: candidateId! })
-    expect(result.receipt?.customerMessage).toBe('我找到：水餃。')
-    expect(result.after).toEqual(result.before)
-    // This proves absence of a cart write, not successful resolution of the
-    // requested ingredient fact. The experimental policy must not be adopted.
+    expect(candidateId).toBeUndefined()
   })
   it('detects that repeat additions do not establish a multi-line ambiguity fixture', async () => {
     const fixture = await prepare('duplicates', '水餃那一份取消掉')
@@ -300,16 +295,15 @@ describe('isolated resolver challenge contracts', () => {
     expect(result.phaseAfter).toBe('ordering')
     expect(result.questionAfter).toBe('checkout-entry')
   })
-  it('requires a separate confirmation before payment even for a legal selected method', async () => {
+  it('reaches the payment boundary for an explicit method without completing a payment', async () => {
     const fixture = await prepare('pickup', '開始結帳')
     await fixture.runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:start-checkout' })
     await fixture.runtime.invoke('checkout_skip_membership', { confirmedByUser: true })
     await fixture.runtime.invoke('checkout_choose_invoice', { method: 'donation' })
     await fixture.runtime.invoke('kiosk_fast_path_context', { transcript: '信用卡' })
-    const receipt = await fixture.runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:select-payment:card' }) as Receipt
-    expect(receipt.decisionTrace?.authorize?.kind).toBe('REQUIRE_CONFIRMATION')
-    expect(receipt.pendingConfirmation?.confirmationId).toBeTruthy()
-    expect(fixture.paymentAttempts()).toBe(0)
+    await expect(fixture.runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:select-payment:card' })).rejects.toThrow('Replay cannot initiate payment')
+    expect(fixture.paymentAttempts()).toBe(1)
+    expect((await fixture.cart()).paymentId).toBeUndefined()
   })
 })
 

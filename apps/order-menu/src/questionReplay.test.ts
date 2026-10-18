@@ -58,7 +58,7 @@ describe.skipIf(!replayUrl)('live action-bound Jev replay with actual runtime ca
             checkout = undefined
             revision++
           },
-          selectPayment: async () => { throw new Error('Live replay must never initiate a payment') },
+          selectPayment: async () => ({ customerMessage: '已選擇，尚未付款。', status: 'selected' }),
         },
       })
       await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
@@ -81,7 +81,7 @@ describe.skipIf(!replayUrl)('live action-bound Jev replay with actual runtime ca
       else {
         expect(decision).toMatchObject({ kind: 'FAST_ACTION', actionId: scenario.expected })
         if (scenario.paymentPhase)
-          expect(execution).toMatchObject({ decisionTrace: { authorize: { kind: 'REQUIRE_CONFIRMATION' }, operationPlan: { intent: 'SELECT_PAYMENT' } } })
+          expect(execution).toMatchObject({ decisionTrace: { authorize: { kind: 'EXECUTE' }, operationPlan: { intent: 'SELECT_PAYMENT' } } })
         if (scenario.expected === 'intent:start-checkout')
           expect(checkout?.stage).toBe('membership')
       }

@@ -105,6 +105,7 @@ const emit = defineEmits<{
       <section v-if="props.submissionStatus === 'uncertain'" class="order-status" role="alert">
         訂單正在等待 POS 對帳。為避免重複送單，此頁已鎖定送出；請由服務人員以同一筆提交識別資訊確認結果。
       </section>
+      <slot v-if="props.completed" name="continuation" />
       <section v-if="props.completed" class="order-completion" role="status" aria-live="polite">
         <div class="i-solar:check-circle-bold-duotone" aria-hidden="true" /><div><strong>{{ props.completedLabel }}</strong><p>訂單已完成確認。</p></div>
       </section>

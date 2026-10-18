@@ -2,12 +2,20 @@ import type { MenuItem } from './domain/order-machine'
 
 import { describe, expect, it } from 'vitest'
 
-import { authorize, compileOperationPlan, createConfirmation, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, validateConfirmation } from './kiosk-intents'
+import { authorize, compileOperationPlan, createConfirmation, createQuestion, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, validateConfirmation } from './kiosk-intents'
 
 const shrimpRoll: MenuItem = { available: true, category: '小吃', description: '現炸蝦捲', id: 'shrimp-roll', imageUrl: '', name: '蝦捲', optionGroups: [{ id: 'ginger', label: '嫩薑', required: false, values: [{ id: 'with', label: '要薑', priceDelta: 0 }] }], price: 75, recommendationTags: ['fried'] }
 const base = { cart: { fulfillmentMode: undefined, itemCount: 0, lines: [], total: 0 }, menu: [shrimpRoll], revisions: { cart: 0, checkout: 0, selectedItem: 0 } }
 
 describe('kiosk intent routing', () => {
+  it('offers only LINE Pay and 街口支付 when those are the deployed payment choices', () => {
+    const cart = { ...base.cart, fulfillmentMode: 'dine-in' as const, lines: [{ id: 'L1', itemId: shrimpRoll.id, name: shrimpRoll.name, quantity: 1, options: {}, unitPrice: 75 }], total: 75, itemCount: 1 }
+    const context = deriveDecisionContext({ ...base, cart, checkout: { stage: 'payment' }, paymentMethods: ['linepay', 'jkopay'], transcript: '街口' })
+    expect(context.allowedPaymentMethods).toEqual(['linepay', 'jkopay'])
+    expect(createQuestion(context, 'payment-question', Date.now())?.question).toBe('請選擇LINE Pay或街口支付。')
+    expect(context.candidates.find(choice => choice.id === 'intent:select-payment:jkopay')?.description).toContain('街口支付')
+    expect(context.candidates.some(choice => choice.id === 'intent:select-payment:card')).toBe(false)
+  })
   it('keeps explicit legal operations available while an unrelated party-size question is pending', () => {
     const cart = { ...base.cart, fulfillmentMode: 'dine-in' as const, lines: [{ id: 'L1', itemId: shrimpRoll.id, name: shrimpRoll.name, quantity: 1, options: {}, unitPrice: 75 }], total: 75, itemCount: 1 }
     const context = deriveDecisionContext({ ...base, cart, transcript: '清空購物車', waitingFor: { questionId: 'Q1', phase: 'ordering', purpose: 'party-size', question: '幾位？', choices: [], expectedRevisions: { cart: 0 }, expiresAt: Date.now() + 30000 } })
@@ -416,7 +424,7 @@ describe('kiosk intent routing', () => {
     expect(authorize(compileOperationPlan(clearResult.plan), clear)).toEqual({ kind: 'REQUIRE_CONFIRMATION' })
     const confirmation = createConfirmation({ action: 'CLEAR_CART', cartRevision: 3, confirmationId: 'confirm-1', createdAt: 1_000, expiresAt: 4_000, payload: {} })
     expect(validateConfirmation(confirmation, { cartRevision: 3, now: 2_000 })).toEqual({ kind: 'VALID' })
-    expect(validateConfirmation(confirmation, { action: 'SELECT_PAYMENT', cartRevision: 3, now: 2_000 })).toEqual({ kind: 'INVALID', reason: 'MISMATCH' })
+    expect(validateConfirmation(confirmation, { action: 'CANCEL_CHECKOUT', cartRevision: 3, now: 2_000 })).toEqual({ kind: 'INVALID', reason: 'MISMATCH' })
     expect(validateConfirmation({ ...confirmation, consumedAt: 2_000 }, { cartRevision: 3, now: 2_001 })).toEqual({ kind: 'INVALID', reason: 'CONSUMED' })
 
     const payment = deriveDecisionContext({ ...base, checkout: { stage: 'payment' } })
@@ -424,7 +432,7 @@ describe('kiosk intent routing', () => {
     const paymentResult = resolveIntent(paymentDecision, payment)
     if (paymentResult.kind !== 'PLAN')
       throw new Error('Expected payment plan.')
-    expect(authorize(compileOperationPlan(paymentResult.plan), payment)).toEqual({ kind: 'REQUIRE_CONFIRMATION' })
+    expect(authorize(compileOperationPlan(paymentResult.plan), payment)).toEqual({ kind: 'EXECUTE' })
     expect(deriveDecisionContext({ ...base, checkout: { stage: 'payment' }, paymentStatus: 'pending' }).candidates.some(candidate => candidate.intent === 'SELECT_PAYMENT')).toBe(false)
   })
 })

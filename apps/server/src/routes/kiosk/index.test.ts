@@ -36,6 +36,58 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  it.each(['application/json', 'text/event-stream'])('requires a fresh menu lookup and keeps no-tool claims out of dialogue over %s', async (accept) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '推薦韭菜盒、甜不辣。' } }] }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json', 'Accept': accept }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const tools = ['menu_get', 'menu_recommend', 'order_add_item'].map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '還有其他的嗎？', tools, decisionState: { phase: 'customer_entry', requireMenuRead: true } }) })
+    expect(response.status).toBe(200)
+    await response.text()
+    expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({ body: expect.objectContaining({ tool_choice: 'required', tools: tools.slice(0, 2) }) }))
+    const transcript = await kioskService.getVisitorSessionForDevice({ deviceId: (await kioskService.resolveDeviceCredential(headers.Cookie.split('=')[1]!))!.id, visitorSessionId: session.id })
+    expect(transcript.entries.filter(entry => entry.kind === 'assistant_text').map(entry => entry.content)).not.toContain('推薦韭菜盒、甜不辣。')
+  })
+
+  it('keeps menu-inquiry tools read-only after a successful lookup and restores tools for a new customer request', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { tool_calls: [{ id: 'inquiry-menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"水餃"}' } }] } }] }))
+      .mockImplementation(async () => Response.json({ choices: [{ message: { content: '水餃目前可以點。' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const url = `/api/kiosk/visitor-sessions/${session.id}/messages`
+    const tools = ['menu_get', 'order_add_item', 'cart_remove_item'].map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
+    const initial = await app.request(url, { method: 'POST', headers, body: JSON.stringify({ content: '有水餃嗎？', tools, decisionState: { phase: 'ordering', requireMenuRead: true, readOnly: true } }) })
+    expect(initial.status).toBe(200)
+    await initial.text()
+    expect(complete.mock.calls.at(-1)?.[0].body.tools).toEqual(tools.slice(0, 1))
+    const continuation = await app.request(url, { method: 'POST', headers, body: JSON.stringify({ tools, decisionState: { phase: 'ordering', requireMenuRead: true, readOnly: true }, toolResults: [{ toolCallId: 'inquiry-menu', name: 'menu_get', content: '{"items":[{"id":"dumplings","name":"水餃"}]}' }] }) })
+    expect(continuation.status).toBe(200)
+    await continuation.text()
+    expect(complete.mock.calls.at(-1)?.[0].body.tools).toEqual(tools.slice(0, 1))
+    const next = await app.request(url, { method: 'POST', headers, body: JSON.stringify({ content: '我要水餃一份', tools, decisionState: { phase: 'ordering' } }) })
+    expect(next.status).toBe(200)
+    await next.text()
+    expect(complete.mock.calls.at(-1)?.[0].body.tools).toEqual(tools)
+  })
+
+  it('preserves browser clarification offers through HTTP validation', async () => {
+    const kioskService = createKioskService(db)
+    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway, runtimeModelPolicy, systemOne: { isEnabled: async () => true, decide: async () => ({ answers: { route: { choice: 'CLARIFY_REQUEST', confidence: 0.95 } } }), getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', body: JSON.stringify({ registrationCode: '483920' }), headers: { 'Content-Type': 'application/json' } })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '酸辣魚便當', candidates: [], decisionState: { phase: 'ordering', clarificationOffer: { id: 'browser-offer1', label: '泰式酸辣魚便當' }, interactionState: { screen: 'request_confirmation', matchingCartLines: 0 } } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ kind: 'NEEDS_CLARIFICATION' })
+  })
+
   // Report: this chat, Oct 8 — the admin switch promised an assistant handoff.
   it('authenticates live Fast Path status and bypasses decisions while disabled without changing the session', async () => {
     const kioskService = createKioskService(db)
@@ -75,20 +127,38 @@ describe('kiosk routes', () => {
     expect(await response.json()).toEqual({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
   })
 
+  it('accepts the optional phone-entry screen and forwards its skip candidate to Jev', async () => {
+    const decide = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.service
+      ? { answers: { service: { choice: 'REQUEST', confidence: 0.95 } } }
+      : { answers: { phone: { choice: 'SKIP', confidence: 0.95 } } })
+    const systemOne = { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const }
+    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy, secureCookies: false, systemOne }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', body: JSON.stringify({ registrationCode: '483920' }), headers: { 'Content-Type': 'application/json' } })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '略過電話', candidates: [{ id: 'intent:skip-customer-entry', description: '略過自願電話登記，進入菜單。', requiresHighConfidence: true }], decisionState: { phase: 'customer_entry', interactionState: { screen: 'customer_entry', matchingCartLines: 0 } } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:skip-customer-entry' })
+    expect(JSON.parse(decide.mock.calls[0]![0])).toEqual({ customerUtterance: '略過電話' })
+    expect(decide).toHaveBeenCalledTimes(2)
+  })
+
   it('carries bounded price evidence through the authenticated HTTP schema and returns its choice ID', async () => {
     const kioskService = createKioskService(db)
     const decide = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ answers: questions.route
       ? { route: { choice: 'intent:search-menu', confidence: 0.95 } }
-      : { price: { choice: 'UPPER_INCLUSIVE', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
+      : questions.recipient
+        ? { recipient: { choice: 'KIOSK', confidence: 0.95 } }
+        : { price: { choice: 'UPPER_INCLUSIVE', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
     const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false, systemOne: { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '已儲存提示', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', body: JSON.stringify({ registrationCode: '483920' }), headers: { 'Content-Type': 'application/json' } })
     const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
     const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '100元以下的便當', candidates: [{ id: 'intent:search-menu', description: '查詢' }], decisionState: { phase: 'ordering', constraints: { exclude: [], unresolvedPrice: true }, priceEvidence: { amounts: [{ text: '100元', amount: 100 }], choices: [{ id: 'UPPER_INCLUSIVE', kind: 'condition', conditions: { maxPrice: 100 }, description: '單份不超過100' }, { id: 'NONE', kind: 'none', description: '無價格需求' }, { id: 'UNSUPPORTED', kind: 'unsupported', description: '需要釐清' }] } } }) })
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ kind: 'FAST_ACTION', priceChoiceId: 'UPPER_INCLUSIVE' })
-    expect(decide.mock.calls[0]?.[0]).toContain('maxPrice')
+    expect(decide.mock.calls[0]?.[0]).toContain('100元')
     expect(decide.mock.calls[0]?.[1]).toMatchObject({ route: { instructions: expect.stringContaining('價格詢問') } })
-    expect(decide.mock.calls[1]?.[1]).toHaveProperty('price')
+    expect(decide.mock.calls[1]?.[1]).toHaveProperty('recipient')
+    expect(decide.mock.calls[2]?.[1]).toHaveProperty('price')
   })
 
   it('saves failed decision diagnostics without promoting them into completed dialogue', async () => {
@@ -111,9 +181,9 @@ describe('kiosk routes', () => {
     const kioskService = createKioskService(db)
     const decide = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ answers: questions.route
       ? { route: { choice: 'intent:search-menu', confidence: 0.95 } }
-      : questions.filterRequirement
-        ? { filterRequirement: { choice: 'COVERED', confidence: 0.95 } }
-        : { filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
+      : questions.recipient
+        ? { recipient: { choice: 'KIOSK', confidence: 0.95 } }
+        : { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
     const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false, systemOne: { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', body: JSON.stringify({ registrationCode: '483920' }), headers: { 'Content-Type': 'application/json' } })
     const cookie = enrolled.headers.get('Set-Cookie')!.split(';')[0]!
@@ -132,7 +202,12 @@ describe('kiosk routes', () => {
     }
     expect(body.actionId).toBe('intent:search-menu')
     expect((await app.request(`/api/kiosk/interaction-decisions/${id}`, { method: 'POST', headers, body: '{}' })).status).toBe(400)
-    expect(decide).toHaveBeenCalledTimes(3)
+    expect(decide.mock.calls.map(([, questions]) => Object.keys(questions))).toEqual([
+      ['route'],
+      ['recipient'],
+      ['filterRequirement'],
+      ['filterPresence'],
+    ])
   })
 
   it('requires device and operator identities, returns effective bootstrap values, and rejects stale or forged local writes', async () => {
@@ -353,6 +428,30 @@ describe('kiosk routes', () => {
           }),
         ]),
       }),
+    }))
+  })
+
+  it('generates an entry welcome with the selected VLM and optional-phone context', async () => {
+    const complete = vi.fn(async () => Response.json({ choices: [{ message: { content: '歡迎光臨！手機可以選填或略過。' } }] }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway: { complete }, runtimeModelPolicy, secureCookies: false }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const cookie = enrolled.headers.get('Set-Cookie')!.split(';')[0]!
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1]!)
+    await db.update(schema.kioskDevices).set({ settings: { ...defaultDeviceSettings, overrides: { observationEnabled: true, greetingEnabled: true, proactiveVlmEnabled: true } } }).where(eq(schema.kioskDevices.id, device!.id))
+    const headers = { 'Cookie': cookie, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/assistant-actions`, { method: 'POST', headers, body: JSON.stringify({ frame: 'data:image/jpeg;base64,ZmFrZQ==', kind: 'greeting', phase: 'customer_entry', invitationAllowed: false }) })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ answer: '歡迎光臨！手機可以選填或略過。' })
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({
+      modelName: 'test-vlm',
+      body: expect.objectContaining({ messages: expect.arrayContaining([
+        expect.objectContaining({ role: 'system', content: expect.stringContaining('目前是自願電話登記頁') }),
+        expect.objectContaining({ role: 'user', content: expect.arrayContaining([expect.objectContaining({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,ZmFrZQ==' } })]) }),
+      ]) }),
     }))
   })
 
@@ -658,7 +757,7 @@ describe('kiosk routes', () => {
     expect(speak).toHaveBeenCalledWith({ locale: 'zh-TW', modelName: 'restaurant-tts', text: '您好，想吃什麼？' })
   })
 
-  it('keeps the current browser tool exchange but replaces historical tool payloads with compact working context', async () => {
+  it('retains every tool exchange of the current request and drops them when a new customer request begins', async () => {
     const complete = vi.fn()
       .mockResolvedValueOnce(Response.json({
         choices: [{ message: {
@@ -666,6 +765,10 @@ describe('kiosk routes', () => {
           tool_calls: [{ id: 'call_menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"牛肉麵"}' } }],
         } }],
       }))
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: {
+        content: null,
+        tool_calls: [{ id: 'call_cart', type: 'function', function: { name: 'cart_get', arguments: '{"display":false}' } }],
+      } }] }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: '牛肉麵目前可以點餐。' } }] }))
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { content: '剛剛找到的是牛肉麵。' } }] }))
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
@@ -705,7 +808,7 @@ describe('kiosk routes', () => {
       headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
       body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_menu', name: 'menu_get', content: JSON.stringify({ items: [{ id: 'beef-noodles', name: '牛肉麵' }], presentation: { itemIds: ['beef-noodles'] } }) }] }),
     })
-    await expect(completedReply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: '牛肉麵目前可以點餐。', toolCalls: [] })
+    await expect(completedReply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: undefined, toolCalls: expect.any(Array) })
     expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({
       body: expect.objectContaining({
         tools,
@@ -716,6 +819,16 @@ describe('kiosk routes', () => {
         ]),
       }),
     }))
+
+    const cartReply = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
+      method: 'POST',
+      headers: new Headers([['Cookie', cookie], ['Content-Type', 'application/json']]),
+      body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'call_cart', name: 'cart_get', content: JSON.stringify({ cart: { lines: [], itemCount: 0, total: 0 } }) }] }),
+    })
+    await expect(cartReply.json()).resolves.toEqual({ agentInteraction: { mode: 'active' }, answer: '牛肉麵目前可以點餐。', toolCalls: [] })
+    const continuationMessages = complete.mock.calls.at(-1)?.[0].body.messages as Array<{ content?: string, role: string, tool_call_id?: string, tool_calls?: Array<{ id: string }> }>
+    expect(continuationMessages.filter(message => message.role === 'tool').map(message => message.tool_call_id)).toEqual(['call_menu', 'call_cart'])
+    expect(continuationMessages.filter(message => message.tool_calls).flatMap(message => message.tool_calls!.map(call => call.id))).toEqual(['call_menu', 'call_cart'])
 
     const followUp = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, {
       method: 'POST',
@@ -901,7 +1014,7 @@ describe('kiosk routes', () => {
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({ stream: true }) }))
   })
 
-  it('includes a completed fast-path voice turn when the same visitor asks the Agent a follow-up', async () => {
+  it('retains fast-path history while isolating a checkout follow-up from previous ordering dialogue', async () => {
     let modelMessages: Array<{ content: string, role: string }> = []
     const complete = vi.fn(async (request: Parameters<KioskRoutesOptions['llmGateway']['complete']>[0]) => {
       modelMessages = request.body.messages as Array<{ content: string, role: string }>
@@ -964,9 +1077,9 @@ describe('kiosk routes', () => {
     expect(modelMessages[0]?.content).toContain('目前 Kiosk 畫面：checkout_payment_select')
     expect(modelMessages[0]?.content).toContain('目前可選付款方式：card、mobile')
     expect(modelMessages[0]?.content).toContain('"label":"櫃台自取"')
+    // Checkout reads the structured browser state and this utterance; the
+    // earlier ordering exchange remains available through the history endpoint.
     expect(modelMessages.filter(message => message.role !== 'system')).toEqual([
-      { content: '我要一份水餃', role: 'user' },
-      { content: '已加入一份水餃。', role: 'assistant' },
       { content: '再一份', role: 'user' },
     ])
     for (let index = 0; index < 18; index++) {

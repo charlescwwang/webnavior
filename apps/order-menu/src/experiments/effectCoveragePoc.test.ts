@@ -148,12 +148,12 @@ describe('independent effect and whole-request contract', () => {
       throw new Error('Expected a domain plan')
     expect(authorize(compileOperationPlan(result.resolution.plan), fixture.context())).toMatchObject({ kind: 'BLOCKED', reason: 'STALE_PLAN' })
   })
-  it('a checked payment-method hypothesis still requires independent confirmation', async () => {
+  it('a checked payment-method hypothesis authorizes method selection without completing payment', async () => {
     const fixture = prepare({ ...fixtureScenario, setup: 'pickup' })
     const context = deriveDecisionContext({ ...fixture.context(), checkout: { stage: 'payment', invoiceMethod: 'donation' }, transcript: '我要刷卡喔' })
     const result = await inspectEffect({ candidateId: 'intent:select-payment:card', context, conversation: fixture.conversation, threshold: 0.6, invoke: answer('COVERED', 1) })
     expect(result.kind).toBe('CHECKED_HYPOTHESIS')
-    expect(result.authorization?.kind).toBe('REQUIRE_CONFIRMATION')
+    expect(result.authorization?.kind).toBe('EXECUTE')
     expect(fixture.machine.getCart().paymentId).toBeUndefined()
   })
 })

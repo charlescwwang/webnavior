@@ -120,6 +120,7 @@ async function execute(fixture: Awaited<ReturnType<typeof prepare>>, decision: K
     try {
       receipt = envelope(await fixture.runtime.invoke('kiosk_fast_path_execute', {
         candidateId: decision.actionId,
+        ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}),
         ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}),
         ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}),
       }))
@@ -179,7 +180,11 @@ describe('isolated production pipeline and partition contracts', () => {
   it('uses the real resolver/compiler/guard to add the exact quantity to an isolated cart', async () => {
     const scenario = scenarios.find(row => row.id === 'p10')!
     const fixture = await prepare(scenario)
-    const decision = await decideInteraction({ transcript: scenario.text, candidates: fixture.snapshot.candidates, decisionState: fixture.snapshot, policy, invoke: async () => ({ answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } }) })
+    const decision = await decideInteraction({ transcript: scenario.text, candidates: fixture.snapshot.candidates, decisionState: fixture.snapshot, policy, invoke: async (_state, questions) => questions.route
+      ? { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } }
+      : questions.requestPurpose
+        ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+        : { answers: { cartRequest: { choice: 'SINGLE', confidence: 0.95 } } } })
     const result = await execute(fixture, decision)
     expect(result.plan?.slots.itemId).toBe('noodle')
     expect(result.plan?.slots.quantity).toBe(2)
@@ -201,7 +206,11 @@ describe('isolated production pipeline and partition contracts', () => {
   })
   it('does not recover high-confidence unfinished category speech just from a lexical match', async () => {
     const fixture = await prepare(scenarios[0]!)
-    const result = await decidePartitioned({ transcript: scenarios[0]!.text, candidates: fixture.snapshot.candidates, decisionState: fixture.snapshot, policy, invoke: async () => ({ answers: { partition: { choice: 'UNFINISHED', confidence: 0.9 } } }) })
+    const result = await decidePartitioned({ transcript: scenarios[0]!.text, candidates: fixture.snapshot.candidates, decisionState: fixture.snapshot, policy, invoke: async (_state, questions) => questions.partition
+      ? { answers: { partition: { choice: 'UNFINISHED', confidence: 0.9 } } }
+      : questions.service
+        ? { answers: { service: { choice: 'REQUEST', confidence: 0.95 } } }
+        : { answers: { speech: { choice: 'INCOMPLETE', confidence: 0.95 } } } })
     expect(result.decision.kind).toBe('INCOMPLETE')
     expect(result.emissions[0].confidence).toBe(0.9)
   })

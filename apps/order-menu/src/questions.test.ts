@@ -8,6 +8,18 @@ import { authorize, compileOperationPlan, createQuestion, deriveDecisionContext,
 import { createMenuToolRuntime } from './webmcp'
 
 describe('action-bound customer questions', () => {
+  it('revokes an operation confirmation when the assistant answers a side question', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '清空訂單' })
+    const pending = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:clear-cart' }) as { pendingConfirmation: { confirmationId: string } }
+    await runtime.invoke('kiosk_dialogue_presented', { content: '我是這裡的 AI 點餐助手。', interruptsQuestion: true })
+    const next = await runtime.invoke('kiosk_fast_path_context', { transcript: '好' }) as { phase: string, candidates: Array<{ id: string }> }
+    expect(next.phase).not.toBe('pending_confirmation')
+    expect(next.candidates.some(choice => choice.id.startsWith('intent:confirm:'))).toBe(false)
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: `intent:confirm:${pending.pendingConfirmation.confirmationId}` })).rejects.toThrow()
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+  })
   it.each(['menu_get', 'menu_recommend', 'cart_get', 'menu_select_item', 'menu_open', 'dialogue'] as const)('retains an unanswered question across %s in the same order', async (action) => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
@@ -69,11 +81,11 @@ describe('action-bound customer questions', () => {
     }
     finally { vi.useRealTimers() }
   })
-  it('runs checkout questions through membership and invoice, then requires one-use payment authorization', async () => {
+  it('runs checkout questions through membership and invoice, then selects a payment method without starting payment', async () => {
     let snapshot: CheckoutSnapshot | undefined
     let revision = 0
     let payment: 'pending' | undefined
-    let paymentAttempts = 0
+    let methodSelections = 0
     const update = (next: CheckoutSnapshot) => {
       snapshot = next
       revision++
@@ -99,10 +111,9 @@ describe('action-bound customer questions', () => {
         setTaxId: value => update(setTaxIdDraft(snapshot!, value)),
         confirmTaxId: () => update(confirmTaxId(snapshot!)),
         selectPayment: async () => {
-          paymentAttempts++
-          payment = 'pending'
+          methodSelections++
           revision++
-          return { customerMessage: '等待付款終端。', status: 'pending' }
+          return { customerMessage: '已選擇，尚未付款。', status: 'selected' }
         },
         cancel: () => {
           snapshot = undefined
@@ -120,23 +131,25 @@ describe('action-bound customer questions', () => {
     }
     await answer('對', 'intent:start-checkout')
     expect(snapshot?.stage).toBe('membership')
-    expect(paymentAttempts).toBe(0)
+    expect(methodSelections).toBe(0)
     await answer('略過會員', 'intent:skip-membership')
     expect(snapshot?.stage).toBe('invoice')
     expect(result).toMatchObject({ pendingCustomerChoice: { purpose: 'invoice' } })
     expect(JSON.stringify(result)).not.toContain('已掃描載具')
-    await answer('捐贈', 'intent:choose-invoice:donation')
+    await answer('略過，捐贈發票', 'intent:choose-invoice:donation')
     expect(snapshot?.stage).toBe('payment')
+    expect(snapshot?.invoiceMethod).toBe('donation')
+    expect(snapshot?.donationCode).toBeUndefined()
+    expect(methodSelections).toBe(0)
     await answer('信用卡', 'intent:select-payment:card')
-    expect(paymentAttempts).toBe(0)
-    const confirmation = result as { pendingConfirmation: { confirmationId: string } }
-    await runtime.invoke('kiosk_dialogue_presented', { content: '請確認使用信用卡付款。' })
-    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '確認' }) as { candidates: Array<{ id: string }> }
-    const id = `intent:confirm:${confirmation.pendingConfirmation.confirmationId}`
-    expect(context.candidates.map(choice => choice.id)).toContain(id)
-    await runtime.invoke('kiosk_fast_path_execute', { candidateId: id })
-    expect(paymentAttempts).toBe(1)
-    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: id })).rejects.toThrow('expired')
+    expect(methodSelections).toBe(1)
+    expect(result).toMatchObject({ payment: { method: 'card', status: 'selected' } })
+    expect(result).not.toHaveProperty('pendingConfirmation')
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:select-payment:card' })).rejects.toThrow('expired')
+    expect(methodSelections).toBe(1)
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'checkout_payment_select', paymentState: 'idle' })
+    payment = 'pending'
+    revision++
     expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '信用卡' })).toMatchObject({ phase: 'payment_locked', candidates: [] })
   })
   it('rejects a stale presentation receipt after touch changes the cart', async () => {
@@ -268,7 +281,7 @@ describe('bounded question plans', () => {
     expect(authorize(operation, { ...context, waitingFor: undefined })).toEqual({ kind: 'BLOCKED', reason: 'STALE_PLAN' })
   })
 
-  it('payment choice remains a high-risk confirmation and cannot mean checkout entry', () => {
+  it('payment method choice executes directly and cannot mean checkout entry', () => {
     const initial = deriveDecisionContext({ ...base, checkout: { stage: 'payment', invoiceMethod: 'donation' } })
     const waitingFor = createQuestion(initial, 'Q2', Date.now())!
     const context = deriveDecisionContext({ ...initial, waitingFor, transcript: '信用卡' })
@@ -277,7 +290,7 @@ describe('bounded question plans', () => {
     const result = resolveIntent(context.candidates.find(choice => choice.slots?.method === 'card')!, context)
     if (result.kind !== 'PLAN')
       throw new Error('Expected payment choice')
-    expect(authorize(compileOperationPlan(result.plan), context)).toEqual({ kind: 'REQUIRE_CONFIRMATION' })
+    expect(authorize(compileOperationPlan(result.plan), context)).toEqual({ kind: 'EXECUTE' })
     const pending = deriveDecisionContext({ ...context, paymentStatus: 'pending' })
     expect(pending.candidates).toEqual([])
     expect(createQuestion(pending, 'Q3', Date.now())).toBeUndefined()

@@ -51,7 +51,7 @@ describe('kiosk System One interaction decision', () => {
       decisionState: { phase: 'ordering' },
     })
     expect(result.kind).toBe('UNAVAILABLE')
-    expect(invoke).toHaveBeenCalledOnce()
+    expect(invoke).toHaveBeenCalledTimes(choice === 'intent:return-menu' ? 1 : 2)
     expect(result.supersededQuestionId).toBeUndefined()
   })
   it.each(['NEEDS_ASSISTANT', 'MULTI_ACTION', 'FOLLOW_UP_ACTIVE'])('rejects unreliable %s without consuming the session question', async (choice) => {
@@ -64,7 +64,7 @@ describe('kiosk System One interaction decision', () => {
       expect(result.supersededQuestionId).toBeUndefined()
       expect(result.answeredQuestionId).toBeUndefined()
       expect(decisionState.waitingFor).toBe(waitingFor)
-      expect(invoke).toHaveBeenCalledOnce()
+      expect(invoke).toHaveBeenCalledTimes(2)
     }
   })
   it.each(['NEEDS_ASSISTANT', 'MULTI_ACTION', 'FOLLOW_UP_ACTIVE'])('retains reliable %s at the existing 0.6 boundary', async (choice) => {
@@ -106,7 +106,7 @@ describe('kiosk System One interaction decision', () => {
       ? { answers: { route: { choice, confidence: 0.95 } } }
       : questions.relation
         ? { answers: { relation: { choice, confidence: 0.95 } } }
-        : { answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
+        : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript, policy: { decisionInstruction: '', storeInstruction: '' }, invoke, candidates: [{ id: 'intent:recommend', description: '推薦三項，不加入購物車' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result.kind).toBe(kind)
     expect(result).toMatchObject({ answeredQuestionId: 'I1' })
@@ -126,7 +126,7 @@ describe('kiosk System One interaction decision', () => {
   })
   it('does not consume an uncertain invitation answer or authorize an absent recommendation candidate', async () => {
     for (const confidence of [0.4, 0.95]) {
-      const invoke = vi.fn(async () => ({ answers: { route: { choice: 'intent:recommend', confidence }, relation: { choice: 'ANSWER', confidence: 0.95 } } }))
+      const invoke = vi.fn(async () => ({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence }, relation: { choice: 'ANSWER', confidence: 0.95 } } }))
       const result = await decideInteraction({ transcript: '好', policy: { decisionInstruction: '', storeInstruction: '' }, invoke, candidates: [], decisionState: { phase: 'ordering', waitingFor: { questionId: 'I1', purpose: 'recommendation-invitation', question: '要推薦嗎？', expiresAt: Date.now() + 30000, choices: [{ id: 'intent:recommend', description: '推薦' }] } } })
       expect(result.kind).toBe('UNAVAILABLE')
       expect(result.answeredQuestionId).toBeUndefined()
@@ -155,14 +155,14 @@ describe('kiosk System One interaction decision', () => {
   it('keeps possible product queries separate from ingredient polarity without extra slot forwards', async () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route
       ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.95 } } }
-      : { answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'PRODUCT_QUERY', confidence: 0.95 } } })
+      : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'PRODUCT_QUERY', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '有蝦捲嗎', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:search-menu', description: '查詢餐點或條件' }], invoke, decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'shrimp', label: '蝦' }], productResolution: { status: 'possible', count: 1, references: [{ refId: 'ITEM_1', label: '蝦捲便當' }] } } })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', searchInterpretation: 'product', ingredientFilters: { includeIngredients: [], excludeIngredients: [] } })
-    expect(invoke).toHaveBeenCalledTimes(2)
-    expect(Object.keys(invoke.mock.calls[1]![1])).toEqual(['filterRequirement', 'filterPresence'])
+    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(Object.keys(invoke.mock.calls[2]![1])).toEqual(['filterRequirement', 'filterPresence'])
   })
   it.each(['BOTH', 'UNCERTAIN'])('does not silently drop part of a possible product/filter requirement: %s', async (choice) => {
-    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.95 } } } : { answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice, confidence: 0.95 } } })
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.95 } } } : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice, confidence: 0.95 } } })
     expect(await decideInteraction({ transcript: '蝦捲不要蛋', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:search-menu', description: '查詢' }], invoke, decisionState: { phase: 'ordering', productResolution: { status: 'possible', count: 1, references: [{ refId: 'ITEM_1', label: '蝦捲便當' }] } } })).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNRESOLVED_FILTER' })
   })
   it.each([{ choice: 'UNCERTAIN', confidence: 0.95 }, { choice: 'SATISFIED', confidence: 0.3 }])('does not accept an uncertain final review: $choice / $confidence', async (answer) => {
@@ -228,20 +228,14 @@ describe('kiosk System One interaction decision', () => {
     expect((await decideInteraction({ transcript: '你好', policy, invoke, candidates: [{ id: 'intent:confirm:c1', description: '確認清空購物車' }], decisionState: { phase: 'pending_confirmation' } })).kind).toBe('UNAVAILABLE')
   })
   it('does not treat a nutrition word in a dish name as an unavailable requirement', async () => {
-    const invoke = async () => ({ answers: { 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'NO_FILTER', confidence: 0.95 }, 'unavailable:sugar': { choice: 'MENTION_ONLY', confidence: 0.95 } } })
+    const invoke = async () => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'NO_FILTER', confidence: 0.95 }, 'unavailable:sugar': { choice: 'MENTION_ONLY', confidence: 0.95 } } })
     expect(await decideInteraction({ transcript: '有糖醋排骨嗎', policy, invoke, candidates: [{ id: 'intent:search-menu', description: '查餐點是否存在' }], decisionState: { phase: 'ordering', unavailableConditionReferences: [{ id: 'sugar', label: '糖含量（沒有營養數據）' }] } })).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-menu' })
   })
   it('keeps a requested unavailable nutrition reference from being dropped beside a known ingredient', async () => {
-    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ answers: {
-      'route': { choice: 'intent:search-menu', confidence: 0.95 },
-      'filterRequirement': { choice: 'COVERED', confidence: 0.95 },
-      'filterPresence': { choice: 'REQUIRED', confidence: 0.95 },
-      'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 },
-      ...(questions['unavailable:sodium'] ? { 'unavailable:sodium': { choice: 'REQUIRED', confidence: 0.95 } } : {}),
-    } }))
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 }, ...(questions['unavailable:sodium'] ? { 'unavailable:sodium': { choice: 'REQUIRED', confidence: 0.95 } } : {}) } }))
     const result = await decideInteraction({ transcript: '低鈉又不要豬肉', policy, invoke, candidates: [{ id: 'intent:search-menu', description: '查成分' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }], unavailableConditionReferences: [{ id: 'sodium', label: '鈉含量（未提供營養數據）' }] } })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER' })
-    expect(invoke.mock.calls[1]?.[1]).toHaveProperty('unavailable:sodium')
+    expect(invoke.mock.calls[2]?.[1]).toHaveProperty('unavailable:sodium')
   })
   it('validates question relation only after selecting a checkout answer', async () => {
     const invoke = vi.fn()
@@ -256,6 +250,10 @@ describe('kiosk System One interaction decision', () => {
   })
   it('keeps state-valid new actions available despite a mistaken ANSWER relation', async () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => {
+      if (questions.requestPurpose)
+        return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+      if (questions.cartRequest)
+        return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 }, cartRequest: { choice: 'SINGLE', confidence: 0.95 } } }
       if (questions.speech)
         return { answers: { speech: { choice: 'TASK_SPEECH', confidence: 0.98 }, relation: { choice: 'ANSWER', confidence: 0.9 } } }
       const route = questions.route as { criteria: Record<string, string> }
@@ -310,46 +308,46 @@ describe('kiosk System One interaction decision', () => {
     ] } })
   })
   it('explains which filter check rejected a read without discarding the original answers', async () => {
-    const invoke = async () => ({ answers: { route: { choice: 'intent:search-menu', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.9 } } })
+    const invoke = async () => ({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:search-menu', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.9 } } })
     const result = await decideInteraction({ candidates: [{ id: 'intent:search-menu', description: '查菜單' }], decisionState: { phase: 'ordering' }, transcript: '有低鈉的嗎', policy, invoke, includeTrace: true })
-    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER', trace: { exchanges: [expect.objectContaining({ questions: { route: expect.any(Object) } }), expect.objectContaining({ answers: { filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.9 }, route: { choice: 'intent:search-menu', confidence: 0.95 } } })] } })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER', trace: { exchanges: [expect.objectContaining({ questions: { route: expect.any(Object) } }), expect.objectContaining({ questions: { recipient: expect.any(Object) } }), expect.objectContaining({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.9 }, route: { choice: 'intent:search-menu', confidence: 0.95 } } })] } })
   })
   it('rejects an unsupported filter rather than executing an unfiltered menu lookup', async () => {
-    const invoke = vi.fn(async (_state: string, _questions: Record<string, unknown>) => ({ answers: { route: { choice: 'intent:search-menu', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.95 } } }))
+    const invoke = vi.fn(async (_state: string, _questions: Record<string, unknown>) => ({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:search-menu', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.95 } } }))
     const result = await decideInteraction({ candidates: [{ id: 'intent:search-menu', description: '查詢菜單' }], decisionState: { phase: 'ordering' }, transcript: '有低鈉的嗎？', policy, invoke, includeTrace: true })
     expect(result.kind).toBe('NEEDS_ASSISTANT')
-    expect(invoke.mock.calls[1]?.[1]).toHaveProperty('filterRequirement')
+    expect(invoke.mock.calls[2]?.[1]).toHaveProperty('filterRequirement')
   })
   it('compiles a bounded vegetarian choice to all four meat exclusions, never arbitrary parameters', async () => {
-    const invoke = vi.fn(async () => ({ answers: { route: { choice: 'intent:search-menu', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'REQUIRED', confidence: 0.95 }, dietary: { choice: 'VEGETARIAN', confidence: 0.95 } } }))
+    const invoke = vi.fn(async () => ({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:search-menu', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'REQUIRED', confidence: 0.95 }, dietary: { choice: 'VEGETARIAN', confidence: 0.95 } } }))
     const result = await decideInteraction({ candidates: [{ id: 'intent:search-menu', description: '查詢菜單' }], decisionState: { phase: 'ordering', dietaryReferences: [{ id: 'vegetarian', label: '素食' }] }, transcript: '有素食嗎？', policy, invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', ingredientFilters: { excludeIngredients: [], includeIngredients: [], dietary: 'vegetarian' } })
   })
   it('fails closed when filter coverage is missing or when a required filter resolves to no slots', async () => {
     for (const answers of [{}, { 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'NONE', confidence: 0.95 } }]) {
-      const invoke = async () => ({ answers: { route: { choice: 'intent:search-menu', confidence: 0.95 }, ...answers } })
+      const invoke = async () => ({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:search-menu', confidence: 0.95 }, ...answers } })
       expect(await decideInteraction({ candidates: [{ id: 'intent:search-menu', description: '查詢菜單' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }] }, transcript: '不要豬肉的', policy, invoke })).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
     }
   })
   it('preserves finite ingredient changes on an alternative recommendation', async () => {
-    const invoke = vi.fn(async () => ({ answers: { 'route': { choice: 'intent:recommend-more', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 } } }))
+    const invoke = vi.fn(async () => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:recommend-more', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 } } }))
     const result = await decideInteraction({ transcript: '換一批，不要豬肉', policy, candidates: [{ id: 'intent:recommend-more', description: '沿用條件推薦另一批' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }] }, invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:recommend-more', ingredientFilters: { excludeIngredients: ['pork'], includeIngredients: [] } })
   })
   it('keeps ingredient polarity in finite choices rather than a transcript regex or free parameters', async () => {
-    const invoke = vi.fn(async () => ({ answers: { 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 }, 'ingredient:egg': { choice: 'INCLUDE', confidence: 0.95 } } }))
+    const invoke = vi.fn(async () => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 }, 'ingredient:egg': { choice: 'INCLUDE', confidence: 0.95 } } }))
     const result = await decideInteraction({ transcript: '不要豬肉的，要有蛋', policy, candidates: [{ id: 'intent:search-menu', description: '搜尋符合條件的餐點' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }, { id: 'egg', label: '蛋' }] }, includeTrace: true, invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', ingredientFilters: { excludeIngredients: ['pork'], includeIngredients: ['egg'] }, trace: { ingredientAnswers: { pork: { choice: 'EXCLUDE' } } } })
-    expect(invoke).toHaveBeenCalledTimes(2)
+    expect(invoke).toHaveBeenCalledTimes(3)
   })
   it('routes unrecognized or uncertain ingredient choices to Agent instead of silently dropping the constraint', async () => {
     for (const slot of [{ choice: 'invented', confidence: 0.99 }, { choice: 'EXCLUDE', confidence: 0.1 }]) {
-      const invoke = async () => ({ answers: { 'route': { choice: 'intent:recommend', confidence: 0.95 }, 'ingredient:pork': slot } })
+      const invoke = async () => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:recommend', confidence: 0.95 }, 'ingredient:pork': slot } })
       expect(await decideInteraction({ transcript: '不要豬肉', policy, candidates: [{ id: 'intent:recommend', description: '推薦符合條件的餐點' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }] }, invoke })).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
     }
   })
   it('does not attach ingredient filters to a cart removal even when pork is mentioned', async () => {
-    const invoke = async () => ({ answers: { 'route': { choice: 'intent:remove-item', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 } } })
+    const invoke = async () => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:remove-item', confidence: 0.95 }, 'requestPurpose': { choice: 'OPERATION', confidence: 0.95 }, 'cartRequest': { choice: 'SINGLE', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '豬肉便當不要了', policy, candidates: [{ id: 'intent:remove-item', description: '移除現有購物車品項' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }] }, invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:remove-item' })
     expect(result).not.toHaveProperty('ingredientFilters')
@@ -390,20 +388,20 @@ describe('kiosk System One interaction decision', () => {
     expect(invoke.mock.calls[1]?.[1]).not.toHaveProperty('relation.criteria.ANSWER')
   })
 
-  it('rejects an uncertain new operation in one route without requiring old-question relation', async () => {
+  it('rejects an unverified cart operation without requiring old-question relation', async () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => {
       if (questions.speech)
         return { answers: { speech: { choice: 'TASK_SPEECH', confidence: 0.98 }, relation: { choice: 'NEW_REQUEST', confidence: 0.8 } } }
       return { answers: { route: { choice: 'intent:add-item', confidence: 0.4 } } }
     })
     expect(await decideInteraction({ candidates: [...waitingFor.choices, { id: 'intent:add-item', description: '新增水餃', requiresHighConfidence: true }], decisionState: { phase: 'ordering', waitingFor }, transcript: '再加兩份水餃', policy, invoke })).toMatchObject({ kind: 'UNAVAILABLE' })
-    expect(invoke).toHaveBeenCalledOnce()
+    expect(invoke).toHaveBeenCalledTimes(2)
     expect(invoke.mock.calls[0]?.[0]).toContain('正在等待回答的問題：{"questionId":"Q1"')
     expect(invoke.mock.calls[0]?.[1]).not.toHaveProperty('relation')
   })
 
   it('provides speakers without making an answered price inquiry a pending order', async () => {
-    const invoke = vi.fn(async (_state: string) => ({ answers: { route: { choice: 'intent:search-menu' }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
+    const invoke = vi.fn(async (_state: string) => ({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:search-menu' }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
     await decideInteraction({ candidates: [{ id: 'intent:search-menu', description: '查菜單' }], conversation: { messages: [{ role: 'user', content: '水餃怎麼賣？' }, { role: 'assistant', content: '一份十顆，60 元。' }] }, decisionState: { phase: 'ordering' }, invoke, policy, transcript: '有牛肉麵嗎' })
     expect(invoke.mock.calls[0]?.[0]).toContain('"role":"assistant"')
     expect(invoke.mock.calls[0]?.[0]).toContain('正在等待回答的問題：null')
@@ -574,10 +572,10 @@ describe('kiosk System One interaction decision', () => {
   it('keeps an unfinished ordering utterance out of both WebMCP and the Main Agent', async () => {
     await expect(decideInteraction({
       candidates,
-      invoke: async (_state, questions) => questions.speech ? { answers: { speech: { choice: 'INCOMPLETE' } } } : { answers: { route: { choice: 'INCOMPLETE' } } },
+      invoke: async () => ({ answers: { route: { choice: 'INCOMPLETE', confidence: 0.95 } } }),
       policy,
       transcript: '我要一份',
-    })).resolves.toEqual({ kind: 'INCOMPLETE' })
+    })).resolves.toEqual({ kind: 'INCOMPLETE', confidence: 0.95 })
   })
 
   it('does not offer a model-generated clarification outcome', async () => {

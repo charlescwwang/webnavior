@@ -9,9 +9,9 @@ describe('finite answers to the current question', () => {
   // Report: local attachment eda15e0f-3084-41f3-91e4-d711b23d04e1; no public URL.
   it('validates captured 好啊 at route confidence 0.5289 before accepting an invitation', async () => {
     const invoke = vi.fn()
-      .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.5289 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.5289 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:recommend', confidence: 0.95 } } })
-      .mockResolvedValueOnce({ answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '好啊', policy, invoke, includeTrace: true, candidates: [{ id: 'intent:recommend', description: '推薦三項，不新增訂購', requiresHighConfidence: false }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:recommend', answeredQuestionId: 'I1', confidence: 0.95, modelCalls: 3, modelQuestions: 4 })
     expect(invoke.mock.calls[1]?.[1]).toHaveProperty('relation.criteria.intent:recommend')
@@ -25,7 +25,7 @@ describe('finite answers to the current question', () => {
     const invoke = vi.fn()
       .mockResolvedValueOnce({ answers: { route: { choice: route, confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: reply, confidence: 0.95 } } })
-      .mockResolvedValueOnce({ answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript, policy, invoke, includeTrace: true, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result.kind).toBe(kind)
     expect(result.answeredQuestionId).toBe('I1')
@@ -71,7 +71,7 @@ describe('finite answers to the current question', () => {
   ])('retains an unresolved invitation for $choice / $confidence without Agent fallback', async (reply) => {
     const waitingFor = createRecommendationInvitation('I1', Date.now())
     const invoke = vi.fn()
-      .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { relation: reply } })
     const result = await decideInteraction({ transcript: '嗯', policy, invoke, includeTrace: true, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor } })
     expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', modelCalls: 2 })
@@ -82,7 +82,7 @@ describe('finite answers to the current question', () => {
 
   it('does not accept an unrelated legal action as an answer to the current question', async () => {
     const invoke = vi.fn()
-      .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:add-item', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '好', policy, invoke, candidates: [{ id: 'intent:recommend', description: '推薦三項' }, { id: 'intent:add-item', description: '新增餐點' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE' })
@@ -110,6 +110,7 @@ describe('finite answers to the current question', () => {
     const invoke = vi.fn()
       .mockResolvedValueOnce({ answers: { route: { choice: 'DECLINE_INVITATION', confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: 'NEW_REQUEST', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '不用，水餃多少錢？', policy, invoke, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', supersededQuestionId: 'I1' })
     expect(result.answeredQuestionId).toBeUndefined()
@@ -117,7 +118,7 @@ describe('finite answers to the current question', () => {
 
   it('does not turn a companion answer into accepting the invitation', async () => {
     const invoke = vi.fn()
-      .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: 'BACKGROUND', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '小明，好啊', policy, invoke, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result.kind).toBe('IGNORE')
@@ -128,10 +129,11 @@ describe('finite answers to the current question', () => {
   it('allows an explicit new recommendation without reusing an expired question', async () => {
     const waitingFor = createRecommendationInvitation('OLD', Date.now() - 60000)
     const invoke = vi.fn()
-      .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } })
-      .mockResolvedValueOnce({ answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '推薦三樣餐點', policy, invoke, includeTrace: true, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor } })
-    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:recommend', modelCalls: 2 })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:recommend', modelCalls: 3 })
     expect(result.answeredQuestionId).toBeUndefined()
     expect(invoke.mock.calls[0]?.[0]).toContain('正在等待回答的問題：null')
   })

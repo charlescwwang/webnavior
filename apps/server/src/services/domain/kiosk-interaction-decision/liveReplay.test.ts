@@ -1,3 +1,4 @@
+import type { KioskDecisionTrace } from '.'
 import type { SystemOneQuestion } from '../kiosk-system-one'
 
 import { describe, expect, it } from 'vitest'
@@ -7,6 +8,174 @@ import { createDecisionStages } from './stages'
 
 const replayUrl = process.env.KIOSK_SYSTEM_ONE_REPLAY_URL
 const policy = { decisionInstruction: '', storeInstruction: '' }
+
+describe.skipIf(!replayUrl)('live optional phone entry', () => {
+  it.each(['略過', '跳過', '不要留電話'])('accepts %s at the optional phone screen', async (transcript) => {
+    const result = await decideInteraction({
+      transcript,
+      candidates: [{ id: 'intent:skip-customer-entry', description: '顧客明確表示略過、不留電話、不要會員或直接開始點餐；略過自願的電話登記，進入菜單，不新增餐點、不代表登入會員。', requiresHighConfidence: true }],
+      decisionState: { phase: 'customer_entry', interactionState: { screen: 'customer_entry', matchingCartLines: 0 } },
+      conversation: { messages: [{ role: 'assistant', content: '歡迎光臨！手機可以選填，也可以直接略過開始點餐。' }] },
+      policy,
+      invoke,
+      includeTrace: true,
+    })
+    expect(result, JSON.stringify(result)).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:skip-customer-entry' })
+  }, 40_000)
+  it.each([
+    { transcript: '略過', expected: 'FAST_ACTION' },
+    { transcript: '我可以略過嗎？', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '不要略過，我要輸入電話', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '我想吃飯', expected: 'CUSTOMER_ENTRY_REQUIRED' },
+    { transcript: '有賣什麼嗎？', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '你是誰？', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '還有其他的嗎？', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '菜單沒有你剛才說的韭菜盒吧', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '真的有甜不辣嗎？', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '小陳，這一頁先跳過，我們等下再討論。', expected: 'IGNORE' },
+  ])('keeps the phone-question effect for $transcript as $expected', async ({ transcript, expected }) => {
+    const choice = { id: 'intent:skip-customer-entry', description: '顧客明確表示略過、不留電話或直接開始點餐，略過自願電話登記。', requiresHighConfidence: true }
+    const result = await decideInteraction({ transcript, candidates: [choice], decisionState: { phase: 'customer_entry', waitingFor: { questionId: 'phone-fixture', purpose: 'customer-entry', question: '手機可以選填，也可以略過，直接開始點餐。', expiresAt: Date.now() + 30_000, choices: [choice] } }, policy, invoke, includeTrace: true })
+    expect(result, JSON.stringify(result)).toMatchObject({ kind: expected })
+    if (['有賣什麼嗎？', '還有其他的嗎？', '菜單沒有你剛才說的韭菜盒吧', '真的有甜不辣嗎？'].includes(transcript))
+      expect(result.reason, JSON.stringify(result)).toBe('MENU_QUERY')
+    if (transcript === '你是誰？')
+      expect(result.reason).toBeUndefined()
+  }, 40_000)
+})
+
+describe.skipIf(!replayUrl)('live simple meal clarification', () => {
+  it.each([
+    { transcript: '我想問還有沒有', expected: 'inquire-meal:fixture' },
+    { transcript: '還能點嗎', expected: 'inquire-meal:fixture' },
+    { transcript: '沒有了嗎', expected: 'inquire-meal:fixture' },
+    { transcript: '不是，我是想問還有沒有', expected: 'inquire-meal:fixture' },
+    { transcript: '對', expected: 'confirm-meal:fixture:yes' },
+    { transcript: '不是', expected: 'confirm-meal:fixture:no' },
+    { transcript: '小陳，你問便當還有沒有？', expected: 'SILENT' },
+  ])('treats elliptical availability $transcript as $expected', async ({ transcript, expected }) => {
+    const choices = [{ id: 'confirm-meal:fixture:yes', description: '是，確認要點打拋豬便當。' }, { id: 'confirm-meal:fixture:no', description: '不是。' }]
+    const result = await decideInteraction({ transcript, candidates: [...choices, { id: 'inquire-meal:fixture', description: '查詢目前確認的這款餐點現在是否可點，例如「我想問還有沒有」「還能點嗎」「沒有了嗎」；不是購買或否認購買，不新增餐點。', requiresHighConfidence: true }], decisionState: { phase: 'meal_confirmation', waitingFor: { questionId: 'fixture', purpose: 'confirm-meal', question: '您是要點打拋豬便當嗎？', expiresAt: Date.now() + 30_000, choices } }, policy, invoke, includeTrace: true })
+    if (expected === 'SILENT') {
+      expect(['IGNORE', 'UNAVAILABLE'], JSON.stringify(result)).toContain(result.kind)
+      if (result.kind === 'UNAVAILABLE')
+        expect(result.reason).toBe('UNCERTAIN_RECIPIENT')
+    }
+    else {
+      expect(result, JSON.stringify(result)).toMatchObject({ kind: 'FAST_ACTION', actionId: expected })
+    }
+  }, 40_000)
+  it('confirms a partial menu name after recommendations without inventing an alias', async () => {
+    const result = await decideInteraction({ transcript: '我想點糖醋魚飯', candidates: [{ id: 'intent:search-menu', description: '查詢餐點，不新增訂單。' }], policy, invoke, decisionState: { phase: 'ordering', clarificationOffer: { id: 'offer1', label: '招牌糖醋魚飯' }, productResolution: { status: 'possible', count: 1, references: [{ label: '招牌糖醋魚飯', refId: 'ITEM_1' }] } }, conversation: { messages: [{ role: 'user', content: '推薦飯類' }, { role: 'assistant', content: '可以看看招牌糖醋魚飯或香菇雞飯。' }] } })
+    expect(result.kind).toBe('NEEDS_CLARIFICATION')
+  }, 40_000)
+  it.each([
+    { transcript: '香菇雞飯', expected: 'NEEDS_CLARIFICATION' },
+    { transcript: '小陳，你晚餐要吃香菇雞飯嗎？', expected: 'SILENT' },
+    { transcript: '那份報告寫完再來討論香菇雞飯。', expected: 'SILENT' },
+    { transcript: '香菇雞飯多少錢？', expected: 'NEEDS_ASSISTANT' },
+  ])('routes $transcript without treating every dish mention as an order', async ({ transcript, expected }) => {
+    const cancel = { id: 'configure:fixture:cancel', description: '只有明確取消這筆蒸餃才選；另一個品名不是取消。' }
+    const result = await decideInteraction({ transcript, candidates: [cancel], policy, invoke, includeTrace: true, conversation: { messages: [{ role: 'user', content: '蒸餃' }, { role: 'assistant', content: '蒸餃要幾份？' }] }, decisionState: { phase: 'configuration', clarificationOffer: { id: 'offer1', label: '香菇雞飯' }, catalogEvidence: { products: [{ label: '香菇雞飯', matchedText: '香菇雞飯', source: 'name' }], categories: [] }, references: [{ refId: 'CONFIGURING_ITEM', label: '蒸餃' }], waitingFor: { questionId: 'fixture', purpose: 'item-configuration', question: '蒸餃要幾份？', expiresAt: Date.now() + 30_000, choices: [cancel] } } })
+    const trace = result.trace as KioskDecisionTrace | undefined
+    const diagnostic = JSON.stringify({ kind: result.kind, reason: result.reason, answers: trace?.exchanges?.map(exchange => exchange.answers), route: trace?.rawAnswer, relation: trace?.questionRelation })
+    if (expected === 'SILENT') {
+      expect(['IGNORE', 'UNAVAILABLE'], diagnostic).toContain(result.kind)
+      if (result.kind === 'UNAVAILABLE')
+        expect(result.reason).toBe('UNCERTAIN_RECIPIENT')
+    }
+    else {
+      expect(result.kind, diagnostic).toBe(expected)
+    }
+    if (expected === 'NEEDS_ASSISTANT')
+      expect(result.reason).toBe('NEW_REQUEST')
+  }, 40_000)
+
+  it.each([{ transcript: '對', suffix: 'yes' }, { transcript: '不是', suffix: 'no' }])('answers a single confirmation with $transcript', async ({ transcript, suffix }) => {
+    const choices = [{ id: 'confirm-meal:fixture:yes', description: '是，要點香菇雞飯，接著補必要資料。' }, { id: 'confirm-meal:fixture:no', description: '不是，保留原本點餐進度。' }]
+    const result = await decideInteraction({ transcript, candidates: choices, policy, invoke, includeTrace: true, decisionState: { phase: 'meal_confirmation', waitingFor: { questionId: 'fixture', purpose: 'confirm-meal', question: '您是要點香菇雞飯嗎？', expiresAt: Date.now() + 30_000, choices } } })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: `confirm-meal:fixture:${suffix}` })
+    expect(result.modelCalls).toBe(1)
+  }, 40_000)
+})
+
+describe.skipIf(!replayUrl)('live topic changes during meal configuration', () => {
+  it.each([
+    { transcript: '不要水餃', expected: 'FAST_ACTION' },
+    { transcript: '我沒有要水餃，我是問有沒有', expected: 'FAST_ACTION' },
+    { transcript: '我沒有要水餃，我是有有沒有', expected: 'FAST_ACTION' },
+  ])('handles current-meal correction $transcript as $expected', async ({ transcript, expected }) => {
+    const cancel = { id: 'configure:fixture:cancel', description: '顧客明確表示取消／不要這筆尚未加入的餐點時才選，保留購物車；單說另一個品名或分類不是取消。' }
+    const inquiry = { id: 'configure:fixture:inquiry', description: '顧客更正不是要點水餃，而是在問有沒有：放棄這筆未加入需求，查詢水餃是否可點，不新增訂單。', requiresHighConfidence: true }
+    const result = await decideInteraction({ transcript, candidates: [cancel, inquiry], decisionState: { phase: 'configuration', clarificationOffer: { id: 'offer-fixture', label: '水餃' }, catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] }, references: [{ refId: 'CONFIGURING_ITEM', label: '水餃' }], waitingFor: { questionId: 'fixture', purpose: 'item-configuration', question: '請問水餃要幾份？', expiresAt: Date.now() + 30_000, choices: [cancel] } }, policy, invoke, includeTrace: true })
+    expect(result, JSON.stringify(result)).toMatchObject({ kind: expected })
+    if (expected === 'FAST_ACTION')
+      expect(result).toMatchObject({ actionId: transcript === '不要水餃' ? cancel.id : inquiry.id })
+  }, 40_000)
+
+  it.each([
+    { transcript: '香菇雞飯', effect: 'new-request', category: false },
+    { transcript: '飯類', effect: 'new-request', category: true },
+    { transcript: '先取消蒸餃', effect: 'cancel', category: false },
+    { transcript: '兩份', effect: 'quantity', category: false },
+  ] as const)('distinguishes $transcript from a bare cancellation while asking quantity', async ({ transcript, effect, category }) => {
+    // Synthetic menu and dialogue, not the reported customer session.
+    const cancel = { id: 'configure:fixture:cancel', description: '取消這筆尚未加入的餐點需求，保留購物車。', requiresHighConfidence: true }
+    const choices = effect === 'quantity' ? [{ id: 'configure:fixture:quantity', description: '將蒸餃設為 2 份。', requiresHighConfidence: true }, cancel] : [cancel]
+    const result = await decideInteraction({
+      transcript,
+      candidates: choices,
+      decisionState: {
+        phase: 'configuration',
+        catalogEvidence: { products: effect === 'new-request' && !category ? [{ label: '香菇雞飯', matchedText: transcript, source: 'name' }] : [], categories: category ? [{ label: '飯類', matchedText: transcript, itemCount: 2 }] : [] },
+        references: [{ refId: 'CONFIGURING_ITEM', label: '蒸餃' }],
+        interactionState: { screen: 'item_configuration', matchingCartLines: 0, pendingIntent: 'ADD_ITEM' },
+        waitingFor: { questionId: 'fixture', purpose: 'item-configuration', question: '請問蒸餃要幾份？', expiresAt: Date.now() + 30_000, choices },
+      },
+      conversation: { messages: [{ role: 'user', content: '蒸餃' }, { role: 'assistant', content: '請問蒸餃要幾份？' }] },
+      policy,
+      invoke,
+      includeTrace: true,
+    })
+    expect(result).toMatchObject(effect === 'new-request'
+      ? { kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' }
+      : { kind: 'FAST_ACTION', actionId: `configure:fixture:${effect}` })
+  }, 40_000)
+})
+
+describe.skipIf(!replayUrl)('live missing order slots versus unfinished speech', () => {
+  it.each([
+    { transcript: '我想點糖醋魚飯', target: 'possible', expected: 'NEEDS_ASSISTANT' },
+    { transcript: '我想點招牌糖醋魚飯', target: 'exact', expected: 'FAST_ACTION' },
+    { transcript: '我要一份……', target: 'none', expected: 'INCOMPLETE' },
+  ] as const)('routes $transcript as $expected after a synthetic recommendation', async ({ transcript, target, expected }) => {
+    // Artificial menu and dialogue only; no recorded customer history or saved
+    // private profile is sent to the provider by this opt-in diagnostic.
+    const result = await decideInteraction({
+      transcript,
+      candidates: [
+        { id: 'intent:search-menu', description: '查詢餐點，不新增訂單。' },
+        { id: 'intent:show-recommendations', description: '再次顯示目前的推薦餐點。' },
+        ...(target === 'exact' ? [{ id: 'intent:add-item', description: '新增本句明確指定品名的餐點；缺少份數或必要規格由程式追問。', requiresHighConfidence: true }] : []),
+      ],
+      decisionState: {
+        phase: 'ordering',
+        catalogEvidence: { products: target === 'none' ? [] : [{ label: '招牌糖醋魚飯', matchedText: target === 'exact' ? '招牌糖醋魚飯' : '糖醋魚飯', source: target === 'exact' ? 'name' : 'fragment' }], categories: [] },
+        productResolution: { status: target, count: target === 'none' ? 0 : 1, references: target === 'none' ? [] : [{ label: '招牌糖醋魚飯', refId: 'ITEM_1' }] },
+        interactionState: { screen: 'menu', matchingCartLines: 0 },
+      },
+      conversation: { messages: [{ role: 'user', content: '可以推薦飯類嗎？' }, { role: 'assistant', content: '可以考慮招牌糖醋魚飯，也有香菇雞飯。' }] },
+      policy,
+      invoke,
+      includeTrace: true,
+    })
+    console.info(JSON.stringify({ fixture: 'missing-order-slots', transcript, kind: result.kind, modelQuestions: result.modelQuestions, ...(result.kind === 'FAST_ACTION' ? { actionId: result.actionId } : {}) }))
+    expect(result.kind).toBe(expected)
+    expect(result.modelQuestions).toBe(1)
+    if (result.kind === 'FAST_ACTION')
+      expect(result.actionId).toBe('intent:add-item')
+  }, 40_000)
+})
 
 // Synthetic contrasts only; the reported customer transcripts stay in local
 // recorded-choice tests. This suite requires explicit endpoint opt-in.

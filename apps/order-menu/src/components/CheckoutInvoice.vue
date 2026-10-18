@@ -1,36 +1,145 @@
 <script setup lang="ts">
-defineProps<{ carrierCode?: string, membershipNumber?: string, total: string }>()
-const emit = defineEmits<{ back: [], carrier: [], donation: [], taxId: [] }>()
+import type { CheckoutSnapshot } from '../domain/checkout-flow'
+
+import { computed, shallowRef, watch } from 'vue'
+
+const props = defineProps<{ checkout: CheckoutSnapshot, total: string }>()
+const emit = defineEmits<{
+  back: []
+  choose: [method: 'carrier' | 'citizen' | 'donation']
+  details: [method: 'carrier' | 'citizen' | 'donation', code: string]
+  taxId: []
+}>()
+const code = shallowRef('')
+const method = computed(() => props.checkout.invoiceMethod === 'citizen' || props.checkout.invoiceMethod === 'donation' ? props.checkout.invoiceMethod : 'carrier')
+const title = computed(() => ({ carrier: '手機條碼', citizen: '自然人憑證條碼', donation: '捐贈碼' })[method.value])
+const valid = computed(() => ({ carrier: /^\/[0-9A-Z+.-]{7}$/, citizen: /^[A-Z]{2}\d{14}$/, donation: /^\d{3,7}$/ })[method.value].test(code.value.trim().toUpperCase()))
+watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCode, () => props.checkout.donationCode], ([selected, carrier, citizen, donation]) => {
+  code.value = ({ carrier, citizen, donation })[selected] ?? ''
+}, { immediate: true })
 </script>
 
 <template>
-  <section class="checkout-step">
-    <header class="checkout-header">
-      <button type="button" aria-label="返回會員掃碼" @click="emit('back')">
-        ‹
-      </button><div><span>結帳 2／4</span><h2>確認發票資料</h2></div>
-    </header><div class="checkout-content">
-      <p class="checkout-timer">
-        30 秒後{{ carrierCode ? '使用此載具' : '自動捐贈發票' }}
-      </p><div v-if="membershipNumber" class="membership-summary">
-        <span>會員已辨識</span><strong>會員編號 {{ membershipNumber }}</strong>
-      </div><h3>{{ carrierCode ? '確認雲端發票載具' : '掃描雲端發票載具' }}</h3><p>{{ carrierCode ? '會員已帶入載具，仍可改填統編或捐贈。' : '請使用實體掃描器，或選擇其他開立方式。' }}</p><strong v-if="carrierCode" class="carrier-code">{{ carrierCode }}</strong><p class="checkout-total">
-        本次訂單 {{ total }}
-      </p>
-    </div><footer class="checkout-footer">
-      <button v-if="carrierCode" class="primary-action" type="button" @click="emit('carrier')">
-        使用此載具
-      </button><div class="checkout-choice-actions">
-        <button type="button" @click="emit('taxId')">
-          改填統編
-        </button><button type="button" @click="emit('donation')">
-          捐贈發票
-        </button>
-      </div>
+  <section :class="['checkout-step']" aria-labelledby="invoice-heading">
+    <header>
+      <h2 id="invoice-heading">
+        選擇發票方式
+      </h2>
+    </header>
+    <p>可填寫載具或統編；不需要時請選擇「略過，捐贈發票」，直接選擇付款方式。</p>
+    <div :class="['invoice-options']">
+      <button v-for="choice in (['carrier', 'citizen', 'donation'] as const)" :key="choice" type="button" :aria-pressed="method === choice" @click="emit('choose', choice)">
+        {{ { carrier: '手機載具', citizen: '自然人憑證', donation: '略過，捐贈發票' }[choice] }}
+      </button>
+      <button type="button" @click="emit('taxId')">
+        公司統一編號
+      </button>
+    </div>
+    <form v-if="method !== 'donation'" @submit.prevent="valid && emit('details', method, code)">
+      <label for="invoice-code">{{ title }}</label>
+      <input id="invoice-code" v-model="code" autocomplete="off" inputmode="text" :maxlength="method === 'citizen' ? 16 : 8" :placeholder="method === 'carrier' ? '/ABC1234' : 'AB12345678901234'">
+      <small>測試僅驗證資料格式，尚未串接正式發票開立或受贈單位查詢。</small>
+      <strong>本次訂單 {{ total }}</strong>
+      <button type="submit" :disabled="!valid">
+        確認發票資料，選擇付款方式
+      </button>
+    </form>
+    <footer>
+      <button type="button" @click="emit('back')">
+        返回上一頁
+      </button>
     </footer>
   </section>
 </template>
 
 <style scoped>
-.checkout-step{display:flex;min-height:calc(100vh - 48px);flex-direction:column;border-radius:20px;background:#fff;box-shadow:0 12px 26px #7a3b141a}.checkout-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid #f0e4da;padding:18px 20px}.checkout-header button{width:34px;height:34px;border:1px solid #ead7c9;border-radius:50%;color:#803813;background:#fff9f3;font-size:24px}.checkout-header span{color:#ba5724;font-size:12px;font-weight:800}.checkout-header h2{margin:3px 0 0;color:#3d281c;font-size:21px}.checkout-content{display:grid;flex:1;place-content:center;justify-items:center;padding:32px;text-align:center}.membership-summary{display:grid;min-width:260px;gap:6px;margin-top:18px;border:1px solid #f0cfbc;border-radius:14px;padding:13px 18px;background:#fff8f2}.membership-summary span{color:#a95025;font-size:12px;font-weight:800}.membership-summary strong{color:#3d281c;font-size:17px;letter-spacing:.02em}.checkout-content h3{margin:16px 0 8px;color:#3d281c;font-size:18px}.checkout-content p{max-width:300px;margin:0;color:#876;font-size:14px;line-height:1.6}.checkout-timer{color:#ba5724!important;font-size:12px!important;font-weight:800}.carrier-code{width:100%;margin-top:18px;border:1px solid #ead7c9;border-radius:12px;padding:14px;color:#3d281c;background:#fff8ee;font-size:19px;letter-spacing:.08em}.checkout-total{margin-top:20px!important;color:#3d281c!important;font-weight:800}.checkout-footer{border-top:1px solid #f0e4da;padding:16px 20px 20px}.primary-action{width:100%;margin-bottom:10px;padding:14px;color:#fff;background:#d95327;font-weight:800}.checkout-choice-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}.checkout-choice-actions button{border:1px solid #ead7c9;padding:12px;color:#803813;background:#fff9f3;font-weight:800}
+.checkout-step {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: calc(100vh - 48px);
+  align-content: start;
+  padding: 28px;
+  border-radius: 20px;
+  background: #fff;
+  color: #3d281c;
+  box-shadow: 0 12px 26px #7a3b141a;
+}
+
+.checkout-step header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.checkout-step footer {
+  margin-top: auto;
+  border-top: 1px solid #ead7c9;
+  padding-top: 20px;
+}
+
+.checkout-step footer button {
+  width: 100%;
+}
+
+.checkout-step h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.checkout-step p {
+  line-height: 1.7;
+  color: #786655;
+}
+
+.invoice-options {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 12px;
+}
+
+.checkout-step button {
+  border: 1px solid #ddcbbd;
+  border-radius: 12px;
+  padding: 16px;
+  background: #fff8ee;
+  color: #72351c;
+  font-weight: 700;
+}
+
+.checkout-step [aria-pressed=true] {
+  border-color: #d95327;
+  background: #d95327;
+  color: #fff;
+}
+
+.checkout-step form {
+  display: grid;
+  gap: 16px;
+}
+
+.checkout-step input {
+  min-width: 0;
+  border: 1px solid #ddcbbd;
+  border-radius: 12px;
+  padding: 18px;
+  font-size: 22px;
+  text-transform: uppercase;
+}
+
+.checkout-step small {
+  line-height: 1.6;
+  color: #786655;
+}
+
+.checkout-step button[type=submit] {
+  background: #d95327;
+  color: #fff;
+}
+
+.checkout-step button:disabled {
+  background: #c6b8ae;
+  border-color: #c6b8ae;
+  color: #fff;
+}
 </style>

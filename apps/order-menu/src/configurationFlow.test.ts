@@ -18,6 +18,80 @@ async function configuredCatalog(): Promise<CatalogSnapshot> {
 }
 
 describe('required order configuration', () => {
+  it('corrects an unadded meal into an availability inquiry without reviving its quantity question', async () => {
+    const catalog = await configuredCatalog()
+    const runtime = createMenuToolRuntime({ menu: catalog.items.map(item => ({ ...item, optionGroups: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invokeForAgent('order_add_item', { itemId: 'beef-noodle-soup', quantity: 1 })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '我沒有要水餃，我是問有沒有' }) as { candidates: Array<{ id: string }> }
+    const inquiry = context.candidates.find(candidate => candidate.id.endsWith(':inquiry'))
+    expect(inquiry).toBeDefined()
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: inquiry!.id })
+    expect(result).toMatchObject({ customerMessage: expect.stringContaining('您是在詢問'), itemStatuses: [{ name: '水餃', status: 'available' }] })
+    expect(result).not.toHaveProperty('pendingCustomerChoice')
+    const after = await runtime.invoke('kiosk_interaction_state')
+    expect(after).toMatchObject({ phase: 'ordering' })
+    expect(after).not.toHaveProperty('waitingFor')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'beef-noodle-soup' }] } })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: inquiry!.id })).rejects.toThrow('STALE_PLAN')
+  })
+
+  it('moves to the requested noodle before opening its quantity question', async () => {
+    const catalog = await configuredCatalog()
+    const events: string[] = []
+    let visibleItemId: string | undefined
+    const runtime = createMenuToolRuntime({
+      menu: catalog.items.map(item => ({ ...item, optionGroups: [] })),
+      screen: () => visibleItemId ? 'item_configuration' : 'menu',
+      visibleItemId: () => visibleItemId,
+      onAction: (action) => { events.push(`cursor:${action.controlId ?? action.targetId}`) },
+      onMenuSelection: (itemId) => {
+        visibleItemId = itemId
+        events.push(`show:${itemId}`)
+      },
+      onCartChange: () => {},
+    })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).toMatchObject({ customerMessage: '請問紅燒牛肉麵要幾份？' })
+    expect(events).toEqual(['cursor:beef-noodle-soup', 'show:beef-noodle-soup'])
+    const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '一份' }) as { candidates: Array<{ id: string, description: string }> }
+    const quantity = answer.candidates.find(choice => choice.description.includes('1 份'))!
+    expect(quantity).toBeDefined()
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: quantity.id })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'beef-noodle-soup', quantity: 1 }] } })
+    expect(events.filter(event => event === 'cursor:beef-noodle-soup')).toHaveLength(1)
+    expect(events.filter(event => event === 'show:beef-noodle-soup')).toHaveLength(1)
+  })
+
+  it('continues the same noodle dialog across option and quantity answers, restoring it after a lookup', async () => {
+    const catalog = await configuredCatalog()
+    let visibleItemId: string | undefined
+    const select = vi.fn((itemId: string | undefined) => {
+      visibleItemId = itemId
+    })
+    const action = vi.fn()
+    const runtime = createMenuToolRuntime({
+      menu: catalog.items,
+      screen: () => visibleItemId ? 'item_configuration' : 'menu',
+      visibleItemId: () => visibleItemId,
+      onAction: action,
+      onMenuSelection: select,
+      onCartChange: () => {},
+      onRecommendationsChange: () => { visibleItemId = undefined },
+    })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    const spice = await runtime.invoke('kiosk_fast_path_context', { transcript: '微辣' }) as { candidates: Array<{ id: string, description: string }> }
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: spice.candidates.find(choice => choice.description.includes('微辣'))!.id })
+    expect(select.mock.calls).toEqual([['beef-noodle-soup']])
+    expect(action.mock.calls).toHaveLength(1)
+    await runtime.invoke('menu_get', { query: '水餃', display: true })
+    expect(visibleItemId).toBeUndefined()
+    const quantity = await runtime.invoke('kiosk_fast_path_context', { transcript: '一份' }) as typeof spice
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: quantity.candidates.find(choice => choice.description.includes('1 份'))!.id })).toMatchObject({ cart: { lines: [{ itemId: 'beef-noodle-soup', quantity: 1, options: { spice: 'light' } }] } })
+    expect(select.mock.calls).toEqual([['beef-noodle-soup'], ['beef-noodle-soup'], [undefined]])
+    expect(action.mock.calls.filter(([entry]) => entry.targetId === 'beef-noodle-soup' && !entry.controlId)).toHaveLength(2)
+  })
   it('answers a separate ambiguous lookup before resuming the retained meal configuration', async () => {
     const catalog = await configuredCatalog()
     const bentos = catalog.items.filter(item => item.category === '便當').slice(0, 2).map(item => ({ ...item, name: `招牌${item.name}`, aliases: [] }))

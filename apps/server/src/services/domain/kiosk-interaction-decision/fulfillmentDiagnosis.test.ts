@@ -16,7 +16,7 @@ function replay(routeChoice: string, routeConfidence: number, relationChoice = '
     decisionState: { phase: 'ordering', interactionState: { screen: 'cart_review', matchingCartLines: 0 }, waitingFor: { questionId: 'Q1', purpose: 'checkout-entry', question: '要進入結帳流程嗎？', expiresAt: Date.now() + 30000, choices: [{ id: 'intent:start-checkout', description: '開始結帳' }, { id: 'intent:defer-question', description: '暫緩目前問題，沒有其他需求' }] } },
     invoke: async (_state: string, questions: Record<string, unknown>) => questions.route
       ? { answers: { route: routeCalls++ === 0 ? { choice: routeChoice, confidence: routeConfidence } : { choice: 'intent:set-fulfillment:dine-in', confidence: 0.95 } } }
-      : { answers: { relation: { choice: relationChoice, confidence: relationConfidence } } },
+      : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, relation: { choice: relationChoice, confidence: relationConfidence } } },
   })
 }
 
@@ -41,6 +41,6 @@ describe('fulfillment change mistaken for checkout answer diagnosis', () => {
   })
 
   it('hands off instead of recovering dine-in even when the relation correctly recognizes a new request', async () => {
-    expect(await replay('intent:start-checkout', 0.4665, 'NEW_REQUEST', 0.95)).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelCalls: 2, modelQuestions: 2 })
+    expect(await replay('intent:start-checkout', 0.4665, 'NEW_REQUEST', 0.95)).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelCalls: 3, modelQuestions: 3 })
   })
 })

@@ -3,6 +3,12 @@ import type { RecommendationSignal } from '../../../order-menu-server/src/domain
 
 import cuttlefishBallImageUrl from '../assets/cuttlefish-ball.svg'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+
+/** Observable page scenarios, without asserting inventory quantities. */
+export const menuPageStates = ['available', 'sold-out', 'unknown', 'selection-failure'] as const
+export type MenuPageState = typeof menuPageStates[number]
+
 export interface MenuOptionValue {
   id: string
   label: string
@@ -27,6 +33,8 @@ export interface MenuItem {
   aliases?: string[]
   /** The POS can retain an unavailable item for customer-facing explanation, but it cannot be ordered. */
   available?: boolean
+  /** Page-observed state takes precedence over catalog availability in the trial UI. */
+  pageState?: MenuPageState
   id: string
   name: string
   description: string
@@ -37,6 +45,28 @@ export interface MenuItem {
   price: number
   recommendationTags: RecommendationTag[]
   optionGroups: MenuOptionGroup[]
+}
+
+/** The page can look selectable before a selection is rejected. */
+export function menuPageState(item: MenuItem): MenuPageState {
+  return item.pageState ?? (item.available === false ? 'sold-out' : 'available')
+}
+
+/** Read-only page evidence. A selectable control is not an inventory count. */
+export function itemAvailability(item: MenuItem) {
+  const state = menuPageState(item)
+  const status = state === 'selection-failure' ? 'available' : state
+  const copy = orderingMessages['zh-Hant']
+  const template = status === 'available' ? copy.available : status === 'sold-out' ? copy.soldOut : copy.availabilityUnknown
+  return { id: item.id, name: item.name, status, customerMessage: template.replace('{item}', item.name) }
+}
+
+/** Known page refusal, distinct from a lost mutation receipt or payment result. */
+export class ItemSelectionError extends Error {
+  readonly rejection = 'item-selection'
+  constructor(item: MenuItem, rejected = false) {
+    super(rejected ? orderingMessages['zh-Hant'].selectionRejected.replace('{item}', item.name) : itemAvailability(item).customerMessage)
+  }
 }
 
 export interface Selection {
@@ -580,8 +610,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
 
   function selectMenuItem(itemId: string) {
     const item = itemOrThrow(itemId)
-    if (item.available === false)
-      throw new Error(`${item.name} is currently unavailable.`)
+    assertItemSelectable(itemId)
     selection = { itemId, quantity: 1, options: defaultOptionsFor(item) }
     revisions.selectedItem += 1
     return { ...selection, options: { ...selection.options } }
@@ -613,39 +642,44 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     return { ...current, options: { ...current.options } }
   }
 
-  function addToCart() {
+  /** Commits an addition or a validated whole-line replacement without an intermediate cart. */
+  function addToCart(replaceLineId?: string) {
+    const original = replaceLineId === undefined ? undefined : cart.find(line => line.id === replaceLineId)
+    if (replaceLineId !== undefined && !original)
+      throw new Error(`Unknown cart line: ${replaceLineId}`)
     const current = selectedOrThrow()
     const item = itemOrThrow(current.itemId)
+    assertItemSelectable(item.id)
     for (const group of item.optionGroups) {
       if (group.required && !group.values.some(value => value.id === current.options[group.id]))
         throw new Error(`Required option is missing: ${group.label}`)
     }
-    const matchingLine = cart.find(line => line.itemId === item.id && hasSameOptions(line.options, current.options))
-    if (matchingLine) {
-      invalidatePayment()
-      matchingLine.quantity += current.quantity
-      lastAddedLineId = matchingLine.id
-      selection = undefined
-      revisions.cart += 1
-      revisions.selectedItem += 1
-      return { line: { ...matchingLine, options: { ...matchingLine.options } }, cart: cloneCart(cart, fulfillmentMode, catalogRevision) }
-    }
-
-    invalidatePayment()
+    const matchingLine = cart.find(line => line.id !== replaceLineId && line.itemId === item.id && hasSameOptions(line.options, current.options))
     const line: CartLine = {
-      id: `line-${crypto.randomUUID()}`,
+      id: matchingLine?.id ?? `line-${crypto.randomUUID()}`,
       itemId: item.id,
       name: item.name,
-      quantity: current.quantity,
+      quantity: (matchingLine?.quantity ?? 0) + current.quantity,
       options: { ...current.options },
       unitPrice: resolveUnitPrice(item, current.options),
     }
-    cart.push(line)
+    // All validation precedes this synchronous commit. No callback can observe
+    // a missing original or an extra replacement, including a merge into an
+    // already-present equivalent line. Failure leaves the original cart intact.
+    const nextCart = cart.filter(candidate => candidate.id !== replaceLineId).map(candidate => candidate.id === matchingLine?.id ? line : candidate)
+    if (!matchingLine)
+      nextCart.push(line)
+    invalidatePayment()
+    cart.splice(0, cart.length, ...nextCart)
     lastAddedLineId = line.id
     selection = undefined
     revisions.cart += 1
     revisions.selectedItem += 1
-    return { line: { ...line, options: { ...line.options } }, cart: cloneCart(cart, fulfillmentMode, catalogRevision) }
+    return {
+      line: { ...line, options: { ...line.options } },
+      cart: cloneCart(cart, fulfillmentMode, catalogRevision),
+      ...(original ? { replacedLine: { ...original, options: { ...original.options } } } : {}),
+    }
   }
 
   function removeFromCart(lineId: string) {
@@ -806,7 +840,28 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     revisions.menu += 1
   }
 
+  function setItemPageState(itemId: string, state: MenuPageState) {
+    itemOrThrow(itemId)
+    // Only operability changes. Existing cart prices and quantities are retained;
+    // the menu revision invalidates plans issued before the observed change.
+    catalog = catalog.map(item => item.id === itemId ? { ...item, pageState: state, available: state === 'available' || state === 'selection-failure' } : item)
+    revisions.menu += 1
+  }
+
+  function assertItemSelectable(itemId: string) {
+    const item = itemOrThrow(itemId)
+    const state = menuPageState(item)
+    if (state === 'available')
+      return
+    if (state === 'selection-failure') {
+      setItemPageState(itemId, 'unknown')
+      throw new ItemSelectionError(item, true)
+    }
+    throw new ItemSelectionError(item)
+  }
+
   return {
+    assertItemSelectable,
     addToCart,
     clearCart,
     confirmOrder,
@@ -824,6 +879,7 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     setCartLineOption,
     setFulfillmentMode,
     setItemOption,
+    setItemPageState,
     setMenu,
     setPaymentId,
     setQuantity,

@@ -1,3 +1,4 @@
+import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { CatalogMentionEvidence } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { PriceConditions, PriceEvidence } from '../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
 import type { CheckoutSnapshot } from './domain/checkout-flow'
@@ -8,6 +9,7 @@ import type { SeatingContext } from './domain/seating'
 import { filterIngredients, mentionedDietaryReferences, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
 import { priceEvidence } from './domain/pricing'
 import { partySizeSlot } from './domain/seating'
+import { paymentLabels } from './pos-bridge'
 
 /** Customer intent vocabulary. These names deliberately never expose WebMCP. */
 export type KioskIntent
@@ -15,15 +17,17 @@ export type KioskIntent
     | 'CONFIRM_TAX_ID' | 'RECOMMEND' | 'REMOVE_ITEM' | 'REQUEST_TAX_ID'
     | 'SEARCH_MENU' | 'SCROLL_MENU' | 'SELECT_ITEM' | 'SELECT_PAYMENT' | 'SET_FULFILLMENT'
     | 'SET_OPTION' | 'SET_QUANTITY' | 'SET_TAX_ID' | 'SHOW_RECOMMENDATIONS'
-    | 'SKIP_MEMBERSHIP' | 'START_CHECKOUT' | 'VIEW_CART' | 'SET_PARTY_SIZE' | 'RESERVE_TABLES' | 'DEFER_QUESTION' | 'RETURN_MENU'
+    | 'SKIP_CUSTOMER_ENTRY' | 'SKIP_MEMBERSHIP' | 'START_CHECKOUT' | 'VIEW_CART' | 'SET_PARTY_SIZE' | 'RESERVE_TABLES' | 'DEFER_QUESTION' | 'RETURN_MENU'
 
 export interface KioskRevisions { cart: number, checkout: number, menu?: number, selectedItem: number, seating?: number, recommendation?: number }
 export interface DomainReference { label: string, refId: string }
 /** Catalog growth must not enlarge or silently truncate model target choices. */
 export const targetReferenceLimit = 5
-export type KioskPhase = 'ordering' | 'checkout_membership' | 'checkout_invoice' | 'checkout_tax_id' | 'checkout_payment_select' | 'payment_locked' | 'checkout_complete'
+export type KioskPhase = 'customer_entry' | 'ordering' | 'checkout_membership' | 'checkout_invoice' | 'checkout_tax_id' | 'checkout_payment_select' | 'payment_locked' | 'checkout_complete'
 
 export interface KioskIntentContext {
+  customerEntryPending?: boolean
+  customerEntrySkipSupported?: boolean
   menuReturnSupported?: boolean
   menuScrollSupported?: boolean
   ingredientFilters?: IngredientFilters
@@ -32,6 +36,7 @@ export interface KioskIntentContext {
   cart: CartSnapshot
   checkout?: CheckoutSnapshot
   menu: readonly MenuItem[]
+  paymentMethods?: readonly PaymentMethod[]
   paymentStatus?: 'pending' | 'uncertain'
   presentationItemIds?: readonly string[]
   /** Only present while a revision-bound recommendation batch can be continued. */
@@ -61,9 +66,9 @@ export interface DecisionContext extends KioskIntentContext {
   productResolution: { status: 'exact' | 'possible' | 'none' | 'overflow', count: number, references: DomainReference[] }
   searchInterpretation?: 'product' | 'filter'
   /** Provenance never grants authority: current catalog constraints qualify every mutation target. */
-  referenceOrigins: Record<string, 'utterance' | 'continuation' | 'category' | 'presentation' | 'selection' | 'cart' | 'seating'>
+  referenceOrigins: Record<string, 'utterance' | 'continuation' | 'confirmation' | 'category' | 'presentation' | 'selection' | 'cart' | 'seating'>
   targetConstraints: { itemIds: string[], categories: string[] }
-  allowedPaymentMethods: Array<'card' | 'mobile'>
+  allowedPaymentMethods: PaymentMethod[]
   candidates: IntentCandidate[]
   /** Dietary constraints and slots are catalog-grounded application data, not model-generated arguments. */
   constraints: { exclude: string[], include: string[], dietary?: 'vegetarian', price?: PriceConditions, unresolvedPrice?: boolean }
@@ -86,7 +91,7 @@ export interface DomainPlan {
 /** A question actually presented by the application, independent from recent subject focus. */
 export interface PendingQuestion {
   questionId: string
-  purpose: 'fulfillment' | 'party-size' | 'tables' | 'checkout-entry' | 'membership' | 'invoice' | 'tax-id' | 'payment-method'
+  purpose: 'customer-entry' | 'fulfillment' | 'party-size' | 'tables' | 'checkout-entry' | 'membership' | 'invoice' | 'tax-id' | 'payment-method'
   phase: KioskPhase
   choices: IntentCandidate[]
   expectedRevisions: Partial<KioskRevisions>
@@ -101,7 +106,7 @@ export function questionIsCurrent(question: PendingQuestion, revisions: KioskRev
 
 export type KioskOperationToolName
   = | 'cart_add_item' | 'cart_clear' | 'cart_get' | 'cart_remove_item' | 'cart_set_line_option' | 'cart_set_line_quantity'
-    | 'checkout_cancel' | 'checkout_choose_invoice' | 'checkout_confirm_tax_id' | 'checkout_request_tax_id' | 'checkout_select_payment' | 'checkout_set_tax_id' | 'checkout_skip_membership' | 'checkout_start'
+    | 'customer_skip_phone' | 'checkout_cancel' | 'checkout_choose_invoice' | 'checkout_confirm_tax_id' | 'checkout_request_tax_id' | 'checkout_select_payment' | 'checkout_set_tax_id' | 'checkout_skip_membership' | 'checkout_start'
     | 'menu_get' | 'menu_open' | 'menu_scroll' | 'menu_recommend' | 'menu_select_item' | 'menu_set_item_option' | 'menu_set_quantity' | 'menu_show_recommendations'
     | 'order_add_item' | 'order_set_fulfillment' | 'order_set_party_size' | 'seating_reserve' | 'order_defer_question'
 
@@ -128,7 +133,7 @@ type ResolutionResult
 
 /** A one-use authorization for a high-risk customer action. */
 export interface PendingConfirmation {
-  action: 'CANCEL_CHECKOUT' | 'CLEAR_CART' | 'CONFIRM_TAX_ID' | 'SELECT_PAYMENT'
+  action: 'CANCEL_CHECKOUT' | 'CLEAR_CART' | 'CONFIRM_TAX_ID'
   cartRevision?: number
   checkoutRevision?: number
   confirmationId: string
@@ -174,7 +179,9 @@ function itemRef(item: MenuItem) {
 /** Produces a small phase-legal intent set; catalog size never multiplies choices. */
 export function deriveDecisionContext(input: KioskIntentContext): DecisionContext {
   const transcript = input.transcript?.trim() ?? ''
-  const menuItems = input.menu.filter(item => item.available !== false)
+  // Unselectable dishes remain valid lookup targets. Mutation candidates and
+  // final authorization still require current availability independently.
+  const menuItems = input.menu
   const currentItems = resolveMenuItems(menuItems, transcript)
   const possibleItems = !currentItems.length ? possibleMenuItems(menuItems, transcript) : []
   const currentCategories = currentItems.length || possibleItems.length ? [] : resolveCategories(menuItems, transcript)
@@ -205,7 +212,7 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     : []
   const categoryRefs = matchingCategories.map(category => ({ label: `${category}分類`, refId: `category:${encodeURIComponent(category)}` }))
   const categoryItemRefs = matchingCategories.length
-    ? menuItems.filter(item => matchingCategories.includes(item.category)).map(item => ({ label: item.name, refId: itemRef(item) }))
+    ? menuItems.filter(item => item.available !== false && matchingCategories.includes(item.category)).map(item => ({ label: item.name, refId: itemRef(item) }))
     : []
   const references = [...itemRefs, ...categoryRefs, ...categoryItemRefs, ...focusRefs, ...(selectedRef ? [selectedRef] : []), ...cartRefs]
   const productItems = currentItems.length ? currentItems : possibleItems
@@ -242,23 +249,28 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   const candidates: IntentCandidate[] = []
   const checkout = input.checkout
   let phase: KioskPhase = 'ordering'
-  const allowedPaymentMethods: Array<'card' | 'mobile'> = []
+  const allowedPaymentMethods: PaymentMethod[] = []
 
-  if (!checkout) {
+  if (input.customerEntryPending) {
+    phase = 'customer_entry'
+    if (input.customerEntrySkipSupported)
+      candidates.push(candidate('SKIP_CUSTOMER_ENTRY', 'intent:skip-customer-entry', '顧客明確表示略過、不留電話、不要會員或直接開始點餐；略過自願的電話登記，進入菜單，不新增餐點、不代表登入會員。'))
+  }
+  else if (!checkout) {
     if (input.menuReturnSupported)
       candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。'))
     // Target resolution is independent of intent selection: Jev receives one
     // candidate per operation, never one per product or cart line.
-    candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
+    candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
     if (input.menuScrollSupported) {
       candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:up', '把菜單畫面向上移動一頁；不是換推薦、搜尋或選餐點。', undefined, { direction: 'UP' }))
       candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:down', '把菜單畫面向下移動一頁；不是換推薦、搜尋或選餐點。', undefined, { direction: 'DOWN' }))
     }
-    if (itemRefs.length)
+    if (matchingItems.some(item => item.available !== false))
       candidates.push(candidate('SELECT_ITEM', 'intent:select-item', '查看或編輯已解析的餐點，但不建立訂購項目。'))
     const categoryPreference = matchingCategories.length > 0 && quantityFromTranscript(transcript) === undefined && quantityFromTranscript(input.previousTranscript ?? '') === undefined
-    if (!possibleItems.length && !categoryPreference && (itemRefs.length || categoryItemRefs.length || focusRefs.length || selected || recentAddedLine))
-      candidates.push(candidate('ADD_ITEM', 'intent:add-item', '新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。'))
+    if (!possibleItems.length && !categoryPreference && (matchingItems.some(item => item.available !== false) || categoryItemRefs.length || focusRefs.length || selected || recentAddedLine))
+      candidates.push(candidate('ADD_ITEM', 'intent:add-item', '顧客要求購買或加點餐點，才建立訂購項目。匹配品名／別名只提供查詢對象，不是購買授權；詢問種類、款式、有哪些或有沒有都選查詢，不選新增。明確要點餐點但缺份數／選項仍可新增，由程式補問；分類須有明確份數才建立待選品項訂購。品項歧義由程式釐清，不自行挑選。'))
     if (!itemRefs.length && (!categoryRefs.length || priceEvidence(transcript)) && !possibleItems.length)
       candidates.push(candidate('RECOMMEND', 'intent:recommend', '顧客請系統挑選值得吃的餐點：開始一輪簡單推薦，最多三項；可套用已知分類、單份價格及飲食限制。不是列出整份菜單，也不是換掉剛推薦的一批。'))
     if (!itemRefs.length && !categoryRefs.length && !possibleItems.length && input.recommendationConditions !== undefined)
@@ -304,9 +316,9 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   }
   else if (checkout.stage === 'invoice') {
     phase = 'checkout_invoice'
-    candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:donation', '選擇捐贈發票。', undefined, { method: 'donation' }))
-    if (checkout.carrierCode)
-      candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:carrier', '使用已掃描的雲端載具。', undefined, { method: 'carrier' }))
+    candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:donation', '顧客選擇「略過」或「捐贈發票」：記錄捐贈選擇，直接進入付款方式，不輸入捐贈碼，也不執行付款。', undefined, { method: 'donation' }))
+    candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:carrier', '選擇手機載具；資料未確認前停留在輸入畫面。', undefined, { method: 'carrier' }))
+    candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:citizen', '選擇自然人憑證條碼；資料未確認前停留在輸入畫面。', undefined, { method: 'citizen' }))
     candidates.push(candidate('REQUEST_TAX_ID', 'intent:request-tax-id', '輸入統編。'))
     candidates.push(candidate('CANCEL_CHECKOUT', 'intent:cancel-checkout', '取消結帳並回到訂單。'))
   }
@@ -321,9 +333,9 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   }
   else if (checkout.stage === 'payment') {
     phase = 'checkout_payment_select'
-    allowedPaymentMethods.push('card', 'mobile')
-    candidates.push(candidate('SELECT_PAYMENT', 'intent:select-payment:card', '選擇信用卡，進入啟動付款的授權確認。', undefined, { method: 'card' }))
-    candidates.push(candidate('SELECT_PAYMENT', 'intent:select-payment:mobile', '選擇行動支付，進入啟動付款的授權確認。', undefined, { method: 'mobile' }))
+    allowedPaymentMethods.push(...(input.paymentMethods ?? ['card', 'mobile']))
+    for (const method of allowedPaymentMethods)
+      candidates.push(candidate('SELECT_PAYMENT', `intent:select-payment:${method}`, `選擇${paymentLabels[method]}${method === 'jkopay' ? '（也稱街口）' : ''}後直接顯示測試 QR Code，倒數5秒自動模擬付款，不另問確認、不需實際掃碼；倒數時可更換方式，選擇當下不代表付款成功。`, undefined, { method }))
     candidates.push(candidate('CANCEL_CHECKOUT', 'intent:cancel-checkout', '取消尚未啟動付款的結帳並回到訂單；執行前須再次確認。'))
   }
   else {
@@ -393,10 +405,11 @@ export function createQuestion(context: DecisionContext, questionId: string, now
   }
   else {
     const definitions = {
+      customer_entry: { purpose: 'customer-entry', question: '手機號碼可自願填寫，也可以選擇略過，直接開始點餐。', intents: ['SKIP_CUSTOMER_ENTRY'] },
       checkout_membership: { purpose: 'membership', question: '請掃描會員條碼，或選擇略過會員。', intents: ['SKIP_MEMBERSHIP'] },
-      checkout_invoice: { purpose: 'invoice', question: '請選擇捐贈發票、已掃描載具，或輸入統編。', intents: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID'] },
+      checkout_invoice: { purpose: 'invoice', question: '請選擇手機載具、自然人憑證、公司統編，或略過並捐贈發票。', intents: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID'] },
       checkout_tax_id: { purpose: 'tax-id', question: context.checkout?.taxId ? `請確認畫面上的統編 ${context.checkout.taxId.split('').join(' ')} 是否正確。` : '請提供八位統編。', intents: ['SET_TAX_ID', 'CONFIRM_TAX_ID'] },
-      checkout_payment_select: { purpose: 'payment-method', question: '請選擇信用卡或行動支付。', intents: ['SELECT_PAYMENT'] },
+      checkout_payment_select: { purpose: 'payment-method', question: `請選擇${context.allowedPaymentMethods.map(method => paymentLabels[method]).join('或')}。`, intents: ['SELECT_PAYMENT'] },
     } as const
     if (!(context.phase in definitions))
       return undefined
@@ -766,6 +779,7 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
     case 'SET_PARTY_SIZE': return { ...base, input: { partySize: plan.slots.partySize }, toolName: 'order_set_party_size' }
     case 'RESERVE_TABLES': return { ...base, input: { choiceId: plan.slots.choiceId, splitApproved: plan.slots.splitApproved === 'yes', expectedRevision: plan.expectedRevisions.seating }, toolName: 'seating_reserve' }
     case 'START_CHECKOUT': return { ...base, input: { confirmedByUser: true }, toolName: 'checkout_start' }
+    case 'SKIP_CUSTOMER_ENTRY': return { ...base, input: { confirmedByUser: true }, toolName: 'customer_skip_phone' }
     case 'SKIP_MEMBERSHIP': return { ...base, input: { confirmedByUser: true }, toolName: 'checkout_skip_membership' }
     case 'CHOOSE_INVOICE': return { ...base, input: { method: plan.slots.method }, toolName: 'checkout_choose_invoice' }
     case 'REQUEST_TAX_ID': return { ...base, input: {}, toolName: 'checkout_request_tax_id' }
@@ -790,6 +804,7 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
   if (plan.intent === 'DEFER_QUESTION')
     return context.waitingFor?.questionId === plan.slots.questionId ? { kind: 'EXECUTE' as const } : { kind: 'BLOCKED' as const, reason: 'STALE_PLAN' as const }
   const allowedByPhase: Record<KioskPhase, readonly KioskIntent[]> = {
+    customer_entry: ['SKIP_CUSTOMER_ENTRY', 'SEARCH_MENU', 'RECOMMEND', 'SHOW_RECOMMENDATIONS'],
     ordering: ['ADD_ITEM', 'CLEAR_CART', 'RECOMMEND', 'REMOVE_ITEM', 'SEARCH_MENU', 'SCROLL_MENU', 'SELECT_ITEM', 'SET_FULFILLMENT', 'SET_OPTION', 'SET_QUANTITY', 'SHOW_RECOMMENDATIONS', 'START_CHECKOUT', 'VIEW_CART', 'SET_PARTY_SIZE', 'RESERVE_TABLES', 'RETURN_MENU'],
     checkout_membership: ['SKIP_MEMBERSHIP', 'CANCEL_CHECKOUT'],
     checkout_invoice: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID', 'CANCEL_CHECKOUT'],
@@ -827,11 +842,21 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
   }
   if (plan.targetRef?.startsWith('cart:') && !context.cart.lines.some(line => lineRef(line) === plan.targetRef))
     return { kind: 'BLOCKED' as const, reason: 'TARGET_MISSING' as const }
+  if (plan.intent === 'ADD_ITEM' && plan.input.replaceLineId !== undefined) {
+    const original = context.cart.lines.find(line => line.id === plan.input.replaceLineId)
+    // The compact addition tool can replace a whole real cart line. It must
+    // validate the removal target as well as the new item; a stale opaque ID
+    // can never degrade into a normal addition. Ambiguous variants stay intact.
+    if (typeof plan.input.replaceLineId !== 'string' || !original || context.cart.lines.filter(line => line.itemId === original.itemId).length > 1)
+      return { kind: 'BLOCKED' as const, reason: 'TARGET_MISSING' as const }
+  }
   if (plan.intent === 'ADD_ITEM' && !context.menu.some(item => item.id === plan.slots.itemId && item.available !== false))
     return { kind: 'BLOCKED' as const, reason: 'TARGET_MISSING' as const }
   if (plan.targetRef?.startsWith('selected:') && context.selectedItem?.itemId !== plan.targetRef.slice(9))
     return { kind: 'BLOCKED' as const, reason: 'TARGET_MISSING' as const }
-  if (plan.targetRef?.startsWith('item:') && !context.menu.some(item => itemRef(item) === plan.targetRef && item.available !== false))
+  // An unavailable item is still a valid lookup subject. Selection/mutation
+  // must retain the availability gate even when discovery exposes its name.
+  if (plan.targetRef?.startsWith('item:') && !context.menu.some(item => itemRef(item) === plan.targetRef && (plan.intent === 'SEARCH_MENU' || item.available !== false)))
     return { kind: 'BLOCKED' as const, reason: 'TARGET_MISSING' as const }
   if ((plan.intent === 'SET_QUANTITY' || plan.intent === 'ADD_ITEM') && (!Number.isInteger(Number(plan.slots.quantity ?? 1)) || Number(plan.slots.quantity ?? 1) < 1 || Number(plan.slots.quantity ?? 1) > 20))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
@@ -845,13 +870,15 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
     if (!item?.optionGroups.some(group => group.id === plan.slots.groupId && group.values.some(value => value.id === plan.slots.valueId)))
       return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
   }
-  if (plan.intent === 'SELECT_PAYMENT' && !context.allowedPaymentMethods.includes(plan.input.method as 'card' | 'mobile'))
+  if (plan.intent === 'SELECT_PAYMENT' && !context.allowedPaymentMethods.includes(plan.input.method as PaymentMethod))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_PHASE' as const }
   return requiresConfirmation(plan, context) ? { kind: 'REQUIRE_CONFIRMATION' as const } : { kind: 'EXECUTE' as const }
 }
 
 export function requiresConfirmation(plan: OperationPlan, context: DecisionContext) {
-  if (plan.intent === 'CLEAR_CART' || plan.intent === 'CONFIRM_TAX_ID' || plan.intent === 'SELECT_PAYMENT')
+  // Selecting a method opens the test scan step and remains reversible during
+  // its countdown. Only the simulator's result proves payment authorization.
+  if (plan.intent === 'CLEAR_CART' || plan.intent === 'CONFIRM_TAX_ID')
     return true
   return plan.intent === 'CANCEL_CHECKOUT' && (context.checkout?.stage === 'payment' || Boolean(context.checkout?.carrierCode || context.checkout?.taxId))
 }

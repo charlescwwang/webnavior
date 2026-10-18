@@ -8,6 +8,29 @@ import { createRecommendationInvitation } from './contracts'
 const policy = { decisionInstruction: '', storeInstruction: '' }
 
 describe('question context is not a routing prerequisite', () => {
+  it('recovers a mistaken meal-cancellation route when the reply names another dish', async () => {
+    const cancel = { id: 'configure:Q1:cancel', description: '取消這筆尚未加入的餐點需求，保留購物車。' }
+    const invoke = vi.fn()
+      .mockResolvedValueOnce({ answers: { route: { choice: cancel.id, confidence: 0.652 } } })
+      .mockResolvedValueOnce({ answers: { relation: { choice: 'NEW_REQUEST', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
+    const result = await decideInteraction({
+      transcript: '牛肉麵',
+      policy,
+      invoke,
+      candidates: [cancel],
+      decisionState: {
+        phase: 'configuration',
+        catalogEvidence: { products: [{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }], categories: [] },
+        references: [{ refId: 'CONFIGURING_ITEM', label: '水餃' }],
+        waitingFor: { questionId: 'Q1', purpose: 'item-configuration', question: '請問水餃要幾份？', expiresAt: Date.now() + 30_000, choices: [cancel] },
+      },
+    })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
+    expect(result.answeredQuestionId).toBeUndefined()
+    expect(invoke.mock.calls[0]?.[1].route.instructions).toContain('不必帶「我要」「改成」')
+    expect(invoke.mock.calls[1]?.[1].relation.instructions).toContain('單說另一個有菜單證據的品名或分類')
+  })
   // Report: local customer attachment 9b8c37b5-50d8-4d5c-a928-0dcaa0712dab, no public URL.
   // NOTICE: Frozen provider choices reproduce a known semantic misroute. This
   // opt-in diagnostic stays red until new-request recovery can safely re-route
@@ -40,7 +63,11 @@ describe('question context is not a routing prerequisite', () => {
   })
 
   it('routes 牛肉麵一碗 directly when the first choice matches its exact alias evidence', async () => {
-    const invoke = vi.fn(async () => ({ answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } }))
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.requestPurpose
+      ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+      : questions.cartRequest
+        ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 }, cartRequest: { choice: 'SINGLE', confidence: 0.95 } } }
+        : { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } })
     const result = await decideInteraction({
       transcript: '牛肉麵一碗',
       policy,
@@ -58,14 +85,18 @@ describe('question context is not a routing prerequisite', () => {
       },
     })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item' })
-    expect(invoke).toHaveBeenCalledOnce()
+    expect(invoke).toHaveBeenCalledTimes(3)
   })
 
   // Report: local customer attachment d913b030-3323-49f1-813f-e66bdba4318c, no public URL.
   it('routes 排骨便當一份 before the captured uncertain invitation ACCEPT', async () => {
-    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.invitation
-      ? { answers: { invitation: { choice: 'ACCEPT', confidence: 0.4568 } } }
-      : { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } })
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.requestPurpose
+      ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+      : questions.cartRequest
+        ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 }, cartRequest: { choice: 'SINGLE', confidence: 0.95 } } }
+        : questions.invitation
+          ? { answers: { invitation: { choice: 'ACCEPT', confidence: 0.4568 } } }
+          : { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } })
     const result = await decideInteraction({
       transcript: '排骨便當一份',
       policy,
@@ -74,20 +105,24 @@ describe('question context is not a routing prerequisite', () => {
       candidates: [{ id: 'intent:add-item', description: '新增本句指定的餐點' }],
       decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()), productResolution: { status: 'exact', count: 1, references: [{ refId: 'ITEM_1', label: '炸排骨便當' }] }, catalogEvidence: { products: [{ label: '炸排骨便當', matchedText: '排骨便當', source: 'alias' }], categories: [] } },
     })
-    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelCalls: 1, modelQuestions: 1 })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelCalls: 3, modelQuestions: 3 })
     expect(result.answeredQuestionId).toBeUndefined()
     expect(result.supersededQuestionId).toBe('I1')
     expect(invoke.mock.calls[0]?.[1]).toHaveProperty('route')
-    expect(invoke).toHaveBeenCalledOnce()
+    expect(invoke).toHaveBeenCalledTimes(3)
   })
 
   it.each(['party-size', 'checkout-entry', 'fulfillment'])('does not gate an independent new purchase on %s relation', async (purpose) => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route
       ? { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } }
-      : { answers: { speech: { choice: 'BACKGROUND', confidence: 0.1 }, relation: { choice: 'ANSWER', confidence: 0.1 } } })
+      : questions.requestPurpose
+        ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+        : questions.cartRequest
+          ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 }, cartRequest: { choice: 'SINGLE', confidence: 0.95 } } }
+          : { answers: { speech: { choice: 'BACKGROUND', confidence: 0.1 }, relation: { choice: 'ANSWER', confidence: 0.1 } } })
     const decisionState: KioskDecisionState = { phase: 'ordering', waitingFor: { questionId: 'Q1', purpose, question: '待答問題', expiresAt: Date.now() + 30000, choices: [{ id: 'intent:start-checkout', description: '開始結帳' }] } }
     const result = await decideInteraction({ transcript: '水餃兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增水餃' }], decisionState, includeTrace: true })
-    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelCalls: 1, modelQuestions: 1 })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelCalls: 3, modelQuestions: 3 })
     expect(decisionState.waitingFor?.questionId).toBe('Q1')
   })
 
@@ -122,16 +157,20 @@ describe('question context is not a routing prerequisite', () => {
       ? { answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } }
       : questions.relation
         ? { answers: { relation: { choice: 'intent:recommend', confidence: 0.95 } } }
-        : { answers: { filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.95 } } })
+        : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '好', policy, invoke, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER' })
     expect(result.answeredQuestionId).toBeUndefined()
   })
 
   it('does not use an unfinished speech fragment as a gate for a complete new request', async () => {
-    const invoke = vi.fn(async (_state: string, _questions: Record<string, unknown>) => ({ answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } }))
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.requestPurpose
+      ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+      : questions.cartRequest
+        ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 }, cartRequest: { choice: 'SINGLE', confidence: 0.95 } } }
+        : { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '水餃兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增水餃' }], decisionState: { phase: 'ordering', incompleteSpeech: { transcript: '我要一份……', expiresAt: Date.now() + 3000 } }, includeTrace: true })
-    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelCalls: 1, modelQuestions: 1 })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelCalls: 3, modelQuestions: 3 })
     expect(invoke.mock.calls[0]?.[1]).toHaveProperty('route.criteria.CONTINUE_INCOMPLETE')
   })
 

@@ -15,25 +15,41 @@ describe('segmented bounded decisions', () => {
     expect(first).toMatchObject({ kind: 'DECISION_PROGRESS', choice: 'MULTI_ACTION', confidence: 0.2911 })
     if (first.kind !== 'DECISION_PROGRESS')
       throw new Error('Expected a route checkpoint')
-    const result = await stages.next(owner, first.continuationId)
-    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', modelCalls: 1, modelQuestions: 1, trace: { rawAnswer: { choice: 'MULTI_ACTION', confidence: 0.2911 } } })
+    const scope = await stages.next(owner, first.continuationId)
+    expect(scope).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'recipient' })
+    if (scope.kind !== 'DECISION_PROGRESS')
+      throw new Error('Expected recipient checkpoint')
+    const result = await stages.next(owner, scope.continuationId)
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', modelCalls: 2, modelQuestions: 2, trace: { rawAnswer: { choice: 'MULTI_ACTION', confidence: 0.2911 } } })
     if (result.kind === 'DECISION_PROGRESS')
-      throw new Error('Expected the weak route to finish without another checkpoint')
+      throw new Error('Expected scope to finish without granting an action')
     expect(result.supersededQuestionId).toBeUndefined()
     expect(result.answeredQuestionId).toBeUndefined()
-    expect(invoke).toHaveBeenCalledOnce()
+    expect(invoke).toHaveBeenCalledTimes(2)
   })
 
   it('starts at route and finishes a new order without a question-context checkpoint', async () => {
     const stages = createDecisionStages()
     const owner = { deviceId: 'question-routing', visitorSessionId: 's1' }
-    const invoke = vi.fn(async () => ({ answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } }))
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.requestPurpose
+      ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
+      : questions.cartRequest
+        ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 }, cartRequest: { choice: 'SINGLE', confidence: 0.95 } } }
+        : { answers: { route: { choice: 'intent:add-item', confidence: 0.95 } } })
     const first = await stages.start(owner, checkpoint => decideInteraction({ transcript: '排骨便當一份', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:add-item', description: '新增炸排骨便當' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) }, includeTrace: true, invoke: checkpoint(invoke) }))
     expect(first).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'route' })
     if (first.kind !== 'DECISION_PROGRESS')
       throw new Error('Expected a checkpoint')
-    expect(await stages.next(owner, first.continuationId)).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', supersededQuestionId: 'I1', modelCalls: 1, modelQuestions: 1 })
-    expect(invoke).toHaveBeenCalledOnce()
+    const purpose = await stages.next(owner, first.continuationId)
+    expect(purpose).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'requestPurpose' })
+    if (purpose.kind !== 'DECISION_PROGRESS')
+      throw new Error('Expected purpose checkpoint')
+    const coverage = await stages.next(owner, purpose.continuationId)
+    expect(coverage).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'cartRequest' })
+    if (coverage.kind !== 'DECISION_PROGRESS')
+      throw new Error('Expected purchase-authority checkpoint')
+    expect(await stages.next(owner, coverage.continuationId)).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', supersededQuestionId: 'I1', modelCalls: 3, modelQuestions: 3 })
+    expect(invoke).toHaveBeenCalledTimes(3)
   })
 
   // Report: local attachment eda15e0f-3084-41f3-91e4-d711b23d04e1; no public URL.
@@ -41,9 +57,9 @@ describe('segmented bounded decisions', () => {
     const stages = createDecisionStages()
     const owner = { deviceId: 'concrete-answer', visitorSessionId: 's1' }
     const invoke = vi.fn()
-      .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.5289 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.5289 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:recommend', confidence: 0.95 } } })
-      .mockResolvedValueOnce({ answers: { filterRequirement: { choice: 'COVERED', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
     let result = await stages.start(owner, checkpoint => decideInteraction({ transcript: '好啊', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:recommend', description: '推薦三項，不新增訂購' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) }, includeTrace: true, invoke: checkpoint(invoke) }))
     const questions: string[] = []
@@ -86,9 +102,11 @@ describe('segmented bounded decisions', () => {
     const stages = createDecisionStages()
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ answers: questions.route
       ? { route: { choice: 'intent:search-menu', confidence: 0.95 } }
-      : questions.filterRequirement
-        ? { filterRequirement: { choice: 'COVERED', confidence: 0.95 } }
-        : { filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
+      : questions.recipient
+        ? { recipient: { choice: 'KIOSK', confidence: 0.95 } }
+        : questions.filterRequirement
+          ? { filterRequirement: { choice: 'COVERED', confidence: 0.95 } }
+          : { filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }))
     const owner = { deviceId: 'd1', visitorSessionId: 's1' }
     let result = await stages.start(owner, checkpoint => decideInteraction({ transcript: '有賣什麼', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:search-menu', description: '查菜單' }], decisionState: { phase: 'ordering' }, includeTrace: true, invoke: checkpoint(invoke) }))
     expect(result).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'route', choice: 'intent:search-menu' })
@@ -98,11 +116,11 @@ describe('segmented bounded decisions', () => {
     const firstId = result.continuationId
     await expect(stages.next({ deviceId: 'd2', visitorSessionId: 's1' }, firstId)).rejects.toThrow('unavailable')
     result = await stages.next(owner, firstId)
-    expect(result).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'filterRequirement' })
+    expect(result).toMatchObject({ kind: 'DECISION_PROGRESS', question: 'recipient' })
     await expect(stages.next(owner, firstId)).rejects.toThrow('unavailable')
     while (result.kind === 'DECISION_PROGRESS')
       result = await stages.next(owner, result.continuationId)
-    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 3 })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 4 })
   })
   it('does not evaluate food filters for an unrelated utterance', async () => {
     const invoke = vi.fn(async () => ({ answers: { route: { choice: 'IGNORE', confidence: 0.95 } } }))

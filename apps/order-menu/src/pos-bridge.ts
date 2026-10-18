@@ -1,14 +1,14 @@
+import type { ContinuationAccess } from '../../order-menu-server/src/domain/continuationContracts'
+import type { PaymentIntent, PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { CartSnapshot, PosOrderGateway, SubmissionReceipt, SubmittedOrder } from './domain/order-machine'
 
-export type PaymentMethod = 'card' | 'mobile'
-export type PaymentStatus = 'authorized' | 'pending' | 'rejected' | 'uncertain'
+export type { PaymentIntent, PaymentMethod, PaymentStatus } from '../../order-menu-server/src/domain/contracts'
 
-export interface PaymentIntent {
-  amount: number
-  id: string
-  method: PaymentMethod
-  status: PaymentStatus
-}
+/** Labels shared by the visible controls and semantic payment candidates. */
+export const paymentLabels: Record<PaymentMethod, string> = { card: '信用卡', mobile: '行動支付', linepay: 'LINE Pay', jkopay: '街口支付' }
+
+/** Deployed methods shared by the owned kiosk UI and native tool schema. */
+export const testPaymentMethods: readonly PaymentMethod[] = ['linepay', 'jkopay']
 
 function endpoint(baseUrl: string, path: string) {
   return new URL(path, `${baseUrl.replace(/\/$/, '')}/`).toString()
@@ -20,7 +20,8 @@ function isPayment(value: unknown): value is PaymentIntent {
   const payment = value as Record<string, unknown>
   return typeof payment.amount === 'number'
     && typeof payment.id === 'string'
-    && (payment.method === 'card' || payment.method === 'mobile')
+    && typeof payment.method === 'string'
+    && Object.hasOwn(paymentLabels, payment.method)
     && (payment.status === 'authorized' || payment.status === 'pending' || payment.status === 'rejected' || payment.status === 'uncertain')
 }
 
@@ -78,21 +79,30 @@ function isSubmittedOrder(value: unknown): value is SubmittedOrder {
 }
 
 /** Calls the configured POS Bridge and never substitutes a browser-local demo order. */
-export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined): PosOrderGateway {
-  let idempotencyKey: string | undefined
+export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined, customer?: { phone: () => string | undefined, onContinuation: (access: ContinuationAccess) => void }): PosOrderGateway {
+  // One page serves many customers. Deduplicate replays of the same payment,
+  // not every order submitted during the gateway's lifetime. Keep earlier keys
+  // for late retries so they cannot create another order after a newer checkout.
+  const idempotencyKeys = new Map<CartSnapshot['paymentId'], string>()
 
   return {
     submit: async (cart) => {
-      idempotencyKey ??= `menu-${crypto.randomUUID()}`
+      let idempotencyKey = idempotencyKeys.get(cart.paymentId)
+      if (!idempotencyKey) {
+        idempotencyKey = `menu-${crypto.randomUUID()}`
+        idempotencyKeys.set(cart.paymentId, idempotencyKey)
+      }
       try {
         const response = await fetch(endpoint(baseUrl, 'v1/orders'), {
-          body: JSON.stringify({ cart: { ...cart, ...(cart.fulfillmentMode === 'dine-in' ? { tableHoldId: tableHoldId() } : {}) }, idempotencyKey }),
+          body: JSON.stringify({ cart: { ...cart, ...(cart.fulfillmentMode === 'dine-in' ? { tableHoldId: tableHoldId() } : {}) }, idempotencyKey, customerPhone: customer?.phone() }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         })
-        const payload = await response.json().catch(() => undefined) as { order?: unknown } | undefined
+        const payload = await response.json().catch(() => undefined) as { order?: unknown, continuation?: ContinuationAccess } | undefined
         if (!response.ok || !isSubmittedOrder(payload?.order))
           return uncertainOrder(cart)
+        if (payload.order.receipt.status === 'accepted' && payload.continuation)
+          customer?.onContinuation(payload.continuation)
         return payload.order
       }
       catch {

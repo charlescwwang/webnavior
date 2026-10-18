@@ -72,9 +72,16 @@ export function requiresPresentedReply(results: readonly { name: string, content
 /**
  * Keeps the latest complete conversational turns within a provider-independent
  * character ceiling. The newest single turn is truncated only when that turn
- * alone exceeds the entire budget.
+ * alone exceeds the entire budget. Checkout retains only the latest customer
+ * turn and its following exchange; the durable transcript is never modified.
  */
-export function selectBoundedConversationText(entries: KioskConversationTextEntry[]): KioskConversationMessage[] {
+export function selectBoundedConversationText(entries: KioskConversationTextEntry[], scope: 'ordering' | 'checkout' = 'ordering'): KioskConversationMessage[] {
+  // Checkout carries the current utterance and its own tool exchange. Earlier
+  // chat remains in the durable transcript and is not reused as authorization.
+  if (scope === 'checkout') {
+    const lastUser = entries.findLastIndex(entry => entry.kind === 'user_text')
+    entries = lastUser < 0 ? [] : entries.slice(lastUser)
+  }
   const selected: KioskConversationMessage[] = []
   let usedCharacters = 0
   const truncationNotice = '【較早內容已省略】\n'
@@ -157,17 +164,20 @@ export function compactToolResultForModel(name: string, content: string) {
 }
 
 /** Builds the small system-only note that accompanies the bounded transcript. */
-export function createInteractionInstructions(state: KioskAgentInteractionState) {
+export function createInteractionInstructions(state: KioskAgentInteractionState, scope: 'ordering' | 'checkout' = 'ordering') {
   const instructions = [
     '這是單一訪客、僅在本次點餐有效的互動摘要；不可向顧客提及摘要、session 或內部規則。',
     '購物車、金額、選項與取餐方式不是此摘要的真實來源；回答前如有需要，必須使用點餐工具查詢。',
+    '顧客明確要求更換已加入購物車的餐點時，必須完成更換，不可把需求改成詢價或只介紹兩道餐點。先用 cart_get(display:false) 核對原 lineId、份數，再查 menu_get 確認替代品項、供應與必要選項。資料齊全時用 order_add_item 並帶 replaceLineId 一次更換，未另指定份數就保留原份數。不要另外呼叫 cart_remove_item，也不要逐步選餐。原餐點不唯一、替代品項不存在或資料未齊時，只問一個必要問題，保留原購物車。只有成功回執含 replacedLine 才可說已更換。',
     '查詢與推薦必須完整保留顧客條件，不能因沒有符合結果而改查全部或放寬條件。工具 availability=NONE 就回答沒有；UNKNOWN 表示無法確認，CUSTOMIZATION_REQUIRED 不代表已符合。未支援或有歧義的條件先說明或澄清，不使用無條件查詢代替。素食只採用 POS 明確標示，不從缺少肉類成分自行推論；換一批沿用原條件，只有顧客明確修改需求才可變更。',
   ]
-  if (state.suggestedSubjectIds.length > 0)
+  if (scope === 'checkout')
+    instructions.push('目前使用獨立結帳上下文。依本輪畫面狀態、有效問題與工具結果操作；插話後的附和不代表同意付款，必要時重新詢問。')
+  if (scope === 'ordering' && state.suggestedSubjectIds.length > 0)
     instructions.push(`已展示但尚未選擇的餐點 ID：${state.suggestedSubjectIds.join(', ')}。除非顧客主動提起，不可再次推薦這些餐點。`)
-  if (state.dismissedSubjectIds.length > 0)
+  if (scope === 'ordering' && state.dismissedSubjectIds.length > 0)
     instructions.push(`顧客已拒絕或要求替換的餐點 ID：${state.dismissedSubjectIds.join(', ')}。不可再次推薦。`)
-  if (state.recentMenuSubjects?.length)
+  if (scope === 'ordering' && state.recentMenuSubjects?.length)
     instructions.push(`最近顯示或操作的餐點：${state.recentMenuSubjects.map(item => `${item.name}（${item.id}）`).join('、')}。可用於理解「剛剛那個」等指涉。`)
   if (state.cartSummary) {
     const serviceMode = state.cartSummary.fulfillmentMode ?? '尚未選擇'
@@ -176,7 +186,7 @@ export function createInteractionInstructions(state: KioskAgentInteractionState)
       : '空購物車'
     instructions.push(`最近一次成功工具結果的購物車快照：${lines}；共 ${state.cartSummary.itemCount} 份，總額 ${state.cartSummary.total} 元，用餐方式 ID：${serviceMode}（對顧客使用最新 POS fulfillmentModes 的 label，不自行翻譯 ID）。此快照用於延續對話；修改或結帳前仍以點餐工具的最新結果為準。`)
   }
-  if (state.mode === 'decision_guidance') {
+  if (scope === 'ordering' && state.mode === 'decision_guidance') {
     instructions.push('顧客尚未做出決定。請停止重複開放式提問，改為展示 2 至 3 個尚未展示的可點選選項，或只問一個可直接回答的二選一問題。')
   }
   if (state.mode === 'touch_preferred')

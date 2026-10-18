@@ -1,8 +1,16 @@
 <script setup lang="ts">
 import type { MenuItem } from '../domain/order-machine'
 
+import { computed } from 'vue'
+
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+import { menuPageState } from '../domain/order-machine'
+
 const props = defineProps<{ isTargeted: boolean, item: MenuItem }>()
 const emit = defineEmits<{ select: [itemId: string] }>()
+const state = computed(() => menuPageState(props.item))
+const disabled = computed(() => state.value === 'sold-out' || state.value === 'unknown')
+const statusLabel = computed(() => state.value === 'unknown' ? orderingMessages['zh-Hant'].unknownLabel : orderingMessages['zh-Hant'].soldOutLabel)
 function currency(amount: number) {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
 }
@@ -10,9 +18,9 @@ function currency(amount: number) {
 
 <template>
   <button
-    :aria-label="props.item.available === false ? `${props.item.name}，今日售完` : `查看${props.item.name}`"
-    :class="['menu-card', { 'is-targeted': props.isTargeted, 'is-unavailable': props.item.available === false }]"
-    :disabled="props.item.available === false"
+    :aria-label="disabled ? `${props.item.name}，${statusLabel}` : `查看${props.item.name}`"
+    :class="['menu-card', { 'is-targeted': props.isTargeted, 'is-unavailable': disabled }]"
+    :disabled="disabled"
     type="button"
     @click="emit('select', props.item.id)"
   >
@@ -22,7 +30,7 @@ function currency(amount: number) {
     <div class="menu-card-body">
       <div><h3>{{ props.item.name }}</h3><p>{{ props.item.description }}</p></div><strong>{{ currency(props.item.price) }}</strong>
     </div>
-    <span v-if="props.item.available === false" class="unavailable">今日售完</span>
+    <span v-if="disabled" class="unavailable">{{ statusLabel }}</span>
   </button>
 </template>
 
