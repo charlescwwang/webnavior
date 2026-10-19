@@ -7,6 +7,55 @@ accumulating history.
 
 ## Current State
 
+- Oct19 release: four code commits through 5f2c5f1 are deployed to
+  `https://webnavior.aikcitri.qzz.io`; API restarted via systemd at11:17 Taipei
+  (PID584043). Public `/` and `/kiosk/` serve index-0t8K34cR.js, `/menu/`
+  index-9m9pfTsn.js, and admin index-Bd2h2EYE.js. Browser smoke: unregistered
+  Kiosk shows device setup without errors; Menu loads all7 actual dishes and
+  no cart/order/payment was attempted. API readiness reports DB/Redis ok.
+  Root typecheck passed once; root lint reports3184 pre-existing errors in16
+  unchanged files. All staged-file commit hooks and focused Shared21/Kiosk74
+  tests pass. Old static assets and a pg_restore-list-verified database dump are
+  retained in `/tmp/webnavior-release-20261019-rpf1ss90` (ephemeral backup; move
+  to managed storage if longer retention is needed). No remote push, real login
+  round trip, voice/hardware or payment acceptance test.
+
+- Oct19 cart replacement (same session, entries76/78): 牛肉麵幫我改水餃 chose
+  ADD .5474, purpose OPERATION .5638, coverage HANDOFF .5137, then UNAVAILABLE.
+  Independent recipient and replacement-semantic checks now recover weak HANDOFF
+  coverage and weak MULTI_ACTION before inquiry-only recovery. No threshold was
+  lowered; Agent still validates targets and uses atomic replaceLineId. Live
+  configured-provider replay completes noodle→dumplings and reverse replacements;
+  eight cart-change controls pass, including absent pizza preserving the cart,
+  add/quantity/remove and companion speech. Server decision268 tests pass
+  (75 opt-in skips), Server scoped types and changed-file lint pass. Released
+  Oct19 as recorded above; no voice/hardware test.
+
+- Oct19 food hallucination (session hIHA3DAvjhrG8x0RjggBa): read-only DB audit
+  confirms 我不想吃飯 received invented 麻醬麵/酸辣湯麵 without any tool call.
+  Plain Agent handoffs now require menu receipts even with zero catalog matches;
+  GENERAL_QUESTION explicitly admits identity/service dialogue. Reprojection
+  retains requireMenuRead. Both prompts prohibit inferring a substitute from an
+  ambiguous refusal. Host regression reproduced the gap before the fix; Kiosk73
+  and Server140 targeted tests pass (2 skipped), scoped types checked. Oct19
+  continuation used `/etc/webnavior/server.env` for the actual deployed provider
+  configuration. Local `.env.local` REDIS_URL now matches that authenticated
+  connection; standard apply:env Redis authentication/PING passes. The food-refusal
+  replay chose IGNORE, producing no invented menu reply. Host evidence-guard
+  regression independently verifies rejection if an Agent does generate prose.
+  Released Oct19 as recorded above; voice/hardware remains unverified.
+
+- Oct18 routing/auth follow-up: public HTTPS `/` and deployed entry bundle already
+  redirect to `/kiosk/`; local Nginx agrees. Preserved pre-existing root/PWA edits
+  and added the missing root redirect to the deployment script. Oct19 correction: API 401 after
+  failed token refresh automatically starts local Webnavior OIDC login; the
+  previously added opt-out/banner was removed at user direction. The callback
+  restores the original safe local route instead of `/`.
+  Entry/login changes were deployed Oct19. Third-party non-WebMCP control remains a
+  pending choice (Chrome extension / Electron / local CDP); see
+  `plans/2026-10-18-webnavior-routing-and-browser-control.md`. Public Maifood
+  HTML was read only; no cart/order/payment or real browser validation.
+
 - Oct18 test-release commit cut: current work is grouped into shared contracts,
   continuation Bridge, ordering/Jev core, welcome administration, Kiosk host,
   and deployment documentation. User explicitly authorized these commits; no

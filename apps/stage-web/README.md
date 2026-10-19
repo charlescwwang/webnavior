@@ -70,3 +70,15 @@ configuration:
 
 The admin application does not embed a Kiosk preview. Open the separately
 deployed `/kiosk/` application when an end-to-end customer-flow check is needed.
+
+## Entry and login recovery
+
+The public `/` entry opens the separately deployed `/kiosk/` application;
+management starts at `/admin`. An expired API session that cannot be refreshed starts OIDC sign-in through
+the local Webnavior `/auth/login` page. After successful OIDC login, the
+web callback restores the original local route, including query and hash;
+missing or unsafe return routes go to `/admin`. API failures must not navigate
+to an external AIRI application.
+
+Deployment findings and the pending third-party browser-control options are in
+[`docs/plans/2026-10-18-webnavior-routing-and-browser-control.md`](../../docs/plans/2026-10-18-webnavior-routing-and-browser-control.md).
