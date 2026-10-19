@@ -198,3 +198,6 @@ webCallback:
     finalizing: Finalizing authentication with AIRI.
   action:
     tryAgain: 再試一次
+
+sessionRecovery:
+  unconfirmed: 無法確認登入狀態，請重試。

@@ -222,6 +222,7 @@ export async function triggerSignIn(opts?: { provider?: OAuthProvider }): Promis
   await signInOIDC({
     clientId: OIDC_CLIENT_ID,
     redirectUri: OIDC_REDIRECT_URI,
+    returnPath: `${window.location.pathname}${window.location.search}${window.location.hash}`,
     ...opts,
   })
 }

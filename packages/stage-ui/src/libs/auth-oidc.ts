@@ -11,6 +11,8 @@ export interface OIDCFlowParams {
   clientId: string
   redirectUri: string
   scopes?: string[]
+  /** Local route restored by the web callback; never sent to the provider. */
+  returnPath?: string
   /**
    * Client secret — required when the OIDC client is registered as
    * confidential on the server. Omit for public clients.
@@ -170,5 +172,21 @@ export function consumeFlowState(): { flowState: OIDCFlowState, params: OIDCFlow
   return {
     flowState: JSON.parse(flowStateRaw),
     params: JSON.parse(paramsRaw),
+  }
+}
+
+/** Restore only a local application route, excluding auth loops and external URLs. */
+export function resolveReturnPath(path: string | undefined, origin: string): string {
+  if (!path?.startsWith('/') || path.startsWith('//'))
+    return '/admin'
+
+  try {
+    const target = new URL(path, origin)
+    if (target.origin !== origin || target.pathname === '/auth' || target.pathname.startsWith('/auth/'))
+      return '/admin'
+    return `${target.pathname}${target.search}${target.hash}`
+  }
+  catch {
+    return '/admin'
   }
 }

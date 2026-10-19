@@ -198,3 +198,6 @@ webCallback:
     finalizing: Finalizing authentication with AIRI.
   action:
     tryAgain: Try again
+
+sessionRecovery:
+  unconfirmed: Unable to confirm your session. Please try again.

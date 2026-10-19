@@ -2,7 +2,7 @@
 import { errorMessageFrom } from '@moeru/std'
 import { useAnalytics } from '@proj-airi/stage-ui/composables'
 import { applyOIDCTokens, fetchSession, triggerSignIn } from '@proj-airi/stage-ui/libs/auth'
-import { consumeFlowState, exchangeCodeForTokens } from '@proj-airi/stage-ui/libs/auth-oidc'
+import { consumeFlowState, exchangeCodeForTokens, resolveReturnPath } from '@proj-airi/stage-ui/libs/auth-oidc'
 import { Button } from '@proj-airi/ui'
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -41,8 +41,9 @@ onMounted(async () => {
   try {
     const tokens = await exchangeCodeForTokens(code, persisted.flowState, persisted.params, state)
     await applyOIDCTokens(tokens, persisted.params.clientId)
-    await fetchSession()
-    router.replace('/')
+    if (!await fetchSession())
+      throw new Error(t('server.auth.sessionRecovery.unconfirmed'))
+    await router.replace(resolveReturnPath(persisted.params.returnPath, window.location.origin))
   }
   catch (err) {
     trackOauthCallbackFailed({ stage: 'token_exchange_failed' })
