@@ -62,7 +62,7 @@ export type KioskInteractionDecision = {
   /** Questions actually evaluated; one HTTP exchange can contain several forwards. */
   modelQuestions?: number
   /** Mechanical refusal cause; never a second interpretation of the utterance. */
-  reason?: 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
+  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
 } & (
   | { kind: 'COMPLETE', confidence?: number }
   | { kind: 'CONTINUE_INCOMPLETE' }

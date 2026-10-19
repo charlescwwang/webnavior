@@ -275,7 +275,11 @@ without changing durable receipts or payment/order status.
 `MENU_QUERY` handoffs require current-turn menu evidence, including while phone
 entry is pending. Other ordering handoffs with current-utterance product/category
 matches require it too, so a replacement cannot invent unverified dish examples
-in a clarification. Old cart references alone do not imply a food claim. The host
+in a clarification. Ordinary unclassified handoffs require evidence even when
+no product/category matched. Explicit `GENERAL_QUESTION` routing keeps identity
+and service explanations natural. A food refusal does not authorize a guessed
+substitute; ambiguous preferences require clarification. Old cart references
+alone do not imply a food claim. The host
 carries `decisionState.requireMenuRead`; initial
 JSON/SSE completions restrict tools to `menu_get`/`menu_recommend` and require a
 tool call. A no-tool provider answer stays diagnostic prose, and Kiosk refuses
@@ -283,6 +287,13 @@ to publish it as a food claim. Normal identity/phone dialogue is unaffected.
 Menu verification targets the disputed names using `menu_get.verifyClaim`, not
 an unrelated recommendation batch. Current-meal cancellation and corrective
 availability inquiries use finite choices tied to the browser's live question.
+
+Weak cart-change coverage and weak compound routes may recover a complete
+replacement through separate recipient and replacement-semantic checks when
+real cart lines exist, before inquiry-only recovery. The
+original utterance goes to Main Agent without a partial mutation or a fulfillment
+answer. Target resolution and replacement legality remain owned by Menu tools;
+the speech classifier does not decide whether a dish exists or can be replaced.
 
 Main Agent continuations retain the completed tool exchanges of the current
 customer request, paired by `toolCallId` within that latest user turn. Each result

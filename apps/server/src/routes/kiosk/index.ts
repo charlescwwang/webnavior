@@ -1131,7 +1131,7 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
       : undefined,
     input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
-    { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清可直接用自然語言回答，不需要為了回覆招呼而查菜單。餐點、價格、庫存與訂單狀態必須先查詢工具；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
+    { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清可直接用自然語言回答，不需要為了回覆招呼而查菜單。拒絕或否定某餐點不代表指定替代餐點。「不想吃飯」可能是不想用餐，也可能是不吃米飯；未確認前不可自行推成想吃麵、排除米飯或同意換一批。需求不明先釐清；若本輪要求查菜單，查詢只取得事實，不代表顧客已要求推薦或接受替代餐點。餐點、價格、庫存與訂單狀態必須先查詢工具；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
     { content: '操作問題由點餐系統依 POS 與目前狀態產生。工具回傳 pendingCustomerChoice 時，不另寫或重複詢問問題，由畫面呈現該問題。用餐方式名稱必須取自最新 POS fulfillmentModes，不自行將 takeout 解讀成外帶。環境、資料來源與測試標記僅供內部紀錄，不向顧客敘述；只回報工具證實的訂單與付款狀態。pending 或 uncertain 不可宣稱付款或訂單成功。', title: '顧客回覆與操作問題分界' },
   ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }

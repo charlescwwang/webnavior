@@ -98,6 +98,28 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     } }) })
   }
 
+  // Report: this chat, 2026-10-19, visitor session hIHA3DAvjhrG8x0RjggBa.
+  it('grounds an unmatched food refusal after a bento recommendation instead of inventing noodles', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('menu_recommend', {})
+    const decision = await decide('我不想吃飯', { messages: [{ role: 'user', content: '推薦一下' }, { role: 'assistant', content: '推薦3項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。' }] }, configuredPolicy)
+    process.stdout.write(`[food-refusal] ${JSON.stringify({ kind: decision.kind, reason: decision.reason, jevAnswers })}\n`)
+    expect(['NEEDS_ASSISTANT', 'IGNORE']).toContain(decision.kind)
+    if (decision.kind === 'NEEDS_ASSISTANT') {
+      expect(decision.reason).not.toBe('GENERAL_QUESTION')
+      const state = conversationDecisionStateFrom(decision.decisionState, decision)!
+      expect(state).toMatchObject({ requireMenuRead: true })
+      const reply = await agent('我不想吃飯', state)
+      process.stdout.write(`[food-refusal-main] ${JSON.stringify(reply)}\n`)
+      expect(reply.calls.some(call => ['menu_get', 'menu_recommend'].includes(call.name))).toBe(true)
+      expect(reply.answer).not.toContain('麻醬麵')
+      expect(reply.answer).not.toContain('酸辣湯麵')
+    }
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  }, 60_000)
+
   // Report: attachment a4c50e1a, 有魚排便當？ while fulfillment is pending.
   it('recovers unfamiliar menu inquiries without requiring a fulfillment answer or changing the cart', async () => {
     ready = true
@@ -178,6 +200,29 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
         expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
       }
     }
+  }, 60_000)
+
+  // Report: this chat, 2026-10-19, session hIHA3DAvjhrG8x0RjggBa.
+  it('replaces the reported noodle order with dumplings while fulfillment remains unanswered', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const first = await runtime.invoke('order_add_item', { itemId: 'beef-noodle-soup', quantity: 1 })
+    const question = questionReceiptFrom(first)!
+    await runtime.invoke('kiosk_dialogue_presented', { content: question.question, questionId: question.questionId })
+    const conversation: DecisionConversation = { messages: [{ role: 'user', content: '牛肉麵一份' }, { role: 'assistant', content: `已將紅燒牛肉麵加入購物車，共 1 份。 ${question.question}` }] }
+    const decision = await decide('牛肉麵幫我改水餃', conversation, configuredPolicy)
+    process.stdout.write(`[reported-replacement] ${JSON.stringify({ kind: decision.kind, reason: decision.reason, jevAnswers })}\n`)
+    expect(decision.kind, JSON.stringify(decision)).toBe('NEEDS_ASSISTANT')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'beef-noodle-soup', quantity: 1 }] } })
+    const saved = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: JSON.stringify(first), metadata: { name: 'order_add_item', decisionRoute: 'fast_path' } }) })
+    expect(saved.status).toBe(201)
+    await recordReply(conversation.messages[1]!.content)
+    const reply = await agent('牛肉麵幫我改水餃', conversationDecisionStateFrom(decision.decisionState, decision)!)
+    process.stdout.write(`[reported-replacement-main] ${JSON.stringify(reply)}\n`)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'dumplings', quantity: 1 }] } })
+    expect(reply.calls.some(call => call.name === 'order_add_item' && typeof call.input === 'object' && call.input !== null && 'replaceLineId' in call.input)).toBe(true)
+    expect(reply.calls.some(call => ['cart_remove_item', 'order_set_fulfillment'].includes(call.name))).toBe(false)
   }, 60_000)
 
   it('routes cart replacements as whole requests and completes the reported swap with actual Jev and Main Agent', async () => {

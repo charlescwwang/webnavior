@@ -270,7 +270,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         GREET: '只向店員／本機打招呼，沒有提出點餐、查詢或其他需求。招呼加點餐必須選點餐意圖；對同伴打招呼屬 IGNORE。',
         IGNORE: '叫同伴名字向他說話或提問，即使詢問餐點種類、報品名或要求操作，也屬此項。其他背景討論、招呼、閒聊或對已完成資訊回答的單純附和，沒有向店員／本機提出服務需求。不能因向本機提出的有效需求缺資料就選 IGNORE。',
         MULTI_ACTION: '顧客這一句向店員／本機明確要求兩個以上獨立的點餐服務操作；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。多個子句、一般討論或抱怨不等於多項操作。',
-        NEEDS_ASSISTANT: '向店員／本機提出的點餐服務需求超出有限候選，或直接詢問本機身分、名稱或能力（你是誰、你能做什麼）：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。顧客已表達要點餐點，但只有 possible／fragment 商品證據、沒有合法新增候選時也選此項，交接確認品名；這不是語句未完成，不改成查詢。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。',
+        NEEDS_ASSISTANT: '向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。顧客已表達要點餐點，但只有 possible／fragment 商品證據、沒有合法新增候選時也選此項，交接確認品名；這不是語句未完成，不改成查詢。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。',
       }
   if (input.review) {
     for (const key of Object.keys(criteria)) delete criteria[key]
@@ -284,8 +284,10 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     criteria.NEW_REQUEST = '顧客提出另一個需求或查詢，不是回答這筆餐點的缺漏設定。原問題問份數／規格，卻單說另一個真實菜單品名或分類，也選此項，不必出現「我要」「改成」。品名不是份數，換話題不是取消。先重新判斷新需求，只有明確換餐點才替換未加入的餐點；本選項不直接變更訂單。背景話語不是新需求。'
   if (phase === 'meal_confirmation')
     criteria.NEW_REQUEST = '顧客明確提出查價、其他餐點或不同服務需求，不是在回答這題是／不是；交接新需求，保留原本點餐進度。'
-  if (!input.review && (!phase || phase === 'ordering'))
+  if (!input.review && (!phase || phase === 'ordering')) {
+    criteria.GENERAL_QUESTION = '顧客直接詢問本機身分、名稱、能力或電話用途等服務說明，不需要餐點、價格、庫存或訂單事實。餐點偏好、拒絕先前餐點或含糊飲食需求不是一般問題；不能靠這項直接介紹餐點。'
     criteria.MENU_QUERY = '顧客查證先前介紹的品項：真的有嗎、菜單沒有吧、是否說錯餐點；或需要超出有限候選的餐點比較／解釋。必須交給助手先查菜單；不能用一般聊天回答。單純查詢、推薦與換批仍選已有的精確意圖。'
+  }
   if (canClarify && !input.review)
     criteria.CLARIFY_REQUEST = '確定顧客向本機提出服務需求，但不能確定是否要點提案中的餐點；用已提供的提案反問一次。正在回答確認問題但答案不清楚也選此項。對象不明、背景聊天不是此項，不因低信心就選；明確查價／篩選直接選查詢。'
   if (!followUp && !input.review && input.decisionState?.activeRequest)
@@ -401,6 +403,21 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     // consuming an unrelated fulfillment/invitation question. CART_LINE refs
     // provide actual cart context; history alone never invents an order line.
     const cartReferences = input.decisionState?.references?.filter(reference => reference.refId.startsWith('CART_LINE_')) ?? []
+    // Both a weak partial mutation and a weak compound route can describe the
+    // same replacement. Recipient verification must precede this narrow check;
+    // it admits the whole utterance, never a target or permission to mutate.
+    async function qualifyReplacement(): Promise<KioskInteractionDecision> {
+      const replacement = (await invoke(JSON.stringify({ customerUtterance: input.transcript }), { replacement: {
+        type: 'choice',
+        instructions: '這句話是在要求將一種餐點改成另一種餐點嗎？只判斷語意，不查菜單或購物車，不確認商品、份數或能不能換；這些由程式處理。A幫我改B、A改B、A換成B，都是換餐點。加一份B、A改兩份、A不要辣，則不是換成另一種餐點。詢問能不能換或意思不明選 OTHER。',
+        criteria: { REPLACE: '要求把原餐點改成另一種餐點。', OTHER: '不是要求換成另一種餐點。' },
+      } })).answers?.replacement as { choice?: string, confidence?: number } | undefined
+      if (trace.trace)
+        trace.trace.semanticCheck = { kind: 'weak-cart-replacement', replacement }
+      if (replacement?.choice === 'REPLACE' && typeof replacement.confidence === 'number' && Number.isFinite(replacement.confidence) && replacement.confidence >= 0.6 && replacement.confidence <= 1)
+        return { kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', confidence: replacement.confidence, ...trace }
+      return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
+    }
     const cartEffects: Record<string, string> = {
       'intent:add-item': '只新增餐點，所有原購物車餐點保留，不更換、不移除。',
       'intent:remove-item': '只移除既有餐點，不新增替代品項。',
@@ -448,6 +465,24 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         trace.trace.semanticCheck = { kind: 'cart-operation-coverage', proposedAction: selected.id, purpose, answer: coverage }
       if (!coverage || !['SINGLE', 'HANDOFF', 'BACKGROUND', 'UNCERTAIN', ...(readOnly ? ['READ_ONLY'] : [])].includes(String(coverage.choice)))
         return { kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE', ...trace }
+      if (coverage.choice === 'HANDOFF' && typeof coverage.confidence === 'number' && Number.isFinite(coverage.confidence) && coverage.confidence >= 0 && coverage.confidence < 0.6 && cartReferences.length) {
+        // Weak coverage cannot authorize the proposed partial mutation. Qualify
+        // recipient and replacement semantics independently, without showing
+        // the assumed ADD/REMOVE action or the pending fulfillment question.
+        // Cart presence gates recovery; it does not confirm the source target.
+        // This only routes the original utterance; Agent tools still resolve and
+        // authorize every target/effect against fresh browser state.
+        const recipient = (await invoke(JSON.stringify({ customerUtterance: input.transcript }), { recipient: recipientQuestion })).answers?.recipient as { choice?: string, confidence?: number } | undefined
+        if (trace.trace)
+          trace.trace.semanticCheck = { kind: 'weak-cart-replacement', recipient }
+        if (!recipient || typeof recipient.confidence !== 'number' || !Number.isFinite(recipient.confidence) || recipient.confidence < 0.6 || recipient.confidence > 1)
+          return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT', ...trace }
+        if (recipient.choice === 'OTHER')
+          return { kind: 'IGNORE', confidence: recipient.confidence, ...trace }
+        if (recipient.choice !== 'KIOSK')
+          return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT', ...trace }
+        return await qualifyReplacement()
+      }
       if (typeof coverage.confidence !== 'number' || !Number.isFinite(coverage.confidence) || coverage.confidence < 0.6 || coverage.confidence > 1 || coverage.choice === 'UNCERTAIN')
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
       if (coverage.choice === 'BACKGROUND')
@@ -560,7 +595,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     // Agent handoff admits speech into customer dialogue just like an action.
     // Fail closed before superseding a question; an uncertain read-result
     // review remains distinct because its original request was already admitted.
-    const assistantRoute = answer?.choice === 'MENU_QUERY' || answer?.choice === 'NEEDS_ASSISTANT' || answer?.choice === 'MULTI_ACTION' || answer?.choice === 'CLARIFY_REQUEST'
+    const assistantRoute = answer?.choice === 'GENERAL_QUESTION' || answer?.choice === 'MENU_QUERY' || answer?.choice === 'NEEDS_ASSISTANT' || answer?.choice === 'MULTI_ACTION' || answer?.choice === 'CLARIFY_REQUEST'
       || (answer?.choice === 'FOLLOW_UP_ACTIVE' && Boolean(criteria.FOLLOW_UP_ACTIVE))
     if (!input.review && assistantRoute && (confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1)) {
       // A weak broad route never gains mutation authority. Qualify its literal
@@ -570,6 +605,13 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         trace.trace.semanticCheck = { kind: 'weak-handoff-recipient', recipient }
       if (recipient?.choice === 'OTHER' && typeof recipient.confidence === 'number' && Number.isFinite(recipient.confidence) && recipient.confidence >= 0.6 && recipient.confidence <= 1)
         return { kind: 'IGNORE', confidence: recipient.confidence, ...trace }
+      if (answer?.choice === 'MULTI_ACTION' && cartReferences.length
+        && typeof confidence === 'number' && Number.isFinite(confidence) && confidence >= 0 && confidence < 0.6
+        && recipient?.choice === 'KIOSK' && typeof recipient.confidence === 'number' && Number.isFinite(recipient.confidence) && recipient.confidence >= 0.6 && recipient.confidence <= 1) {
+        // A replacement is not a factual inquiry. Resolve its complete semantic
+        // purpose before the inquiry-only recovery can grant a read-only task.
+        return await qualifyReplacement()
+      }
       // The broad route mixes uncertainty about intent, catalog coverage and
       // execution. Verify a pure menu inquiry independently: an unknown dish
       // still deserves a factual lookup, but recipient confidence alone cannot
@@ -592,7 +634,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     // An invitation is conversational foreground, not an unfinished meal. A
     // verified independent demand replaces it, while its record stays retained.
     if (invitation && confidence !== undefined && confidence >= 0.6
-      && ((selected && selected.id !== 'intent:recommend') || ['NEEDS_ASSISTANT', 'MULTI_ACTION'].includes(String(answer?.choice)))) {
+      && ((selected && selected.id !== 'intent:recommend') || ['GENERAL_QUESTION', 'NEEDS_ASSISTANT', 'MULTI_ACTION'].includes(String(answer?.choice)))) {
       supersededQuestionId = invitation.questionId
       trace.supersededQuestionId = invitation.questionId
     }
@@ -680,6 +722,8 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       return { kind: 'IGNORE', ...(confidence === undefined ? {} : { confidence }), ...trace }
     if (answer?.choice === 'INCOMPLETE')
       return { kind: 'INCOMPLETE', ...(confidence === undefined ? {} : { confidence }), ...trace }
+    if (answer?.choice === 'GENERAL_QUESTION' && criteria.GENERAL_QUESTION)
+      return { kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', confidence, ...trace }
     if (answer?.choice === 'MENU_QUERY' && criteria.MENU_QUERY)
       return { kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence, ...trace }
     if (answer?.choice === 'NEEDS_ASSISTANT')

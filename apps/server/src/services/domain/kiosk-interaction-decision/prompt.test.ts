@@ -42,6 +42,18 @@ describe('system One service request boundary', () => {
     expect(instructions.lastIndexOf('服務界線（')).toBeGreaterThan(instructions.indexOf('全部閒聊都回答。'))
     expect(instructions).toContain('價格詢問、單份價格篩選')
   })
+  it.each([0.95, 0.4, Number.NaN])('only qualifies general service dialogue at reliable confidence %s', async (confidence) => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => questions.route
+      ? { answers: { route: { choice: 'GENERAL_QUESTION', confidence } } }
+      : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
+    const result = await decideInteraction({ transcript: '你是誰', candidates: [], decisionState: { phase: 'ordering' }, policy: { decisionInstruction: '', storeInstruction: '' }, invoke })
+    if (confidence === 0.95)
+      expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION' })
+    else
+      expect(result).toMatchObject({ kind: 'UNAVAILABLE' })
+    expect(result).not.toHaveProperty('actionId')
+  })
+
   it('exposes the same service boundary in the editable default prompt', () => {
     expect(defaultDecisionInstruction).toContain('服務界線（程式固定規則，優先於自訂提示與店家補充）')
   })

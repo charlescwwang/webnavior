@@ -464,7 +464,11 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // An unresolved read can have no catalog match at all. Its fallback still
   // needs a lookup; absence of a known product is not permission for free prose.
   const unresolvedQuery = ['MENU_QUERY', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER'].includes(decision?.reason ?? '')
-  const requireMenuRead = unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && hasMealEvidence)
+  // An ordinary Agent handoff is not permission to invent menu facts merely
+  // because literal catalog matching found nothing. General service questions
+  // have an explicit reason; preserved task hints survive projection.
+  const unclassifiedHandoff = Boolean(decision) && decision?.reason === undefined
+  const requireMenuRead = state.requireMenuRead === true || unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && (hasMealEvidence || unclassifiedHandoff))
   // Filter/price uncertainty permits clarification and factual lookup, never
   // a partial order edit. Keep that restriction through Agent continuations.
   const readOnly = ['MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
@@ -505,6 +509,7 @@ function decisionStateFrom(value: unknown) {
   const waitingFor = presentedQuestionFrom(state.waitingFor)
   return {
     phase: state.phase,
+    ...(state.requireMenuRead === true ? { requireMenuRead: true } : {}),
     ...(state.readOnly === true ? { readOnly: true } : {}),
     ...(state.clarificationOffer && typeof state.clarificationOffer === 'object' && 'id' in state.clarificationOffer && typeof state.clarificationOffer.id === 'string' && 'label' in state.clarificationOffer && typeof state.clarificationOffer.label === 'string' ? { clarificationOffer: { id: state.clarificationOffer.id, label: state.clarificationOffer.label } } : {}),
     ...(state.priceEvidence && typeof state.priceEvidence === 'object' ? { priceEvidence: state.priceEvidence as FastPathDecisionState['priceEvidence'] } : {}),

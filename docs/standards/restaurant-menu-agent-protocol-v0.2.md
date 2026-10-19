@@ -40,7 +40,9 @@ separately from clerk wording and uses short, mutually exclusive outcomes.
 
 A `MENU_QUERY` Agent handoff, or another ordering handoff with current-utterance
 product/category evidence, carries `requireMenuRead` to the conversational
-boundary. Cart history alone cannot activate this guard; phone entry retains its
+boundary. Ordinary unclassified handoffs require evidence even with no catalog
+match; `GENERAL_QUESTION` explicitly admits identity and service explanations
+without a menu read. The guard survives repeated state projection. Cart history alone cannot activate this guard; phone entry retains its
 explicit factual-query prerequisite. Its initial tool choice requires a fresh menu read, and no-tool prose
 cannot become a customer food claim. `menu_get.verifyClaim:true` checks specific
 `query`/`queries` and returns an explicit correction for nonexistent names, or
@@ -51,7 +53,13 @@ and whole-request coverage, including before the first meal draft. Literal
 inquiry/operation classification is separate from single-effect coverage, so
 the proposed effect does not imply purchase consent. Uncertain purpose grants
 no authority; the original route and whole-effect checks must independently pass
-to execute. A weak route may only hand off after coverage/recipient verification. A verified pure inquiry rejoins the existing search/filter path, retaining price and dietary
+to execute. A weak route may only hand off after coverage/recipient verification.
+When coverage weakly selects HANDOFF, or a weak MULTI_ACTION route has real
+cart lines, independent recipient and replacement-semantic checks may admit the
+original utterance to Agent before inquiry-only recovery. Both paths require
+real cart lines. This never executes the partial ADD/REMOVE, answers fulfillment or
+confirms a target. The semantic check does not decide cart membership, menu
+availability, quantities or feasibility; owned Agent tools validate those. A verified pure inquiry rejoins the existing search/filter path, retaining price and dietary
 requirements. Matching a dish or having only one result never authorizes buying
 it. This finite check neither plans arbitrary actions nor consumes an unrelated
 fulfillment question; uncertain recipient/meaning leaves the order intact.

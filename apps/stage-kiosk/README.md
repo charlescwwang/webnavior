@@ -98,7 +98,10 @@ to render price matches. With fresh menu receipts, those internal tool names do
 not trigger the phone prerequisite; actual selection/order edits still do.
 
 Food requests admitted as `MENU_QUERY`, and other ordering handoffs with current
-product/category matches, carry a host-owned `requireMenuRead` guard. Old cart
+product/category matches, carry a host-owned `requireMenuRead` guard. An ordinary
+handoff without a classified reason also requires evidence even with no catalog
+match; `GENERAL_QUESTION` admits identity/service explanations directly. The
+guard survives repeated state projection. Old cart
 references alone do not force identity dialogue through menu tools. Phone entry
 still admits only its explicit factual-query route through this guard.
 Pure factual inquiries and unresolved filter/price handoffs also carry

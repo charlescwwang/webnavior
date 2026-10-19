@@ -67,8 +67,20 @@ describe('question presentation receipts', () => {
     expect(state).not.toHaveProperty('requireMenuRead')
   })
 
+  // Report: this chat, 2026-10-19, visitor session hIHA3DAvjhrG8x0RjggBa.
+  it('rejects invented noodles after an unmatched food refusal and retains its evidence requirement across continuations', () => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] }, productResolution: { status: 'none', count: 0, references: [] }, references: [{ label: '剛展示的周氏蝦捲招牌便當', refId: 'ITEM_1' }] }, {})
+    expect(state).toMatchObject({ requireMenuRead: true })
+    const continued = conversationDecisionStateFrom(state)
+    expect(continued).toMatchObject({ requireMenuRead: true })
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '推薦3項麵食：紅燒牛肉麵、麻醬麵、酸辣湯麵。' }, { menu: createMenuReplyWindow(), requireMenuRead: continued?.requireMenuRead, failureMessage: '查詢未完成。' })).toEqual({ role: 'error', content: '查詢未完成。' })
+    const menu = createMenuReplyWindow()
+    menu.record('menu_get', { items: [{ id: 'beef', name: '紅燒牛肉麵', price: 150 }], customerMessage: '我找到：紅燒牛肉麵。' })
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], answer: '推薦3項麵食：紅燒牛肉麵、麻醬麵、酸辣湯麵。' }, { menu, requireMenuRead: continued?.requireMenuRead, failureMessage: '查詢未完成。' })).toEqual({ role: 'assistant', content: '我找到：紅燒牛肉麵。' })
+  })
+
   it('keeps identity dialogue natural when only old cart references remain', () => {
-    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] }, references: [{ label: '購物車水餃', refId: 'CART_LINE_1' }], interactionState: { matchingCartLines: 0, lastAddedItemName: '水餃', screen: 'menu' } }, { reason: 'NEW_REQUEST' })
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] }, references: [{ label: '購物車水餃', refId: 'CART_LINE_1' }], interactionState: { matchingCartLines: 0, lastAddedItemName: '水餃', screen: 'menu' } }, { reason: 'GENERAL_QUESTION' })
     expect(state).not.toHaveProperty('requireMenuRead')
     expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '我是點餐助手。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, failureMessage: '查詢未完成。' })).toEqual({ role: 'assistant', content: '我是點餐助手。' })
   })

@@ -122,6 +122,74 @@ describe('whole-request coverage for cart changes', () => {
     expect(result).not.toHaveProperty('supersededQuestionId')
   })
 
+  // Report: this chat, 2026-10-19, session hIHA3DAvjhrG8x0RjggBa, entries 76/78.
+  it('recovers the reported weak replacement without executing ADD or answering fulfillment', async () => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'intent:add-item', confidence: 0.5474 } } }
+      if (questions.requestPurpose)
+        return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.5638 } } }
+      if (questions.cartRequest)
+        return { answers: { cartRequest: { choice: 'HANDOFF', confidence: 0.5137 } } }
+      if (questions.recipient)
+        return { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } }
+      return { answers: { replacement: { choice: 'REPLACE', confidence: 0.95 } } }
+    })
+    const result = await decideInteraction({ transcript: '牛肉麵幫我改水餃', decisionState: { ...state, references: [...state.references!.filter(reference => !reference.refId.startsWith('CART_LINE_')), { label: '購物車第1筆紅燒牛肉麵（最近加入）', refId: 'CART_LINE_1' }], waitingFor: { questionId: 'F1', purpose: 'fulfillment', question: '請問要內用還是自取？', expiresAt: Date.now() + 30_000, choices: [] } }, candidates, policy, invoke, includeTrace: true })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('answeredQuestionId')
+    expect(result).not.toHaveProperty('supersededQuestionId')
+    expect(invoke).toHaveBeenCalledTimes(5)
+  })
+
+  it.each([
+    { recipient: 'OTHER', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.95, kind: 'IGNORE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.4, replacement: 'REPLACE', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
+    { recipient: 'UNCERTAIN', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'OTHER', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'UNCERTAIN', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.59, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: Number.NaN, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'invented', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
+  ])('keeps weak replacement recovery bounded: $recipient/$recipientConfidence/$replacement/$replacementConfidence', async ({ recipient, recipientConfidence, replacement, replacementConfidence, kind }) => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'intent:add-item', confidence: 0.5474 } } }
+      if (questions.requestPurpose)
+        return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.5638 } } }
+      if (questions.cartRequest)
+        return { answers: { cartRequest: { choice: 'HANDOFF', confidence: 0.5137 } } }
+      if (questions.recipient)
+        return { answers: { recipient: { choice: recipient, confidence: recipientConfidence } } }
+      return { answers: { replacement: { choice: replacement, confidence: replacementConfidence } } }
+    })
+    const result = await decideInteraction({ transcript: '牛肉麵幫我改水餃', decisionState: state, candidates, policy, invoke })
+    expect(result.kind).toBe(kind)
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('answeredQuestionId')
+    expect(result).not.toHaveProperty('supersededQuestionId')
+  })
+
+  it('recovers a weak compound replacement before inquiry-only recovery can drop its mutation scope', async () => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'MULTI_ACTION', confidence: 0.2147 } } }
+      if (questions.recipient)
+        return { answers: { recipient: { choice: 'KIOSK', confidence: 0.9997 } } }
+      if (questions.replacement)
+        return { answers: { replacement: { choice: 'REPLACE', confidence: 0.95 } } }
+      return { answers: { menuInquiry: { choice: 'QUERY', confidence: 0.95 } } }
+    })
+    const result = await decideInteraction({ transcript: '水餃不要，改牛肉麵', decisionState: state, candidates: [...candidates, { id: 'intent:search-menu', description: '查詢餐點。' }], policy, invoke })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('answeredQuestionId')
+    expect(result).not.toHaveProperty('supersededQuestionId')
+    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(invoke.mock.calls.some(([, questions]) => questions.menuInquiry)).toBe(false)
+  })
+
   it('suspends a partial route until whole-request coverage is resumed and verified', async () => {
     const stages = createDecisionStages()
     const owner = { deviceId: 'cart-coverage', visitorSessionId: 'synthetic-visitor' }
