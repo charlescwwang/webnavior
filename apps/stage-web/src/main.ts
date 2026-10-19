@@ -49,10 +49,12 @@ router.afterEach(() => {
 })
 
 router.beforeEach((to) => {
-  // The AIRI experience remains available to existing development routes, but
-  // Webnavior administrators should always land on the control centre.
-  if (to.path === '/')
-    return '/admin'
+  // Webnavior default entry point is the Kiosk.
+  // Administrators access management via /admin.
+  if (to.path === '/') {
+    window.location.replace('/kiosk/')
+    return false
+  }
 })
 
 async function bootstrap() {

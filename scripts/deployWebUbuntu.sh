@@ -124,6 +124,10 @@ server {
     listen [::]:5169 default_server;
     server_name _;
     root /var/www/airi;
+    absolute_redirect off;
+
+    # Resolve the public entry before the management SPA and its cached routes.
+    location = / { return 302 /kiosk/; }
 
     location = /kiosk { return 301 /kiosk/; }
     location = /menu { return 301 /menu/; }

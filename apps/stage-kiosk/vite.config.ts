@@ -13,6 +13,7 @@ import { DownloadLive2DSDK } from '@proj-airi/unplugin-live2d-sdk/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  base: '/kiosk/',
   optimizeDeps: {
     exclude: [
       // stage-ui's provider registry can reference DuckDB settings helpers,

@@ -134,7 +134,7 @@ export async function fetchPosCatalog(serverUrl: string | undefined): Promise<Po
     throw new Error('未設定 VITE_ORDER_MENU_SERVER_URL，無法載入 POS 菜單。')
 
   try {
-    const response = await fetch(new URL('/v1/catalog', serverUrl))
+    const response = await fetch(new URL('v1/catalog', `${serverUrl.replace(/\/$/, '')}/`))
     if (!response.ok)
       throw new Error(`POS Bridge 回傳 HTTP ${response.status}。`)
     return parseCatalog(await response.json())
