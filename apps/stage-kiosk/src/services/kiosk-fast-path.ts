@@ -165,8 +165,8 @@ export async function runFastPath(input: {
   }
   const candidateTool = input.webMcp.tools.find(tool => tool.name === candidateToolName)
   if (!candidateTool) {
-    input.onTrace?.({ browserContext: { error: 'Kiosk semantic context tool is unavailable.' }, decision: { kind: 'UNAVAILABLE' }, transcript: input.transcript })
-    return { kind: 'UNAVAILABLE' }
+    browserContext = { error: 'Kiosk semantic context tool is unavailable.' }
+    return await handoff('SYSTEM_ONE_DISABLED')
   }
 
   let executionStarted = false

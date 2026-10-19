@@ -179,6 +179,7 @@ export function createWebMcpAdapter() {
       if (currentGeneration !== generation.value || currentRevision !== refreshRevision)
         return
       const message = checkingCompatibility ? 'WebMCP 相容性檢查逾時，請直接操作服務畫面。' : '互動服務尚未提供 WebMCP tools。'
+      console.warn('[webmcp] timeout:', message)
       fail(checkingCompatibility ? 'compatibility-check-failed' : 'no-tools', message)
       controller.abort(new Error(message))
     }, readyTimeoutMs)
@@ -221,6 +222,7 @@ export function createWebMcpAdapter() {
     catch (caught) {
       if (currentGeneration !== generation.value || currentRevision !== refreshRevision)
         return
+      console.warn('[webmcp] compatibility check failed:', caught)
       fail(checkingCompatibility ? 'compatibility-check-failed' : 'discovery-failed', errorMessageFrom(caught) ?? '無法取得互動服務的 WebMCP tools。')
     }
   }

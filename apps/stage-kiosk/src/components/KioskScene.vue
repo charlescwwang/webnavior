@@ -874,11 +874,16 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     }
     if (result.kind === 'IGNORE' || result.kind === 'INCOMPLETE' || result.kind === 'UNAVAILABLE') {
-      if (shownInput && result.reason !== 'UNCERTAIN_RECIPIENT') {
+      if ((shownInput || utterance.source === 'simulation') && result.reason !== 'UNCERTAIN_RECIPIENT') {
         const message = result.kind === 'UNAVAILABLE'
           ? t('stage.kiosk-agent.decision-uncertain')
           : '這句需求尚未完成，請再說一次或使用螢幕操作。'
-        conversationMessages.value = [...conversationMessages.value, { role: 'error', content: message }]
+        conversationMessages.value = [
+          ...conversationMessages.value,
+          ...(!shownInput ? [{ role: 'user' as const, content: utterance.text }] : []),
+          { role: 'error', content: message },
+        ]
+        shownInput = true
         await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'unavailable', source: utterance.source, utteranceId: utterance.id })
         await interactionRecording.append('service_event', JSON.stringify({ kind: 'decision_not_completed', result: result.kind, trace: latestDecisionTrace }), { decisionRoute: 'unavailable', utteranceId: utterance.id })
       }

@@ -450,6 +450,21 @@ describe('kiosk System One fast path', () => {
     })).resolves.toEqual({ kind: 'UNAVAILABLE' })
   })
 
+  it('hands off to Main Agent when WebMCP context tools are missing or unsupported', async () => {
+    const decide = vi.fn()
+    const execute = vi.fn()
+    const result = await runFastPath({
+      isEnabled: async () => true,
+      decide,
+      transcript: '我要一個招牌便當',
+      webMcp: { execute, tools: [] },
+    })
+    expect(result.kind).toBe('NEEDS_ASSISTANT')
+    expect(result.reason).toBe('SYSTEM_ONE_DISABLED')
+    expect(decide).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('can classify an active Agent follow-up without a legal menu action', async () => {
     const decide = vi.fn(async () => ({ kind: 'FOLLOW_UP_ACTIVE' as const }))
     const execute = vi.fn(async () => ({ candidates: [], phase: 'ordering' }))
