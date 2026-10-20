@@ -27,6 +27,13 @@ it does not authenticate a member of the external ordering site.
 **略過，捐贈發票** explicitly records donation and advances directly to payment
 selection without a donation code. Touch, Jev and Main Agent use the same
 transition; it clears earlier personal invoice details and never initiates payment.
+The **略過，捐贈發票** button is in the bottom action area, below invoice
+entry and above **返回上一頁**. On the invoice screen, saying **略過** or
+**跳過** selects donation even when the customer entered this step by touch
+and no spoken question has been presented. Asking whether skipping is possible
+or declining to skip does not authorize donation. This remains a selection of
+invoice handling, not payment or invoice issuance.
+
 The future POS/invoice integration owns the actual donation recipient; this test
 page neither invents a recipient code nor issues an invoice.
 Customers may press **略過電話，直接點餐** or ask the assistant to skip.
@@ -65,6 +72,28 @@ to the order review, tax-ID entry returns to invoice selection, and payment
 returns to the preceding invoice or tax-ID page. Confirmed identifiers and the
 tax-ID draft remain available for editing; returning clears the unpaid payment
 selection. Pending, authorized and uncertain payments block backward navigation.
+Tax-ID and payment pages also offer a separate **返回訂單內容，保留餐點** action,
+matching voice cancellation rather than pretending that the previous-page action
+skips every intermediate step. Tax-ID entry offers explicit skip/donation too.
+
+Voice/Agent checkout operations register their actual controls with the shared
+cursor: review confirmation, invoice choices, membership skip, tax-ID entry and
+confirmation, payment methods and cancellation. Starting checkout reveals the
+review before targeting its confirmation button. Cursor movement/press completes
+before the owning transition runs once; no synthetic DOM click is dispatched.
+Tax-ID dictation highlights the visible draft instead of submitting it. Unpaid
+QR screens retain method buttons so changing payment also has a visible target.
+
+Invoice entry focuses the active carrier/citizen field on arrival, selection
+(including reselecting the same option), and after Agent control is released.
+Tax-ID entry is a labelled keyboard/scanner text field with the existing touch
+keypad retained; it accepts up to eight digits and still requires confirmation.
+Fields release focus and are disabled during Agent control, then regain focus
+after the owning DOM unlock without replacing the current draft. This supports
+keyboard-wedge scanner input without a preliminary tap, not a device-specific
+scanner SDK. Invoice's existing valid-form Enter submission remains unchanged;
+tax-ID scan suffix Enter does not confirm the number. Physical scanner testing
+remains necessary for the deployed device configuration.
 
 Checkout's existing 30-second page timer returns to the order review only when
 the payment page still has no selected method. It is armed on checkout state
@@ -147,6 +176,36 @@ From the repository root:
 pnpm --filter @proj-airi/order-menu dev
 ```
 
+### Confirming the query scope
+
+After recommendations are visible, a new broad price or dietary query first
+asks whether to check **the previous recommendations** or **the whole catalog**.
+The scope question stays in the Kiosk conversation, without a floating option
+panel. Voice answers use `domain/queryScope.ts`. This version confirms new
+broad conditions once rather than inferring scope from recommendation context.
+Genuine customer-named dish/category lookups retain their precise scope.
+
+The owner preserves confirmed conditions and shown IDs, binds the question to
+catalog/batch revisions for120seconds, and accepts it once. Unknown replies keep
+the question pending and explain the difference between the previously introduced
+dishes and all dishes offered by the restaurant. These explanations preserve the
+original expiry, revisions and confirmed conditions. Context/validation snapshots
+do not change the spoken question. Full labels/ordinals use
+the existing bounded reference parser; other speech uses the server's Main Agent
+checkpoint, binding omitted nouns and temporal references to the active question.
+A new request is rerouted with its whole original utterance; changed price
+evidence must be requalified.
+The shown-item universe is distinct from food exclusions, so `more:true` keeps
+that universe while a new query can return to the whole catalog. Titles and
+replies identify the selected scope. A successful order change/reset invalidates
+old scope choices. Scope questions stop Agent continuation before any menu query.
+
+`kiosk_query_scope` is host-only; `hostTools.ts` is shared with Kiosk's model-tool
+filter. `kiosk_agent_task BEGIN` requires `transcript` in addition to verified
+constraints, so model-supplied dish names cannot silently narrow a broad price
+request. Publish Menu and Kiosk together with the matching API and reload Kiosk.
+See research section17 for live-model, HTTP, host and Chrome acceptance limits.
+
 ### Single-dish price queries and recommendations
 
 `menu_get` and `menu_recommend` share `minPrice`, `maxPrice`, optional
@@ -181,11 +240,23 @@ shared-unit ranges) into finite `priceEvidence` interpretations. Jev selects a
 `priceChoiceId` alongside existing read-condition questions; it never supplies
 numbers or calculates item prices. The browser verifies that ID against the
 current one-use ticket before compiling tool arguments. Quantities/person counts
-are not currency evidence. Approximate/relative prices, total allocations,
-ambiguous shorthand, fractional/negative literals and unsupported interpretations
+are not currency evidence. Taiwanese trailing-place speech is supported in price
+evidence: 一百二 means120, 兩百五 means250, 千二 means1200, and 一萬二 means12000.
+An explicit zero retains its place (一百零二 means102); traditional/simplified
+兩/两 and 萬/万 and full-width Arabic digits are normalized. Unsupported mixed
+digit/unit forms, approximate/relative prices, total allocations,
+fractional/negative literals and unsupported interpretations
 clarify instead of ignoring a condition. This is not a total-budget optimizer.
-Agent handoffs carry verified bounds or an unresolved-price guard; tools cannot
-widen the former, guess out-of-range recommendations, or mutate through the latter.
+Spoken fractional currency such as 十二塊五 does not silently become12. Explicit
+serving counts after a currency amount remain separate from fractional prices.
+Agent menu handoffs qualify this utterance's issued price choice before creating
+the read-only task, including changes to an earlier recommendation budget. An
+uncertain food-filter scope may hand off only after a reliable read route; it
+still requires independent price qualification. Unsupported prices clarify.
+Handoffs carry verified bounds or an unresolved-price guard; tools cannot widen
+the former, guess out-of-range recommendations, or mutate through the latter.
+An unresolved-price tool refusal returns `ok:false`, stopping the Agent tool
+sequence instead of appearing to be an empty catalog that invites budget guesses.
 The shared wire types live in the server's side-effect-free `priceContracts.ts`;
 Menu owns parsing/filtering/batch policy in `domain/pricing.ts` and `webmcp.ts`.
 
@@ -270,33 +341,44 @@ a rejected query does not mean that the store has no matching dishes. Use the
 exact category or search with `query`; category synonyms are not invented by the
 browser.
 
-When the customer asks what the store recommends without stating a preference,
-the Agent calls `menu_recommend` without `needs`. The default is up to three
-distinct available dishes in POS catalog order; this is not a popularity claim.
-Fewer matches are never padded. `limit: 1` or `2` can narrow an explicit request.
-`maxPrice` is a non-negative integer in POS price units and limits each dish's
-base price, not the total order or option surcharges. `strategy` is offered only
-when current POS/merchant evidence supports `POPULAR`, `NEW_ARRIVAL`, or
-`CHEF_SPECIAL`. Evidence has a positive rank and a validity window; missing or
-expired evidence is rejected rather than replaced by catalog-order popularity.
-`more:true` returns the next batch, preserving verified ingredient/need filters
-and excluding all dishes already delivered in that recommendation session.
-Budget and strategy are retained too; changing either requires a fresh request
-without `more`.
-The session binds menu and recommendation revisions, has no idle TTL,
-and resets with a new order. Jev gets one bounded `intent:recommend-more` choice
-while the session is valid, not a new tool workflow or a full-menu search.
-Broad catalog exploration (including “what do you sell?” and “show everything”)
-uses this same bounded policy: show up to three recommendations, then replace
-them with the next unseen batch while the session remains valid. The response
-calls these recommendations, not the entire menu. Exhaustion does not recycle
-items. Named products, categories and explicit food-condition queries remain
-precise searches. No additional tools, intent choices or UI controls are needed.
-Fresh recommendations do not inherit old dietary conditions. The Agent should
-recommend first and only ask about
-rice, noodles, spice, or similar preferences after the customer rejects or
-narrows that first suggestion. For an explicit preference, `menu_recommend`
-accepts verified `needs` tags. The menu renders the returned items as a
+Conversational `menu_recommend` calls require an explicit `action`:
+
+| Action | Browser-owned behavior |
+| --- | --- |
+| `continue` | Keep confirmed conditions and return the next unseen batch. No condition changes are allowed. |
+| `update` | Apply only supplied changes; retain other groups. New numeric price bounds replace the old price group. Sort-only changes retain bounds. Use `clear` to remove explicit groups. |
+| `reset` | Release browsing bounds/category/subject/needs/strategy; retain dietary restrictions, food exclusions, cart and shown history. |
+| `clarify` | Return one application-owned spoken question; do not query, present, consume a batch or change the cart. |
+
+A plain condition update includes previously displayed matches. For a changed
+condition **and** a request for different dishes, `excludeShown:true` excludes
+history. `continue` and `reset` already exclude shown items. Retaining history
+must not turn a price lookup into a false claim that no matching food exists.
+`clear` supports price, category, query, needs, strategy, dietary, ingredients and
+excluded-item groups; dietary removal requires an explicit `update`, never an
+implicit reset. Tool receipts expose `queryState` from the current browser batch.
+The Agent does not reconstruct this state from conversational prose.
+
+`query`/`queries` identify concrete meal names or name fragments, including a
+real name absent from the catalog. Relative requests such as other items are
+query actions, not literal product names. `menu_get(display:false)` remains an
+internal evidence read; broad customer-facing exploration uses explicit query
+actions. Uncertain intent/scope uses `clarify`, while a clear new browsing
+request may use `reset`. No additional choice card is created. On exhaustion,
+continuation asks whether to change the price range or food type and retains
+the last presentation. It does not relax conditions or recycle the same batch.
+
+The default is up to three distinct available dishes in POS catalog order;
+this is not a popularity claim. Fewer matches are never padded. `limit:1` or `2`
+can narrow an explicit request. Prices are per-dish base prices, not order or
+customization budgets. `strategy` is offered only with current POS evidence for
+`POPULAR`, `NEW_ARRIVAL`, or `CHEF_SPECIAL`. Existing deterministic host actions
+use internal `more:true`; conversational callers must use `action` and cannot
+submit the old `more` argument. The batch binds menu revisions, has no idle TTL
+and resets with a new order. Jev keeps its bounded fast paths; this change adds
+no Jev classification stage. For a first recommendation use `action:update`
+without unrequested `needs`. Explicit preferences use verified `needs` tags.
+The menu renders the returned items as a
 non-blocking recommendation view with the catalog's own data; it never trusts
 model-generated product details. `menu_show_recommendations` remains available
 when the Agent needs to display a previously verified custom set.
@@ -310,6 +392,12 @@ recommendation batch's filters and seen history without an extra model/tool read
 
 `menu_scroll({direction: 'UP' | 'DOWN'})` moves one visible page on the
 native scroll owner without changing selection, cart or recommendation batch.
+UP reveals earlier content nearer the menu beginning; DOWN reveals later content
+nearer its end. Candidate descriptions name that visible result rather than
+finger motion or a required customer phrase. Voice routing verifies this content
+destination independently before mapping it to UP/DOWN. Composite gestures may
+remain unresolved and must not execute the opposite destination; bare gesture
+phrases do not yet have a universally verified interpretation.
 It reports measured `MOVED`, `BOUNDARY` or `UNAVAILABLE`; modal/review screens do
 not scroll underneath their controls, and checkout disallows navigation. Hosts
 without a viewport controller do not advertise it. No scrolling dependency is
@@ -420,11 +508,14 @@ and cart reads preserve an active checkout screen.
 
 A unique real name/fragment can issue a short-lived clarification proposal.
 Only the host's admitted-service result can call `kiosk_fast_path_clarify` to ask
-whether the customer wants that dish. Touch Yes/No and voice share the same
+whether the customer wants that dish. The question is spoken and shown in the
+Kiosk conversation without a floating Yes/No card. Voice answers retain the same
 30-second question and revision validation; Yes resolves the proposed name and
 continues required slots, No preserves the original progress. Repeating the
-current dish re-asks its missing information. One repeat is spoken, then controls
-remain available without repeatedly speaking. Main Agent may read while a meal
+current dish re-asks its missing information. One repeat is spoken, then the
+question remains answerable without repeatedly speaking or referring to removed
+buttons. Screen identity continues to describe the actual menu/item/review view,
+independently from the pending confirmation phase. Main Agent may read while a meal
 confirmation is active but cannot bypass it with a cart write. Reset/clear and
 checkout discard confirmation authority. Copy lives in the neutral
 `packages/i18n/src/orderingMessages.ts` bank.
@@ -545,15 +636,26 @@ Results expose `availability`: `MATCHES`, `NONE`, `UNKNOWN`, or
 insufficient facts to verify absence. Neither outcome starts an unfiltered
 continuation. Alternative batches retain the dietary condition too.
 
-The application supplies finite ingredient references mentioned in the utterance.
-After selecting a read intent, Jev chooses EXCLUDE / INCLUDE / NONE in separate
-bounded questions;
-it does not invent IDs, interpret recipes or generate tool arguments. Only search
-and recommendation consume these slots. Uncertain slots reach Main Agent intact.
-Runtime validation rejects unoffered ingredients and stale catalog plans. A
-one-use read continuation retains the exact filters. Filters belong to this
-query/continuation, not a permanent visitor dietary profile; subsequent requests
-must explicitly resolve their conditions again. Main Agent uses the same tools.
+Open food preferences, exclusions, combined requirements and corrections belong
+to Main Agent. Jev routes the complete utterance as a read-only `MENU_QUERY`;
+if it initially selects a finite read, a whole-request scope check exits on
+`OPEN_REQUEST` before ingredient slots. This does not add speech-pattern rules
+or candidates per food phrase. Existing bounded direct-read validation remains;
+Jev does not invent IDs, interpret recipes or generate arbitrary tool arguments.
+
+Main Agent first resolves the full utterance and conversation, clarifying real
+ambiguity rather than assuming a replacement dish. `menu_get(display:false)`
+provides catalog evidence with `dataOnly:true`; Kiosk does not narrate that
+internal receipt alongside the eventual filtered recommendation. Composition
+facts remain intact when the Server compacts long tool responses. Supported
+ingredient, dietary and price requirements are checked by their existing owners.
+Both `menu_get` and `menu_recommend` also accept `excludeItemIds` resolved from
+real menu data. Unknown IDs fail before display. All exclusions and filters are
+intersected; `more:true` retains and extends exclusions while skipping previously
+shown dishes. A changed positive scope or relaxed requirement starts a fresh
+request without `more`, with the complete new conditions. This query state does
+not remove cart lines or become a permanent customer dietary profile. Empty
+recommendations clear old cards instead of silently widening the query.
 
 Example: `menu_get({ category: '便當', excludeIngredients: ['pork'] })`.
 Changing to real recipes requires updating POS facts and source/revision, not

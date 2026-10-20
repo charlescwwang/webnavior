@@ -7,6 +7,362 @@ accumulating history.
 
 ## Current State
 
+- Oct20: the accumulated Oct19 ordering changes are now grouped into commits
+  for spoken prices, checkout/phone UI, menu-query/voice routing, and docs.
+  The older UNCOMMITTED labels below describe deployment-time status only.
+  Commit preparation updated stale test calls to the explicit query-action
+  contract and supplied the separate filter-presence checkpoint response.
+  Menu 684, Kiosk 175, Server 368 unit tests and 20 Chrome UI tests pass;
+  env-guarded live-provider tests were not enabled. Full-project typecheck
+  and changed-file lint pass. Root lint reports existing errors outside this
+  change set, including test_prompt JSON formatting; no unrelated cleanup.
+
+- Oct19 explicit conversational query actions are DEPLOYED, UNCOMMITTED.
+  Main must choose continue/update/reset/clarify for Agent menu_recommend calls;
+  browser owns queryState, group changes and exclusions. Trusted host more:true
+  stays internal. Plain condition updates include shown matches; explicit
+  alternatives use excludeShown, continue/reset exclude history. Reset retains
+  dietary/ingredient restrictions and cart. Relative words are not product names.
+  Exhaustion/clarify return canonical speech without a new presentation/card;
+  JSON/SSE completion settles that receipt without another provider call.
+  User requested deployment. Backup: /tmp/webnavior-query-actions-release-20261019-w67wqnw1.
+  Menu index-D75tOMir.js public index/bundle verified; bridge/catalog7, DB/Redis,
+  unchanged Kiosk/Nginx verified. User restarted API at22:19:54 Taipei, PID603743;
+  active/livez/readyz, DB/Redis and public bridge verified; release deployed-verified.
+  Existing Menu tabs should reload because Agent action is now required.
+  See order-menu/server/stage-kiosk READMEs and queryActions.test.ts.
+  Local Menu684, Kiosk77 and Server51 tests, all three scoped typechecks,
+  changed-file lint and Menu production build pass. No root typecheck.
+  User explicitly authorized existing credentials and synthetic conversations
+  to the configured Main/Jev endpoints after auto-review initially rejected it.
+  Final real-provider suite: all41 pass (22:15:12 Taipei, 110.57s), log
+  /tmp/webnavior-main-scope-live.log. First full run reproduced stale other-dishes
+  intent leaking into a plain changed-price query via excludeShown:true. Tool
+  description and Main instructions now require that request in the CURRENT
+  utterance; all41 pass after the fix. No phrase whitelist or threshold change.
+  Main qwen36: https://syqvzpveyn.aikcitri.qzz.io/v1;
+  Jev: http://projev.aikcitri.qzz.io/v1/systemone.
+  Test: apps/stage-kiosk/src/services/mainScopeReplay.test.ts, env guarded;
+  isolated synthetic sessions only, no real orders or payments. Scoped lint and
+  Menu production build rerun after prompt change; pass. Deployment verified above.
+
+- Oct19 price-handoff context isolation is DEPLOYED, UNCOMMITTED (API only).
+  User requested deployment. Backup and API-before state:
+  /tmp/webnavior-budget-api-release-20261019-qc279oms.
+  User restarted API at21:19:20 Taipei, PID521926. Source hash matches release;
+  livez/readyz DB/Redis and public bridge pass. Public Menu/Kiosk and Nginx hashes
+  unchanged. Release deployed-verified. No frontend/schema change.
+  Visitor KW8V27ebW…: after SHOWN120 returns none, then catalog120 returns dumplings,
+  一百三以下呢 reaches price but UPPER_INCLUSIVE confidence0.5368 (0.5181 with 的),
+  so UNSUPPORTED_PRICE caused the misleading unsupported-budget response.
+  Prior live tests covered a different conversation order. Expanded live cases
+  first reproduced both new-order failures. handoffMenu now sends original current
+  utterance + literal amounts only to the finite price checkpoint; old budgets,
+  scope answers, dish references and unrelated state remain outside that decision.
+  No lowered thresholds or phrase whitelist. Live regression also exposed weak
+  RANGE vs RANGE_MAX_EXCLUSIVE for explicit102–104 after isolation. Price question
+  now explicitly distinguishes inclusive defaults from exclusions stated in the
+  current utterance, and explains literal amounts are not separate budgets.
+  All6 live Jev/Main/Menu cases pass: both conversation orders, both wordings,
+  120–140 and102–104. Correct bounds apply and cart stays empty. Server317 tests,
+  scoped Server/Kiosk types and changed-file lint pass.
+  This changes the handoff checkpoint only, not finite action/filter checkpoints.
+  Above/strictly-above boundaries have unit coverage but were not live-tested.
+
+- Oct19 short budget-follow-up recovery is DEPLOYED, UNCOMMITTED (API only).
+  User requested deployment. Source/state backup:
+  /tmp/webnavior-budget-api-release-20261019-mv7b6bgi.
+  User restarted API at21:09:10 Taipei, PID508956 (previous497185).
+  Source hash matches prepared release; livez/readyz DB/Redis and public bridge pass.
+  Public Menu/Kiosk index hashes and Nginx unchanged. Release deployed-verified.
+  Visitor wu0beMfO… entries26–30: 一百三以下的呢／一百三以下呢 parsed130,
+  but Jev chose recommend-more at0.5906/0.5351, then weak OPEN_REQUEST and
+  UNAVAILABLE before price. Fixed-value tests reproduce both failures first.
+  Existing weak read recovery now includes recommendation routes without an
+  owned pending question. Independent strong recipient + pure menu inquiry are
+  required; price is qualified before read-only Main handoff. No lower thresholds,
+  automatic batch change or mutation; invitation answers retain their own checks.
+  Server decision-domain316 tests pass. Live2 real Jev/Main/Menu replays retain
+  reported dialogue, replace120 with130, include125/130 items after catalog scope,
+  and leave the cart empty. API restart verified above; no frontend change.
+
+- Oct19 meal-confirmation floating card removal is DEPLOYED, UNCOMMITTED.
+  Menu index-DHBGGZSD.js and Kiosk index-CJRtGvLN.js published with backups at
+  /tmp/webnavior-voice-ui-release-20261019-ata1w7qx. Public hashes, bridge/catalog7,
+  unchanged Nginx and Origin-Trial checked. User restarted API at21:00:16 Taipei,
+  PID497185; livez/readyz and DB/Redis verified. Release state deployed-verified.
+  User chose launch simplicity: remove the extra Yes/No meal card while retaining
+  the owned voice question, conversation text, expiry and repeat limits. No direct
+  ordering shortcut. Phone, item configuration, idle protection and completion
+  windows remain unchanged. Removed the component and click-only browser tests;
+  repeated unclear speech no longer instructs customers to use removed buttons.
+  meal_confirmation remains a business phase; interactionState reports the actual
+  screen. Menu48 focused tests, scoped typecheck, lint and production build pass.
+  Menu publication and selective voice recovery API restart are complete.
+
+- Oct19 selective voice recovery is DEPLOYED, UNCOMMITTED. User clarified that
+  surrounding speech is not necessarily the customer; do not make every failure
+  produce a spoken retry. Broad UNAVAILABLE/error speech, repetition caps, phone,
+  invoice/scanner capabilities and checkout timing remain unchanged in this task.
+  Main decision-guidance no longer forces clicking. Persisted/wire touch_preferred
+  is retained but now pauses unsolicited prompts and serves directed voice requests.
+  An unresolved cart-target clarification no longer consumes its cancel candidate
+  or tells the customer to use touch: Kiosk keeps the owned question/deadline.
+  Server now admits this spoken retry only with strong CLARIFICATION + separately
+  qualified KIOSK recipient; OTHER→IGNORE, weak/unknown→UNAVAILABLE. No confidence
+  reduction. Target instructions compare full attributes/negation, allowing omitted
+  names when uniquely identified. Live 不辣那一份 first failed (weak CLARIFICATION),
+  then passed after this general instruction; customer re-question + companion case
+  also pass (live3). Unit recipient matrix5 and host unresolved→bound answer test
+  verify no premature mutation/cancellation. Server317 + Host76 pass; scoped
+  Server/Kiosk types, changed-file lint and Kiosk build checked. Kiosk publication
+  and API restart verified above. No new customer controls or real payment/POS effects.
+
+- Oct19 Taiwanese spoken prices are DEPLOYED, UNCOMMITTED.
+  Public Menu index-CehhbAJB.js index/bundle hashes verified; Kiosk unchanged.
+  Backup: /tmp/webnavior-taiwan-price-release-20261019-ensyulmp.
+  API restarted at20:11:12 Taipei, PID448038; livez/readyz and DB/Redis pass.
+  Public Menu hashes, unchanged Kiosk and bridge/catalog7 verified; Nginx unchanged.
+  Origin-Trial was verified at publication. Price handoff repair is loaded.
+  Session tVUWid2B_4UvHrFMVl-x2: 一百二到一百四 had empty amounts because
+  pricing.ts deliberately rejected omitted trailing places. Existing amountFrom
+  now resolves 百二→120, 千二→1200, 千二百三→1230, 萬二→12000; explicit零
+  preserves102/1002/10002. Optional leading一, 兩/两, 萬/万 and NFKC supported.
+  Full token spans include unsupported higher units, avoiding partial extraction.
+  Approximation, unsupported mixed notation and spoken fractional currency remain
+  non-executable; 十二塊五 must not become12, and 元兩份 stays a quantity.
+  Real Jev exposed a separate low-confidence COVERED handoff missing priceChoiceId;
+  it now uses existing handoffMenu to qualify prices before read-only Main.
+  Fixed-value regression first reproduced that missing qualification. No thresholds
+  lowered. Menu focused119 + decision-domain299 pass. Live2 real Jev/Main/Menu
+  cases verify120–140 inclusive vs explicit102–104 after previous119, empty cart.
+  Scoped Menu/Server/Kiosk types pass; targeted lint/build checked. Menu publication
+  and API restart verified. No schema/lockfile change or POS submission/payment.
+
+- Oct19 natural scope replies + floating-panel removal are DEPLOYED, UNCOMMITTED.
+  Public Menu index-DKDaE4FB.js index/bundle hashes verified; Kiosk unchanged.
+  Backup: /tmp/webnavior-scope-voice-release-20261019-2_lrhdcy.
+  API restarted at19:55:27 Taipei, PID430265; livez/readyz and DB/Redis pass.
+  Public Menu hashes, unchanged Kiosk and bridge/catalog7 verified; Nginx unchanged.
+  Origin-Trial was verified at publication. Scope prompt is loaded.
+  Session -IQxJ9IOqXiIewQHNA86c reproduced Main SHOWN for 剛才推薦 but ASK for
+  剛才的 / 剛才的推薦. Prior local prompt change binds omitted nouns/temporal
+  references to the active question's two search universes, without a whitelist.
+  Expanded live replay now starts with recommendations, real Jev price admission
+  and Main read before answering the scope question. All27 scenarios pass, with
+  strict automatic acceptance for clear replies and holdout phrasing only in tests:
+  剛剛的, 前面的, 你之前介紹的, negated corrections, fresh price100 and background.
+  No new prompt/phrase rule was needed for these additional forms.
+  Unclear spoken replies now explain the two universes (not repeat the initial
+  question); original question ID,120s expiry, revisions and conditions remain.
+  ASK-without-speech context/validation probes remain read-only. Unit17 pass;
+  after this clarification change, targeted live4 unclear→natural answer flows
+  pass with120 preserved. Other27 live results: /tmp/webnavior-scope-generalization-all.log
+  and -all-results.json; latest4 results use /tmp/webnavior-scope-clarification-final.log.
+  Menu/Kiosk scoped types, changed-file lint and Menu build pass; no root types.
+  App no longer mounts/imports the floating scope UI; handler/busy state, component
+  and obsolete3 touch browser tests removed. Owned voice question remains. Menu
+  build index-DKDaE4FB.js has no floating-panel styles and is published. API
+  restart is verified; reload the full Kiosk to obtain the updated Menu.
+
+- Oct19 unsolicited recommendation expansion and weak search recovery are DEPLOYED.
+  Public Kiosk index-Cv8z9P3a.js matches staged index/bundle hashes; Menu unchanged.
+  Website/source/database backup: /tmp/webnavior-recommendation-release-20261019-2zjh0v9n.
+  API restarted at19:33:58 Taipei, PID405914; livez/readyz, DB/Redis, public
+  bridge/catalog7 and Origin-Trial pass; Nginx unchanged. Both Server repairs loaded.
+  Same session entries14–21: `推薦幾個餐點` caused menu_recommend(limit3), then
+  unsolicited more:true; menu reply aggregation narrated6 dishes plus6 prices.
+  Kiosk recording now owns one recommendation presentation per send() turn.
+  After an accepted recommendation receipt it withdraws recommendation/show
+  tools from continuation definitions; repeat recommendations and broad visible
+  menu_get calls receive a correlated data-only acknowledgement, without tool
+  execution or customer receipt. Same-batch repeats are also suppressed. Named
+  comparisons, internal evidence and authorized operations continue normally.
+  Next customer send resets the budget, permitting an explicit request for more.
+  Server instructions also constrain more:true and decision-guidance to prevent
+  unsolicited expansion. This is separate from weak-price-entry repair below.
+  Kiosk focused55 + Server26 pass; real Main/Jev replay12 pass, including the new
+  completed-recommendation continuation (no second tool request). Scoped Kiosk
+  types/lint and Kiosk build pass. Kiosk and API deployment are verified.
+  Reload the full Kiosk to activate its per-turn guard.
+
+- Oct19 post-deployment weak search recovery is DEPLOYED in the release above.
+  Session -_n4bX6MRFcoRGilxK9-_ entries22–23: `120以下有什麼？` selected
+  search-menu at0.597; filterRequirement OPEN_REQUEST at0.3999 then returned
+  UNAVAILABLE before Main or the query-scope question. Weak finite search now
+  uses the existing independent recipient + pure menuInquiry qualification
+  before a price-qualified read-only Main handoff. No threshold lowered and no
+  mutation permission added. Fixed-value reproduction fails before the change;
+  recipient/background, mixed-operation and uncertain inquiry cases stay closed.
+  Decision-domain298 tests and live Jev/Main/Menu11 pass; new live case starts
+  before price interpretation with the reported bento conversation and reaches
+  pendingCustomerChoice. Original10 live cases only started after scope creation.
+  Server types/lint pass; this recovery needs no extra frontend change.
+  API restart verified above. No POS order or payment.
+
+- Oct19 query-scope flow and price-handoff repair are DEPLOYED, UNCOMMITTED.
+  Menu index-R0AKYPEi.js remains current; initial Kiosk index-f7hMuxg8.js is
+  superseded by index-Cv8z9P3a.js in the recommendation repair above.
+  API restarted successfully; livez/readyz, DB/Redis, public bridge and7 catalog
+  items pass. Nginx unchanged; Origin-Trial present; old assets retained.
+  Verified website/source/database backup: /tmp/webnavior-scope-release-20261019-ne9ul3yh.
+  New broad price/dietary reads after a visible recommendation ask once whether
+  to filter the shown batch or the whole catalog. Menu owns a120s revision-bound
+  queryScope question and immutable conditions; the original floating UI is now
+  removed locally as described above.
+  Pending voice goes through the real Main chat model checkpoint in authenticated
+  /interaction-decisions (SCOPE_CHOICE, temperature0), not Jev. Only question text,
+  ordered option labels and confirmed conditions reach that checkpoint; opaque
+  IDs/expiry remain browser authority. ASK retains the pending question; NEW_REQUEST
+  clears the old question and reruns ordinary Jev on the entire current utterance.
+  Price evidence forces fresh qualification even if Main misses the new amount.
+  Complete labels/ordinals use the existing bound-reference parser; real Main
+  still proposed SHOWN for 第二個, and application correctly resolved CATALOG.
+  Do not call this100% model accuracy. Invalid/unavailable interpretation falls
+  back to conversational clarification. Provider/activation failure cannot grant normal chat
+  writes while a scope question remains pending.
+  Scope execution has a private per-call admission, not a global bypass flag.
+  Confirmed item universe is separate from food exclusions, retained on more,
+  reset by fresh queries; UI title/reply names the selected scope. Stale answers,
+  order changes and resets retire the question. Main cannot invent a named scope
+  for a customer-wide price query: BEGIN now requires the source transcript.
+  All BEGIN fixtures and KioskScene are updated. Host-only tool names are shared
+  in order-menu/src/hostTools.ts so kiosk_query_scope never reaches Agent tools.
+  Recording stops at an owned scope question without another model continuation.
+  Real qwen36 + real Jev + production route/host/Menu replay10 pass including
+  120→100 and synthetic add2. Some earlier paraphrases required touch fallback;
+  acceptance permits preserved ASK + explicit click, not wrong automatic scope.
+  Menu648, Host69, HTTP3 and Chrome13 checks pass; Menu/Kiosk/Server scoped types,
+  changed-file lint and both frontend builds pass. No root typecheck, POS order,
+  payment or commit. Physical microphone/scanner remains unverified.
+  See research section17 and READMEs. Menu + Kiosk + API are released together;
+  reload the full Kiosk because the BEGIN contract changed.
+  The older ordering release below is retained as deployment history.
+
+- Oct19 price-handoff fix is DEPLOYED with the query-scope release above,
+  UNCOMMITTED. Reported
+  session `7hsfZq4mzTs1YZvCTCdXg`: after a99 recommendation, `120以下有什麼`
+  made Main Agent correctly call menu_get(maxPrice120), but unresolvedPrice
+  blocked it; ordinary empty receipts prompted retries119/115/110/109.
+  Menu handoffs now qualify the browser-issued priceChoiceId before host task
+  creation, retaining existing contextual price input. A reliable read route
+  can hand off uncertain filter scope read-only, with independent price
+  qualification; weak route plus weak scope still abstains. Price-only changes
+  are distinguished from food preferences in scope instructions. Menu's
+  unresolved-price refusal returns ok:false to stop the tool sequence.
+  Real Jev→Kiosk→Menu synthetic replays99→120 and120→99 pass with exact bounds,
+  including the120 boundary; six existing food-preference live replays pass.
+  These replay actual tools with synthetic dishes, not full live Agent speech.
+  No threshold reduction, schema change or commit. Menu and API deployment
+  are verified in the query-scope release above.
+
+- Earlier Oct19 ordering release (superseded by the scope release above) deployed to
+  `https://webnavior.aikcitri.qzz.io`: scanner focus, checkout cursor, scroll
+  destination and open preference queries. Menu serves index-pOjsIocX.js;
+  Kiosk serves index-BphV_JC4.js. Both public bundle SHA-256 hashes match the
+  staged builds. User restarted API at16:25:42 Taipei, PID199010; livez/readyz
+  pass with DB/Redis ok. Public Menu Bridge and all7 catalog items are readable.
+  Nginx configuration hash is unchanged, Origin-Trial header remains present,
+  and older assets are retained for already-open clients. Static trees,
+  working-tree patch, new builds and a pg_restore-list-verified database dump
+  are backed up at `/tmp/webnavior-ordering-release-20261019-bm1wpslt`;
+  release.json records verification. Host pg_dump has no installed client, so
+  backup used the existing matching postgres:16 container and configured DB
+  role. No schema/lockfile change, commit or push. Changes remain uncommitted;
+  physical scanner and full Agent/voice acceptance remain unverified. No order
+  or payment was executed during deployment checks.
+
+- Oct19 scanner-focus follow-up: carrier/citizen invoice fields now autofocus
+  on mount, option selection/reselection and Agent unlock. App passes the same
+  lock as its inert main; locked fields disable/blur before regaining focus
+  after DOM updates. Tax-ID output is now a labelled digit input, retaining the
+  touch keypad, eight-digit validation, draft and explicit confirmation. Its
+  scanner Enter suffix does not confirm; invoice valid-form Enter keeps existing
+  behavior. Tax-ID cursor target registration is cleaned up on unmount. Chrome
+  keyboard-wedge simulation and checkout-animation regression10, checkout
+  unit14 pass. Physical scanner remains unverified. Deployed in the ordering release above; changes remain
+  uncommitted. No scanner SDK, new dependency or global keyboard interception.
+
+- Oct19 open food-preference follow-up: Jev routes the whole utterance to Main
+  Agent via read-only MENU_QUERY rather than adding phrase/category candidates.
+  A finite-read hypothesis first checks whole-request scope; OPEN_REQUEST exits
+  before ingredient-slot questions. Direct reads retain bounded validation.
+  Main Agent instructions preserve negation, combinations, corrections and cart
+  state, clarify ambiguity, then use catalog-grounded query tools. menu_get and
+  menu_recommend accept validated excludeItemIds; batches retain/extend them on
+  more:true and reset on a fresh request. Existing dietary/ingredient/price
+  filters intersect with exclusions. Internal menu_get(display:false) receipts
+  now carry dataOnly:true and are not narrated by Kiosk. Server tool-result
+  compaction preserves composition facts intact. Deployed with Menu, Kiosk and API together in the release above;
+  changes remain uncommitted. Real Jev replay: five
+  clear preferences reach MENU_QUERY; ambiguous 不想吃飯 reaches Agent for
+  clarification without executing a filter. Focused tests, all six live routing
+  cases, Menu/Server/Kiosk scoped types and changed-file lint pass; no root
+  typecheck. Agent end-to-end speech/hardware validation remains outstanding.
+  Candidate pruning and follow-up timing remain
+  separate pending work.
+
+- Oct19 checkout cursor follow-up: runtime checkout announcements lacked
+  control IDs and checkout components did not register targets. Registered the
+  real review/invoice/tax-ID/payment controls and wired them through App; checkout
+  start first reveals review, then animates confirmation. Transitions wait for
+  animation and execute once without a synthetic DOM click. Tax-ID dictation
+  targets the draft; explicit skip/donation and return-to-order touch actions now
+  match supported voice transitions. Unpaid QR pages retain payment-method
+  buttons; pending/authorized/uncertain states still lock navigation. Deployed in the ordering
+  release above; changes remain uncommitted. Chrome regression covers target registration,
+  pre-transition ordering, switching unpaid QR method, touch actions and locks
+  (11 browser tests, including existing review regression); Menu93 unit tests,
+  Menu/Kiosk scoped typechecks and changed-file lint pass. No root typecheck.
+  Actual microphone/hardware remains unverified.
+
+- Oct19 scroll content-destination follow-up: original session
+  NOSb3gdRfHaSE-uu_s7wB selected UP .8065 for 往下一點 at viewport0. Public
+  direct DOWN moved0→720, so the owner is functional. Menu candidates now name
+  earlier content near its beginning / later content near its end, not finger
+  motion. Jev verifies EARLIER/LATER before mapping to an offered UP/DOWN action.
+  Actual generated-candidate replay still chose initial UP .7481 for 往下一點;
+  verification corrected it with LATER .9298, so the extra one question remains.
+  Six clear position commands execute correctly; two composite gestures may
+  abstain, never execute opposite (8 acceptance cases pass, not 8 successes).
+  Bare finger-only probes remain inconsistent; do not claim general gesture
+  interpretation is solved. A gesture-only fourth choice degraded core commands
+  and was removed. No lexical executor, threshold change, new tool or dependency.
+  Server83/Menu41 tests, scoped types/lint pass; prior real Chrome viewport test
+  passed and geometry is unchanged. Deployed in the ordering release above;
+  changes remain uncommitted. See `research/2026-10-02-menu-scroll-options.md`.
+  Open preference/exclusion support is described above; candidate pruning and
+  checkout-question timing remain separate pending work.
+
+- Oct19 invoice skip follow-up: moved **略過，捐贈發票** below invoice entry,
+  above Back. Retained session zloUV_0YpdMnMhQlGEFvp entries7/9 recorded literal
+  略過 as INCOMPLETE .621 while already in checkout_invoice with no presented
+  question; a real-provider synthetic replay reproduced it. Invoice routing now
+  uses a concise current-phase instruction and sanitized checkout summary rather
+  than stale meal/cart context. Other checkout phases retain their prior route.
+  No lexical execution shortcut, threshold change, donation-code invention or
+  payment initiation. Regression covers summary privacy, no-question routing,
+  UI footer order and weak-choice refusal. Final live invoice8 + payment1 pass;
+  Menu36/Server116 unit tests, scoped types and changed-file lint pass. An earlier
+  broader live replay routed 走走走 去那邊 to NEEDS_ASSISTANT in ordering; that
+  unchanged ordering case is outside this invoice fix. Actual microphone/touch
+  hardware remains unverified. Menu frontend deployed Oct19 as index-BsE53J15.js;
+  public bundle matches the build. User restarted API Oct19 at14:07:42 Taipei;
+  new PID60954 is active/running. `/livez` and `/readyz` pass with DB/Redis ok,
+  and the public Menu still serves the expected release. Both invoice UI and
+  Server routing changes are now deployed. Backup:
+  `/tmp/webnavior-invoice-deploy-20261019-3snye5oy`. Changes remain uncommitted.
+
+- Oct19 voice-entry UI is deployed, with local changes still uncommitted. Public
+  Kiosk now serves index-C00sQvW4.js: saying “略過” is the primary entry cue,
+  phone/touch controls are secondary, VAD readiness drives the microphone label,
+  and the existing idle hint gives spoken-order examples. Browser component11,
+  Kiosk types and changed-file lint pass. Kiosk-only build/publish preserved
+  the WebMCP Origin-Trial header; API readiness reports DB/Redis ok. Previous
+  Kiosk assets and the source patch are backed up under
+  `/tmp/webnavior-voice-entry-20261019-nc7fru6x`. No API restart or real speech,
+  order or payment test was needed for this static UI release.
+
 - Oct19 release: four code commits through 5f2c5f1 are deployed to
   `https://webnavior.aikcitri.qzz.io`; API restarted via systemd at11:17 Taipei
   (PID584043). Public `/` and `/kiosk/` serve index-0t8K34cR.js, `/menu/`

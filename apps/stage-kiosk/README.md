@@ -1,6 +1,6 @@
 # AIRI Kiosk
 
-`@proj-airi/stage-kiosk` is the full-screen, touch-first AIRI surface for a restaurant kiosk. It shares AIRI's local hardware UI, LLM tools, and independent `@proj-airi/order-menu` service; the Server owns all ASR/TTS provider, model, voice, endpoint, and credential policy.
+`@proj-airi/stage-kiosk` is the full-screen AIRI surface for a restaurant kiosk with voice-led ordering and existing touch controls. It shares AIRI's local hardware UI, LLM tools, and independent `@proj-airi/order-menu` service; the Server owns all ASR/TTS provider, model, voice, endpoint, and credential policy.
 
 Use it for customer-facing horizontal or vertical kiosk displays. Do not use it as a replacement for the normal settings-oriented `stage-web` application.
 
@@ -34,9 +34,10 @@ screen with the QR-code enrollment flow.
 ## Meal clarification
 
 The owned menu supports a small yes/no meal-clarification flow. The host requests
-it only after service admission, renders/speaks the exact browser-issued question,
-and leaves the same Yes/No controls available on the menu. A second unclear reply
-uses the controls without a repeated spoken question. Other service queries can
+it only after service admission and speaks/shows the exact browser-issued question
+in the conversation. No additional floating Yes/No card is mounted on the menu.
+Spoken repeats remain bounded while the voice question stays answerable until
+its existing expiry; there is no instruction to click removed controls. Other service queries can
 interrupt confirmation while retaining unadded meals. Background or uncertain
 recipient speech stays silent; model/transport failures remain separate. Deploy
 Server, Kiosk and Order Menu together for the new clarification tool and phase.
@@ -69,6 +70,9 @@ optional phone form as a local overlay in the host ordering region, above the
 iframe. A 25% dark mask leaves the menu visible; its scrollable dialog stays
 inside that region. Upper avatar and conversation controls remain interactive. It does not use document-wide modal
 blocking.
+The entry screen leads with saying “略過” to start voice ordering; the phone
+form and touch skip are secondary. Its listening label follows the host VAD
+readiness, and an inactive microphone points to the touch fallback.
 Touch submit uses host-only `kiosk_customer_phone`; voice and touch skip share
 `customer_skip_phone`. The modal closes only after reading the ordering phase;
 errors retain its controls. Discovery replacement/unmount drops the local draft
@@ -110,6 +114,24 @@ the read-task snapshot on every model continuation; receiving a menu result
 does not authorize an order edit or answer the pending fulfillment question.
 Ordinary mutation tasks keep their initial snapshot only, since their own tools
 may advance checkout. A new customer turn receives fresh task authority.
+Repeated unchanged recommendations pause unsolicited prompts instead of requiring
+touch input. The persisted/wire mode `touch_preferred` now waits for the next
+directed customer request while retaining normal voice service. Background and
+uncertain-recipient speech still follow the existing admission rules.
+Main query requests use Menu's explicit `continue`/`update`/`reset`/`clarify`
+actions. The browser owns current conditions and shown history. Clarification
+receipts are spoken through the existing verified menu-reply path without
+presenting dishes or a floating choice panel; the API settles that question
+without an additional model continuation. Updating query scope does not write
+the cart or start checkout.
+
+Each customer turn can display only one recommendation batch. After a successful
+recommendation read, Kiosk removes recommendation/display tools from subsequent
+model continuations and acknowledges repeated recommendation calls without
+executing them, including calls in the same batch and broad visible `menu_get`
+reads. Named comparisons, internal `display:false` evidence reads and other
+permitted operations remain available. A new customer turn resets this budget,
+so an explicit request for more can display the next batch.
 The Server requires a fresh menu tool call before an Agent final answer;
 Kiosk rejects no-receipt prose even if a provider ignores the tool requirement.
 Ordinary identity/phone conversation remains natural. A disputed recommendation
@@ -254,6 +276,11 @@ prose relies on the model instructions to avoid unsupported commerce claims;
 this path does not perform a second semantic classification or guarantee that
 all model-written factual claims are grounded.
 
+Internal `menu_get(display:false)` results carry `dataOnly:true`. They provide
+catalog evidence to Main Agent and are excluded from customer reply receipts,
+so a later filtered recommendation does not announce rejected dishes from the
+initial full-catalog lookup.
+
 Model/provider failure before tools, task timeout, tool rejection, duplicate
 calls, and processing limits have distinct presentation reasons. If a later model
 call fails after accepted work, the host retains that work's receipt alongside
@@ -372,8 +399,11 @@ not restart an unfiltered search.
 Unfinished speech is retained for three seconds in the same phase/revisions. Jev
 classifies the next utterance's relation before the application resolves separate
 fragments; transcripts are never blindly joined. Background does not consume a
-clarification answer. One valid unresolved answer ends that bound session and asks
-for touch selection. Stale/expired clarification and confirmation remain rejected.
+clarification answer. A confidently directed unresolved answer keeps the current
+target question available for another voice reply, without cancelling the pending
+operation or extending its deadline. Weak intent, an uncertain recipient and
+companion speech do not authorize a spoken retry. Stale/expired clarification
+and confirmation remain rejected.
 When an ASR turn escalates, the Main Agent receives a sanitized snapshot of the
 current menu or checkout phase and available payment methods. Typed turns read
 the same state through a host-only, read-only WebMCP tool. Tax IDs, carrier
@@ -426,7 +456,8 @@ execution intact, with no within-turn retry. Waiting audio is not dialogue or a
 customer choice, does not change the order's interaction phase, and shares the
 normal output player. No new settings, provider or prerecorded bank is required
 for this trial. It uses the site's existing TTS model, voice and locale.
-It starts with “直接告訴我想吃什麼” and always leaves the menu touchable. The old
+The idle hint reads “現在可以直接開口點餐”, with spoken recommendation and
+one-dish examples, and always leaves the menu touchable. The old
 draggable technical audio-status card is available only in development
 diagnostics; camera, microphone, and model failures are not customer-facing
 copy. When an embedded menu displays accepted recommendations, it does so in

@@ -1086,3 +1086,268 @@ presentation／selection／cart，但一般 context 回傳沒有此欄位。
 優先討論 A／B／F 的候選與資訊補足，以及 C／D／E 的产品契約。
 契約固定後才建立 baseline、prompt 對照與 fine-tune 對照；歷史 0.001
 案例仍需原始 payload／候選／回傳才能歸因，不從本輪 static audit 推断原因。
+
+
+## 14. 查詢範圍追問實驗（2026-10-19，未接正式流程）
+
+使用者要求先驗證 Jev 是否能處理「只查剛推薦的／查整份菜單」的兩輪
+對話。本輪只以合成文字呼叫既有 `projev` 的 `/v1/systemone`；沒有修改
+production prompt、候選或狀態流程，也沒有執行訂購。模型版本未獨立核對。
+這是原型 prompt 可行性探測，不是現有 runtime 的端到端測試或模型準確率。
+採用既有0.6信心門檻，沒有以補句型或降低門檻取得通過。
+
+第一版同一題選 SHOWN／CATALOG／NEW_REQUEST／UNCERTAIN／IGNORE，
+帶入上一批推薦、120以下條件與待答問題。7筆初始查詢沒有一筆達到
+預期選項且信心至少0.6；22筆追問回答中11筆達到。明確推薦指涉通常
+能理解，但 `第二個` 誤選 SHOWN（0.6289），`好` 誤選 SHOWN（0.9313），
+`幫我加兩份水餃` 也誤選 SHOWN（0.897）。不能直接用此追問授權查詢。
+
+第二版隔離最後一句及待答問題，先以另一題判斷 ANSWER／NEW_REQUEST／
+QUESTION／UNCERTAIN／IGNORE，確認回答後再辨識範圍。22筆回答類型
+中13筆符合預期且至少0.6，但 `好`（ANSWER 0.7879）、`隨便`
+（ANSWER 0.6383）、`不要麵，要素食`（ANSWER 0.6467）仍被誤接成範圍
+回答。13筆預期明確範圍且通過 gate 的探測中，11筆範圍選對且至少0.6；
+`推薦裡面的`、`第二個` 雖選對但分別僅0.3021／0.4027。7筆隔離的初始
+查詢只有1筆符合預期且達門檻。分兩步改善部分案例，但仍不足以接正式流程。
+
+結論：暫不新增自動追問後由 Jev 直接選範圍的流程。需先讓 Main Agent
+處理完整語意／歧義，或另行比較更清楚的題目與 UI 明示範圍；不能把本次
+低信心或高信心誤判當作成功。價格／飲食條件由程式保存與驗證，這次
+原型 state 帶入120不代表已驗證實際條件保存、revision／expiry 或工具執行。
+重播程式與完整原始答案暫存 `/tmp/webnavior-scope-probe-v1.py`、
+`/tmp/webnavior-scope-probe.py`、`/tmp/webnavior-scope-probe-results.json`、
+`/tmp/webnavior-scope-probe-v2-results.json`；正式接入前須建立持久回歸測試。
+
+
+## 15. Main Agent 查詢範圍重播（2026-10-19，未接正式流程）
+
+依使用者要求，改測目前選用的 Main Agent：`RTXPRO6000` profile，
+`qwen36`、enableThinking=false。唯讀取得選用設定，以同模型的真實
+chat/completions 呼叫接到 production `createKioskRoutes`。資料庫用既有
+mockDB/PGlite，菜單使用實際 createMenuToolRuntime 與合成四品項，並未
+連線真實 POS 或建立訂單。測試店角色設定來自既有 development profile，
+不是複製正式店角色；沒有模擬模型回覆，也未修改 production prompt。
+此探測直接進 Main Agent 路由，不含前置 Jev admission 或真實語音/UI。
+
+菜單：剛展示水餃80、牛肉麵130；另有未展示的蔬菜湯110、燙青菜120，
+兩者有明確 merchant vegetarian 標示。新條件由 host 預先確認 maxPrice120；
+改100案例則由 host 預先確認100，故這不是價格文字解析的驗證。
+先用本機工具產生推薦回執，經真實 entries 路由寫入隔離 session。
+追問案例另提供前兩輪對話（顧客問120以下、助手問推薦還是整份菜單）；
+這是人工種下的追問上下文，不代表模型自行提出過這個問題，亦未新增
+production waitingFor 契約。工具失敗依 host 現行規則停止，不讓模型把
+拒絕當成成功；任何新增／結帳請求僅記錄，不執行。
+
+最終九案觀察：
+
+| 輸入／上下文 | 實際行為 | 結論 |
+|---|---|---|
+| 這幾個有120以下的嗎 | menu_get(maxPrice120)，回水餃、蔬菜湯、燙青菜 | 明確指涉仍擴大為整份菜單，失敗。較早輪曾依兩道推薦分別查，顯示不穩定。 |
+| 整份菜單120以下有什麼 | 查全菜單，回80／110／120三項 | 此案範圍正確。 |
+| 120以下有什麼 | 直接查全菜單，沒有釐清範圍 | 沒有保留本次討論的歧義；較早輪也曾反過來只查原推薦。 |
+| 追問後：剛才那幾個 | menu_recommend(more:true,maxPrice120) | 把原批次當換批，且與原批次無價格限制衝突；工具拒絕並停止。 |
+| 追問後：全部都看看 | 查全菜單，回80／110／120 | 此案範圍正確。 |
+| 追問後：好 | 直接查全菜單 | 未選範圍卻自行補成全菜單，失敗。 |
+| 追問後：整份菜單，不過改成100以下 | 查maxPrice100，僅回水餃80 | 接收已確認新上限的工具行為正確；不代表自然語言價格解析通過。 |
+| 追問後：不要麵，要素食 | 查dietary vegetarian＋maxPrice120，回蔬菜湯、燙青菜 | 此合成菜單中能處理新偏好；沒有含麵素食品項作負例，不能宣稱排除麵的泛化已驗證。 |
+| 追問後：幫我加兩份水餃 | 最終輪反問「你指的是水餃嗎？」 | 未被當作範圍回答，但也未完成新需求；較早輪曾提出正確quantity2的新增工具呼叫，該呼叫僅記錄。 |
+
+另有結構性限制：MENU_QUERY 現行 requireMenuRead 會強制首次呼叫
+menu_get／menu_recommend，readOnly 工具政策也未提供查詢範圍的澄清
+操作。直接交 Main Agent 不會自動得到「先釐清範圍」的完整流程；不能
+只改自然語言 prompt 就宣稱此問題已解決。後續需要明確的 query-scope
+狀態／追問契約，以及範圍未定時允許先澄清的交接政策，再重測整條流程。
+
+探測程式：`apps/stage-kiosk/src/services/mainScopeReplay.test.ts`，只有
+KIOSK_MAIN_SCOPE_REPLAY=1 才會呼叫真實模型；需事先提供受保護的
+`/tmp/webnavior-main-scope-profile.json`（選用profile快照，含加密憑證）
+及 LLM_ROUTER_MASTER_KEY。不得把憑證加入版本庫或輸出。原始回執在
+`/tmp/webnavior-main-scope-results.json`，執行紀錄在
+`/tmp/webnavior-main-scope-live.log`。
+Vitest九案執行與空購物車檢查通過，changed-file ESLint通過；這些 assertion
+只保證探測完成，**不表示九個語意行為通過**。沒有跑全專案 typecheck、
+部署、真實麥克風／付款或正式 session 寫入。
+
+
+## 16. 有待答狀態的範圍反問原型（2026-10-19，歷史紀錄）
+
+此節保留原型當時的結果與限制；正式整合及目前驗收狀態見第17節。
+
+使用者同意「反問＋兩個點選答案」後要求開始實測。保留第15節的失敗
+baseline，新增隔離的 scope protocol。這一階段直接呼叫同一個qwen36
+provider，採用候選 scope_decide 工具，**沒有透過正式 MENU_QUERY 的強制
+查詢政策**；不能把原型通過解讀成 production 路由已修復。
+
+原型分工：
+
+- Main Agent只提議 ASK／SHOWN／CATALOG／NEW_REQUEST／IGNORE，不產生
+  金額或品項ID，也不取得訂購工具。ASK由程式產生固定的二選一問題。
+- `order-menu/src/domain/queryScope.ts` 保存原推薦ID、已確認價格／飲食
+  條件、questionId、有效期與menu／recommendation revision。選擇後只消耗
+  一次；ASK保留問題，IGNORE保留但不回應，新需求交接完整原句並撤銷舊問題。
+- 語音與點選共用同一owner。SHOWN只允許原推薦ID，CATALOG從完整菜單
+  依原條件查詢。實際原型查詢仍使用真實 Menu runtime；沒有建訂單。
+- 回答出現新的價格證據時，直接交回新需求解析，不能只採用模型的範圍
+  選擇而遺失條件。這僅建立重新解析需求，不直接把新數字當成新上限。
+- `queryScopeQuestion.vue`只顯示問句與兩個現有Button，發出questionId與
+  choiceId；host鎖定時禁用。此元件未掛進App.vue，尚不是正式畫面功能。
+
+實際結果與限制：
+
+1. 預設取樣曾整組18項通過，另一次重播卻有2項在初始句
+   `120以下有什麼`直接選CATALOG，沒有先反問。這是重複性失敗，不能抹除。
+2. 候選的有限選項checkpoint改用temperature=0（不修改正式chat設定）後，
+   最後一輪18項通過；相同初始句在該輪15次都選ASK。這是有限樣本，
+   不保證所有自然語句或所有部署條件都穩定。
+3. 「剛才那幾個／推薦裡面的／剛剛介紹的那兩樣」能限定原批次；
+   「全部都看看／不只那兩個，別的也算／第二個」能選整份菜單。
+   「好／都可以／隨便」保留問題，隨後點選才查詢。
+4. **模型仍把「整份菜單，不過改成100以下」只解讀為CATALOG**。
+   owner透過既有priceEvidence拒絕沿用120查詢，交接NEW_REQUEST及完整
+   原句。因此此案通過的是程式接受結果，不是模型原始解讀。
+5. 「不要麵，要素食／幫我加兩份水餃／先不要，我想結帳」交接新需求，
+   舊問題不能再回答；這次不執行新需求的訂購／結帳，也不宣稱完成。
+6. Chrome真實點擊：原推薦只回水餃80；全菜單回水餃80、蔬菜湯110、
+   燙青菜120；都保留120上限及空購物車。兩個鎖定按鈕均不可點。
+
+驗證：Main Agent原型18項；Chrome3項；queryScope unit7＋既有priceFlow15
+共22項通過。Menu／Kiosk／Server套件typecheck及變更檔ESLint通過，未跑
+root typecheck。測試原先放Server引入browser menu runtime會跨越Node-only
+composite邊界，已移至擁有瀏覽器協調工作的Kiosk套件；不改tsconfig或用
+mock遮蔽匯入問題。
+
+重播：使用受保護profile快照與LLM_ROUTER_MASTER_KEY，執行
+`KIOSK_MAIN_SCOPE_REPLAY=1 pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/mainScopeReplay.test.ts -t 'scope protocol prototype' --maxWorkers 1`。
+原始模型輸出在`/tmp/webnavior-main-scope-protocol-results.json`，
+Chrome紀錄`/tmp/webnavior-query-scope-browser.log`。取樣設定寫在候選測試，
+不會改選用profile。無部署、schema變更、真實POS寫入或付款。
+
+下一個實作切點：把候選的前置範圍checkpoint接到正式host／server工具
+政策，註冊／呈現question與兩個UI控制項，將確認結果帶入一用ticket的
+scope限制，並在正式路由及瀏覽器端重跑相同案例。這些整合尚未完成，
+不得直接部署並宣稱已具備此範圍反問功能。
+
+## 17. 正式範圍反問流程（2026-10-19，已部署）
+
+Menu、Kiosk與API已完成正式整合。已有推薦後，新的泛價格／飲食篩選
+由程式先建立範圍問題，呈現「剛才推薦的／整份菜單」兩個按鈕，尚不
+執行查詢。第一版保守地對新的泛條件確認一次；顧客明確指定品名或
+分類仍走精確查詢。BEGIN必須攜帶顧客原句，避免Main自行補入品名
+後繞過這個確認。
+
+待答語音經正式interaction-decisions路由交給已設定的Main模型，以
+temperature=0選擇有限的SCOPE_CHOICE；此階段不交給Jev。模型只看
+問句、選項與已確認條件，不看questionId或到期時間。程式保管原推薦
+ID、條件、120秒有效期及menu／recommendation revision，確認後才
+執行有界查詢。ASK或服務異常保留問題及按鈕；IGNORE不回應；新需求
+撤銷舊問題，將完整原句交回正常解析流程。觸控與語音共用同一份狀態。
+
+選定範圍與食物排除條件分開保存；同範圍換推薦保留查詢母集合，新的
+查詢可以重新選整份菜單。結果標題與回覆指出實際範圍。Main取得待選
+範圍的工具回覆後停止續跑，不能把尚未查詢誤認成查無餐點並重試。
+
+正式路徑實測10項通過：推薦內查詢、全菜單查詢、不確定回答、旁人
+對話、新價格、新飲食需求及加點。其中「第二個」的Main原始結果曾
+錯選SHOWN，程式重用既有完整選項／序號解析，依實際問題校正為
+CATALOG；這不是模型百分之百正確的證據。較早輪次也曾對明確口語
+保留ASK，由按鈕完成選擇，因此仍須保留觸控退路。
+
+「整份菜單，不過改100以下」驗證了新價格重新解析、重新確認，最後
+只取得符合100上限的餐點。「不要麵，要素食」交回正常需求解析；
+「幫我加兩份水餃」驗證測試購物車變成兩份，未送出真實POS訂單或
+付款。這些案例不代表所有複合條件繼承及任意語句都已完整驗證。
+
+驗證結果：Menu 648項通過；Kiosk相關69項通過；HTTP範圍路由3項
+通過；真實Main／Jev正式流程10項通過；Chrome 13項通過（含範圍
+按鈕、既有掃碼focus與結帳操作）。Menu、Kiosk、Server套件typecheck
+及變更檔ESLint通過，兩個前端建置成功；未跑root typecheck。
+
+正式重播使用受保護profile快照及LLM_ROUTER_MASTER_KEY：
+`KIOSK_MAIN_SCOPE_REPLAY=1 pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/mainScopeReplay.test.ts -t 'production scope flow' --maxWorkers 1`。
+原始結果位於`/tmp/webnavior-main-scope-production-results.json`；第16節
+的原型測試已由此正式流程測試取代，舊filter不再適用。
+
+已一起發布Menu與Kiosk，使用者重啟API後健康檢查通過；公開index及
+bundle雜湊與建置一致，Menu Bridge與7項菜單讀取正常，Nginx未變更。
+網站、原始碼及已驗證資料庫備份位於`/tmp/webnavior-scope-release-20261019-ne9ul3yh`。
+修改仍未提交；可進行小範圍上線測試。須完整重新載入Kiosk，讓新BEGIN
+契約與範圍問答狀態一致。
+
+## 18. 上線後弱查詢路由中斷（2026-10-19，已部署）
+
+實際session `-_n4bX6MRFcoRGilxK9-_` entries22–23：前面已顯示便當
+推薦，再問「120以下有什麼？」時，route選search-menu但confidence僅
+0.597；filterRequirement選OPEN_REQUEST、confidence0.3999。程式將
+兩個不確定結果拒絕為UNAVAILABLE，尚未交給Main，也未建立範圍問題。
+因此前面的10項已建立問題後的回答測試，不足以涵蓋這段入口。
+
+修正讓弱有限search與既有弱MENU_QUERY共用獨立的說話對象及純菜單
+查詢確認；兩者都通過後，仍須獨立驗證價格，才交給唯讀Main任務。
+沒有降低信心門檻；對同伴說話、含操作需求或不確定是否純查詢仍拒絕。
+
+固定0.597／0.3999的測試先重現UNAVAILABLE，再確認修正後帶正確
+UPPER_INCLUSIVE交接。決策domain298項通過。新增含原便當對話、
+七道菜及完整價格入口的真實Jev→Main→Menu測試，驗證最後取得
+menu-query-scope待答問題而非直接執行查詢；與既有10項合計11項通過。
+本修正隨第19節部署重啟API生效，前端由該節推薦修正一併更新；
+未建立真實POS訂單或付款。
+
+## 19. 同輪自行換批，合併唸出六項（2026-10-19，已部署）
+
+使用者指出第18節不是他所指的「中間秀斗」。相同session entries14–21
+顯示：「推薦幾個餐點」讓Main先呼叫menu_recommend(limit3)，收到
+三項後又呼叫more:true。回覆程式保留多次查詢結果，最後將六項推薦
+與六個價格一起唸出。這與後來120價格句的UNAVAILABLE是兩個問題。
+
+Kiosk在單一send()擁有推薦展示額度：接受第一份推薦回執後，後續
+模型工具列表移除menu_recommend與menu_show_recommendations。
+已發出的同批／續輪重複推薦或泛menu_get不再執行，僅以原toolCallId
+回傳dataOnly、recommendationAlreadyPresented的確認，並不產生另一份
+顧客回執。內部display:false、指定餐點／分類比較及其他已授權操作
+仍可執行。下一則顧客輸入重設額度，因此主動詢問更多才可換下一批。
+Server提示同步說明此界線，decision-guidance不再要求同輪繼續換批。
+
+先以測試重現三種重複執行情況（同批、續輪、泛menu_get），再驗證
+都只執行一次、只朗讀第一份三項結果；並驗證下一輪more可執行，以及
+指定／內部查詢和訂購不被阻擋。Kiosk相關55項、Server相關26項通過。
+真實Main續輪沒有再要求工具，連同既有Jev／範圍重播合計12項通過。
+真實模型首輪曾回傳無符合結果，因此這項live驗證涵蓋推薦read完成後
+停止續查；三項成功推薦的防重複展示則由正式host回歸測試驗證，不
+宣稱每次模型都能自動挑出正確候選。本修正需發布Kiosk並重啟API；
+Menu版本不變。Kiosk已發布為index-Cv8z9P3a.js，公開index／bundle
+雜湊一致。使用者於19:33:58重啟API，PID405914，livez／readyz、
+DB／Redis、公開Menu Bridge及7項菜單確認正常；提示與弱查詢入口修正
+已載入。Nginx未變更，Origin-Trial仍在。備份位於
+`/tmp/webnavior-recommendation-release-20261019-2zjh0v9n`。沒有送出真實POS訂單或付款。
+
+## 20. 自然範圍回答與解釋式追問（2026-10-19，已部署）
+
+Session `-IQxJ9IOqXiIewQHNA86c`重現：Main將「剛才推薦」解讀為
+SHOWN，卻對「剛才的」「剛才的推薦」選ASK。調整範圍checkpoint
+指示與工具描述，依有效問題的兩個查詢集合理解省略名詞與時間指涉，
+不是要求顧客覆誦標籤，也沒有新增字詞比對表。使用者要求移除懸浮
+範圍按鈕，已移除App掛載、事件handler、元件及三項舊觸控測試；
+範圍問題繼續由對話回答。
+
+後續將實測擴成27個情境，包含「剛剛的」「前面的」「你之前介紹的」、
+未寫入提示詞的說法、否定／改口、價格變更、旁人對話及模糊回答。
+每個回答情境從已展示推薦開始，經真實Jev價格解析、Main工具請求
+建立範圍問題，再由真實Main解讀回答；明確回答必須直接執行正確
+範圍，不能以重問或點按鈕算通過。27項通過；額外說法未再新增提示
+特例。既有owner單元測試也涵蓋到期、錯誤questionId與revision失效。
+
+模糊回答先保留問題，改說明「只查剛才介紹的那幾道」與「查店裡所有
+餐點」的差別。單元測試先重現原先只重複原句，再確認說明不改價格、
+有效期或questionId；沒有語音的ASK驗證／快照不可修改問題。相關
+單元17項通過。此變更後另跑4個真實模糊回答→說明→自然回答流程，
+都完成原推薦範圍查詢並保留120上限。
+
+完整實測紀錄為`/tmp/webnavior-scope-generalization-all.log`與
+`/tmp/webnavior-scope-generalization-all-results.json`；接續追問為
+`/tmp/webnavior-scope-clarification-final.log`。Menu／Kiosk套件型別、
+變更檔lint與Menu建置通過，未跑root typecheck。有限樣本通過不代表
+所有口語都保證成功。Menu已發布index-DKDaE4FB.js並核對公開雜湊，
+API已於19:55:27（台北時間）重啟，PID430265；livez／readyz及
+DB／Redis正常，範圍提示已載入。公開Menu、Kiosk與7項目錄再驗證通過。
+備份位於`/tmp/webnavior-scope-voice-release-20261019-2_lrhdcy`。
+不改資料庫schema，也沒有送出真實訂單或付款。

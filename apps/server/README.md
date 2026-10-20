@@ -73,6 +73,17 @@ is retained in traces, but generic ANSWER is no longer an accepted result.
 The question owner supplies newly parsed values such as party size and tax ID;
 Server never infers answer choices from the purpose name. The initial route is
 a hypothesis, not assumed consent, and the concrete answer may correct it.
+A browser-owned `query_scope` question uses the configured Main chat model,
+not Jev. Authenticated `/api/kiosk/interaction-decisions` returns a finite
+`SCOPE_CHOICE`; only the browser owner can consume its question ID and execute
+the bounded read. The checkpoint uses temperature0 and receives question text,
+ordered labels and confirmed conditions, excluding opaque IDs/expiry numbers.
+Elliptical and temporal references are interpreted against the two scope objects
+in the active question, without requiring verbatim option labels. Uncertain or
+invalid proposals keep the conversational question pending. There is no floating
+scope option panel. This does not authorize cart
+writes; independent requests return to ordinary intent/price qualification.
+
 Kiosk sends `segmented:true`: every Jev question gets a separate provider request
 and returns a `DECISION_PROGRESS`
 checkpoint before the next question. Authenticated
@@ -145,11 +156,29 @@ verify KIOSK/OTHER/UNCERTAIN using only the current utterance,
 before the existing filter/price questions retain their original evidence. Already
 verified question answers/recovered queries do not repeat scope. A weak Agent
 handoff first verifies the recipient. In ordering, a second narrow check may
-independently establish a pure menu inquiry, even for an unfamiliar dish; this
-admits factual lookup only, never the weak operation. A
+independently establish a pure menu inquiry, even for an unfamiliar dish. This
+also covers weak search/recommendation routes when no recommendation question
+is pending: a budget follow-up can compete with the next-batch intent without
+authorizing that batch change. The recovery admits factual lookup only and
+qualifies the current utterance's price before handoff, never the weak operation. A
 question-relation NEW_REQUEST likewise verifies recipient before Agent admission.
+The handoff's price checkpoint receives only the original current utterance and
+its literal amounts. Previous budgets and scope answers remain with query-scope
+handling; they cannot compete with a fresh explicitly stated price boundary.
+Price instructions distinguish inclusive bounds from explicitly excluded endpoints;
+literal amount evidence does not create an additional budget requirement.
 This is bounded coverage, not a generic action planner or arbitrary multi-action
 execution guarantee.
+
+Main receives explicit browser query actions (`continue`, `update`, `reset`,
+`clarify`) instead of reconstructing whether omitted arguments reset conditions.
+The Menu runtime owns their state transitions and dietary/history preservation;
+see the Menu README for the tool contract. Relative requests are not meal names.
+Read-only tool selection uses temperature zero. A single non-presenting
+`menu_recommend` receipt with `queryAction:clarify` settles JSON and SSE replies
+with its application-owned question, without another provider call or tools.
+Mixed receipts, named lookups and malformed payloads cannot take this shortcut.
+The customer answers by voice; no new floating choice panel is created.
 
 Unmatched named dishes cannot be widened into a category or general
 recommendations. `filterPresence: UNRESOLVED_SUBJECT` retains the original
@@ -221,6 +250,14 @@ YES/NO choices in one call, mapped to that exact browser question; it cannot pay
 or add an item without the remaining slots. Price evidence keeps its existing
 bounded interpretation path. These checks are specific to clarification, not a
 generic extra speech classifier on normal routes.
+
+For a pending cart-target clarification, `CLARIFICATION` means the directed
+customer reply still needs disambiguation, not permission to cancel or switch
+to touch. Its route must reach the existing0.6 confidence threshold, followed by
+an independent literal-recipient check. Companion speech is ignored; weak or
+unknown recipients remain unavailable. Qualified replies retain the same owned
+question and expiry for another voice answer. Target selection compares complete
+attributes and negation rather than only shared dish-name fragments.
 
 Product evidence distinguishes exact names, unconfirmed literal catalog matches,
 absence and overflow. Model target choices remain finite (five), not an entire

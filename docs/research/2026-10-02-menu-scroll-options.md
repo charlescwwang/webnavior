@@ -114,3 +114,43 @@ layout measurements or `scrollend` with browser-platform mocks would not establi
 these behaviors. Pure phase/outcome decisions can be tested independently without
 claiming browser completion. No tests or typechecks were run for this documentation
 research; no production files or dependencies were changed.
+
+## 2026-10-19 direction regression
+
+Retained session `NOSb3gdRfHaSE-uu_s7wB` recorded 「往下一點」 as
+`intent:scroll-menu:up` at confidence 0.8065. The viewport was at position zero,
+so the resulting boundary response was correct for the wrong direction.
+「往上一點」 then correctly produced the same boundary. A public Menu browser
+check measured a 720px viewport and 2144px document; calling DOWN moved it to
+720px. This report is a semantic direction error, not evidence of a broken
+scroll owner.
+
+The menu now describes scrolling by its visible result: earlier content nearer
+its beginning, or later content nearer its end. The public UP/DOWN tool slots
+retain this content-position meaning; they are not finger-motion directions.
+The ordering router distinguishes navigation from lookup and independently
+checks EARLIER/LATER against the isolated utterance before mapping to an offered
+UP/DOWN candidate. Original route and verification remain in the trace.
+
+Candidate wording alone does not justify removing verification. A fresh replay
+using actual generated menu candidates still chose UP .7481 for 「往下一點」;
+the independent content check chose LATER .9298 and the runtime executed DOWN.
+One extra finite question therefore remains for selected scrolling only, with
+unchanged confidence thresholds and one-viewport movement. No keyword executor,
+new tool or dependency was added.
+
+The owned-menu replay now uses production-generated candidates instead of a
+hand-copied list. Six explicit position requests must execute the correct
+movement. Two composite finger/content cases may abstain when unresolved, but
+must never execute the opposite destination. All eight acceptance cases pass;
+this does not mean eight successful scrolls. Earlier isolated finger-only probes
+were inconsistent: one abstained while another inferred a destination. Bare
+hand gestures remain an unverified interpretation boundary, not a solved case.
+Adding a fourth gesture-only choice also degraded ordinary commands in probes,
+so that experiment is not in production source.
+
+Server83 and Menu41 targeted tests, scoped Server/Menu typechecks and changed-file
+lint pass. The viewport implementation is unchanged; its prior installed-Chrome
+movement/boundary test passed. These changes remain local and require the Menu
+build plus API restart before live voice uses them. No microphone replay or
+deployment was performed for this content-destination revision.
