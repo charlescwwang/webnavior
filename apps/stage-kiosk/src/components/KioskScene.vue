@@ -320,9 +320,9 @@ const assistantPresence = computed<{ description: string, mode: KioskAssistantPr
     }
   }
   return {
-    description: '也可以直接點選下方菜單。',
+    description: t('stage.kiosk.ordering-hint.description'),
     mode: 'listening',
-    title: '直接告訴我想吃什麼',
+    title: t('stage.kiosk.ordering-hint.title'),
   }
 })
 const conversationActivityStatus = computed(() => {
@@ -2145,7 +2145,7 @@ onUnmounted(() => {
       />
     </section>
 
-    <ScenarioSurface class="menu-region" @activity="recordCustomerActivity('manual')" />
+    <ScenarioSurface :listening="isAudioListening" class="menu-region" @activity="recordCustomerActivity('manual')" />
     <KioskAgentControl
       v-if="agentOrderOwner"
       :releasing="manualControlPending"

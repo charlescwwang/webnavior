@@ -1,6 +1,12 @@
 /** Copy for the standalone ordering runtime, without loading a Vue i18n instance. */
 export const orderingMessages = {
   'zh-Hant': {
+    checkout: {
+      returnToOrder: '返回訂單內容，保留餐點',
+      donation: '略過，捐贈發票',
+      taxIdLabel: '統一編號',
+      taxIdPlaceholder: '請輸入統一編號',
+    },
     continuation: {
       startTitle: '接續你的訂單',
       orderTitle: '訂單已帶到手機',
@@ -60,6 +66,12 @@ export const orderingMessages = {
     inquiryCorrection: '了解，您是在詢問，沒有要點這道。',
   },
   'en': {
+    checkout: {
+      returnToOrder: 'Return to order, keep items',
+      donation: 'Skip and donate invoice',
+      taxIdLabel: 'Business tax ID',
+      taxIdPlaceholder: 'Enter your business tax ID',
+    },
     continuation: {
       startTitle: 'Continue your order',
       orderTitle: 'Your order is on your phone',

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+
 import type { PaymentMethod, PaymentStatus } from '../pos-bridge'
 
 import { computed, onMounted } from 'vue'
@@ -8,7 +10,7 @@ import { usePaymentSimulation } from '../composables/usePaymentSimulation'
 import { paymentLabels, testPaymentMethods } from '../pos-bridge'
 
 const props = defineProps<{ error?: string, method?: PaymentMethod, status?: PaymentStatus, total: string }>()
-const emit = defineEmits<{ back: [], changeMethod: [], select: [method: PaymentMethod], simulate: [] }>()
+const emit = defineEmits<{ registerControl: [id: string, element: Element | ComponentPublicInstance | null], cancel: [], back: [], changeMethod: [], select: [method: PaymentMethod], simulate: [] }>()
 const copy = orderingMessages['zh-Hant'].payment
 const selection = computed(() => props.method && props.status === undefined && !props.error ? { method: props.method, total: props.total } : undefined)
 const { qr, error: qrError, remaining, start } = usePaymentSimulation(() => selection.value, () => emit('simulate'))
@@ -28,13 +30,15 @@ onMounted(start)
     <template v-if="status !== 'pending' && status !== 'uncertain' && status !== 'authorized'">
       <template v-if="!method">
         <p>{{ copy.methodHint }}</p>
-        <div :class="['payment-options']">
-          <button v-for="choice in testPaymentMethods" :key="choice" type="button" @click="emit('select', choice)">
-            {{ paymentLabels[choice] }}
-          </button>
-        </div>
       </template>
-      <template v-else>
+      <!-- Keep the same controls available while the unpaid QR is visible so
+           touch and voice can both change the selected method. -->
+      <div :class="['payment-options']">
+        <button v-for="choice in testPaymentMethods" :key="choice" :ref="element => emit('registerControl', `checkout:payment:${choice}`, element)" type="button" :aria-pressed="method === choice" @click="emit('select', choice)">
+          {{ paymentLabels[choice] }}
+        </button>
+      </div>
+      <template v-if="method">
         <p role="status">
           {{ copy.waiting }}
         </p>
@@ -66,6 +70,9 @@ onMounted(start)
     </template>
     <strong>{{ copy.total }} {{ total }}</strong>
     <footer>
+      <button :ref="element => emit('registerControl', 'checkout:cancel', element)" type="button" :disabled="status === 'pending' || status === 'uncertain' || status === 'authorized'" @click="emit('cancel')">
+        {{ orderingMessages['zh-Hant'].checkout.returnToOrder }}
+      </button>
       <button type="button" :disabled="status === 'pending' || status === 'uncertain' || status === 'authorized'" @click="emit('back')">
         {{ copy.back }}
       </button>
@@ -101,6 +108,7 @@ onMounted(start)
 
 .checkout-step footer button {
   width: 100%;
+  margin-top: 12px;
 }
 
 .checkout-step h2 {

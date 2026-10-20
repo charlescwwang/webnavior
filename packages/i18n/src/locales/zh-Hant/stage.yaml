@@ -42,16 +42,23 @@ kiosk:
     selection-failure: 選取時失敗
     refresh: 更新目前狀態
     failed: 無法套用情境。請確認仍在點餐階段，或重新載入測試頁。
+  ordering-hint:
+    title: 現在可以直接開口點餐
+    description: 例如：「幫我推薦」或「我要一份牛肉麵」。
   customer-entry:
-    title: 留下手機，或直接開始點餐
-    description: 手機號碼可選填，用於本次交易記錄。也可以略過，不需要加入會員。
+    title: 請說「略過」，開始語音點餐
+    description: 不必按按鈕，直接對我說「略過」即可。
+    listening: 可以說話了
+    not-listening: 目前未收音，可用下方按鈕略過。
+    phone-section-title: 想留下手機？
+    optional: 手機可選填，不影響點餐。
     phone: 手機號碼
     confirm: 確認手機，開始點餐
-    skip: 略過電話，直接點餐
-    voice-hint: 也可以告訴助手「略過」。填寫手機不會登入第三方點餐會員。
+    skip: 用按鈕略過
+    voice-hint: 填寫手機僅用於本次交易記錄，不會登入第三方點餐會員。
     test-phone-hint: 測試時可輸入：0912345678
-    query-reminder: 手機可以選填；要開始點餐，請填寫手機或按略過。測試時可輸入 0912345678。
-    complete-first: 請先填寫手機號碼，或選擇「略過」；完成後就能為您推薦或點餐。測試時可輸入 0912345678。
+    query-reminder: 手機可以選填；要開始點餐，請說「略過」，或填寫手機。測試時可輸入 0912345678。
+    complete-first: 請先說「略過」，或填寫手機號碼；完成後就能為您推薦或點餐。測試時可輸入 0912345678。
     failed: 無法確認是否已完成，請再選擇一次或使用語音略過。
     invalid: 請輸入 09 開頭的 10 碼手機號碼。
   welcome:
@@ -59,7 +66,7 @@ kiosk:
     first: 歡迎光臨！需要的話，我可以幫您介紹餐點。
     second: 您好，歡迎光臨！我可以協助您挑選餐點。
     third: 歡迎光臨！想了解餐點時，隨時可以問我。
-    phone-hint: 手機號碼可以選填，也可以直接略過開始點餐。
+    phone-hint: 手機號碼可選填，不想留手機，請說「略過」，接著就能開口點餐。
     editor-label: 固定歡迎詞（每行一組）
     editor-hint: 設定 1 至 {limit} 組，可寫入店名，每組最多 {characters} 字，依序輪播。電話頁會自動加上選填或略過說明，這裡只填開場。發布後重新載入 Kiosk，會預先準備語音；更換語音模型或聲線後也請重新載入。
     count: 目前 {count} 組，最多 {limit} 組。

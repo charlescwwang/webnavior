@@ -7,6 +7,7 @@ import { useKioskCustomerEntry } from '../composables/useKioskCustomerEntry'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
+const props = defineProps<{ listening?: boolean }>()
 const emit = defineEmits<{ activity: [] }>()
 const customerEntry = useKioskCustomerEntry(webMcpAdapter)
 const scenarioFrame = useTemplateRef<HTMLIFrameElement>('scenarioFrame')
@@ -30,7 +31,7 @@ onUnmounted(() => {
 
 <template>
   <section :class="['scenario-surface']" aria-label="互動服務畫面">
-    <CustomerPhoneModal v-if="customerEntry.pending.value" :busy="customerEntry.busy.value" :error="customerEntry.error.value" @submit="customerEntry.submit" @skip="customerEntry.submit()" @activity="emit('activity')" />
+    <CustomerPhoneModal v-if="customerEntry.pending.value" :listening="props.listening" :busy="customerEntry.busy.value" :error="customerEntry.error.value" @submit="customerEntry.submit" @skip="customerEntry.submit()" @activity="emit('activity')" />
     <iframe
       ref="scenarioFrame"
       :key="`${scenarioRegistry.activeScenario.value?.id ?? 'none'}:${scenarioRegistry.iframeRevision.value}`"

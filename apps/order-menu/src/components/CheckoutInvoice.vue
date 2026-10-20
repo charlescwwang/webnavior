@@ -1,15 +1,28 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+
 import type { CheckoutSnapshot } from '../domain/checkout-flow'
 
-import { computed, shallowRef, watch } from 'vue'
+import { computed, shallowRef, useTemplateRef, watch } from 'vue'
 
-const props = defineProps<{ checkout: CheckoutSnapshot, total: string }>()
+const props = defineProps<{ checkout: CheckoutSnapshot, total: string, locked?: boolean }>()
 const emit = defineEmits<{
   back: []
+  registerControl: [id: string, element: Element | ComponentPublicInstance | null]
   choose: [method: 'carrier' | 'citizen' | 'donation']
   details: [method: 'carrier' | 'citizen' | 'donation', code: string]
   taxId: []
 }>()
+const input = useTemplateRef<HTMLInputElement>('invoiceInput')
+// Inert Agent-controlled pages cannot take keyboard focus. Wait for the DOM
+// unlock, including when the voice action changed the invoice option meanwhile.
+watch([input, () => props.checkout, () => props.locked], ([field, , locked]) => {
+  if (locked)
+    field?.blur()
+  else
+    field?.focus({ preventScroll: true })
+}, { flush: 'post' })
+
 const code = shallowRef('')
 const method = computed(() => props.checkout.invoiceMethod === 'citizen' || props.checkout.invoiceMethod === 'donation' ? props.checkout.invoiceMethod : 'carrier')
 const title = computed(() => ({ carrier: '手機條碼', citizen: '自然人憑證條碼', donation: '捐贈碼' })[method.value])
@@ -28,16 +41,16 @@ watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCod
     </header>
     <p>可填寫載具或統編；不需要時請選擇「略過，捐贈發票」，直接選擇付款方式。</p>
     <div :class="['invoice-options']">
-      <button v-for="choice in (['carrier', 'citizen', 'donation'] as const)" :key="choice" type="button" :aria-pressed="method === choice" @click="emit('choose', choice)">
-        {{ { carrier: '手機載具', citizen: '自然人憑證', donation: '略過，捐贈發票' }[choice] }}
+      <button v-for="choice in (['carrier', 'citizen'] as const)" :key="choice" :ref="element => emit('registerControl', `checkout:invoice:${choice}`, element)" type="button" :aria-pressed="method === choice" @click="emit('choose', choice)">
+        {{ { carrier: '手機載具', citizen: '自然人憑證' }[choice] }}
       </button>
-      <button type="button" @click="emit('taxId')">
+      <button :ref="element => emit('registerControl', 'checkout:tax-id:request', element)" type="button" @click="emit('taxId')">
         公司統一編號
       </button>
     </div>
     <form v-if="method !== 'donation'" @submit.prevent="valid && emit('details', method, code)">
       <label for="invoice-code">{{ title }}</label>
-      <input id="invoice-code" v-model="code" autocomplete="off" inputmode="text" :maxlength="method === 'citizen' ? 16 : 8" :placeholder="method === 'carrier' ? '/ABC1234' : 'AB12345678901234'">
+      <input id="invoice-code" ref="invoiceInput" v-model="code" :disabled="props.locked" autocomplete="off" inputmode="text" :maxlength="method === 'citizen' ? 16 : 8" :placeholder="method === 'carrier' ? '/ABC1234' : 'AB12345678901234'">
       <small>測試僅驗證資料格式，尚未串接正式發票開立或受贈單位查詢。</small>
       <strong>本次訂單 {{ total }}</strong>
       <button type="submit" :disabled="!valid">
@@ -45,7 +58,10 @@ watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCod
       </button>
     </form>
     <footer>
-      <button type="button" @click="emit('back')">
+      <button :ref="element => emit('registerControl', 'checkout:invoice:donation', element)" type="button" @click="emit('choose', 'donation')">
+        略過，捐贈發票
+      </button>
+      <button :ref="element => emit('registerControl', 'checkout:cancel', element)" type="button" @click="emit('back')">
         返回上一頁
       </button>
     </footer>
@@ -73,6 +89,8 @@ watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCod
 }
 
 .checkout-step footer {
+  display: grid;
+  gap: 12px;
   margin-top: auto;
   border-top: 1px solid #ead7c9;
   padding-top: 20px;

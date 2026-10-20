@@ -1,15 +1,47 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
+
+import { computed, onUnmounted, useTemplateRef, watch } from 'vue'
+
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 
 const props = defineProps<{
   taxId: string
+  locked?: boolean
 }>()
 
 const emit = defineEmits<{
   back: []
+  cancel: []
+  donation: []
+  registerControl: [id: string, element: Element | ComponentPublicInstance | null]
   confirm: []
   updateTaxId: [taxId: string]
 }>()
+
+const taxIdInput = useTemplateRef<HTMLInputElement>('taxIdInput')
+watch(taxIdInput, field => emit('registerControl', 'checkout:tax-id:value', field), { flush: 'post' })
+// Template-ref watchers stop during unmount; explicitly release the registered
+// target so the cursor cannot retain an input from a previous checkout page.
+onUnmounted(() => emit('registerControl', 'checkout:tax-id:value', null))
+// Ref registration, a keypad edit and Agent unlock all restore the same field;
+// focusing an existing draft must not select or replace its digits.
+watch([taxIdInput, () => props.taxId, () => props.locked], ([field, , locked]) => {
+  if (locked)
+    field?.blur()
+  else
+    field?.focus({ preventScroll: true })
+}, { flush: 'post' })
+
+function updateDraft(event: Event) {
+  const field = event.target as HTMLInputElement
+  // The draft owner accepts at most eight digits. Reject invalid input without
+  // sending malformed scanner data into the checkout state transition.
+  if (/^\d{0,8}$/.test(field.value))
+    emit('updateTaxId', field.value)
+  else
+    field.value = props.taxId
+}
 
 const isValid = computed(() => /^\d{8}$/.test(props.taxId))
 
@@ -29,7 +61,20 @@ function append(digit: string) {
         請確認統編後繼續；不會自動改成捐贈。
       </p>
       <p>可按鍵輸入，或直接口說統編由 Agent 帶入；送出前請確認完整 8 碼。</p>
-      <output :class="['tax-id-value']">{{ taxId || '請輸入統一編號' }}</output>
+      <input
+        ref="taxIdInput"
+        :class="['tax-id-value']"
+        :aria-label="orderingMessages['zh-Hant'].checkout.taxIdLabel"
+        :placeholder="orderingMessages['zh-Hant'].checkout.taxIdPlaceholder"
+        :value="taxId"
+        :disabled="props.locked"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
+        maxlength="8"
+        pattern="[0-9]{8}"
+        @input="updateDraft"
+      >
       <p :class="['voice-hint']">
         說出「統編是……」即可帶入畫面
       </p>
@@ -49,8 +94,14 @@ function append(digit: string) {
       </div>
     </div>
     <footer :class="['checkout-footer']">
-      <button :class="['primary-action']" type="button" :disabled="!isValid" @click="emit('confirm')">
+      <button :ref="element => emit('registerControl', 'checkout:tax-id:confirm', element)" :class="['primary-action']" type="button" :disabled="!isValid" @click="emit('confirm')">
         確認統編
+      </button>
+      <button :ref="element => emit('registerControl', 'checkout:invoice:donation', element)" :class="['back-action']" type="button" @click="emit('donation')">
+        {{ orderingMessages['zh-Hant'].checkout.donation }}
+      </button>
+      <button :ref="element => emit('registerControl', 'checkout:cancel', element)" :class="['back-action']" type="button" @click="emit('cancel')">
+        {{ orderingMessages['zh-Hant'].checkout.returnToOrder }}
       </button>
       <button :class="['back-action']" type="button" @click="emit('back')">
         返回上一頁
@@ -71,5 +122,5 @@ function append(digit: string) {
   font-weight: 700;
 }
 
-.checkout-step{display:flex;min-height:calc(100vh - 48px);flex-direction:column;border-radius:20px;background:#fff;box-shadow:0 12px 26px #7a3b141a}.checkout-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid #f0e4da;padding:18px 20px}.checkout-header button{width:34px;height:34px;border:1px solid #ead7c9;border-radius:50%;color:#803813;background:#fff9f3;font-size:24px}.checkout-header span{color:#ba5724;font-size:12px;font-weight:800}.checkout-header h2{margin:3px 0 0;color:#3d281c;font-size:21px}.checkout-content{display:grid;flex:1;place-content:center;justify-items:center;padding:26px;text-align:center}.checkout-content p{max-width:300px;margin:0;color:#876;font-size:14px;line-height:1.6}.checkout-timer{margin-bottom:18px!important;color:#ba5724!important;font-size:12px!important;font-weight:800}.tax-id-value{width:100%;margin-top:18px;border:1px solid #d95327;border-radius:12px;padding:14px;color:#3d281c;font-size:20px;letter-spacing:.18em}.voice-hint{margin-top:12px!important;color:#803813!important;font-weight:700}.tax-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;margin-top:14px}.tax-keypad button{min-height:38px;border:1px solid #ead7c9;color:#3d281c;background:#fff9f3}.checkout-footer{border-top:1px solid #f0e4da;padding:16px 20px 20px}.primary-action{width:100%;padding:14px;color:#fff;background:#d95327;font-weight:800}.primary-action:disabled{background:#c6b8ae}
+.checkout-step{display:flex;min-height:calc(100vh - 48px);flex-direction:column;border-radius:20px;background:#fff;box-shadow:0 12px 26px #7a3b141a}.checkout-header{display:flex;align-items:center;gap:12px;border-bottom:1px solid #f0e4da;padding:18px 20px}.checkout-header button{width:34px;height:34px;border:1px solid #ead7c9;border-radius:50%;color:#803813;background:#fff9f3;font-size:24px}.checkout-header span{color:#ba5724;font-size:12px;font-weight:800}.checkout-header h2{margin:3px 0 0;color:#3d281c;font-size:21px}.checkout-content{display:grid;flex:1;place-content:center;justify-items:center;padding:26px;text-align:center}.checkout-content p{max-width:300px;margin:0;color:#876;font-size:14px;line-height:1.6}.checkout-timer{margin-bottom:18px!important;color:#ba5724!important;font-size:12px!important;font-weight:800}.tax-id-value{box-sizing:border-box;width:100%;margin-top:18px;border:1px solid #d95327;border-radius:12px;padding:14px;color:#3d281c;font-size:20px;letter-spacing:.18em}.voice-hint{margin-top:12px!important;color:#803813!important;font-weight:700}.tax-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;width:100%;margin-top:14px}.tax-keypad button{min-height:38px;border:1px solid #ead7c9;color:#3d281c;background:#fff9f3}.checkout-footer{border-top:1px solid #f0e4da;padding:16px 20px 20px}.primary-action{width:100%;padding:14px;color:#fff;background:#d95327;font-weight:800}.primary-action:disabled{background:#c6b8ae}
 </style>

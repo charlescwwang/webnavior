@@ -17,6 +17,7 @@ function setupEntry(regionHeight = 500) {
   let entryStarted = false
   let phone: string | undefined
   const heroClicks = shallowRef(0)
+  const listening = shallowRef(false)
   const runtime = createMenuToolRuntime({
     orderingReady: () => ready,
     onCustomerEntryRequested: () => {
@@ -62,25 +63,41 @@ function setupEntry(regionHeight = 500) {
         h('button', { onClick: () => heroClicks.value++ }, '上半部互動'),
         h('section', { 'data-testid': 'ordering-region', 'style': { position: 'relative', height: `${regionHeight}px`, width: '640px', maxWidth: '100%' } }, [
           h('p', { 'data-testid': 'background-menu' }, '背景菜單'),
-          entry.pending.value ? h(CustomerPhoneModal, { busy: entry.busy.value, error: entry.error.value, onSubmit: entry.submit, onSkip: () => entry.submit() }) : h('p', '菜單已開啟'),
+          entry.pending.value ? h(CustomerPhoneModal, { listening: listening.value, busy: entry.busy.value, error: entry.error.value, onSubmit: entry.submit, onSkip: () => entry.submit() }) : h('p', '菜單已開啟'),
         ]),
       ])
     },
   }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
-  return { bridge, tools, listeners, runtime, screen, heroClicks, phone: () => phone }
+  return { bridge, tools, listeners, runtime, screen, heroClicks, listening, phone: () => phone }
 }
 
 describe('kiosk-owned optional phone modal', () => {
+  it('prioritizes spoken skip and only invites speech when the microphone is listening', async () => {
+    const { screen, listening } = setupEntry()
+    try {
+      await expect.element(screen.getByRole('heading', { level: 1, name: '請說「略過」，開始語音點餐' })).toBeVisible()
+      await expect.element(screen.getByRole('status')).toHaveTextContent('目前未收音，可用下方按鈕略過。')
+      await expect.element(screen.getByRole('button', { name: '用按鈕略過' })).toBeEnabled()
+      listening.value = true
+      await expect.element(screen.getByRole('status')).toHaveTextContent('可以說話了')
+      listening.value = false
+      await expect.element(screen.getByRole('status')).toHaveTextContent('目前未收音，可用下方按鈕略過。')
+    }
+    finally {
+      screen.unmount()
+    }
+  })
+
   it('retains the optional phone choice while the Agent browses food, then allows explicit skip', async () => {
     const { screen, runtime } = setupEntry()
     try {
       await expect.element(screen.getByRole('dialog')).toBeVisible()
       await expect.element(screen.getByText('測試時可輸入：0912345678', { exact: true })).toBeVisible()
-      const result = await runtime.invokeForAgent('menu_get', { display: true }) as { items: unknown[] }
+      const result = await runtime.invokeForAgent('menu_recommend', { action: 'update' }) as { items: unknown[] }
       expect(result.items.length).toBeGreaterThan(0)
       await expect.element(screen.getByRole('dialog')).toBeVisible()
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'customer_entry' })
-      await screen.getByRole('button', { name: '略過電話，直接點餐' }).click()
+      await screen.getByRole('button', { name: '用按鈕略過' }).click()
       await expect.element(screen.getByText('菜單已開啟', { exact: true })).toBeVisible()
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
     }
@@ -121,7 +138,7 @@ describe('kiosk-owned optional phone modal', () => {
     await screen.getByRole('button', { name: '確認手機，開始點餐' }).click()
     await expect.element(screen.getByRole('alert')).toBeVisible()
     expect(phone()).toBeUndefined()
-    await screen.getByRole('button', { name: '略過電話，直接點餐' }).click()
+    await screen.getByRole('button', { name: '用按鈕略過' }).click()
     await expect.element(screen.getByText('菜單已開啟')).toBeVisible()
     screen.unmount()
   })
@@ -144,7 +161,7 @@ describe('kiosk-owned optional phone modal', () => {
     const { screen, runtime, phone } = setupEntry()
     await expect.element(screen.getByRole('dialog')).toBeVisible()
     expect(document.querySelector('dialog')?.ownerDocument).toBe(document)
-    await screen.getByRole('button', { name: '略過電話，直接點餐' }).click()
+    await screen.getByRole('button', { name: '用按鈕略過' }).click()
     await expect.element(screen.getByText('菜單已開啟')).toBeVisible()
     expect(phone()).toBeUndefined()
     expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })

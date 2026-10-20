@@ -42,16 +42,23 @@ kiosk:
     selection-failure: Reject selection
     refresh: Refresh current state
     failed: Could not apply the scenario. Return to ordering or reload the test page.
+  ordering-hint:
+    title: You can now order by voice
+    description: 'Try “Recommend something” or “One beef noodle soup, please”.'
   customer-entry:
-    title: Enter your phone or start ordering
-    description: Your phone is optional and used for this transaction record. You can skip without joining a membership.
+    title: Say “skip” to start voice ordering
+    description: No need to press a button. Just say “skip”.
+    listening: You can speak now
+    not-listening: The microphone is not listening. Use the skip button below.
+    phone-section-title: Want to leave your phone number?
+    optional: Your phone number is optional. You can order without it.
     phone: Phone number
     confirm: Confirm phone and start ordering
-    skip: Skip phone and start ordering
-    voice-hint: You can also tell the assistant “skip”. Entering a phone does not sign in to the external ordering site.
+    skip: Skip with button
+    voice-hint: Your phone is used only for this transaction record and does not sign in to the external ordering site.
     test-phone-hint: 'For testing, you can enter: 0912345678'
-    query-reminder: Your phone is optional. To start ordering, enter a phone number or select Skip. For testing, you can enter 0912345678.
-    complete-first: Please enter a phone number or select Skip first. Then I can recommend dishes or help you order. For testing, you can enter 0912345678.
+    query-reminder: Your phone is optional. To start ordering, say “skip” or enter a phone number. For testing, you can enter 0912345678.
+    complete-first: Please say “skip” or enter a phone number first. Then I can recommend dishes or help you order. For testing, you can enter 0912345678.
     failed: We could not confirm completion. Please choose again or ask the assistant to skip.
     invalid: Enter a 10-digit phone number starting with 09.
   welcome:
@@ -59,7 +66,7 @@ kiosk:
     first: Welcome! I can introduce our menu whenever you need.
     second: Hello and welcome! I can help you choose your meal.
     third: Welcome! Feel free to ask me about the menu.
-    phone-hint: Your phone number is optional. You can also skip this step and start ordering.
+    phone-hint: Your phone number is optional. Say “skip”, then tell me what you would like to order.
     editor-label: Fixed welcome phrases (one per line)
     editor-hint: Add 1–{limit} openings, up to {characters} characters each, including your store name if needed. They play in order. The optional-phone explanation is appended on the entry screen. Reload the Kiosk after publishing or changing the speech model or voice to prepare fresh audio.
     count: '{count} phrases, up to {limit} allowed.'

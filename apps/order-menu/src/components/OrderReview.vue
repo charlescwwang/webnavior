@@ -96,7 +96,7 @@ const emit = defineEmits<{
 
     <slot name="seating" />
     <footer class="review-footer">
-      <button v-if="!props.completed" class="confirm-button" type="button" :disabled="props.lines.length === 0 || !props.fulfillmentMode || !props.seatingReady || props.submissionStatus === 'uncertain'" @click="emit('checkout')">
+      <button v-if="!props.completed" :ref="element => emit('registerControl', 'checkout:start', element)" :class="['confirm-button']" type="button" :disabled="props.lines.length === 0 || !props.fulfillmentMode || !props.seatingReady || props.submissionStatus === 'uncertain'" @click="emit('checkout')">
         確認訂單，進入結帳
       </button>
       <p v-if="props.orderStatus" class="order-status">

@@ -890,18 +890,24 @@ onUnmounted(() => {
     <CheckoutInvoice
       v-if="checkout?.stage === 'invoice'"
       :checkout="checkout"
+      :locked="agentControlsOrder || customerEntryStatus === 'pending'"
       :total="currency(cart.total)"
       @back="backCheckout"
       @choose="chooseInvoice"
       @details="(method, code) => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) }"
       @tax-id="openTaxId"
+      @register-control="setControlElement"
     />
     <CheckoutTaxId
       v-else-if="checkout?.stage === 'tax-id'"
       :tax-id="checkout.taxId ?? ''"
+      :locked="agentControlsOrder || customerEntryStatus === 'pending'"
       @back="backCheckout"
       @confirm="confirmTaxIdNumber"
       @update-tax-id="updateTaxId"
+      @register-control="setControlElement"
+      @cancel="cancelCheckout"
+      @donation="chooseInvoice('donation')"
     />
     <CheckoutPayment
       v-else-if="checkout?.stage === 'payment'"
@@ -913,6 +919,8 @@ onUnmounted(() => {
       @change-method="() => { assertCanRestart(); resetPaymentAttempt() }"
       @select="selectPayment"
       @simulate="simulatePayment"
+      @register-control="setControlElement"
+      @cancel="cancelCheckout"
     />
     <OrderReview
       v-else-if="orderReviewOpen"

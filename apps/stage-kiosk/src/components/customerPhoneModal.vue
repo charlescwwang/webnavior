@@ -3,7 +3,7 @@ import { Button, Input } from '@proj-airi/ui'
 import { computed, onMounted, shallowRef, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-const props = defineProps<{ busy: boolean, error?: 'failed' | 'invalid' }>()
+const props = defineProps<{ busy: boolean, error?: 'failed' | 'invalid', listening?: boolean }>()
 const emit = defineEmits<{ activity: [], submit: [phone: string], skip: [] }>()
 const { t } = useI18n()
 const dialog = useTemplateRef<HTMLDialogElement>('dialog')
@@ -29,10 +29,24 @@ onMounted(() => dialog.value?.show())
       <h1 id="customer-phone-title" :class="['m-0 text-2xl font-bold sm:text-3xl']">
         {{ t('stage.kiosk.customer-entry.title') }}
       </h1>
-      <p id="customer-phone-description" :class="['mb-6 mt-4 leading-7 text-[#786655]']">
-        {{ t('stage.kiosk.customer-entry.description') }}
-      </p>
-      <form :class="['grid gap-4']" @submit.prevent="valid && !props.busy && emit('submit', phone)">
+      <div :class="['my-5 rounded-2xl bg-[#fff2e5] p-5', 'flex items-start gap-4']">
+        <span aria-hidden="true" :class="['mt-1 size-9 shrink-0 text-[#d95327]', props.listening ? 'i-solar:microphone-3-bold' : 'i-solar:microphone-slash-bold']" />
+        <div>
+          <p id="customer-phone-description" :class="['m-0 text-lg font-semibold leading-7']">
+            {{ t('stage.kiosk.customer-entry.description') }}
+          </p>
+          <p role="status" :class="['mb-0 mt-2 text-sm leading-6 text-[#786655]']">
+            {{ t(props.listening ? 'stage.kiosk.customer-entry.listening' : 'stage.kiosk.customer-entry.not-listening') }}
+          </p>
+        </div>
+      </div>
+      <form :class="['grid gap-3 border-t border-[#eadfce] pt-5']" @submit.prevent="valid && !props.busy && emit('submit', phone)">
+        <h2 :class="['m-0 text-lg font-semibold']">
+          {{ t('stage.kiosk.customer-entry.phone-section-title') }}
+        </h2>
+        <p :class="['m-0 text-sm leading-6 text-[#786655]']">
+          {{ t('stage.kiosk.customer-entry.optional') }}
+        </p>
         <label for="kiosk-customer-phone" :class="['font-semibold']">{{ t('stage.kiosk.customer-entry.phone') }}</label>
         <Input id="kiosk-customer-phone" v-model="phone" type="tel" inputmode="numeric" autocomplete="off" maxlength="10" pattern="09[0-9]{8}" placeholder="09xxxxxxxx" aria-describedby="kiosk-test-phone-hint" :disabled="props.busy" :class="['min-h-14 !text-2xl']" />
         <p id="kiosk-test-phone-hint" :class="['m-0 text-sm text-[#786655]']">
@@ -41,11 +55,9 @@ onMounted(() => dialog.value?.show())
         <p v-if="props.error" role="alert" :class="['m-0 text-red-700']">
           {{ t(`stage.kiosk.customer-entry.${props.error}`) }}
         </p>
-        <div :class="['grid grid-cols-2 gap-3']">
-          <Button type="button" autofocus :disabled="props.busy" variant="secondary" :class="['min-h-14 min-w-0 !whitespace-normal']" :label="t('stage.kiosk.customer-entry.skip')" @click="emit('skip')" />
-          <Button type="submit" :disabled="!valid || props.busy" :class="['min-h-14 min-w-0 !whitespace-normal !bg-[#d95327] !text-white']" :label="t('stage.kiosk.customer-entry.confirm')" />
-        </div>
+        <Button type="submit" :disabled="!valid || props.busy" :class="['min-h-14 min-w-0 !whitespace-normal !bg-[#d95327] !text-white']" :label="t('stage.kiosk.customer-entry.confirm')" />
       </form>
+      <Button type="button" autofocus :disabled="props.busy" variant="secondary" :class="['mt-4 min-h-12 w-full !whitespace-normal']" :label="t('stage.kiosk.customer-entry.skip')" @click="emit('skip')" />
       <p :class="['mb-0 mt-5 text-sm leading-6 text-[#786655]']">
         {{ t('stage.kiosk.customer-entry.voice-hint') }}
       </p>

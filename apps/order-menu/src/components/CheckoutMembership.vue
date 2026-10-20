@@ -1,10 +1,13 @@
 <script setup lang="ts">
+import type { ComponentPublicInstance } from 'vue'
+
 defineProps<{
   total: string
 }>()
 
 const emit = defineEmits<{
   back: []
+  registerControl: [id: string, element: Element | ComponentPublicInstance | null]
   skip: []
 }>()
 </script>
@@ -12,7 +15,7 @@ const emit = defineEmits<{
 <template>
   <section class="checkout-step" aria-labelledby="membership-heading">
     <header class="checkout-header">
-      <button type="button" aria-label="返回訂單內容" @click="emit('back')">
+      <button :ref="element => emit('registerControl', 'checkout:cancel', element)" type="button" aria-label="返回訂單內容" @click="emit('back')">
         ‹
       </button>
       <div>
@@ -32,7 +35,7 @@ const emit = defineEmits<{
       </p>
     </div>
     <footer class="checkout-footer">
-      <button class="secondary-action" type="button" @click="emit('skip')">
+      <button :ref="element => emit('registerControl', 'checkout:membership:skip', element)" :class="['secondary-action']" type="button" @click="emit('skip')">
         略過會員
       </button>
     </footer>

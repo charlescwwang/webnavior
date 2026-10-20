@@ -1481,7 +1481,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_start': {
           if (input.confirmedByUser !== true)
             throw new Error('Starting checkout requires confirmedByUser: true.')
-          await announce('進入結帳', 'cart', {}, onAction)
+          await revealReview(onAction)
+          await announce('進入結帳', undefined, { controlId: 'checkout:start' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).start()
           clearMealProgress()
           return {
@@ -1493,14 +1494,14 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_skip_membership': {
           if (input.confirmedByUser !== true)
             throw new Error('Skipping membership requires confirmedByUser: true.')
-          await announce('略過會員', undefined, {}, onAction)
+          await announce('略過會員', undefined, { controlId: 'checkout:membership:skip' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).skipMembership()
           return { checkout, customerMessage: '已略過會員，請選擇發票方式。' }
         }
         case 'checkout_choose_invoice': {
           const method = requiredInvoiceMethod(input)
           const label = { carrier: '手機載具', citizen: '自然人憑證', donation: '捐贈發票' }[method]
-          await announce(`選擇${label}`, undefined, {}, onAction)
+          await announce(`選擇${label}`, undefined, { controlId: `checkout:invoice:${method}` }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).chooseInvoice(method)
           let customerMessage: string
           if (method === 'donation')
@@ -1515,7 +1516,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
         }
         case 'checkout_request_tax_id': {
-          await announce('輸入統編', undefined, {}, onAction)
+          await announce('輸入統編', undefined, { controlId: 'checkout:tax-id:request' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).requestTaxId()
           return { checkout, customerMessage: '已開啟統編輸入畫面。' }
         }
@@ -1523,7 +1524,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const taxId = requiredString(input, 'taxId')
           if (!/^\d{8}$/.test(taxId))
             throw new Error('taxId must contain exactly eight digits.')
-          await announce('帶入統編', undefined, {}, onAction)
+          await announce('帶入統編', undefined, { controlId: 'checkout:tax-id:value' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).setTaxId(taxId)
           return {
             checkout,
@@ -1534,13 +1535,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_confirm_tax_id': {
           if (input.confirmedByUser !== true)
             throw new Error('Confirming a tax ID requires confirmedByUser: true.')
-          await announce('確認統編', undefined, {}, onAction)
+          await announce('確認統編', undefined, { controlId: 'checkout:tax-id:confirm' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).confirmTaxId()
           return { checkout, customerMessage: '已確認統編，請選擇付款方式。' }
         }
         case 'checkout_select_payment': {
           const method = requiredPaymentMethod(input)
-          await announce(`選擇${paymentLabels[method]}`, undefined, {}, onAction)
+          await announce(`選擇${paymentLabels[method]}`, undefined, { controlId: `checkout:payment:${method}` }, onAction)
           const payment = await checkoutControllerOrThrow(options.checkout).selectPayment(method)
           // Selection answers the method question and opens the scan step.
           // Actual authorization still requires customer payment completion.
@@ -1557,7 +1558,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_cancel': {
           if (input.confirmedByUser !== true)
             throw new Error('Cancelling checkout requires confirmedByUser: true.')
-          await announce('取消結帳', 'cart', {}, onAction)
+          await announce('取消結帳', undefined, { controlId: 'checkout:cancel' }, onAction)
           await checkoutControllerOrThrow(options.checkout).cancel()
           return {
             cart: machine.getCart(),
