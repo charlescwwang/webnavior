@@ -65,13 +65,69 @@ const recipientQuestion: SystemOneQuestion = {
 export async function decideInteraction(input: DecisionInput): Promise<KioskInteractionDecision> {
   let modelCalls = 0
   let modelQuestions = 0
-  const result = await decideBoundedInteraction({ ...input, invoke: async (state, questions) => {
+  const admission: { recipient: 'unchecked' | 'unknown' | 'kiosk' | 'other', uncertainMeaning: boolean, invalidAnswer: boolean } = { recipient: 'unchecked', uncertainMeaning: false, invalidAnswer: false }
+  // Observe actual finite answers even when tracing is off. Recipient admission
+  // and semantic uncertainty are separate facts; model confidence never grants
+  // target, question-answer, or execution authority.
+  const invoke: DecisionInput['invoke'] = async (state, questions) => {
     if (modelQuestions + Object.keys(questions).length > (input.maxQuestions ?? decisionQuestionBudget))
       throw new Error('Decision question budget exhausted')
     modelCalls++
     modelQuestions += Object.keys(questions).length
-    return await input.invoke(state, questions)
-  } })
+    const response = await input.invoke(state, questions)
+    for (const [key, question] of Object.entries(questions)) {
+      if (question.type !== 'choice')
+        continue
+      if (key === 'recipient' || key === 'service' || key === 'greeting')
+        admission.recipient = 'unknown'
+      const answer = response.answers?.[key] as { choice?: unknown, confidence?: unknown } | undefined
+      const choices = Array.isArray(question.criteria) ? question.criteria : Object.keys(question.criteria ?? {})
+      if (!answer || typeof answer.choice !== 'string' || !choices.includes(answer.choice) || typeof answer.confidence !== 'number' || !Number.isFinite(answer.confidence) || answer.confidence < 0 || answer.confidence > 1) {
+        admission.invalidAnswer = true
+        continue
+      }
+      if (key === 'recipient' || key === 'service' || key === 'greeting') {
+        if (answer.confidence >= 0.6 && ['KIOSK', 'REQUEST'].includes(answer.choice))
+          admission.recipient = 'kiosk'
+        else if (answer.confidence >= 0.6 && ['OTHER', 'BACKGROUND', 'IGNORE'].includes(answer.choice))
+          admission.recipient = 'other'
+        continue
+      }
+      admission.uncertainMeaning ||= answer.confidence < 0.6 || answer.choice === 'UNCERTAIN'
+    }
+    return response
+  }
+  let result = await decideBoundedInteraction({ ...input, invoke })
+  const weakDecision = (result.kind === 'FAST_ACTION' || result.kind === 'IGNORE' || result.kind === 'INCOMPLETE') && typeof result.confidence === 'number' && result.confidence < 0.6
+  // Revoke the guessed effect before admission. A failed recipient check or
+  // exhausted budget must never restore a weak action or a guessed IGNORE.
+  if (!input.review && weakDecision)
+    result = { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...(result.trace === undefined ? {} : { trace: result.trace }) }
+  const rejectedMeaning = result.kind === 'UNAVAILABLE' && (result.reason === undefined || result.reason === 'UNCERTAIN_OPERATION')
+  // Finalize only pre-execution semantic abstentions. A read review already has
+  // receipts and its own recovery protocol; malformed replies and uncertain
+  // recipients must not be promoted by this policy.
+  if (!input.review && !admission.invalidAnswer && admission.uncertainMeaning && rejectedMeaning) {
+    if (admission.recipient === 'unchecked' && modelQuestions < (input.maxQuestions ?? decisionQuestionBudget)) {
+      const state = JSON.stringify({ customerUtterance: normalizeTranscript(input.transcript).normalized })
+      const startedAt = performance.now()
+      const trace = result.trace as KioskDecisionTrace | undefined
+      try {
+        const response = await invoke(state, { recipient: recipientQuestion })
+        trace?.exchanges?.push({ index: modelCalls, state, questions: { recipient: recipientQuestion }, answers: response.answers, durationMs: performance.now() - startedAt, status: 'answered' })
+      }
+      catch {
+        trace?.exchanges?.push({ index: modelCalls, state, questions: { recipient: recipientQuestion }, durationMs: performance.now() - startedAt, status: 'failed' })
+      }
+    }
+    // Failed classification never consumes a live question or supersedes an
+    // invitation. Main receives the original utterance and current state.
+    const preserved = result.trace === undefined ? {} : { trace: result.trace }
+    if (!admission.invalidAnswer && admission.recipient === 'kiosk')
+      result = { ...preserved, kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' }
+    else if (!admission.invalidAnswer && admission.recipient === 'other')
+      result = { ...preserved, kind: 'IGNORE' }
+  }
   return input.includeTrace ? { ...result, modelCalls, modelQuestions } : result
 }
 
@@ -209,8 +265,8 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       qualifiedRequest = true
       const choice = (await invoke(state, { phone: {
         type: 'choice',
-        instructions: '分類 customerUtterance 的目的。含招呼又提出需求時依需求分類。ORDER 是請你推薦、換其他推薦、想吃或訂購餐點，先提醒完成電話選擇。MENU 是單純詢問販售內容、價格或查證有沒有，不代表要推薦或點餐。ASK 是電話用途、身分或其他一般問題。SKIP 是明確省略電話或直接開始點餐；ENTER 是要填電話或否定略過。「可以略過嗎」是 ASK，「請略過」是 SKIP，「不要略過」是 ENTER。',
-        criteria: { SKIP: '明確要求現在略過、不填電話或直接開始點餐。', ENTER: '要填電話，不略過。', ASK: '電話用途、可不可以略過、本機身分或其他一般問題。', MENU: '單純問賣什麼、餐點價格、成分或有沒有某餐點／分類，以及查證先前品項。', ORDER: '請推薦、換推薦、想吃或明確點餐、調整訂單；先完成電話選擇，不操作餐點。' },
+        instructions: '分類 customerUtterance 最後仍成立的需求。含招呼又提出需求時依需求分類；同句先點餐後撤回，以最後改口為準。已撤回的餐點不是仍要訂購，也不是查詢有沒有；未指定電話的「不要了」不等於略過電話。沒有剩餘操作的撤回選 ASK，交助手確認。ORDER 是仍請你推薦、換其他推薦、想吃或訂購餐點，先提醒完成電話選擇。MENU 是單純詢問販售內容、價格或查證有沒有，不代表要推薦或點餐。ASK 也包含電話用途、身分或其他一般問題。SKIP 是明確省略電話或直接開始點餐；ENTER 是要填電話或否定略過。「可以略過嗎」是 ASK，「請略過」是 SKIP，「不要略過」是 ENTER。',
+        criteria: { SKIP: '明確要求現在略過、不填電話或直接開始點餐；撤回餐點不屬於此項。', ENTER: '要填電話，不略過。', ASK: '電話用途、可不可以略過、本機身分、一般問題，或同句撤回點餐後沒有剩餘操作，只需確認或釐清。', MENU: '單純問賣什麼、餐點價格、成分或有沒有某餐點／分類，以及查證先前品項；只提到已撤回的餐點不屬於此項。', ORDER: '最後仍要求推薦、換推薦、想吃或明確點餐、調整訂單；先完成電話選擇，不操作餐點。同句已撤回的訂購不屬於此項。' },
       } })).answers?.phone as { choice?: string, confidence?: number } | undefined
       if (!choice || typeof choice.confidence !== 'number' || !Number.isFinite(choice.confidence) || choice.confidence < 0.6 || choice.confidence > 1)
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
@@ -370,10 +426,10 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     if (filterChoices) {
       questions.filterRequirement = {
         type: 'choice',
-        instructions: `先判斷是否需要由主 Agent 理解整句餐點需求，不提取條件、不判斷商品是否符合。單份價格由獨立 price 問題判斷；只改金額、價格邊界或排序仍選 COVERED，不算食物偏好改變。凡新增或修改想吃／不想吃的食物範圍、飲食偏好、排除、條件組合或改口，選 OPEN_REQUEST，與詞序或菜單有無匹配無關。只有查已知品名／分類、單份價格或沿用原條件推薦，才檢查可用條件。可用條件：${[...ingredientReferences.map(reference => `${reference.label}：包含或排除`), ...(input.decisionState?.dietaryReferences ?? []).map(reference => reference.label), ...(prices?.choices.some(choice => choice.kind === 'condition') ? ['單份價格上限、下限、完整區間、精確價格、由低到高排序；具體邊界由獨立 price 問題判斷'] : [])].join('；') || '本句未解析出可用條件'}。詢問商品售價與不要求條件的查詢或推薦也是 COVERED；整筆預算或未提供價格條件不可忽略。`,
+        instructions: `先判斷是否需要由主 Agent 理解整句餐點需求，不提取條件、不判斷商品是否符合。單份價格由獨立 price 問題判斷；只改金額、價格邊界或排序仍選 COVERED，不算食物偏好改變。先區分查詢對象與額外條件：正向詢問某品名或分類有哪些、有沒有、種類、款式，或只表示想瀏覽某分類，是 COVERED；即使第一次指定分類或從另一分類切換，也只是查詢對象，不是新增食物偏好。只有在查詢對象之外另加食材／飲食要求、拒絕或排除食物、組合條件或修正這些偏好時，才選 OPEN_REQUEST；菜單有無匹配不改變這項界線。查已知品名／分類、單份價格或沿用原條件推薦，再檢查可用條件。可用條件：${[...ingredientReferences.map(reference => `${reference.label}：包含或排除`), ...(input.decisionState?.dietaryReferences ?? []).map(reference => reference.label), ...(prices?.choices.some(choice => choice.kind === 'condition') ? ['單份價格上限、下限、完整區間、精確價格、由低到高排序；具體邊界由獨立 price 問題判斷'] : [])].join('；') || '本句未解析出可用條件'}。詢問商品售價與不要求條件的查詢或推薦也是 COVERED；整筆預算或未提供價格條件不可忽略。`,
         criteria: {
-          OPEN_REQUEST: '本句表達或修改食物偏好、包含／排除、飲食要求、食物條件組合或改口，需要完整語意理解；交接原句，不選餐點或規劃訂單操作。只有單份價格改變不屬於此項。',
-          COVERED: '查品名、正向分類、單份售價或沿用條件換批；可新增或修改單份價格邊界、區間與排序，但沒有額外食物偏好。價格交給獨立問題判定，不在此推測結果。',
+          OPEN_REQUEST: '查詢對象之外另加或修改食材／飲食偏好、拒絕或排除食物、組合條件或修正這些偏好，需要完整理解。單純正向品名／分類瀏覽，以及單份價格改變不屬於此項。交接原句，不選餐點或規劃訂單操作。',
+          COVERED: '正向詢問某品名／分類有哪些、有沒有、種類或款式，或想瀏覽某分類；首次指定或切換分類也是查詢對象，不是額外食物偏好。也包含單份售價、價格邊界／區間／排序與沿用條件換批。沒有額外飲食或排除要求；價格交獨立問題判定。',
           UNSUPPORTED_FILTER: '至少一項要求營養數據、過敏安全保證、更嚴格素別、其他未提供的條件，或條件互相矛盾。不可省略這項要求。',
         },
       }
@@ -535,11 +591,18 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
           return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT', ...trace }
         return await qualifyReplacement()
       }
-      if (typeof coverage.confidence !== 'number' || !Number.isFinite(coverage.confidence) || coverage.confidence < 0.6 || coverage.confidence > 1 || coverage.choice === 'UNCERTAIN')
+      if (typeof coverage.confidence !== 'number' || !Number.isFinite(coverage.confidence) || coverage.confidence < 0 || coverage.confidence > 1)
+        return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
+      // A reliable order request can still have uncertain whole-request
+      // coverage: one proposed mutation may omit a second requested effect.
+      // This grants no single-action authority. Verify the recipient below,
+      // then let Main resolve the original utterance against fresh cart state.
+      const unresolvedOperation = coverage.choice === 'SINGLE' && coverage.confidence < 0.6 && !uncertainPurpose && typeof confidence === 'number' && Number.isFinite(confidence) && confidence >= 0.6 && confidence <= 1
+      if ((coverage.confidence < 0.6 && !unresolvedOperation) || coverage.choice === 'UNCERTAIN')
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
       if (coverage.choice === 'BACKGROUND')
         return { kind: 'IGNORE', confidence: coverage.confidence, ...trace }
-      if (coverage.choice === 'READ_ONLY' || coverage.choice === 'HANDOFF' || confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1) {
+      if (unresolvedOperation || coverage.choice === 'READ_ONLY' || coverage.choice === 'HANDOFF' || confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1) {
         // Coverage alone is not admission: mentioning a complete replacement
         // to a companion must not promote a weak route into an Agent task.
         // Isolate the literal utterance so cart/history cannot imply consent.

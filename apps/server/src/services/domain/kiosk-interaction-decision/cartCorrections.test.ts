@@ -22,6 +22,52 @@ const state: KioskDecisionState = {
 }
 
 describe('whole-request coverage for cart changes', () => {
+  // Report: attachment 44310a20-ae6f-4e32-84e9-3b36bf0c5298, this chat, 2026-10-20.
+  it.each([
+    { route: 0.4, purpose: 0.8458, coverage: 0.3983 },
+    { route: 0.7289, purpose: 0.4, coverage: 0.3983 },
+    { route: 0.7289, purpose: 0.8458, coverage: Number.NaN },
+    { route: 0.7289, purpose: 0.8458, coverage: -0.1 },
+    { route: 0.7289, purpose: 0.8458, coverage: 1.1 },
+  ])('does not promote unqualified compound-operation evidence: $route/$purpose/$coverage', async ({ route, purpose, coverage }) => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'intent:add-item', confidence: route } } }
+      if (questions.requestPurpose)
+        return { answers: { requestPurpose: { choice: 'OPERATION', confidence: purpose } } }
+      return { answers: { cartRequest: { choice: 'SINGLE', confidence: coverage } } }
+    })
+    const result = await decideInteraction({ transcript: '水餃改一份好了 然後我要再一碗牛肉麵', candidates, decisionState: state, policy, invoke })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).not.toHaveProperty('actionId')
+    expect(invoke).toHaveBeenCalledTimes(Number.isFinite(coverage) && coverage >= 0 && coverage <= 1 ? 4 : 3)
+  })
+
+  it.each([
+    { service: 'REQUEST', serviceConfidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { service: 'BACKGROUND', serviceConfidence: 0.95, kind: 'IGNORE' },
+    { service: 'REQUEST', serviceConfidence: 0.4, kind: 'UNAVAILABLE' },
+    { service: 'UNCERTAIN', serviceConfidence: 0.95, kind: 'UNAVAILABLE' },
+  ])('preserves the reported quantity change plus addition without executing half: $service/$serviceConfidence', async ({ service, serviceConfidence, kind }) => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'intent:add-item', confidence: 0.7289 } } }
+      if (questions.requestPurpose)
+        return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.8458 } } }
+      if (questions.cartRequest)
+        return { answers: { cartRequest: { choice: 'SINGLE', confidence: 0.3983 } } }
+      return { answers: { service: { choice: service, confidence: serviceConfidence } } }
+    })
+    const result = await decideInteraction({ transcript: '水餃改一份好了 然後我要再一碗牛肉麵', candidates, decisionState: { ...state, waitingFor: { questionId: 'F1', purpose: 'fulfillment', question: '請問要內用還是自取？', expiresAt: Date.now() + 30_000, choices: [] } }, policy, invoke, includeTrace: true })
+    expect(result.kind).toBe(kind)
+    if (kind === 'NEEDS_ASSISTANT')
+      expect(result).toHaveProperty('reason', 'UNCERTAIN_OPERATION')
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('answeredQuestionId')
+    expect(result).not.toHaveProperty('supersededQuestionId')
+    expect(invoke).toHaveBeenCalledTimes(4)
+  })
+
   it.each([
     { choice: 'OTHER', confidence: 0.95, kind: 'IGNORE' },
     { choice: 'KIOSK', confidence: 0.95, kind: 'UNAVAILABLE' },
@@ -147,9 +193,9 @@ describe('whole-request coverage for cart changes', () => {
     { recipient: 'OTHER', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.95, kind: 'IGNORE' },
     { recipient: 'KIOSK', recipientConfidence: 0.4, replacement: 'REPLACE', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
     { recipient: 'UNCERTAIN', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
-    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'OTHER', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'OTHER', replacementConfidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'UNCERTAIN', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
-    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.59, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: 0.59, kind: 'NEEDS_ASSISTANT' },
     { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'REPLACE', replacementConfidence: Number.NaN, kind: 'UNAVAILABLE' },
     { recipient: 'KIOSK', recipientConfidence: 0.95, replacement: 'invented', replacementConfidence: 0.95, kind: 'UNAVAILABLE' },
   ])('keeps weak replacement recovery bounded: $recipient/$recipientConfidence/$replacement/$replacementConfidence', async ({ recipient, recipientConfidence, replacement, replacementConfidence, kind }) => {

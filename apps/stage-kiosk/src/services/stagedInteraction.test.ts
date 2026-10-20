@@ -20,6 +20,20 @@ import { createInvitationWindow, presentedQuestionFrom } from './questionPresent
 const merchantMenu: MenuItem[] = sourceMenu.items.map(item => ({ id: item.id, name: item.name, aliases: 'aliases' in item ? item.aliases : [], category: sourceMenu.categories.find(category => category.id === item.categoryId)!.name, price: item.price, imageUrl: item.image, description: item.description, available: item.available, optionGroups: item.optionGroups, recommendationTags: [] }))
 
 describe('staged decision through the actual ordering runtime', () => {
+  // Report: this chat, 2026-10-20; typed 略過 at phone entry must still
+  // execute the browser-owned skip even when visual presence is EMPTY.
+  it('skips optional phone entry with empty presence when the utterance is admitted', async () => {
+    let ready = false
+    const onSkip = vi.fn(() => ready = true)
+    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: onSkip, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const result = await runFastPath({ transcript: '略過', presenceState: 'EMPTY', isEnabled: async () => true, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) }, decide: request => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => questions.service
+      ? { answers: { service: { choice: 'REQUEST', confidence: 0.95 } } }
+      : { answers: { phone: { choice: 'SKIP', confidence: 0.95 } } } }) })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', action: { id: 'intent:skip-customer-entry' } })
+    expect(onSkip).toHaveBeenCalledOnce()
+    expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('phase', 'ordering')
+  })
+
   it('keeps greetings, recommendation and ordering requests at phone entry without executing a meal or a skip', async () => {
     const onCartChange = vi.fn()
     const runtime = createMenuToolRuntime({ orderingReady: () => false, onCustomerEntrySkipped: () => {}, onAction: () => {}, onCartChange, onMenuSelection: () => {} })
@@ -59,6 +73,9 @@ describe('staged decision through the actual ordering runtime', () => {
       const invoke = vi.fn()
         .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } })
         .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:recommend', confidence: 0.4 } } })
+        // The uncertain reply now asks an independent recipient question;
+        // an unknown addressee must retain the invitation without authorizing it.
+        .mockResolvedValueOnce({ answers: { recipient: { choice: 'UNCERTAIN', confidence: 0.95 } } })
         .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.5289 } } })
         .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:recommend', confidence: 0.95 } } })
         .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.99 }, service: { choice: 'REQUEST', confidence: 0.99 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })

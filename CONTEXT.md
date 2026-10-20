@@ -102,8 +102,12 @@ follow-up, or the application identifies disabled Fast Path or a provider/
 decision-transport failure. Activation is checked uncached before any Fast Path
 candidate/direct action. Infrastructure handoff preserves the current session,
 question and completed read receipts; it is not intent or execution authority.
-Semantic `UNAVAILABLE`, `IGNORE`, `INCOMPLETE`, and `CLARIFICATION` retain their
-non-escalating policy. A lost browser mutation receipt never permits automatic
+Valid low-confidence semantic choices relinquish Fast Path before execution.
+After independent recipient admission, the decision becomes `NEEDS_ASSISTANT /
+UNCERTAIN_OPERATION`; Main receives the original utterance without inheriting
+the guessed operation or a question answer. Uncertain recipients and malformed
+answers are not semantic admission. Confirmed `IGNORE`, `INCOMPLETE`, and
+`CLARIFICATION` retain their non-escalating policy. A lost browser mutation receipt never permits automatic
 replay. A related follow-up interrupts only a still-thinking
 Agent; once a browser tool is requested, it waits for the result and is
 reclassified against the latest state.

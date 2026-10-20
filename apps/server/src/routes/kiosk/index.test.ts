@@ -36,6 +36,29 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  // Report: this chat, 2026-10-20 — 水餃一份 啊 我不要了 on the phone-entry page.
+  it('preserves a retracted order for Main without requiring a menu read or exposing phone/order mutations', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '好的，這份水餃先不點。' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const tools = ['menu_get', 'customer_skip_phone', 'order_add_item', 'checkout_start'].map(name => ({ type: 'function', function: { name, description: name, parameters: { type: 'object', properties: {} } } }))
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '水餃一份 啊 我不要了', decisionState: { phase: 'customer_entry', readOnly: true }, tools }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ answer: '好的，這份水餃先不點。', toolCalls: [] })
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({
+      tools: tools.slice(0, 1),
+      messages: expect.arrayContaining([
+        expect.objectContaining({ role: 'user', content: '水餃一份 啊 我不要了' }),
+        expect.objectContaining({ role: 'system', content: expect.stringContaining('沒有剩餘操作就簡短確認先不點') }),
+      ]),
+    }) }))
+    expect(complete.mock.calls[0]![0].body).not.toHaveProperty('tool_choice', 'required')
+  })
+
   // Report: this chat, query-action voice clarification, 2026-10-19.
   it.each([false, true])('finishes a query clarification without another provider call (stream=%s)', async (stream) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
@@ -157,6 +180,42 @@ describe('kiosk routes', () => {
     expect(await (await app.request('/api/kiosk/interaction-decisions/status', { headers })).json()).toEqual({ enabled: false })
     const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '有水餃嗎', candidates: [] }) })
     expect(await response.json()).toEqual({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
+  })
+
+  // Report: this chat, 2026-10-20; REQUEST0.7406 / SKIP0.4977.
+  it.each([
+    { choice: 'SKIP_PHONE', segmented: false },
+    { choice: 'SKIP_PHONE', segmented: true },
+    { choice: 'KEEP_PHONE', segmented: false },
+    { choice: 'UNCERTAIN', segmented: false },
+  ])('resolves a weak phone skip with Main without exposing browser tools: $choice/segmented=$segmented', async ({ choice, segmented }) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_phone_choice', arguments: JSON.stringify({ choice }) } }] } }] }))
+    const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: async (_state: string, questions: Record<string, unknown>) => questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.7406 } } } : { answers: { phone: { choice: 'SKIP', confidence: 0.4977 } } } }
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '略過', segmented, includeTrace: true, candidates: [{ id: 'intent:skip-customer-entry', description: '略過電話', requiresHighConfidence: true }], decisionState: { phase: 'customer_entry' } }) })
+    expect(response.status).toBe(200)
+    let payload = await response.json()
+    for (let step = 0; step < 3; step++) {
+      if (!payload || typeof payload !== 'object' || !('kind' in payload) || payload.kind !== 'DECISION_PROGRESS' || !('continuationId' in payload))
+        break
+      const next = await app.request(`/api/kiosk/interaction-decisions/${String(payload.continuationId)}`, { method: 'POST', headers, body: '{}' })
+      expect(next.status).toBe(200)
+      payload = await next.json()
+    }
+    expect(payload).toHaveProperty('trace.phoneResolution.choice', choice)
+    if (choice === 'SKIP_PHONE') {
+      expect(payload).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:skip-customer-entry' })
+      expect(payload).not.toHaveProperty('confidence')
+    }
+    else {
+      expect(payload).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+      expect(payload).not.toHaveProperty('actionId')
+    }
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete.mock.calls[0]![0].body).toHaveProperty('tools', [expect.objectContaining({ function: expect.objectContaining({ name: 'resolve_phone_choice' }) })])
+    expect(JSON.stringify(complete.mock.calls[0]![0].body)).not.toContain('0.4977')
   })
 
   it('accepts the optional phone-entry screen and forwards its skip candidate to Jev', async () => {

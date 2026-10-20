@@ -5,6 +5,29 @@ import { describe, expect, it, vi } from 'vitest'
 import { decideInteraction } from '.'
 
 describe('optional phone entry routing', () => {
+  it.each([Number.NaN, -0.1, 1.1])('rejects malformed phone confidence rather than admitting an uncertain request: %s', async (confidence) => {
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => questions.service
+      ? { answers: { service: { choice: 'REQUEST', confidence: 0.8808 } } }
+      : { answers: { phone: { choice: 'SKIP', confidence } } })
+    const result = await decideInteraction({ transcript: '水餃一份 啊 我不要了', candidates: [], decisionState: { phase: 'customer_entry' }, policy: { decisionInstruction: '', storeInstruction: '' }, invoke })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).not.toHaveProperty('actionId')
+  })
+
+  // Report: this chat, 2026-10-20 — recorded phone-page REQUEST0.8808 / ORDER0.3861.
+  it.each(['ORDER', 'SKIP', 'ENTER', 'ASK', 'MENU'])('hands uncertain %s meaning to Main without choosing phone entry or placing an order', async (choice) => {
+    const transcript = '水餃一份 啊 我不要了'
+    const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => questions.service
+      ? { answers: { service: { choice: 'REQUEST', confidence: 0.8808 } } }
+      : { answers: { phone: { choice, confidence: 0.3861 } } })
+    const result = await decideInteraction({ transcript, candidates: [{ id: 'intent:skip-customer-entry', description: '略過電話', requiresHighConfidence: true }], decisionState: { phase: 'customer_entry' }, policy: { decisionInstruction: '', storeInstruction: '' }, invoke, includeTrace: true })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('answeredQuestionId')
+    expect(result).toHaveProperty('trace.transcript', transcript)
+    expect(invoke).toHaveBeenCalledTimes(2)
+  })
+
   it.each([
     { choice: 'RANGE', confidence: 0.95, reason: 'MENU_QUERY', expectedChoice: 'RANGE' },
     { choice: 'UNSUPPORTED', confidence: 0.95, reason: 'UNSUPPORTED_PRICE', expectedChoice: 'UNSUPPORTED' },

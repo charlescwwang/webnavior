@@ -362,8 +362,11 @@ The Agent does not reconstruct this state from conversational prose.
 `query`/`queries` identify concrete meal names or name fragments, including a
 real name absent from the catalog. Relative requests such as other items are
 query actions, not literal product names. `menu_get(display:false)` remains an
-internal evidence read; broad customer-facing exploration uses explicit query
-actions. Uncertain intent/scope uses `clarify`, while a clear new browsing
+internal evidence read; customer-facing category browsing also uses explicit
+query actions, for example `menu_recommend({ action: 'update', category: '便當' })`.
+`menu_get({ category: '便當', display: true })` is rejected: its category field
+is for internal reads, while displayed `menu_get` results require a concrete
+meal query. Uncertain intent/scope uses `clarify`, while a clear new browsing
 request may use `reset`. No additional choice card is created. On exhaustion,
 continuation asks whether to change the price range or food type and retains
 the last presentation. It does not relax conditions or recycle the same batch.

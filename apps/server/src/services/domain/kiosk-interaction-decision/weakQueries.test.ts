@@ -32,15 +32,15 @@ describe('weak menu-query route recovery', () => {
   it.each([
     { speech: '有雞腿飯嗎？', choice: 'QUERY', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { speech: '咖哩飯有哪些？', choice: 'QUERY', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
-    { speech: '我要魚排便當一份', choice: 'OTHER', confidence: 0.95, kind: 'UNAVAILABLE' },
-    { speech: '有魚排便當就幫我加一份', choice: 'OTHER', confidence: 0.95, kind: 'UNAVAILABLE' },
-    { speech: '外面下雨嗎？', choice: 'OTHER', confidence: 0.95, kind: 'UNAVAILABLE' },
-    { speech: '有沒有……', choice: 'UNCERTAIN', confidence: 0.95, kind: 'UNAVAILABLE' },
-    { speech: '有魚排便當？', choice: 'QUERY', confidence: 0.59, kind: 'UNAVAILABLE' },
+    { speech: '我要魚排便當一份', choice: 'OTHER', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { speech: '有魚排便當就幫我加一份', choice: 'OTHER', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { speech: '外面下雨嗎？', choice: 'OTHER', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { speech: '有沒有……', choice: 'UNCERTAIN', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { speech: '有魚排便當？', choice: 'QUERY', confidence: 0.59, kind: 'NEEDS_ASSISTANT' },
     { speech: '有魚排便當？', choice: 'QUERY', confidence: Number.NaN, kind: 'UNAVAILABLE' },
     { speech: '有魚排便當？', choice: 'QUERY', confidence: 1.1, kind: 'UNAVAILABLE' },
     { speech: '有魚排便當？', choice: 'INVENTED', confidence: 0.95, kind: 'UNAVAILABLE' },
-  ])('bounds inquiry-only recovery for $speech/$choice/$confidence', async ({ speech, choice, confidence, kind }) => {
+  ])('hands unresolved meaning to Main after recipient admission for $speech/$choice/$confidence', async ({ speech, choice, confidence, kind }) => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => questions.route
       ? { answers: { route: { choice: 'NEEDS_ASSISTANT', confidence: 0.3454 } } }
       : questions.recipient

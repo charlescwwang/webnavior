@@ -28,9 +28,9 @@ describe('fulfillment change mistaken for checkout answer diagnosis', () => {
     expect(await replay('intent:start-checkout', 0.4665)).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:set-fulfillment:dine-in' })
   })
 
-  it('reproduces the refusal with no previous dialogue or missing fulfillment candidate', async () => {
+  it('hands the captured uncertain fulfillment meaning to Main without guessing a checkout answer', async () => {
     const result = await replay('intent:start-checkout', 0.4665)
-    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', modelCalls: 2, modelQuestions: 2 })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', modelCalls: 3, modelQuestions: 3 })
     expect(result).toHaveProperty('trace.candidateIntents', expect.arrayContaining([expect.objectContaining({ id: 'intent:set-fulfillment:dine-in' })]))
     expect(result).toHaveProperty('trace.rawAnswer', expect.objectContaining({ choice: 'intent:start-checkout', confidence: 0.4665 }))
     expect(result).toHaveProperty('trace.questionRelation', expect.objectContaining({ choice: 'intent:defer-question', confidence: 0.3911 }))

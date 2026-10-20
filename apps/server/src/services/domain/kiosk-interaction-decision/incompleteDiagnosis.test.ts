@@ -12,6 +12,8 @@ function replay(choice: string, confidence: number, speech = 'REQUEST') {
       return { answers: { route: { choice, confidence } } }
     if (questions.cartRequest)
       return { answers: { cartRequest: { choice: 'UNCERTAIN', confidence: 0.95 } } }
+    if (questions.requestPurpose)
+      return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
     if (questions.service)
       return { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }
     if (questions.speech)
@@ -38,9 +40,9 @@ describe('recorded missing-item complaint recovery', () => {
 
   // Report: /Users/charleswang/.codex/attachments/a6f483f0-f574-4275-81ae-eded7ecf0f71/貼上的文字.txt
   it.each([
-    { choice: 'intent:add-item', confidence: 0.2836, kind: 'UNAVAILABLE' },
+    { choice: 'intent:add-item', confidence: 0.2836, kind: 'NEEDS_ASSISTANT' },
     { choice: 'intent:add-item', confidence: 0.95, kind: 'FAST_ACTION' },
-    { choice: 'NEEDS_ASSISTANT', confidence: 0.2836, kind: 'UNAVAILABLE' },
+    { choice: 'NEEDS_ASSISTANT', confidence: 0.2836, kind: 'NEEDS_ASSISTANT' },
     { choice: 'NEEDS_ASSISTANT', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { choice: 'INCOMPLETE', confidence: 0.2836, kind: 'NEEDS_ASSISTANT' },
   ])('compares admission for the same complaint through $choice at confidence $confidence', async ({ choice, confidence, kind }) => {
@@ -52,8 +54,8 @@ describe('recorded missing-item complaint recovery', () => {
       invoke: replay(choice, confidence),
     })
     expect(result.kind).toBe(kind)
-    expect(result.modelCalls).toBe(choice === 'INCOMPLETE' ? 3 : choice === 'NEEDS_ASSISTANT' && confidence < 0.6 ? 2 : 1)
-    expect(result.modelQuestions).toBe(choice === 'INCOMPLETE' ? 3 : choice === 'NEEDS_ASSISTANT' && confidence < 0.6 ? 2 : 1)
+    expect(result.modelCalls).toBe(choice === 'INCOMPLETE' ? 3 : confidence < 0.6 ? 2 : 1)
+    expect(result.modelQuestions).toBe(choice === 'INCOMPLETE' ? 3 : confidence < 0.6 ? 2 : 1)
     expect(result.answeredQuestionId).toBeUndefined()
     expect(result.supersededQuestionId).toBeUndefined()
     if (result.kind === 'FAST_ACTION')
@@ -62,7 +64,7 @@ describe('recorded missing-item complaint recovery', () => {
 
   it.each([
     { transcript: '牛肉麵沒點到', choice: 'INCOMPLETE', confidence: 0.3286, kind: 'NEEDS_ASSISTANT' },
-    { transcript: '你沒有點到我的牛肉麵', choice: 'intent:add-item', confidence: 0.2836, kind: 'UNAVAILABLE' },
+    { transcript: '你沒有點到我的牛肉麵', choice: 'intent:add-item', confidence: 0.2836, kind: 'NEEDS_ASSISTANT' },
   ])('retains dialogue and the pending fulfillment question while reproducing $transcript', async ({ transcript, choice, confidence, kind }) => {
     const waitingFor = {
       questionId: 'Q1',
@@ -83,7 +85,7 @@ describe('recorded missing-item complaint recovery', () => {
     expect(result.kind).toBe(kind)
     expect(result).toHaveProperty('trace.decisionState', expect.stringContaining('牛肉麵一碗，排骨便當一份'))
     expect(result).toHaveProperty('trace.decisionState', expect.stringContaining('請問要內用還是自取？'))
-    expect(result.modelCalls).toBe(choice === 'INCOMPLETE' ? 3 : 2)
+    expect(result.modelCalls).toBe(choice === 'INCOMPLETE' ? 3 : 4)
     expect(result.answeredQuestionId).toBeUndefined()
     expect(result.supersededQuestionId).toBeUndefined()
   })

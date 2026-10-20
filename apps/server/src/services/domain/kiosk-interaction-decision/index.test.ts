@@ -51,7 +51,7 @@ describe('kiosk System One interaction decision', () => {
       decisionState: { phase: 'ordering' },
     })
     expect(result.kind).toBe('UNAVAILABLE')
-    expect(invoke).toHaveBeenCalledTimes(choice === 'intent:return-menu' ? 1 : 2)
+    expect(invoke).toHaveBeenCalledTimes(2)
     expect(result.supersededQuestionId).toBeUndefined()
   })
   it.each(['NEEDS_ASSISTANT', 'MULTI_ACTION', 'FOLLOW_UP_ACTIVE'])('rejects unreliable %s without consuming the session question', async (choice) => {
@@ -271,7 +271,7 @@ describe('kiosk System One interaction decision', () => {
     })
     const result = await decideInteraction({ transcript: '周氏蝦捲再兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增餐點' }, { id: 'intent:start-checkout', description: '開始結帳' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'q', purpose: 'checkout-entry', question: '要結帳嗎？', choices: [{ id: 'intent:start-checkout', description: '開始結帳' }], expiresAt: Date.now() + 30_000 } } })
     expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
-    expect(invoke).toHaveBeenCalledTimes(2)
+    expect(invoke).toHaveBeenCalledTimes(3)
   })
   it('distinguishes a new request from consent while a concrete confirmation is pending', async () => {
     const invoke = vi.fn(async (_state: string, _questions: Record<string, unknown>) => ({ answers: { route: { choice: 'NEW_REQUEST', confidence: 0.95 } } }))
@@ -414,13 +414,13 @@ describe('kiosk System One interaction decision', () => {
     expect(invoke).toHaveBeenCalledWith(expect.stringContaining('本次已執行結果：查詢成功'), expect.objectContaining({ route: expect.objectContaining({ criteria: { 'SATISFIED': expect.any(String), 'DEVIATED': expect.any(String), 'UNCERTAIN': expect.any(String), 'continue:recommend': '補充推薦' } }) }))
   })
 
-  it('rejects an uncertain operation without a second generic speech classifier', async () => {
+  it('requires recipient admission before handing off an uncertain operation', async () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.speech
       ? { answers: { speech: { choice: 'REQUEST', confidence: 0.9 } } }
       : { answers: { route: { choice: 'intent:add-item', confidence: 0.4 } } })
     const result = await decideInteraction({ candidates: [{ id: 'intent:add-item', description: '新增餐點', requiresHighConfidence: true }], conversation: { messages: [{ role: 'assistant', content: '推薦水餃。' }] }, invoke, policy, transcript: '這個好了' })
     expect(result.kind).toBe('UNAVAILABLE')
-    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledTimes(2)
   })
 
   it('accepts only an action ID from the finite browser-provided candidate set', async () => {

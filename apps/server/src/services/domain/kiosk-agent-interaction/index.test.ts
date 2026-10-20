@@ -24,6 +24,23 @@ it('isolates checkout language from earlier ordering chat without altering the d
 })
 
 describe('kiosk Agent interaction', () => {
+  // Report: this chat, 2026-10-20; live retraction replay read an empty cart
+  // and falsely said the dumplings had been removed.
+  it('distinguishes reading an empty cart from successfully removing an order', () => {
+    const instructions = createInteractionInstructions(defaultKioskAgentInteractionState)
+    expect(instructions).toContain('cart_get 是唯讀查詢')
+    expect(instructions).toContain('只有本輪成功的修改工具回執')
+    expect(instructions).toContain('購物車為空只代表目前沒有餐點')
+  })
+
+  // Report: this chat, 2026-10-20; session pNjTf7VrgOG7-0Gxp7lRZ, entries 19–26.
+  it('routes category presentation through an explicit query update before any tool rejection', () => {
+    const instructions = createInteractionInstructions(defaultKioskAgentInteractionState)
+    expect(instructions).toContain('分類瀏覽不是具體品名查證')
+    expect(instructions).toContain('menu_recommend({action:"update",category:')
+    expect(instructions).toContain('menu_get 的 category 只限 display:false')
+  })
+
   it('waits for the customer after repeated reads without redirecting speech to touch', () => {
     const instructions = createInteractionInstructions({ ...defaultKioskAgentInteractionState, mode: 'touch_preferred', noProgressCount: 3 })
     expect(instructions).toContain('等待顧客')

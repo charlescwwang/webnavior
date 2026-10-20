@@ -13,7 +13,7 @@ describe('question context is not a routing prerequisite', () => {
     { routeConfidence: 0.95, recipient: 'KIOSK', recipientConfidence: 0.95, expected: 'CLARIFICATION' },
     { routeConfidence: 0.95, recipient: 'OTHER', recipientConfidence: 0.95, expected: 'IGNORE' },
     { routeConfidence: 0.95, recipient: 'UNCERTAIN', recipientConfidence: 0.95, expected: 'UNAVAILABLE' },
-    { routeConfidence: 0.4, recipient: 'KIOSK', recipientConfidence: 0.95, expected: 'UNAVAILABLE' },
+    { routeConfidence: 0.4, recipient: 'KIOSK', recipientConfidence: 0.95, expected: 'NEEDS_ASSISTANT' },
     { routeConfidence: 0.95, recipient: 'KIOSK', recipientConfidence: 0.4, expected: 'UNAVAILABLE' },
   ])('clarification speech admission: $routeConfidence/$recipient/$recipientConfidence', async ({ routeConfidence, recipient, recipientConfidence, expected }) => {
     const result = await decideInteraction({ transcript: recipient === 'OTHER' ? '小陳，你說哪一個？' : '你說哪一個？', policy, candidates: [{ id: 'clarify:0', description: '小辣水餃' }, { id: 'clarify:1', description: '不辣水餃' }], decisionState: { phase: 'clarification', waitingFor: { questionId: 'Q1', purpose: 'item-clarification', question: '您指的是小辣水餃還是不辣水餃？', expiresAt: Date.now() + 30_000, choices: [] } }, invoke: async (_state, questions) => ({ answers: { ...(questions.route ? { route: { choice: 'CLARIFICATION', confidence: routeConfidence } } : {}), ...(questions.recipient ? { recipient: { choice: recipient, confidence: recipientConfidence } } : {}) } }) })
@@ -191,6 +191,6 @@ describe('question context is not a routing prerequisite', () => {
     const invoke = vi.fn(async () => ({ answers: { route: { choice: 'CONTINUE_INCOMPLETE', confidence } } }))
     const result = await decideInteraction({ transcript: '水餃', policy, invoke, candidates: [], decisionState: { phase: 'ordering', incompleteSpeech: { transcript: '我要兩份', expiresAt: Date.now() + 3000 } }, includeTrace: true })
     expect(result.kind).toBe(confidence >= 0.6 ? 'CONTINUE_INCOMPLETE' : 'UNAVAILABLE')
-    expect(result.modelQuestions).toBe(1)
+    expect(result.modelQuestions).toBe(confidence >= 0.6 ? 1 : 2)
   })
 })

@@ -5,6 +5,39 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { createCustomerEntryReminder, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyWithQuestion } from './questionPresentation'
 
+// Report: this chat, 2026-10-20 — retracted order while the phone page is still visible.
+it('allows a no-tool acknowledgement for uncertain phone-stage meaning without authorizing any mutation', () => {
+  const state = conversationDecisionStateFrom({ phase: 'customer_entry', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] }, interactionState: { screen: 'customer_entry', matchingCartLines: 0 } }, { reason: 'UNCERTAIN_OPERATION' })
+  expect(state).toHaveProperty('readOnly', true)
+  expect(state).not.toHaveProperty('requireMenuRead')
+  expect(conversationDecisionStateFrom(state)).toHaveProperty('readOnly', true)
+  expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '好的，這份水餃先不點。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, failureMessage: '未完成。' })).toEqual({ role: 'assistant', content: '好的，這份水餃先不點。' })
+})
+
+it.each(['configuration', 'clarification', 'meal_confirmation', 'pending_confirmation', 'checkout_payment_select', 'checkout_payment_pending'])('does not give an uncertain %s handoff authority to answer a question or mutate checkout', (phase) => {
+  const waitingFor = { questionId: 'Q1', purpose: 'confirmation', question: '確認操作嗎？', expiresAt: Date.now() + 30_000, choices: [{ id: 'confirm', description: '確認' }] }
+  const state = conversationDecisionStateFrom({ phase, waitingFor }, { reason: 'UNCERTAIN_OPERATION' })
+  expect(state).toHaveProperty('readOnly', true)
+  expect(state).not.toHaveProperty('requireMenuRead')
+  expect(state).toHaveProperty('waitingFor', waitingFor)
+})
+
+it('retains separate unfinished speech as unverified context instead of merging it into a new order', () => {
+  const fragment = { transcript: '我要兩份……', expiresAt: Date.now() + 3000 }
+  const state = conversationDecisionStateFrom({ phase: 'ordering', incompleteSpeech: fragment }, { reason: 'UNCERTAIN_OPERATION' })
+  expect(state).toHaveProperty('incompleteSpeech', fragment)
+  expect(state?.incompleteSpeech).not.toHaveProperty('related', true)
+  expect(state).not.toHaveProperty('requireMenuRead')
+})
+
+it.each([true, false])('does not inherit checkout consent from an uncertain answer (question live=%s)', (live) => {
+  const waitingFor = { questionId: 'checkout', purpose: 'checkout-entry', question: '開始結帳嗎？', expiresAt: Date.now() + (live ? 30_000 : -30_000), choices: [{ id: 'checkout', description: '開始結帳' }] }
+  const state = conversationDecisionStateFrom({ phase: 'ordering', waitingFor }, { reason: 'UNCERTAIN_OPERATION' })
+  expect(state?.readOnly === true).toBe(live)
+  expect(state).not.toHaveProperty('requireMenuRead')
+  expect(state).toHaveProperty('waitingFor', waitingFor)
+})
+
 // Report: this chat, query-action voice clarification, 2026-10-19.
 it('presents the application-owned query question without a choice panel or dish claims', async () => {
   const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
@@ -104,6 +137,13 @@ describe('question presentation receipts', () => {
     expect(result).toEqual({ role: 'error', content: '查詢失敗。' })
     expect(result.content).not.toContain('韭菜盒')
   })
+  // Report: attachment 44310a20-ae6f-4e32-84e9-3b36bf0c5298, this chat, 2026-10-20.
+  it('keeps the quantity-change plus addition handoff capable of validated order edits', () => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }, { label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } }, { reason: 'UNCERTAIN_OPERATION' })
+    expect(state).not.toHaveProperty('requireMenuRead')
+    expect(state).not.toHaveProperty('readOnly')
+  })
+
   it.each(['MENU_QUERY', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_FILTER', 'UNSUPPORTED_PRICE'] as const)('keeps %s handoffs read-only while retaining ordinary mutation tasks', (reason) => {
     const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [{ label: '便當', matchedText: '便當', itemCount: 5 }] } }, { reason })
     expect(state).toMatchObject({ readOnly: true, requireMenuRead: true })

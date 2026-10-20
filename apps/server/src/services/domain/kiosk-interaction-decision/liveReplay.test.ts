@@ -9,6 +9,57 @@ import { createDecisionStages } from './stages'
 const replayUrl = process.env.KIOSK_SYSTEM_ONE_REPLAY_URL
 const policy = { decisionInstruction: '', storeInstruction: '' }
 
+describe.skipIf(!replayUrl)('live optional phone skip', () => {
+  // Report: this chat, 2026-10-20; REQUEST0.7406 / SKIP0.4977.
+  it('admits 略過 as a direct skip or a whole-request Main handoff', async () => {
+    const result = await decideInteraction({ transcript: '略過', candidates: [{ id: 'intent:skip-customer-entry', description: '顧客明確表示略過、不留電話、不要會員或直接開始點餐；略過自願的電話登記，進入菜單，不新增餐點、不代表登入會員。', requiresHighConfidence: true }], decisionState: { phase: 'customer_entry' }, policy, invoke, includeTrace: true })
+    console.info(JSON.stringify({ phoneSkipReplay: result }))
+    expect(['FAST_ACTION', 'NEEDS_ASSISTANT']).toContain(result.kind)
+    if (result.kind === 'FAST_ACTION')
+      expect(result.actionId).toBe('intent:skip-customer-entry')
+    else
+      expect(result.reason).toBe('UNCERTAIN_OPERATION')
+  }, 60_000)
+})
+
+describe.skipIf(!replayUrl)('live category inquiry regression', () => {
+  // Report: this chat, 2026-10-20 — 「有什麼便當」 with the ordering candidate set.
+  it('admits 有什麼便當 as a read-only category inquiry', async () => {
+    const transcript = '有什麼便當'
+    const result = await decideInteraction({
+      transcript,
+      conversation: { messages: [{ role: 'user', content: '略過' }, { role: 'assistant', content: '已略過手機登記，現在可以直接點餐。' }] },
+      candidates: [
+        { id: 'intent:return-menu', description: '回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。', requiresHighConfidence: true },
+        { id: 'intent:search-menu', description: '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。', requiresHighConfidence: false },
+        { id: 'intent:scroll-menu:up', description: '捲動菜單，顯示目前位置上方、較前段且接近開頭的內容；每次一個可視頁面，保留分類、推薦與購物車。', requiresHighConfidence: true },
+        { id: 'intent:scroll-menu:down', description: '捲動菜單，顯示目前位置下方、較後段且接近結尾的內容；每次一個可視頁面，保留分類、推薦與購物車。', requiresHighConfidence: true },
+      ],
+      decisionState: {
+        phase: 'ordering',
+        catalogEvidence: { products: [], categories: [{ label: '便當', matchedText: '便當', itemCount: 5 }] },
+        productResolution: { status: 'none', count: 0, references: [] },
+        revisions: { cart: 0, menu: 1, selectedItem: 0, checkout: 2 },
+        menuRevision: 1,
+        fulfillmentModes: [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }],
+        ingredientReferences: [],
+        unavailableConditionReferences: [],
+        dietaryReferences: [],
+        paymentState: 'idle',
+        allowedPaymentMethods: [],
+        references: ['便當分類', '周氏蝦捲招牌便當', '椒麻雞便當', '泰式酸辣魚便當', '炸排骨便當', '打拋豬便當'].map((label, index) => ({ label, refId: index === 0 ? 'CATEGORY_1' : `ITEM_${index}` })),
+        constraints: { exclude: [], include: [] },
+        interactionState: { matchingCartLines: 0, screen: 'menu' },
+      },
+      policy,
+      invoke,
+      includeTrace: true,
+    })
+    console.info(JSON.stringify({ transcript, result }))
+    expect(result, JSON.stringify(result)).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-menu' })
+  }, 60_000)
+})
+
 describe.skipIf(!replayUrl)('live voice clarification recovery', () => {
   it.each([
     { transcript: '我沒聽懂，你是說哪一筆？', expected: 'CLARIFICATION' },

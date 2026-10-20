@@ -18,6 +18,7 @@ import { compactToolResultForModel, createInteractionInstructions, queryClarific
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
 import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
+import { resolvePhoneChoice } from '../../services/domain/kiosk-interaction-decision/phoneResolution'
 import { scopeInstructions, scopeTool } from '../../services/domain/kiosk-interaction-decision/queryScopeContracts'
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
@@ -350,9 +351,27 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       presenceState: result.output.presenceState,
       transcript: result.output.transcript,
     }
+    const decide = async (invoke: typeof decisionInput.invoke) => {
+      const decision = await decideInteraction({ ...decisionInput, invoke })
+      const skip = result.output.candidates.find(candidate => candidate.id === 'intent:skip-customer-entry')
+      if (result.output.review || result.output.decisionState?.phase !== 'customer_entry' || decision.kind !== 'NEEDS_ASSISTANT' || decision.reason !== 'UNCERTAIN_OPERATION' || !skip)
+        return decision
+      const modelName = await options.runtimeModelPolicy.modelFor('chat')
+      if (!modelName)
+        return decision
+      // Main resolves a phase-local semantic choice, not browser tools. Only
+      // an explicit skip rejoins the existing candidate authorization path;
+      // every other proposal retains the original read-only assistant handoff.
+      const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: c.req.raw.signal }))
+      const trace = result.output.includeTrace ? { trace: { ...(decision.trace && typeof decision.trace === 'object' ? decision.trace : {}), phoneResolution: resolution } } : {}
+      if (resolution.choice !== 'SKIP_PHONE')
+        return { ...decision, ...trace }
+      const waitingFor = result.output.decisionState.waitingFor
+      return { kind: 'FAST_ACTION' as const, actionId: skip.id, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(waitingFor?.purpose === 'customer-entry' ? { answeredQuestionId: waitingFor.questionId } : {}), ...trace }
+    }
     return c.json(result.output.segmented
-      ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, checkpoint => decideInteraction({ ...decisionInput, invoke: checkpoint(options.systemOne!.decide) }))
-      : await decideInteraction(decisionInput))
+      ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, checkpoint => decide(checkpoint(options.systemOne!.decide)))
+      : await decide(options.systemOne.decide))
   })
 
   routes.post('/interaction-decisions/:id', async (c) => {
@@ -1128,6 +1147,21 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
  * into one leading message so the same request shape works across providers.
  */
 function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile'>) {
+  let readAuthority: string | undefined
+  if (input.decisionState?.readOnly) {
+    if (!input.decisionState.requireMenuRead)
+      readAuthority = '本輪可以理解原句、確認、釐清與必要的唯讀查詢。不得填寫或略過電話、變更訂單、進入結帳或消耗未確認的操作問題。先理解整句最後仍成立的需求；撤回點餐只需確認先不點，不因提到品名就查詢菜單。前一個判定或待確認提案不是顧客已同意的事實。'
+    else
+      readAuthority = '本輪僅授權查詢菜單資訊，不能新增、刪除、更換餐點、變更用餐方式、回答舊問題或進入結帳。有具體品名時依原名查證，不把其他相近餐點說成顧客問的品項；泛指或更正語句先理解指涉，不能直接當商品關鍵字。'
+  }
+  const fragment = input.decisionState?.incompleteSpeech
+  let fragmentInstructions: string | undefined
+  if (fragment) {
+    if (fragment.related)
+      fragmentInstructions = `本次需求承接的未完成顧客語句（與這一句是同一需求，保留兩段原文，不視為兩筆訂單）：${JSON.stringify(fragment.transcript)}`
+    else
+      fragmentInstructions = `先前未完成的顧客語句（與本句的關聯尚未確認，不能直接合併、補數量或視為另一筆訂單；先理解或釐清）：${JSON.stringify(fragment.transcript)}`
+  }
   return [
     { content: createCharacterInstructions(input.profile.snapshot), title: '角色與店別設定' },
     input.agentInteraction ? { content: createInteractionInstructions(input.agentInteraction, conversationScope(input.decisionState)), title: '本次點餐互動規則' } : undefined,
@@ -1135,13 +1169,13 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? {
           content: [
             `目前 Kiosk 畫面：${input.decisionState.phase}`,
-            input.decisionState.phase === 'customer_entry' ? '目前是自願電話登記頁，不要求會員。顧客可觸控填寫，也可明確略過。顧客要求推薦、換推薦或點餐時，先請他填寫手機或選擇略過；不呼叫推薦／訂購工具，不把這個流程限制說成沒有符合條件的餐點。單純問有沒有、價格或成分仍可用 menu_get 查詢。不得猜填電話或替顧客略過。' : undefined,
+            input.decisionState.phase === 'customer_entry' ? '目前是自願電話登記頁，不要求會員。顧客可觸控填寫，也可明確略過。顧客最後仍要求推薦、換推薦或點餐時，先請他填寫手機或選擇略過；不呼叫推薦／訂購工具，不把這個流程限制說成沒有符合條件的餐點。單純問有沒有、價格或成分仍可用 menu_get 查詢。不得猜填電話或替顧客略過。同一句話後段撤回前段點餐時，以最後意圖回應；沒有剩餘操作就簡短確認先不點，保留電話頁，不查餐點、不新增或移除，也不要求為已撤回的點餐完成電話選擇。' : undefined,
             `本次已解析條件（不得省略或自行放寬）：${JSON.stringify(input.decisionState.constraints ?? { exclude: [] })}`,
             input.decisionState.requireMenuRead ? '本輪是餐點需求：先查菜單再回答。條件不變且尚有下一批時，換其他推薦使用 menu_recommend action:continue；原條件已無其他結果而新範圍不明時，使用 menu_recommend action:clarify 語音釐清，不必先查資料。顧客質疑先前品項不存在或是否真的有時，用 menu_get 的 query／queries 核對具體品名並指定 verifyClaim:true，不以換推薦或請顧客自行看畫面代替。確實介紹錯就明確承認、更正，依回傳品項回答。' : undefined,
-            input.decisionState.readOnly ? '本輪僅授權查詢菜單資訊，不能新增、刪除、更換餐點、變更用餐方式、回答舊問題或進入結帳。有具體品名時依原名查證，不把其他相近餐點說成顧客問的品項；泛指或更正語句先理解指涉，不能直接當商品關鍵字。' : undefined,
+            readAuthority,
             input.decisionState.priceEvidence ? '本句涉及價格。只使用已解析的單份基本售價條件；未解析時先詢問明確單份上限或範圍，不自行猜預算、分配總額或忽略價格。價格以工具真實售價顯示在畫面即可，不必口頭逐項唸價。' : undefined,
             `本次已完成的查詢（不要重複已完成操作）：${JSON.stringify(input.decisionState.completedReads ?? [])}`,
-            input.decisionState.incompleteSpeech?.related ? `本次需求承接的未完成顧客語句（與這一句是同一需求，保留兩段原文，不視為兩筆訂單）：${JSON.stringify(input.decisionState.incompleteSpeech.transcript)}` : undefined,
+            fragmentInstructions,
             `本句提及但目前資料不能驗證的條件主題（提及不一定是要求；若確為要求，不可聲稱已符合）：${JSON.stringify(input.decisionState.unavailableConditionReferences ?? [])}`,
             `POS 目前提供的用餐方式（只能使用這些名稱）：${JSON.stringify(input.decisionState.fulfillmentModes ?? [])}`,
             `付款狀態：${input.decisionState.paymentState ?? 'unknown'}`,

@@ -18,7 +18,8 @@ import { createKioskService } from '../../../server/src/services/domain/kiosk'
 import { decideInteraction } from '../../../server/src/services/domain/kiosk-interaction-decision'
 import { defaultDecisionInstruction } from '../../../server/src/services/domain/kiosk-interaction-decision/prompt'
 import { createEnvelopeCrypto } from '../../../server/src/utils/envelope-crypto'
-import { runFastPath } from './kiosk-fast-path'
+import { conversationDecisionStateFrom, runFastPath } from './kiosk-fast-path'
+import { createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation } from './questionPresentation'
 
 import * as schema from '../../../server/src/schemas'
 
@@ -31,6 +32,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
   let headers: Record<string, string>
   let model: string
   let secret: Buffer | undefined
+  let recordedPhoneSkip = false
   beforeAll(async () => {
     const profile = JSON.parse(await readFile('/tmp/webnavior-main-scope-profile.json', 'utf8'))
     model = profile.model_id
@@ -51,6 +53,8 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
     }
     const db = await mockDB(schema)
     app = createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: gateway, runtimeModelPolicy: { modelFor: async () => model }, systemOne: { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction, storeInstruction: '', updatedAt: null }), decide: async (state, questions) => {
+      if (recordedPhoneSkip)
+        return questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.7406 } } } : { answers: { phone: { choice: 'SKIP', confidence: 0.4977 } } }
       const response = await fetch('http://projev.aikcitri.qzz.io/v1/systemone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, questions }), signal: AbortSignal.timeout(30_000) })
       if (!response.ok)
         throw new Error(`Jev HTTP ${response.status}`)
@@ -61,6 +65,132 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
     headers = { 'Content-Type': 'application/json', 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]! }
   }, 60_000)
   afterAll(() => secret?.fill(0))
+
+  // Report: this chat, 2026-10-20; exercise both reported utterances through
+  // real Jev, Main, task authorization and browser-owned cart state.
+  it.each([
+    { scenario: 'phone retraction', transcript: '水餃一份 啊 我不要了', phone: true, compound: false, skip: false },
+    { scenario: 'ordering retraction', transcript: '水餃一份 啊 我不要了', phone: false, compound: false, skip: false },
+    { scenario: 'quantity plus addition', transcript: '水餃改一份好了 然後我要再一碗牛肉麵', phone: false, compound: true, skip: false },
+    { scenario: 'recorded weak phone skip', transcript: '略過', phone: true, compound: false, skip: true },
+  ])('semantic handoff live acceptance: $scenario', async ({ scenario, transcript, phone, compound, skip }) => {
+    recordedPhoneSkip = skip
+    let ready = !phone
+    let cartItemCount = 0
+    const runtime = createMenuToolRuntime({ menu: [
+      { ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [] },
+      { ...menu[0]!, id: 'noodles', name: '紅燒牛肉麵', aliases: ['牛肉麵'], optionGroups: [] },
+    ], orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onAction: () => {}, onCartChange: cart => cartItemCount = cart.itemCount, onMenuSelection: () => {} })
+    const started = await app.request('/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    expect(started.status).toBe(201)
+    const { session } = await started.json() as { session: { id: string } }
+    if (compound) {
+      const receipt = await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 2 })
+      expect((await app.request(`/visitor-sessions/${session.id}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: JSON.stringify(receipt), metadata: { name: 'order_add_item', decisionRoute: 'fast_path' } }) })).status).toBe(201)
+    }
+    const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+    const began = performance.now()
+    const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(tool.name as MenuToolName, input) }, decide: async (request) => {
+      const response = await app.request('/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ ...request, visitorSessionId: session.id }) })
+      expect(response.status).toBe(200)
+      return await response.json() as KioskInteractionDecision
+    } })
+    const jevMs = Math.round(performance.now() - began)
+    console.info(JSON.stringify({ acceptance: scenario, kind: decision.kind, reason: decision.reason, jevMs }))
+    if (skip) {
+      expect(decision).toMatchObject({ kind: 'FAST_ACTION', action: { id: 'intent:skip-customer-entry' }, result: { customerMessage: '已略過手機登記，現在可以直接點餐。' } })
+      expect(ready).toBe(true)
+      expect(cartItemCount).toBe(0)
+      expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('phase', 'ordering')
+      return
+    }
+    expect(decision.kind).toBe('NEEDS_ASSISTANT')
+    const state = conversationDecisionStateFrom(decision.decisionState, decision)!
+    if (decision.reason === 'UNCERTAIN_OPERATION')
+      expect(state.requireMenuRead).not.toBe(true)
+    if (phone && decision.reason === 'UNCERTAIN_OPERATION')
+      expect(state.readOnly).toBe(true)
+    const taskId = `acceptance-${scenario}`
+    expect(await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId, transcript, expectedMenuRevision: state.menuRevision, readOnly: state.readOnly === true, constraints: {} })).not.toHaveProperty('ok', false)
+    const agentTools = tools.filter(tool => !tool.name.startsWith('kiosk_')).map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } }))
+    let payload: Record<string, unknown> = { content: transcript, decisionState: state, tools: agentTools }
+    const calls: string[] = []
+    const receipts = createMenuReplyWindow()
+    let outcome: string | undefined
+    let question: ReturnType<typeof questionReceiptFrom>
+    let answer: string | undefined
+    let complete = false
+    for (let round = 0; round < 5; round++) {
+      const response = await app.request(`/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify(payload) })
+      expect(response.status).toBe(200)
+      const reply = await response.json() as { answer?: string, toolCalls: Array<{ id: string, function: { name: string, arguments: string } }> }
+      answer = reply.answer
+      if (!reply.toolCalls.length) {
+        complete = true
+        break
+      }
+      const results = []
+      for (const call of reply.toolCalls) {
+        calls.push(call.function.name)
+        const receipt = await runtime.invokeForAgent(call.function.name as MenuToolName, JSON.parse(call.function.arguments))
+        expect(receipt, JSON.stringify({ scenario, call, receipt })).not.toHaveProperty('ok', false)
+        receipts.record(call.function.name, receipt)
+        outcome = operationReplyFrom(receipt) ?? outcome
+        question = questionReceiptFrom(receipt) ?? question
+        results.push({ name: call.function.name, toolCallId: call.id, content: JSON.stringify(receipt) })
+      }
+      payload = { tools: agentTools, toolResults: results, ...(state.readOnly ? { decisionState: state } : {}) }
+    }
+    const phase = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))?.phase
+    const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, requestedTools: calls }, { menu: receipts, outcome, question, requireMenuRead: state.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase, prompt: '請先填寫手機或選擇略過。' } })
+    console.info(JSON.stringify({ acceptance: scenario, calls, answer, presented, jevMs, totalMs: Math.round(performance.now() - began) }))
+    expect(complete).toBe(true)
+    expect(presented.role).toBe('assistant')
+    expect(presented.content).not.toContain('目前可以點')
+    expect(answer).toBeTruthy()
+    expect(answer).not.toContain('目前可以點')
+    if (compound) {
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2, lines: expect.arrayContaining([
+        expect.objectContaining({ itemId: 'dumplings', quantity: 1 }),
+        expect.objectContaining({ itemId: 'noodles', quantity: 1 }),
+      ]) } })
+    }
+    else {
+      expect(calls.every(name => name === 'cart_get')).toBe(true)
+      expect(answer).not.toMatch(/已經?(?:移除|刪除)/u)
+      // Phone entry deliberately forbids cart_get; observe the real runtime's
+      // cart callback without bypassing the prerequisite just for verification.
+      expect(cartItemCount).toBe(0)
+      expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('phase', phone ? 'customer_entry' : 'ordering')
+    }
+    await runtime.invoke('kiosk_agent_task', { action: 'END', taskId })
+  }, 120_000)
+
+  // Report: this chat, 2026-10-20; session pNjTf7VrgOG7-0Gxp7lRZ, entries 19–26.
+  it('presents 有什麼便當 after a read-only handoff without a rejected tool or retry', async () => {
+    const runtime = createMenuToolRuntime({ menu: ['周氏蝦捲招牌便當', '椒麻雞便當', '泰式酸辣魚便當', '炸排骨便當', '打拋豬便當'].map((name, index) => ({ ...menu[0]!, id: `bento-${index}`, name, description: name, category: '便當', aliases: [], optionGroups: [], recommendationTags: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'category-inquiry', transcript: '有什麼便當', expectedMenuRevision: 0, readOnly: true, constraints: {} })
+    const started = await app.request('/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    for (const [kind, content] of [['user_text', '略過'], ['assistant_text', '已略過手機登記，現在可以直接點餐。']])
+      expect((await app.request(`/visitor-sessions/${session.id}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind, content }) })).status).toBe(201)
+    const tools = runtime.toolDefinitions.filter(tool => ['menu_get', 'menu_recommend'].includes(tool.name)).map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } }))
+    const response = await app.request(`/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '有什麼便當', decisionState: { phase: 'ordering', readOnly: true, requireMenuRead: true }, tools }) })
+    expect(response.status).toBe(200)
+    const reply = await response.json() as { toolCalls: Array<{ id: string, function: { name: string, arguments: string } }> }
+    expect(reply.toolCalls).toHaveLength(1)
+    const call = reply.toolCalls[0]!
+    expect(call.function.name).toBe('menu_recommend')
+    expect(JSON.parse(call.function.arguments)).toMatchObject({ action: 'update', category: '便當' })
+    const receipt = await runtime.invokeForAgent(call.function.name as MenuToolName, JSON.parse(call.function.arguments))
+    expect(receipt).not.toHaveProperty('ok', false)
+    expect(receipt).toHaveProperty('presentation.kind', 'recommendation')
+    expect(receipt).toHaveProperty('items', expect.arrayContaining([expect.objectContaining({ category: '便當' })]))
+    const continued = await app.request(`/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ toolResults: [{ name: call.function.name, toolCallId: call.id, content: JSON.stringify(receipt) }], decisionState: { phase: 'ordering', readOnly: true, requireMenuRead: true }, tools }) })
+    expect(continued.status).toBe(200)
+    expect(await continued.json()).toHaveProperty('toolCalls', [])
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  }, 90_000)
 
   describe('production scope flow', () => {
     // Report: this chat, session IRWWpQr2aQ0m67i1M_0yi entries29–38, 2026-10-19.

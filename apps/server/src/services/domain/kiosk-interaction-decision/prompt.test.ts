@@ -49,6 +49,8 @@ describe('system One service request boundary', () => {
     const result = await decideInteraction({ transcript: '你是誰', candidates: [], decisionState: { phase: 'ordering' }, policy: { decisionInstruction: '', storeInstruction: '' }, invoke })
     if (confidence === 0.95)
       expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION' })
+    else if (confidence === 0.4)
+      expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
     else
       expect(result).toMatchObject({ kind: 'UNAVAILABLE' })
     expect(result).not.toHaveProperty('actionId')

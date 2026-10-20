@@ -97,14 +97,21 @@ safety limit, not a normal request count. Pending questions cannot remove
 state-valid explicit new actions; implicit meal mutations still need real target
 or slot evidence, so a bare acknowledgment cannot repeat an order. A concrete
 answer requires numeric confidence >= 0.6; a weak initial question-related route
-may reach this check rather than being rejected first. Uncertain answers return
-UNAVAILABLE without consuming the question, executing even a guessed deferral,
-or escalating the guess to Agent. Initial `NEEDS_ASSISTANT`, `MULTI_ACTION`, and
-`FOLLOW_UP_ACTIVE` routes also require finite numeric confidence in [0.6, 1].
-An unreliable handoff returns `UNAVAILABLE` / `UNCERTAIN_OPERATION` before
-superseding an invitation; dialogue, waiting questions and session state remain
-intact. Existing action thresholds and already-admitted read-result review stay
-unchanged. Confidence is not a separate proof of task relevance.
+may reach this check rather than being rejected first. Before browser execution,
+one final policy separates valid semantic uncertainty from malformed answers.
+An uncertain finite choice may become `NEEDS_ASSISTANT / UNCERTAIN_OPERATION`
+only after an independently reliable recipient decision. An existing recipient
+decision is reused; an unknown recipient is not repeatedly reclassified. If no
+recipient check has run, one bounded check may use the remaining question budget.
+Confirmed background and genuinely unfinished speech retain their normal paths.
+Uncertain recipient, invalid confidence/choice and exhausted budget grant no
+new authority. Handoff never consumes a question, supersedes an invitation, or
+executes the guessed operation. Weak action proposals also relinquish Fast Path.
+Main receives the original utterance; merely matching a meal name does not force
+a menu lookup. Confirmation/configuration/checkout uncertainty is read-only;
+ordinary ordering still validates each Main tool against fresh browser state.
+Already-executed reads and lost mutation receipts retain their separate recovery
+protocols. Confidence is not a separate proof of task relevance.
 These scores are not calibrated correctness rates. The browser owns live revisions,
 phase checks and one-use high-risk confirmation.
 
@@ -145,7 +152,11 @@ exchanges record the coverage check. A recovered pure query re-enters normal
 SEARCH_MENU filter/price validation; it cannot open a quantity draft. A recovered
 query or replacement/weak-route handoff additionally
 verifies recipient using the isolated utterance, so companion speech cannot be
-promoted merely because it describes a valid change. Uncertain coverage or
+promoted merely because it describes a valid change. When the original route and
+operation purpose are reliable but `SINGLE` coverage is uncertain, an independent
+recipient check may hand the complete utterance to Main as `UNCERTAIN_OPERATION`.
+This handoff grants no Fast Path mutation; Main must resolve and validate each
+effect, including quantity changes combined with additions. Uncertain coverage or
 recipient preserves the cart and pending fulfillment question. Thresholds are
 unchanged. A weak purpose answer grants no authority and does not override
 independently reliable original-route and whole-effect checks. A weak route
@@ -231,6 +242,17 @@ return `CUSTOMER_ENTRY_REQUIRED` for a fixed host reminder to fill or skip first
 they do not start the Agent or authorize a browser operation. Factual menu
 questions remain `MENU_QUERY` handoffs, while identity/phone FAQs stay ordinary
 dialogue. An entry prerequisite must never be described as an empty menu.
+After a reliable `REQUEST` recipient decision, an uncertain finite phone choice
+is independently resolved by Main using only `SKIP_PHONE`, `KEEP_PHONE` or
+`UNCERTAIN`, without exposing browser tools or the weak Jev proposal. Only
+`SKIP_PHONE` rejoins the current browser-issued skip candidate and its normal
+authorization/execution path. Other or malformed proposals preserve the
+`UNCERTAIN_OPERATION` handoff with read-only conversation authority and no
+required menu lookup. Same-utterance order retractions follow the final intent
+and may be acknowledged without a tool. The optional trace's `phoneResolution`
+records the separate Main choice and duration; `modelCalls`/`modelQuestions`
+continue to count the Jev checkpoints, without inventing a Main confidence score.
+Uncertain recipients and malformed provider answers still fail closed.
 Factual price queries at phone entry resolve the same browser-issued price
 interpretations as ordering reads before their `MENU_QUERY` handoff. Uncertain or
 unsupported bounds remain guarded clarification, never an unfiltered menu reply.

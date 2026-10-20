@@ -70,13 +70,14 @@ describe('finite answers to the current question', () => {
     { choice: 'UNCERTAIN', confidence: 0.95 },
     { choice: 'BACKGROUND', confidence: 0.4 },
     { choice: 'intent:recommend', confidence: undefined },
-  ])('retains an unresolved invitation for $choice / $confidence without Agent fallback', async (reply) => {
+  ])('retains an unresolved invitation for $choice / $confidence without treating Main handoff as a confirmed answer', async (reply) => {
     const waitingFor = createRecommendationInvitation('I1', Date.now())
     const invoke = vi.fn()
       .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, route: { choice: 'intent:recommend', confidence: 0.95 } } })
       .mockResolvedValueOnce({ answers: { relation: reply } })
+      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '嗯', policy, invoke, includeTrace: true, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor } })
-    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', modelCalls: 2 })
+    expect(result).toMatchObject({ kind: reply.confidence === undefined ? 'UNAVAILABLE' : 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', modelCalls: reply.confidence === undefined ? 2 : 3 })
     expect(result.answeredQuestionId).toBeUndefined()
     expect(result.supersededQuestionId).toBeUndefined()
     expect(waitingFor.questionId).toBe('I1')

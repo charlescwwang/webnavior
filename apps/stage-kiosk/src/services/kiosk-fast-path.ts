@@ -499,16 +499,24 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // because literal catalog matching found nothing. General service questions
   // have an explicit reason; preserved task hints survive projection.
   const unclassifiedHandoff = Boolean(decision) && decision?.reason === undefined
-  const requireMenuRead = state.requireMenuRead === true || unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && (hasMealEvidence || unclassifiedHandoff))
+  const uncertainMeaning = decision?.reason === 'UNCERTAIN_OPERATION'
+  // A semantic abstention is not a menu query. Named meals may belong to a
+  // withdrawn order or a compound edit, so Main must understand the whole turn
+  // before deciding whether a factual lookup is needed.
+  const requireMenuRead = !uncertainMeaning && (state.requireMenuRead === true || unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && (hasMealEvidence || unclassifiedHandoff)))
   // Filter/price uncertainty permits clarification and factual lookup, never
   // a partial order edit. Keep that restriction through Agent continuations.
-  const readOnly = ['MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
+  // An uncertain phone choice grants conversation/read authority, never a
+  // guessed skip, entered phone number or order. It need not query the menu.
+  const pendingCheckout = state.waitingFor?.purpose === 'checkout-entry' && state.waitingFor.expiresAt > Date.now()
+  const protectedUncertainty = uncertainMeaning && (state.phase !== 'ordering' || pendingCheckout)
+  const readOnly = protectedUncertainty || ['MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
     phase: state.phase,
     ...(requireMenuRead ? { requireMenuRead: true } : {}),
     ...(readOnly || state.readOnly === true ? { readOnly: true } : {}),
     ...(state.priceEvidence ? { priceEvidence: state.priceEvidence } : {}),
-    ...(state.incompleteSpeech?.related ? { incompleteSpeech: state.incompleteSpeech } : {}),
+    ...((state.incompleteSpeech?.related || (uncertainMeaning && state.incompleteSpeech)) ? { incompleteSpeech: state.incompleteSpeech } : {}),
     ...(state.menuRevision !== undefined ? { menuRevision: state.menuRevision } : {}),
     ...(state.constraints ? { constraints: state.constraints } : {}),
     ...(state.completedReads ? { completedReads: state.completedReads } : {}),

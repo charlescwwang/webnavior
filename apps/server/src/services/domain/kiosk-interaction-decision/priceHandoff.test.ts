@@ -55,9 +55,9 @@ describe('price-qualified menu handoffs', () => {
   it.each([
     { recipient: 'KIOSK', inquiry: 'QUERY', inquiryConfidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { recipient: 'OTHER', inquiry: 'QUERY', inquiryConfidence: 0.95, kind: 'IGNORE' },
-    { recipient: 'KIOSK', inquiry: 'OTHER', inquiryConfidence: 0.95, kind: 'UNAVAILABLE' },
-    { recipient: 'KIOSK', inquiry: 'UNCERTAIN', inquiryConfidence: 0.95, kind: 'UNAVAILABLE' },
-    { recipient: 'KIOSK', inquiry: 'QUERY', inquiryConfidence: 0.4, kind: 'UNAVAILABLE' },
+    { recipient: 'KIOSK', inquiry: 'OTHER', inquiryConfidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { recipient: 'KIOSK', inquiry: 'UNCERTAIN', inquiryConfidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { recipient: 'KIOSK', inquiry: 'QUERY', inquiryConfidence: 0.4, kind: 'NEEDS_ASSISTANT' },
   ].flatMap(scenario => ['intent:search-menu', 'intent:recommend', 'intent:recommend-more'].map(route => ({ ...scenario, route }))))('independently verifies weak $route before read-only handoff: $recipient/$inquiry/$inquiryConfidence', async ({ recipient, inquiry, inquiryConfidence, kind, route }) => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
       const answers: Record<string, unknown> = {}
@@ -76,13 +76,16 @@ describe('price-qualified menu handoffs', () => {
     const result = await decideInteraction({ transcript: '120以下有什麼？', policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true, invoke, candidates: [{ id: 'intent:search-menu', description: '查詢菜單' }, { id: 'intent:recommend', description: '推薦餐點' }, { id: 'intent:recommend-more', description: '換批推薦' }], decisionState: { phase: 'ordering', priceEvidence, constraints: { exclude: [], include: [], unresolvedPrice: true } } })
     expect(result.kind).toBe(kind)
     expect(result).not.toHaveProperty('actionId')
-    if (kind === 'NEEDS_ASSISTANT') {
+    if (kind === 'NEEDS_ASSISTANT' && inquiry === 'QUERY' && inquiryConfidence >= 0.6) {
       expect(result).toMatchObject({ reason: 'MENU_QUERY', priceChoiceId: 'UPPER_INCLUSIVE' })
       expect(invoke.mock.calls.filter(([, questions]) => questions.menuInquiry)).toHaveLength(1)
       expect(invoke.mock.calls.filter(([, questions]) => questions.price)).toHaveLength(1)
     }
     else {
       expect(invoke.mock.calls.filter(([, questions]) => questions.price)).toHaveLength(0)
+      expect(result).not.toHaveProperty('priceChoiceId')
+      if (kind === 'NEEDS_ASSISTANT')
+        expect(result).toHaveProperty('reason', 'UNCERTAIN_OPERATION')
     }
   })
 
