@@ -23,6 +23,11 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  text-console:
+    title: 文字輸入與 Trace
+    reset: 重設位置
+    collapse: 收合
+    expand: 展開
   wait:
     recognizing: 正在辨識您的需求…
     confirming: 正在確認您的需求…

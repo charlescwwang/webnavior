@@ -21,7 +21,7 @@ it('keeps only the simulated ASR input in text mode and forwards its transcript'
     props: { ...props, onSimulateAsr },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: { stage: { message: 'Message' } } } })] },
   })
-  expect(screen.container.querySelectorAll('textarea')).toHaveLength(1)
+  expect(document.querySelectorAll('textarea')).toHaveLength(1)
   expect(screen.container.querySelector('[aria-label="送出訊息"]')).toBeNull()
   await screen.getByRole('textbox').fill('我想吃麵，一碗')
   await screen.getByRole('button', { name: '模擬辨識並執行' }).click()
@@ -30,11 +30,11 @@ it('keeps only the simulated ASR input in text mode and forwards its transcript'
 })
 
 it('keeps voice-only mode free of text inputs', () => {
-  const screen = render(KioskConversation, {
+  render(KioskConversation, {
     props: { ...props, voiceConversationOnly: true },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
-  expect(screen.container.querySelectorAll('textarea')).toHaveLength(0)
+  expect(document.querySelectorAll('textarea')).toHaveLength(0)
 })
 
 afterEach(() => {

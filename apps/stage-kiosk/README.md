@@ -412,6 +412,12 @@ tool execution still checks the browser's live state.
 
 ## Local diagnostic overlays
 
+In text mode, the simulated-ASR input, timing and full decision trace share a
+floating console. Drag its title bar with a mouse or touch, collapse it to keep
+the service visible, or choose **重設位置** to return it to the lower-right corner.
+Collapsing preserves the draft and trace; viewport changes keep the console
+within reach. Voice-only mode does not show this console.
+
 In **Kiosk 現場設定 → 開發診斷**, operators can independently toggle the
 idle-reset and presence diagnostics in the lower-right corner and the decision
 flow inspector in the upper-right corner. All three default to

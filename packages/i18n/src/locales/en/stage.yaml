@@ -23,6 +23,11 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
+  text-console:
+    title: Text input and trace
+    reset: Reset position
+    collapse: Collapse
+    expand: Expand
   wait:
     recognizing: Understanding your request…
     confirming: Checking your request…

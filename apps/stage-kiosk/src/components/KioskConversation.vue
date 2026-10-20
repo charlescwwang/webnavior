@@ -8,9 +8,9 @@ import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import KioskAsrSimulationPanel from './KioskAsrSimulationPanel.vue'
 import KioskAssistantPresence from './KioskAssistantPresence.vue'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
+import KioskTextConsole from './kioskTextConsole.vue'
 
 import { scenarioRegistry } from '../services/scenario-registry'
 import { webMcpAdapter } from '../services/webmcp-adapter'
@@ -150,7 +150,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <p v-if="props.voiceConversationOnly" class="voice-only-notice" role="status">
       請直接對麥克風說話；處理中也能繼續補充。
     </p>
-    <KioskAsrSimulationPanel
+    <KioskTextConsole
       v-else
       :status="props.fastPathSimulationStatus"
       :trace="props.fastPathSimulationTrace"
