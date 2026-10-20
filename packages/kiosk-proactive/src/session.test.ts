@@ -7,8 +7,8 @@ describe('createInteractionWindow', () => {
     const window = createInteractionWindow({ ...defaultProactiveInteractionSettings, enabled: true })
 
     expect(window.decide({ observedAtMs: 0, attendingPeople: 2, presencePeople: 2 })).toMatchObject({ phase: 'observing', reason: 'observing', shouldGreet: false })
-    expect(window.decide({ observedAtMs: 2499, attendingPeople: 2, presencePeople: 2 })).toMatchObject({ phase: 'observing', reason: 'observing', shouldGreet: false })
-    expect(window.decide({ observedAtMs: 2500, attendingPeople: 2, presencePeople: 2 })).toMatchObject({ phase: 'greeted', reason: 'dwell-met', shouldGreet: true })
+    expect(window.decide({ observedAtMs: 299, attendingPeople: 2, presencePeople: 2 })).toMatchObject({ phase: 'observing', reason: 'observing', shouldGreet: false })
+    expect(window.decide({ observedAtMs: 300, attendingPeople: 2, presencePeople: 2 })).toMatchObject({ phase: 'greeted', reason: 'dwell-met', shouldGreet: true })
     expect(window.decide({ observedAtMs: 5000, attendingPeople: 3, presencePeople: 3 })).toMatchObject({ phase: 'greeted', reason: 'already-greeted', shouldGreet: false })
   })
 

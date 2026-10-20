@@ -12,7 +12,7 @@ export const defaultPresenceGreetingPrompt = '現場參考：訪客已進入 kio
 /** Default conservative settings for the CPU kiosk proof of concept. */
 export const defaultProactiveInteractionSettings: ProactiveInteractionSettings = {
   enabled: false,
-  dwellMs: 2500,
+  dwellMs: 300,
   emptyResetMs: 1500,
   minAttendingPeople: 1,
   triggerMode: 'attention',

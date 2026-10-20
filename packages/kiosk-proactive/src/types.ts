@@ -75,7 +75,7 @@ export type ProactiveGreetingTrigger = Exclude<ProactiveTriggerMode, 'mixed'>
 export interface ProactiveInteractionSettings {
   /** Whether the kiosk may begin new proactive interaction windows. @default false */
   enabled: boolean
-  /** Continuous attention needed before a greeting is eligible. @default 2500 */
+  /** Continuous presence or attention needed before a greeting is eligible, in milliseconds. @default 300 */
   dwellMs: number
   /** Continuous absence required before the current anonymous window is reset. @default 1500 */
   emptyResetMs: number

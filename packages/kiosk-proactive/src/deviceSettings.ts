@@ -106,7 +106,7 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   greetingEnabled: false,
   reminderEnabled: false,
   triggerMode: 'attention',
-  dwellMs: 2500,
+  dwellMs: defaultKioskInteractionSettings.proactiveGreeting.dwellMs,
   emptyResetMs: 1500,
   minAttendingPeople: 1,
   reminderWaitMs: 20000,
