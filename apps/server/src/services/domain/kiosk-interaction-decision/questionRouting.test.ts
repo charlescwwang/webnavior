@@ -8,6 +8,19 @@ import { createRecommendationInvitation } from './contracts'
 const policy = { decisionInstruction: '', storeInstruction: '' }
 
 describe('question context is not a routing prerequisite', () => {
+  // Report: this chat, 2026-10-19 — ambient speech must not trigger a voice retry.
+  it.each([
+    { routeConfidence: 0.95, recipient: 'KIOSK', recipientConfidence: 0.95, expected: 'CLARIFICATION' },
+    { routeConfidence: 0.95, recipient: 'OTHER', recipientConfidence: 0.95, expected: 'IGNORE' },
+    { routeConfidence: 0.95, recipient: 'UNCERTAIN', recipientConfidence: 0.95, expected: 'UNAVAILABLE' },
+    { routeConfidence: 0.4, recipient: 'KIOSK', recipientConfidence: 0.95, expected: 'UNAVAILABLE' },
+    { routeConfidence: 0.95, recipient: 'KIOSK', recipientConfidence: 0.4, expected: 'UNAVAILABLE' },
+  ])('clarification speech admission: $routeConfidence/$recipient/$recipientConfidence', async ({ routeConfidence, recipient, recipientConfidence, expected }) => {
+    const result = await decideInteraction({ transcript: recipient === 'OTHER' ? '小陳，你說哪一個？' : '你說哪一個？', policy, candidates: [{ id: 'clarify:0', description: '小辣水餃' }, { id: 'clarify:1', description: '不辣水餃' }], decisionState: { phase: 'clarification', waitingFor: { questionId: 'Q1', purpose: 'item-clarification', question: '您指的是小辣水餃還是不辣水餃？', expiresAt: Date.now() + 30_000, choices: [] } }, invoke: async (_state, questions) => ({ answers: { ...(questions.route ? { route: { choice: 'CLARIFICATION', confidence: routeConfidence } } : {}), ...(questions.recipient ? { recipient: { choice: recipient, confidence: recipientConfidence } } : {}) } }) })
+    expect(result.kind).toBe(expected)
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('answeredQuestionId')
+  })
   it('recovers a mistaken meal-cancellation route when the reply names another dish', async () => {
     const cancel = { id: 'configure:Q1:cancel', description: '取消這筆尚未加入的餐點需求，保留購物車。' }
     const invoke = vi.fn()

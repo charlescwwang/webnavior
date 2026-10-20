@@ -1,6 +1,8 @@
 /** Copy for the standalone ordering runtime, without loading a Vue i18n instance. */
 export const orderingMessages = {
   'zh-Hant': {
+    queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
+    queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
     checkout: {
       returnToOrder: '返回訂單內容，保留餐點',
       donation: '略過，捐贈發票',
@@ -52,7 +54,6 @@ export const orderingMessages = {
     yes: '是',
     no: '不是',
     declined: '好的，先保留原本的點餐進度。',
-    useButtons: '請選擇畫面上的「是」或「不是」。',
     resumed: '接著繼續剛才的餐點。',
     available: '{item}目前可以點。',
     soldOut: '{item}目前售完了。',
@@ -66,6 +67,8 @@ export const orderingMessages = {
     inquiryCorrection: '了解，您是在詢問，沒有要點這道。',
   },
   'en': {
+    queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
+    queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
     checkout: {
       returnToOrder: 'Return to order, keep items',
       donation: 'Skip and donate invoice',
@@ -117,7 +120,6 @@ export const orderingMessages = {
     yes: 'Yes',
     no: 'No',
     declined: 'Okay, your previous ordering progress is saved.',
-    useButtons: 'Please select Yes or No on the screen.',
     resumed: 'Let’s continue your previous item.',
     available: '{item} can currently be selected.',
     soldOut: '{item} is currently sold out.',

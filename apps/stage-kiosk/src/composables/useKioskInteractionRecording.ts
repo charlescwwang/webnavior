@@ -174,6 +174,10 @@ export function useKioskInteractionRecording() {
       if (control.manual)
         return unfinished('manual-control')
       const seenCalls = new Set<string>()
+      // One customer turn owns one displayed recommendation batch. Internal
+      // evidence reads and named comparisons remain available after it; only a
+      // new send() may admit another recommendation, including more:true.
+      let recommendationPresented = false
       let response = await streamKioskConversationMessage({ content, utteranceId: callbacks.utteranceId, ...(callbacks.decisionState ? { decisionState: callbacks.decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
         if (event.type === 'turn-failed')
           transportReason = event.reason
@@ -216,11 +220,35 @@ export function useKioskInteractionRecording() {
             break
           if (signal.aborted)
             return callbacks.signal?.aborted ? undefined : unfinished('timeout')
+          let recommendationRead = ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)
+          if (recommendationPresented && toolCall.function.name === 'menu_get') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments)
+              if (args && typeof args === 'object') {
+                const namedQuery = (typeof args.query === 'string' && args.query.trim()) || (typeof args.category === 'string' && args.category.trim()) || (Array.isArray(args.queries) && args.queries.length > 0)
+                recommendationRead = args.display !== false && !namedQuery
+              }
+            }
+            catch {
+              // Malformed calls still use normal tool validation below.
+            }
+          }
+          if (recommendationPresented && recommendationRead) {
+            // Acknowledge the model's call ID without executing a second batch
+            // or reporting another customer-visible receipt. This also covers
+            // parallel requests already emitted before the tool list shrinks.
+            toolResults.push({ content: JSON.stringify({ ok: true, dataOnly: true, recommendationAlreadyPresented: true }), name: toolCall.function.name, toolCallId: toolCall.id })
+            callbacks.onToolActivity?.(toolCall.function.name, 'done')
+            continue
+          }
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           const content = serializeToolResultContent(result.message.content)
           let rejected = result.completionToolResult.isError
           try {
-            rejected ||= JSON.parse(content)?.ok === false
+            const payload = JSON.parse(content)
+            rejected ||= payload?.ok === false
+            if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)))
+              recommendationPresented = true
           }
           catch {
             // Non-JSON tool prose is allowed by xsAI; only its error bit is
@@ -245,10 +273,24 @@ export function useKioskInteractionRecording() {
         }
         if (signal.aborted)
           return unfinished('timeout')
+        // Scope is unresolved: publish the owned question without another model
+        // continuation that could replace it with a guessed search or answer.
+        const scopeQuestion = toolResults.some((result) => {
+          try {
+            return JSON.parse(result.content)?.pendingCustomerChoice?.purpose === 'menu-query-scope'
+          }
+          catch { return false }
+        })
+        if (scopeQuestion) {
+          for (const result of toolResults)
+            await append('tool_result', result.content, { name: result.name })
+          return { agentMode, requestedTools, status: 'completed' }
+        }
         // Inquiry authority survives its read receipts. Mutation tasks keep the
         // existing first-request-only snapshot: their tools may change checkout
         // phase, so replaying that old snapshot would reintroduce stale state.
-        response = await streamKioskConversationMessage({ signal, toolResults, ...(callbacks.decisionState?.readOnly ? { decisionState: callbacks.decisionState } : {}), tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        const continuationTools = recommendationPresented ? toolDefinitions.filter(tool => !['menu_recommend', 'menu_show_recommendations'].includes(tool.function.name)) : toolDefinitions
+        response = await streamKioskConversationMessage({ signal, toolResults, ...(callbacks.decisionState?.readOnly ? { decisionState: callbacks.decisionState } : {}), tools: continuationTools, visitorSessionId: sessionId }, (event) => {
           if (event.type === 'turn-failed')
             transportReason = event.reason
           if (event.type === 'turn-started')

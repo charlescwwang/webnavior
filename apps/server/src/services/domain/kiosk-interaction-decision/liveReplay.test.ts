@@ -9,6 +9,27 @@ import { createDecisionStages } from './stages'
 const replayUrl = process.env.KIOSK_SYSTEM_ONE_REPLAY_URL
 const policy = { decisionInstruction: '', storeInstruction: '' }
 
+describe.skipIf(!replayUrl)('live voice clarification recovery', () => {
+  it.each([
+    { transcript: '我沒聽懂，你是說哪一筆？', expected: 'CLARIFICATION' },
+    { transcript: '小陳，你是說哪一筆？', expected: 'SILENT' },
+    { transcript: '不辣那一份', expected: 'FAST_ACTION' },
+  ])('keeps the pending target for $transcript: $expected', async ({ transcript, expected }) => {
+    const choices = [{ id: 'clarify:fixture:0', description: '顧客指的是小辣水餃一份。', requiresHighConfidence: true }, { id: 'clarify:fixture:1', description: '顧客指的是不辣水餃一份。', requiresHighConfidence: true }]
+    const result = await decideInteraction({ transcript, candidates: choices, decisionState: { phase: 'clarification', references: [{ refId: 'CART_LINE_1', label: '小辣水餃一份' }, { refId: 'CART_LINE_2', label: '不辣水餃一份' }], waitingFor: { questionId: 'fixture', purpose: 'item-clarification', question: '您指的是小辣水餃一份，還是不辣水餃一份？', expiresAt: Date.now() + 30_000, choices } }, policy, invoke, includeTrace: true })
+    console.info(JSON.stringify({ transcript, result }))
+    if (expected === 'SILENT') {
+      expect(['IGNORE', 'UNAVAILABLE']).toContain(result.kind)
+      expect(result).not.toHaveProperty('answeredQuestionId')
+    }
+    else {
+      expect(result.kind).toBe(expected)
+      if (expected === 'FAST_ACTION')
+        expect(result).toHaveProperty('actionId', 'clarify:fixture:1')
+    }
+  }, 40_000)
+})
+
 describe.skipIf(!replayUrl)('live optional phone entry', () => {
   it.each(['略過', '跳過', '不要留電話'])('accepts %s at the optional phone screen', async (transcript) => {
     const result = await decideInteraction({

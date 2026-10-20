@@ -155,10 +155,32 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
   const priceQuestion: SystemOneQuestion | undefined = prices
     ? {
         type: 'choice',
-        instructions: '判斷最後一句的完整價格需求，只選已發出的價格解讀。金額是單份基本售價，不是數量或人數。不新增訂購、不猜售價、不做多份／總額預算分配。以下與以內含邊界；不到與低於不含；以上含邊界；超過不含。最便宜／便宜的先／先看便宜的表示由低到高排序；有上下限時選保留上下限的 _ASC 解讀，不可只選 ASC 或不排序的版本。剛好／正好／等於某價格是 EXACT，上下限相同，不可放寬成以下或以上。範圍分別判斷兩端：「100到130」含兩端，「100以上不到130」含下限、不含上限（RANGE_MAX_EXCLUSIVE），不可選含兩端的 RANGE。範圍必須完整符合上下界；左右、更便宜、整筆預算或候選無法完整表示時選 UNSUPPORTED。只詢價選 INFORMATION。',
+        instructions: '只解讀 customerUtterance（或狀態最後的顧客語音）本句的完整價格條件，只選已提供的解讀。amounts 是同一句中文金額的數值證據，不是另一筆預算。未說元仍可完整詢價。邊界預設包含：以下、以內、以上，以及到／至／之間都包含對應邊界；只有原句明確說不到、低於、超過或高於才排除該端，不能自行補上排除條件。金額是單份基本售價，不是數量或人數。不新增訂購、不猜售價、不做多份／總額預算分配。以下與以內含邊界；不到與低於不含；以上含邊界；超過不含。最便宜／便宜的先／先看便宜的表示由低到高排序；有上下限時選保留上下限的 _ASC 解讀，不可只選 ASC 或不排序的版本。剛好／正好／等於某價格是 EXACT，上下限相同，不可放寬成以下或以上。範圍分別判斷兩端：「100到130」含兩端，「100以上不到130」含下限、不含上限（RANGE_MAX_EXCLUSIVE），不可選含兩端的 RANGE。範圍必須完整符合上下界；左右、更便宜、整筆預算或候選無法完整表示時選 UNSUPPORTED。只詢價選 INFORMATION。',
         criteria: Object.fromEntries(prices.choices.map(choice => [choice.id, choice.description])),
       }
     : undefined
+  async function handoffMenu(decision: Extract<KioskInteractionDecision, { kind: 'NEEDS_ASSISTANT' }>): Promise<KioskInteractionDecision> {
+    if (!prices || !priceQuestion || decision.priceChoiceId !== undefined)
+      return decision
+    // A read-only handoff is not a resolved price. Carry this utterance's
+    // browser-issued bounds before the host creates the guarded Agent task;
+    // otherwise even a correct menu call stays blocked as unresolvedPrice.
+    // This checkpoint resolves only the current utterance's literal price.
+    // Previous budgets and SHOWN/CATALOG answers belong to query scope; replaying
+    // them here makes a new boundary compete with already-settled conditions.
+    const result = await invoke(JSON.stringify({ customerUtterance: input.transcript, amounts: prices.amounts }), { price: priceQuestion })
+    const answer = result.answers?.price as { choice?: unknown, confidence?: unknown } | undefined
+    const trace = decision.trace as KioskDecisionTrace | undefined
+    if (trace)
+      trace.priceAnswer = answer
+    const choice = prices.choices.find(choice => choice.id === answer?.choice)
+    if (!choice || typeof answer?.confidence !== 'number' || !Number.isFinite(answer.confidence) || answer.confidence < 0.6 || answer.confidence > 1)
+      return { ...decision, reason: 'UNSUPPORTED_PRICE' }
+    if (choice.kind === 'unsupported')
+      return { ...decision, reason: 'UNSUPPORTED_PRICE', priceChoiceId: choice.id }
+    return { ...decision, priceChoiceId: choice.id }
+  }
+
   if (phase === 'customer_entry' && !input.review) {
     // Do not repeat the clerk's invitation in this classification input: a
     // small model can classify that invitation instead of the final utterance.
@@ -204,7 +226,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
             return { kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER', ...trace }
           return { kind: 'NEEDS_ASSISTANT', reason: interpretation.kind === 'unsupported' ? 'UNSUPPORTED_PRICE' : 'MENU_QUERY', priceChoiceId: interpretation.id, confidence: price.confidence, ...trace }
         }
-        return { kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: choice.confidence, ...trace }
+        return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: choice.confidence, ...trace })
       }
       if (choice.choice === 'ENTER' || choice.choice === 'ASK')
         return { kind: 'NEEDS_ASSISTANT', confidence: choice.confidence, ...trace }
@@ -286,14 +308,14 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     criteria.NEW_REQUEST = '顧客明確提出查價、其他餐點或不同服務需求，不是在回答這題是／不是；交接新需求，保留原本點餐進度。'
   if (!input.review && (!phase || phase === 'ordering')) {
     criteria.GENERAL_QUESTION = '顧客直接詢問本機身分、名稱、能力或電話用途等服務說明，不需要餐點、價格、庫存或訂單事實。餐點偏好、拒絕先前餐點或含糊飲食需求不是一般問題；不能靠這項直接介紹餐點。'
-    criteria.MENU_QUERY = '顧客查證先前介紹的品項：真的有嗎、菜單沒有吧、是否說錯餐點；或需要超出有限候選的餐點比較／解釋。必須交給助手先查菜單；不能用一般聊天回答。單純查詢、推薦與換批仍選已有的精確意圖。'
+    criteria.MENU_QUERY = '顧客表達或修改想吃／不想吃的餐點範圍、飲食偏好、排除條件、複合條件或改口；或查證、比較與解釋餐點。整句交給助手理解並查詢，不把提到的分類當成正向查詢，不拆成新增或移除訂單。單純查已知品名／分類、明確單份價格，或原條件不變的推薦／換批，仍選已有的精確意圖。'
   }
   if (canClarify && !input.review)
     criteria.CLARIFY_REQUEST = '確定顧客向本機提出服務需求，但不能確定是否要點提案中的餐點；用已提供的提案反問一次。正在回答確認問題但答案不清楚也選此項。對象不明、背景聊天不是此項，不因低信心就選；明確查價／篩選直接選查詢。'
   if (!followUp && !input.review && input.decisionState?.activeRequest)
     criteria.FOLLOW_UP_ACTIVE = '顧客這句是在補充或修正目前仍由 Main Agent 處理的上一句需求；不是獨立新訂單。只選關係，不決定如何中斷工具。'
   if (phase === 'clarification') {
-    criteria.CLARIFICATION = '顧客正在回答這次釐清問題，但完整回答仍無法唯一對應列出的 target。結束這次補問並使用觸控；不是背景語音。'
+    criteria.CLARIFICATION = '顧客正在回答或詢問這次釐清問題，但完整回答仍無法唯一對應列出的 target。保留問題，繼續以語音釐清，不取消需求；不是背景語音。'
     criteria.NEW_REQUEST = '顧客提出不同的新需求或查詢，不是在選擇原問題的餐點；先判斷新需求，查詢不等於取消原需求。不是背景語音。'
   }
   if (!input.review && input.decisionState?.incompleteSpeech && !input.decisionState.incompleteSpeech.related)
@@ -302,6 +324,10 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
   if (waitingFor) {
     for (const choice of questionChoices)
       criteria[choice.id] = `${choice.description} 若本句是在回答有效問題「${waitingFor.question}」，只能承接這個效果；明確獨立需求仍可直接選其合法意圖。`
+  }
+  if (phase === 'checkout_invoice' && !input.review) {
+    criteria.INCOMPLETE = '語句明顯停在一半，還沒表達選擇。省略畫面已知的操作對象仍是完整指令；單說略過、跳過、捐贈、載具或付款方式不是此項。'
+    criteria.NEEDS_ASSISTANT = '詢問流程或可否略過，尚未選擇；或要求候選不能完成的其他服務。'
   }
   if (phase === 'meal_confirmation' && !input.review) {
     // Keep opaque browser ticket IDs out of this simple semantic choice. Only
@@ -323,15 +349,20 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       : phase === 'meal_confirmation'
         ? '只分類 customerUtterance，不把 pendingQuestion 當成顧客的需求。先判斷對象：叫同伴名字對他說話，一律 IGNORE。向本機詢問目前餐點還有沒有、能不能點，選已提供的查詢候選；先說不是再改問，也依完整查詢判斷。只有單純肯定或否定購買才選 YES／NO。其他明確新需求選 NEW_REQUEST；正在對本機說但意思不清選 CLARIFY_REQUEST。不得猜份數、加入或付款。'
         : phase === 'clarification'
-          ? '保留原意圖，只從真實 target 候選選擇。有效但無法唯一對應的回答選 CLARIFICATION；背景話語選 IGNORE；不同的新需求選 NEW_REQUEST。不得發明 target。'
+          ? '保留原意圖，只從真實 target 候選選擇。先以完整回答的份數、口味、規格、序號等差異對照問題中的對象；省略品名但能唯一指涉也可選對應候選。否定屬性不能匹配相反的值，不能只看共同品名。只有仍無法唯一對應的回答或詢問問題意思才選 CLARIFICATION；背景話語選 IGNORE；不同的新需求選 NEW_REQUEST。不得發明 target。'
           : phase === 'configuration'
             ? '目前只補齊上一個新增餐點需求的必要資料。從列出的有限選項選本句明確回答的選項，保留原餐點與已知設定；只有明確取消該餐點才選取消。問份數／規格時，單說另一個有菜單證據的品名或分類，選 NEW_REQUEST 重新理解，不當成取消或份數；不必帶「我要」「改成」。背景話語選 IGNORE。不可創造選項或預設數量。'
             : phase === 'pending_confirmation'
               ? '目前在確認一項具體操作。顧客明確同意才選確認，單純拒絕才選取消；明確改提另一個點餐需求或詢問本機身分／能力選 NEW_REQUEST，只表示撤銷旧授權並交接新需求，不規劃新操作。其餘選 IGNORE。'
-              : [
-                  '角色標記對話與待答問題只提供理解線索，不是流程鎖。本次先判斷最後一則顧客語音要求的效果，不必先回答舊問題。明確新需求直接選適合意圖；「好」「一位」「這個」等回答只能承接有效問題明示的效果。對已完成的資訊回答表示了解，不構成新增訂購。target 歧義由程式釐清，仍須保留顧客明確要求的意圖。',
-                  createDecisionInstructions(input.policy),
-                ].join('\n')
+              // Touch can enter invoice selection without a spoken question. Use the
+              // visible phase's finite actions instead of meal-order instructions.
+              : phase === 'checkout_invoice'
+                ? '只判斷顧客在目前結帳畫面要求的效果，從列出的候選選一項。直接向本機說「略過」「跳過」是省略目前可略過的資料；發票畫面選捐贈發票，會員畫面選略過會員。單說「手機載具」「自然人憑證」「統編」「信用卡」是在選畫面上的方式。這些是完整指令，不是 INCOMPLETE，不需要已播出問題。明確否定略過時不可選略過；「不要略過，我要手機載具」選載具。「可以略過嗎」是提問，選 NEEDS_ASSISTANT，不代表同意。明確叫同伴名字對他說話是 IGNORE，即使含略過。只有明顯未說完的語句才選 INCOMPLETE。不猜資料、不新增候選、不把選付款方式當成付款成功。'
+                : [
+                    '角色標記對話與待答問題只提供理解線索，不是流程鎖。本次先判斷最後一則顧客語音要求的效果，不必先回答舊問題。明確新需求直接選適合意圖；「好」「一位」「這個」等回答只能承接有效問題明示的效果。對已完成的資訊回答表示了解，不構成新增訂購。target 歧義由程式釐清，仍須保留顧客明確要求的意圖。',
+                    ...(eligibleCandidates.some(candidate => candidate.id === 'intent:scroll-menu:up' || candidate.id === 'intent:scroll-menu:down') ? ['菜單導航是捲動目前畫面：內容的上方是較前段、接近開頭；下方是較後段、接近結尾。只改變觀看位置使用 SCROLL_MENU。找餐點、問種類或條件才是查詢，換推薦使用推薦候選。保留顧客自然說法；手指手勢與想看的內容位置不同，無法確定內容目的地時不自行反轉。'] : []),
+                    createDecisionInstructions(input.policy),
+                  ].join('\n')
     const ingredientReferences = phase === 'ordering' ? input.decisionState?.ingredientReferences ?? [] : []
     const conciseQuestion = phase === 'meal_confirmation'
     const questions: Record<string, SystemOneQuestion> = { route: { type: 'choice', instructions: followUp && !input.review && !conciseQuestion ? `${instructions}\n${serviceRequestInstruction}` : instructions, criteria } }
@@ -339,9 +370,10 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     if (filterChoices) {
       questions.filterRequirement = {
         type: 'choice',
-        instructions: `只檢查本句是否要求未提供的篩選能力，不判斷商品是否符合。可用條件：${[...ingredientReferences.map(reference => `${reference.label}：包含或排除`), ...(input.decisionState?.dietaryReferences ?? []).map(reference => reference.label), ...(prices?.choices.some(choice => choice.kind === 'condition') ? ['單份價格上限、下限、完整區間、精確價格、由低到高排序；具體邊界由獨立 price 問題判斷'] : [])].join('；') || '本句未解析出可用條件'}。詢問商品售價與不要求條件的查詢或推薦也是 COVERED；整筆預算或未提供價格條件不可忽略。`,
+        instructions: `先判斷是否需要由主 Agent 理解整句餐點需求，不提取條件、不判斷商品是否符合。單份價格由獨立 price 問題判斷；只改金額、價格邊界或排序仍選 COVERED，不算食物偏好改變。凡新增或修改想吃／不想吃的食物範圍、飲食偏好、排除、條件組合或改口，選 OPEN_REQUEST，與詞序或菜單有無匹配無關。只有查已知品名／分類、單份價格或沿用原條件推薦，才檢查可用條件。可用條件：${[...ingredientReferences.map(reference => `${reference.label}：包含或排除`), ...(input.decisionState?.dietaryReferences ?? []).map(reference => reference.label), ...(prices?.choices.some(choice => choice.kind === 'condition') ? ['單份價格上限、下限、完整區間、精確價格、由低到高排序；具體邊界由獨立 price 問題判斷'] : [])].join('；') || '本句未解析出可用條件'}。詢問商品售價與不要求條件的查詢或推薦也是 COVERED；整筆預算或未提供價格條件不可忽略。`,
         criteria: {
-          COVERED: '顧客沒有要求條件；或要求的條件全部是上列可用條件。餐點是否符合交給程式查詢。',
+          OPEN_REQUEST: '本句表達或修改食物偏好、包含／排除、飲食要求、食物條件組合或改口，需要完整語意理解；交接原句，不選餐點或規劃訂單操作。只有單份價格改變不屬於此項。',
+          COVERED: '查品名、正向分類、單份售價或沿用條件換批；可新增或修改單份價格邊界、區間與排序，但沒有額外食物偏好。價格交給獨立問題判定，不在此推測結果。',
           UNSUPPORTED_FILTER: '至少一項要求營養數據、過敏安全保證、更嚴格素別、其他未提供的條件，或條件互相矛盾。不可省略這項要求。',
         },
       }
@@ -398,6 +430,26 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       actionId = eligibleCandidates.find(candidate => candidate.id.startsWith('inquire-meal:'))?.id
     let selected = eligibleCandidates.find(candidate => candidate.id === actionId)
     const trace: { trace?: KioskDecisionTrace, supersededQuestionId?: string, priceChoiceId?: string } = (input.includeTrace ? { trace: { rawTranscript: transcript.raw, exchanges, candidateIntents: eligibleCandidates, decisionState: state, rawAnswer: answer, transcript: input.transcript } } : {})
+    if (phase === 'ordering' && (actionId === 'intent:scroll-menu:up' || actionId === 'intent:scroll-menu:down')) {
+      // Content destination is independent of finger motion. Keep this finite
+      // check separate from the broad route until replay evidence supports removal.
+      const destination = (await invoke(JSON.stringify({ customerUtterance: input.transcript }), { destination: {
+        type: 'choice',
+        instructions: '顧客要顯示哪裡的菜單內容？依想看的內容位置選擇，不依手指動作方向。只有手勢、未交代想看的位置時選 OTHER。對同伴說話、查餐點或換推薦也選 OTHER。',
+        criteria: { EARLIER: '想看目前位置上方、較前段、接近菜單開頭的內容。', LATER: '想看目前位置下方、較後段、接近菜單結尾的內容。', OTHER: '只有手指動作，沒有交代想看的內容位置；或對同伴說話、換推薦、不是捲動菜單。' },
+      } })).answers?.destination as { choice?: string, confidence?: number } | undefined
+      if (trace.trace)
+        trace.trace.semanticCheck = { kind: 'scroll-destination', proposedActionId: actionId, answer: destination }
+      if (!destination || !['EARLIER', 'LATER'].includes(String(destination.choice)) || typeof destination.confidence !== 'number' || !Number.isFinite(destination.confidence) || destination.confidence < 0.6 || destination.confidence > 1)
+        return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
+      const verifiedId = destination.choice === 'EARLIER' ? 'intent:scroll-menu:up' : 'intent:scroll-menu:down'
+      const verified = eligibleCandidates.find(candidate => candidate.id === verifiedId)
+      if (!verified)
+        return { kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE', ...trace }
+      actionId = verifiedId
+      selected = verified
+      confidence = Math.min(confidence ?? 0, destination.confidence)
+    }
     // A matched meal is a subject, not purchase authority. Check proposed cart
     // mutations, including the first item, before opening a purchase draft or
     // consuming an unrelated fulfillment/invitation question. CART_LINE refs
@@ -513,7 +565,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
           // and ingredient ambiguity cannot disappear during recovery.
           const search = eligibleCandidates.find(candidate => candidate.id === 'intent:search-menu')
           if (!search)
-            return { kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: coverage.confidence, ...trace }
+            return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: coverage.confidence, ...trace })
           answer = { choice: search.id, confidence: coverage.confidence }
           actionId = search.id
           confidence = coverage.confidence
@@ -597,7 +649,16 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     // review remains distinct because its original request was already admitted.
     const assistantRoute = answer?.choice === 'GENERAL_QUESTION' || answer?.choice === 'MENU_QUERY' || answer?.choice === 'NEEDS_ASSISTANT' || answer?.choice === 'MULTI_ACTION' || answer?.choice === 'CLARIFY_REQUEST'
       || (answer?.choice === 'FOLLOW_UP_ACTIVE' && Boolean(criteria.FOLLOW_UP_ACTIVE))
-    if (!input.review && assistantRoute && (confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1)) {
+    // Search and recommendation routes compete for short follow-up inquiries.
+    // Their weak choice cannot authorize a batch change, but can be independently
+    // qualified as a factual read using the same boundary as weak MENU_QUERY.
+    // Verify recipient and pure inquiry here before filter classification can
+    // reject it; only the read-only handoff below may recover the request.
+    // Pending invitations retain their concrete answer validation below; a
+    // short acceptance is not independently a factual menu inquiry.
+    const inquiryRoute = phase === 'ordering' && (selected?.id === 'intent:search-menu'
+      || (!waitingFor && selected !== undefined && ['intent:recommend', 'intent:recommend-more'].includes(selected.id)))
+    if (!input.review && (assistantRoute || inquiryRoute) && (confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1)) {
       // A weak broad route never gains mutation authority. Qualify its literal
       // recipient before trying the narrower, read-only menu-query boundary.
       const recipient = (await invoke(JSON.stringify({ customerUtterance: input.transcript }), { recipient: recipientQuestion })).answers?.recipient as { choice?: string, confidence?: number } | undefined
@@ -627,7 +688,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         if (trace.trace)
           trace.trace.semanticCheck = { kind: 'weak-handoff-menu-inquiry', recipient, inquiry }
         if (inquiry?.choice === 'QUERY' && typeof inquiry.confidence === 'number' && Number.isFinite(inquiry.confidence) && inquiry.confidence >= 0.6 && inquiry.confidence <= 1)
-          return { kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: inquiry.confidence, ...trace }
+          return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: inquiry.confidence, ...trace })
       }
       return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
     }
@@ -652,8 +713,23 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       return { kind: 'NEEDS_CLARIFICATION', confidence, ...trace }
     if ((phase === 'pending_confirmation' || phase === 'configuration' || phase === 'clarification' || phase === 'meal_confirmation') && answer?.choice === 'NEW_REQUEST')
       return typeof confidence === 'number' && confidence >= 0.6 ? { kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', confidence, ...trace } : { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
-    if (phase === 'clarification' && answer?.choice === 'CLARIFICATION')
-      return { kind: 'CLARIFICATION', ...trace }
+    if (phase === 'clarification' && answer?.choice === 'CLARIFICATION') {
+      if (confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1)
+        return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
+      // An unresolved target is not proof of who spoke. Qualify the literal
+      // recipient before a voice retry; background/weak speech stays silent
+      // and cannot consume or cancel the pending clarification.
+      const recipient = (await invoke(JSON.stringify({ customerUtterance: input.transcript }), { recipient: recipientQuestion })).answers?.recipient as { choice?: string, confidence?: number } | undefined
+      if (trace.trace)
+        trace.trace.semanticCheck = { kind: 'clarification-recipient', recipient }
+      if (!recipient || typeof recipient.confidence !== 'number' || !Number.isFinite(recipient.confidence) || recipient.confidence < 0.6 || recipient.confidence > 1)
+        return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT', ...trace }
+      if (recipient.choice === 'OTHER')
+        return { kind: 'IGNORE', confidence: recipient.confidence, ...trace }
+      if (recipient.choice !== 'KIOSK')
+        return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT', ...trace }
+      return { kind: 'CLARIFICATION', confidence, ...trace }
+    }
     if (answer?.choice === 'GREET' && criteria.GREET)
       return { ...await resolveGreeting(), ...trace }
     if (answer?.choice === 'CONTINUE_INCOMPLETE' && criteria.CONTINUE_INCOMPLETE) {
@@ -725,7 +801,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     if (answer?.choice === 'GENERAL_QUESTION' && criteria.GENERAL_QUESTION)
       return { kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', confidence, ...trace }
     if (answer?.choice === 'MENU_QUERY' && criteria.MENU_QUERY)
-      return { kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence, ...trace }
+      return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence, ...trace })
     if (answer?.choice === 'NEEDS_ASSISTANT')
       return { kind: 'NEEDS_ASSISTANT', ...(confidence === undefined ? {} : { confidence }), ...trace }
     if (answer?.choice === 'FOLLOW_UP_ACTIVE' && criteria.FOLLOW_UP_ACTIVE)
@@ -777,8 +853,31 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
           }
           // Filters keep their original typed evidence and contextual state;
           // scope isolation must not change price or ingredient interpretation.
-          const conditions = await invoke(state, conditionQuestions)
-          result.answers = { ...result.answers, ...conditions.answers }
+          // Classify the whole request before spending forwards on finite slots.
+          // A catalog match cannot turn a rejected category into a positive lookup.
+          const requirement = await invoke(state, { filterRequirement: questions.filterRequirement! })
+          const scope = requirement.answers?.filterRequirement as { choice?: string, confidence?: number } | undefined
+          if (trace.trace)
+            trace.trace.filterRequirement = scope
+          if (scope?.choice === 'OPEN_REQUEST') {
+            if (typeof scope.confidence !== 'number' || !Number.isFinite(scope.confidence) || scope.confidence < 0 || scope.confidence > 1)
+              return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
+            if (scope.confidence < 0.6) {
+              // A reliable read route permits reasoning about unclear filters,
+              // but never a finite action or an unqualified price.
+              if (typeof confidence === 'number' && Number.isFinite(confidence) && confidence >= 0.6 && confidence <= 1)
+                return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER', confidence, ...trace })
+              return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
+            }
+            return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: scope.confidence, ...trace })
+          }
+          if (!scope || !['COVERED', 'UNSUPPORTED_FILTER'].includes(String(scope.choice)) || typeof scope.confidence !== 'number' || !Number.isFinite(scope.confidence) || scope.confidence < 0.5 || scope.confidence > 1)
+            return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER', ...trace })
+          if (scope.choice === 'UNSUPPORTED_FILTER')
+            return { kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER', ...trace }
+          const remainingQuestions = Object.fromEntries(Object.entries(conditionQuestions).filter(([key]) => key !== 'filterRequirement'))
+          const conditions = await invoke(state, remainingQuestions)
+          result.answers = { ...result.answers, ...conditions.answers, filterRequirement: scope }
         }
         if (requiresFilters && prices) {
           const price = result.answers?.price as { choice?: unknown, confidence?: unknown } | undefined
@@ -859,7 +958,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         if (requiresFilters) {
           const presence = result.answers?.filterPresence as { choice?: unknown, confidence?: unknown } | undefined
           if (input.decisionState?.productResolution?.status === 'none' && presence?.choice === 'UNRESOLVED_SUBJECT' && typeof presence.confidence === 'number' && Number.isFinite(presence.confidence) && presence.confidence >= 0.6 && presence.confidence <= 1)
-            return { kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: presence.confidence, ...trace }
+            return await handoffMenu({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', confidence: presence.confidence, ...trace })
           if (!presence || !['REQUIRED', 'NO_FILTER'].includes(String(presence.choice)) || typeof presence.confidence !== 'number' || presence.confidence < 0.5)
             return { kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER', ...trace }
           const hasFilter = Boolean(ingredientFilters?.dietary || ingredientFilters?.excludeIngredients.length || ingredientFilters?.includeIngredients.length)
@@ -899,6 +998,12 @@ function createDecisionState(input: Pick<DecisionInput, 'conversation' | 'review
         hasTaxId: typeof checkout.taxId === 'string' && /^\d{8}$/.test(checkout.taxId),
       }
     : undefined
+  if (input.decisionState?.phase === 'checkout_invoice' && !input.review) {
+    // Touch can enter invoice selection before a spoken question. Ground short choices
+    // in this step, without stale meal references or personal invoice codes.
+    const waitingFor = input.decisionState.waitingFor
+    return JSON.stringify({ customerUtterance: input.transcript, phase: input.decisionState.phase, checkout: checkoutSummary, pendingQuestion: waitingFor && waitingFor.expiresAt > Date.now() ? waitingFor : null })
+  }
   return [
     `近期角色標記對話：${JSON.stringify(input.conversation?.messages ?? [])}`,
     ...(input.decisionState?.incompleteSpeech ? [`尚未完成的顧客語句（獨立片段）：${JSON.stringify(input.decisionState.incompleteSpeech)}`] : []),

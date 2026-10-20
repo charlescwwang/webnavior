@@ -39,6 +39,16 @@ describe('kiosk System One fast path', () => {
     expect(session.snapshot()).toEqual(fragment)
   })
 
+  it.each([true, false])('retains scope touch choices when semantic service is unavailable (enabled=%s)', async (enabled) => {
+    const waitingFor = { questionId: 'scope-1', purpose: 'menu-query-scope', question: '請選擇查詢範圍', expiresAt: Date.now() + 30_000, choices: [{ id: 'SHOWN', description: '剛才推薦的' }, { id: 'CATALOG', description: '整份菜單' }] }
+    const execute = vi.fn(async (_tool: WebMcpTool) => ({ phase: 'query_scope', candidates: [], waitingFor }))
+    const result = await runFastPath({ isEnabled: async () => enabled, decide: async () => {
+      throw new Error('provider unavailable')
+    }, transcript: '好', webMcp: { tools: [candidateTool, executeTool, stateTool], execute } })
+    expect(result).toMatchObject({ kind: 'CLARIFICATION', question: waitingFor })
+    expect(execute.mock.calls.every(([tool]) => tool.name !== executeTool.name)).toBe(true)
+  })
+
   it('checks activation again on each turn so re-enabling restores Fast Path without reloading', async () => {
     const isEnabled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:add-item' }))
@@ -423,10 +433,16 @@ describe('kiosk System One fast path', () => {
     expect(execute).toHaveBeenNthCalledWith(1, candidateTool, { transcript: '改成兩份' })
   })
 
-  it('returns a touch instruction after an unresolved clarification response', async () => {
-    const execute = vi.fn(async () => ({ phase: 'clarification', candidates: [{ id: 'clarify:0', description: '第一筆水餃' }, { id: 'clarify:1', description: '第二筆水餃' }] }))
-    await expect(runFastPath({ isEnabled: async () => true, decide: async () => ({ kind: 'CLARIFICATION' }), transcript: '那個', webMcp: { execute, tools: [candidateTool, executeTool] } })).resolves.toMatchObject({ kind: 'CLARIFICATION', prompt: expect.stringContaining('螢幕') })
+  // Report: this chat, 2026-10-19 — a verified unclear answer must remain answerable by voice.
+  it('retains the owned clarification without cancelling it or requiring touch', async () => {
+    const question = { questionId: 'clarification-1', purpose: 'item-clarification', question: '您指的是小辣水餃還是不辣水餃？', expiresAt: Date.now() + 30_000, choices: [{ id: 'clarify:0', description: '小辣水餃' }, { id: 'clarify:1', description: '不辣水餃' }, { id: 'clarify:cancel', description: '取消這次修改' }] }
+    const execute = vi.fn(async (tool: WebMcpTool, args?: Record<string, unknown>) => tool === executeTool ? { customerMessage: '已修改不辣水餃。' } : { phase: 'clarification', waitingFor: question, candidates: question.choices, ...(args?.transcript === '第二筆' ? { resolvedCandidateId: 'clarify:1' } : {}) })
+    const decide = vi.fn(async () => ({ kind: 'CLARIFICATION' as const }))
+    await expect(runFastPath({ isEnabled: async () => true, decide, transcript: '那個', webMcp: { execute, tools: [candidateTool, executeTool] } })).resolves.toMatchObject({ kind: 'CLARIFICATION', prompt: question.question, question })
     expect(execute).toHaveBeenCalledTimes(1)
+    await expect(runFastPath({ isEnabled: async () => true, decide, transcript: '第二筆', webMcp: { execute, tools: [candidateTool, executeTool] } })).resolves.toMatchObject({ kind: 'FAST_ACTION', action: { id: 'clarify:1' } })
+    expect(decide).toHaveBeenCalledTimes(1)
+    expect(execute).toHaveBeenLastCalledWith(executeTool, { candidateId: 'clarify:1' })
   })
 
   it('executes a uniquely resolved bound reference without another model call', async () => {

@@ -12,11 +12,11 @@ describe('kiosk customer entry and seating capabilities', () => {
       onCartChange: () => {},
       onMenuSelection: () => {},
     })
-    const menu = await runtime.invokeForAgent('menu_get', { display: true }) as { items: unknown[] }
+    const menu = await runtime.invokeForAgent('menu_recommend', { action: 'update' }) as { items: unknown[] }
     expect(menu.items.length).toBeGreaterThan(0)
     const lookup = await runtime.invokeForAgent('menu_get', { query: '周氏蝦捲', display: true }) as { items: Array<{ id: string }> }
     expect(lookup.items.map(item => item.id)).toContain('chous-shrimp-roll')
-    const recommendations = await runtime.invokeForAgent('menu_recommend', {}) as { items: Array<{ id: string }> }
+    const recommendations = await runtime.invokeForAgent('menu_recommend', { action: 'update' }) as { items: Array<{ id: string }> }
     expect(recommendations.items.length).toBeGreaterThan(0)
     await runtime.invokeForAgent('menu_show_recommendations', { itemIds: recommendations.items.map(item => item.id) })
     expect(ready).toBe(false)

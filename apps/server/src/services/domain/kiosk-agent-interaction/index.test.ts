@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 
-import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
+import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, queryClarification, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
+
+// Report: this chat, query-action voice clarification, 2026-10-19.
+it('settles only a single non-presenting query clarification receipt', () => {
+  const payload = { queryAction: 'clarify', items: [], customerMessage: '你想調整價位，還是換餐點種類？' }
+  expect(queryClarification([{ name: 'menu_recommend', content: JSON.stringify(payload) }])).toBe(payload.customerMessage)
+  expect(queryClarification([{ name: 'menu_get', content: JSON.stringify(payload) }])).toBeUndefined()
+  expect(queryClarification([{ name: 'menu_recommend', content: JSON.stringify({ ...payload, items: [{ id: 'dish' }] }) }])).toBeUndefined()
+  expect(queryClarification([{ name: 'menu_recommend', content: JSON.stringify({ ...payload, presentation: { itemIds: [] } }) }])).toBeUndefined()
+  expect(queryClarification([{ name: 'menu_recommend', content: 'not JSON' }])).toBeUndefined()
+  expect(queryClarification([{ name: 'menu_recommend', content: JSON.stringify(payload) }, { name: 'order_add_item', content: '{}' }])).toBeUndefined()
+})
 
 it('isolates checkout language from earlier ordering chat without altering the durable entries', () => {
   const entries = [
@@ -13,6 +24,13 @@ it('isolates checkout language from earlier ordering chat without altering the d
 })
 
 describe('kiosk Agent interaction', () => {
+  it('waits for the customer after repeated reads without redirecting speech to touch', () => {
+    const instructions = createInteractionInstructions({ ...defaultKioskAgentInteractionState, mode: 'touch_preferred', noProgressCount: 3 })
+    expect(instructions).toContain('等待顧客')
+    expect(instructions).toContain('語音')
+    expect(instructions).not.toContain('畫面點選目前優先')
+    expect(instructions).not.toContain('優先引導他直接使用畫面')
+  })
   it('keeps competing model operation prose out of customer history but retains general answers', () => {
     expect(requiresPresentedReply([{ name: 'order_ask_question', content: JSON.stringify({ pendingCustomerChoice: { questionId: 'Q1' } }) }])).toBe(true)
     expect(requiresPresentedReply([{ name: 'checkout_select_payment', content: JSON.stringify({ customerMessage: '付款尚未完成。' }) }])).toBe(true)
@@ -137,6 +155,7 @@ describe('kiosk Agent interaction', () => {
       items: [{
         available: true,
         category: '麵食',
+        composition: { complete: true, ingredients: ['beef', 'noodles'], dietaryLabels: [], revision: '1' },
         description: '完整介紹'.repeat(3_000),
         id: 'beef-noodles',
         name: '牛肉麵',
@@ -152,7 +171,7 @@ describe('kiosk Agent interaction', () => {
     expect(modelContent.length).toBeLessThanOrEqual(8_000)
     expect(payload).toMatchObject({
       customerMessage: '我找到牛肉麵。',
-      items: [{ id: 'beef-noodles', name: '牛肉麵', optionGroups: [{ id: 'spice' }] }],
+      items: [{ id: 'beef-noodles', name: '牛肉麵', composition: { complete: true, ingredients: ['beef', 'noodles'], dietaryLabels: [] }, optionGroups: [{ id: 'spice' }] }],
       modelContextCompacted: true,
       originalCharacterCount: original.length,
       presentation: { itemIds: ['beef-noodles'] },

@@ -2,7 +2,6 @@
 import type { InteractionLifecycleMessage, InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { ComponentPublicInstance } from 'vue'
 
-import type { PresentedQuestion } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ContinuationAccess } from './continuation'
 import type { CheckoutSnapshot } from './domain/checkout-flow'
 import type { CartSnapshot, FulfillmentMode, MenuItem, Selection, SubmissionStatus, SubmittedOrder } from './domain/order-machine'
@@ -15,7 +14,6 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch
 import CheckoutInvoice from './components/CheckoutInvoice.vue'
 import CheckoutPayment from './components/CheckoutPayment.vue'
 import CheckoutTaxId from './components/CheckoutTaxId.vue'
-import MealConfirmation from './components/mealConfirmation.vue'
 import MenuCatalogState from './components/MenuCatalogState.vue'
 import MenuItemCard from './components/menuItemCard.vue'
 import MenuItemDialog from './components/MenuItemDialog.vue'
@@ -64,8 +62,6 @@ const activeCategory = shallowRef<string>()
 const recommendedCategoryId = '__recommendations__'
 const selectedItemId = shallowRef<string>()
 const orderReviewOpen = shallowRef(false)
-const mealConfirmation = shallowRef<PresentedQuestion>()
-const mealConfirmationBusy = shallowRef(false)
 const menuInteractionMessage = shallowRef<string>()
 const checkout = shallowRef<CheckoutSnapshot>()
 const paymentMethod = shallowRef<PaymentMethod>()
@@ -81,9 +77,6 @@ let checkoutRevision = 0
 // a change that is undone before the next System One request arrives.
 watch([checkout, paymentMethod, paymentStatus, customerEntryStatus], () => {
   checkoutRevision += 1
-  // Local touch transitions revoke the displayed question just as host tools do.
-  if (checkout.value || customerEntryStatus.value === 'pending')
-    mealConfirmation.value = undefined
 }, { flush: 'sync' })
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
@@ -287,8 +280,6 @@ const runtime = createMenuToolRuntime({
       return 'customer_entry'
     if (checkout.value)
       return 'checkout'
-    if (mealConfirmation.value)
-      return 'request_confirmation'
     if (orderReviewOpen.value)
       return 'cart_review'
     return selectedItem.value ? 'item_configuration' : 'menu'
@@ -333,7 +324,6 @@ const runtime = createMenuToolRuntime({
   gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onContinuation: access => continuationAccess.value = access }),
   menu: [],
   onAction: animateAction,
-  onClarificationChange: question => mealConfirmation.value = question,
   onReviewRequested: async () => {
     // A cart read must not replace a live checkout/payment screen.
     if (checkout.value || completedOrderId.value)
@@ -397,22 +387,6 @@ const runtime = createMenuToolRuntime({
 
 async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, options: { animate?: boolean } = {}) {
   return await runtime.invokeManual(name, args, options.animate === false ? () => {} : undefined)
-}
-
-async function answerMealConfirmation(candidateId: string) {
-  if (mealConfirmationBusy.value)
-    return
-  mealConfirmationBusy.value = true
-  try {
-    await invoke('kiosk_fast_path_execute', { candidateId }, { animate: false })
-  }
-  catch (error) {
-    console.warn('[order-menu] confirmation no longer applies:', errorMessageFrom(error))
-    await runtime.invoke('kiosk_interaction_state')
-  }
-  finally {
-    mealConfirmationBusy.value = false
-  }
 }
 
 function syncSelection(selection: Selection) {
@@ -886,7 +860,6 @@ onUnmounted(() => {
     <p v-if="menuInteractionMessage" role="status" :class="['presentation-context']">
       {{ menuInteractionMessage }}
     </p>
-    <MealConfirmation v-if="mealConfirmation && !checkout && customerEntryStatus !== 'pending'" :question="mealConfirmation" :locked="mealConfirmationBusy || agentControlsOrder" @answer="answerMealConfirmation" />
     <CheckoutInvoice
       v-if="checkout?.stage === 'invoice'"
       :checkout="checkout"

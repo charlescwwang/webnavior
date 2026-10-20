@@ -274,7 +274,7 @@ describe('whole-request coverage for cart changes', () => {
     const result = await decideInteraction({ transcript: '有哪種水餃？', decisionState: { ...state, references: hasCart ? state.references : [] }, candidates: [...candidates, { id: 'intent:search-menu', description: '查詢餐點。' }], policy, invoke, includeTrace: true })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', trace: { rawAnswer: { choice: 'intent:add-item' } } })
     expect(result).not.toHaveProperty('answeredQuestionId')
-    expect(invoke).toHaveBeenCalledTimes(4)
+    expect(invoke).toHaveBeenCalledTimes(5)
   })
 
   it('keeps recovered queries behind normal filter validation', async () => {

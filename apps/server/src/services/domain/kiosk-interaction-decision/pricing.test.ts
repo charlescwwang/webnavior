@@ -27,8 +27,8 @@ describe('finite price decision', () => {
     expect(state).toContain('100元')
     expect(state).not.toContain(evidence.choices[0]!.description)
     expect(questions.filterRequirement.instructions).not.toContain(evidence.choices[0]!.description)
-    expect(questions.price.criteria).toHaveProperty('UPPER_INCLUSIVE', evidence.choices[0]!.description)
-    expect(questions.price.criteria).toHaveProperty('UPPER_EXCLUSIVE', evidence.choices[1]!.description)
+    expect(invoke.mock.calls[3]![1].price.criteria).toHaveProperty('UPPER_INCLUSIVE', evidence.choices[0]!.description)
+    expect(invoke.mock.calls[3]![1].price.criteria).toHaveProperty('UPPER_EXCLUSIVE', evidence.choices[1]!.description)
   })
 
   it.each(['UPPER_INCLUSIVE', 'UPPER_EXCLUSIVE', 'INFORMATION', 'NONE'])('returns only the issued interpretation: %s', async (choice) => {
@@ -37,8 +37,8 @@ describe('finite price decision', () => {
       : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, price: { choice, confidence: 0.96 }, filterRequirement: { choice: 'COVERED', confidence: 0.96 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.96 } } })
     const result = await decideInteraction({ transcript: '100元以下有什麼便當', decisionState: { phase: 'ordering', priceEvidence: evidence }, candidates: [{ id: 'intent:search-menu', description: '查詢餐點' }], policy: { decisionInstruction: '自訂提示', storeInstruction: '' }, invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', priceChoiceId: choice })
-    expect(invoke).toHaveBeenCalledTimes(3)
-    expect(invoke.mock.calls[2]?.[1].price?.criteria).toHaveProperty('UPPER_INCLUSIVE')
+    expect(invoke).toHaveBeenCalledTimes(4)
+    expect(invoke.mock.calls[3]?.[1].price?.criteria).toHaveProperty('UPPER_INCLUSIVE')
   })
   it.each([{ choice: 'UPPER_INCLUSIVE', confidence: 0.4 }, { choice: 'invented', confidence: 0.99 }, { choice: 'UNSUPPORTED', confidence: 0.99 }])('does not execute uncertain or unoffered conditions: $choice/$confidence', async (price) => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => questions.route ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.96 } } } : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, price } })

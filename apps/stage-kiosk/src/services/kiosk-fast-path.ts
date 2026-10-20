@@ -137,6 +137,8 @@ export async function runFastPath(input: {
     }
     if (input.isCurrent?.() === false)
       return { kind: 'DEFERRED' }
+    if (decisionState?.phase === 'query_scope' && decisionState.waitingFor)
+      return { kind: 'CLARIFICATION', prompt: decisionState.waitingFor.question, question: decisionState.waitingFor, decisionState }
     const decision: FastPathDecision = { kind: 'NEEDS_ASSISTANT', reason, ...(failedDecision?.trace ? { trace: failedDecision.trace } : {}), ...(failedDecision?.modelCalls !== undefined ? { modelCalls: failedDecision.modelCalls } : {}), ...(failedDecision?.modelQuestions !== undefined ? { modelQuestions: failedDecision.modelQuestions } : {}) }
     input.onTrace?.({ browserContext, decision, decisionSource: 'application', transcript: input.transcript })
     return { ...decision, ...(decisionState ? { decisionState } : {}) }
@@ -207,7 +209,32 @@ export async function runFastPath(input: {
           ...(input.presenceState ? { presenceState: input.presenceState } : {}),
           transcript: input.transcript,
         })
+    if (decision.kind === 'SCOPE_CHOICE') {
+      const scopeTool = input.webMcp.tools.find(tool => tool.name === 'kiosk_query_scope')
+      const questionId = decisionState?.waitingFor?.questionId
+      if (!scopeTool || !questionId || input.isCurrent?.() === false)
+        return { kind: 'UNAVAILABLE', decisionState }
+      const receipt = await input.webMcp.execute(scopeTool, { questionId, choice: decision.choice, transcript: input.transcript })
+      input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource: 'application', executionResult: receipt, transcript: input.transcript })
+      const outcome = receipt as { status?: string, pendingCustomerChoice?: PresentedQuestion, customerMessage?: string }
+      if (outcome.status === 'NEW_REQUEST') {
+        rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript })
+        decisionState = decisionStateFrom(rawCandidates)
+        candidates = candidatesFrom(rawCandidates)
+        decision = await decide({ candidates, decisionState, transcript: input.transcript, includeTrace: true })
+      }
+      else {
+        if (outcome.status === 'IGNORE')
+          return { kind: 'IGNORE', decisionState }
+        await notifyExecuted(receipt)
+        if (outcome.pendingCustomerChoice)
+          return { kind: 'CLARIFICATION', prompt: outcome.pendingCustomerChoice.question, question: outcome.pendingCustomerChoice, decisionState }
+        return { kind: 'FAST_ACTION', action: { id: 'query-scope', description: '依確認範圍查詢餐點' }, result: receipt, decisionState }
+      }
+    }
     let spent = applicationResolved ? 0 : decision.modelQuestions
+    if (decisionState?.phase === 'query_scope' && decisionState.waitingFor && decision.kind !== 'SCOPE_CHOICE')
+      return { kind: 'CLARIFICATION', prompt: decisionState.waitingFor.question, question: decisionState.waitingFor, decisionState }
     if (decision.reason === 'PROVIDER_FAILURE' || decision.reason === 'SYSTEM_ONE_DISABLED')
       return await handoff(decision.reason, decision)
     // Defer fragment expiry-by-state until a real semantic result exists;
@@ -241,11 +268,13 @@ export async function runFastPath(input: {
       return { kind: 'CLARIFICATION', prompt: priceClarification, decisionState }
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, transcript: input.transcript })
     if (decisionState?.phase === 'clarification' && decision.kind === 'CLARIFICATION') {
-      const cancel = candidates.find(candidate => candidate.id.startsWith('clarify:') && candidate.id.endsWith(':cancel'))
-      const executeTool = input.webMcp.tools.find(tool => tool.name === executeToolName)
-      if (cancel && executeTool && input.isCurrent?.() !== false)
-        await input.webMcp.execute(executeTool, { candidateId: cancel.id })
-      return { kind: 'CLARIFICATION', prompt: '這次無法確認你指的是哪一筆，請改用螢幕選擇。', decisionState }
+      const question = decisionState.waitingFor
+      if (!question || question.expiresAt <= Date.now())
+        return { kind: 'UNAVAILABLE', decisionState }
+      // The server admitted a reply to this kiosk, but no unique target yet.
+      // Keep the owned choices and original deadline; only explicit cancellation
+      // may retire this request. Do not turn another question into a cart write.
+      return { kind: 'CLARIFICATION', prompt: question.question, question, decisionState }
     }
     if (decision.kind === 'INCOMPLETE') {
       input.session?.retain(input.transcript, decisionState)
@@ -316,6 +345,8 @@ export async function runFastPath(input: {
       await notifyExecuted(receipt)
       return { kind: 'CLARIFICATION', prompt: question.question, question, silent: Boolean(receipt && typeof receipt === 'object' && 'silent' in receipt && receipt.silent === true), decisionState }
     }
+    if (decision.kind === 'SCOPE_CHOICE')
+      return { kind: 'UNAVAILABLE', decisionState }
     if (decision.kind !== 'FAST_ACTION')
       return decision.kind === 'COMPLETE' ? { kind: 'UNAVAILABLE', decisionState } : { ...decision, ...(decisionState ? { decisionState } : {}) }
 

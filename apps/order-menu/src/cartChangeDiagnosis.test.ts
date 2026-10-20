@@ -18,7 +18,7 @@ describe('cart meal-change diagnosis', () => {
     await runtime.invoke('order_add_item', { itemId: 'pork-bento', quantity: 1 })
     const before = await runtime.invoke('cart_get', { display: false }) as { cart: CartSnapshot }
     const state = await runtime.invoke('kiosk_interaction_state') as KioskDecisionState
-    await runtime.invoke('kiosk_agent_task', { taskId: 'menu-inquiry', action: 'BEGIN', expectedMenuRevision: state.menuRevision, readOnly: true, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { taskId: 'menu-inquiry', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: state.menuRevision, readOnly: true, constraints: {} })
     await runtime.invokeForAgent('menu_get', { query: '水餃' })
     const snapshot = await runtime.invokeForAgent('cart_get')
     expect(snapshot).toEqual({ cart: before.cart })
@@ -29,7 +29,7 @@ describe('cart meal-change diagnosis', () => {
     await expect(runtime.invokeForAgent('order_defer_question')).rejects.toThrow('only authorizes menu reads')
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: before.cart })
     await runtime.invoke('kiosk_agent_task', { taskId: 'menu-inquiry', action: 'END' })
-    await runtime.invoke('kiosk_agent_task', { taskId: 'new-purchase', action: 'BEGIN', expectedMenuRevision: state.menuRevision, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { taskId: 'new-purchase', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: state.menuRevision, constraints: {} })
     await runtime.invokeForAgent('order_add_item', { itemId: 'dumplings', quantity: 1 })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
   })
@@ -39,7 +39,7 @@ describe('cart meal-change diagnosis', () => {
     await runtime.invoke('order_add_item', { itemId: 'pork-bento', quantity: 1 })
     const before = await runtime.invoke('cart_get', { display: false }) as { cart: CartSnapshot }
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '排骨便當改披薩' }) as KioskDecisionState
-    await runtime.invoke('kiosk_agent_task', { taskId: 'missing-target', action: 'BEGIN', expectedMenuRevision: context.menuRevision, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { taskId: 'missing-target', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: context.menuRevision, constraints: {} })
     await runtime.invokeForAgent('menu_get', query)
     expect(await runtime.invokeForAgent('cart_remove_item', { lineId: before.cart.lines[0]!.id })).toMatchObject({ ok: false, customerMessage: expect.stringContaining('保留') })
     expect(await runtime.invokeForAgent('order_add_item', { itemId: 'dumplings', replaceLineId: before.cart.lines[0]!.id })).toMatchObject({ ok: false })
@@ -49,7 +49,7 @@ describe('cart meal-change diagnosis', () => {
     await runtime.invokeForAgent('menu_get', { query: '水餃' })
     expect(await runtime.invokeForAgent('cart_clear')).toMatchObject({ ok: false })
     await runtime.invoke('kiosk_agent_task', { taskId: 'missing-target', action: 'END' })
-    await runtime.invoke('kiosk_agent_task', { taskId: 'explicit-removal', action: 'BEGIN', expectedMenuRevision: context.menuRevision, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { taskId: 'explicit-removal', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: context.menuRevision, constraints: {} })
     await runtime.invokeForAgent('cart_remove_item', { lineId: before.cart.lines[0]!.id })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { lines: [] } })
   })
@@ -61,13 +61,13 @@ describe('cart meal-change diagnosis', () => {
         replaceTask = false
         await runtime.invoke('kiosk_agent_task', { taskId: 'old-lookup', action: 'END' })
         const state = await runtime.invoke('kiosk_interaction_state') as KioskDecisionState
-        await runtime.invoke('kiosk_agent_task', { taskId: 'new-removal', action: 'BEGIN', expectedMenuRevision: state.menuRevision, constraints: {} })
+        await runtime.invoke('kiosk_agent_task', { taskId: 'new-removal', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: state.menuRevision, constraints: {} })
       }
     } })
     await runtime.invoke('order_add_item', { itemId: 'pork-bento', quantity: 1 })
     const before = await runtime.invoke('cart_get', { display: false }) as { cart: CartSnapshot }
     const state = await runtime.invoke('kiosk_interaction_state') as KioskDecisionState
-    await runtime.invoke('kiosk_agent_task', { taskId: 'old-lookup', action: 'BEGIN', expectedMenuRevision: state.menuRevision, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { taskId: 'old-lookup', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: state.menuRevision, constraints: {} })
     replaceTask = true
     await runtime.invokeForAgent('menu_get', { query: '披薩' })
     await runtime.invokeForAgent('cart_remove_item', { lineId: before.cart.lines[0]!.id })

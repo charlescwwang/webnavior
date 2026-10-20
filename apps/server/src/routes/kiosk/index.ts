@@ -14,10 +14,11 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
-import { compactToolResultForModel, createInteractionInstructions, recordAssistantActions, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
+import { compactToolResultForModel, createInteractionInstructions, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
 import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
+import { scopeInstructions, scopeTool } from '../../services/domain/kiosk-interaction-decision/queryScopeContracts'
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
@@ -314,6 +315,26 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       : undefined
     if (session && session.session.state !== 'active')
       throw createBadRequestError('Visitor session is not active', 'SESSION_INACTIVE')
+    if (!result.output.review && result.output.decisionState?.phase === 'query_scope' && result.output.decisionState.waitingFor?.purpose === 'menu-query-scope') {
+      const state = result.output.decisionState
+      const modelName = await options.runtimeModelPolicy.modelFor('chat')
+      if (!modelName)
+        return c.json({ kind: 'SCOPE_CHOICE', choice: 'ASK' })
+      // IDs and expiry belong to browser admission, not language semantics.
+      // Exclude their arbitrary numbers from the scope/condition checkpoint.
+      const response = await options.llmGateway.complete({ modelName, abortSignal: c.req.raw.signal, body: { model: modelName, temperature: 0, messages: [{ role: 'system', content: scopeInstructions }, { role: 'user', content: JSON.stringify({ stage: 'answer', customerUtterance: result.output.transcript, confirmedConditions: state.constraints, question: { prompt: state.waitingFor!.question, options: state.waitingFor!.choices.map(choice => ({ id: choice.id, label: choice.description })) } }) }], tools: [scopeTool], tool_choice: 'required' } })
+      const payload = await response.json().catch(() => null)
+      const parsed = safeParse(object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: string(), arguments: string() }) })) }) })) }), payload)
+      const calls = parsed.success ? parsed.output.choices[0]?.message.tool_calls : undefined
+      let choice: unknown
+      if (response.ok && calls?.length === 1 && calls[0]!.function.name === 'scope_decide') {
+        try {
+          choice = JSON.parse(calls[0]!.function.arguments).choice
+        }
+        catch { /* An invalid proposal keeps the question pending. */ }
+      }
+      return c.json({ kind: 'SCOPE_CHOICE', choice: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST', 'IGNORE'].includes(String(choice)) ? choice : 'ASK' })
+    }
     if (!options.systemOne || !await options.systemOne.isEnabled())
       return c.json({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
     const decisionInput = {
@@ -822,6 +843,9 @@ async function completeKioskReply(input: {
   toolResults?: Array<{ content: string, name: string, toolCallId: string }>
   tools?: Array<{ function: { description?: string, name: string, parameters: unknown }, type: 'function' }>
 }) {
+  const clarification = queryClarification(input.toolResults ?? [])
+  if (clarification)
+    return { content: clarification, toolCalls: [] }
   const modelName = input.modelCapability === 'vision'
     ? await resolveKioskVisionModel(input.runtimeModelPolicy)
     : await input.runtimeModelPolicy.modelFor('chat')
@@ -968,6 +992,11 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
 
 /** Converts an OpenAI-compatible provider SSE response into the kiosk event contract. */
 async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
+  const clarification = queryClarification(input.toolResults)
+  if (clarification) {
+    onTextDelta(clarification)
+    return { content: clarification, toolCalls: [] }
+  }
   const modelName = await input.runtimeModelPolicy.modelFor('chat')
   if (!modelName)
     throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
@@ -997,17 +1026,19 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
 // A semantic food handoff must obtain a fresh read before any generated
 // final answer or order change. Continuations already carry that tool receipt.
 function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
+  // Read-only tool selection favors repeatable semantic decisions over prose variation.
+  const generation = input.decisionState?.readOnly ? { temperature: 0 } : {}
   // A qualified inquiry stays read-only across every continuation. A fresh
   // customer request creates a new task; a menu receipt cannot grant writes.
   const available = input.decisionState?.readOnly
     ? input.tools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(tool.function.name))
     : input.tools
   if (!input.decisionState?.requireMenuRead || input.toolResults?.length)
-    return available?.length ? { tools: available } : {}
+    return available?.length ? { ...generation, tools: available } : generation
   const tools = available?.filter(tool => ['menu_get', 'menu_recommend'].includes(tool.function.name)) ?? []
   if (!tools.length)
     throw createBadRequestError('目前無法查詢菜單。', 'KIOSK_MENU_LOOKUP_UNAVAILABLE')
-  return { tools, tool_choice: 'required' as const }
+  return { ...generation, tools, tool_choice: 'required' as const }
 }
 
 async function parseKioskReplyStream(response: Response, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
@@ -1106,8 +1137,8 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
             `目前 Kiosk 畫面：${input.decisionState.phase}`,
             input.decisionState.phase === 'customer_entry' ? '目前是自願電話登記頁，不要求會員。顧客可觸控填寫，也可明確略過。顧客要求推薦、換推薦或點餐時，先請他填寫手機或選擇略過；不呼叫推薦／訂購工具，不把這個流程限制說成沒有符合條件的餐點。單純問有沒有、價格或成分仍可用 menu_get 查詢。不得猜填電話或替顧客略過。' : undefined,
             `本次已解析條件（不得省略或自行放寬）：${JSON.stringify(input.decisionState.constraints ?? { exclude: [] })}`,
-            input.decisionState.requireMenuRead ? '本輪是餐點需求：先查菜單再回答。換其他推薦使用 menu_recommend more:true，保留原條件。顧客質疑先前品項不存在或是否真的有時，用 menu_get 的 query／queries 核對具體品名並指定 verifyClaim:true，不以換推薦或請顧客自行看畫面代替。確實介紹錯就明確承認、更正，依回傳品項回答。' : undefined,
-            input.decisionState.readOnly ? '本輪僅授權查詢菜單資訊，不能新增、刪除、更換餐點、變更用餐方式、回答舊問題或進入結帳。依顧客原品名查證，不把其他相近餐點說成顧客問的品項。' : undefined,
+            input.decisionState.requireMenuRead ? '本輪是餐點需求：先查菜單再回答。條件不變且尚有下一批時，換其他推薦使用 menu_recommend action:continue；原條件已無其他結果而新範圍不明時，使用 menu_recommend action:clarify 語音釐清，不必先查資料。顧客質疑先前品項不存在或是否真的有時，用 menu_get 的 query／queries 核對具體品名並指定 verifyClaim:true，不以換推薦或請顧客自行看畫面代替。確實介紹錯就明確承認、更正，依回傳品項回答。' : undefined,
+            input.decisionState.readOnly ? '本輪僅授權查詢菜單資訊，不能新增、刪除、更換餐點、變更用餐方式、回答舊問題或進入結帳。有具體品名時依原名查證，不把其他相近餐點說成顧客問的品項；泛指或更正語句先理解指涉，不能直接當商品關鍵字。' : undefined,
             input.decisionState.priceEvidence ? '本句涉及價格。只使用已解析的單份基本售價條件；未解析時先詢問明確單份上限或範圍，不自行猜預算、分配總額或忽略價格。價格以工具真實售價顯示在畫面即可，不必口頭逐項唸價。' : undefined,
             `本次已完成的查詢（不要重複已完成操作）：${JSON.stringify(input.decisionState.completedReads ?? [])}`,
             input.decisionState.incompleteSpeech?.related ? `本次需求承接的未完成顧客語句（與這一句是同一需求，保留兩段原文，不視為兩筆訂單）：${JSON.stringify(input.decisionState.incompleteSpeech.transcript)}` : undefined,
@@ -1132,6 +1163,7 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       : undefined,
     input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
     { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清可直接用自然語言回答，不需要為了回覆招呼而查菜單。拒絕或否定某餐點不代表指定替代餐點。「不想吃飯」可能是不想用餐，也可能是不吃米飯；未確認前不可自行推成想吃麵、排除米飯或同意換一批。需求不明先釐清；若本輪要求查菜單，查詢只取得事實，不代表顧客已要求推薦或接受替代餐點。餐點、價格、庫存與訂單狀態必須先查詢工具；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
+    { content: '查詢語意由你依本句與相關對話理解，不依賴前置意圖名稱。menu_recommend 必須選 action：continue 沿用條件換批；update 新增或只修改明示條件，包含第一輪查詢，只有本句同時明確要求不同餐點才加 excludeShown:true，不得沿用前句換批或無更多結果的語意；單純改價位或分類的新條件查詢不可排除已展示的符合品項；reset 顧客明確重新挑選時清除瀏覽限制，保留飲食限制與已展示歷史；clarify 意圖或範圍不明時只回傳語音問題。原條件已無更多結果，顧客只泛指其他而未明示改哪個範圍時，選 clarify，不重試或自行重置；明確不限價格用 update 並 clear:[price]，不是重置所有條件。query／queries 只放具體商品名稱，泛指其他品項、別的或先前那些不是品名；具體陌生品名仍用 menu_get 查原名。條件由程式保存，不從歷史重填整組舊條件，不用省略參數或 more 表達動作。clarify 只傳 {action:clarify}，不填 customerMessage 或 question；工具回傳的 customerMessage 是本輪語音追問，不再查資料、推薦或改寫成找不到商品。', title: '查詢動作與條件狀態' },
     { content: '操作問題由點餐系統依 POS 與目前狀態產生。工具回傳 pendingCustomerChoice 時，不另寫或重複詢問問題，由畫面呈現該問題。用餐方式名稱必須取自最新 POS fulfillmentModes，不自行將 takeout 解讀成外帶。環境、資料來源與測試標記僅供內部紀錄，不向顧客敘述；只回報工具證實的訂單與付款狀態。pending 或 uncertain 不可宣稱付款或訂單成功。', title: '顧客回覆與操作問題分界' },
   ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }

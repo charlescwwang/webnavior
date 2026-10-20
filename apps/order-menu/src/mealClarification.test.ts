@@ -129,12 +129,14 @@ describe('simple meal confirmation', () => {
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
-  it('keeps buttons available but stops repeating the same spoken question', async () => {
+  it('keeps voice choices without directing the customer to removed buttons and bounds spoken repeats', async () => {
     const runtime = await pendingMeal()
     const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '牛肉麵' }) as Snapshot
     const first = await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer!.id }) as { pendingCustomerChoice: Snapshot['waitingFor'] }
     const questionId = first.pendingCustomerChoice.questionId
-    expect(await runtime.invoke('kiosk_fast_path_clarify', { questionId })).toMatchObject({ silent: false })
+    const repeated = await runtime.invoke('kiosk_fast_path_clarify', { questionId }) as { silent: boolean, pendingCustomerChoice: { question: string } }
+    expect(repeated.silent).toBe(false)
+    expect(repeated.pendingCustomerChoice.question).not.toContain('畫面')
     expect(await runtime.invoke('kiosk_fast_path_clarify', { questionId })).toMatchObject({ silent: true, pendingCustomerChoice: { choices: expect.arrayContaining([expect.objectContaining({ id: `confirm-meal:${questionId}:yes` })]) } })
   })
 })

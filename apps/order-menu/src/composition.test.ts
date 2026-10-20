@@ -13,9 +13,9 @@ describe('composition-grounded menu filtering', () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
     let presentations = 0
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: () => presentations++ })
-    await expect(runtime.invokeForAgent(name, { category: '麵類', display: true })).rejects.toThrow('UNKNOWN_CATEGORY')
+    await expect(runtime.invokeForAgent(name, { ...(name === 'menu_recommend' ? { action: 'update' } : { display: false }), category: '麵類' })).rejects.toThrow('UNKNOWN_CATEGORY')
     expect(presentations).toBe(0)
-    expect(await runtime.invokeForAgent(name, { category: '麵食' })).toMatchObject({ items: [{ name: '紅燒牛肉麵' }] })
+    expect(await runtime.invokeForAgent(name, { ...(name === 'menu_recommend' ? { action: 'update' } : { display: false }), category: '麵食' })).toMatchObject({ items: [{ name: '紅燒牛肉麵' }] })
     const definition = runtime.toolDefinitions.find(tool => tool.name === name)!
     expect(definition.inputSchema.properties).toMatchObject({ category: { enum: ['便當', '麵食', '點心'] } })
     runtime.setMenu(catalog.items.filter(item => item.category === '點心'))
@@ -26,17 +26,17 @@ describe('composition-grounded menu filtering', () => {
     const runtime = createMenuToolRuntime({ menu, onAction: () => new Promise<void>(resolve => settle = resolve), onCartChange: () => {}, onMenuSelection: () => {} })
     const snapshot = await runtime.invoke('kiosk_interaction_state') as { menuRevision: number }
     const manual = runtime.invokeManual('menu_select_item', { itemId: menu[0]!.id })
-    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'agent', expectedMenuRevision: snapshot.menuRevision, constraints: {} })).rejects.toThrow('MANUAL_CONTROL')
+    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'agent', expectedMenuRevision: snapshot.menuRevision, constraints: {} })).rejects.toThrow('MANUAL_CONTROL')
     settle()
     await manual
-    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'agent', expectedMenuRevision: snapshot.menuRevision, constraints: {} })).resolves.toEqual({ ok: true })
+    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'agent', expectedMenuRevision: snapshot.menuRevision, constraints: {} })).resolves.toEqual({ ok: true })
   })
   // Report: this chat, 2026-10-14 — manual edits race an active Agent task.
   it('keeps manual operations locked until the matching task ends', async () => {
     const ownership: boolean[] = []
     const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onAgentControlChange: locked => ownership.push(locked) })
     const snapshot = await runtime.invoke('kiosk_interaction_state') as { menuRevision: number }
-    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'new', expectedMenuRevision: snapshot.menuRevision, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'new', expectedMenuRevision: snapshot.menuRevision, constraints: {} })
     await expect(runtime.invokeManual('cart_set_line_quantity', { lineId: 'line', quantity: 2 })).rejects.toThrow('AGENT_CONTROL')
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'old' })
     expect(ownership).toEqual([true])
@@ -73,25 +73,25 @@ describe('composition-grounded menu filtering', () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const snapshot = await runtime.invoke('kiosk_interaction_state') as { menuRevision: number }
-    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'task-1', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })
-    const filtered = await runtime.invokeForAgent('menu_get') as { items: CatalogSnapshot['items'] }
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'task-1', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })
+    const filtered = await runtime.invokeForAgent('menu_recommend', { action: 'update' }) as { items: CatalogSnapshot['items'] }
     expect(filtered.items.length).toBeGreaterThan(0)
     for (const item of filtered.items)
       expect(item.composition.ingredients).not.toContain('pork')
-    await expect(runtime.invokeForAgent('menu_get', { includeIngredients: ['pork'] })).rejects.toThrow('Task constraint conflict')
-    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'task-2', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['pork'] })).rejects.toThrow('Task constraint conflict')
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'task-2', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'task-1' })
-    expect(await runtime.invokeForAgent('menu_recommend')).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] } })
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'update' })).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] } })
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'task-2' })
     expect(await runtime.invokeForAgent('menu_get', { display: false })).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: 'dumplings' })]) })
   })
   it('rejects task conditions after a catalog change instead of quietly removing the filter', async () => {
     const runtime = createMenuToolRuntime({ menu: [menu[0]!], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const snapshot = await runtime.invoke('kiosk_interaction_state') as { menuRevision: number }
-    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'task-1', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'task-1', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })
     runtime.setMenu([menu[0]!], 'next-catalog')
-    await expect(runtime.invokeForAgent('menu_get')).rejects.toThrow('STALE_PLAN')
-    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'task-2', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })).rejects.toThrow('STALE_PLAN')
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'update' })).rejects.toThrow('STALE_PLAN')
+    await expect(runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'task-2', expectedMenuRevision: snapshot.menuRevision, constraints: { excludeIngredients: ['pork'] } })).rejects.toThrow('STALE_PLAN')
     await expect(runtime.invokeForAgent('kiosk_agent_task', { action: 'END', taskId: 'task-1' })).rejects.toThrow('unavailable to the Agent')
   })
   it('enforces dietary requirements even without pre-expanded ingredient exclusions', () => {
@@ -198,7 +198,8 @@ describe('composition-grounded menu filtering', () => {
       onMenuSelection: () => {},
     })
     expect(await runtime.invoke('menu_recommend', { excludeIngredients: ['pork', 'egg'], limit: 3 })).toMatchObject({ items: [{ id: 'fish' }] })
-    expect(await runtime.invoke('menu_recommend', { includeIngredients: ['chicken'], excludeIngredients: ['egg'] })).toMatchObject({ items: [] })
+    const offer = await runtime.invoke('menu_recommend', { includeIngredients: ['chicken'], excludeIngredients: ['egg'] }) as { pendingCustomerChoice: { questionId: string } }
+    expect(await runtime.invoke('kiosk_query_scope', { questionId: offer.pendingCustomerChoice.questionId, choice: 'CATALOG' })).toMatchObject({ items: [] })
   })
   it('filters actual ingredients, without requiring absent-ingredient tags', async () => {
     const runtime = createMenuToolRuntime({

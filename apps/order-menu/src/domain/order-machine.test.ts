@@ -293,6 +293,7 @@ describe('createMenuToolRuntime', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
       'kiosk_fast_path_clarify',
+      'kiosk_query_scope',
       'kiosk_agent_task',
       'menu_get',
       'menu_recommend',
@@ -829,7 +830,7 @@ describe('createMenuToolRuntime', () => {
       if (!recommend)
         throw new Error('Expected menu_recommend to be registered.')
 
-      await expect(recommend.execute({ needs: ['fried'] })).resolves.toMatchObject({ needs: ['fried'] })
+      await expect(recommend.execute({ action: 'update', needs: ['fried'] })).resolves.toMatchObject({ needs: ['fried'] })
     }
     finally {
       vi.unstubAllGlobals()
@@ -1271,12 +1272,13 @@ describe('createMenuToolRuntime', () => {
         title: '排除豬肉',
       },
     })
-    await expect(runtime.invoke('menu_recommend', { needs: ['rice'], excludeIngredients: ['pork'] })).resolves.toMatchObject({ items: [] })
+    const offer = await runtime.invoke('menu_recommend', { needs: ['rice'], excludeIngredients: ['pork'] }) as { pendingCustomerChoice: { questionId: string } }
+    await expect(runtime.invoke('kiosk_query_scope', { questionId: offer.pendingCustomerChoice.questionId, choice: 'CATALOG' })).resolves.toMatchObject({ items: [] })
     expect(presentations).toEqual([{
       kind: 'recommendation',
       itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
       title: '排除豬肉',
-    }, { kind: 'recommendation', itemIds: [], title: '排除豬肉' }])
+    }, { kind: 'recommendation', itemIds: [], title: '整份菜單 · 排除豬肉' }])
   })
 
   it('uses the store default recommendation order when the customer has not stated a preference', async () => {

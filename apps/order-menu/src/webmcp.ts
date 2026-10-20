@@ -2,10 +2,13 @@ import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts
 import type { RecommendationStrategy } from '../../order-menu-server/src/domain/recommendation'
 import type { KioskScreen, PresentedQuestion } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { PriceConditions } from '../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
+import type { ScopeChoice } from '../../server/src/services/domain/kiosk-interaction-decision/queryScopeContracts'
 import type { CheckoutSnapshot, InvoiceMethod } from './domain/checkout-flow'
 import type { IngredientFilters } from './domain/composition'
 import type { CartSnapshot, FulfillmentMode, MenuItem, MenuPageState, PosOrderGateway, RecommendationTag, Selection, SubmittedOrder } from './domain/order-machine'
+import type { SelectedQueryScope } from './domain/queryScope'
 import type { SeatingContext } from './domain/seating'
+import type { HostToolName } from './hostTools'
 import type { DecisionContext, DomainPlan, DomainReference, IntentCandidate, KioskRevisions, OperationPlan, PendingConfirmation, PendingQuestion } from './kiosk-intents'
 import type { ScrollDirection, ScrollResult } from './menuScroll'
 
@@ -17,6 +20,8 @@ import { currentRecommendationSignal } from '../../order-menu-server/src/domain/
 import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters } from './domain/composition'
 import { catalogInfo, createOrderMachine, itemAvailability, ItemSelectionError, menuPageState, menuPageStates } from './domain/order-machine'
 import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription, priceProperties } from './domain/pricing'
+import { createQueryScope } from './domain/queryScope'
+import { hostToolNames } from './hostTools'
 import { authorize, buildClarificationPrompt, compileOperationPlan, configurationQuestion, createConfirmation, createQuestion, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, targetReferenceLimit, validateConfirmation } from './kiosk-intents'
 import { createMealClarification, mealMessages } from './mealClarification'
 import { paymentLabels } from './pos-bridge'
@@ -59,6 +64,7 @@ export type MenuToolName
     | 'kiosk_dialogue_presented'
     | 'kiosk_question_validate'
     | 'kiosk_agent_task'
+    | 'kiosk_query_scope'
 
 export type MenuPresentationToolName = 'menu_get' | 'menu_recommend' | 'menu_show_recommendations'
 
@@ -67,12 +73,11 @@ export interface MenuTestSnapshot {
   items: Array<{ id: string, name: string, state: MenuPageState }>
 }
 
-type KioskHostOnlyToolName = 'kiosk_test_menu' | 'kiosk_customer_entry_start' | 'kiosk_customer_phone' | 'kiosk_fast_path_clarify' | 'kiosk_interaction_state' | 'kiosk_fast_path_context' | 'kiosk_fast_path_execute' | 'kiosk_fast_path_continue' | 'kiosk_dialogue_presented' | 'kiosk_question_validate' | 'kiosk_agent_task'
-const kioskHostOnlyToolNames = new Set<MenuToolName>(['kiosk_test_menu', 'kiosk_customer_entry_start', 'kiosk_customer_phone', 'kiosk_fast_path_clarify', 'kiosk_interaction_state', 'kiosk_fast_path_context', 'kiosk_fast_path_execute', 'kiosk_fast_path_continue', 'kiosk_dialogue_presented', 'kiosk_question_validate', 'kiosk_agent_task'])
+const kioskHostOnlyToolNames = new Set<MenuToolName>(hostToolNames)
 // Optional phone entry gates order changes, not browsing the restaurant menu.
 const menuBrowsingToolNames = new Set<MenuToolName>(['menu_get', 'menu_recommend', 'menu_show_recommendations'])
 
-function isKioskHostOnlyToolName(name: MenuToolName): name is KioskHostOnlyToolName {
+function isKioskHostOnlyToolName(name: MenuToolName): name is HostToolName {
   return kioskHostOnlyToolNames.has(name)
 }
 
@@ -158,7 +163,7 @@ function menuPresentationToolFor(name: MenuToolName, input: Record<string, unkno
   // A complete catalog read does not replace the menu grid. Reserve the
   // loading surface for filtered lookups that will visibly change it.
   const { category, queries } = getMenuQuery(input)
-  return category || queries.length > 0 || input.display === true || input.excludeIngredients !== undefined || input.includeIngredients !== undefined ? name : undefined
+  return category || queries.length > 0 || input.display === true || input.excludeIngredients !== undefined || input.includeIngredients !== undefined || input.excludeItemIds !== undefined ? name : undefined
 }
 
 /** Returns the DOM control identifier used to visually follow an AI option change. */
@@ -256,6 +261,7 @@ interface MenuToolRuntimeOptions {
   /** Mirrors the active tool selection into the menu UI. */
   onSelectionChange?: (selection: Selection) => void
   /** Shares the same browser-owned question with voice and touch controls. */
+  onQueryScopeChange?: (question: PresentedQuestion | undefined) => void
   onClarificationChange?: (question: PresentedQuestion | undefined) => void
   /** Notifies the embedding host after the first successfully confirmed order. */
   onOrderConfirmed?: (order: SubmittedOrder) => void
@@ -294,6 +300,10 @@ const ingredientFilterProperties = {
   includeIngredients: { type: 'array', items: { type: 'string', enum: ingredientDefinitions.map(definition => definition.id) }, maxItems: ingredientDefinitions.length, uniqueItems: true, description: '必須含有的成分 ID；與排除條件取交集。' },
 }
 
+const menuExclusionProperties = {
+  excludeItemIds: { type: 'array', items: { type: 'string' }, uniqueItems: true, description: '依完整需求排除的真實菜單品項 ID。先查 menu_get(display:false) 的分類、品名與成分依據，再傳入需要排除的全部品項；不可用虛構 ID、字詞比對或猜成分代替語意理解。與食材、素食和價格條件取交集。more:true 時累加並保留排除；放寬或改口須省略 more 並傳完整新條件。' },
+}
+
 const toolDefinitions: MenuToolDefinition[] = [
   { name: 'kiosk_test_menu', description: '開發用頁面狀態模擬，只供測試者；省略參數讀取目前狀態。', inputSchema: { type: 'object', properties: { itemId: { type: 'string' }, state: { type: 'string', enum: [...menuPageStates] } }, additionalProperties: false } },
   { name: 'kiosk_customer_entry_start', description: 'Host 在新訂單開始前請求自願電話登記；已填寫、略過或開始訂購時不重新詢問。不供 Agent 使用。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
@@ -301,10 +311,11 @@ const toolDefinitions: MenuToolDefinition[] = [
   { name: 'kiosk_fast_path_clarify', description: '將已確認是服務需求的本輪提案轉成單一品名確認問題；只供 host 使用，不寫購物車。', inputSchema: { type: 'object', properties: { questionId: { type: 'string', maxLength: 120 } }, required: ['questionId'], additionalProperties: false } },
   { name: 'customer_skip_phone', description: '顧客明確表示略過電話、不留電話或直接開始點餐時，略過自願電話登記並進入菜單。不代表登入會員，也不新增餐點。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
   { name: 'menu_open', description: '回到菜單繼續點餐，保留購物車。只能在尚未結帳時使用；不取消結帳、不開始付款。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'menu_scroll', description: '向上或向下查看一個畫面高度的菜單。只移動畫面，不選餐點、不新增訂單、不換推薦批次。到邊界時不再移動。', inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: ['UP', 'DOWN'] } }, required: ['direction'], additionalProperties: false } },
-  { name: 'kiosk_agent_task', description: 'Kiosk host 綁定或結束目前 Agent 任務的已解析限制；不是 Agent 可選工具。', inputSchema: { type: 'object', properties: { taskId: { type: 'string', minLength: 1 }, action: { type: 'string', enum: ['BEGIN', 'END'] }, expectedMenuRevision: { type: 'integer', minimum: 0 }, readOnly: { type: 'boolean' }, constraints: { type: 'object', properties: { ...ingredientFilterProperties, ...priceProperties, unresolvedPrice: { type: 'boolean' } }, additionalProperties: false } }, required: ['taskId', 'action'], additionalProperties: false } },
-  { name: 'menu_get', description: '價格條件僅限單份基本售價，按真實價格篩選與排序，最多展示三項；不計算多份或整筆預算。左右、更便宜等未解析条件應先詢問明確單份價格，不得忽略。價格顯示在卡片，不必口頭朗讀。依分類、餐點名稱或食材／飲食條件精確查詢可點餐品項與 ID。顧客泛問有賣什麼、要求看全部或更多選擇時，不展開或朗讀完整菜單；無篩選的顧客查詢每次最多回傳三項推薦，有有效批次時保留原條件並換下一批。要直接推薦請使用 menu_recommend。display:false 僅供內部資料查詢，不得拿完整結果逐項介紹給顧客。帶 category、query 或 queries 的查詢會把最多四項相關餐點非阻斷地顯示在菜單上。顧客一次提到兩道以上餐點時，必須在同一次呼叫以 queries 傳入每一道名稱，讓畫面同時呈現所有符合品項；不可只查其中一道。顧客問某個分類有哪些品項時，先查詢後直接列出並口頭說明本次回傳、符合該分類的品項，不可只說「有幾種」或叫顧客自己看畫面。後續選擇餐點必須使用本工具結果中的 item.id。', inputSchema: { type: 'object', properties: { ...ingredientFilterProperties, ...priceProperties, display: { type: 'boolean', description: 'Agent 預設展示查詢結果；無篩選時最多三項推薦，有有效批次則換批。false 僅供內部讀取資料，不展開完整菜單給顧客。' }, category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, verifyClaim: { type: 'boolean', description: '顧客質疑先前介紹是否真的在菜單時設為 true，並以 query 或 queries 核對先前提到的具體品名；不改查其他餐點。查無品項時明確更正先前介紹。' }, query: { type: 'string', description: '顧客說出的一道餐點名稱或關鍵字；未知時省略。' }, queries: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, maxItems: 4, uniqueItems: true, description: '顧客一次提到多道餐點時使用；每個元素是一道餐點名稱或關鍵字。' } }, additionalProperties: false } },
-  { name: 'menu_recommend', description: '價格條件僅限單份基本售價，按真實價格篩選與排序，最多展示三項；不計算多份或整筆預算。左右、更便宜等未解析条件應先詢問明確單份價格，不得忽略。價格顯示在卡片，不必口頭朗讀。依真實菜單與條件推薦最多三項不同餐點並展示；未指定 limit 時最多三項，符合不足時不硬湊。顧客追問其他推薦或換一批時使用 more:true：程式保留原條件、排除這次推薦歷程中已提供的餐點；不要改查完整菜單。新推薦需求省略 more，不繼承舊條件。needs 僅使用已明示的 rice 飯類、fried 炸物；食材使用 includeIngredients / excludeIngredients。依回傳品名回答，未知與需客製品項不可宣稱符合；不自行列出或猜測熱門度。', inputSchema: { type: 'object', properties: { ...ingredientFilterProperties, ...priceProperties, category: { type: 'string' }, query: { type: 'string' }, queries: { type: 'array', items: { type: 'string' }, maxItems: 4 }, more: { type: 'boolean', description: '換下一批推薦，保留條件並排除已推薦品項。需要尚有效的推薦歷程。' }, needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3, description: '預設最多三項；顧客明確只要一或兩項時可縮小。' } }, additionalProperties: false } },
+  { name: 'menu_scroll', description: '查看一個畫面高度的較前段（UP，接近菜單開頭）或較後段（DOWN，接近菜單結尾）內容。方向表示要顯示的內容位置，不是手指移動方向。保留分類、推薦與購物車；到邊界時不再移動。', inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: ['UP', 'DOWN'] } }, required: ['direction'], additionalProperties: false } },
+  { name: 'kiosk_query_scope', description: 'Host-only scope question transition; validates question authority before querying.', inputSchema: { type: 'object', properties: { questionId: { type: 'string' }, choice: { type: 'string', enum: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST', 'IGNORE'] }, transcript: { type: 'string' } }, required: ['questionId', 'choice'], additionalProperties: false } },
+  { name: 'kiosk_agent_task', description: 'Kiosk host 綁定或結束目前 Agent 任務的已解析限制；不是 Agent 可選工具。', inputSchema: { type: 'object', properties: { taskId: { type: 'string', minLength: 1 }, action: { type: 'string', enum: ['BEGIN', 'END'] }, transcript: { type: 'string', description: 'BEGIN 必須提供本次顧客原句，供程式驗證查詢對象來源；END 不使用。' }, expectedMenuRevision: { type: 'integer', minimum: 0 }, readOnly: { type: 'boolean' }, constraints: { type: 'object', properties: { ...ingredientFilterProperties, ...priceProperties, unresolvedPrice: { type: 'boolean' } }, additionalProperties: false } }, required: ['taskId', 'action'], additionalProperties: false } },
+  { name: 'menu_get', description: '精確查詢顧客指定的具體品名，或用 display:false 取得內部菜單資料。分類條件只供內部查詢；要展示某分類，用 menu_recommend action:update 並傳 category，讓程式保留其他查詢條件。query／queries 僅限具體餐點名稱，category 只能使用 POS 精確分類。顧客沒有指定具體品名／分類，而是在找餐點、換選擇、重新挑選或需要釐清時，使用 menu_recommend 的 action，不使用本工具把整句或其他品項當名稱。display:false 是資料讀取，不可把整份結果逐項介紹。一次提到多道餐點以 queries 一次查齊。質疑先前介紹是否存在時加 verifyClaim:true，查無就明確更正，不改查相近餐點。指定分類透過明確查詢動作後要直接列出並展示回傳品項，不只說有幾種或叫顧客自己看畫面，不能憑分類名猜庫存或價格。單份價格與飲食限制依工具結果驗證，不分配整筆預算。不確定查詢範圍時用 menu_recommend action:clarify，尚未釐清不得猜範圍或推薦。', inputSchema: { type: 'object', properties: { ...menuExclusionProperties, ...ingredientFilterProperties, ...priceProperties, display: { type: 'boolean', description: 'Agent 預設展示查詢結果；無篩選時最多三項推薦，有有效批次則換批。false 僅供內部讀取資料，不展開完整菜單給顧客。' }, category: { type: 'string', description: '要查詢的精確分類名稱；未知時省略。' }, verifyClaim: { type: 'boolean', description: '顧客質疑先前介紹是否真的在菜單時設為 true，並以 query 或 queries 核對先前提到的具體品名；不改查其他餐點。查無品項時明確更正先前介紹。' }, query: { type: 'string', description: '僅限顧客明確指定的具體餐點名稱或名稱片段；即使查無此品名仍保留原名。沒有具體品名時省略。其他、別的、那些等相對指涉與泛指品項不是商品名稱，不可放入 query。' }, queries: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, maxItems: 4, uniqueItems: true, description: '顧客明確指定多道餐點時，每個元素是一道具體餐點名稱。沒有具體品名時省略；不填泛指詞、相對指涉、分類或整句需求。' } }, additionalProperties: false } },
+  { name: 'menu_recommend', description: '由程式保存查詢條件的餐點探索與語音釐清工具。每次必須明確提供 action。continue：保留目前條件找下一批；update：只提供本句要變更的條件，取消條件用 clear，其餘程式保留；reset：使用者明確重新挑選才重置價格、分類等瀏覽條件，飲食限制和已展示歷史保留；clarify：需求或範圍不明，只傳 {action:clarify}，問題由程式產生，不提供 customerMessage、question 或其他參數；工具回傳一個語音問題，不查新餐點、不展示、不改購物車。泛指其他項目、別的選擇或更正前句不是品名。前次已無其他符合結果且未明示新範圍時選 clarify；不能直接重置或重試相同條件。第一輪找餐點用 update。僅明確具體品名的精確查證使用 menu_get。每次最多三項，完全依真實售價、成分和 POS 標示篩選，不猜素食或過敏安全，不分配整筆預算；價格顯示於畫面，不必逐項朗讀。語音釐清的 customerMessage 直接問顧客即可，不再查詢。', inputSchema: { type: 'object', properties: { ...menuExclusionProperties, ...ingredientFilterProperties, ...priceProperties, category: { type: 'string' }, query: { type: 'string', description: '僅限顧客指定的具體餐點名稱；未指定時省略，不填其他品項或相對指涉。' }, queries: { type: 'array', items: { type: 'string' }, maxItems: 4, description: '每個元素必須是顧客指定的具體餐點名稱；沒有具體品名時省略。' }, action: { type: 'string', enum: ['continue', 'update', 'reset', 'clarify'], description: '必要。continue 沿用條件換批，不修改條件；update 只修改本句明示的條件，其餘由程式保留；reset 重新挑選，清除價格與分類等瀏覽限制，保留飲食限制與已展示歷史；clarify 需求有歧義，只傳 action，不提供 customerMessage 或 question；問題由程式產生，不查詢或展示。原條件已無其他結果又只說其他品項，選 clarify，不能把泛指詞當 query。' }, excludeShown: { type: 'boolean', description: '僅 update 使用；只有本句同時修改條件並明確要求其他未介紹餐點時為 true；不得沿用前句要求其他餐點的意圖。單純改價位或分類、詢問新條件有哪些符合餐點時省略，即使前句曾要求換批或沒有更多結果，符合的已展示餐點也可列入。continue／reset 已內建排除歷史，不需此欄位。' }, clear: { type: 'array', items: { type: 'string', enum: ['price', 'category', 'query', 'needs', 'strategy', 'dietary', 'ingredients', 'excludedItems'] }, uniqueItems: true, description: '僅 update 使用；明確取消哪組條件才列出。提供新的價格欄位會整組替換原價格上下限，省略欄位保留原組。飲食限制不可因重新挑選而自行清除。' }, needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3, description: '預設最多三項；顧客明確只要一或兩項時可縮小。' } }, required: ['action'], additionalProperties: false } },
   { name: 'menu_show_recommendations', description: '在菜單中非阻斷地展示 1 至 4 項推薦。只可在顧客明確表示想看推薦後使用。itemIds 必須全部來自先前 menu_get 或 menu_recommend 的回傳結果；不得自行猜測品項。可附簡短標題與理由，但不得加入未提供的健康、過敏或供應資訊。回覆時直接說出實際推薦品名，不要只叫顧客看畫面。', inputSchema: { type: 'object', properties: { itemIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true, description: '必要。先前菜單工具回傳的 item.id。' }, reason: { type: 'string', maxLength: 90, description: '可選。給顧客看的簡短搭配理由。' }, title: { type: 'string', maxLength: 36, description: '可選。推薦列標題。' } }, required: ['itemIds'], additionalProperties: false } },
   { name: 'menu_select_item', description: '選擇一個餐點並建立可設定的選擇。呼叫前必須先使用 menu_get，並傳入其結果中完全相同的 item.id。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。先前 menu_get 回傳的其中一個 item.id；不得猜測、翻譯或自行建立。' } }, required: ['itemId'], additionalProperties: false } },
   { name: 'menu_set_item_option', description: '設定目前餐點的口味、辣度、甜度或冰量。groupId 與 valueId 必須來自 menu_select_item 回傳的 item.optionGroups。', inputSchema: { type: 'object', properties: { groupId: { type: 'string', description: '必要。已選餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['groupId', 'valueId'], additionalProperties: false } },
@@ -430,6 +441,19 @@ function menuItemForAgent(item: MenuItem) {
     recommendationTags: item.recommendationTags,
     optionGroups: item.optionGroups,
   }
+}
+
+// Exclusions are resolved catalog identities, never user phrases. Validate them
+// against the current menu before filtering or replacing a visible batch.
+function menuExclusions(input: Record<string, unknown>, menu: readonly MenuItem[]): string[] {
+  if (input.excludeItemIds === undefined)
+    return []
+  if (!Array.isArray(input.excludeItemIds) || !input.excludeItemIds.every(id => typeof id === 'string'))
+    throw new Error('excludeItemIds must be an array of current menu item IDs.')
+  const ids = [...new Set<string>(input.excludeItemIds)]
+  if (ids.some(id => !menu.some(item => item.id === id)))
+    throw new Error('UNKNOWN_MENU_EXCLUSION: Read the current catalog and use its exact item IDs.')
+  return ids
 }
 
 function getMenuQuery(input: Record<string, unknown>) {
@@ -562,13 +586,15 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   // order and resume after the foreground meal completes; no cart line is implied.
   const suspendedConfigurations: PendingConfiguration[] = []
   const mealClarification = createMealClarification()
+  let queryScope: ReturnType<typeof createQueryScope> | undefined
+  let queryScopeInput: { name: 'menu_get' | 'menu_recommend', input: Record<string, unknown> } | undefined
   let clarificationTranscript = ''
   let issuedFastPathContext: IssuedFastPathContext | undefined
   // Admitted customer calls must settle before an Agent can acquire ownership.
   let manualOperations = 0
   // Host-owned, per Agent turn. A new task replaces this record; END from an
   // interrupted older turn cannot clear its successor's verified conditions.
-  let agentTask: { taskId: string, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number } | undefined
+  let agentTask: { taskId: string, broadMenuQuery: boolean, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number } | undefined
   let waitingFor: PendingQuestion | undefined
   let offeredQuestion: typeof waitingFor
   // Records belong to this order, not a model turn. Completed/superseded
@@ -579,7 +605,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   // Conditions and delivered items belong to this order, not an idle timer.
   // An explicit fresh recommendation replaces the batch; reset clears it.
   let recommendationRevision = 0
-  let recommendationBatch: { seenIds: Set<string>, filters: IngredientFilters, needs: RecommendationTag[], prices: PriceConditions, category: string, queries: string[], strategy?: RecommendationStrategy, menuRevision: number | undefined } | undefined
+  let recommendationBatch: { seenIds: Set<string>, filters: IngredientFilters, excludedItemIds: string[], needs: RecommendationTag[], prices: PriceConditions, category: string, queries: string[], strategy?: RecommendationStrategy, scope?: SelectedQueryScope, exhausted: boolean, menuRevision: number | undefined } | undefined
 
   // Native WebMCP and embedded-host discovery must expose the same POS
   // capabilities, not a static enum containing unavailable service modes.
@@ -636,6 +662,14 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     return { ...machine.getRevisions(), recommendation: recommendationRevision, checkout: options.checkout?.revision() ?? 0, ...(options.seating ? { seating: options.seating.context().revision } : {}) }
   }
 
+  // Retire the owner, captured request and visible controls together. A later
+  // checkout cancellation must not revive a previous menu-scope question.
+  function clearQueryScope() {
+    queryScope = undefined
+    queryScopeInput = undefined
+    options.onQueryScopeChange?.(undefined)
+  }
+
   function currentFastPathContext(transcript = '', previousTranscript?: string, renewQuestion = false) {
     const revisions = currentFastPathRevisions()
     let context = deriveDecisionContext({
@@ -651,7 +685,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       menuReturnSupported: Boolean(options.onMenuRequested),
       paymentStatus: options.checkout?.paymentStatus(),
       presentationItemIds: presentationFocus?.menuRevision === revisions.menu ? presentationItemIds : undefined,
-      recommendationConditions: recommendationBatch && recommendationBatch.menuRevision === revisions.menu ? [ingredientFilterDescription(recommendationBatch.filters), priceDescription(recommendationBatch.prices), recommendationBatch.category, ...recommendationBatch.queries, ...recommendationBatch.needs].filter(Boolean).join('、') || '原本條件' : undefined,
+      recommendationConditions: recommendationBatch && recommendationBatch.menuRevision === revisions.menu ? [ingredientFilterDescription(recommendationBatch.filters), priceDescription(recommendationBatch.prices), recommendationBatch.category, ...(recommendationBatch.excludedItemIds.length ? [`排除餐點：${recommendationBatch.excludedItemIds.join('、')}`] : []), ...recommendationBatch.queries, ...recommendationBatch.needs].filter(Boolean).join('、') || '原本條件' : undefined,
       recentAddedLineId: machine.getLastAddedLineId(),
       revisions,
       selectedItem: machine.getSelection(),
@@ -733,7 +767,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     options.onClarificationChange?.(question)
     if (!question)
       return undefined
-    return { phase: 'meal_confirmation', waitingFor: question, candidates: [...question.choices.map(choice => ({ ...choice, requiresHighConfidence: true })), ...(mealClarification.inquiry(context) ? [{ id: `inquire-meal:${question.questionId}`, description: '查詢目前確認的這款餐點現在是否可點，例如「我想問還有沒有」「還能點嗎」「沒有了嗎」；不是購買或否認購買，不新增餐點。', requiresHighConfidence: true }] : [])], catalogEvidence: context.catalogEvidence, paymentState: 'idle', interactionState: { ...context.interactionState, screen: 'request_confirmation' } }
+    return { phase: 'meal_confirmation', waitingFor: question, candidates: [...question.choices.map(choice => ({ ...choice, requiresHighConfidence: true })), ...(mealClarification.inquiry(context) ? [{ id: `inquire-meal:${question.questionId}`, description: '查詢目前確認的這款餐點現在是否可點，例如「我想問還有沒有」「還能點嗎」「沒有了嗎」；不是購買或否認購買，不新增餐點。', requiresHighConfidence: true }] : [])], catalogEvidence: context.catalogEvidence, paymentState: 'idle', interactionState: context.interactionState }
   }
 
   function suspendMeal() {
@@ -889,6 +923,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
 
   async function invoke(name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction): Promise<unknown> {
     if (name === 'menu_get' || name === 'menu_recommend') {
+      menuExclusions(input, machine.getMenu())
       const { category } = getMenuQuery(input)
       const categories = [...new Set(machine.getMenu().map(item => item.category))]
       // An invented label is an invalid query, not evidence of unavailable food.
@@ -896,10 +931,29 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (category && !categories.includes(category))
         throw new Error(`UNKNOWN_CATEGORY: Use an exact POS category from ${JSON.stringify(categories)}; do not infer availability from this rejected query.`)
     }
+    if ((name === 'menu_get' || name === 'menu_recommend') && input.more !== true) {
+      const { category, queries } = getMenuQuery(input)
+      const prices = priceConditions(input)
+      const filters = ingredientFilters(input)
+      const hasConditions = Object.keys(prices).length > 0 || filters.dietary || filters.includeIngredients.length || filters.excludeIngredients.length
+      // A fresh constrained broad read after recommendations has no declared
+      // scope. Ask once rather than treating the prior batch as the catalog.
+      const keepsKnownScope = input.action === 'update' && Boolean(recommendationBatch?.scope || recommendationBatch?.category)
+      if (input.action !== 'reset' && !keepsKnownScope && !category && !queries.length && hasConditions && recommendationBatch?.menuRevision === machine.getRevisions().menu && presentationItemIds?.length && currentFastPathContext().phase === 'ordering') {
+        if (!queryScope) {
+          issuedFastPathContext = undefined
+          pendingReadContinuation = undefined
+          queryScope = createQueryScope({ questionId: crypto.randomUUID(), expiresAt: Date.now() + 120_000, revisions: { menu: machine.getRevisions().menu, recommendation: recommendationRevision }, shownItemIds: presentationItemIds, conditions: { ...prices, ...filters } })
+          queryScopeInput = { name, input: { ...input, ...prices, ...filters, excludeItemIds: menuExclusions(input, machine.getMenu()), ...(input.needs ? { needs: recommendationNeeds(input) } : {}) } }
+        }
+        options.onQueryScopeChange?.(queryScope.question)
+        return { customerMessage: queryScope.question.question, pendingCustomerChoice: queryScope.question }
+      }
+    }
     if (name === 'menu_get' && input.display === true && input.verifyClaim !== true) {
       const { category, queries } = getMenuQuery(input)
       const filters = ingredientFilters(input)
-      if (!category && !queries.length && !filters.dietary && !filters.excludeIngredients.length && !filters.includeIngredients.length && !Object.keys(priceConditions(input)).length) {
+      if (!category && !queries.length && !filters.dietary && !filters.excludeIngredients.length && !filters.includeIngredients.length && !menuExclusions(input, machine.getMenu()).length && !Object.keys(priceConditions(input)).length) {
         if (!['ordering', 'customer_entry'].includes(currentFastPathContext().phase))
           throw new Error('Menu exploration is unavailable in the current phase.')
         // Customer-facing broad browsing shares the same batches as semantic
@@ -917,6 +971,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         options.onMenuChanged?.(machine.getMenu())
       throw error
     }
+    if (queryScope && !isKioskHostOnlyToolName(name) && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get'].includes(name))
+      clearQueryScope()
     if (name === 'kiosk_fast_path_context' && result && typeof result === 'object') {
       const context = currentFastPathContext(typeof input.transcript === 'string' ? input.transcript : '')
       const snapshot = result as { candidates?: Array<{ id: string }> }
@@ -957,7 +1013,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     return result
   }
 
-  async function invokeOperation(name: MenuToolName, input: Record<string, unknown>, onAction: MenuToolRuntimeOptions['onAction']): Promise<unknown> {
+  async function invokeOperation(name: MenuToolName, input: Record<string, unknown>, onAction: MenuToolRuntimeOptions['onAction'], scopeSelection?: SelectedQueryScope): Promise<unknown> {
+    const scopeLabel = scopeSelection ? scopeSelection.scope === 'SHOWN' ? mealMessages.queryScope.shown : mealMessages.queryScope.catalog : undefined
     if (options.orderingReady?.() === false && !menuBrowsingToolNames.has(name) && !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone' && name !== 'order_ask_question')
       throw new Error('請在開始畫面輸入手機號碼或選擇略過，再開始點餐。')
     const presentationToolName = menuPresentationToolFor(name, input)
@@ -1033,6 +1090,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           return { recorded: true }
         }
         case 'kiosk_question_validate': {
+          if (queryScope && queryScope.question.questionId === input.questionId) {
+            const probe = queryScope.resolve({ questionId: input.questionId as string, choice: 'ASK' }, { menu: machine.getRevisions().menu, recommendation: recommendationRevision })
+            return probe.status === 'WAITING' ? { pendingCustomerChoice: probe.question } : {}
+          }
+
           const current = currentFastPathContext()
           return offeredQuestion && offeredQuestion.questionId === input.questionId && offeredQuestion.phase === current.phase && questionIsCurrent(offeredQuestion, current.revisions, Date.now())
             ? { pendingCustomerChoice: publicQuestion(offeredQuestion) }
@@ -1060,11 +1122,15 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const prices = priceConditions(input)
           // Price-qualified customer reads share the recommendation batch owner:
           // ranking precedes the three-item cap and later alternatives keep scope.
-          if (Object.keys(prices).length && input.display !== false)
+          if (Object.keys(prices).length && input.display !== false) {
+            if (scopeSelection)
+              return await invokeOperation('menu_recommend', { ...input, ...prices }, onAction, scopeSelection)
             return await invoke('menu_recommend', { ...input, ...prices })
+          }
           const categories = [...new Set(machine.getMenu().map(item => item.category))]
           const appliedFilters = ingredientFilters(input)
-          const scope = machine.getMenu(category || undefined).filter(item => queries.length === 0 || queries.some(query => itemMatchesQuery(item, query)))
+          const excludedItemIds = menuExclusions(input, machine.getMenu())
+          const scope = machine.getMenu(category || undefined).filter(item => (!scopeSelection?.itemIds || scopeSelection.itemIds.includes(item.id)) && !excludedItemIds.includes(item.id) && (queries.length === 0 || queries.some(query => itemMatchesQuery(item, query))))
           const itemStatuses = queries.length ? scope.map(itemAvailability) : []
           if (input.verifyClaim === true && !queries.length)
             throw new Error('Specify the meal names being verified with query or queries.')
@@ -1096,7 +1162,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           // the visible menu synchronized with that result without depending
           // on the model to remember a second presentation-only tool call.
           const visibleSubjects = subjects.length ? subjects : categories.map(category => ({ id: `category:${category}`, label: category, itemIds: items.filter(item => item.category === category).map(item => item.id) }))
-          const presentation = (category || queries.length > 0 || input.display === true || hasIngredientFilters)
+          const presentation = (category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false))
             ? {
                 kind: 'query-results' as const,
                 itemIds: coverageItemIds(visibleSubjects),
@@ -1105,10 +1171,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               }
             : undefined
           if (presentation) {
+            if (scopeLabel)
+              presentation.title = `${scopeLabel} · ${presentation.title}`
             presentationItemIds = presentation.itemIds
             options.onRecommendationsChange?.(presentation)
           }
           return {
+            // Host replies must not narrate this internal catalog as a second
+            // recommendation before the Agent has applied the customer's scope.
+            dataOnly: input.display === false,
+            ...(recommendationBatch?.menuRevision === machine.getRevisions().menu ? { queryState: { category: recommendationBatch.category, queries: recommendationBatch.queries, prices: recommendationBatch.prices, filters: recommendationBatch.filters, exhausted: recommendationBatch.exhausted } } : {}),
             catalog: catalogInfo,
             categories,
             ingredientDefinitions,
@@ -1116,12 +1188,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             items,
             itemStatuses,
             requestedQueries: queries,
+            excludedItemIds,
             appliedFilters,
             appliedPriceConditions: prices,
             availability: filterAvailability(filtered, items.length),
             customizable: filtered.customizable.map(({ item, requiredOptions }) => ({ item: menuItemForAgent(item), requiredOptions })),
             unknownCompositionItems: filtered.unknown.map(menuItemForAgent),
-            ...(category || queries.length > 0 || input.display === true || hasIngredientFilters
+            ...(category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false)
               ? { customerMessage: verificationMessage ?? (queries.length && !hasIngredientFilters && !appliedFilters.dietary && !Object.keys(prices).length ? queryMessage : `${hasIngredientFilters ? `${filterDescription}：` : ''}${items.length ? `我找到：${items.map(item => item.name).join('、')}。` : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`) }
               : {}),
             ...(presentation ? { presentation } : {}),
@@ -1129,8 +1202,22 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         }
         case 'menu_recommend': {
           const previous = input.more === true ? recommendationBatch : undefined
+          // More keeps the confirmed universe without turning that universe
+          // into food exclusions which could leak into a later fresh query.
+          const suppliedScope = getMenuQuery(input)
+          const retainsSubject = recommendationBatch?.category === suppliedScope.category && JSON.stringify(recommendationBatch?.queries) === JSON.stringify(suppliedScope.queries)
+          let actionScope: SelectedQueryScope | undefined
+          if (input.action === 'reset' || (input.action === 'update' && !recommendationBatch))
+            actionScope = { scope: 'CATALOG' }
+          else if (input.action === 'update' && retainsSubject)
+            actionScope = recommendationBatch?.scope
+          // An owned scope reply takes precedence; continuation retains its
+          // confirmed universe, while explicit reset starts from the catalog.
+          const selectedScope = scopeSelection ?? previous?.scope ?? actionScope
+          const selectedScopeLabel = selectedScope ? selectedScope.scope === 'SHOWN' ? mealMessages.queryScope.shown : mealMessages.queryScope.catalog : undefined
           if (input.more === true && (!previous || previous.menuRevision !== machine.getRevisions().menu))
             throw new Error('Recommendation context is absent or the catalog changed; start a new recommendation.')
+          const excludedItemIds = [...new Set([...(previous?.excludedItemIds ?? []), ...menuExclusions(input, machine.getMenu())])]
           const needs = input.needs === undefined && previous ? previous.needs : recommendationNeeds(input)
           const strategy = input.strategy === undefined ? previous?.strategy : input.strategy
           if (strategy !== undefined && strategy !== 'POPULAR' && strategy !== 'NEW_ARRIVAL' && strategy !== 'CHEF_SPECIAL')
@@ -1144,7 +1231,6 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (previous && Object.entries(suppliedPrices).some(([key, value]) => previous.prices[key as keyof PriceConditions] !== value))
             throw new Error('Price conditions changed; start a new recommendation without more.')
           const prices = previous?.prices ?? suppliedPrices
-          const suppliedScope = getMenuQuery(input)
           if (previous && ((suppliedScope.category && suppliedScope.category !== previous.category) || (suppliedScope.queries.length && JSON.stringify(suppliedScope.queries) !== JSON.stringify(previous.queries))))
             throw new Error('Menu scope changed; start a new recommendation without more.')
           const { category, queries } = previous ?? suppliedScope
@@ -1163,22 +1249,27 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           // Budget refers to one dish's base price, not the whole order or
           // customized price. Scope all result classes before composition
           // checks so an over-budget unknown dish cannot mask a known absence.
-          const scope = machine.getMenu(category || undefined).filter(item => (!queries.length || queries.some(query => itemMatchesQuery(item, query))) && needs.every(need => item.recommendationTags.includes(need)) && (!strategy || currentRecommendationSignal(item.recommendationSignals, strategy, now)))
+          const scope = machine.getMenu(category || undefined).filter(item => (!selectedScope?.itemIds || selectedScope.itemIds.includes(item.id)) && !excludedItemIds.includes(item.id) && (!queries.length || queries.some(query => itemMatchesQuery(item, query))) && needs.every(need => item.recommendationTags.includes(need)) && (!strategy || currentRecommendationSignal(item.recommendationSignals, strategy, now)))
           const filtered = filterIngredients(filterPrices(scope, prices), appliedFilters)
           const hasIngredientFilters = appliedFilters.excludeIngredients.length > 0 || appliedFilters.includeIngredients.length > 0
           const ranked = strategy && !prices.priceOrder
             ? filtered.matches.filter(item => currentRecommendationSignal(item.recommendationSignals, strategy, now)).sort((a, b) => currentRecommendationSignal(a.recommendationSignals, strategy, now)!.rank - currentRecommendationSignal(b.recommendationSignals, strategy, now)!.rank)
             : filtered.matches
-          const items = ranked
+          const historyIds = previous?.seenIds ?? (input.action === 'update' || input.action === 'reset' ? recommendationBatch?.seenIds : undefined)
+          const seenIds = previous || input.action === 'reset' || input.excludeShown === true ? historyIds : undefined
+          const eligible = ranked
             .filter(item => item.available !== false)
             .filter(item => needs.every(need => item.recommendationTags.includes(need)))
-            .filter(item => !previous?.seenIds.has(item.id))
-            .slice(0, limit)
+            .filter(item => !seenIds?.has(item.id))
+          if (input.more === true && eligible.length === 0 && filterAvailability(filtered, 0) === 'NONE') {
+            return { queryAction: 'clarify', items: [], needs, customerMessage: mealMessages.queryActions.exhausted, appliedPriceConditions: prices, appliedFilters, excludedItemIds, ...(prices.maxPrice !== undefined ? { maxPrice: prices.maxPrice } : {}), availability: 'NONE' }
+          }
+          const items = eligible.slice(0, limit)
             .map(menuItemForAgent)
-          recommendationBatch = { seenIds: new Set([...(previous?.seenIds ?? []), ...items.map(item => item.id)]), filters: appliedFilters, needs, prices, category, queries, ...(strategy ? { strategy } : {}), menuRevision: machine.getRevisions().menu }
+          recommendationBatch = { ...(selectedScope ? { scope: selectedScope } : {}), seenIds: new Set([...(historyIds ?? []), ...items.map(item => item.id)]), exhausted: eligible.length <= items.length, filters: appliedFilters, excludedItemIds, needs, prices, category, queries, ...(strategy ? { strategy } : {}), menuRevision: machine.getRevisions().menu }
           recommendationRevision++
           const title = [category, ...queries, ingredientFilterDescription(appliedFilters), priceDescription(prices)].filter(Boolean).join('、')
-          const presentation = items.length > 0 || hasIngredientFilters || Object.keys(prices).length > 0 || input.more === true
+          const presentation = items.length > 0 || hasIngredientFilters || excludedItemIds.length > 0 || Object.keys(prices).length > 0 || input.more === true
             ? {
                 kind: 'recommendation' as const,
                 itemIds: items.map(item => item.id),
@@ -1190,6 +1281,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               }
             : undefined
           if (presentation) {
+            if (selectedScopeLabel)
+              presentation.title = `${selectedScopeLabel} · ${presentation.title}`
             presentationItemIds = presentation.itemIds
             options.onRecommendationsChange?.(presentation)
           }
@@ -1198,7 +1291,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               ? `推薦${items.length === 1 ? '一項' : `${items.length} 項`}：${items.map(item => item.name).join('、')}。`
               : input.more === true && filterAvailability(filtered, items.length) === 'NONE' ? '目前沒有其他符合原條件且尚未推薦的餐點。' : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`,
             items,
+            ...(input.action ? { queryAction: input.action } : {}),
+            queryState: { category, queries, prices, filters: appliedFilters, exhausted: recommendationBatch.exhausted },
             needs,
+            excludedItemIds,
             ...(prices.maxPrice !== undefined ? { maxPrice: prices.maxPrice } : {}),
             appliedPriceConditions: prices,
             ...(strategy ? { strategy } : {}),
@@ -1565,6 +1661,35 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             customerMessage: '已返回訂單內容，購物車仍保留。',
           }
         }
+        case 'kiosk_query_scope': {
+          if (!queryScope)
+            throw new Error('STALE_PLAN: Query scope question is no longer active.')
+          const questionId = requiredString(input, 'questionId')
+          const choice = input.choice as ScopeChoice
+          const result = queryScope.resolve({ questionId, choice, ...(typeof input.transcript === 'string' ? { transcript: input.transcript } : {}) }, { menu: machine.getRevisions().menu, recommendation: recommendationRevision })
+          if (result.status === 'STALE') {
+            clearQueryScope()
+            throw new Error('STALE_PLAN: Query scope expired or recommendation changed.')
+          }
+          if (result.status === 'WAITING')
+            return { customerMessage: result.question.question, pendingCustomerChoice: result.question }
+          if (result.status === 'IGNORE')
+            return { status: 'IGNORE' }
+          const original = queryScopeInput
+          clearQueryScope()
+          if (result.status === 'NEW_REQUEST')
+            return result
+          // Admission stays on this internal call chain, not a global bypass
+          // that another concurrent read could accidentally inherit.
+          const receipt = await invokeOperation(original?.name ?? 'menu_get', { ...original?.input, ...result.conditions, display: true }, onAction, result)
+          if (receipt && typeof receipt === 'object') {
+            if ('presentation' in receipt)
+              presentationFocus = { menuRevision: machine.getRevisions().menu }
+            const label = result.scope === 'SHOWN' ? mealMessages.queryScope.shown : mealMessages.queryScope.catalog
+            return { ...receipt, queryScope: result.scope, ...('customerMessage' in receipt && typeof receipt.customerMessage === 'string' ? { customerMessage: `${label}：${receipt.customerMessage}` } : {}) }
+          }
+          return receipt
+        }
         case 'kiosk_agent_task': {
           const taskId = requiredString(input, 'taskId')
           if (input.action === 'END') {
@@ -1585,7 +1710,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (!constraints || typeof constraints !== 'object' || Array.isArray(constraints))
             throw new Error('Agent task requires explicit bounded constraints.')
           const bounded = constraints as Record<string, unknown>
-          agentTask = { taskId, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000 }
+          const source = deriveDecisionContext({ ...currentFastPathContext(), transcript: requiredString(input, 'transcript') })
+          agentTask = { taskId, broadMenuQuery: source.catalogEvidence.products.length === 0 && source.catalogEvidence.categories.length === 0, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000 }
           options.onAgentControlChange?.(true)
           return { ok: true }
         }
@@ -1604,6 +1730,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           return { customerMessage: speak ? question.question : '', pendingCustomerChoice: question, silent: !speak }
         }
         case 'kiosk_interaction_state': {
+          if (queryScope && currentFastPathContext().phase !== 'ordering') {
+            clearQueryScope()
+          }
+          if (queryScope) {
+            const probe = queryScope.resolve({ questionId: queryScope.question.questionId, choice: 'ASK' }, { menu: machine.getRevisions().menu, recommendation: recommendationRevision })
+            if (probe.status === 'WAITING')
+              return { phase: 'query_scope', candidates: [], menuRevision: machine.getRevisions().menu, constraints: { exclude: queryScope.conditions.excludeIngredients, include: queryScope.conditions.includeIngredients, dietary: queryScope.conditions.dietary, price: priceConditions({ ...queryScope.conditions }) }, waitingFor: probe.question }
+            clearQueryScope()
+          }
+
           const context = currentFastPathContext()
           const confirmation = mealConfirmationSnapshot(context)
           if (confirmation)
@@ -1635,6 +1771,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
         }
         case 'kiosk_fast_path_context': {
+          if (queryScope && currentFastPathContext().phase !== 'ordering') {
+            clearQueryScope()
+          }
+          if (queryScope) {
+            const probe = queryScope.resolve({ questionId: queryScope.question.questionId, choice: 'ASK' }, { menu: machine.getRevisions().menu, recommendation: recommendationRevision })
+            if (probe.status === 'WAITING')
+              return { phase: 'query_scope', candidates: [], menuRevision: machine.getRevisions().menu, constraints: { exclude: queryScope.conditions.excludeIngredients, include: queryScope.conditions.includeIngredients, dietary: queryScope.conditions.dietary, price: priceConditions({ ...queryScope.conditions }) }, waitingFor: probe.question }
+            clearQueryScope()
+          }
+
           if (machine.getCart().fulfillmentMode === 'dine-in')
             await options.seating?.refresh()
           // A new utterance supersedes any unclaimed read continuation from
@@ -1750,6 +1896,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
         }
         case 'kiosk_fast_path_execute': {
+          if (queryScope)
+            throw new Error('STALE_PLAN: Resolve the pending query scope before executing another Kiosk plan.')
           if (machine.getCart().fulfillmentMode === 'dine-in')
             await options.seating?.refresh()
           const candidateId = requiredString(input, 'candidateId')
@@ -2034,9 +2182,89 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     if (agentTask?.unresolvedPrice && !['cart_get', 'seating_get'].includes(name)) {
       if (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu)
         throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')
-      return { items: [], customerMessage: priceClarification }
+      // The host stops on ok:false. This is a clarification boundary, not an
+      // empty search result that the Agent may retry with guessed amounts.
+      return { ok: false, items: [], customerMessage: priceClarification }
+    }
+    if (menuBrowsingToolNames.has(name) && agentTask && (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu))
+      throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')
+    if (name === 'menu_recommend' && !['ordering', 'customer_entry'].includes(currentFastPathContext().phase))
+      throw new Error('Menu exploration is unavailable in the current phase.')
+    if (name === 'menu_recommend') {
+      const action = requiredString(input, 'action')
+      if (!['continue', 'update', 'reset', 'clarify'].includes(action))
+        throw new Error('Invalid query action.')
+      const { action: _action, clear, ...patch } = input
+      if ('more' in patch)
+        throw new Error('Use an explicit action instead of more.')
+      if ((action === 'continue' || action === 'clarify') && (clear !== undefined || Object.keys(patch).some(key => key !== 'limit')))
+        throw new Error(`${action} cannot change query conditions.`)
+      if (action === 'continue' && recommendationBatch && recommendationBatch.menuRevision !== machine.getRevisions().menu)
+        throw new Error('STALE_PLAN: Query conditions belong to an older menu.')
+      if (action === 'clarify' || (action === 'continue' && recommendationBatch?.exhausted))
+        return { queryAction: 'clarify', items: [], customerMessage: recommendationBatch?.exhausted ? mealMessages.queryActions.exhausted : mealMessages.queryActions.clarify }
+      if (action === 'continue') {
+        input = { ...patch, action, more: true }
+      }
+      else {
+        if (action === 'reset' && clear !== undefined)
+          throw new Error('reset retains dietary conditions; use update to explicitly clear conditions.')
+        const groups = ['price', 'category', 'query', 'needs', 'strategy', 'dietary', 'ingredients', 'excludedItems']
+        if (clear !== undefined && (!Array.isArray(clear) || clear.some(value => typeof value !== 'string' || !groups.includes(value))))
+          throw new Error('Invalid query condition group.')
+        const cleared = new Set<string>(Array.isArray(clear) ? clear : [])
+        const previous = recommendationBatch
+        if (previous && previous.menuRevision !== machine.getRevisions().menu)
+          throw new Error('STALE_PLAN: Query conditions belong to an older menu.')
+        // A supplied price group replaces its old bounds. Other groups retain
+        // browser-owned values unless explicitly changed or cleared; reset
+        // only releases browsing scope, never dietary restrictions or history.
+        const prices = action === 'update' && !cleared.has('price') && patch.minPrice === undefined && patch.maxPrice === undefined ? previous?.prices : undefined
+        const category = action === 'update' && !cleared.has('category') ? previous?.category : undefined
+        const queries = action === 'update' && !cleared.has('query') && patch.query === undefined && patch.queries === undefined ? previous?.queries : undefined
+        const needs = action === 'update' && !cleared.has('needs') ? previous?.needs : undefined
+        const strategy = action === 'update' && !cleared.has('strategy') ? previous?.strategy : undefined
+        const filters = previous?.filters
+        input = {
+          ...prices,
+          ...(category ? { category } : {}),
+          ...(queries?.length ? { queries } : {}),
+          ...(needs?.length ? { needs } : {}),
+          ...(strategy ? { strategy } : {}),
+          ...(!cleared.has('dietary') && filters?.dietary ? { dietary: filters.dietary } : {}),
+          ...(!cleared.has('ingredients') && filters ? { excludeIngredients: filters.excludeIngredients, includeIngredients: filters.includeIngredients } : {}),
+          ...(!cleared.has('excludedItems') && previous ? { excludeItemIds: previous.excludedItemIds } : {}),
+          ...patch,
+          action,
+        }
+        // New exclusions add to confirmed food constraints. Removing a group
+        // requires an explicit clear; updating a price cannot release it.
+        if (previous && !cleared.has('excludedItems'))
+          input.excludeItemIds = [...new Set([...previous.excludedItemIds, ...menuExclusions(patch, machine.getMenu())])]
+        if (filters && !cleared.has('ingredients')) {
+          const supplied = ingredientFilters(patch)
+          input.excludeIngredients = [...new Set([...filters.excludeIngredients, ...supplied.excludeIngredients])]
+          input.includeIngredients = [...new Set([...filters.includeIngredients, ...supplied.includeIngredients])]
+        }
+      }
+    }
+    if (name === 'menu_get' && input.display !== false) {
+      const { category, queries } = getMenuQuery(input)
+      if (!category && !queries.length && !['ordering', 'customer_entry'].includes(currentFastPathContext().phase))
+        throw new Error('Menu exploration is unavailable in the current phase.')
+      if (!queries.length && input.verifyClaim === true)
+        throw new Error('Specify the meal names being verified with query or queries.')
+      if (!queries.length)
+        throw new Error('Menu browsing presentation requires menu_recommend with an explicit action.')
     }
     if (agentTask && menuBrowsingToolNames.has(name)) {
+      // Tool arguments cannot turn a customer-wide price/filter query into a
+      // named lookup of the previous recommendation. The source utterance owns
+      // subject evidence, independently from the model's chosen arguments.
+      if (name === 'menu_get' && agentTask.readOnly && agentTask.broadMenuQuery && (Object.keys(agentTask.prices).length || agentTask.filters.dietary || agentTask.filters.excludeIngredients.length || agentTask.filters.includeIngredients.length)) {
+        const { query: _query, queries: _queries, category: _category, more: _more, ...conditions } = input
+        input = conditions
+      }
       if (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu)
         throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')
       const prices = intersectPrices(agentTask.prices, priceConditions(input))
@@ -2284,6 +2512,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     questionHistory.clear()
     pendingReadContinuation = undefined
     issuedFastPathContext = undefined
+    clearQueryScope()
     options.onSessionReset?.()
     const cart = machine.reset()
     completedOrderId = undefined

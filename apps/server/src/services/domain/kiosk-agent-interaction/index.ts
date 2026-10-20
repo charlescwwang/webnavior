@@ -69,6 +69,18 @@ export function requiresPresentedReply(results: readonly { name: string, content
   return results.some(result => result.name !== 'kiosk_session_history')
 }
 
+/** A browser-owned query clarification ends the turn without another model decision. */
+export function queryClarification(results: readonly { name: string, content: string }[]) {
+  // Only the single non-mutating query receipt owns this spoken question.
+  // Mixed results, named lookups and arbitrary model prose cannot settle it.
+  if (results.length !== 1 || results[0]!.name !== 'menu_recommend')
+    return undefined
+  const payload = parseToolPayload(results[0]!.content)
+  if (payload?.queryAction !== 'clarify' || !Array.isArray(payload.items) || payload.items.length !== 0 || typeof payload.customerMessage !== 'string' || !payload.customerMessage.trim() || payload.presentation || payload.pendingCustomerChoice)
+    return undefined
+  return payload.customerMessage
+}
+
 /**
  * Keeps the latest complete conversational turns within a provider-independent
  * character ceiling. The newest single turn is truncated only when that turn
@@ -152,6 +164,7 @@ export function compactToolResultForModel(name: string, content: string) {
     item: compactMenuItem(payload.item, false),
     line: compactLine(payload.line),
     cart: compactCartForModel(payload.cart),
+    queryState: compactJsonValue(payload.queryState, 0, 50),
     checkout: compactJsonValue(payload.checkout, 0, 120),
     modelContextCompacted: true,
     originalCharacterCount: content.length,
@@ -169,7 +182,9 @@ export function createInteractionInstructions(state: KioskAgentInteractionState,
     '這是單一訪客、僅在本次點餐有效的互動摘要；不可向顧客提及摘要、session 或內部規則。',
     '購物車、金額、選項與取餐方式不是此摘要的真實來源；回答前如有需要，必須使用點餐工具查詢。',
     '顧客明確要求更換已加入購物車的餐點時，必須完成更換，不可把需求改成詢價或只介紹兩道餐點。先用 cart_get(display:false) 核對原 lineId、份數，再查 menu_get 確認替代品項、供應與必要選項。資料齊全時用 order_add_item 並帶 replaceLineId 一次更換，未另指定份數就保留原份數。不要另外呼叫 cart_remove_item，也不要逐步選餐。原餐點不唯一、替代品項不存在或資料未齊時，只問一個必要問題，保留原購物車。只有成功回執含 replacedLine 才可說已更換。',
+    '開放式餐點需求由你讀完整原句與相關對話，理解否定、條件組合與最後的改口，不要求顧客改說固定句型。歧義可能不是查餐點時先釐清；確定需要查詢時，先用 menu_get(display:false) 取得真實品項、分類與成分資料；能用支援的 dietary、食材與價格條件表達時，交給工具依完整成分與店家標示驗證；分類或指定品項的排除則將真實品項 ID 傳給 menu_recommend 的 excludeItemIds，所有條件同時套用。無法由菜單資料確認食物範圍時先釐清，不猜品項歸屬。不能以品名文字猜素食或食材安全。單說不想吃飯可能是不想用餐，無法由上下文確定時先釐清，不自行指定替代品。偏好不是取消訂單；除非明確要求修改已點餐點，保留購物車。條件不變換批用 menu_recommend action:continue；補充排除且原正向查詢範圍仍適用時，可同時傳 excludeItemIds；若原範圍已不適用，或改口要放寬或替換原條件，用 action:update 只傳明示變更或 clear 取消的條件組；重新挑選使用 action:reset，不能用省略參數暗示重置。',
     '查詢與推薦必須完整保留顧客條件，不能因沒有符合結果而改查全部或放寬條件。工具 availability=NONE 就回答沒有；UNKNOWN 表示無法確認，CUSTOMIZATION_REQUIRED 不代表已符合。未支援或有歧義的條件先說明或澄清，不使用無條件查詢代替。素食只採用 POS 明確標示，不從缺少肉類成分自行推論；換一批沿用原條件，只有顧客明確修改需求才可變更。',
+    '每一則顧客需求最多展示一批三項推薦。這一輪已取得推薦工具結果後，直接依結果簡短回覆，不能再次推薦、用 action:continue 自行換批，或用泛 menu_get 繼續擴充。recommendationAlreadyPresented=true 表示本輪推薦已完成，不是查無餐點或工具失敗。只有下一則顧客主動追問其他選擇，才可換下一批。顧客同句指定的餐點查詢、比較或訂單操作仍須依完整需求處理；內部 display:false 查詢不算展示推薦。',
   ]
   if (scope === 'checkout')
     instructions.push('目前使用獨立結帳上下文。依本輪畫面狀態、有效問題與工具結果操作；插話後的附和不代表同意付款，必要時重新詢問。')
@@ -187,10 +202,13 @@ export function createInteractionInstructions(state: KioskAgentInteractionState,
     instructions.push(`最近一次成功工具結果的購物車快照：${lines}；共 ${state.cartSummary.itemCount} 份，總額 ${state.cartSummary.total} 元，用餐方式 ID：${serviceMode}（對顧客使用最新 POS fulfillmentModes 的 label，不自行翻譯 ID）。此快照用於延續對話；修改或結帳前仍以點餐工具的最新結果為準。`)
   }
   if (scope === 'ordering' && state.mode === 'decision_guidance') {
-    instructions.push('顧客尚未做出決定。請停止重複開放式提問，改為展示 2 至 3 個尚未展示的可點選選項，或只問一個可直接回答的二選一問題。')
+    instructions.push('顧客尚未做出決定。請停止重複開放式提問；若本輪尚未展示推薦，可簡短介紹 2 至 3 個尚未介紹的餐點，或只問一個可用語音回答的二選一問題。本輪已展示推薦就等待顧客回答，不自行再換一批，不要求改用點選。')
   }
-  if (state.mode === 'touch_preferred')
-    instructions.push('畫面點選目前優先。不要主動追問；只有顧客主動輸入時才簡短協助，並優先引導他直接使用畫面。')
+  if (state.mode === 'touch_preferred') {
+    // This persisted/wire mode is the final no-progress stage. It pauses
+    // unsolicited prompts, without revoking the customer's voice interaction.
+    instructions.push('暫停主動推薦與重複追問，等待顧客提出明確需求。顧客向本機說話時仍正常理解完整語音並簡短協助，不要求改用螢幕點選。背景對話或無法確認對象的聲音仍依說話對象規則處理，不主動追問。')
+  }
   return instructions.join('\n')
 }
 
@@ -300,6 +318,9 @@ function compactMenuItem(value: unknown, includeDescription: boolean) {
     price: value.price,
     available: value.available,
     ...(includeDescription ? { description: compactString(value.description, 240) } : {}),
+    // Preserve composition facts intact: truncating ingredients while keeping
+    // complete=true would falsely imply that omitted ingredients are absent.
+    composition: value.composition,
     recommendationTags: compactJsonValue(value.recommendationTags),
     optionGroups: compactJsonValue(value.optionGroups),
   }

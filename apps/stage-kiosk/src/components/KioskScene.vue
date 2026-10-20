@@ -1773,6 +1773,7 @@ async function sendConversationMessage(
     if (taskTool && decisionState?.menuRevision !== undefined) {
       const binding = await webMcpAdapter.execute(taskTool, {
         action: 'BEGIN',
+        transcript: text,
         taskId,
         expectedMenuRevision: decisionState.menuRevision,
         readOnly: decisionState.readOnly === true,

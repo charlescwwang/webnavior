@@ -55,12 +55,19 @@ describe('recommendation batches', () => {
       await runtime.invoke('kiosk_fast_path_context', { transcript })
       const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })
       const ids = dishes.slice(index * 3, index * 3 + 3).map(item => item.id)
-      expect(result).toMatchObject({ items: ids.map(id => ({ id })), presentation: { kind: 'recommendation', itemIds: ids }, decisionTrace: { operationPlan: { intent: 'SEARCH_MENU', toolName: 'menu_recommend' } } })
+      expect(result).toMatchObject({ items: ids.map(id => ({ id })), decisionTrace: { operationPlan: { intent: 'SEARCH_MENU', toolName: 'menu_recommend' } } })
+      if (ids.length) {
+        expect(result).toMatchObject({ presentation: { kind: 'recommendation', itemIds: ids } })
+      }
+      else {
+        expect(result).toHaveProperty('queryAction', 'clarify')
+        expect(result).not.toHaveProperty('presentation')
+      }
       expect(result).not.toHaveProperty('continuation')
       if (index === 3)
         expect(result).toMatchObject({ customerMessage: expect.stringContaining('沒有其他') })
     }
-    expect(presentations).toEqual([['dish-0', 'dish-1', 'dish-2'], ['dish-3', 'dish-4', 'dish-5'], ['dish-6'], []])
+    expect(presentations).toEqual([['dish-0', 'dish-1', 'dish-2'], ['dish-3', 'dish-4', 'dish-5'], ['dish-6']])
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
@@ -93,7 +100,7 @@ describe('recommendation batches', () => {
 
   it('bounds Agent and explicit display lookups while retaining a data-only catalog read', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    expect(await runtime.invokeForAgent('menu_get')).toMatchObject({ items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }], presentation: { kind: 'recommendation' } })
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'update' })).toMatchObject({ items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }], presentation: { kind: 'recommendation' } })
     expect(await runtime.invoke('menu_get', { display: true })).toMatchObject({ items: [{ id: 'dish-3' }, { id: 'dish-4' }, { id: 'dish-5' }], presentation: { kind: 'recommendation' } })
     expect(await runtime.invokeForAgent('menu_get', { query: '餐點0' })).toMatchObject({ items: [{ id: 'dish-0' }], presentation: { kind: 'query-results' } })
     const catalog = await runtime.invokeForAgent('menu_get', { display: false })
@@ -118,7 +125,8 @@ describe('recommendation batches', () => {
     expect(first).toMatchObject({ maxPrice: 100, items: [{ id: 'dish-1' }, { id: 'dish-2' }, { id: 'dish-3' }] })
     expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ maxPrice: 100, items: [{ id: 'dish-4' }, { id: 'dish-5' }, { id: 'dish-6' }] })
     await expect(runtime.invoke('menu_recommend', { more: true, maxPrice: 300 })).rejects.toThrow('start a new recommendation')
-    expect(await runtime.invoke('menu_recommend', { maxPrice: 50 })).toMatchObject({ items: [], availability: 'NONE' })
+    const offer = await runtime.invoke('menu_recommend', { maxPrice: 50 }) as { pendingCustomerChoice: { questionId: string } }
+    expect(await runtime.invoke('kiosk_query_scope', { questionId: offer.pendingCustomerChoice.questionId, choice: 'CATALOG' })).toMatchObject({ items: [], availability: 'NONE' })
   })
   it('rejects an old more plan after another recommendation has changed the batch', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })

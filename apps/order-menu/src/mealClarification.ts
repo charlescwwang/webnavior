@@ -36,7 +36,7 @@ export function createMealClarification() {
     return {
       questionId: pending.id,
       purpose: 'confirm-meal',
-      question: `${mealMessages.confirmMeal.replace('{item}', pending.label)}${pending.attempts > 1 ? mealMessages.useButtons : ''}`,
+      question: mealMessages.confirmMeal.replace('{item}', pending.label),
       expiresAt: pending.expiresAt,
       choices: [
         { id: `confirm-meal:${pending.id}:yes`, description: `${mealMessages.yes}，確認要點${pending.label}；繼續補必要資料，尚不授權付款。` },

@@ -112,7 +112,7 @@ describe('kiosk System One interaction decision', () => {
     expect(result).toMatchObject({ answeredQuestionId: 'I1' })
     if (result.kind === 'FAST_ACTION')
       expect(result.actionId).toBe('intent:recommend')
-    expect(invoke).toHaveBeenCalledTimes(kind === 'FAST_ACTION' ? 3 : 2)
+    expect(invoke).toHaveBeenCalledTimes(kind === 'FAST_ACTION' ? 4 : 2)
     expect(invoke.mock.calls[0]?.[1]).toHaveProperty('route')
     expect(invoke.mock.calls[1]?.[1]).toHaveProperty('relation')
   })
@@ -152,14 +152,15 @@ describe('kiosk System One interaction decision', () => {
     expect(await decideInteraction({ candidates: [], transcript: '有蝦捲嗎', review: { answer: '有含蝦便當', observation: '查到便當' }, invoke, policy: { decisionInstruction: '', storeInstruction: '' } })).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'DEVIATED' })
     expect(invoke).toHaveBeenCalledTimes(1)
   })
-  it('keeps possible product queries separate from ingredient polarity without extra slot forwards', async () => {
+  it('checks request scope before resolving a possible product query without ingredient slot forwards', async () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route
       ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.95 } } }
       : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'PRODUCT_QUERY', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '有蝦捲嗎', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:search-menu', description: '查詢餐點或條件' }], invoke, decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'shrimp', label: '蝦' }], productResolution: { status: 'possible', count: 1, references: [{ refId: 'ITEM_1', label: '蝦捲便當' }] } } })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', searchInterpretation: 'product', ingredientFilters: { includeIngredients: [], excludeIngredients: [] } })
-    expect(invoke).toHaveBeenCalledTimes(3)
-    expect(Object.keys(invoke.mock.calls[2]![1])).toEqual(['filterRequirement', 'filterPresence'])
+    expect(invoke).toHaveBeenCalledTimes(4)
+    expect(Object.keys(invoke.mock.calls[2]![1])).toEqual(['filterRequirement'])
+    expect(Object.keys(invoke.mock.calls[3]![1])).toEqual(['filterPresence'])
   })
   it.each(['BOTH', 'UNCERTAIN'])('does not silently drop part of a possible product/filter requirement: %s', async (choice) => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route ? { answers: { route: { choice: 'intent:search-menu', confidence: 0.95 } } } : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice, confidence: 0.95 } } })
@@ -235,7 +236,7 @@ describe('kiosk System One interaction decision', () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 }, ...(questions['unavailable:sodium'] ? { 'unavailable:sodium': { choice: 'REQUIRED', confidence: 0.95 } } : {}) } }))
     const result = await decideInteraction({ transcript: '低鈉又不要豬肉', policy, invoke, candidates: [{ id: 'intent:search-menu', description: '查成分' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }], unavailableConditionReferences: [{ id: 'sodium', label: '鈉含量（未提供營養數據）' }] } })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER' })
-    expect(invoke.mock.calls[2]?.[1]).toHaveProperty('unavailable:sodium')
+    expect(invoke.mock.calls[3]?.[1]).toHaveProperty('unavailable:sodium')
   })
   it('validates question relation only after selecting a checkout answer', async () => {
     const invoke = vi.fn()
@@ -338,7 +339,7 @@ describe('kiosk System One interaction decision', () => {
     const invoke = vi.fn(async () => ({ answers: { 'recipient': { choice: 'KIOSK', confidence: 0.95 }, 'service': { choice: 'REQUEST', confidence: 0.95 }, 'route': { choice: 'intent:search-menu', confidence: 0.95 }, 'filterRequirement': { choice: 'COVERED', confidence: 0.95 }, 'filterPresence': { choice: 'REQUIRED', confidence: 0.95 }, 'ingredient:pork': { choice: 'EXCLUDE', confidence: 0.95 }, 'ingredient:egg': { choice: 'INCLUDE', confidence: 0.95 } } }))
     const result = await decideInteraction({ transcript: '不要豬肉的，要有蛋', policy, candidates: [{ id: 'intent:search-menu', description: '搜尋符合條件的餐點' }], decisionState: { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }, { id: 'egg', label: '蛋' }] }, includeTrace: true, invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', ingredientFilters: { excludeIngredients: ['pork'], includeIngredients: ['egg'] }, trace: { ingredientAnswers: { pork: { choice: 'EXCLUDE' } } } })
-    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(invoke).toHaveBeenCalledTimes(4)
   })
   it('routes unrecognized or uncertain ingredient choices to Agent instead of silently dropping the constraint', async () => {
     for (const slot of [{ choice: 'invented', confidence: 0.99 }, { choice: 'EXCLUDE', confidence: 0.1 }]) {
@@ -532,7 +533,7 @@ describe('kiosk System One interaction decision', () => {
 
     expect(invoke).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       route: expect.objectContaining({
-        instructions: expect.stringContaining('顧客表達餐點、食材或飲食偏好，但目前候選無法安全直接完成時，選 NEEDS_ASSISTANT，不是 IGNORE'),
+        instructions: expect.stringContaining('餐點偏好、拒絕某類食物、飲食要求、複合條件與改口，交給 Main Agent'),
       }),
     }))
   })

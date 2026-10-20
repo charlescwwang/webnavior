@@ -1,4 +1,5 @@
 import type { PriceConditions, PriceEvidence } from './priceContracts'
+import type { ScopeChoice } from './queryScopeContracts'
 
 /** Hard per-utterance question ceiling; normal routes do not consume this allowance. */
 export const decisionQuestionBudget = 24
@@ -64,6 +65,7 @@ export type KioskInteractionDecision = {
   /** Mechanical refusal cause; never a second interpretation of the utterance. */
   reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
 } & (
+  | { kind: 'SCOPE_CHOICE', choice: ScopeChoice }
   | { kind: 'COMPLETE', confidence?: number }
   | { kind: 'CONTINUE_INCOMPLETE' }
   | { kind: 'CLARIFICATION', confidence?: number }

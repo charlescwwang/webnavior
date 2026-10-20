@@ -2,9 +2,10 @@ import type { Tool } from '@xsai/shared-chat'
 
 import { rawTool } from '@xsai/tool'
 
+import { hostToolNames } from '../../../order-menu/src/hostTools'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 
-const kioskHostOnlyToolNames = new Set(['kiosk_test_menu', 'kiosk_customer_entry_start', 'kiosk_customer_phone', 'kiosk_fast_path_clarify', 'kiosk_interaction_state', 'kiosk_fast_path_context', 'kiosk_fast_path_execute', 'kiosk_fast_path_continue', 'kiosk_dialogue_presented', 'kiosk_question_validate', 'kiosk_agent_task'])
+const kioskHostOnlyToolNames: ReadonlySet<string> = new Set(hostToolNames)
 
 /** Maps active native WebMCP tools into the tool format consumed by AIRI's LLM runtime. */
 export function createWebMcpTools(): Tool[] {

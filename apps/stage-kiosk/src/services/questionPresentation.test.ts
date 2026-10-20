@@ -1,8 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
+import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { createCustomerEntryReminder, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyWithQuestion } from './questionPresentation'
+
+// Report: this chat, query-action voice clarification, 2026-10-19.
+it('presents the application-owned query question without a choice panel or dish claims', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const receipt = await runtime.invokeForAgent('menu_recommend', { action: 'clarify' })
+  const window = createMenuReplyWindow()
+  window.record('menu_recommend', receipt)
+  expect(window.hasReceipts()).toBe(true)
+  expect(window.reply()).toBe('你想調整價位，還是換餐點種類？')
+  expect(receipt).not.toHaveProperty('pendingCustomerChoice')
+  expect(receipt).not.toHaveProperty('presentation')
+})
 
 describe('optional phone reminder after a verified menu reply', () => {
   const hint = '手機可以選填；要開始點餐，請填寫手機或按略過。'
@@ -12,7 +25,7 @@ describe('optional phone reminder after a verified menu reply', () => {
     const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const reminder = createCustomerEntryReminder()
     const menu = createMenuReplyWindow()
-    menu.record('menu_get', await runtime.invokeForAgent('menu_get', { display: true }))
+    menu.record('menu_recommend', await runtime.invokeForAgent('menu_recommend', { action: 'update' }))
     const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))
     expect(reminder.append(menu.reply(), state?.phase, hint)).toBe(`${menu.reply()} ${hint}`)
     expect(reminder.append('水餃目前可以點。', state?.phase, hint)).toBe('水餃目前可以點。')
@@ -118,9 +131,9 @@ describe('question presentation receipts', () => {
 
   it('does not narrate invented vegetarian recommendations after an empty actual menu query', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    const result = await runtime.invokeForAgent('menu_get', { dietary: 'vegetarian' })
+    const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', dietary: 'vegetarian' })
     const window = createMenuReplyWindow()
-    window.record('menu_get', result)
+    window.record('menu_recommend', result)
     const reply = replyFromOperation('推薦松露素麵和田園沙拉。', window.reply(), undefined)
     expect(reply).toBe(operationReplyFrom(result))
     expect(reply).not.toContain('松露素麵')
@@ -205,5 +218,22 @@ describe('question presentation receipts', () => {
     expect(context.waitingFor.question).toBe('請問要櫃台自取？')
     expect(context.candidates.map(choice => choice.id)).toContain('intent:set-fulfillment:takeout')
     expect(context.candidates.map(choice => choice.id)).not.toContain('intent:set-fulfillment:dine-in')
+  })
+})
+
+describe('preference lookup receipts', () => {
+  // Report: this chat, 2026-10-19 — internal catalog reads must not reintroduce rejected dishes.
+  it('speaks only the filtered recommendation after an internal catalog lookup', async () => {
+    const runtime = createMenuToolRuntime({ menu: [
+      { ...sampleMenu[0]!, id: 'bento', name: '便當', category: '飯類' },
+      { ...sampleMenu[0]!, id: 'salad', name: '田園沙拉', category: '沙拉' },
+    ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const window = createMenuReplyWindow()
+    window.record('menu_get', await runtime.invokeForAgent('menu_get', { display: false }))
+    expect(window.hasReceipts()).toBe(false)
+    window.record('menu_recommend', await runtime.invokeForAgent('menu_recommend', { action: 'update', excludeItemIds: ['bento'] }))
+    expect(window.hasReceipts()).toBe(true)
+    expect(window.reply()).toBe('推薦一項：田園沙拉。')
+    expect(window.reply()).not.toContain('便當')
   })
 })

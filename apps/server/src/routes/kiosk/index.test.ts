@@ -36,6 +36,38 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  // Report: this chat, query-action voice clarification, 2026-10-19.
+  it.each([false, true])('finishes a query clarification without another provider call (stream=%s)', async (stream) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const question = '你想調整價位，還是換餐點種類？'
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, ...(stream ? { Accept: 'text/event-stream' } : {}) }, body: JSON.stringify({ decisionState: { phase: 'ordering', readOnly: true }, toolResults: [{ name: 'menu_recommend', toolCallId: 'clarification', content: JSON.stringify({ queryAction: 'clarify', items: [], customerMessage: question }) }] }) })
+    expect(response.status).toBe(200)
+    if (stream)
+      expect(await response.text()).toContain(question)
+    else
+      expect(await response.json()).toMatchObject({ answer: question, toolCalls: [] })
+    expect(complete).not.toHaveBeenCalled()
+  })
+
+  it.each(['SHOWN', 'CATALOG', 'invented'])('uses Main Agent only for the live scope question: %s', async (choice) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'scope', type: 'function', function: { name: 'scope_decide', arguments: JSON.stringify({ choice }) } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ candidates: [], transcript: '剛才那幾個', decisionState: { phase: 'query_scope', waitingFor: { questionId: 'scope-1', purpose: 'menu-query-scope', question: '剛才推薦的還是整份菜單？', expiresAt: Date.now() + 60_000, choices: [{ id: 'SHOWN', description: '剛才推薦的' }, { id: 'CATALOG', description: '整份菜單' }] } } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ kind: 'SCOPE_CHOICE', choice: choice === 'invented' ? 'ASK' : choice })
+    expect(complete).toHaveBeenCalledTimes(1)
+    expect(complete.mock.calls[0]![0].body).toMatchObject({ temperature: 0, tools: [{ function: { name: 'scope_decide' } }], tool_choice: 'required' })
+    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).not.toContain('scope-1')
+    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).not.toContain('expiresAt')
+  })
+
   it.each(['application/json', 'text/event-stream'])('requires a fresh menu lookup and keeps no-tool claims out of dialogue over %s', async (accept) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '推薦韭菜盒、甜不辣。' } }] }))
     const kioskService = createKioskService(db)
@@ -158,7 +190,7 @@ describe('kiosk routes', () => {
     expect(decide.mock.calls[0]?.[0]).toContain('100元')
     expect(decide.mock.calls[0]?.[1]).toMatchObject({ route: { instructions: expect.stringContaining('價格詢問') } })
     expect(decide.mock.calls[1]?.[1]).toHaveProperty('recipient')
-    expect(decide.mock.calls[2]?.[1]).toHaveProperty('price')
+    expect(decide.mock.calls.some(([, questions]) => 'price' in questions)).toBe(true)
   })
 
   it('saves failed decision diagnostics without promoting them into completed dialogue', async () => {

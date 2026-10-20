@@ -42,6 +42,10 @@ export function createMenuReplyWindow() {
       if (!result || typeof result !== 'object')
         return
       const payload = result as Record<string, unknown>
+      // An internal catalog lookup supplies evidence to the Agent, not dishes
+      // to announce alongside the later filtered recommendation.
+      if (name === 'menu_get' && payload.dataOnly === true)
+        return
       if (name === 'cart_get') {
         // Cart inspection is a separate read. It may answer an order-summary
         // request, but must not replace menu evidence gathered for comparison.

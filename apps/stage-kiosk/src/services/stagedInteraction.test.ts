@@ -62,6 +62,7 @@ describe('staged decision through the actual ordering runtime', () => {
         .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.5289 } } })
         .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:recommend', confidence: 0.95 } } })
         .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.99 }, service: { choice: 'REQUEST', confidence: 0.99 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
+        .mockResolvedValueOnce({ answers: { filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } })
       const run = (transcript: string) => runFastPath({ isEnabled: async () => true, transcript, webMcp: { tools, execute: (tool, input) => {
         const definition = runtime.toolDefinitions.find(definition => definition.name === tool.name)
         if (!definition)

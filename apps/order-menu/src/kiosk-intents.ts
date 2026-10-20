@@ -263,8 +263,8 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     // candidate per operation, never one per product or cart line.
     candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
     if (input.menuScrollSupported) {
-      candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:up', '把菜單畫面向上移動一頁；不是換推薦、搜尋或選餐點。', undefined, { direction: 'UP' }))
-      candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:down', '把菜單畫面向下移動一頁；不是換推薦、搜尋或選餐點。', undefined, { direction: 'DOWN' }))
+      candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:up', '捲動菜單，顯示目前位置上方、較前段且接近開頭的內容；每次一個可視頁面，保留分類、推薦與購物車。', undefined, { direction: 'UP' }))
+      candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:down', '捲動菜單，顯示目前位置下方、較後段且接近結尾的內容；每次一個可視頁面，保留分類、推薦與購物車。', undefined, { direction: 'DOWN' }))
     }
     if (matchingItems.some(item => item.available !== false))
       candidates.push(candidate('SELECT_ITEM', 'intent:select-item', '查看或編輯已解析的餐點，但不建立訂購項目。'))
