@@ -1,13 +1,18 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+
 export interface KioskVoiceDiagnosticEntry {
   id: number
-  status: 'recognizing' | 'unrecognized' | 'recognized' | 'decided' | 'failed'
+  status: 'recognizing' | 'unrecognized' | 'recognized' | 'decided' | 'failed' | 'ignored'
   text?: string
 }
 
 const props = defineProps<{ entries: readonly KioskVoiceDiagnosticEntry[] }>()
+const { t } = useI18n()
 
 function statusLabel(entry: KioskVoiceDiagnosticEntry) {
+  if (entry.status === 'ignored')
+    return t('stage.kiosk.voice-presence-ignored')
   if (entry.status === 'recognizing')
     return '辨識中'
   if (entry.status === 'unrecognized')

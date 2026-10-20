@@ -562,6 +562,23 @@ the Server independently enforces recording and proactive-action permissions.
 Recording without observation does not start MediaPipe. These controls do not
 change browser camera/microphone permission or the existing local preview toggle.
 
+When **local camera observation** is enabled, microphone utterances and
+unsolicited greetings/reminders require a recent, locally detected person of
+sufficient quality inside the configured detection zone. Observation continues
+in standby even if greetings and reminders are disabled. A first valid detection
+admits voice immediately; the greeting's separate sample/dwell rules still apply.
+The existing 1.5-second lost-person grace tolerates brief occlusion, after which
+old evidence expires even if inference stops. Starting, failed or restarted
+cameras do not qualify as presence. This uses local Pose/Face, not VLM.
+
+The host checks before ASR, after transcription, at queue admission and before
+executing a delayed decision or handing it to Main. Unsolicited audio is checked
+again before playback; loss of presence cancels only the proactive turn. Existing
+commerce requests still settle their receipts normally. Touch and simulated text
+input remain available, and devices with observation disabled retain ordinary
+voice service. Presence only admits speech processing; Jev must still distinguish
+directed speech from a nearby person's conversation.
+
 For voice-only acceptance testing, an administrator can enable **語音診斷模式（測試用）**
 on an individual device. The Kiosk then shows its latest eight VAD segments as
 recognizing, unrecognized, recognized, failed, or decided, together with the

@@ -52,7 +52,6 @@ import { useKioskInteractionRecording } from '../composables/useKioskInteraction
 import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
-import { needsKioskObservation } from '../composables/useKioskProactiveSettings'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { useKioskWaitSpeech } from '../composables/useKioskWaitSpeech'
 import { setKioskLocale } from '../modules/i18n'
@@ -66,6 +65,7 @@ import { isKioskConversationRetrySafeTool } from '../services/kioskConversationR
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
 import { createCustomerEntryReminder, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
+import { createVoicePresenceGate } from '../services/voicePresence'
 import { webMcpAdapter } from '../services/webmcp-adapter'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
 
@@ -428,17 +428,14 @@ const presenceSettings = {
 }
 let presenceWindow = createPresenceWindow(presenceSettings, proactiveSettings.value.proactiveGreeting)
 const presenceDecision = shallowRef<ReturnType<typeof presenceWindow.decide>>()
+const voicePresence = createVoicePresenceGate()
 const lastPresenceCandidate = shallowRef<Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'>>()
 let visualEngagementProtectionStartedAtMs: number | undefined
 const presenceDiagnostics = shallowRef<{ cadenceTier: 'idle' | 'boost' | 'stable', faceActive: boolean, poseIntervalMs: number }>({ cadenceTier: 'idle', faceActive: false, poseIntervalMs: performanceSettings.value.detectionIntervalMs })
 const localObservationRequired = computed(() => {
-  const hasActiveSession = customerSessionState.value === 'active'
-  // Once observation is explicitly enabled, an active session keeps the local
-  // presence policy running even when greetings and reminders are disabled.
-  // Otherwise ENGAGED could never release or restore the idle timer.
-  return proactiveSettings.value.observation.enabled && (
-    hasActiveSession || needsKioskObservation(proactiveSettings.value, hasActiveSession)
-  )
+  // Voice admission also needs live inference in standby, including devices
+  // whose greetings and reminders are disabled. No VLM request is involved.
+  return proactiveSettings.value.observation.enabled
 })
 const presenceIdleProtection = computed(() => {
   const decision = presenceDecision.value
@@ -469,6 +466,7 @@ const proactiveVision = useKioskProactiveVision({
       && Boolean(candidate?.greetingRoiHit || candidate?.interactionRoiHit)
   },
   onCameraStream: (stream) => {
+    voicePresence.reset()
     cameraStream.value = stream
     mediaCapture.attachCameraStream(stream)
   },
@@ -477,6 +475,9 @@ const proactiveVision = useKioskProactiveVision({
   onDiagnostics: diagnostics => presenceDiagnostics.value = diagnostics,
 })
 const cameraRequired = computed(() => localObservationRequired.value || effectiveMediaCaptureMode.value !== 'off')
+function allowsObservedVoice() {
+  return voicePresence.allows({ enabled: localObservationRequired.value, observing: proactiveVision.status.value === 'observing', nowMs: performance.now() })
+}
 const { x, y } = useMouse()
 const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
 let stopAssistantAudio: (() => void) | undefined
@@ -489,6 +490,8 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
   minSilenceDurationMs: computed(() => props.voiceVadSettings.minSilenceDurationMs),
   speechPadMs: computed(() => props.voiceVadSettings.speechPadMs),
   onSpeechStart: () => {
+    if (!allowsObservedVoice())
+      return
     // Capture first; even audible output remains intact until Jev decides
     // that the speech is addressed to this kiosk rather than background talk.
     activeVoiceCandidate = interactionTurn.beginCustomerVoiceCandidate()
@@ -500,6 +503,10 @@ const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
     activeVoiceCandidate = undefined
     if (!candidate)
       return
+    if (!allowsObservedVoice()) {
+      interactionTurn.completeVoiceCandidate(candidate)
+      return
+    }
     const reservation = utteranceQueue.reserve('asr')
     if (reservation.kind === 'OVERLOADED') {
       interactionTurn.completeVoiceCandidate(candidate)
@@ -624,7 +631,7 @@ async function processVoiceCandidate(
   candidate: NonNullable<ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate>>,
   reservation: Extract<KioskUtteranceReservation, { kind: 'ACCEPTED' }>,
 ) {
-  if (buffer.length === 0) {
+  if (buffer.length === 0 || !allowsObservedVoice()) {
     reservation.cancel()
     interactionTurn.completeVoiceCandidate(candidate)
     return
@@ -635,6 +642,10 @@ async function processVoiceCandidate(
   try {
     const recording = createKioskVadRecording(buffer)
     const { text } = await transcribeKioskAudio(recording, candidate.signal)
+    if (!allowsObservedVoice()) {
+      updateVoiceDiagnostic(diagnosticId, { status: 'ignored' })
+      return
+    }
     if (!text.trim()) {
       updateVoiceDiagnostic(diagnosticId, { status: 'unrecognized' })
       return
@@ -661,6 +672,12 @@ async function processVoiceCandidate(
 
 /** One final ASR utterance enters the same decision path in live and test mode. */
 async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtteranceTicket) {
+  // A captured utterance may have waited behind a tool round. Recheck before
+  // Jev/Main, without cancelling already-issued commerce work or touch input.
+  if (utterance.source === 'asr' && !allowsObservedVoice()) {
+    finishVoiceDiagnostic(utterance.id, 'ignored')
+    return
+  }
   const input: FastPathInput = utterance
   const entry: KioskDecisionEntry = {
     id: utterance.id,
@@ -782,8 +799,10 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           await interactionRecording.append('tool_result', JSON.stringify(payload), { decisionRoute: 'fast_path', name: trace.operationPlan.toolName })
         }
       },
-      isCurrent: ticket.isCurrent,
+      isCurrent: () => ticket.isCurrent() && (utterance.source !== 'asr' || allowsObservedVoice()),
       onActionSelected: async () => {
+        if (utterance.source === 'asr' && !allowsObservedVoice())
+          return 'DEFER'
         const request = currentAgentRequest()
         if (request) {
           if (request.stage !== 'thinking')
@@ -795,7 +814,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           interactionTurn.cancelActiveTurn()
           await request.done
         }
-        if (!ticket.isCurrent())
+        if (!ticket.isCurrent() || (utterance.source === 'asr' && !allowsObservedVoice()))
           return 'DEFER'
         interruptAssistantOutput()
         selectedTurn = interactionTurn.begin('voice', 'thinking')
@@ -836,6 +855,15 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     })
     if (!ticket.isCurrent())
       return
+    // Do not escalate a late decision after the visitor has left. Accepted or
+    // uncertain execution receipts still settle normally, without retrying.
+    if (utterance.source === 'asr' && !allowsObservedVoice() && result.kind !== 'FAST_ACTION' && result.kind !== 'EXECUTION_FAILED') {
+      if (selectedTurn && interactionTurn.isCurrent(selectedTurn))
+        interactionTurn.complete(selectedTurn)
+      finishVoiceDiagnostic(utterance.id, 'ignored')
+      updateDecisionEntry(utterance.id, { route: 'ignored', reason: 'LOCAL_PRESENCE_REQUIRED' })
+      return
+    }
 
     if (result.kind === 'DEFERRED') {
       updateDecisionEntry(utterance.id, { route: 'deferred' })
@@ -1198,10 +1226,14 @@ function clearConversationPresentation() {
 async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal) {
   if (signal.aborted || !interactionTurn.isCurrent(turn))
     return
+  if (turn.kind === 'proactive' && !allowsObservedVoice())
+    return
   interruptAssistantOutput()
   try {
     const audio = preparedAudio ?? await synthesizeKioskSpeech({ locale: language.value, signal, text })
     if (signal.aborted || !interactionTurn.isCurrent(turn))
+      return
+    if (turn.kind === 'proactive' && !allowsObservedVoice())
       return
 
     const player = new Audio(URL.createObjectURL(audio))
@@ -1301,6 +1333,7 @@ watch([stream, loaded], async ([audioStream, vadLoaded]) => {
 })
 
 watch(proactiveSettings, () => {
+  voicePresence.reset()
   proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
   assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
   presenceWindow = createPresenceWindow({
@@ -1368,7 +1401,7 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
   if (!localObservationRequired.value)
     return
   if (customerSessionState.value === 'active') {
-    if (!interactionTurn.canProactivelySpeak.value)
+    if (!allowsObservedVoice() || !interactionTurn.canProactivelySpeak.value)
       return
 
     const reminderCandidate = assistanceReminderWindow.decide(observation)
@@ -1409,6 +1442,9 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
 }
 
 function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'> | undefined) {
+  voicePresence.observe(performance.now(), candidate, proactiveSettings.value.observation.detectionZone)
+  if (!allowsObservedVoice())
+    interactionTurn.cancelProactive()
   lastPresenceCandidate.value = candidate
   const decision = presenceWindow.decide(performance.now(), candidate)
   presenceDecision.value = decision
@@ -1462,7 +1498,7 @@ function syncPresenceIdleSuppression(decision: ReturnType<typeof presenceWindow.
 }
 
 async function startProactiveGreeting(onStarted?: () => void) {
-  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
+  if (!allowsObservedVoice() || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
     return
 
   const stateTool = webMcpAdapter.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
@@ -1475,7 +1511,7 @@ async function startProactiveGreeting(onStarted?: () => void) {
       })
     : undefined
   const state = conversationDecisionStateFrom(stateResult)
-  if (!greetingPhase(state) || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
+  if (!allowsObservedVoice() || !greetingPhase(state) || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
     return
 
   const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined
@@ -1571,6 +1607,8 @@ async function sendAssistantAction(
   capturedFrame?: string,
   existingTurn?: ReturnType<typeof interactionTurn.begin>,
 ) {
+  if (!allowsObservedVoice())
+    return false
   const serviceId = scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction'
   // The effective device policy selects fixed openings or a vision request.
   // Fixed mode never captures a frame for welcome generation.
@@ -1597,10 +1635,10 @@ async function sendAssistantAction(
       // TTS may still be cold. Re-read browser state so late audio cannot
       // welcome over a new checkout page or an unresolved customer question.
       const latest = stateTool ? conversationDecisionStateFrom(await webMcpAdapter.execute(stateTool, {})) : undefined
-      if (!interactionTurn.isCurrent(turn) || greetingPhase(latest) !== phase || currentAgentRequest())
+      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || greetingPhase(latest) !== phase || currentAgentRequest())
         return false
       await interactionRecording.append('assistant_text', welcome.text, { source: 'fixed_greeting' })
-      if (!interactionTurn.isCurrent(turn))
+      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn))
         return false
       conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: welcome.text, slices: [], tool_results: [] }]
       playTransientMotion('greeting')
@@ -1614,11 +1652,11 @@ async function sendAssistantAction(
       return false
     const response = await interactionRecording.runAssistantAction(serviceId, kind, frame, turn.signal, kind === 'reminder', phase)
     const answer = response?.answer
-    if (!interactionTurn.isCurrent(turn))
+    if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn))
       return
     if (kind === 'greeting') {
       const latest = stateTool ? conversationDecisionStateFrom(await webMcpAdapter.execute(stateTool, {})) : undefined
-      if (!interactionTurn.isCurrent(turn) || greetingPhase(latest) !== phase || currentAgentRequest())
+      if (!allowsObservedVoice() || !interactionTurn.isCurrent(turn) || greetingPhase(latest) !== phase || currentAgentRequest())
         return false
     }
     if (answer) {

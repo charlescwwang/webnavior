@@ -23,6 +23,7 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  voice-presence-ignored: 未確認現場有人，已忽略語音
   text-console:
     title: 文字輸入與 Trace
     reset: 重設位置

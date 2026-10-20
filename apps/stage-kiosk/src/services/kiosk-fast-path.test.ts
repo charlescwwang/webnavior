@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { priceEvidence } from '../../../order-menu/src/domain/pricing'
 import { conversationDecisionStateFrom, createIncompleteAsrSession, runFastPath } from './kiosk-fast-path'
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
+import { createVoicePresenceGate } from './voicePresence'
 
 const candidateTool: WebMcpTool = {
   description: 'Candidates',
@@ -21,6 +22,37 @@ const executeTool: WebMcpTool = {
 const stateTool: WebMcpTool = { ...candidateTool, name: 'kiosk_interaction_state' }
 
 describe('kiosk System One fast path', () => {
+  // Report: this chat, 2026-10-20; a visitor can leave while Jev is deciding.
+  it('rejects a late voice action after local presence expires before execution', async () => {
+    const gate = createVoicePresenceGate()
+    gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
+    let now = 100
+    const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
+    const result = await runFastPath({ transcript: '一份水餃', isEnabled: async () => true, isCurrent: () => gate.allows({ enabled: true, observing: true, nowMs: now }), decide: async () => {
+      now = 1601
+      return { kind: 'FAST_ACTION', actionId: 'intent:add-item' }
+    }, webMcp: { tools: [candidateTool, executeTool], execute } })
+    expect(result.kind).toBe('DEFERRED')
+    expect(execute.mock.calls).toHaveLength(1)
+  })
+
+  it('retains an accepted receipt when presence expires during an issued mutation', async () => {
+    const gate = createVoicePresenceGate()
+    gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
+    let now = 100
+    const onExecuted = vi.fn()
+    const execute = vi.fn(async (tool: WebMcpTool) => {
+      if (tool.name === candidateTool.name)
+        return { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }
+      now = 1601
+      return { customerMessage: '已加入水餃一份。' }
+    })
+    const result = await runFastPath({ transcript: '一份水餃', isEnabled: async () => true, isCurrent: () => gate.allows({ enabled: true, observing: true, nowMs: now }), onExecuted, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item' }), webMcp: { tools: [candidateTool, executeTool], execute } })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', result: { customerMessage: '已加入水餃一份。' } })
+    expect(onExecuted).toHaveBeenCalledOnce()
+    expect(execute.mock.calls).toHaveLength(2)
+  })
+
   // Report: this chat, Oct 8 — admin disables Fast Path but voice ordering stops.
   it('bypasses even application-resolved actions when disabled, preserving the pending question', async () => {
     const waitingFor = { questionId: 'party', purpose: 'party-size', question: '請問幾位？', expiresAt: Date.now() + 30_000, choices: [{ id: 'one', description: '一位' }] }
