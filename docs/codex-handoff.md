@@ -7,6 +7,107 @@ accumulating history.
 
 ## Current State
 
+- Oct20 commit validation: changes are grouped by ordering, floating console,
+  local presence, greeting defaults, assets and documentation. Changed-file
+  commit hooks pass. Root lint reports3182 existing errors in files outside this
+  change set (including test_prompt and older audio/provider tests). Root
+  typecheck was attempted once, then its remaining parallel Vue workers were
+  terminated to release resources; it did not complete and is not a pass.
+  The earlier affected-package typechecks and targeted tests remain passing.
+  No deployment or remote push is part of this commit task.
+
+- Oct20 local camera voice admission is LOCAL, NOT DEPLOYED. With observation
+  enabled, voicePresence.ts requires an in-zone candidate with quality>=0.5
+  within the existing1500ms loss grace and currently observing camera status.
+  First valid sample admits voice; greeting dwell/sample gates are unchanged.
+  Unknown/starting/failed camera blocks voice; the user explicitly confirmed
+  strict mode in the async preference reply after implementation. Observation
+  now runs in standby even with greetings/reminders off. Disabled observation,
+  touch and simulated text retain service. KioskScene checks before ASR, after
+  ASR, on dequeue, before delayed Fast Path actions/Main handoff and proactive
+  playback. Lost presence cancels proactive work only, not an issued commerce
+  request or its receipt. Camera/settings resets discard old admission evidence.
+  Kiosk195 unit tests, scoped typecheck/lint and production build pass; no real
+  camera/microphone acceptance or deployment. README documents the policy.
+
+- Oct20 typed 略過 trace established REQUEST0.7406 / SKIP0.4977, then
+  UNCERTAIN_OPERATION -> read-only Main unable to skip. Unrelated to the camera
+  gate. Server now resolves admitted weak phone meaning through Main's bounded
+  resolve_phone_choice tool (SKIP_PHONE/KEEP_PHONE/UNCERTAIN), independent of the
+  weak Jev proposal. Only SKIP_PHONE rejoins the original browser skip candidate;
+  no general Main mutation authority or threshold/phrase-list change. Other or
+  malformed results keep the read-only handoff. Original Jev counters remain
+  separate from trace.phoneResolution choice/duration; no fabricated confidence.
+  User explicitly authorized this exact 略過 replay to the existing Jev/Main
+  endpoints. Live Jev passes; recorded weak scores + real Main/browser runtime
+  skip successfully, and the three previous withdrawal/compound cases pass.
+  Targeted Server domain354/routes5 and Kiosk100 tests pass, including segmented
+  continuation; Server/Kiosk scoped types and changed-file lint pass. Local
+  source only, not deployed. Server README documents the flow.
+
+- Oct20 unified semantic-abstention policy is LOCAL, NOT DEPLOYED. The public
+  decideInteraction boundary now hands valid low-confidence semantic outcomes
+  to Main after independent recipient admission; it reuses existing admission,
+  does not recheck an uncertain recipient, and respects the question budget.
+  Malformed replies, confirmed background/unfinished speech and post-execution
+  review/receipt recovery retain separate paths. No guessed action, price choice
+  or question-answer IDs survive the new handoff. Kiosk no longer forces a menu
+  read for UNCERTAIN_OPERATION; protected phases and checkout-entry questions
+  remain read-only. Separate unfinished fragments can accompany Main as
+  unverified context, never concatenated or treated as confirmed quantities.
+  This covers the reported phone REQUEST0.8808 / ORDER0.3861 retraction too.
+  Oct20 release checks: full relevant Server400, Kiosk187, Menu684,
+  proactive24 and Chrome15 tests pass. An invitation integration fixture needed
+  the new independent recipient answer; production logic was unchanged there.
+  Server/Kiosk/Menu builds pass; Kiosk needs CHOKIDAR_USEPOLLING=1 on this Mac
+  to avoid EMFILE from filesystem watchers. Scoped types and changed-file lint
+  pass. Real Jev category replay and Main category replay pass. User explicitly
+  authorized both reported dumpling utterances to configured Jev/Main too:
+  mainScopeReplay semantic-handoff cases cover phone/order retraction and
+  quantity-plus-addition against synthetic carts, then assert the actual host
+  reply selection. All4 final Main cases pass (including category). First replay
+  caught raw Main falsely saying an empty cart had been edited after cart_get;
+  shared instructions now distinguish read receipts from successful mutations.
+  Its focused16 tests pass after that change. No physical mic/VAD/noise,
+  hardware payment/POS acceptance or deployment performed.
+
+- Oct20 text-mode input/timing/trace now lives in kioskTextConsole.vue, a
+  floating console composed by KioskConversation. Header-only VueUse dragging,
+  collapse preserving the draft, reset position and viewport clamping; voice-only
+  mode still has no text input. Local source only, not deployed. Chrome15 tests
+  cover submission, drag bounds, collapse and narrow-screen resize.
+
+- Oct20 shared initial greeting dwell is now300ms in the local source, not
+  deployed. Device defaults derive dwell from the shared interaction policy;
+  explicit device/local overrides retain precedence. User clarified this was
+  global initial configuration, so the unintended DEV-088065 local300ms change
+  was restored to its original500ms (settings revision14, audited). Sampling
+  cadence, sample-count gate and enabled defaults are unchanged.
+
+- Oct20 compound quantity/addition fix is LOCAL, NOT DEPLOYED.
+  Attachment44310a20 / session kXF5nbdV-N5IZSd3okoaI: 水餃改一份好了 然後我要再一碗牛肉麵
+  selected ADD0.7289, purpose OPERATION0.8458, coverage SINGLE0.3983 and stopped.
+  Reliable route + operation purpose with weak SINGLE coverage now verifies
+  the isolated recipient before handing the original utterance to Main as
+  UNCERTAIN_OPERATION; no Fast Path action or fulfillment answer is authorized.
+  Recorded-value regression and recipient/invalid-evidence contrasts pass;
+  Kiosk projection retains order-edit capability. Oct20 real Jev/Main/local
+  Menu replay now passes: dumpling quantity2 becomes1 and one beef noodle
+  is added, without rejected tools. No deployment; thresholds unchanged.
+
+- Oct20 category inquiry fix is LOCAL, NOT DEPLOYED. Reported
+  session pNjTf7VrgOG7-0Gxp7lRZ entries19–26 shows Main called
+  menu_get(category:便當,display:true), rejected by the explicit query-action
+  contract; Kiosk correctly stopped its attempted retry with tool-rejected.
+  Main instructions and menu_get field descriptions now route category display
+  to menu_recommend(action:update). Real Main/local Menu replay passes without
+  rejection or a retry. Jev also reproduced weak filterRequirement after a
+  strong read route; its overlapping category/preference definitions are now
+  disjoint, and the original-utterance replay passes. Server focused332 and
+  Menu query-actions8 tests pass. Expanded synthetic Jev contrasts remain
+  opt-in and were not run: auto-review limited external transmission to the
+  supplied replay. No thresholds, rejection policy or order behavior changed.
+
 - Oct20: the accumulated Oct19 ordering changes are now grouped into commits
   for spoken prices, checkout/phone UI, menu-query/voice routing, and docs.
   The older UNCOMMITTED labels below describe deployment-time status only.
