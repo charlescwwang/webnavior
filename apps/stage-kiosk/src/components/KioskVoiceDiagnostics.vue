@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { useI18n } from 'vue-i18n'
 
 export interface KioskVoiceDiagnosticEntry {
@@ -35,7 +36,7 @@ function statusLabel(entry: KioskVoiceDiagnosticEntry) {
     <ol class="voice-diagnostics-list">
       <li v-for="entry in props.entries" :key="entry.id" class="voice-diagnostics-entry">
         <strong>{{ statusLabel(entry) }}</strong>
-        <span v-if="entry.text" class="voice-diagnostics-text">「{{ entry.text }}」</span>
+        <span v-if="entry.text" class="voice-diagnostics-text">「{{ toTaiwanTraditionalChinese(entry.text) }}」</span>
       </li>
     </ol>
   </aside>

@@ -5,6 +5,7 @@ import type { FastPathTiming } from '../services/kiosk-fast-path'
 import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import { ChatHistory } from '@proj-airi/stage-ui/components'
+import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -48,7 +49,30 @@ const assistantLabel = 'Webnavior'
 const historyMessages = computed<ChatHistoryItem[]>(() => [
   ...props.messages,
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
-])
+].map((message): ChatHistoryItem => {
+  // Presentation owns a copy: ASR, model history and tool payloads remain the
+  // original evidence even when their visible text uses Taiwan Traditional.
+  if (message.role === 'assistant') {
+    return {
+      ...message,
+      content: typeof message.content === 'string'
+        ? toTaiwanTraditionalChinese(message.content)
+        : message.content?.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(part.text) } : part),
+      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toTaiwanTraditionalChinese(slice.text) } : slice),
+    }
+  }
+  if (message.role === 'user') {
+    return {
+      ...message,
+      content: typeof message.content === 'string'
+        ? toTaiwanTraditionalChinese(message.content)
+        : message.content.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(part.text) } : part),
+    }
+  }
+  if (message.role === 'error')
+    return { ...message, content: toTaiwanTraditionalChinese(message.content) }
+  return message
+}))
 // Tool discovery describes assistant control, not whether the embedded menu
 // loaded successfully. Keep the service usable while that capability is absent.
 const serviceStatus = computed(() => {
@@ -95,9 +119,9 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <div class="message-history">
       <KioskAssistantPresence
         v-if="historyMessages.length === 0 && !props.pendingTranscript"
-        :description="props.assistantPresence.description"
+        :description="toTaiwanTraditionalChinese(props.assistantPresence.description)"
         :mode="props.assistantPresence.mode"
-        :title="props.assistantPresence.title"
+        :title="toTaiwanTraditionalChinese(props.assistantPresence.title)"
       />
       <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
            placeholder would otherwise render only the assistant name. -->
@@ -116,17 +140,17 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
-        <span>{{ props.pendingTranscript }}</span>
+        <span>{{ toTaiwanTraditionalChinese(props.pendingTranscript) }}</span>
       </div>
       <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ props.activityStatus }}</span>
+        <span>{{ toTaiwanTraditionalChinese(props.activityStatus) }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
       <ol v-if="props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
         <li v-for="step in props.activitySteps" :key="step.toolName" :class="['assistant-activity-step', `is-${step.state}`]">
           <span class="activity-step-marker" aria-hidden="true" />
-          <span>{{ step.label }}</span>
+          <span>{{ toTaiwanTraditionalChinese(step.label) }}</span>
         </li>
       </ol>
       <output v-if="props.executionDurationMs !== undefined" class="conversation-execution-duration" aria-label="本輪對話處理耗時">
@@ -151,7 +175,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       @simulate="emit('simulateAsr', $event)"
     />
     <p v-if="serviceStatus" class="service-status" role="status">
-      {{ serviceStatus }}
+      {{ toTaiwanTraditionalChinese(serviceStatus) }}
     </p>
   </section>
 </template>
