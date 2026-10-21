@@ -20,7 +20,13 @@ and clear it when the session ends; never append it to the static survey URL.
 
 ## Native WebMCP adapter
 
-`services/webmcp-adapter` is the shared host-side adapter for an approved iframe. A host activates it after iframe load; it discovers tools only from that iframe origin, converts the tool metadata into Vue-safe descriptors, and executes them through native WebMCP. It intentionally has no `postMessage` tool bridge fallback.
+`services/webmcp-adapter` remains the native adapter used by Stage Web. Kiosk has
+migrated to the separate client below. This adapter and its health export remain
+unchanged; the updated owned Menu no longer exposes native tools to it.
+
+A native host activates the adapter after iframe load; it discovers tools only
+from that iframe origin, converts metadata into Vue-safe descriptors, and executes
+through native WebMCP. It intentionally has no `postMessage` tool bridge fallback.
 
 The adapter targets Chrome 155's object-input execution contract:
 `document.modelContext.executeTool(registeredTool, inputObject)`. Arguments are
@@ -41,6 +47,22 @@ replies and timeouts leave the adapter unavailable, with a diagnostic `error`
 and a stable `unavailableReason`. Hosts must retain manual interaction. This
 checks native argument/result transport, not individual business tools, payment
 providers, authentication, or physical iframe input delivery.
+
+## Kiosk interactive-service client
+
+`services/interactiveServiceClient` provides the Kiosk's Eventa window-message
+connection. Call `activate(serviceUrl, iframe.contentWindow)` after iframe load
+and `activate()` when the frame is replaced/unmounted. It exposes readonly tools,
+availability, execution notifications, completion revision and `waitUntilReady`.
+The approved service must implement `@proj-airi/stage-shared/interactive-service`.
+Exact origin/source, a fresh connection ID and the service document identity
+isolate replies. Retained descriptors are invalid after activation changes.
+Only discovery retries; lost execution receipts revoke admission and must not
+be treated as proof that a commerce operation did not happen. It does not grant
+access to unmodified third-party pages or fall back to native WebMCP.
+
+Run the focused real cross-origin Chrome tests from the workspace root:
+`VITEST_BROWSER_CHANNEL=chrome pnpm exec vitest run --config packages/stage-ui/vitest.interactiveService.config.ts`.
 
 ## Anonymous customer lifecycle
 

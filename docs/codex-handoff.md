@@ -7,6 +7,205 @@ accumulating history.
 
 ## Current State
 
+- Oct21 service recovery is implemented and committed locally; source of truth:
+  docs/plans/2026-10-21-kiosk-service-recovery.md. Valid Jev service uncertainty
+  permits one fixed Main verdict, then one richer no-commerce review only for
+  a valid UNCERTAIN. Invalid/provider failures cannot trigger semantic retries.
+  Admitted requests hand off with the original utterance; no invented Fast Path
+  action/confidence or restarting Jev. Existing finite phone resolution runs first.
+  Recovery caps are 8s/12s, with a combined 20s including progress checkpoint
+  waits, within the same 60s model turn. Checkpoints expire within 15s and are
+  owner-bound/one-use; cancellation settles even an uncooperative provider.
+  Separate typed Main progress/counters; text immediately shows receipt/time
+  and a terminal state; unadmitted voice stays silent. A clarification cue is
+  versioned/expiring and read-only, never an order/payment confirmation ticket.
+  Metrics record stage times/request bytes/provider tokens without prompt bodies.
+  The old clarificationDiagnosis failure was an incomplete serviceRequest mock;
+  tests now supply every question explicitly and retain the complete two-item
+  request, with valid uncertainty and invalid-response cases kept separate.
+  Unit/integration: Server477/Kiosk227/Menu725 passed (optional tests skipped);
+  final combined-deadline/HTTP subset25 passed. Live provider replay, target
+  device/POS/payment and comparative p50/p95 remain unrun. No deployment.
+  Browser: Kiosk15, cross-origin15 and ScenarioSurface1 passed separately.
+  Commit gate root typecheck found Menu's virtual validator declaration missing
+  in the stage-ui consumer. The owning production entry now references its d.ts;
+  stage-ui scoped typecheck passes after the fix (no second root run).
+  Changed TS/Vue/JSON lint passes; root lint still fails in untouched baseline
+  chats/audio/provider/research/PoC files. Do not describe root lint as green.
+
+- Oct21 Main-context integration is implemented and committed locally (not deployed).
+  Source of truth: docs/plans/2026-10-21-kiosk-main-context-and-ordering.md.
+  Neutral stage-shared/kiosk-conversation contract; host-only Menu snapshot with
+  complete compact catalog after phone entry, fresh cart/checkout/questions/tools.
+  Kiosk refreshes every model round and validates task ownership; refreshConversationState
+  explicitly maps neutral ingredient/price constraints to HTTP task fields and retires
+  old questions/focus. Server sends one current projection, compacts repeated menu
+  receipts, intersects tools and rejects inconsistent context phase/read-only/revision.
+  Runtime guards known handoff effects/line IDs and snapshot revisions; only own accepted
+  writes advance a same-batch version. Unknown/fragment products cannot grant writes.
+  Shared aliases; separate possibleItems; menu_confirm_item owns explicit add/replace
+  consent, original constraints/replaceLineId/quantity and question validation. Fragments
+  bypass old name-only Fast Path confirmation and go through Main's explicit proposal.
+  Exact repeated named removal returns already-absent instead of reviving old 排骨飯.
+  Removal reveals/animates the actual line control, checks revision, removes once and
+  returns to menu; Main combo defers return until END. Missing control preserves cart;
+  return failure retains accepted receipt, including END failure without repeated delete.
+  Server main_round_metrics records real payload/section bytes, duration, SSE first
+  output and provider inputTokens only if supplied; Kiosk main_task_metrics records
+  orchestration time/rounds/tool count. No prompt bodies logged or extra LLM calls.
+  No Jev order/threshold changes or Stage Web edits. No new external model replay
+  authorization: live semantic/device/POS/payment and comparative p50/p95 remain unrun.
+  The later recovery work fixes the incomplete clarificationDiagnosis mock;
+  Menu now has no failure in the relevant complete suite. Real DOM removal and
+  cross-origin transport checks are also covered. See both plans for validation
+  and remaining live-model/device/performance acceptance.
+
+- Oct21 attachment a553fda2: 大腸臭臭鍋一份 has no product/category match;
+  recorded scores correctly recover weak INCOMPLETE through serviceRequest to
+  Main UNCERTAIN_OPERATION. Same-text local session UGmY-FToOvrROt9GPBGMA
+  records Main customer_skip_phone rejected INVALID_PHASE, then a requested
+  menu_get without receipt. Recording loop intentionally stops on the rejected
+  batch after obtaining the continuation, so the later lookup is never executed.
+  General Main now never receives host-owned customer_skip_phone, including
+  phase-less continuations; finite phone resolver/Fast Path still owns skipping.
+  Tests cover tool exclusion, rejected-loop behavior, exact-score handoff plus
+  actual unknown-name lookup/customer reply/empty cart. No live model replay;
+  attachment alone has no session correlation key, so same-text DB evidence is
+  not proof that every matching UI failure has the same cause.
+
+- Oct21 attachment b0b98800: local recording confirms 鱔魚意麵3份，不要蔥花，
+  一份大辣兩份小辣 incorrectly executed order_add_item beef-noodle-soup x3
+  (450). The defect is unauthorized product substitution, not missing options
+  on the wrong dish. No eel product matched; sole 麵食 member was
+  treated as identity. Server now hands sole-category/no-product ADD to Main,
+  retaining original wording; browser resolveIntent independently blocks that
+  automatic target for ADD/SELECT. Multi-target category clarification remains
+  available. Multiple values in one option group cannot collapse into one
+  cart-line option; Main resolves splits/corrections. Existing category-one
+  auto-purchase expectations changed to handoff, with named-item positive tests
+  retained; requirement PoC n13 capability expectation updated, semantic gold
+  unchanged. Recorded high scores and actual runtime verify zero added lines.
+  Generalized at Main's task boundary: exact current products bound eligible
+  selection/configuration/add IDs; category-only/possible/overflow evidence
+  cannot grant a product choice, regardless of category size or successful
+  alternative/full-menu lookup. Task BEGIN replaces bounds; menu revision/expiry
+  invalidate them. No-lexical-evidence contextual replies retain existing flow;
+  this does not claim full semantic identity/consent validation. resolveIntent
+  now uses derived item constraints rather than reusing old transcript names
+  that could bypass the sole-category guard. No new Jev questions or thresholds.
+  Source only; no existing live cart was edited, no external model replay.
+
+- Oct21 attachment c1d194f6: previous 「那我要排骨便當」 produced duplicate
+  quantity prompts before a correctly handled 一份. Menu beginMeal returns the
+  same question as customerMessage and pendingCustomerChoice; Scene’s local
+  customerMessageFrom concatenated both before replyWithQuestion. Receipt
+  presentation now lives in questionPresentation.replyFromReceipt, used by Scene:
+  compose the explicit outcome with the validated question once; no raw pending
+  fallback. Cart summary behavior remains. Actual runtime regression red -> green
+  and shared composition tests cover identical/already-contained/absent outcomes.
+  No intent/threshold changes, provider replay or deployment.
+
+- Oct21 handoff audit: added short-answer cases 一份/不要辣 alongside 內用/一位
+  and topic-change-to-store/menu checks. Reliable concrete answers recover weak
+  routes without granting checkout consent or executing guessed actions.
+  Confirmed store FAQ gap: a strong generic NEEDS_ASSISTANT with no reason/no
+  food matches inherited requireMenuRead. API now uses bounded Main
+  resolve_service_scope only for unclassified, non-phone, unmatched handoffs;
+  SERVICE_INFO -> GENERAL_QUESTION; food/order/mixed/unknown/error retain
+  the original guard. General service tasks are read-only. Trace serviceResolution
+  is separate from Jev counters. API53/Kiosk209 and relevant Server domain
+  tests/scoped types pass. No phrase list, live provider replay or deployment.
+
+- Oct21 attachment e2821679: typed 略過 -> service REQUEST0.7406, phone
+  SKIP0.5227, serviceRequest BACKGROUND0.3255 ended silent before the existing
+  Main phone resolver. API now also permits bounded phone validation for
+  customer_entry UNAVAILABLE/UNCERTAIN_SERVICE_REQUEST with an issued skip
+  candidate. Only SKIP_PHONE rejoins Fast Path; all other/invalid/failed answers
+  preserve the original silent result. This never admits open conversation or
+  menu tools. Confirmed background/uncertain recipient still do not invoke Main.
+  Exact-score segmented/nonsegmented tests cover skip/keep/uncertain, retaining
+  the3 Jev counts and separate phoneResolution evidence. No live provider replay.
+
+- Oct21 user clarified the phone gate: filling a valid phone OR explicit skip is
+  required before ALL menu reads/recommendations/ordering/checkout. This
+  supersedes phone-stage factual browsing. MENU and ORDER both return
+  CUSTOMER_ENTRY_REQUIRED; Main at customer_entry receives only optional session
+  history, no commerce tools. Menu runtime rejects reads/writes from Agent and
+  manual callers; host phone controls and customer-entry questions remain. Host
+  checks live phase before presenting old receipts; reset restores the gate.
+  Store facts/identity/phone explanations remain available. Removed the obsolete
+  once-only post-query phone reminder. Entry tests7, Server domain378/API45,
+  Kiosk206 and scoped types pass. Full Menu run has684 passes and one existing
+  clarificationDiagnosis expectation mismatch: UNCERTAIN_SERVICE_REQUEST vs
+  UNCERTAIN_OPERATION (phase clarification, unrelated to entry gate); untouched.
+  No live model replay or deployment.
+  Earlier no-reply wording remains customer-facing. Internal dataOnly reads still
+  do not finish a read-only presentation after entry.
+
+- Oct21 user-provided 周氏蝦捲 service facts are saved/published in the local
+  test Site profile revision52 through the existing draft/release service.
+  agentInstructions:11:00–14:00, cashless payment, electronic invoice; order at
+  Kiosk/online/table QR; self-pickup or robot delivery to table. No assumed
+  operating days/payment brands/URLs/delivery guarantees. Other profile fields
+  unchanged; prior release51 remains immutable. Sessions pin their original
+  release, so new sessions use the new facts. No global store default changed.
+  Jev service scope/GENERAL_QUESTION now includes store-service information,
+  including weak-route relevance recovery; Main uses supplied site facts and
+  distinguishes explanations from live operations. No live-model replay.
+
+- Oct21 ordering is restored to intent-first per user accuracy preference.
+  The standalone recipientAdmission.ts and its obsolete order tests were removed;
+  authenticated decisions call index.ts directly. Existing per-intent recipient,
+  relation/price/food checks remain. Kiosk shows progress only on confident
+  service intent plus recipient checkpoints (or serviceRequest REQUEST), never
+  recipient/route confidence or ASR completion alone; customer text is appended
+  only on accepted final paths or real read receipts, preventing silent outcomes
+  from leaving unanswered bubbles; microphone indicators/operator diagnostics remain.
+  Recorded 「哈哈哈 好啊好啊」 GREET0.7487 -> greeting IGNORE0.5559
+  exposed an untagged UNAVAILABLE retry. UNCERTAIN_GREETING stays silent through
+  shouldShowDecisionRetry, alongside unknown recipients, IGNORE and INCOMPLETE.
+  No phrase whitelist/threshold changes, live replay, commit or deployment.
+  Movie traces weak IGNORE0.4215/0.4658 -> recipient KIOSK0.9931/0.9941
+  exposed a second issue: recipient-only recovery promoted chatter to Main.
+  Final abstention recovery now asks serviceRequest (valid Kiosk service demand
+  or answer); BACKGROUND ignores, REQUEST alone admits Main, weak/unknown scope
+  stays silent UNCERTAIN_SERVICE_REQUEST. Weak unfinished-speech recovery also
+  rejoins this gate: recorded 「你有看過流星嗎」 INCOMPLETE0.2323 -> service
+  REQUEST0.9336 -> speech REQUEST0.2382 must not borrow recipient confidence
+  to admit Main. Recorded-score tests retain genuine service recovery.
+  Uses current references and unexpired
+  questions, never operations; intent-first order and thresholds remain.
+
+- Oct20 recorded 「有水餃或牛肉麵嗎？多少錢？」 price INFORMATION0.359
+  reproduced UNCERTAIN_FILTER handoff with unresolvedPrice blocking even Main's
+  menu reads. Server now uses Main's bounded resolve_price_choice checkpoint
+  before binding that task; only issued IDs survive, and the task remains
+  read-only. Trace priceResolution is separate from original Jev counters.
+  Mocked recorded-score replay and segmented/nonsegmented route tests pass;
+  no live provider replay, commit or deployment for this change.
+
+- Oct20 `no_mcp` Kiosk + localhost:5166 Menu migration is implemented locally,
+  uncommitted and NOT DEPLOYED. Stage Web/DaMai are explicitly deferred; Stage
+  Web's native adapter/health export are unchanged, but updated Menu no longer
+  registers native tools. Plan and acceptance scope:
+  `docs/plans/2026-10-20-webnavior-without-native-webmcp.md`.
+  Eventa window-message uses exact origin/Window, connection/document IDs and
+  a challenge; execution caches in-flight receipts per operation ID. Only
+  discovery retries. Lost execution receipts revoke admission; no write replay.
+  Kiosk keeps the `webmcp` registry namespace for existing toolset prompts.
+  Menu runtime/authorization remains in webmcp.ts; static contracts moved to
+  toolDefinitions.ts. Ajv8.18 validators compile/bundle at Vite/Vitest load time,
+  preserving dynamic POS enums without browser eval. Tool inputs and receipts
+  retain native JSON semantics (including Vue readonly inputs); no proxy cloning.
+  Menu682/Kiosk195 unit and Kiosk52 browser tests pass; focused cross-origin
+  suite15 passes; it covers combined add, multi-tool work, recommendation, task locks, phone,
+  source isolation, dedupe, late replies and simulated checkout/payment/completion.
+  Run it from root with `VITEST_BROWSER_CHANNEL=chrome pnpm exec vitest run
+  --config packages/stage-ui/vitest.interactiveService.config.ts`; run Kiosk
+  browser tests with its package-scoped command to share its Vitest runtime.
+  Scoped Menu/Kiosk types and builds pass; no root typecheck, live Jev/Main,
+  target-device, physical payment/POS acceptance, commit, push or deployment.
+
 - Oct20 commit validation: changes are grouped by ordering, floating console,
   local presence, greeting defaults, assets and documentation. Changed-file
   commit hooks pass. Root lint reports3182 existing errors in files outside this

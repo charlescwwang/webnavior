@@ -48,6 +48,53 @@ purchase question again. This read has an additional recipient check; ordinary
 Yes/No answers still take one Jev call. Companion speech and uncertain recipients
 remain silent. Named alternatives, categories and filters use normal routing.
 
+## Fresh Main rounds
+
+After phone entry, Main receives the complete compact catalog and current Menu
+state through the host-only `kiosk_conversation_context` tool. The host refreshes
+it before each model request, verifies task ownership, replaces old questions and
+intersects tools with current phase capabilities. It preserves the immutable
+read-only request boundary and never restores stale write permission. Pure store
+FAQs and phone entry omit catalog details. Jev's context/order/thresholds are
+unchanged; Stage Web is outside this integration.
+
+Known operation handoffs retain effect and resolved targets. A successful lookup
+of another dish cannot complete a known removal request. Owned confirmation
+questions end the model loop without another completion call. Rejected tool
+batches persist their receipts and stop without a speculative continuation.
+The host records `main_task_metrics` service events with orchestration duration,
+model rounds and tool count; these include context/tool waiting but exclude TTS.
+Server separately records provider round sizes/latency/usage. Neither metric
+stores the prompt or implies successful POS submission.
+
+## Uncertain service recovery
+
+An eligible, valid Jev service abstention can request one no-commerce Main
+adjudication, followed only on a valid UNCERTAIN by one richer contextual review.
+This is separate from a real Main Agent task: it admits service meaning, never
+an operation. A review can ignore, abstain, hand off the original request, or
+create a read-only service question. Its answer cannot consume an older Menu
+purchase/payment question. Independent new requests leave that clarification
+without inheriting its authority.
+
+`SERVICE_RECOVERY_PROGRESS` reaches the host before the provider starts. Explicit
+text shows receipt immediately, elapsed time, and a longer-wait message after
+five seconds. Background/uncertain text ends with a status; failed pre-operation
+recovery offers a manual retry through the decision flow. Unadmitted ambient
+voice stays silent, without a customer bubble or waiting speech. Inspector
+stages distinguish Main recovery from Jev; Main progress does not inflate Jev
+counts. A new explicit text correction can cancel pre-operation recovery;
+accepted browser writes retain their existing receipt/settlement rules.
+
+Shared `serviceRecoveryLimits` sets 8s adjudication, 12s review, a 60s turn budget
+and 15s unconsumed checkpoints. Formal Main receives only the remaining budget.
+The 60s limit stops further model planning; accepted tools still settle through
+their authoritative receipt, rather than being declared unexecuted on timeout.
+Phone entry, camera gating, current target/revision checks and ordinary strong
+routes retain their normal behavior. Current recovery primarily begins after
+finite operation interpretation has abstained, so service REQUEST usually hands
+off to Main instead of rerunning Jev from the beginning.
+
 ## Menu acceptance trials
 
 In development mode, open Kiosk administrator mode and **點餐體驗情境測試**.
@@ -82,24 +129,14 @@ old full-page Menu entry is removed. Standalone Menu opens the catalog directly;
 without reopening after a choice or cart activity. The menu remains inert while
 entry is pending. Deploy Menu and Kiosk together.
 
-The phone choice allows factual menu queries, but recommendation and ordering
-requests such as **推薦一下** or **我想吃飯** return a fixed localized prompt
-to fill or skip first (`CUSTOMER_ENTRY_REQUIRED`). That reply starts neither
-Main Agent generation nor a meal/skip operation. Filling or explicitly skipping
-is required before recommending, selecting a dish or changing the order.
-After the first successful menu reply while entry is still pending, the host
-adds one fixed reminder to fill or skip the phone. It rereads the current phase
-before presentation, so a choice made during the lookup suppresses the reminder;
-new-customer reset clears its once-only state. Identity replies and operation
-questions do not consume it. The acceptance-test UI and reminder currently offer
-`0912345678` as an example number; the input remains empty until the customer types.
-After an Agent fallback, the host rereads the phase before presenting any
-recommendation or order-tool result. Pending entry uses the same fixed prompt,
-including for empty recommendations or rejected operations; completed entry
-keeps its real result. Identity dialogue and factual lookups remain available.
-An admitted factual `MENU_QUERY` may use read-only recommendation/display tools
-to render price matches. With fresh menu receipts, those internal tool names do
-not trigger the phone prerequisite; actual selection/order edits still do.
+The customer must enter a valid phone or explicitly skip before any menu query,
+recommendation, selection, cart edit or checkout. Menu questions return the fixed
+localized `CUSTOMER_ENTRY_REQUIRED` prompt without Main generation or menu reads.
+Phone entry remains voluntary: choosing skip is sufficient. Store facts and
+identity/phone-use explanations remain available without commerce tools.
+The host rechecks entry before presenting a tool result: if a new session has
+restored the phone screen, an older receipt cannot bypass it. The menu runtime
+also rejects both Agent and manual menu reads/writes until entry is complete.
 
 Food requests admitted as `MENU_QUERY`, and other ordering handoffs with current
 product/category matches, carry a host-owned `requireMenuRead` guard. An ordinary
@@ -169,8 +206,21 @@ made available to the Agent, so a customer message cannot open an arbitrary URL.
 configure its deployed URL only for a fresh browser Profile; it defaults to
 `http://localhost:5166` locally. Once an administrator saves a URL in **互動服務**,
 that `serviceUrl` is the exact iframe URL and takes precedence over this variable.
-`VITE_AIRI_ORIGIN` belongs to the embedded service's WebMCP allowlist; it never
+`VITE_AIRI_ORIGIN` belongs to the embedded service's parent-origin allowlist; it never
 changes the iframe URL.
+
+The owned Order Menu uses Eventa `window-message` for tool discovery/execution.
+`ScenarioSurface` binds `interactiveServiceClient` to the exact iframe Window
+and approved URL after load. A five-second handshake admits tools; replacing
+the frame revokes old descriptors and pending calls. Discovery alone can retry.
+Tool execution has a sixty-second receipt deadline and never automatically retries
+an operation; a lost receipt revokes tools because the write may already exist.
+The Menu preserves its task locks, tool authorization, recommendation state and
+cart/checkout rules. Matching Kiosk/Menu versions are required. Native WebMCP,
+Origin-Trial and iframe `allow="tools"` are not required for this path.
+The current integration targets `http://localhost:5166`; administrator-saved
+service URLs retain precedence. Stage Web migration and DaMai integration are
+outside this change.
 
 The interactive iframe delegates geolocation to its source origin so embedded
 services can request location with the user's permission. Production pages must
@@ -186,7 +236,8 @@ assistant handles immediately. Pending discovery waiters reject on document
 replacement, and removal of the last discovered tool revokes readiness.
 
 Embedding a third-party site does not give the Agent access to its DOM or
-business state. The current native WebMCP path requires that site's tools; this
+business state. Assistant control requires the site to implement the approved
+interactive-service protocol and expose its tools; this
 host does not implement a general browser-control bridge. A third-party checkout
 screen also cannot automatically report completion to the host unless an
 integration supplies a validated result. Manual iframe checkout alone therefore
@@ -227,8 +278,8 @@ clicks service controls, signs in, grants location consent or submits orders.
 Test the actual production HTTPS origin separately, including third-party
 storage, authentication redirects, payment windows and completion behavior.
 Cross-origin iframe content and failed API responses cannot be inspected or
-repaired by ordinary parent-page JavaScript. Native WebMCP also requires tools
-registered by the embedded document; menu visibility does not establish Agent
+repaired by ordinary parent-page JavaScript. Tool control requires an explicit
+connection implemented by the embedded document; menu visibility does not establish Agent
 control. No automatic order retry is safe after an uncertain submission.
 
 ### Debugging iframe input with DevTools
@@ -344,6 +395,9 @@ is shown as unknown, never zero, and does not change semantic or execution polic
 Expand **檢視本次 System One 決策 trace** and select **複製完整 trace**
 to copy the full displayed JSON, including scroll-hidden content. Copy success
 is acknowledged; clipboard failures leave the trace selectable for manual copy.
+Fast Path and Main compose an outcome with its validated question once. If the
+tool’s customer message already contains that question, it is not appended again;
+raw pending-question text does not create answer authority.
 Operational questions use explicit receipts: ID, purpose, finite choices and
 effects, expiry and state revisions. Both Fast Path and Main Agent validate the
 receipt before presentation; the displayed question is retained in role history.
@@ -360,20 +414,46 @@ UNCERTAIN. This replaces the generic ANSWER relation without adding a separate
 speech classifier. Initial choices can be corrected, including consent to refusal.
 Every finite question
 uses its own Jev request and yields an authenticated one-use checkpoint to Kiosk.
-Speech qualification alone does not create a dialogue bubble. A confident route
-shows the accepted customer utterance while required conditions are still checked;
-it grants no execution authority. Uncertain concrete answers retain the question
+Speech qualification alone does not create a dialogue bubble or grant execution
+authority. Uncertain concrete answers retain the question
 without executing a guessed deferral or handing the guess to Main Agent. Payment
 and destructive confirmations remain distinct one-use authorization records.
 Complete-menu lookup may ask one bounded follow-up decision: finish with the
 grounded answer, perform one offered recommendation read, or hand off to Main
 Agent. It never loops or retries a cart/payment mutation. The decision inspector
 shows these stages and the role-labelled context actually sent to System One.
+Fast Path processing feedback requires both a confident service intent and a
+confirmed recipient, or an explicit `serviceRequest: REQUEST` recovery check.
+Neither recipient confidence nor route confidence alone admits feedback. Customer
+text enters the conversation only on an accepted final path or a real read receipt,
+so a later silent outcome leaves no unanswered customer bubble. Ordinary ordering
+checks intent first, then verifies the recipient where that intent requires it; there is no standalone recipient-first
+pass. Background or uncertain recipients produce no customer processing prompt. Existing microphone
+capture indicators and operator diagnostics remain separate from this feedback.
+Once service scope is confirmed, progress remains visible during the remaining checks;
+no intermediate checkpoint authorizes an order operation.
+General service-information handoffs are read-only and need no menu receipt when
+there is no current food evidence. Generic Main routing can first use the bounded
+service-scope resolver; unresolved food requests retain menu verification.
+An uncertain social greeting (`UNCERTAIN_GREETING`) stays silent even if its
+recipient was already admitted. Ignored acknowledgements and unfinished speech
+also produce no retry prompt; actual failed service decisions retain that prompt.
+Weak-route recovery additionally verifies service relevance (`serviceRequest`):
+only `REQUEST` can hand the original utterance to Main. Everyday chatter remains
+ignored even when addressed with 「你」; uncertain relevance stays silent as
+`UNCERTAIN_SERVICE_REQUEST`. Weak unfinished-speech recovery uses this same
+check; it cannot substitute recipient confidence for uncertain service meaning.
+Recipient confidence alone is not service consent.
 Price inquiries/filters use the existing search/recommend routes with finite,
 browser-issued price interpretation IDs, not model-authored amounts. The host
 forwards the selected ID for browser verification, and hands off verified
-single-dish bounds or an unresolved-price guard. Unsupported approximate/relative
-or total budgets clarify without cart mutation. Card prices and condition headers
+single-dish bounds or an unresolved-price guard. Price interpretations first
+use a bounded Main check when Jev abstains without
+a resolved choice. Main selects an issued price interpretation only; an
+information-only result permits factual menu reads while the handoff stays
+read-only. Failed or invalid checks retain the unresolved guard. Confirmed
+unsupported approximate/relative or total budgets clarify without cart mutation.
+Card prices and condition headers
 are visual; replies need not read prices aloud. The application appends this
 capability boundary even to older saved System One prompts, without rewriting
 merchant configuration.
@@ -381,7 +461,7 @@ It also shows actual bounded-call counts, questions, answers, durations and
 refusal reasons. An optional read continuation is allowed only with a known
 remaining budget under 24 questions across the entire utterance. Verified read
 receipts are visible before optional review, which may perform at most one extra
-read and then choose only completion or Agent handoff. Rejected WebMCP envelopes
+read and then choose only completion or Agent handoff. Rejected tool envelopes
 are not success; a lost execution result is shown as unknown, without automatic
 mutation retries. Main Agent tools run serially, with four rounds, 16 calls and a
 60-second model deadline; exhaustion/rejection retains actual receipts and reports
@@ -406,7 +486,7 @@ companion speech do not authorize a spoken retry. Stale/expired clarification
 and confirmation remain rejected.
 When an ASR turn escalates, the Main Agent receives a sanitized snapshot of the
 current menu or checkout phase and available payment methods. Typed turns read
-the same state through a host-only, read-only WebMCP tool. Tax IDs, carrier
+the same state through a host-only, read-only service tool. Tax IDs, carrier
 codes, and raw checkout objects are never included in that conversation hint;
 tool execution still checks the browser's live state.
 
@@ -443,10 +523,10 @@ text does not clear the customer progress display or claim an operation result;
 the host publishes the final reply after validating the actual tool receipts.
 Only that completed customer reply is retained in the visitor transcript.
 
-An idle Kiosk shows localized neutral progress as soon as an ASR/test utterance
-starts classification, even when the first Jev route is weak. This display does
-not admit speech or take ownership of an interaction turn. It gives way to the
-existing tool-progress bubble during Main Agent work; a continuation preserves
+An idle Kiosk shows localized neutral progress after service relevance and the
+recipient are confirmed. A weak route followed only by a confident recipient
+does not display progress. This display does not take ownership of an interaction
+turn. It gives way to the existing tool-progress bubble during Main Agent work; a continuation preserves
 the latest tool status rather than resetting it to understanding after each SSE
 round. Background/unfinished/uncertain utterances never trigger waiting speech.
 
@@ -629,10 +709,10 @@ model product claims. Empty vegetarian results cannot be padded with invented
 dishes; a missing lookup produces a safe explanation instead. Multiple lookups
 remain available and their base prices can be compared, but unsupported free-form
 explanations are not presented as facts. Cart-only summaries use the actual cart.
-No extra WebMCP tool or payment authority is introduced.
+No extra tool or payment authority is introduced.
 
 Text mode exposes only the simulated-ASR input, with no separate ordinary chat
-composer. Typed turns use the same decision queue, validation and WebMCP path as
+composer. Typed turns use the same decision queue, validation and interactive-service tool path as
 speech; Main Agent remains available through escalation and retry.
 The text ASR input submits only on a deliberate Enter or button activation,
 not on IME composition commits or held Enter repeats. Each submitted draft is
@@ -667,7 +747,7 @@ their audio or transcript when they are not confirmed.
 
 ### Webnavior Kiosk Activity Manifest
 
-An approved interactive service can optionally serve `/.well-known/webnavior-kiosk-activity.json` from its own origin. It provides customer-facing status labels for its WebMCP tools; it does not change tool execution and is never sent to the LLM. The kiosk ignores missing, unavailable, or invalid manifests and uses its generic status labels instead.
+An approved interactive service can optionally serve `/.well-known/webnavior-kiosk-activity.json` from its own origin. It provides customer-facing status labels for its service tools; it does not change tool execution and is never sent to the LLM. The kiosk ignores missing, unavailable, or invalid manifests and uses its generic status labels instead.
 
 ```json
 {

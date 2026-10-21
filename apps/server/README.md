@@ -100,9 +100,15 @@ answer requires numeric confidence >= 0.6; a weak initial question-related route
 may reach this check rather than being rejected first. Before browser execution,
 one final policy separates valid semantic uncertainty from malformed answers.
 An uncertain finite choice may become `NEEDS_ASSISTANT / UNCERTAIN_OPERATION`
-only after an independently reliable recipient decision. An existing recipient
-decision is reused; an unknown recipient is not repeatedly reclassified. If no
-recipient check has run, one bounded check may use the remaining question budget.
+only after an independently reliable `serviceRequest:REQUEST` decision confirms
+an actual request for Kiosk service or a valid service answer. Recipient `KIOSK`
+alone is insufficient: addressing the machine does not turn everyday chatter into
+a service request. Confirmed companion speech stays ignored; unknown recipients
+are not repeatedly reclassified. The bounded service check uses the complete
+utterance, real references and only an unexpired pending question, within the
+remaining question budget. `BACKGROUND` stays ignored; weak/unknown relevance
+returns silent `UNCERTAIN_SERVICE_REQUEST`. This check replaces the final
+recipient-only recovery for an otherwise unclassified semantic abstention.
 Confirmed background and genuinely unfinished speech retain their normal paths.
 Uncertain recipient, invalid confidence/choice and exhausted budget grant no
 new authority. Handoff never consumes a question, supersedes an invitation, or
@@ -139,6 +145,18 @@ required for legitimate food comparisons, dietary queries or contextual replies.
 These prompt boundaries do not guarantee the model cannot misclassify speech;
 live semantic accuracy is distinct from deterministic admission tests.
 
+Ordinary ordering decisions classify intent first, then perform the recipient,
+question-relation and condition checks required by that intent. The standalone
+recipient-first admission pass was removed: a broad recipient guess must not
+promote unrelated chatter into a service request. Phone entry and proposal
+clarification retain their existing phase-specific service checks. Segmented
+clients receive provisional checkpoints; a route alone grants neither customer
+progress feedback nor menu/order execution authority.
+Recipient admission alone does not establish an actionable service request.
+An uncertain greeting-purpose check returns `UNAVAILABLE/UNCERTAIN_GREETING`;
+clients keep it silent rather than prompting for a clearer order or escalating
+the guessed greeting. Its original model choice and confidence remain in Trace.
+
 For ordinary ordering ADD/REMOVE/quantity/option proposals, `requestPurpose`
 first distinguishes an inquiry from an operation using the literal utterance.
 Balanced examples use the current browser-matched subject without authorizing
@@ -154,7 +172,8 @@ query or replacement/weak-route handoff additionally
 verifies recipient using the isolated utterance, so companion speech cannot be
 promoted merely because it describes a valid change. When the original route and
 operation purpose are reliable but `SINGLE` coverage is uncertain, an independent
-recipient check may hand the complete utterance to Main as `UNCERTAIN_OPERATION`.
+recipient check and confirmed service relevance may hand the complete utterance
+to Main as `UNCERTAIN_OPERATION`.
 This handoff grants no Fast Path mutation; Main must resolve and validate each
 effect, including quantity changes combined with additions. Uncertain coverage or
 recipient preserves the cart and pending fulfillment question. Thresholds are
@@ -176,6 +195,14 @@ question-relation NEW_REQUEST likewise verifies recipient before Agent admission
 The handoff's price checkpoint receives only the original current utterance and
 its literal amounts. Previous budgets and scope answers remain with query-scope
 handling; they cannot compete with a fresh explicitly stated price boundary.
+When Jev abstains on price interpretation, Main independently chooses from the
+same browser-issued price choices before binding the read-only Agent task.
+This distinguishes a factual 「多少錢？」 inquiry from a price filter without
+guessing amounts or lowering Jev thresholds. Trace `priceResolution` records
+Main's choice and duration separately from Jev's counters. Missing, malformed
+or unavailable Main results preserve the unresolved-price guard; an accepted
+unsupported choice still requires clarification. This step grants no order
+mutation authority.
 Price instructions distinguish inclusive bounds from explicitly excluded endpoints;
 literal amount evidence does not create an additional budget requirement.
 This is bounded coverage, not a generic action planner or arbitrary multi-action
@@ -237,24 +264,29 @@ the host's fixed greeting without an Agent call or completing the phone question
 Greetings addressed to a named companion stay background; a greeting combined
 with a request follows that request instead of hiding it behind `GREET`.
 Only the current browser-issued skip candidate may advance entry, and phone
-values never enter this decision context. Recommendations and ordering requests
-return `CUSTOMER_ENTRY_REQUIRED` for a fixed host reminder to fill or skip first;
-they do not start the Agent or authorize a browser operation. Factual menu
-questions remain `MENU_QUERY` handoffs, while identity/phone FAQs stay ordinary
-dialogue. An entry prerequisite must never be described as an empty menu.
+values never enter this decision context. Menu inquiries, recommendations and
+ordering requests return `CUSTOMER_ENTRY_REQUIRED` for a fixed host reminder to fill or skip first;
+they do not start the Agent or authorize a browser operation. Identity, store
+service information and phone FAQs stay ordinary dialogue. An entry prerequisite must never be described as an empty menu.
 After a reliable `REQUEST` recipient decision, an uncertain finite phone choice
 is independently resolved by Main using only `SKIP_PHONE`, `KEEP_PHONE` or
 `UNCERTAIN`, without exposing browser tools or the weak Jev proposal. Only
 `SKIP_PHONE` rejoins the current browser-issued skip candidate and its normal
-authorization/execution path. Other or malformed proposals preserve the
-`UNCERTAIN_OPERATION` handoff with read-only conversation authority and no
-required menu lookup. Same-utterance order retractions follow the final intent
+authorization/execution path. Phone-stage `UNCERTAIN_SERVICE_REQUEST` may
+also use this bounded validator after a confirmed recipient; this does not admit
+open conversation. Other or malformed proposals preserve the original result:
+either the read-only `UNCERTAIN_OPERATION` handoff or silent service abstention,
+with no menu operation or required menu lookup. Same-utterance order retractions follow the final intent
 and may be acknowledged without a tool. The optional trace's `phoneResolution`
 records the separate Main choice and duration; `modelCalls`/`modelQuestions`
 continue to count the Jev checkpoints, without inventing a Main confidence score.
+General Main conversation tools exclude `customer_skip_phone` on initial calls
+and continuations, including continuations without a phase snapshot. Only the
+finite phone path owns skipping entry; historical phone reminders must not
+trigger a rejected skip after the customer has already entered the menu.
 Uncertain recipients and malformed provider answers still fail closed.
-Factual price queries at phone entry resolve the same browser-issued price
-interpretations as ordering reads before their `MENU_QUERY` handoff. Uncertain or
+Factual price queries wait for phone entry or explicit skip, then resolve the
+same browser-issued price interpretations as other ordering reads. Uncertain or
 unsupported bounds remain guarded clarification, never an unfiltered menu reply.
 Price questions receive literal amounts in customer state and finite alternatives
 only in their own criteria. Do not repeat all alternative descriptions in the
@@ -331,15 +363,29 @@ as service events, not customer dialogue; the host records the validated reply
 actually presented. Model-only tool results omit deployment/provenance labels,
 without changing durable receipts or payment/order status.
 
-`MENU_QUERY` handoffs require current-turn menu evidence, including while phone
-entry is pending. Other ordering handoffs with current-utterance product/category
+`MENU_QUERY` handoffs require current-turn menu evidence after phone entry has
+been completed or explicitly skipped. Other ordering handoffs with current-utterance product/category
 matches require it too, so a replacement cannot invent unverified dish examples
 in a clarification. Ordinary unclassified handoffs require evidence even when
 no product/category matched. Explicit `GENERAL_QUESTION` routing keeps identity
-and service explanations natural. A food refusal does not authorize a guessed
+and service explanations natural, including store name, opening hours, payment
+methods, invoices, ordering channels and pickup/delivery information. Store facts
+come from the published site Profile’s `agentInstructions`, not global restaurant
+defaults. Generic Main handoffs without current product/category matches use
+a bounded `resolve_service_scope` check: only pure `SERVICE_INFO` rejoins
+`GENERAL_QUESTION`; food/order/mixed/uncertain or failed checks retain the original
+menu guard. This probe supplies no answers or operations; `trace.serviceResolution`
+is separate from the original Jev counters. Missing facts must not be invented; live payment/order/delivery options
+still require current tool evidence. Informational questions grant no operation
+authority. A food refusal does not authorize a guessed
 substitute; ambiguous preferences require clarification. Old cart references
 alone do not imply a food claim. The host
-carries `decisionState.requireMenuRead`; initial
+carries `decisionState.requireMenuRead` after entry. All menu inquiries and
+ordering require a valid phone or explicit skip first; phone-stage MENU and ORDER
+return `CUSTOMER_ENTRY_REQUIRED` without Main. Main can still explain store facts
+and phone/identity questions, but receives no menu/order tools at phone entry. A read-only internal `menu_get(display:false)` does not satisfy
+presentation: the continuation still requires a menu tool until a customer-facing
+receipt exists. Initial
 JSON/SSE completions restrict tools to `menu_get`/`menu_recommend` and require a
 tool call. A no-tool provider answer stays diagnostic prose, and Kiosk refuses
 to publish it as a food claim. Normal identity/phone dialogue is unaffected.
@@ -438,6 +484,49 @@ or frontend failure.
 ```sh
 pnpm -F @proj-airi/server-schema build
 ```
+
+## Main conversation context and measurements
+
+Kiosk Main messages accept the neutral `stage-shared/kiosk-conversation`
+contract. A current compact catalog supports identity/price/option understanding
+without a compulsory second literal lookup; requested menu presentation still
+needs its tool receipt. The current snapshot replaces historical state, and tool
+scope intersects its allowed tools with offered tools. Phone skip stays host-owned.
+Initial and continuation requests use the same schema; inconsistent phase,
+read-only state or menu revision is rejected before provider execution.
+
+Each model round records a `main_round_metrics` service event: actual UTF-8
+request/message/tool bytes, projected context bytes, wall duration and task ID
+when present. SSE records time to first nonempty text or tool delta. JSON-only
+responses omit first-output time. `inputTokens` is included only when the provider
+supplies valid `usage.prompt_tokens`; bytes are not converted into token estimates.
+These events contain no prompt or tool arguments and never become model dialogue.
+They measure gateway/stream duration, not isolated GPU inference. Model latency
+percentiles and production capacity require real-provider measurements; local
+mock tests do not establish those values.
+
+## Service admission recovery
+
+`kiosk-interaction-decision/serviceRecovery.ts` owns recovery eligibility,
+adjudication/review payloads, strict fixed-tool response validation and time caps.
+It runs only for a marked valid semantic service abstention; invalid answers,
+provider failures and confirmed background do not become eligibility. Existing
+phone skip validation runs first and is not repeated by generic recovery.
+
+Segmented responses include separate `SERVICE_RECOVERY_PROGRESS` checkpoints
+before Main invocation and after a valid result. The device/session generation
+owns provider cancellation and one-use continuations. The 24 Jev-question cap
+and four additional recovery progress events have separate accounting. A
+recovery result never supplies Jev confidence, operation arguments or action IDs.
+Only the existing phone choice validator can rejoin its legal skip candidate.
+
+`service_recovery_metrics` service events store recovery/utterance correlation,
+status, admission/disposition, per-stage duration and actual request bytes;
+provider input tokens are present only if reported. No provider errors, prompts
+or hidden reasoning are persisted in those events. A read-only service question
+has a 30s lifetime; its next utterance uses one contextual review directly, which
+separates clarification answers from independent new requests. A clarification
+answer remains read-only when formally handed to Main.
 
 ## Kiosk system archives
 
