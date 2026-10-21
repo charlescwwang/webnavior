@@ -7,6 +7,21 @@ accumulating history.
 
 ## Current State
 
+- Production deployment is separate from the current `no_mcp` branch. The last
+  verified release was master `fcf3b52` on Oct20 at
+  `https://webnavior.aikcitri.qzz.io`; this does not mark the Oct21 work below
+  as deployed. API restarted at 19:47:36 Taipei, PID 1741934. At that release,
+  livez/readyz reported DB/Redis ok; public Menu index-CapzATGV.js and Kiosk
+  index-CxqFrGRD.js plus all HTML-linked assets matched staged SHA-256 hashes.
+  Root redirect, bridge and 7 catalog items passed; Nginx/Origin-Trial unchanged.
+  Backup: `/tmp/webnavior-release-20261020-d8nr85ei` contains old static trees,
+  staged builds, a pg_restore-list-verified DB dump and deployed-verified
+  release.json. Switching this checkout to `no_mcp` on Oct21 did not publish
+  frontend assets or restart services. The API service uses this checkout as
+  its source; its next restart will load this branch, so validate and deploy
+  matching builds/dependencies before restarting. Camera/microphone and real
+  payment/POS acceptance were not verified by the Oct20 release checks.
+
 - Oct21 service recovery is implemented and committed locally; source of truth:
   docs/plans/2026-10-21-kiosk-service-recovery.md. Valid Jev service uncertainty
   permits one fixed Main verdict, then one richer no-commerce review only for
