@@ -36,6 +36,8 @@ describe('price-qualified menu handoffs', () => {
         answers.route = { choice: 'intent:recommend-more', confidence: routeConfidence }
       if (questions.recipient)
         answers.recipient = { choice: 'KIOSK', confidence: 0.9997 }
+      if (questions.serviceRequest)
+        answers.serviceRequest = { choice: 'REQUEST', confidence: 0.95 }
       if (questions.menuInquiry)
         answers.menuInquiry = { choice: 'QUERY', confidence: 0.95 }
       if (questions.filterRequirement)
@@ -65,6 +67,8 @@ describe('price-qualified menu handoffs', () => {
         answers.route = { choice: route, confidence: 0.597 }
       if (questions.recipient)
         answers.recipient = { choice: recipient, confidence: 0.9992 }
+      if (questions.serviceRequest)
+        answers.serviceRequest = { choice: 'REQUEST', confidence: 0.95 }
       if (questions.menuInquiry)
         answers.menuInquiry = { choice: inquiry, confidence: inquiryConfidence }
       if (questions.filterRequirement)
@@ -97,6 +101,8 @@ describe('price-qualified menu handoffs', () => {
         answers.route = { choice: ['open-preference', 'uncertain-scope', 'uncertain-covered'].includes(path) ? 'intent:search-menu' : 'MENU_QUERY', confidence: path === 'weak-inquiry' ? 0.4 : 0.95 }
       if (questions.recipient)
         answers.recipient = { choice: 'KIOSK', confidence: 0.95 }
+      if (questions.serviceRequest)
+        answers.serviceRequest = { choice: 'REQUEST', confidence: 0.95 }
       if (questions.menuInquiry)
         answers.menuInquiry = { choice: 'QUERY', confidence: 0.95 }
       if (questions.filterRequirement)

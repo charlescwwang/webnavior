@@ -1,3 +1,4 @@
+import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
@@ -10,16 +11,21 @@ import type { HonoEnv } from '../../types/hono'
 
 import { randomInt, randomUUID } from 'node:crypto'
 
+import { conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import { array, boolean, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
+import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
-import { compactToolResultForModel, createInteractionInstructions, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
+import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
+import { currentContextInstructions } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
 import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
 import { resolvePhoneChoice } from '../../services/domain/kiosk-interaction-decision/phoneResolution'
+import { resolvePriceHandoff } from '../../services/domain/kiosk-interaction-decision/priceResolution'
 import { scopeInstructions, scopeTool } from '../../services/domain/kiosk-interaction-decision/queryScopeContracts'
+import { recoverServiceRequest } from '../../services/domain/kiosk-interaction-decision/serviceRecovery'
+import { resolveServiceHandoff } from '../../services/domain/kiosk-interaction-decision/serviceResolution'
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
@@ -101,7 +107,10 @@ const priceEvidenceSchema = object({
 const conversationMessageSchema = object({
   utteranceId: optional(pipe(number(), integer(), minValue(1))),
   content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
-  decisionState: optional(object({
+  decisionState: optional(pipe(object({
+    serviceClarification: optional(serviceClarificationSchema),
+    context: optional(conversationContextSchema),
+    handoff: optional(handoffSchema),
     requireMenuRead: optional(boolean()),
     readOnly: optional(boolean()),
     priceEvidence: optional(priceEvidenceSchema),
@@ -112,11 +121,11 @@ const conversationMessageSchema = object({
     unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
     fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
     waitingFor: optional(presentedQuestionSchema),
-    allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
+    allowedPaymentMethods: optional(pipe(array(pipe(string(), minLength(1), maxLength(80))), maxLength(20))),
     interactionState: optional(interactionStateSchema),
     paymentState: optional(pipe(string(), maxLength(40))),
     phase: pipe(string(), regex(/^[a-z_]+$/), maxLength(60)),
-  })),
+  }), check(value => !value.context || (value.phase === value.context.phase && (value.readOnly === undefined || value.readOnly === value.context.readOnly) && (value.menuRevision === undefined || value.menuRevision === value.context.revisions.menu)), 'Conversation state does not match its current context'))),
   toolResults: optional(array(kioskToolResultSchema), []),
   tools: optional(array(kioskToolSchema), []),
 })
@@ -146,6 +155,9 @@ const speechSchema = object({
 })
 
 const interactionDecisionSchema = object({
+  utteranceId: optional(pipe(number(), integer(), minValue(1))),
+  recoveryUsed: optional(boolean()),
+  budgetMs: optional(pipe(number(), integer(), minValue(1), maxValue(serviceRecoveryLimits.turnMs))),
   segmented: optional(boolean()),
   visitorSessionId: optional(pipe(string(), minLength(1), maxLength(120))),
   review: optional(object({ answer: pipe(string(), maxLength(2_000)), observation: pipe(string(), maxLength(4_000)) })),
@@ -171,6 +183,7 @@ const interactionDecisionSchema = object({
     constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(9)), include: optional(pipe(array(pipe(string(), maxLength(80))), maxLength(9))), dietary: optional(literal('vegetarian')), price: optional(priceConditionsSchema), unresolvedPrice: optional(boolean()) })),
     ingredientReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z_-]+$/), maxLength(40)), label: pipe(string(), maxLength(40)) })), maxLength(9))),
     dietaryReferences: optional(pipe(array(object({ id: literal('vegetarian'), label: pipe(string(), maxLength(40)) })), maxLength(1))),
+    serviceClarification: optional(serviceClarificationSchema),
     interactionState: optional(interactionStateSchema),
     paymentState: optional(pipe(string(), maxLength(40))),
     phase: pipe(string(), regex(/^[a-z_]+$/), maxLength(60)),
@@ -351,26 +364,54 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       presenceState: result.output.presenceState,
       transcript: result.output.transcript,
     }
-    const decide = async (invoke: typeof decisionInput.invoke) => {
-      const decision = await decideInteraction({ ...decisionInput, invoke })
+    const decide = async (invoke: typeof decisionInput.invoke, progress?: (event: Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>) => Promise<void>, signal: AbortSignal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(result.output.budgetMs ?? serviceRecoveryLimits.turnMs)])) => {
+      const completeResolution = async (body: Record<string, unknown>) => {
+        const modelName = await options.runtimeModelPolicy.modelFor('chat')
+        if (!modelName)
+          throw new Error('No Main model is configured for bounded resolution.')
+        return await options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal })
+      }
+      const cue = result.output.decisionState?.serviceClarification
+      const validCue = cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(result.output.decisionState!)
+      const bounded = validCue ? { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_SERVICE_REQUEST' as const, recovery: { status: 'eligible' as const } } : await decideInteraction({ ...decisionInput, invoke })
+      const priced = await resolvePriceHandoff(bounded, result.output.transcript, result.output.review ? undefined : result.output.decisionState?.priceEvidence, completeResolution)
+      let decision = result.output.review ? priced : await resolveServiceHandoff(priced, result.output.transcript, result.output.decisionState, completeResolution)
       const skip = result.output.candidates.find(candidate => candidate.id === 'intent:skip-customer-entry')
-      if (result.output.review || result.output.decisionState?.phase !== 'customer_entry' || decision.kind !== 'NEEDS_ASSISTANT' || decision.reason !== 'UNCERTAIN_OPERATION' || !skip)
+      const unresolvedPhone = (decision.kind === 'NEEDS_ASSISTANT' && decision.reason === 'UNCERTAIN_OPERATION') || (decision.kind === 'UNAVAILABLE' && decision.reason === 'UNCERTAIN_SERVICE_REQUEST')
+      if (!result.output.review && result.output.decisionState?.phase === 'customer_entry' && unresolvedPhone && skip) {
+        const modelName = await options.runtimeModelPolicy.modelFor('chat')
+        if (modelName) {
+          const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal }))
+          const trace = result.output.includeTrace ? { trace: { ...(decision.trace && typeof decision.trace === 'object' ? decision.trace : {}), phoneResolution: resolution } } : {}
+          if (resolution.choice === 'SKIP_PHONE') {
+            const waitingFor = result.output.decisionState.waitingFor
+            return { kind: 'FAST_ACTION' as const, actionId: skip.id, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(waitingFor?.purpose === 'customer-entry' ? { answeredQuestionId: waitingFor.questionId } : {}), ...trace }
+          }
+          decision = { ...decision, ...trace }
+        }
+      }
+      if (result.output.review || result.output.recoveryUsed || decision.recovery?.status !== 'eligible')
         return decision
       const modelName = await options.runtimeModelPolicy.modelFor('chat')
       if (!modelName)
-        return decision
-      // Main resolves a phase-local semantic choice, not browser tools. Only
-      // an explicit skip rejoins the existing candidate authorization path;
-      // every other proposal retains the original read-only assistant handoff.
-      const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: c.req.raw.signal }))
-      const trace = result.output.includeTrace ? { trace: { ...(decision.trace && typeof decision.trace === 'object' ? decision.trace : {}), phoneResolution: resolution } } : {}
-      if (resolution.choice !== 'SKIP_PHONE')
-        return { ...decision, ...trace }
-      const waitingFor = result.output.decisionState.waitingFor
-      return { kind: 'FAST_ACTION' as const, actionId: skip.id, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(waitingFor?.purpose === 'customer-entry' ? { answeredQuestionId: waitingFor.questionId } : {}), ...trace }
+        return { ...decision, recovery: { status: 'failed' as const, failure: 'unavailable' as const } }
+      const recovered = await recoverServiceRequest(decision, {
+        utteranceId: result.output.utteranceId,
+        modelName,
+        transcript: result.output.transcript,
+        state: result.output.decisionState,
+        conversation: decisionInput.conversation,
+        progress,
+        signal,
+        complete: (body, abortSignal) => options.llmGateway.complete({ modelName, body, abortSignal }),
+      })
+      signal.throwIfAborted()
+      if (result.output.visitorSessionId && recovered.recovery?.rounds?.length)
+        await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: JSON.stringify({ kind: 'service_recovery_metrics', ...recovered.recovery }), metadata: { source: 'service_recovery_metrics', utteranceId: result.output.utteranceId } })
+      return recovered
     }
     return c.json(result.output.segmented
-      ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, checkpoint => decide(checkpoint(options.systemOne!.decide)))
+      ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, (checkpoint, progress, signal) => decide(checkpoint(options.systemOne!.decide), progress, signal), { signal: c.req.raw.signal, timeoutMs: result.output.budgetMs })
       : await decide(options.systemOne.decide))
   })
 
@@ -385,7 +426,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         throw createBadRequestError('Visitor session is not active', 'SESSION_INACTIVE')
     }
     try {
-      return c.json(await decisionStages.next({ deviceId: device.id, visitorSessionId: body.output.visitorSessionId }, c.req.param('id')))
+      return c.json(await decisionStages.next({ deviceId: device.id, visitorSessionId: body.output.visitorSessionId }, c.req.param('id'), c.req.raw.signal))
     }
     catch {
       throw createBadRequestError('Decision continuation expired or unavailable', 'STALE_DECISION')
@@ -628,6 +669,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       tools: result.output.tools,
       abortSignal: c.req.raw.signal,
     })
+    await recordRoundMetrics(options.kioskService, device.id, transcript.session.id, answer)
     if (answer.content) {
       await options.kioskService.appendDeviceInteraction({
         content: answer.content,
@@ -831,6 +873,43 @@ type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferr
 interface KioskCompletion {
   content?: string
   toolCalls: KioskToolCall[]
+  inputTokens?: number
+  metrics?: { requestBytes: number, contextBytes: number, messageBytes: number, toolBytes: number, taskId?: string, durationMs: number, firstOutputMs?: number, inputTokens?: number }
+}
+
+// Measure the actual serialized request after projection/compaction, not raw POS size.
+function inputMetrics(body: { messages: unknown, tools?: unknown }, context?: KioskConversationDecisionState['context']) {
+  const encoder = new TextEncoder()
+  return {
+    requestBytes: encoder.encode(JSON.stringify(body)).byteLength,
+    messageBytes: encoder.encode(JSON.stringify(body.messages)).byteLength,
+    toolBytes: body.tools ? encoder.encode(JSON.stringify(body.tools)).byteLength : 0,
+    contextBytes: context ? encoder.encode(JSON.stringify(context)).byteLength : 0,
+    ...(context?.taskId ? { taskId: context.taskId } : {}),
+  }
+}
+
+// Usage is provider-reported. Missing usage is deliberately not estimated from bytes.
+function promptTokens(payload: unknown): number | undefined {
+  if (!payload || typeof payload !== 'object' || !('usage' in payload))
+    return undefined
+  const usage = payload.usage
+  if (!usage || typeof usage !== 'object' || !('prompt_tokens' in usage))
+    return undefined
+  const tokens = usage.prompt_tokens
+  return typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens >= 0 ? tokens : undefined
+}
+
+async function recordRoundMetrics(kioskService: KioskService, deviceId: string, visitorSessionId: string, answer: KioskCompletion) {
+  if (!answer.metrics)
+    return
+  await kioskService.appendDeviceInteraction({
+    deviceId,
+    visitorSessionId,
+    kind: 'service_event',
+    content: JSON.stringify({ kind: 'main_round_metrics', ...answer.metrics }),
+    metadata: { source: 'main_round_metrics' },
+  })
 }
 
 async function parseAssistantReply(response: Response): Promise<KioskCompletion> {
@@ -841,6 +920,7 @@ async function parseAssistantReply(response: Response): Promise<KioskCompletion>
   if (!isChatCompletion(payload))
     throw createBadRequestError('LLM Provider response is invalid', 'LLM_PROVIDER_INVALID_RESPONSE')
   return {
+    inputTokens: promptTokens(payload),
     content: payload.choices[0].message.content || undefined,
     toolCalls: payload.choices[0].message.tool_calls ?? [],
   }
@@ -871,40 +951,41 @@ async function completeKioskReply(input: {
   if (!modelName)
     throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
   const systemInstructions = createKioskSystemInstructions(input)
-  const response = await input.llmGateway.complete({
-    abortSignal: input.abortSignal,
-    modelName,
-    body: {
-      model: modelName,
-      messages: [
-        { role: 'system', content: systemInstructions },
-        ...toConversationMessages(input.transcript.entries, input.toolResults?.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content)),
-        ...(input.toolResults ?? []).map(toolResult => ({
-          role: 'tool',
-          content: compactToolResultForModel(toolResult.name, toolResult.content),
-          tool_call_id: toolResult.toolCallId,
-        })),
-        ...(input.content ? [{ role: 'user', content: input.content }] : []),
-        // Some OpenAI-compatible gateways reject a system-only conversation.
-        // When VLM is off there is no scene-frame user turn, so represent the
-        // proactive event explicitly without inventing visitor input.
-        ...(input.actionPrompt && !input.sceneFrame
-          ? [{ role: 'user', content: '請現在產生一則自然、簡短的繁體中文主動互動台詞。' }]
-          : []),
-        ...(input.sceneFrame
-          ? [{
-              role: 'user',
-              content: [
-                { type: 'text', text: '這是此刻的 kiosk 視訊畫面。請依畫面與上述場域指引，直接說出現在最適合的一句台詞。' },
-                { type: 'image_url', image_url: { url: input.sceneFrame } },
-              ],
-            }]
-          : []),
-      ],
-      ...replyToolPolicy(input),
-    },
-  })
-  return await parseAssistantReply(response)
+  const catalogItemIds = input.decisionState?.context?.catalog ? new Set(input.decisionState.context.catalog.items.map(item => item.id)) : undefined
+  const body = {
+    model: modelName,
+    messages: [
+      { role: 'system', content: systemInstructions },
+      ...toConversationMessages(input.transcript.entries, input.toolResults?.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content), catalogItemIds),
+      ...(input.toolResults ?? []).map(toolResult => ({
+        role: 'tool',
+        content: compactToolResultForModel(toolResult.name, toolResult.content, catalogItemIds),
+        tool_call_id: toolResult.toolCallId,
+      })),
+      ...(input.content ? [{ role: 'user', content: input.content }] : []),
+      // Some OpenAI-compatible gateways reject a system-only conversation.
+      // When VLM is off there is no scene-frame user turn, so represent the
+      // proactive event explicitly without inventing visitor input.
+      ...(input.actionPrompt && !input.sceneFrame
+        ? [{ role: 'user', content: '請現在產生一則自然、簡短的繁體中文主動互動台詞。' }]
+        : []),
+      ...(input.sceneFrame
+        ? [{
+            role: 'user',
+            content: [
+              { type: 'text', text: '這是此刻的 kiosk 視訊畫面。請依畫面與上述場域指引，直接說出現在最適合的一句台詞。' },
+              { type: 'image_url', image_url: { url: input.sceneFrame } },
+            ],
+          }]
+        : []),
+    ],
+    ...replyToolPolicy(input),
+  }
+  const sizes = inputMetrics(body, input.decisionState?.context)
+  const startedAt = performance.now()
+  const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, modelName, body })
+  const answer = await parseAssistantReply(response)
+  return { ...answer, metrics: { ...sizes, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
 
 type KioskReplyEvent
@@ -947,6 +1028,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
       try {
         emit({ type: 'turn-started' })
         const answer = await streamKioskReply(input, text => emit({ text, type: 'assistant-delta' }))
+        await recordRoundMetrics(input.kioskService, input.deviceId, input.transcript.session.id, answer)
 
         if (answer.toolCalls.length > 0) {
           input.toolTraceObserver?.record({
@@ -1020,39 +1102,57 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
   if (!modelName)
     throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
 
-  const response = await input.llmGateway.complete({
-    abortSignal: input.signal,
-    modelName,
-    body: {
-      model: modelName,
-      messages: [
-        { role: 'system', content: createKioskSystemInstructions(input) },
-        ...toConversationMessages(input.transcript.entries, input.toolResults.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content)),
-        ...input.toolResults.map(toolResult => ({
-          role: 'tool',
-          content: compactToolResultForModel(toolResult.name, toolResult.content),
-          tool_call_id: toolResult.toolCallId,
-        })),
-        ...(input.content ? [{ role: 'user', content: input.content }] : []),
-      ],
-      ...replyToolPolicy(input),
-      stream: true,
-    },
+  const catalogItemIds = input.decisionState?.context?.catalog ? new Set(input.decisionState.context.catalog.items.map(item => item.id)) : undefined
+  const body = {
+    model: modelName,
+    messages: [
+      { role: 'system', content: createKioskSystemInstructions(input) },
+      ...toConversationMessages(input.transcript.entries, input.toolResults.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content), catalogItemIds),
+      ...input.toolResults.map(toolResult => ({
+        role: 'tool',
+        content: compactToolResultForModel(toolResult.name, toolResult.content, catalogItemIds),
+        tool_call_id: toolResult.toolCallId,
+      })),
+      ...(input.content ? [{ role: 'user', content: input.content }] : []),
+    ],
+    ...replyToolPolicy(input),
+    stream: true,
+  }
+  const sizes = inputMetrics(body, input.decisionState?.context)
+  const startedAt = performance.now()
+  let firstOutputMs: number | undefined
+  const response = await input.llmGateway.complete({ abortSignal: input.signal, modelName, body })
+  const answer = await parseKioskReplyStream(response, onTextDelta, () => {
+    firstOutputMs ??= performance.now() - startedAt
   })
-  return await parseKioskReplyStream(response, onTextDelta)
+  return { ...answer, metrics: { ...sizes, durationMs: performance.now() - startedAt, ...(firstOutputMs !== undefined ? { firstOutputMs } : {}), ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
 
 // A semantic food handoff must obtain a fresh read before any generated
-// final answer or order change. Continuations already carry that tool receipt.
+// final answer or order change. Internal catalog reads do not finish presentation.
 function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
   // Read-only tool selection favors repeatable semantic decisions over prose variation.
   const generation = input.decisionState?.readOnly ? { temperature: 0 } : {}
+  // Phone entry allows service explanations, not menu reads or commerce.
+  // Explicit skip is owned by the finite phone resolver/browser candidate.
+  if (input.decisionState?.phase === 'customer_entry') {
+    const history = input.tools?.filter(tool => tool.function.name === 'kiosk_session_history')
+    return history?.length ? { ...generation, tools: history } : generation
+  }
   // A qualified inquiry stays read-only across every continuation. A fresh
   // customer request creates a new task; a menu receipt cannot grant writes.
+  // Phone skip is exclusively owned by the finite phone resolver/browser
+  // candidate. Keep it out of Main even when a continuation omits phase: an
+  // old phone reminder must not prompt an INVALID_PHASE write before lookup.
+  const currentTools = input.decisionState?.context?.allowedToolNames
+  const agentTools = input.tools?.filter(tool => tool.function.name !== 'customer_skip_phone' && (!currentTools || currentTools.includes(tool.function.name) || tool.function.name === 'kiosk_session_history'))
   const available = input.decisionState?.readOnly
-    ? input.tools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(tool.function.name))
-    : input.tools
-  if (!input.decisionState?.requireMenuRead || input.toolResults?.length)
+    ? agentTools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(tool.function.name))
+    : agentTools
+  // Read-only inquiries need a presented result, while operation tasks retain
+  // their existing read-before-write contract and may continue to cart tools.
+  const readCompleted = input.decisionState?.readOnly ? hasMenuReply(input.toolResults ?? []) : Boolean(input.toolResults?.length)
+  if (!input.decisionState?.requireMenuRead || readCompleted || (input.decisionState.context?.catalog?.complete && !input.decisionState.readOnly))
     return available?.length ? { ...generation, tools: available } : generation
   const tools = available?.filter(tool => ['menu_get', 'menu_recommend'].includes(tool.function.name)) ?? []
   if (!tools.length)
@@ -1060,7 +1160,7 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   return { ...generation, tools, tool_choice: 'required' as const }
 }
 
-async function parseKioskReplyStream(response: Response, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
+async function parseKioskReplyStream(response: Response, onTextDelta: (text: string) => void, onOutput: () => void): Promise<KioskCompletion> {
   if (!response.ok)
     throw createBadRequestError('LLM Provider did not return a stream', 'LLM_PROVIDER_ERROR')
   // Some OpenAI-compatible providers accept `stream: true` but still return a
@@ -1076,6 +1176,7 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
   let buffer = ''
   let content = ''
   let receivedPayload = false
+  let inputTokens: number | undefined
   const toolCalls: Array<Partial<KioskToolCall>> = []
 
   const consumeEvent = (rawEvent: string) => {
@@ -1083,6 +1184,7 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     if (!data || data === '[DONE]')
       return
     const parsed: unknown = JSON.parse(data)
+    inputTokens = promptTokens(parsed) ?? inputTokens
     if (!parsed || typeof parsed !== 'object' || !('choices' in parsed) || !Array.isArray(parsed.choices))
       return
     receivedPayload = true
@@ -1090,6 +1192,8 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     if (!delta || typeof delta !== 'object')
       return
     if (typeof delta.content === 'string') {
+      if (delta.content)
+        onOutput()
       content += delta.content
       onTextDelta(delta.content)
     }
@@ -1098,6 +1202,7 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     for (const partial of delta.tool_calls) {
       if (!partial || typeof partial !== 'object' || typeof partial.index !== 'number')
         continue
+      onOutput()
       const existing = toolCalls[partial.index] ?? { function: { arguments: '', name: '' }, id: '', type: 'function' }
       const functionDelta = partial.function
       toolCalls[partial.index] = {
@@ -1135,7 +1240,7 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     && typeof toolCall.function?.name === 'string'
     && typeof toolCall.function.arguments === 'string'
   ))
-  return { content: content || undefined, toolCalls: completedToolCalls }
+  return { content: content || undefined, toolCalls: completedToolCalls, inputTokens }
 }
 
 /**
@@ -1147,6 +1252,9 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
  * into one leading message so the same request shape works across providers.
  */
 function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile'>) {
+  const interaction = input.agentInteraction && input.decisionState?.context
+    ? { ...input.agentInteraction, cartSummary: undefined, recentMenuSubjects: [], recentAgentAction: undefined }
+    : input.agentInteraction
   let readAuthority: string | undefined
   if (input.decisionState?.readOnly) {
     if (!input.decisionState.requireMenuRead)
@@ -1164,12 +1272,13 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
   }
   return [
     { content: createCharacterInstructions(input.profile.snapshot), title: '角色與店別設定' },
-    input.agentInteraction ? { content: createInteractionInstructions(input.agentInteraction, conversationScope(input.decisionState)), title: '本次點餐互動規則' } : undefined,
-    input.decisionState
+    interaction ? { content: createInteractionInstructions(interaction, conversationScope(input.decisionState)), title: '本次點餐互動規則' } : undefined,
+    input.decisionState?.context ? { content: currentContextInstructions(input.decisionState.context), title: '目前有效點餐情境' } : undefined,
+    input.decisionState && !input.decisionState.context
       ? {
           content: [
             `目前 Kiosk 畫面：${input.decisionState.phase}`,
-            input.decisionState.phase === 'customer_entry' ? '目前是自願電話登記頁，不要求會員。顧客可觸控填寫，也可明確略過。顧客最後仍要求推薦、換推薦或點餐時，先請他填寫手機或選擇略過；不呼叫推薦／訂購工具，不把這個流程限制說成沒有符合條件的餐點。單純問有沒有、價格或成分仍可用 menu_get 查詢。不得猜填電話或替顧客略過。同一句話後段撤回前段點餐時，以最後意圖回應；沒有剩餘操作就簡短確認先不點，保留電話頁，不查餐點、不新增或移除，也不要求為已撤回的點餐完成電話選擇。' : undefined,
+            input.decisionState.phase === 'customer_entry' ? '目前是自願電話登記頁，不要求會員。顧客必須先觸控填寫有效手機，或明確說略過，才能開始任何菜單查詢、餐點介紹、推薦、選餐、購物車、結帳或付款操作。手機本身仍是選填，不可要求一定提供。詢問賣什麼、有沒有、價格、成分或要求點餐時，簡短回覆「請先填寫手機號碼，或說『略過』，就可以開始看菜單與點餐。」不呼叫任何菜單／訂單工具、不介紹具體餐點、不替顧客略過。仍可依店別設定回答店名、營業時間、付款方式、發票、點餐／取餐管道，以及電話用途、本機身分／能力；這些是服務說明，不變更畫面或訂單。同句撤回點餐後沒有剩餘操作，只需確認先不點，保留電話頁，不查菜單或要求完成已撤回的點餐。' : undefined,
             `本次已解析條件（不得省略或自行放寬）：${JSON.stringify(input.decisionState.constraints ?? { exclude: [] })}`,
             input.decisionState.requireMenuRead ? '本輪是餐點需求：先查菜單再回答。條件不變且尚有下一批時，換其他推薦使用 menu_recommend action:continue；原條件已無其他結果而新範圍不明時，使用 menu_recommend action:clarify 語音釐清，不必先查資料。顧客質疑先前品項不存在或是否真的有時，用 menu_get 的 query／queries 核對具體品名並指定 verifyClaim:true，不以換推薦或請顧客自行看畫面代替。確實介紹錯就明確承認、更正，依回傳品項回答。' : undefined,
             readAuthority,
@@ -1196,8 +1305,10 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
       : undefined,
     input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
-    { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清可直接用自然語言回答，不需要為了回覆招呼而查菜單。拒絕或否定某餐點不代表指定替代餐點。「不想吃飯」可能是不想用餐，也可能是不吃米飯；未確認前不可自行推成想吃麵、排除米飯或同意換一批。需求不明先釐清；若本輪要求查菜單，查詢只取得事實，不代表顧客已要求推薦或接受替代餐點。餐點、價格、庫存與訂單狀態必須先查詢工具；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
-    { content: '查詢語意由你依本句與相關對話理解，不依賴前置意圖名稱。menu_recommend 必須選 action：continue 沿用條件換批；update 新增或只修改明示條件，包含第一輪查詢，只有本句同時明確要求不同餐點才加 excludeShown:true，不得沿用前句換批或無更多結果的語意；單純改價位或分類的新條件查詢不可排除已展示的符合品項；reset 顧客明確重新挑選時清除瀏覽限制，保留飲食限制與已展示歷史；clarify 意圖或範圍不明時只回傳語音問題。原條件已無更多結果，顧客只泛指其他而未明示改哪個範圍時，選 clarify，不重試或自行重置；明確不限價格用 update 並 clear:[price]，不是重置所有條件。query／queries 只放具體商品名稱，泛指其他品項、別的或先前那些不是品名；具體陌生品名仍用 menu_get 查原名。條件由程式保存，不從歷史重填整組舊條件，不用省略參數或 more 表達動作。clarify 只傳 {action:clarify}，不填 customerMessage 或 question；工具回傳的 customerMessage 是本輪語音追問，不再查資料、推薦或改寫成找不到商品。', title: '查詢動作與條件狀態' },
+    { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清可直接用自然語言回答，不需要為了回覆招呼而查菜單。拒絕或否定某餐點不代表指定替代餐點。「不想吃飯」可能是不想用餐，也可能是不吃米飯；未確認前不可自行推成想吃麵、排除米飯或同意換一批。需求不明先釐清；若本輪要求查菜單，查詢只取得事實，不代表顧客已要求推薦或接受替代餐點。餐點、價格、選項與訂單狀態以本輪完整情境或最新工具資料為準；缺少完整情境才先查詢工具，不以歷史猜測；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
+    input.decisionState?.serviceClarification ? { content: `目前服務釐清只是理解線索，不授權操作或回答舊 Menu 問題：${JSON.stringify(input.decisionState.serviceClarification)}`, title: '服務釐清' } : undefined,
+    { content: '店名、營業時間、付款方式、發票、點餐管道與取餐／送餐方式，可依角色與店別設定中明確提供的店家服務資訊簡短回答，不必為此查菜單。沒有提供的資訊明確說明無法確認，不能自行補上營業日、支付品牌、發票載具規則、網址、候餐時間或配送保證。服務介紹不是操作授權：說明可自取或機器人送餐不代表已變更用餐方式、派送或完成訂單。實際可選付款與用餐方式、即時訂單與配送狀態仍以最新工具回傳為準；若與店家一般介紹不一致，說明當前可用選項，不猜測或承諾。', title: '店家服務資訊與即時操作分界' },
+    { content: '查詢語意由你依本句與相關對話理解，不依賴前置意圖名稱。menu_recommend 必須選 action：continue 沿用條件換批；update 新增或只修改明示條件，包含第一輪查詢，只有本句同時明確要求不同餐點才加 excludeShown:true，不得沿用前句換批或無更多結果的語意；單純改價位或分類的新條件查詢不可排除已展示的符合品項；reset 顧客明確重新挑選時清除瀏覽限制，保留飲食限制與已展示歷史；clarify 意圖或範圍不明時只回傳語音問題。原條件已無更多結果，顧客只泛指其他而未明示改哪個範圍時，選 clarify，不重試或自行重置；明確不限價格用 update 並 clear:[price]，不是重置所有條件。query／queries 只放具體商品名稱，泛指其他品項、別的或先前那些不是品名；具體陌生品名先比對本輪完整菜單；可能是別稱時提出真實候選並確認，不因字面查無就直接說沒有。沒有完整菜單時用 menu_get 查原名。條件由程式保存，不從歷史重填整組舊條件，不用省略參數或 more 表達動作。clarify 只傳 {action:clarify}，不填 customerMessage 或 question；工具回傳的 customerMessage 是本輪語音追問，不再查資料、推薦或改寫成找不到商品。', title: '查詢動作與條件狀態' },
     { content: '操作問題由點餐系統依 POS 與目前狀態產生。工具回傳 pendingCustomerChoice 時，不另寫或重複詢問問題，由畫面呈現該問題。用餐方式名稱必須取自最新 POS fulfillmentModes，不自行將 takeout 解讀成外帶。環境、資料來源與測試標記僅供內部紀錄，不向顧客敘述；只回報工具證實的訂單與付款狀態。pending 或 uncertain 不可宣稱付款或訂單成功。', title: '顧客回覆與操作問題分界' },
   ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }
@@ -1242,6 +1353,7 @@ function toConversationMessages(
   pendingToolCallIds: string[] = [],
   scope: 'ordering' | 'checkout' = 'ordering',
   hasCurrentInput = false,
+  catalogItemIds?: ReadonlySet<string>,
 ) {
   // New customer input starts a fresh task: past tool payloads remain durable
   // for audit, while only their compact working summary reaches the model.
@@ -1280,7 +1392,7 @@ function toConversationMessages(
     for (const call of calls) {
       const result = results.get(call.id)
       if (!pendingIds.has(call.id) && result)
-        batch.push({ role: 'tool', content: compactToolResultForModel(call.function.name, result.content), tool_call_id: call.id })
+        batch.push({ role: 'tool', content: compactToolResultForModel(call.function.name, result.content, catalogItemIds), tool_call_id: call.id })
     }
     exchanges.unshift(...batch)
   }

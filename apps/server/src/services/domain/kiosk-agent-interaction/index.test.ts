@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
-import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, queryClarification, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
+import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, hasMenuReply, queryClarification, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
+
+it('keeps read presentation while removing repeated complete catalog details', () => {
+  const original = JSON.stringify({ catalog: { items: [{ id: 'dish', name: '水餃' }] }, categories: ['主食'], ingredientDefinitions: [{ id: 'pork' }], items: [{ id: 'dish', name: '水餃', description: '長介紹' }], possibleItems: [{ id: 'dish', name: '水餃' }], presentation: { itemIds: ['dish'] }, matchKind: 'possible' })
+  const compacted = JSON.parse(compactToolResultForModel('menu_get', original, new Set(['dish'])))
+  expect(compacted.items).toEqual([{ id: 'dish' }])
+  expect(compacted.possibleItems).toEqual([{ id: 'dish' }])
+  expect(compacted.presentation).toEqual({ itemIds: ['dish'] })
+  expect(compacted.matchKind).toBe('possible')
+  expect(compacted).not.toHaveProperty('catalog')
+  expect(compacted).not.toHaveProperty('ingredientDefinitions')
+  expect(JSON.parse(original).items[0].name).toBe('水餃')
+})
+
+it('retains accepted line outcomes without repeating an older full cart snapshot', () => {
+  const content = JSON.stringify({ cart: { lines: [{ id: 'old-line' }], total: 100 }, selection: { itemId: 'dish' }, line: { id: 'new-line', itemId: 'dish', quantity: 1 }, customerMessage: '已加入餐點。' })
+  const compacted = JSON.parse(compactToolResultForModel('order_add_item', content, new Set(['dish'])))
+  expect(compacted.line).toEqual({ id: 'new-line', itemId: 'dish', quantity: 1 })
+  expect(compacted.customerMessage).toBe('已加入餐點。')
+  expect(compacted).not.toHaveProperty('cart')
+  expect(compacted).not.toHaveProperty('selection')
+  expect(JSON.parse(compactToolResultForModel('cart_get', content))).toHaveProperty('cart')
+})
 
 // Report: this chat, query-action voice clarification, 2026-10-19.
 it('settles only a single non-presenting query clarification receipt', () => {
@@ -229,4 +251,14 @@ describe('kiosk Agent interaction', () => {
       name: 'menu_show_recommendations',
     }])).toMatchObject({ mode: 'active', noProgressCount: 0, suggestedSubjectIds: ['shrimp-roll', 'fish-floss-rice'] })
   })
+})
+
+// Report: this chat, 2026-10-21; phone-page menu lookup stopped after display:false.
+it('requires a presented menu receipt rather than internal data or a failed lookup', () => {
+  expect(hasMenuReply([{ name: 'menu_get', content: JSON.stringify({ dataOnly: true, items: [{ id: 'dumplings' }] }) }])).toBe(false)
+  expect(hasMenuReply([{ name: 'menu_get', content: JSON.stringify({ ok: false, items: [] }) }])).toBe(false)
+  expect(hasMenuReply([{ name: 'menu_get', content: 'invalid' }])).toBe(false)
+  expect(hasMenuReply([{ name: 'cart_get', content: JSON.stringify({ items: [] }) }])).toBe(false)
+  expect(hasMenuReply([{ name: 'menu_recommend', content: JSON.stringify({ items: [] }) }])).toBe(true)
+  expect(hasMenuReply([{ name: 'menu_get', content: JSON.stringify({ items: [{ id: 'dumplings' }] }) }])).toBe(true)
 })

@@ -16,7 +16,7 @@ describe('question context is not a routing prerequisite', () => {
     { routeConfidence: 0.4, recipient: 'KIOSK', recipientConfidence: 0.95, expected: 'NEEDS_ASSISTANT' },
     { routeConfidence: 0.95, recipient: 'KIOSK', recipientConfidence: 0.4, expected: 'UNAVAILABLE' },
   ])('clarification speech admission: $routeConfidence/$recipient/$recipientConfidence', async ({ routeConfidence, recipient, recipientConfidence, expected }) => {
-    const result = await decideInteraction({ transcript: recipient === 'OTHER' ? '小陳，你說哪一個？' : '你說哪一個？', policy, candidates: [{ id: 'clarify:0', description: '小辣水餃' }, { id: 'clarify:1', description: '不辣水餃' }], decisionState: { phase: 'clarification', waitingFor: { questionId: 'Q1', purpose: 'item-clarification', question: '您指的是小辣水餃還是不辣水餃？', expiresAt: Date.now() + 30_000, choices: [] } }, invoke: async (_state, questions) => ({ answers: { ...(questions.route ? { route: { choice: 'CLARIFICATION', confidence: routeConfidence } } : {}), ...(questions.recipient ? { recipient: { choice: recipient, confidence: recipientConfidence } } : {}) } }) })
+    const result = await decideInteraction({ transcript: recipient === 'OTHER' ? '小陳，你說哪一個？' : '你說哪一個？', policy, candidates: [{ id: 'clarify:0', description: '小辣水餃' }, { id: 'clarify:1', description: '不辣水餃' }], decisionState: { phase: 'clarification', waitingFor: { questionId: 'Q1', purpose: 'item-clarification', question: '您指的是小辣水餃還是不辣水餃？', expiresAt: Date.now() + 30_000, choices: [] } }, invoke: async (_state, questions) => ({ answers: { ...(questions.serviceRequest ? { serviceRequest: { choice: 'REQUEST', confidence: 0.95 } } : {}), ...(questions.route ? { route: { choice: 'CLARIFICATION', confidence: routeConfidence } } : {}), ...(questions.recipient ? { recipient: { choice: recipient, confidence: recipientConfidence } } : {}) } }) })
     expect(result.kind).toBe(expected)
     expect(result).not.toHaveProperty('actionId')
     expect(result).not.toHaveProperty('answeredQuestionId')
@@ -26,7 +26,7 @@ describe('question context is not a routing prerequisite', () => {
     const invoke = vi.fn()
       .mockResolvedValueOnce({ answers: { route: { choice: cancel.id, confidence: 0.652 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: 'NEW_REQUEST', confidence: 0.95 } } })
-      .mockResolvedValueOnce({ answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
+      .mockResolvedValueOnce({ answers: { serviceRequest: { choice: 'REQUEST', confidence: 0.95 }, recipient: { choice: 'KIOSK', confidence: 0.95 } } })
     const result = await decideInteraction({
       transcript: '牛肉麵',
       policy,
@@ -162,7 +162,7 @@ describe('question context is not a routing prerequisite', () => {
       ? { answers: { route: { choice: 'intent:start-checkout', confidence: 0.95 } } }
       : { answers: { relation: { choice, confidence: 0.4 } } })
     const result = await decideInteraction({ transcript: '好', policy, invoke, candidates: [{ id: 'intent:start-checkout', description: '開始結帳', requiresHighConfidence: true }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'Q1', purpose: 'checkout-entry', question: '開始結帳嗎？', choices: [{ id: 'intent:start-checkout', description: '開始結帳' }], expiresAt: Date.now() + 30000 } } })
-    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })
   })
 
   it('does not consume an invitation when recommendation filter validation fails', async () => {
@@ -170,7 +170,7 @@ describe('question context is not a routing prerequisite', () => {
       ? { answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } }
       : questions.relation
         ? { answers: { relation: { choice: 'intent:recommend', confidence: 0.95 } } }
-        : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.95 } } })
+        : { answers: { serviceRequest: { choice: 'REQUEST', confidence: 0.95 }, recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'UNSUPPORTED_FILTER', confidence: 0.95 } } })
     const result = await decideInteraction({ transcript: '好', policy, invoke, candidates: [{ id: 'intent:recommend', description: '推薦三項' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('I1', Date.now()) } })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNSUPPORTED_FILTER' })
     expect(result.answeredQuestionId).toBeUndefined()

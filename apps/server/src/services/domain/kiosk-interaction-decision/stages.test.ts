@@ -21,7 +21,7 @@ describe('segmented bounded decisions', () => {
       throw new Error('Expected recipient checkpoint')
     const result = await stages.next(owner, scope.continuationId)
     expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', modelCalls: 2, modelQuestions: 2, trace: { rawAnswer: { choice: 'MULTI_ACTION', confidence: 0.2911 } } })
-    if (result.kind === 'DECISION_PROGRESS')
+    if (result.kind === 'DECISION_PROGRESS' || result.kind === 'SERVICE_RECOVERY_PROGRESS')
       throw new Error('Expected scope to finish without granting an action')
     expect(result.supersededQuestionId).toBeUndefined()
     expect(result.answeredQuestionId).toBeUndefined()

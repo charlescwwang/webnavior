@@ -1,54 +1,106 @@
+import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import type { KioskDecisionTrace } from '.'
 import type { SystemOneQuestion } from '../kiosk-system-one'
 import type { DecisionStageResult, KioskInteractionDecision } from './contracts'
 
+import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import { decisionQuestionBudget } from './contracts'
 
 type Invoke = (state: string, questions: Record<string, SystemOneQuestion>) => Promise<{ answers?: Record<string, unknown> }>
+type RecoveryProgress = Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>
 interface Owner { deviceId: string, visitorSessionId?: string }
 interface Checkpoint {
   owner: Owner
   expiresAt: number
-  timer: ReturnType<typeof setTimeout>
   resume: () => Promise<DecisionStageResult>
   cancel: () => void
 }
 
 /**
- * Suspends server-owned decisions between individual Jev questions. A random
- * checkpoint is scoped to device/session, expires after 15s, and is consumed
- * before resuming. Clients never supply answers, plans or replacement state.
- * Losing a checkpoint stops the decision; no WebMCP effects occur here.
+ * One device generation owns its provider work and one-use checkpoints. HTTP
+ * waits may change between stages; aborting the active wait cancels that job.
+ * Recovery progress is independent of Jev's question count and never an answer.
  */
 export function createDecisionStages() {
   const pending = new Map<string, Checkpoint>()
-  const active = new Map<string, symbol>()
+  const active = new Map<string, AbortController>()
   const sameOwner = (left: Owner, right: Owner) => left.deviceId === right.deviceId && left.visitorSessionId === right.visitorSessionId
 
+  async function waitForRequest(promise: Promise<DecisionStageResult>, cancel: () => void, signal?: AbortSignal) {
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (signal?.aborted)
+      cancel()
+    try {
+      return await promise
+    }
+    finally {
+      signal?.removeEventListener('abort', cancel)
+    }
+  }
+
   return {
-    async start(owner: Owner, run: (checkpoint: (invoke: Invoke) => Invoke) => Promise<KioskInteractionDecision>): Promise<DecisionStageResult> {
-      // A fresh decision replaces only this device's suspended decision. A
-      // still-running model call has no authority to mutate browser state.
-      for (const [id, entry] of pending) {
-        if (entry.owner.deviceId === owner.deviceId) {
-          pending.delete(id)
-          clearTimeout(entry.timer)
-          entry.cancel()
-        }
-      }
+    async start(owner: Owner, run: (checkpoint: (invoke: Invoke) => Invoke, progress: (event: RecoveryProgress) => Promise<void>, signal: AbortSignal) => Promise<KioskInteractionDecision>, options: { signal?: AbortSignal, timeoutMs?: number } = {}): Promise<DecisionStageResult> {
+      active.get(owner.deviceId)?.abort()
       if (active.size >= 128 && !active.has(owner.deviceId))
         return { kind: 'UNAVAILABLE', reason: 'CANDIDATE_BUDGET' }
-      const generation = Symbol('decision')
-      active.set(owner.deviceId, generation)
+      const controller = new AbortController()
+      active.set(owner.deviceId, controller)
+      const deadline = setTimeout(() => controller.abort(), Math.min(serviceRecoveryLimits.turnMs, Math.max(1, options.timeoutMs ?? serviceRecoveryLimits.turnMs)))
+      const signal = controller.signal
       let publish!: (result: DecisionStageResult) => void
       const first = new Promise<DecisionStageResult>(resolve => publish = resolve)
       let calls = 0
+      let events = 0
       const exchanges: NonNullable<KioskDecisionTrace['exchanges']> = []
+      const assertCurrent = () => {
+        signal.throwIfAborted()
+        if (active.get(owner.deviceId) !== controller)
+          throw new Error('Decision replaced')
+      }
+      const pause = async (event: Omit<Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }>, 'continuationId' | 'expiresAt'> | RecoveryProgress) => {
+        assertCurrent()
+        if (++events > decisionQuestionBudget + serviceRecoveryLimits.progressEvents)
+          throw new Error('Decision progress budget exhausted')
+        const continuationId = crypto.randomUUID()
+        const expiresAt = Math.min(Date.now() + serviceRecoveryLimits.checkpointMs, event.kind === 'SERVICE_RECOVERY_PROGRESS' ? event.deadlineAt ?? Number.POSITIVE_INFINITY : Number.POSITIVE_INFINITY)
+        const resumed = new Promise<void>((resolve, reject) => {
+          let timer: ReturnType<typeof setTimeout>
+          let abort!: () => void
+          const cleanup = () => {
+            pending.delete(continuationId)
+            clearTimeout(timer)
+            signal.removeEventListener('abort', abort)
+          }
+          abort = () => {
+            cleanup()
+            reject(new Error('Decision cancelled'))
+          }
+          timer = setTimeout(() => controller.abort(), Math.max(1, expiresAt - Date.now()))
+          signal.addEventListener('abort', abort, { once: true })
+          pending.set(continuationId, {
+            owner,
+            expiresAt,
+            cancel: () => controller.abort(),
+            resume: () => {
+              cleanup()
+              const next = new Promise<DecisionStageResult>(resolveResult => publish = resolveResult)
+              resolve()
+              return next
+            },
+          })
+        })
+        publish({ ...event, continuationId, expiresAt })
+        await resumed
+        assertCurrent()
+      }
       const checkpoint = (invoke: Invoke): Invoke => async (state, questions) => {
         const answers: Record<string, unknown> = {}
         for (const [question, value] of Object.entries(questions)) {
-          if (active.get(owner.deviceId) !== generation || calls >= decisionQuestionBudget)
-            throw new Error('Decision cancelled or question budget exhausted')
+          assertCurrent()
+          if (calls >= decisionQuestionBudget)
+            throw new Error('Decision question budget exhausted')
           const startedAt = performance.now()
           calls++
           let result: Awaited<ReturnType<Invoke>>
@@ -60,62 +112,37 @@ export function createDecisionStages() {
             exchanges.push({ index: calls, state, questions: { [question]: value }, durationMs: performance.now() - startedAt, status: 'failed' })
             throw error
           }
-          if (active.get(owner.deviceId) !== generation)
-            throw new Error('Decision replaced during model invocation')
+          assertCurrent()
           Object.assign(answers, result.answers)
           const answer = result.answers?.[question] as { choice?: unknown, confidence?: unknown } | undefined
-          const continuationId = crypto.randomUUID()
-          const expiresAt = Date.now() + 15_000
-          const resumed = new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(() => {
-              pending.delete(continuationId)
-              reject(new Error('Decision checkpoint expired'))
-            }, 15_000)
-            pending.set(continuationId, {
-              owner,
-              expiresAt,
-              timer,
-              cancel: () => reject(new Error('Decision checkpoint cancelled')),
-              resume: () => {
-                const next = new Promise<DecisionStageResult>(resolveResult => publish = resolveResult)
-                resolve()
-                return next
-              },
-            })
-          })
-          publish({ kind: 'DECISION_PROGRESS', continuationId, expiresAt, question, durationMs: performance.now() - startedAt, ...(typeof answer?.choice === 'string' ? { choice: answer.choice } : {}), ...(typeof answer?.confidence === 'number' ? { confidence: answer.confidence } : {}) })
-          await resumed
+          await pause({ kind: 'DECISION_PROGRESS', question, durationMs: performance.now() - startedAt, ...(typeof answer?.choice === 'string' ? { choice: answer.choice } : {}), ...(typeof answer?.confidence === 'number' ? { confidence: answer.confidence } : {}) })
         }
         return { answers }
       }
-      // Always settle the current HTTP wait, including cancellation/failure.
-      void run(checkpoint).then(result => publish({ ...result, modelCalls: calls, modelQuestions: calls, ...(result.trace && typeof result.trace === 'object' ? { trace: { ...result.trace, exchanges } } : {}) }), () => publish({ kind: 'UNAVAILABLE', reason: 'PROVIDER_FAILURE', modelCalls: calls, modelQuestions: calls })).finally(() => {
-        if (active.get(owner.deviceId) === generation)
+      // The job promise settles every current HTTP wait. An aborted provider
+      // that ignores its signal cannot retain a client wait beyond the deadline.
+      const aborted = new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('Decision cancelled')), { once: true }))
+      void Promise.race([run(checkpoint, pause, signal), aborted]).then(result => publish({ ...result, modelCalls: calls, modelQuestions: calls, ...(result.trace && typeof result.trace === 'object' ? { trace: { ...result.trace, exchanges } } : {}) }), () => publish({ kind: 'UNAVAILABLE', reason: 'PROVIDER_FAILURE', modelCalls: calls, modelQuestions: calls })).finally(() => {
+        clearTimeout(deadline)
+        if (active.get(owner.deviceId) === controller)
           active.delete(owner.deviceId)
       })
-      return first
+      return await waitForRequest(first, () => controller.abort(), options.signal)
     },
-    async next(owner: Owner, id: string): Promise<DecisionStageResult> {
+    async next(owner: Owner, id: string, signal?: AbortSignal): Promise<DecisionStageResult> {
       const entry = pending.get(id)
       if (!entry || !sameOwner(entry.owner, owner))
         throw new Error('Decision checkpoint unavailable')
-      pending.delete(id)
-      clearTimeout(entry.timer)
-      // A busy event loop may delay the expiry timer; the deadline itself is
-      // authoritative, not whether its cleanup callback has already run.
       if (Date.now() >= entry.expiresAt) {
         entry.cancel()
         throw new Error('Decision checkpoint expired')
       }
-      return entry.resume()
+      return await waitForRequest(entry.resume(), entry.cancel, signal)
     },
     cancel(owner: Owner, id: string) {
       const entry = pending.get(id)
-      if (!entry || !sameOwner(entry.owner, owner))
-        return
-      pending.delete(id)
-      clearTimeout(entry.timer)
-      entry.cancel()
+      if (entry && sameOwner(entry.owner, owner))
+        entry.cancel()
     },
   }
 }

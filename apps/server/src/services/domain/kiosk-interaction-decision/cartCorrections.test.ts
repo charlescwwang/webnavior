@@ -38,7 +38,7 @@ describe('whole-request coverage for cart changes', () => {
       return { answers: { cartRequest: { choice: 'SINGLE', confidence: coverage } } }
     })
     const result = await decideInteraction({ transcript: '水餃改一份好了 然後我要再一碗牛肉麵', candidates, decisionState: state, policy, invoke })
-    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: Number.isFinite(coverage) && coverage >= 0 && coverage <= 1 ? 'UNCERTAIN_SERVICE_REQUEST' : 'UNCERTAIN_OPERATION' })
     expect(result).not.toHaveProperty('actionId')
     expect(invoke).toHaveBeenCalledTimes(Number.isFinite(coverage) && coverage >= 0 && coverage <= 1 ? 4 : 3)
   })
@@ -208,7 +208,7 @@ describe('whole-request coverage for cart changes', () => {
         return { answers: { cartRequest: { choice: 'HANDOFF', confidence: 0.5137 } } }
       if (questions.recipient)
         return { answers: { recipient: { choice: recipient, confidence: recipientConfidence } } }
-      return { answers: { replacement: { choice: replacement, confidence: replacementConfidence } } }
+      return { answers: { serviceRequest: { choice: 'REQUEST', confidence: 0.95 }, replacement: { choice: replacement, confidence: replacementConfidence } } }
     })
     const result = await decideInteraction({ transcript: '牛肉麵幫我改水餃', decisionState: state, candidates, policy, invoke })
     expect(result.kind).toBe(kind)

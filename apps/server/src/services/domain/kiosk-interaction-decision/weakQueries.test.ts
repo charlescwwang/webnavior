@@ -34,7 +34,7 @@ describe('weak menu-query route recovery', () => {
     { speech: '咖哩飯有哪些？', choice: 'QUERY', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { speech: '我要魚排便當一份', choice: 'OTHER', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { speech: '有魚排便當就幫我加一份', choice: 'OTHER', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
-    { speech: '外面下雨嗎？', choice: 'OTHER', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
+    { speech: '外面下雨嗎？', choice: 'OTHER', confidence: 0.95, kind: 'IGNORE' },
     { speech: '有沒有……', choice: 'UNCERTAIN', confidence: 0.95, kind: 'NEEDS_ASSISTANT' },
     { speech: '有魚排便當？', choice: 'QUERY', confidence: 0.59, kind: 'NEEDS_ASSISTANT' },
     { speech: '有魚排便當？', choice: 'QUERY', confidence: Number.NaN, kind: 'UNAVAILABLE' },
@@ -45,7 +45,7 @@ describe('weak menu-query route recovery', () => {
       ? { answers: { route: { choice: 'NEEDS_ASSISTANT', confidence: 0.3454 } } }
       : questions.recipient
         ? { answers: { recipient: { choice: 'KIOSK', confidence: 0.9987 } } }
-        : { answers: { menuInquiry: { choice, confidence } } })
+        : { answers: { serviceRequest: { choice: speech === '外面下雨嗎？' ? 'BACKGROUND' : 'REQUEST', confidence: 0.95 }, menuInquiry: { choice, confidence } } })
     const result = await decideInteraction({ transcript: speech, decisionState: state, candidates, policy, invoke })
     expect(result.kind).toBe(kind)
     expect(result).not.toHaveProperty('actionId')

@@ -1,3 +1,5 @@
+import type { ConversationContext } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import type { KioskRoutesOptions } from '.'
 import type { Database } from '../../libs/db'
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
@@ -36,6 +38,129 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  it.each(['json', 'sse'])('records actual Main payload size and provider usage (%s)', async (transport) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => transport === 'json'
+      ? Response.json({ choices: [{ message: { content: '您好。' } }], usage: { prompt_tokens: 123 } })
+      : new Response('data: {"choices":[{"delta":{"content":"您好。"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":123}}\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+    const kioskService = createKioskService(db)
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const cookie = enrolled.headers.get('Set-Cookie')!.split(';')[0]!
+    const headers = { 'Cookie': cookie, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, ...(transport === 'sse' ? { Accept: 'text/event-stream' } : {}) }, body: JSON.stringify({ content: '你是誰' }) })
+    expect(response.status).toBe(200)
+    await response.text()
+    const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1]!)
+    const saved = await kioskService.getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })
+    const entry = saved.entries.find(entry => entry.kind === 'service_event' && entry.content.includes('main_round_metrics'))
+    expect(entry).toBeDefined()
+    const metrics = JSON.parse(entry!.content)
+    expect(metrics.inputTokens).toBe(123)
+    expect(metrics.requestBytes).toBe(new TextEncoder().encode(JSON.stringify(complete.mock.calls[0]![0].body)).byteLength)
+    expect(metrics.contextBytes).toBe(0)
+    expect(metrics.durationMs).toBeGreaterThanOrEqual(0)
+    if (transport === 'sse') {
+      expect(metrics.firstOutputMs).toBeGreaterThanOrEqual(0)
+      expect(metrics.firstOutputMs).toBeLessThanOrEqual(metrics.durationMs)
+    }
+    else {
+      expect(metrics).not.toHaveProperty('firstOutputMs')
+    }
+    expect(metrics).not.toHaveProperty('messages')
+  })
+
+  it.each([false, true])('supplies one complete current catalog without forcing an extra lookup (continuation=%s)', async (continuation) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '請問您是指這道便當嗎？' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'current', capturedAt: Date.now(), taskId: 'task', sourceUtterance: '排骨飯一份', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 2, selectedItem: 0, checkout: 0 }, catalog: { complete: true, itemCount: 1, items: [{ id: 'pork', name: '完整菜單唯一測試便當', aliases: ['排骨便當'], category: '便當', price: 130, availability: 'available', optionGroups: [] }] }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['order_add_item', 'menu_confirm_item'] }
+    const tools = ['menu_get', 'order_add_item', 'menu_confirm_item', 'customer_skip_phone'].map(name => ({ type: 'function', function: { name, description: name, parameters: { type: 'object', properties: {} } } }))
+    if (continuation) {
+      // Keep the original receipt durable, but do not repeat its full product
+      // details when the next round already has the complete current catalog.
+      const entries = [
+        { kind: 'user_text', content: '排骨飯一份' },
+        { kind: 'tool_call', content: 'menu then cart', metadata: { toolCalls: [{ id: 'past-menu', type: 'function', function: { name: 'menu_get', arguments: '{}' } }, { id: 'cart', type: 'function', function: { name: 'cart_get', arguments: '{}' } }] } },
+        { kind: 'tool_result', content: JSON.stringify({ items: context.catalog!.items, catalog: context.catalog, possibleItems: context.catalog!.items }), metadata: { toolCallId: 'past-menu', name: 'menu_get' } },
+      ]
+      for (const entry of entries) {
+        const saved = await app.request(`/api/kiosk/visitor-sessions/${session.id}/entries`, { method: 'POST', headers, body: JSON.stringify(entry) })
+        expect(saved.status).toBe(201)
+      }
+    }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ tools, decisionState: { phase: 'ordering', context, requireMenuRead: true }, ...(continuation ? { toolResults: [{ name: 'cart_get', toolCallId: 'cart', content: '{"cart":{"lines":[],"total":0}}' }] } : { content: '排骨飯一份' }) }) })
+    expect(response.status).toBe(200)
+    const body = complete.mock.calls[0]![0].body
+    expect(body.tools).toEqual([tools[1], tools[2]])
+    expect(body).not.toHaveProperty('tool_choice')
+    const prompt = JSON.stringify(body.messages)
+    expect(prompt.split('完整菜單唯一測試便當')).toHaveLength(2)
+    expect(prompt).toContain('手機填寫／略過步驟已完成')
+    expect(prompt).toContain('排骨便當')
+    expect(prompt).not.toContain('imageUrl')
+    // This route-only harness has no API error middleware; schema rejection is 500 here.
+    const inconsistent = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '測試狀態', decisionState: { phase: 'customer_entry', context } }) })
+    expect(inconsistent.status).toBe(500)
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
+  // Report: attachment a553fda2, 大腸臭臭鍋一份: Main replayed a stale phone reminder before menu lookup.
+  it.each([false, true])('does not offer host-owned phone skip to Main (continuation=%s)', async (continuation) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '查詢中。' } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const tools = ['customer_skip_phone', 'menu_get', 'order_add_item'].map(name => ({ type: 'function', function: { name, description: name, parameters: { type: 'object', properties: {} } } }))
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ tools, ...(continuation ? { toolResults: [{ name: 'menu_get', toolCallId: 'lookup', content: '{"items":[],"customerMessage":"目前菜單查不到大腸臭臭鍋。"}' }] } : { content: '大腸臭臭鍋一份', decisionState: { phase: 'ordering' } }) }) })
+    expect(response.status).toBe(200)
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete.mock.calls[0]![0].body.tools).toEqual([tools[1], tools[2]])
+  })
+
+  // Report: this chat, 2026-10-20: low-confidence price INFORMATION left Main's reads blocked.
+  it.each([false, true])('uses Main to resolve weak price semantics before handoff (segmented=%s)', async (segmented) => {
+    const decide = vi.fn(async () => ({ answers: { route: { choice: 'intent:search-menu', confidence: 0.95 }, recipient: { choice: 'KIOSK', confidence: 0.99 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, price: { choice: 'INFORMATION', confidence: 0.359 } } }))
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_price_choice', arguments: '{"choice":"INFORMATION"}' } }] } }] }))
+    const systemOne = { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const }
+    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '有水餃或牛肉麵嗎？多少錢？', segmented, includeTrace: true, candidates: [{ id: 'intent:search-menu', description: '查詢餐點' }], decisionState: { phase: 'ordering', priceEvidence: { amounts: [], choices: [{ id: 'INFORMATION', kind: 'information', description: '只詢價' }, { id: 'NONE', kind: 'none', description: '無價格需求' }, { id: 'UNSUPPORTED', kind: 'unsupported', description: '無法完整表示' }] }, constraints: { exclude: [], include: [], unresolvedPrice: true } } }) })
+    expect(response.status).toBe(200)
+    let payload = await response.json()
+    for (let step = 0; step < 10; step++) {
+      if (!payload || typeof payload !== 'object' || !('kind' in payload) || payload.kind !== 'DECISION_PROGRESS' || !('continuationId' in payload))
+        break
+      payload = await (await app.request(`/api/kiosk/interaction-decisions/${String(payload.continuationId)}`, { method: 'POST', headers, body: '{}' })).json()
+    }
+    expect(payload).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER', priceChoiceId: 'INFORMATION', trace: { priceResolution: { choice: 'INFORMATION' } } })
+    expect(payload).not.toHaveProperty('actionId')
+    expect(complete).toHaveBeenCalledOnce()
+  })
+
+  // Report: this chat, 2026-10-21; store FAQ sent to unclassified Main.
+  it('recovers a store FAQ sent to generic Main without turning it into a menu lookup', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"SERVICE_INFO"}' } }] } }] }))
+    const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: async (_state: string, questions: Record<string, unknown>) => questions.route ? { answers: { route: { choice: 'NEEDS_ASSISTANT', confidence: 0.95 } } } : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } } }
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '你們幾點關門？', includeTrace: true, candidates: [], decisionState: { phase: 'ordering', catalogEvidence: { products: [], categories: [] } } }) })
+    expect(response.status).toBe(200)
+    const decision = await response.json()
+    expect(decision).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION' })
+    expect(decision).not.toHaveProperty('actionId')
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete.mock.calls[0]![0].body).toHaveProperty('tools', [expect.objectContaining({ function: expect.objectContaining({ name: 'resolve_service_scope' }) })])
+  })
+
   // Report: this chat, 2026-10-20 — 水餃一份 啊 我不要了 on the phone-entry page.
   it('preserves a retracted order for Main without requiring a menu read or exposing phone/order mutations', async () => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '好的，這份水餃先不點。' } }] }))
@@ -50,12 +175,12 @@ describe('kiosk routes', () => {
     expect(await response.json()).toMatchObject({ answer: '好的，這份水餃先不點。', toolCalls: [] })
     expect(complete).toHaveBeenCalledOnce()
     expect(complete).toHaveBeenCalledWith(expect.objectContaining({ body: expect.objectContaining({
-      tools: tools.slice(0, 1),
       messages: expect.arrayContaining([
         expect.objectContaining({ role: 'user', content: '水餃一份 啊 我不要了' }),
-        expect.objectContaining({ role: 'system', content: expect.stringContaining('沒有剩餘操作就簡短確認先不點') }),
+        expect.objectContaining({ role: 'system', content: expect.stringContaining('沒有剩餘操作，只需確認先不點') }),
       ]),
     }) }))
+    expect(complete.mock.calls[0]![0].body).not.toHaveProperty('tools')
     expect(complete.mock.calls[0]![0].body).not.toHaveProperty('tool_choice', 'required')
   })
 
@@ -100,7 +225,7 @@ describe('kiosk routes', () => {
     const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
     const { session } = await started.json() as { session: { id: string } }
     const tools = ['menu_get', 'menu_recommend', 'order_add_item'].map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
-    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '還有其他的嗎？', tools, decisionState: { phase: 'customer_entry', requireMenuRead: true } }) })
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '還有其他的嗎？', tools, decisionState: { phase: 'ordering', requireMenuRead: true } }) })
     expect(response.status).toBe(200)
     await response.text()
     expect(complete).toHaveBeenLastCalledWith(expect.objectContaining({ body: expect.objectContaining({ tool_choice: 'required', tools: tools.slice(0, 2) }) }))
@@ -108,7 +233,7 @@ describe('kiosk routes', () => {
     expect(transcript.entries.filter(entry => entry.kind === 'assistant_text').map(entry => entry.content)).not.toContain('推薦韭菜盒、甜不辣。')
   })
 
-  it('keeps menu-inquiry tools read-only after a successful lookup and restores tools for a new customer request', async () => {
+  it.each([false, true])('keeps menu-inquiry tools read-only after a lookup (dataOnly=%s) and restores tools for a new request', async (dataOnly) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
       .mockResolvedValueOnce(Response.json({ choices: [{ message: { tool_calls: [{ id: 'inquiry-menu', type: 'function', function: { name: 'menu_get', arguments: '{"query":"水餃"}' } }] } }] }))
       .mockImplementation(async () => Response.json({ choices: [{ message: { content: '水餃目前可以點。' } }] }))
@@ -123,10 +248,14 @@ describe('kiosk routes', () => {
     expect(initial.status).toBe(200)
     await initial.text()
     expect(complete.mock.calls.at(-1)?.[0].body.tools).toEqual(tools.slice(0, 1))
-    const continuation = await app.request(url, { method: 'POST', headers, body: JSON.stringify({ tools, decisionState: { phase: 'ordering', requireMenuRead: true, readOnly: true }, toolResults: [{ toolCallId: 'inquiry-menu', name: 'menu_get', content: '{"items":[{"id":"dumplings","name":"水餃"}]}' }] }) })
+    const continuation = await app.request(url, { method: 'POST', headers, body: JSON.stringify({ tools, decisionState: { phase: 'ordering', requireMenuRead: true, readOnly: true }, toolResults: [{ toolCallId: 'inquiry-menu', name: 'menu_get', content: JSON.stringify({ dataOnly, items: [{ id: 'dumplings', name: '水餃' }] }) }] }) })
     expect(continuation.status).toBe(200)
     await continuation.text()
     expect(complete.mock.calls.at(-1)?.[0].body.tools).toEqual(tools.slice(0, 1))
+    if (dataOnly)
+      expect(complete.mock.calls.at(-1)?.[0].body.tool_choice).toBe('required')
+    else
+      expect(complete.mock.calls.at(-1)?.[0].body).not.toHaveProperty('tool_choice')
     const next = await app.request(url, { method: 'POST', headers, body: JSON.stringify({ content: '我要水餃一份', tools, decisionState: { phase: 'ordering' } }) })
     expect(next.status).toBe(200)
     await next.text()
@@ -184,13 +313,24 @@ describe('kiosk routes', () => {
 
   // Report: this chat, 2026-10-20; REQUEST0.7406 / SKIP0.4977.
   it.each([
-    { choice: 'SKIP_PHONE', segmented: false },
-    { choice: 'SKIP_PHONE', segmented: true },
-    { choice: 'KEEP_PHONE', segmented: false },
-    { choice: 'UNCERTAIN', segmented: false },
-  ])('resolves a weak phone skip with Main without exposing browser tools: $choice/segmented=$segmented', async ({ choice, segmented }) => {
-    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_phone_choice', arguments: JSON.stringify({ choice }) } }] } }] }))
-    const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: async (_state: string, questions: Record<string, unknown>) => questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.7406 } } } : { answers: { phone: { choice: 'SKIP', confidence: 0.4977 } } } }
+    { choice: 'SKIP_PHONE', segmented: false, uncertainService: false },
+    { choice: 'SKIP_PHONE', segmented: true, uncertainService: false },
+    { choice: 'KEEP_PHONE', segmented: false, uncertainService: false },
+    { choice: 'UNCERTAIN', segmented: false, uncertainService: false },
+    // Report: attachment e2821679, 2026-10-21; REQUEST0.7406/SKIP0.5227/BACKGROUND0.3255.
+    { choice: 'SKIP_PHONE', segmented: false, uncertainService: true },
+    { choice: 'SKIP_PHONE', segmented: true, uncertainService: true },
+    { choice: 'KEEP_PHONE', segmented: false, uncertainService: true },
+    { choice: 'UNCERTAIN', segmented: false, uncertainService: true },
+  ])('resolves a weak phone skip with Main without exposing browser tools: $choice/segmented=$segmented/uncertainService=$uncertainService', async ({ choice, segmented, uncertainService }) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
+      const tools = body.tools as Array<{ function: { name: string } }>
+      if (tools[0]?.function.name === 'resolve_phone_choice')
+        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_phone_choice', arguments: JSON.stringify({ choice }) } }] } }] })
+      const reviewing = JSON.stringify(body).includes('前一輪有限選項仍不確定')
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(reviewing ? { admission: 'uncertain', disposition: 'abstain' } : { choice: 'UNCERTAIN' }) } }] } }] })
+    })
+    const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: async (_state: string, questions: Record<string, unknown>) => questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.7406 } } } : questions.phone ? { answers: { phone: { choice: 'SKIP', confidence: uncertainService ? 0.5227 : 0.4977 } } } : { answers: { serviceRequest: { choice: uncertainService ? 'BACKGROUND' : 'REQUEST', confidence: uncertainService ? 0.3255 : 0.95 } } } }
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
     const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
@@ -210,12 +350,31 @@ describe('kiosk routes', () => {
       expect(payload).not.toHaveProperty('confidence')
     }
     else {
-      expect(payload).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+      expect(payload).toMatchObject(uncertainService ? { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' } : { kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
       expect(payload).not.toHaveProperty('actionId')
     }
-    expect(complete).toHaveBeenCalledOnce()
+    expect(payload).toMatchObject({ modelCalls: 3, modelQuestions: 3 })
+    expect(complete).toHaveBeenCalledTimes(uncertainService && choice !== 'SKIP_PHONE' ? 3 : 1)
     expect(complete.mock.calls[0]![0].body).toHaveProperty('tools', [expect.objectContaining({ function: expect.objectContaining({ name: 'resolve_phone_choice' }) })])
     expect(JSON.stringify(complete.mock.calls[0]![0].body)).not.toContain('0.4977')
+  })
+
+  it.each([
+    { scope: 'REQUEST', confidence: 0.3, relevanceConfidence: 0.95, kind: 'UNAVAILABLE' },
+    { scope: 'BACKGROUND', confidence: 0.95, relevanceConfidence: 0.95, kind: 'IGNORE' },
+    { scope: 'REQUEST', confidence: 0.7406, relevanceConfidence: 0.95, kind: 'IGNORE' },
+  ])('does not resolve phone choice for rejected speech: $scope/$confidence/$relevanceConfidence', async ({ scope, confidence, relevanceConfidence, kind }) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+    const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: async (_state: string, questions: Record<string, unknown>) => questions.service ? { answers: { service: { choice: scope, confidence } } } : questions.phone ? { answers: { phone: { choice: 'SKIP', confidence: 0.5227 } } } : { answers: { serviceRequest: { choice: 'BACKGROUND', confidence: relevanceConfidence } } } }
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '小王，略過', includeTrace: true, candidates: [{ id: 'intent:skip-customer-entry', description: '略過電話' }], decisionState: { phase: 'customer_entry' } }) })
+    const decision = await response.json()
+    expect(decision).toMatchObject({ kind })
+    expect(decision).not.toHaveProperty('actionId')
+    expect(decision).not.toHaveProperty('trace.phoneResolution')
+    expect(complete).not.toHaveBeenCalled()
   })
 
   it('accepts the optional phone-entry screen and forwards its skip candidate to Jev', async () => {
@@ -283,6 +442,7 @@ describe('kiosk routes', () => {
     expect(first.status).toBe(200)
     let body = await first.json() as { kind: string, continuationId?: string, actionId?: string }
     expect(body.kind).toBe('DECISION_PROGRESS')
+    expect(body).toHaveProperty('question', 'route')
     expect(decide).toHaveBeenCalledTimes(1)
     const id = body.continuationId!
     expect((await app.request(`/api/kiosk/interaction-decisions/${id}`, { method: 'POST', body: '{}' })).status).toBe(401)
@@ -661,6 +821,9 @@ describe('kiosk routes', () => {
     expect(messages[0]).toMatchObject({
       content: expect.stringContaining('【每次回覆都必須遵守的角色規則】\n回覆前必須遵守這項後置指示。'),
     })
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining('【店家服務資訊與即時操作分界】') })
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining('沒有提供的資訊明確說明無法確認') })
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining('即時訂單與配送狀態仍以最新工具回傳為準') })
     expect(messages[1]).toMatchObject({ role: 'user', content: '我想看看菜單。' })
   })
 
@@ -716,7 +879,7 @@ describe('kiosk routes', () => {
       entry: expect.objectContaining({
         content: JSON.stringify({ environment: 'test', fulfillmentMode: 'takeout', id: 'demo-order-1', itemCount: 2, status: 'accepted', total: 180 }),
         kind: 'order_result',
-        sequence: 4,
+        sequence: 5,
       }),
     })
 
@@ -736,7 +899,7 @@ describe('kiosk routes', () => {
     })
     expect(entry.status).toBe(201)
     await expect(entry.json()).resolves.toEqual({
-      entry: expect.objectContaining({ content: '我要一份牛肉麵。', sequence: 5 }),
+      entry: expect.objectContaining({ content: '我要一份牛肉麵。', sequence: 6 }),
     })
 
     const ended = await app.request(`/api/kiosk/visitor-sessions/${session.id}/end`, {

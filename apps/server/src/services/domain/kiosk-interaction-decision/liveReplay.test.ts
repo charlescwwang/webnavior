@@ -331,8 +331,8 @@ describe.skipIf(!replayUrl)('live segmented decision checkpoints', () => {
       const owner = { deviceId: 'synthetic-replay', visitorSessionId: crypto.randomUUID() }
       const questions: string[] = []
       let result = await stages.start(owner, checkpoint => decideInteraction({ transcript: fixture.transcript, candidates: fixture.candidates, decisionState: { phase: fixture.phase, paymentState: 'idle', ...(fixture.phase === 'checkout_payment_select' ? { allowedPaymentMethods: ['card', 'mobile'] } : {}) }, includeTrace: true, policy, invoke: checkpoint(invoke) }))
-      while (result.kind === 'DECISION_PROGRESS') {
-        questions.push(result.question)
+      while (result.kind === 'DECISION_PROGRESS' || result.kind === 'SERVICE_RECOVERY_PROGRESS') {
+        questions.push(result.kind === 'DECISION_PROGRESS' ? result.question : result.stage)
         result = await stages.next(owner, result.continuationId)
       }
       console.info(JSON.stringify({ fixture: fixture.transcript, questions, kind: result.kind, ...(result.kind === 'FAST_ACTION' ? { actionId: result.actionId } : {}), modelQuestions: result.modelQuestions }))

@@ -1,3 +1,5 @@
+import type { ConversationContext, ConversationHandoff, ServiceClarification, ServiceRecovery, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import type { PriceConditions, PriceEvidence } from './priceContracts'
 import type { ScopeChoice } from './queryScopeContracts'
 
@@ -42,16 +44,18 @@ export interface KioskDecisionState {
   constraints?: { exclude: readonly string[], include?: readonly string[], dietary?: 'vegetarian', price?: PriceConditions, unresolvedPrice?: boolean }
   interactionState?: InteractionState
   paymentState?: string
+  serviceClarification?: ServiceClarification
   phase: string
   references?: readonly { label: string, refId: string }[]
 }
 
 /** Safe handoff facts; completed reads do not authorize any later mutation. */
-export type KioskConversationDecisionState = Pick<KioskDecisionState, 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence'>
+export type KioskConversationDecisionState = Pick<KioskDecisionState, 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff }
 
 /** A finite semantic outcome. Food slots are chosen from application-issued references. */
 export type KioskInteractionDecision = {
   /** Selected application-issued interpretation; never model-authored amounts. */
+  recovery?: ServiceRecovery
   priceChoiceId?: string
   /** Correlated conversational invitation consumed by this answer, never mutation permission. */
   answeredQuestionId?: string
@@ -63,7 +67,7 @@ export type KioskInteractionDecision = {
   /** Questions actually evaluated; one HTTP exchange can contain several forwards. */
   modelQuestions?: number
   /** Mechanical refusal cause; never a second interpretation of the utterance. */
-  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
+  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'UNCERTAIN_GREETING' | 'UNCERTAIN_SERVICE_REQUEST' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
 } & (
   | { kind: 'SCOPE_CHOICE', choice: ScopeChoice }
   | { kind: 'COMPLETE', confidence?: number }
@@ -77,11 +81,12 @@ export type KioskInteractionDecision = {
   | { kind: 'CUSTOMER_ENTRY_REQUIRED', confidence?: number }
   | { kind: 'FOLLOW_UP_ACTIVE', confidence?: number }
   | { kind: 'NEEDS_ASSISTANT', confidence?: number }
+  | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
   | { kind: 'UNAVAILABLE' }
 )
 
 /** A server-owned one-use checkpoint, never permission to execute a tool. */
-export type DecisionStageResult = KioskInteractionDecision | {
+export type DecisionStageResult = KioskInteractionDecision | ServiceRecoveryProgress | {
   kind: 'DECISION_PROGRESS'
   continuationId: string
   expiresAt: number

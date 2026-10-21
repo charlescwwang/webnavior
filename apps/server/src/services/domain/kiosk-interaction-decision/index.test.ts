@@ -4,6 +4,15 @@ import { decideInteraction } from '.'
 import { createRecommendationInvitation } from './contracts'
 
 describe('kiosk System One interaction decision', () => {
+  // Report: this chat, 2026-10-21: prioritize intent accuracy over recipient-first progress.
+  it('ignores movie chatter at the route without a preliminary recipient classification', async () => {
+    const invoke = vi.fn(async (_state: string, _questions: Record<string, unknown>) => ({ answers: { route: { choice: 'IGNORE', confidence: 0.95 } } }))
+    const result = await decideInteraction({ transcript: '昨天那部電影好好看', candidates: [{ id: 'intent:recommend', description: '推薦餐點' }], decisionState: { phase: 'ordering' }, policy: { decisionInstruction: '', storeInstruction: '' }, invoke })
+    expect(result.kind).toBe('IGNORE')
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(Object.keys(invoke.mock.calls[0]![1])).toEqual(['route'])
+  })
+
   // Known-red replay of attachment 2c567045. This trace has no dialogue,
   // waiting question or active request; only the recorded route is replayed.
   it.skipIf(process.env.KIOSK_OFF_TOPIC_DIAGNOSIS !== '1')('does not admit the reported unrelated discussion without ordering context', async () => {
@@ -270,7 +279,7 @@ describe('kiosk System One interaction decision', () => {
       return { answers: { route: { choice: 'intent:start-checkout', confidence: 0.95 } } }
     })
     const result = await decideInteraction({ transcript: '周氏蝦捲再兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增餐點' }, { id: 'intent:start-checkout', description: '開始結帳' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'q', purpose: 'checkout-entry', question: '要結帳嗎？', choices: [{ id: 'intent:start-checkout', description: '開始結帳' }], expiresAt: Date.now() + 30_000 } } })
-    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })
     expect(invoke).toHaveBeenCalledTimes(3)
   })
   it('distinguishes a new request from consent while a concrete confirmation is pending', async () => {
@@ -385,7 +394,7 @@ describe('kiosk System One interaction decision', () => {
         return { answers: { relation: { choice: 'intent:defer-question', confidence: 0.45 } } }
       return { answers: { route: { choice: 'intent:defer-question', confidence: 0.95 } } }
     })
-    expect(await decideInteraction({ candidates: waitingFor.choices, decisionState: { phase: 'ordering', waitingFor }, transcript: '先不要', policy, invoke })).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(await decideInteraction({ candidates: waitingFor.choices, decisionState: { phase: 'ordering', waitingFor }, transcript: '先不要', policy, invoke })).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })
     expect(invoke.mock.calls[1]?.[1]).not.toHaveProperty('relation.criteria.ANSWER')
   })
 
