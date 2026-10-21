@@ -1,9 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled } from './kiosk-device'
+import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled, synthesizeKioskSpeech } from './kiosk-device'
 
 describe('segmented device requests', () => {
   afterEach(() => vi.restoreAllMocks())
+
+  // Report: this chat, 2026-10-21 — speech must use the same Traditional text as the Kiosk display.
+  it('normalizes speech output without rewriting the caller text', async () => {
+    const network = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(new Blob(['audio'], { type: 'audio/wav' })))
+    const input = { locale: 'zh-Hant', text: '请确认这份订单。' }
+    await synthesizeKioskSpeech(input)
+    expect(JSON.parse(String(network.mock.calls[0]?.[1]?.body))).toEqual({ locale: 'zh-Hant', text: '請確認這份訂單。' })
+    expect(input.text).toBe('请确认这份订单。')
+  })
 
   it('reads uncached activation on each utterance without sending dialogue or calling Jev', async () => {
     const network = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ enabled: false })).mockResolvedValueOnce(Response.json({ enabled: true }))
