@@ -289,7 +289,7 @@ describe('createMenuToolRuntime', () => {
     expect(activities).toEqual(['loading:menu_recommend', 'idle:menu_recommend'])
   })
 
-  it('declares native WebMCP tools from the same runtime used by the menu UI', () => {
+  it('declares Menu tools from the same runtime used by the menu UI', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
       'kiosk_fast_path_clarify',
@@ -318,6 +318,8 @@ describe('createMenuToolRuntime', () => {
       'checkout_select_payment',
       'checkout_cancel',
       'kiosk_interaction_state',
+      'kiosk_conversation_context',
+      'menu_confirm_item',
       'kiosk_fast_path_context',
       'kiosk_fast_path_execute',
       'kiosk_fast_path_continue',
@@ -761,212 +763,42 @@ describe('createMenuToolRuntime', () => {
     expect(removeItem?.description).toContain('cart_get')
   })
 
-  it('releases an earlier native registration before registering the same tool names again', async () => {
-    const registeredNames = new Set<string>()
-    const registerTool = vi.fn(async (
-      tool: { name: string },
-      registration: { signal?: AbortSignal },
-    ) => {
-      if (registeredNames.has(tool.name))
-        throw new DOMException('Duplicate tool name', 'InvalidStateError')
-
-      registeredNames.add(tool.name)
-      registration.signal?.addEventListener('abort', () => registeredNames.delete(tool.name), { once: true })
-    })
-    vi.stubGlobal('document', { modelContext: { registerTool } })
-
-    try {
-      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      await runtime.registerNativeWebMcp()
-      await expect(runtime.registerNativeWebMcp()).resolves.toBeTypeOf('function')
-      expect(registeredNames.size).toBe(runtime.toolDefinitions.length + 1)
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
+  it('routes approved host context separately from Agent tools', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    expect(await runtime.executeTool('kiosk_fast_path_context', { transcript: '周氏蝦捲' })).toMatchObject({ phase: 'ordering' })
+    await expect(runtime.invokeForAgent('kiosk_fast_path_context', {})).rejects.toThrow('unavailable to the Agent')
+    expect(await runtime.executeTool('menu_recommend', { action: 'update', needs: ['fried'] })).toMatchObject({ needs: ['fried'] })
   })
 
-  it('releases a prior runtime registration before a replacement runtime reuses the tool names', async () => {
-    const registeredNames = new Set<string>()
-    const registerTool = vi.fn(async (
-      tool: { name: string },
-      registration: { signal?: AbortSignal },
-    ) => {
-      if (registeredNames.has(tool.name))
-        throw new DOMException('Duplicate tool name', 'InvalidStateError')
-
-      registeredNames.add(tool.name)
-      registration.signal?.addEventListener('abort', () => registeredNames.delete(tool.name), { once: true })
-    })
-    vi.stubGlobal('document', { modelContext: { registerTool } })
-
-    try {
-      const firstRuntime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      const replacementRuntime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      await firstRuntime.registerNativeWebMcp()
-
-      await expect(replacementRuntime.registerNativeWebMcp()).resolves.toBeTypeOf('function')
-      expect(registeredNames.size).toBe(replacementRuntime.toolDefinitions.length + 1)
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
+  it('preserves actionable domain refusals through the transport entry', async () => {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    expect(await runtime.executeTool('menu_select_item', {})).toMatchObject({ ok: false, recovery: expect.stringContaining('menu_get') })
+    expect(await runtime.executeTool('order_add_item', { itemId: 'missing', quantity: 1 })).toMatchObject({ ok: false })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
-  it('accepts a native WebMCP invocation that omits callback options', async () => {
-    const registeredTools: Array<{
-      name: string
-      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
-    }> = []
-    const registerTool = vi.fn(async (tool: typeof registeredTools[number]) => {
-      registeredTools.push(tool)
-    })
-    vi.stubGlobal('document', { modelContext: { registerTool } })
-
-    try {
-      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      await runtime.registerNativeWebMcp()
-      const recommend = registeredTools.find(tool => tool.name === 'menu_recommend')
-      if (!recommend)
-        throw new Error('Expected menu_recommend to be registered.')
-
-      await expect(recommend.execute({ action: 'update', needs: ['fried'] })).resolves.toMatchObject({ needs: ['fried'] })
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
+  it('starts checkout through the transport entry without completing an order', async () => {
+    const completedOrders: string[] = []
+    const runtime = createMenuToolRuntime({ checkout: checkoutController(), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onOrderConfirmed: order => completedOrders.push(order.id) })
+    await runtime.executeTool('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.executeTool('cart_add_item', {})
+    await runtime.executeTool('order_set_fulfillment', { mode: 'dine-in' })
+    expect(await runtime.executeTool('checkout_start', { confirmedByUser: true })).toMatchObject({ checkout: { stage: 'membership' } })
+    expect(completedOrders).toHaveLength(0)
   })
 
-  it('lets the kiosk host read semantic candidates through native WebMCP', async () => {
-    const registeredTools: Array<{
-      name: string
-      execute: (input: Record<string, unknown>) => Promise<unknown>
-    }> = []
-    vi.stubGlobal('document', { modelContext: { registerTool: async (tool: typeof registeredTools[number]) => {
-      registeredTools.push(tool)
-    } } })
-
-    try {
-      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      runtime.setMenu(menu)
-      await runtime.registerNativeWebMcp()
-      const context = registeredTools.find(tool => tool.name === 'kiosk_fast_path_context')
-      const state = registeredTools.find(tool => tool.name === 'kiosk_interaction_state')
-      if (!context || !state)
-        throw new Error('Expected Kiosk host tools to be registered.')
-
-      await expect(context.execute({ transcript: '周氏蝦捲' })).resolves.toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'intent:add-item' })]), phase: 'ordering' })
-      await expect(state.execute({})).resolves.toMatchObject({ phase: 'ordering' })
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('starts checkout through native WebMCP without completing the order', async () => {
-    const registeredTools: Array<{
-      name: string
-      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
-    }> = []
-    vi.stubGlobal('document', {
-      modelContext: {
-        registerTool: async (tool: typeof registeredTools[number]) => registeredTools.push(tool),
-      },
+  it('keeps checkout recovery guidance in a failed tool receipt', async () => {
+    const runtime = createMenuToolRuntime({
+      checkout: checkoutController({
+        start: () => { throw new Error('Choose dine-in or self-pickup before starting checkout.') },
+      }),
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
     })
-
-    try {
-      const completedOrders: string[] = []
-      const runtime = createMenuToolRuntime({
-        checkout: checkoutController(),
-        onAction: () => {},
-        onCartChange: () => {},
-        onMenuSelection: () => {},
-        onOrderConfirmed: order => completedOrders.push(order.id),
-      })
-      await runtime.registerNativeWebMcp()
-      const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
-      const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
-      const setFulfillment = registeredTools.find(tool => tool.name === 'order_set_fulfillment')
-      const startCheckout = registeredTools.find(tool => tool.name === 'checkout_start')
-      if (!selectItem || !addItem || !setFulfillment || !startCheckout)
-        throw new Error('Expected order tools to be registered.')
-
-      await selectItem.execute({ itemId: 'chous-shrimp-roll' })
-      await addItem.execute({})
-      await setFulfillment.execute({ mode: 'dine-in' })
-      await expect(startCheckout.execute({ confirmedByUser: true })).resolves.toMatchObject({ checkout: { stage: 'membership' } })
-
-      expect(completedOrders).toHaveLength(0)
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('returns an actionable result when an agent omits a selected item ID', async () => {
-    const registeredTools: Array<{
-      name: string
-      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
-    }> = []
-    const registerTool = vi.fn(async (tool: typeof registeredTools[number]) => {
-      registeredTools.push(tool)
-    })
-    vi.stubGlobal('document', { modelContext: { registerTool } })
-
-    try {
-      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      await runtime.registerNativeWebMcp()
-      const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
-      if (!selectItem)
-        throw new Error('Expected menu_select_item to be registered.')
-
-      await expect(selectItem.execute({})).resolves.toMatchObject({
-        ok: false,
-        recovery: expect.stringContaining('menu_get'),
-      })
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('tells an agent to ask for dine-in or self-pickup before retrying confirmation', async () => {
-    const registeredTools: Array<{
-      name: string
-      execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
-    }> = []
-    vi.stubGlobal('document', {
-      modelContext: {
-        registerTool: async (tool: typeof registeredTools[number]) => registeredTools.push(tool),
-      },
-    })
-
-    try {
-      const runtime = createMenuToolRuntime({
-        checkout: checkoutController({
-          start: () => { throw new Error('Choose dine-in or self-pickup before starting checkout.') },
-        }),
-        onAction: () => {},
-        onCartChange: () => {},
-        onMenuSelection: () => {},
-      })
-      await runtime.registerNativeWebMcp()
-      const selectItem = registeredTools.find(tool => tool.name === 'menu_select_item')
-      const addItem = registeredTools.find(tool => tool.name === 'cart_add_item')
-      const startCheckout = registeredTools.find(tool => tool.name === 'checkout_start')
-      if (!selectItem || !addItem || !startCheckout)
-        throw new Error('Expected order tools to be registered.')
-
-      await selectItem.execute({ itemId: 'chous-shrimp-roll' })
-      await addItem.execute({})
-      await expect(startCheckout.execute({ confirmedByUser: true })).resolves.toMatchObject({
-        ok: false,
-        recovery: expect.stringContaining('order_set_fulfillment'),
-      })
-    }
-    finally {
-      vi.unstubAllGlobals()
-    }
+    await runtime.executeTool('menu_select_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.executeTool('cart_add_item', {})
+    expect(await runtime.executeTool('checkout_start', { confirmedByUser: true })).toMatchObject({ ok: false, recovery: expect.stringContaining('order_set_fulfillment') })
   })
 
   it('drives the same visible action sequence and cart state used by WebMCP', async () => {

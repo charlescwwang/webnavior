@@ -7,6 +7,39 @@ import { createOrderMachine } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
 describe('current POS menu without customization options', () => {
+  // Report: this chat, 2026-10-20: 「有水餃或牛肉麵嗎？」 displays only one dish.
+  it.each([false, true])('keeps both dishes visible when Main splits one inquiry into lookups (parallel: %s)', async (parallel) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const shown: string[][] = []
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: presentation => shown.push(presentation.itemIds) })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'two-dishes', transcript: '有水餃或牛肉麵嗎？', expectedMenuRevision: 0, readOnly: true, constraints: {} })
+    if (parallel) {
+      await Promise.all(['水餃', '牛肉麵'].map(query => runtime.invokeForAgent('menu_get', { query })))
+    }
+    else {
+      await runtime.invokeForAgent('menu_get', { query: '水餃' })
+      const result = await runtime.invokeForAgent('menu_get', { query: '牛肉麵' })
+      expect(result).toMatchObject({ items: [{ id: 'beef-noodle-soup' }] })
+    }
+    expect(shown.at(-1)).toEqual(expect.arrayContaining(['dumplings', 'beef-noodle-soup']))
+    await runtime.invokeForAgent('menu_get', { query: '水餃' })
+    expect(shown.at(-1)).toHaveLength(2)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'next-inquiry', transcript: '水餃呢？', expectedMenuRevision: 0, readOnly: true, constraints: {} })
+    await runtime.invokeForAgent('menu_get', { query: '水餃' })
+    expect(shown.at(-1)).toEqual(['dumplings'])
+  })
+
+  // Report: this chat, 2026-10-20: 「有水餃或牛肉麵嗎？」 displays only one dish.
+  it('shows both named dishes for an availability inquiry without adding an order', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃或牛肉麵嗎？' })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { includeIngredients: [], excludeIngredients: [] } })
+    expect(result).toMatchObject({ presentation: { itemIds: expect.arrayContaining(['dumplings', 'beef-noodle-soup']) } })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  })
+
   it('checks disputed meal names and explicitly corrects a nonexistent recommendation', async () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
@@ -49,8 +82,8 @@ describe('current POS menu without customization options', () => {
   })
 
   it.each([
-    { transcript: '我想吃麵，一碗', itemId: 'beef-noodle-soup', price: 150 },
-    { transcript: '我要吃麵，一碗', itemId: 'beef-noodle-soup', price: 150 },
+    { transcript: '我想吃牛肉麵，一碗', itemId: 'beef-noodle-soup', price: 150 },
+    { transcript: '我要吃牛肉麵，一碗', itemId: 'beef-noodle-soup', price: 150 },
     { transcript: '我要水餃，一份', itemId: 'dumplings', price: 80 },
   ])('adds $transcript without an option question', async ({ transcript, itemId, price }) => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
@@ -60,6 +93,15 @@ describe('current POS menu without customization options', () => {
     expect(result).toMatchObject({ cart: { itemCount: 1, total: price, lines: [{ itemId, quantity: 1, options: {} }] } })
     expect(result).not.toHaveProperty('pendingConfiguration')
     expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
+  })
+
+  // A category quantity does not authorize choosing its sole member as a named dish.
+  it.each(['我想吃麵，一碗', '我要吃麵，一碗'])('hands %s to Main without substituting beef noodles', async (transcript) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript })
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).toMatchObject({ needsAssistant: true, decisionTrace: { operationPlan: null, authorize: null } })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
   it('keeps quantity questions and category browsing without supplying customization choices', async () => {

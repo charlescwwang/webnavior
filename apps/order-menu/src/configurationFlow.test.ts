@@ -334,8 +334,8 @@ describe('required order configuration', () => {
   })
 
   it.each([
-    { itemId: 'beef-noodle-soup', question: '辣度', transcript: '我要吃麵，一碗' },
-    { itemId: 'beef-noodle-soup', question: '辣度', transcript: '我想吃麵，一碗' },
+    { itemId: 'beef-noodle-soup', question: '辣度', transcript: '我要吃牛肉麵，一碗' },
+    { itemId: 'beef-noodle-soup', question: '辣度', transcript: '我想吃牛肉麵，一碗' },
     { itemId: 'dumplings', question: '每份顆數', transcript: '我要水餃，一份' },
   ])('shows $itemId before asking for its required configuration', async ({ itemId, question, transcript }) => {
     const catalog = await configuredCatalog()

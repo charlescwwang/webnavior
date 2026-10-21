@@ -50,6 +50,7 @@
     "@proj-airi/kiosk-proactive": "workspace:^",
     "@proj-airi/server-schema": "workspace:*",
     "@proj-airi/server-sdk-shared": "workspace:*",
+    "@proj-airi/stage-shared": "workspace:*",
     "better-auth": "catalog:",
     "cac": "catalog:",
     "drizzle-orm": "catalog:",

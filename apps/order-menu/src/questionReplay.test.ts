@@ -166,28 +166,23 @@ describe.skipIf(!replayUrl)('live menu content destination with actual candidate
         return { status: 'MOVED', position: selected === 'UP' ? 0 : 720 }
       },
     })
-    try {
-      const snapshot = await runtime.invoke('kiosk_fast_path_context', { transcript }) as KioskDecisionState & { candidates: KioskActionCandidate[] }
-      const result = await decideInteraction({ transcript, candidates: snapshot.candidates, decisionState: snapshot, invoke, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true })
-      const trace = result.trace as KioskDecisionTrace | undefined
-      console.info(JSON.stringify({ transcript, kind: result.kind, actionId: result.kind === 'FAST_ACTION' ? result.actionId : undefined, initial: trace?.rawAnswer, check: trace?.semanticCheck, modelCalls: result.modelCalls }))
-      // Composite gestures may remain unresolved by the provider; abstention is
-      // safe, but successful completion must never use the opposite destination.
-      if (mayAbstain && result.kind === 'UNAVAILABLE') {
-        expect(result).not.toHaveProperty('actionId')
-        expect(directions).toEqual([])
-        return
-      }
-      expect(result, JSON.stringify(result)).toMatchObject({ kind: 'FAST_ACTION', actionId: direction === 'UP' ? 'intent:scroll-menu:up' : 'intent:scroll-menu:down' })
-      if (result.kind !== 'FAST_ACTION')
-        throw new Error('Expected a verified scroll action.')
-      expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: result.actionId })).toMatchObject({ status: 'MOVED' })
-      expect(directions).toEqual([direction])
-      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    const snapshot = await runtime.invoke('kiosk_fast_path_context', { transcript }) as KioskDecisionState & { candidates: KioskActionCandidate[] }
+    const result = await decideInteraction({ transcript, candidates: snapshot.candidates, decisionState: snapshot, invoke, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true })
+    const trace = result.trace as KioskDecisionTrace | undefined
+    console.info(JSON.stringify({ transcript, kind: result.kind, actionId: result.kind === 'FAST_ACTION' ? result.actionId : undefined, initial: trace?.rawAnswer, check: trace?.semanticCheck, modelCalls: result.modelCalls }))
+    // Composite gestures may remain unresolved by the provider; abstention is
+    // safe, but successful completion must never use the opposite destination.
+    if (mayAbstain && result.kind === 'UNAVAILABLE') {
+      expect(result).not.toHaveProperty('actionId')
+      expect(directions).toEqual([])
+      return
     }
-    finally {
-      runtime.disposeNativeWebMcp()
-    }
+    expect(result, JSON.stringify(result)).toMatchObject({ kind: 'FAST_ACTION', actionId: direction === 'UP' ? 'intent:scroll-menu:up' : 'intent:scroll-menu:down' })
+    if (result.kind !== 'FAST_ACTION')
+      throw new Error('Expected a verified scroll action.')
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: result.actionId })).toMatchObject({ status: 'MOVED' })
+    expect(directions).toEqual([direction])
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   }, 40_000)
 })
 
@@ -201,20 +196,15 @@ describe.skipIf(!replayUrl)('live open preference handoff with actual candidates
     { transcript: '不是不要便當，是今天不想吃炸的' },
   ])('preserves the whole request for Agent: $transcript', async ({ transcript, mayClarify }) => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    try {
-      const snapshot = await runtime.invoke('kiosk_fast_path_context', { transcript }) as KioskDecisionState & { candidates: KioskActionCandidate[] }
-      const result = await decideInteraction({ transcript, candidates: snapshot.candidates, decisionState: snapshot, invoke, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true })
-      const trace = result.trace as KioskDecisionTrace | undefined
-      console.info(JSON.stringify({ transcript, kind: result.kind, reason: result.kind === 'NEEDS_ASSISTANT' ? result.reason : undefined, route: trace?.rawAnswer, checks: trace?.exchanges?.map(exchange => Object.keys(exchange.questions)), modelCalls: result.modelCalls }))
-      expect(result, JSON.stringify(result)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
-      if (!mayClarify)
-        expect(result).toMatchObject({ reason: 'MENU_QUERY' })
-      expect(result).not.toHaveProperty('actionId')
-      expect(result).not.toHaveProperty('ingredientFilters')
-      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
-    }
-    finally {
-      runtime.disposeNativeWebMcp()
-    }
+    const snapshot = await runtime.invoke('kiosk_fast_path_context', { transcript }) as KioskDecisionState & { candidates: KioskActionCandidate[] }
+    const result = await decideInteraction({ transcript, candidates: snapshot.candidates, decisionState: snapshot, invoke, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true })
+    const trace = result.trace as KioskDecisionTrace | undefined
+    console.info(JSON.stringify({ transcript, kind: result.kind, reason: result.kind === 'NEEDS_ASSISTANT' ? result.reason : undefined, route: trace?.rawAnswer, checks: trace?.exchanges?.map(exchange => Object.keys(exchange.questions)), modelCalls: result.modelCalls }))
+    expect(result, JSON.stringify(result)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+    if (!mayClarify)
+      expect(result).toMatchObject({ reason: 'MENU_QUERY' })
+    expect(result).not.toHaveProperty('actionId')
+    expect(result).not.toHaveProperty('ingredientFilters')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   }, 40_000)
 })

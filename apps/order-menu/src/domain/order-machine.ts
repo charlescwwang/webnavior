@@ -1,13 +1,13 @@
 import type { Composition } from '../../../order-menu-server/src/domain/composition'
 import type { RecommendationSignal } from '../../../order-menu-server/src/domain/recommendation'
+import type { MenuPageState } from './menuPageState'
 
 import cuttlefishBallImageUrl from '../assets/cuttlefish-ball.svg'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 
-/** Observable page scenarios, without asserting inventory quantities. */
-export const menuPageStates = ['available', 'sold-out', 'unknown', 'selection-failure'] as const
-export type MenuPageState = typeof menuPageStates[number]
+export { menuPageStates } from './menuPageState'
+export type { MenuPageState } from './menuPageState'
 
 export interface MenuOptionValue {
   id: string

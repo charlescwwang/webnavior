@@ -25,12 +25,15 @@
     "./composables": "./src/composables/index.ts",
     "./webgpu": "./src/webgpu/index.ts",
     "./webmcp": "./src/webmcp.ts",
+    "./interactive-service": "./src/interactiveService.ts",
+    "./kiosk-conversation": "./src/kioskConversation.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@moeru/eventa": "catalog:",
     "@moeru/std": "catalog:",
     "@vueuse/core": "catalog:",
     "gpuu": "catalog:",
@@ -40,7 +43,6 @@
   },
   "devDependencies": {
     "@electron-toolkit/preload": "catalog:",
-    "@moeru/eventa": "catalog:",
     "@nekopaw/tempora": "catalog:",
     "@proj-airi/electron-screen-capture": "workspace:^",
     "@types/audioworklet": "catalog:"

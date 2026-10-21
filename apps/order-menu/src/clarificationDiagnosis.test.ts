@@ -9,7 +9,7 @@ import { createMenuToolRuntime } from './webmcp'
 
 const original = '我要炒鱔魚意麵，小辣不要香菜，還要一碗牛肉麵小辣，還要一個排骨便當，總共3樣'
 
-async function replay(transcript: string, uncertain = false) {
+async function replay(transcript: string, uncertain = false, service: 'REQUEST' | 'UNCERTAIN' | 'INVALID' = 'REQUEST') {
   const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
   const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invoke('kiosk_fast_path_context', { transcript })
@@ -25,9 +25,15 @@ async function replay(transcript: string, uncertain = false) {
     candidates: context.candidates,
     decisionState: context,
     conversation: { messages: [{ role: 'user', content: transcript }, { role: 'assistant', content: context.waitingFor!.question }] },
-    invoke: async (_state: string, questions: Record<string, unknown>) => questions.route
-      ? { answers: { route: { choice: first.id, confidence: 0.8694 } } }
-      : { answers: { relation: { choice: uncertain ? 'UNCERTAIN' : first.id, confidence: uncertain ? 0.95 : 0.7259 } } },
+    invoke: async (_state: string, questions: Record<string, unknown>) => {
+      if (questions.route)
+        return { answers: { route: { choice: first.id, confidence: 0.8694 } } }
+      if (questions.relation)
+        return { answers: { relation: { choice: uncertain ? 'UNCERTAIN' : first.id, confidence: uncertain ? 0.95 : 0.7259 } } }
+      if (questions.serviceRequest)
+        return service === 'INVALID' ? { answers: {} } : { answers: { serviceRequest: { choice: service, confidence: 0.95 } } }
+      throw new Error('Unexpected decision question')
+    },
   })
   if (decision.kind === 'FAST_ACTION')
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: decision.actionId })
@@ -43,17 +49,30 @@ describe('multiple meals treated as single-target clarification diagnosis', () =
     expect(result.decision.kind).not.toBe('FAST_ACTION')
   })
 
-  it.each([original, '牛肉麵一碗，還要一個排骨便當'])('reproduces the single-target question and one-meal execution for %s', async (transcript) => {
-    const result = await replay(transcript)
-    expect(result.context.waitingFor?.question).toBe('您指的是炸排骨便當、紅燒牛肉麵？')
-    expect(result.context.candidates.map(candidate => candidate.description)).toEqual(['顧客指的是炸排骨便當。', '顧客指的是紅燒牛肉麵。', '顧客取消這次待釐清的需求；保留購物車。'])
-    expect(result.decision).toMatchObject({ kind: 'FAST_ACTION', confidence: 0.7259 })
-    expect(result.cart).toMatchObject({ cart: { lines: [{ itemId: 'fried-pork-chop-bento' }] } })
+  it.each([original, '牛肉麵一碗，還要一個排骨便當'])('hands off the complete compound request without choosing its first dish: %s', async (transcript) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript }) as KioskDecisionState & { candidates: KioskActionCandidate[] }
+    const decision = await decideInteraction({ transcript, candidates: context.candidates, decisionState: context, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'MULTI_ACTION', confidence: 0.99 } } }
+      if (questions.recipient)
+        return { answers: { recipient: { choice: 'KIOSK', confidence: 0.99 } } }
+      throw new Error('Unexpected question')
+    } })
+    expect(decision.kind).toBe('NEEDS_ASSISTANT')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { lines: [] } })
   })
 
   it('does not execute the first dish when the concrete answer remains uncertain', async () => {
     const result = await replay('牛肉麵一碗，還要一個排骨便當', true)
-    expect(result.decision).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })
+    expect(result.decision).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+    expect(result.cart).toMatchObject({ cart: { lines: [] } })
+  })
+  it.each(['UNCERTAIN', 'INVALID'] as const)('keeps an uncertain answer unexecuted when service admission is %s', async (service) => {
+    const result = await replay('牛肉麵一碗，還要一個排骨便當', true, service)
+    expect(result.decision).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })
+    expect(result.decision.recovery?.status).toBe(service === 'UNCERTAIN' ? 'eligible' : 'failed')
     expect(result.cart).toMatchObject({ cart: { lines: [] } })
   })
 })

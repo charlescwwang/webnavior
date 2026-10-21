@@ -33,6 +33,7 @@
     "@xsai/shared-chat": "catalog:",
     "@xsai/tool": "catalog:",
     "pinia": "catalog:",
+    "valibot": "catalog:",
     "vue": "catalog:",
     "vue-i18n": "catalog:",
     "vue-router": "catalog:",

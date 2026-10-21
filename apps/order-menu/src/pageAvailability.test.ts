@@ -26,7 +26,7 @@ describe('observable menu availability for acceptance trials', () => {
 
   it('answers an availability question about the proposed dish without buying it or repeating confirmation', async () => {
     const runtime = createMenuToolRuntime(options)
-    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '酸辣魚便當' }) as { clarificationOffer: { id: string } }
+    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '泰式酸辣魚便當' }) as { clarificationOffer: { id: string } }
     await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer.id })
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '我想問還有沒有' }) as { waitingFor: { questionId: string }, candidates: Array<{ id: string }> }
     const candidateId = `inquire-meal:${context.waitingFor.questionId}`
@@ -50,7 +50,7 @@ describe('observable menu availability for acceptance trials', () => {
 
   it.each(['水餃還有沒有', '有沒有便當', '一百元以下的還有嗎', '這個可以不要魚嗎'])('does not replace %s with a lookup of the proposed dish', async (transcript) => {
     const runtime = createMenuToolRuntime(options)
-    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '酸辣魚便當' }) as { clarificationOffer: { id: string } }
+    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '泰式酸辣魚便當' }) as { clarificationOffer: { id: string } }
     await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer.id })
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript }) as { candidates: Array<{ id: string }> }
     expect(context.candidates.some(candidate => candidate.id.startsWith('inquire-meal:'))).toBe(false)
@@ -59,11 +59,11 @@ describe('observable menu availability for acceptance trials', () => {
 
   it('rejects an inquiry from an earlier meal question without consuming the new one', async () => {
     const runtime = createMenuToolRuntime(options)
-    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '酸辣魚便當' }) as { clarificationOffer: { id: string } }
+    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '泰式酸辣魚便當' }) as { clarificationOffer: { id: string } }
     await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer.id })
     const candidateId = `inquire-meal:${offer.clarificationOffer.id}`
     await runtime.invoke('kiosk_fast_path_execute', { candidateId })
-    const next = await runtime.invoke('kiosk_fast_path_context', { transcript: '酸辣魚便當' }) as { clarificationOffer: { id: string } }
+    const next = await runtime.invoke('kiosk_fast_path_context', { transcript: '泰式酸辣魚便當' }) as { clarificationOffer: { id: string } }
     await runtime.invoke('kiosk_fast_path_clarify', { questionId: next.clarificationOffer.id })
     await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId })).rejects.toThrow('STALE_PLAN')
     expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'meal_confirmation', waitingFor: { questionId: next.clarificationOffer.id } })

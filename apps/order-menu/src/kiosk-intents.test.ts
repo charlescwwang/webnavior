@@ -7,6 +7,28 @@ import { authorize, compileOperationPlan, createConfirmation, createQuestion, de
 const shrimpRoll: MenuItem = { available: true, category: '小吃', description: '現炸蝦捲', id: 'shrimp-roll', imageUrl: '', name: '蝦捲', optionGroups: [{ id: 'ginger', label: '嫩薑', required: false, values: [{ id: 'with', label: '要薑', priceDelta: 0 }] }], price: 75, recommendationTags: ['fried'] }
 const base = { cart: { fulfillmentMode: undefined, itemCount: 0, lines: [], total: 0 }, menu: [shrimpRoll], revisions: { cart: 0, checkout: 0, selectedItem: 0 } }
 
+// Report: attachment b0b98800, 2026-10-21; category-only evidence substituted three beef noodles for eel noodles.
+it('does not turn an unmatched dish into the sole member of a matching category', () => {
+  const menu = [{ ...shrimpRoll, id: 'beef', name: '紅燒牛肉麵', aliases: ['牛肉麵'], category: '麵食', optionGroups: [] }]
+  const context = deriveDecisionContext({ ...base, menu, transcript: '鱔魚意麵3份，不要蔥花，一份大辣兩份小辣' })
+  expect(context.productResolution.status).toBe('none')
+  expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+})
+
+// Report: this chat, attachment b0b98800; the prior product must not identify a new category-only request.
+it('does not let a previous product name bypass the category identity guard', () => {
+  const menu = [{ ...shrimpRoll, id: 'beef', name: '紅燒牛肉麵', aliases: ['牛肉麵'], category: '麵食', optionGroups: [] }]
+  const context = deriveDecisionContext({ ...base, menu, previousTranscript: '牛肉麵', transcript: '鱔魚意麵三份' })
+  expect(context.productResolution.status).toBe('none')
+  expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+})
+
+it('does not collapse two spice values into one option for three servings', () => {
+  const menu = [{ ...shrimpRoll, id: 'beef', name: '紅燒牛肉麵', aliases: ['牛肉麵'], category: '麵食', optionGroups: [{ id: 'spice', label: '辣度', required: true, values: [{ id: 'hot', label: '大辣', priceDelta: 0 }, { id: 'mild', label: '小辣', priceDelta: 0 }] }] }]
+  const context = deriveDecisionContext({ ...base, menu, transcript: '牛肉麵3份，一份大辣兩份小辣' })
+  expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+})
+
 describe('kiosk intent routing', () => {
   it('offers only LINE Pay and 街口支付 when those are the deployed payment choices', () => {
     const cart = { ...base.cart, fulfillmentMode: 'dine-in' as const, lines: [{ id: 'L1', itemId: shrimpRoll.id, name: shrimpRoll.name, quantity: 1, options: {}, unitPrice: 75 }], total: 75, itemCount: 1 }
@@ -36,7 +58,7 @@ describe('kiosk intent routing', () => {
     expect(preference.candidates.some(candidate => candidate.intent === 'ADD_ITEM')).toBe(false)
     expect(preference.candidates.some(candidate => candidate.intent === 'RECOMMEND')).toBe(false)
     const order = deriveDecisionContext({ ...base, menu, transcript: '我要吃麵，一碗' })
-    expect(resolveIntent(order.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, order)).toMatchObject({ kind: 'PLAN', plan: { slots: { itemId: 'beef', quantity: 1 } } })
+    expect(resolveIntent(order.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, order)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
     const alias = deriveDecisionContext({ ...base, menu, transcript: '我要牛肉麵' })
     expect(alias.catalogEvidence.products).toEqual([{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }])
     expect(alias.candidates.some(candidate => candidate.intent === 'ADD_ITEM')).toBe(true)

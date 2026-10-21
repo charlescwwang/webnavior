@@ -30,6 +30,7 @@ import { continuationUrl } from './continuation'
 import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmTaxId, requestTaxId, returnToPreviousStep, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
+import { connectInteractiveService } from './interactiveService'
 import { scrollViewport } from './menuScroll'
 import { createPayment, createPosBridgeGateway, getPayment, paymentLabels, testPaymentMethods } from './pos-bridge'
 import { createMenuToolRuntime } from './webmcp'
@@ -84,8 +85,8 @@ let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
 let checkoutTimeoutTimer: ReturnType<typeof setTimeout> | undefined
 let paymentPollTimer: ReturnType<typeof setTimeout> | undefined
 let paymentAttempt = 0
-let unregisterNativeWebMcp: (() => void) | undefined
-let nativeWebMcpUnmounted = false
+let disconnectService: (() => void) | undefined
+let menuUnmounted = false
 const quantities = reactive<Record<string, number>>({})
 const expandedCustomizations = reactive<Record<string, boolean>>({})
 const selectedOptionsByItem = reactive<Record<string, Record<string, string>>>({})
@@ -237,6 +238,8 @@ async function animateAction(nextAction: AgentAction) {
     ? controlElements.get(nextAction.controlId) ?? (nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined)
     : nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined
   if (!target) {
+    if (nextAction.controlId?.startsWith('cart:remove:'))
+      throw new Error('The cart removal control is not visible.')
     cursorPhase.value = 'resting'
     await waitForAgentCursor(agentCursorTiming.dwellMs)
     return
@@ -793,32 +796,9 @@ function optionLabel(line: CartSnapshot['lines'][number]) {
     .join('、')
 }
 
-async function registerNativeWebMcp() {
-  nativeWebMcpUnmounted = false
-  if (!expectedAiriOrigin)
-    return
-
-  try {
-    const unregister = await runtime.registerNativeWebMcp({ exposedTo: [expectedAiriOrigin] })
-    if (!unregister)
-      return
-
-    // Registration is asynchronous. If Vite replaces this component while
-    // it is pending, release the tools immediately instead of leaving their
-    // names registered in the document.
-    if (nativeWebMcpUnmounted)
-      unregister()
-    else
-      unregisterNativeWebMcp = unregister
-  }
-  catch (error) {
-    console.error('[order-menu] failed to register native WebMCP tools:', errorMessageFrom(error))
-  }
-}
-
 async function loadCatalog() {
   const catalog = await loadPosCatalog()
-  if (!catalog)
+  if (!catalog || menuUnmounted)
     return
 
   runtime.setMenu(catalog.items, catalog.revision)
@@ -828,7 +808,9 @@ async function loadCatalog() {
     expandedCustomizations[item.id] = false
     selectedOptionsByItem[item.id] = defaultOptionsFor(item)
   }
-  await registerNativeWebMcp()
+  disconnectService?.()
+  if (expectedAiriOrigin)
+    disconnectService = connectInteractiveService(runtime, expectedAiriOrigin)
 }
 
 onMounted(() => {
@@ -836,10 +818,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  nativeWebMcpUnmounted = true
-  unregisterNativeWebMcp?.()
-  unregisterNativeWebMcp = undefined
-  runtime.disposeNativeWebMcp()
+  menuUnmounted = true
+  disconnectService?.()
+  disconnectService = undefined
   if (cartUpdateTimer)
     clearTimeout(cartUpdateTimer)
   if (checkoutTimeoutTimer)

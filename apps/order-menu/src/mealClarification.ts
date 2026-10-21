@@ -2,7 +2,8 @@ import type { PresentedQuestion } from '../../server/src/services/domain/kiosk-i
 import type { DecisionContext } from './kiosk-intents'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
-import { mentionedIngredients } from './domain/composition'
+import { filterIngredients, mentionedIngredients } from './domain/composition'
+import { filterPrices } from './domain/pricing'
 import { resolveIntent } from './kiosk-intents'
 
 export const mealMessages = orderingMessages['zh-Hant']
@@ -14,6 +15,9 @@ interface Proposal {
   context: DecisionContext
   expiresAt: number
   repeatCurrent: boolean
+  replaceLineId?: string
+  replacementName?: string
+  explicitAddition?: boolean
 }
 
 /** Browser-owned yes/no lifecycle. A proposal never authorizes a cart write. */
@@ -36,10 +40,10 @@ export function createMealClarification() {
     return {
       questionId: pending.id,
       purpose: 'confirm-meal',
-      question: mealMessages.confirmMeal.replace('{item}', pending.label),
+      question: pending.replacementName ? mealMessages.confirmReplacement.replace('{original}', pending.replacementName).replace('{item}', pending.label) : (pending.explicitAddition ? mealMessages.confirmAddition : mealMessages.confirmMeal).replace('{item}', pending.label),
       expiresAt: pending.expiresAt,
       choices: [
-        { id: `confirm-meal:${pending.id}:yes`, description: `${mealMessages.yes}，確認要點${pending.label}；繼續補必要資料，尚不授權付款。` },
+        { id: `confirm-meal:${pending.id}:yes`, description: `${mealMessages.yes}，確認${pending.replacementName ? `將${pending.replacementName}更換為` : '要點'}${pending.label}；繼續補必要資料，尚不授權付款。` },
         { id: `confirm-meal:${pending.id}:no`, description: `${mealMessages.no}，結束這次品名確認，保留原本點餐進度。` },
       ],
     }
@@ -62,6 +66,19 @@ export function createMealClarification() {
 
   return {
     question,
+    /** Main may propose a real target; only a later customer answer establishes it. */
+    propose(context: DecisionContext, itemId: string, replaceLineId?: string) {
+      const item = context.menu.find(item => item.id === itemId && item.available !== false)
+      const original = replaceLineId ? context.cart.lines.find(line => line.id === replaceLineId) : undefined
+      if (context.phase !== 'ordering' || !item || (replaceLineId && (!original || context.cart.lines.filter(line => line.itemId === original.itemId).length > 1)))
+        throw new Error('The proposed meal or replacement target is not current and unique.')
+      const eligible = filterIngredients(filterPrices([item], context.constraints.price ?? {}), { excludeIngredients: context.constraints.exclude, includeIngredients: context.constraints.include, dietary: context.constraints.dietary }).matches
+      if (!eligible.length || context.constraints.unresolvedPrice || context.unavailableConditionReferences.length)
+        throw new Error('The proposed meal does not satisfy the current verified request conditions.')
+      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
+      offer = undefined
+      return question(context)!
+    },
     /** Read target only when the current utterance can inherit this proposal. */
     inquiry,
     /** Resolves the live proposal for a read, without converting it to an order. */
@@ -77,7 +94,9 @@ export function createMealClarification() {
       offer = undefined
       // Price-qualified speech keeps its bounded price interpretation. Never
       // turn a partial budget/filter into permission to purchase one dish.
-      if (!eligible || question(context) || context.phase !== 'ordering' || context.priceEvidence || context.productResolution.references.length !== 1)
+      // A fragment is a possible identity, not a confirmed operation. Main must
+      // propose an explicit addition or replacement before asking for consent.
+      if (!eligible || question(context) || context.phase !== 'ordering' || context.priceEvidence || context.productResolution.status !== 'exact' || context.productResolution.references.length !== 1)
         return undefined
       const reference = context.productResolution.references[0]!
       const item = context.menu.find(item => `item:${item.id}` === reference.refId && item.available !== false)
@@ -131,6 +150,12 @@ export function createMealClarification() {
       }, reference.refId)
       if (resolution.kind !== 'CONFIGURATION' && resolution.kind !== 'PLAN')
         throw new Error('The confirmed meal does not satisfy the current ordering constraints.')
+      if (accepted.replaceLineId) {
+        const original = context.cart.lines.find(line => line.id === accepted.replaceLineId)
+        if (!original)
+          throw new Error('STALE_PLAN: The replacement line no longer exists.')
+        return { ...resolution.plan, slots: { ...resolution.plan.slots, replaceLineId: original.id, quantity: resolution.plan.slots.quantity ?? original.quantity } }
+      }
       return resolution.plan
     },
     clear() {

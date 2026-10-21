@@ -11,14 +11,17 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@moeru/eventa": "catalog:",
     "@moeru/std": "catalog:",
     "@proj-airi/stage-shared": "workspace:^",
     "qrcode": "catalog:",
+    "valibot": "catalog:",
     "vue": "catalog:"
   },
   "devDependencies": {
     "@types/qrcode": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
+    "ajv": "8.18.0",
     "vite": "catalog:",
     "vitest": "catalog:vitest",
     "vue-tsc": "catalog:"

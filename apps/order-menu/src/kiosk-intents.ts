@@ -7,6 +7,7 @@ import type { CartLine, CartSnapshot, MenuItem, Selection } from './domain/order
 import type { SeatingContext } from './domain/seating'
 
 import { filterIngredients, mentionedDietaryReferences, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
+import { possibleMenuItems, productFragment, resolveCategories, resolveMenuItems } from './domain/menuIdentity'
 import { priceEvidence } from './domain/pricing'
 import { partySizeSlot } from './domain/seating'
 import { paymentLabels } from './pos-bridge'
@@ -281,9 +282,10 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
       candidates.push(candidate('SET_QUANTITY', 'intent:set-quantity', '修改已選或購物車現有餐點數量，不新增品項。'))
       candidates.push(candidate('SET_OPTION', 'intent:set-option', '修改已選或購物車現有餐點客製選項。'))
     }
+    if (input.cart.lines.length || currentItems.length === 1)
+      candidates.push(candidate('REMOVE_ITEM', 'intent:remove-item', matchingCartLines > 1 ? '移除購物車中的餐點；若有多筆同名品項，程式會詢問是哪一筆。' : '移除購物車中的特定一筆餐點；若目前已無該餐點，只回報目前沒有，不移除其他餐點。'))
     if (input.cart.lines.length) {
       const modes = input.fulfillmentModes ?? [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }]
-      candidates.push(candidate('REMOVE_ITEM', 'intent:remove-item', matchingCartLines > 1 ? '移除購物車中的餐點；若有多筆同名品項，程式會詢問是哪一筆。' : '移除購物車中的特定一筆餐點。'))
       candidates.push(candidate('CLEAR_CART', 'intent:clear-cart', '明確要求清空整個購物車。'))
       if ((input.cart.fulfillmentMode !== 'dine-in' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'dine-in')))
         candidates.push(candidate('SET_FULFILLMENT', 'intent:set-fulfillment:dine-in', input.cart.fulfillmentMode === 'dine-in' ? `顧客重申本次${modes.find(mode => mode.id === 'dine-in')!.label}；維持原設定與未回答問題，不表示暫緩或拒絕。` : `這筆訂單設為${modes.find(mode => mode.id === 'dine-in')!.label}，接著詢問用餐人數與選桌。`, undefined, { mode: 'dine-in' }))
@@ -442,9 +444,17 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
     return { kind: 'NEEDS_ASSISTANT' }
   const menuRefs = context.references.filter(reference => reference.refId.startsWith('item:'))
   const categoryRefs = context.references.filter(reference => reference.refId.startsWith('category:'))
-  const namedNow = resolveMenuItems(context.menu, transcript)
-  const namedItemIds = new Set((namedNow.length ? namedNow : resolveMenuItems(context.menu, context.previousTranscript ?? '')).map(item => item.id))
+  // deriveDecisionContext already excludes old names when this turn supplies a
+  // new category or discovery fragment. Re-resolving the previous transcript
+  // here would incorrectly promote a category member to an explicit product.
+  const namedItemIds = new Set(context.targetConstraints.itemIds)
   const explicitMenuRefs = menuRefs.filter(reference => namedItemIds.has(reference.refId.slice(5)))
+  // A category match is browsing evidence, not a product identity. An unknown
+  // dish can contain a category word (鱔魚意麵 -> 麵食); even one available
+  // category member cannot become that dish. Preserve the original request for
+  // Main instead of offering a substitution disguised as target clarification.
+  if (['ADD_ITEM', 'SELECT_ITEM'].includes(resolved.intent) && !chosenTargetRef && !explicitMenuRefs.length && menuRefs.length === 1 && context.referenceOrigins[menuRefs[0]!.refId] === 'category')
+    return { kind: 'NEEDS_ASSISTANT' }
   const hasNamedItem = namedItemIds.size > 0
   const selectedRefs = context.references.filter(reference => reference.refId.startsWith('selected:') && (!hasNamedItem || namedItemIds.has(reference.refId.slice(9))))
   const cartRefs = context.references.filter(reference => reference.refId.startsWith('cart:') && (!hasNamedItem || namedItemIds.has(context.cart.lines.find(line => lineRef(line) === reference.refId)?.itemId ?? '')))
@@ -549,6 +559,20 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   }
 
   const targetRef = targetRefs[0]?.refId
+  if (resolved.intent === 'ADD_ITEM' && targetRef) {
+    const itemId = targetRef.startsWith('cart:') ? context.cart.lines.find(line => lineRef(line) === targetRef)?.itemId : targetRef.slice(targetRef.indexOf(':') + 1)
+    const item = context.menu.find(item => item.id === itemId)
+    if (item) {
+      const current = optionSlotsFromTranscript(item, transcript)
+      const overridden = new Set(current.map(option => option.groupId))
+      const effective = [...optionSlotsFromTranscript(item, context.previousTranscript ?? '').filter(option => !overridden.has(option.groupId)), ...current]
+      // One cart line has one value per option group. Multiple values can be
+      // a split order or a correction; neither may be reduced to the last value
+      // for every serving. Main must resolve the complete original utterance.
+      if (new Set(effective.map(option => option.groupId)).size !== effective.length)
+        return { kind: 'NEEDS_ASSISTANT', targetResolution }
+    }
+  }
   if (resolved.intent === 'SEARCH_MENU') {
     if (targetRef?.startsWith('item:'))
       slots.query = context.menu.find(item => item.id === targetRef.slice(5))?.name ?? ''
@@ -655,66 +679,6 @@ export function configurationQuestion(plan: DomainPlan, menu: readonly MenuItem[
   return undefined
 }
 
-/** Only known catalog names and merchant-provided aliases can identify items. */
-function resolveMenuItems(menu: readonly MenuItem[], transcript: string) {
-  const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
-  const occurrences = menu.flatMap((item) => {
-    return [item.name, ...(item.aliases ?? [])].flatMap((name) => {
-      const token = name.toLocaleLowerCase().replace(/\s/g, '')
-      if (!token)
-        return []
-      const matches: Array<{ end: number, item: MenuItem, start: number }> = []
-      for (let start = normalized.indexOf(token); start >= 0; start = normalized.indexOf(token, start + 1)) matches.push({ end: start + token.length, item, start })
-      return matches
-    })
-  })
-  // Prefer the longest real catalog name at an overlapping location, while
-  // retaining separately spoken products elsewhere in the same utterance.
-  const chosen: typeof occurrences = []
-  for (const match of occurrences.sort((left, right) => (right.end - right.start) - (left.end - left.start))) {
-    if (chosen.some(existing => existing.item.id === match.item.id))
-      continue
-    if (chosen.some(existing => match.start < existing.end && existing.start < match.end && (match.start !== existing.start || match.end !== existing.end)))
-      continue
-    chosen.push(match)
-  }
-  return menu.filter(item => chosen.some(match => match.item.id === item.id))
-}
-
-/** Proposes literal catalog fragments, never a fuzzy match accepted as an item ID. */
-function possibleMenuItems(menu: readonly MenuItem[], transcript: string) {
-  return menu.filter(item => productFragment(item, menu, transcript) !== undefined)
-}
-
-/** Longest literal fragment is discovery evidence only, never a configured alias. */
-function productFragment(item: MenuItem, menu: readonly MenuItem[], transcript: string) {
-  const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
-  const categories = new Set(menu.flatMap(item => [item.category.toLocaleLowerCase(), ...(item.category.endsWith('食') ? [item.category.slice(0, -1).toLocaleLowerCase()] : [])]))
-  const fragments = [item.name, ...(item.aliases ?? [])].flatMap((name) => {
-    const token = name.toLocaleLowerCase().replace(/\s/g, '')
-    const matches: string[] = []
-    for (let length = token.length; length >= 2; length--) {
-      for (let start = 0; start <= token.length - length; start++) {
-        const fragment = token.slice(start, start + length)
-        if (!categories.has(fragment) && normalized.includes(fragment))
-          matches.push(fragment)
-      }
-    }
-    return matches
-  })
-  return fragments.sort((left, right) => right.length - left.length)[0]
-}
-
-function resolveCategories(menu: readonly MenuItem[], transcript: string) {
-  const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
-  const matches = [...new Set(menu.map(item => item.category))].filter((category) => {
-    const name = category.toLocaleLowerCase()
-    return normalized.includes(name) || (name.endsWith('食') && normalized.includes(name.slice(0, -1)))
-  })
-  const best = Math.max(0, ...matches.map(category => category.length))
-  return matches.filter(category => category.length === best)
-}
-
 /** The question is assembled exclusively from the revision-bound real refs. */
 export function buildClarificationPrompt(references: readonly DomainReference[]) {
   return `您指的是${references.map(reference => reference.label).join('、')}？`
@@ -767,6 +731,7 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
           ...base,
           input: {
             itemId: plan.slots.itemId ?? targetId,
+            ...(plan.slots.replaceLineId ? { replaceLineId: plan.slots.replaceLineId } : {}),
             ...(plan.slots.options ? { options: JSON.parse(String(plan.slots.options)) as Array<{ groupId: string, valueId: string }> } : {}),
             quantity: plan.slots.quantity,
           },

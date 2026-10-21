@@ -3,7 +3,7 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { FulfillmentMode } from '../domain/order-machine'
 
-import { fulfillmentControlId } from '../webmcp'
+import { cartRemovalControlId, fulfillmentControlId } from '../webmcp'
 
 interface ReviewLine {
   id: string
@@ -60,7 +60,7 @@ const emit = defineEmits<{
         </div>
         <strong class="review-line-total">{{ line.total }}</strong>
         <div class="review-line-actions">
-          <button type="button" class="remove-button" :disabled="props.completed" @click="emit('remove', line.id)">
+          <button :ref="element => emit('registerControl', cartRemovalControlId(line.id), element)" type="button" :class="['remove-button']" :disabled="props.completed" @click="emit('remove', line.id)">
             移除
           </button>
           <div class="review-quantity" :aria-label="`${line.name} 購物車數量`">

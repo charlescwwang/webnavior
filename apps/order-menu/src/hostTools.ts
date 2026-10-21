@@ -5,6 +5,7 @@ export const hostToolNames = [
   'kiosk_customer_phone',
   'kiosk_fast_path_clarify',
   'kiosk_interaction_state',
+  'kiosk_conversation_context',
   'kiosk_fast_path_context',
   'kiosk_fast_path_execute',
   'kiosk_fast_path_continue',

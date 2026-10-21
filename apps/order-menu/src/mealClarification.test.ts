@@ -44,7 +44,7 @@ describe('simple meal confirmation', () => {
     await expect(runtime.invoke('kiosk_fast_path_clarify', { questionId: old.clarificationOffer!.id })).rejects.toThrow('STALE')
   })
   it.each([
-    { transcript: '酸辣魚便當', label: '泰式酸辣魚便當' },
+    { transcript: '泰式酸辣魚便當', label: '泰式酸辣魚便當' },
     { transcript: '招牌便當', label: '周氏蝦捲招牌便當' },
     { transcript: '炸排骨便當', label: '炸排骨便當' },
   ])('confirms $transcript using the real catalog rather than a dish-specific phrase rule', async ({ transcript, label }) => {
@@ -55,7 +55,7 @@ describe('simple meal confirmation', () => {
     expect(response).toMatchObject({ customerMessage: `您是要點${label}嗎？` })
   })
 
-  it.each(['便當', '恐龍披薩', '牛肉麵和水餃', '100元以下的餐點', '牛肉麵100元以下', '素食牛肉麵', '不要豬肉的牛肉麵', '略過電話', '你是誰', '手機載具', 'LINE Pay'])('does not invent a single-dish confirmation for %s', async (transcript) => {
+  it.each(['酸辣魚便當', '改排骨飯', '便當', '恐龍披薩', '牛肉麵和水餃', '100元以下的餐點', '牛肉麵100元以下', '素食牛肉麵', '不要豬肉的牛肉麵', '略過電話', '你是誰', '手機載具', 'LINE Pay'])('does not invent a single-dish confirmation for %s', async (transcript) => {
     const runtime = await pendingMeal()
     expect(await runtime.invoke('kiosk_fast_path_context', { transcript })).not.toHaveProperty('clarificationOffer')
   })
