@@ -7,20 +7,36 @@ accumulating history.
 
 ## Current State
 
-- Production deployment is separate from the current `no_mcp` branch. The last
-  verified release was master `fcf3b52` on Oct20 at
-  `https://webnavior.aikcitri.qzz.io`; this does not mark the Oct21 work below
-  as deployed. API restarted at 19:47:36 Taipei, PID 1741934. At that release,
-  livez/readyz reported DB/Redis ok; public Menu index-CapzATGV.js and Kiosk
-  index-CxqFrGRD.js plus all HTML-linked assets matched staged SHA-256 hashes.
-  Root redirect, bridge and 7 catalog items passed; Nginx/Origin-Trial unchanged.
-  Backup: `/tmp/webnavior-release-20261020-d8nr85ei` contains old static trees,
-  staged builds, a pg_restore-list-verified DB dump and deployed-verified
-  release.json. Switching this checkout to `no_mcp` on Oct21 did not publish
-  frontend assets or restart services. The API service uses this checkout as
-  its source; its next restart will load this branch, so validate and deploy
-  matching builds/dependencies before restarting. Camera/microphone and real
-  payment/POS acceptance were not verified by the Oct20 release checks.
+- Oct21 Kiosk OpenCC presentation fix is committed locally, NOT DEPLOYED.
+  Reuses stage-ui's Taiwan Traditional converter for conversation/streaming
+  text, errors, visible ASR, welcome/progress and diagnostic transcript headings;
+  speech synthesis also receives converted text. Display copies preserve original
+  model history, ASR, simulation input, tool payloads and raw diagnostic traces.
+  Kiosk 228 unit tests, 7 focused Chrome tests, changed-file lint, production
+  build and the once-run root typecheck pass. Root lint reports 2370 errors in
+  unchanged baseline files; no unrelated cleanup. Browser tests prebundle OpenCC
+  to avoid mid-run optimizer reloads. Changes are grouped into display, speech
+  and documentation commits on no_mcp; no remote push or deployment.
+  This does not fix background admission or unverified model success claims.
+
+- Oct21 `no_mcp` through efcce39 is DEPLOYED and verified at
+  `https://webnavior.aikcitri.qzz.io`; the implementation-time "not deployed"
+  notes below are superseded. API restarted at 13:37:43 Taipei, PID 2642311;
+  livez/readyz report DB/Redis ok. Public Menu index-By0DmB8Z.js and Kiosk
+  index-BSfgpFRX.js plus all HTML-linked assets match staged SHA-256 hashes.
+  Bridge and 7 catalog items pass; Nginx, Origin-Trial and management build
+  unchanged. Backup: `/tmp/webnavior-no-mcp-release-20261021-0rrftbgb` holds old
+  static trees, staged builds, verified DB dump and deployed-verified release.json;
+  its previousRelease records the Oct20 master release. Frozen install, builds,
+  Menu/Kiosk/stage-ui scoped types, Menu725/Kiosk227/Server497 unit tests and
+  Kiosk54/cross-origin15 Chrome tests pass. No root typecheck or live model,
+  camera/microphone, real POS/payment acceptance in this deployment.
+  Root HTTP redirects to /kiosk/; clean Chrome stays at /kiosk/#/ without errors
+  or a controlling SW. User reports intermittent admin routing only in normal
+  browsing, not incognito. Existing SW/cache is suspected, not proven; current
+  management SW excludes root/Kiosk/Menu navigation. Suggested unregistering
+  only this origin's SW, closing its tabs and reopening, preserving local device
+  storage. No routing/configuration changes were made for this report.
 
 - Oct21 service recovery is implemented and committed locally; source of truth:
   docs/plans/2026-10-21-kiosk-service-recovery.md. Valid Jev service uncertainty

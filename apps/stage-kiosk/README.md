@@ -4,6 +4,14 @@
 
 Use it for customer-facing horizontal or vertical kiosk displays. Do not use it as a replacement for the normal settings-oriented `stage-web` application.
 
+Chinese conversation text, recognized-speech display, status messages and diagnostic
+transcript headings use the shared OpenCC Taiwan Traditional converter. Speech
+synthesis receives the same converted text. Presentation uses copies: original
+ASR, model history, tool arguments/results and raw diagnostic traces remain
+unchanged for decisions and troubleshooting. Text typed into the simulation
+input is also submitted unchanged. This normalizes Chinese writing; it does
+not translate other languages or verify the truth of a model reply.
+
 ## Run
 
 Start the menu service, then the kiosk:
