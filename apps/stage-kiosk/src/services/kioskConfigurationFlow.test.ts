@@ -18,7 +18,7 @@ describe('retained meal configuration across topic changes', () => {
     const turn = (transcript: string) => runFastPath({
       transcript,
       isEnabled: async () => true,
-      decide: async request => request.transcript === '酸辣魚便當'
+      decide: async request => request.transcript === '泰式酸辣魚便當'
         ? { kind: 'NEEDS_CLARIFICATION', modelQuestions: 1 }
         : { kind: 'FAST_ACTION', modelQuestions: 1, actionId: request.candidates.find(choice => request.transcript === '對' ? choice.id.endsWith(':yes') : choice.description.includes(request.transcript === '一份' ? '1 份' : '2 份'))!.id },
       webMcp: {
@@ -35,7 +35,7 @@ describe('retained meal configuration across topic changes', () => {
         },
       },
     })
-    expect(await turn('酸辣魚便當')).toMatchObject({ kind: 'CLARIFICATION', prompt: '您是要點泰式酸辣魚便當嗎？' })
+    expect(await turn('泰式酸辣魚便當')).toMatchObject({ kind: 'CLARIFICATION', prompt: '您是要點泰式酸辣魚便當嗎？' })
     expect(calls).toEqual(['kiosk_fast_path_context', 'kiosk_fast_path_clarify'])
     expect(await turn('對')).toMatchObject({ kind: 'FAST_ACTION', result: { customerMessage: '請問泰式酸辣魚便當要幾份？' } })
     expect(await turn('一份')).toMatchObject({ kind: 'FAST_ACTION', result: { pendingCustomerChoice: { question: '請問水餃要幾份？' } } })

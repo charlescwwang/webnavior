@@ -55,7 +55,7 @@ function simulate() {
   <section class="simulation-section">
     <h3>測試用：模擬 ASR 辨識結果</h3>
     <p class="simulation-description">
-      不使用麥克風或 ASR；會直接把這段文字交給與正式語音相同的 System One、候選操作與 WebMCP 流程。可能操作目前購物車，請只在測試時使用。
+      不使用麥克風或 ASR；會直接把這段文字交給與正式語音相同的 System One、候選操作與 互動服務工具流程。可能操作目前購物車，請只在測試時使用。
     </p>
     <form class="simulation-form" @submit.prevent="simulate">
       <BasicTextarea

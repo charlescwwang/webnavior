@@ -140,3 +140,18 @@ describe('kiosk utterance queue', () => {
     expect(handled).toEqual(['第一句'])
   })
 })
+
+it('aborts the active decision transport when the queue is reset', async () => {
+  let signal: AbortSignal | undefined
+  let finish!: () => void
+  const queue = createKioskUtteranceQueue({ process: async (_utterance, ticket) => {
+    signal = ticket.signal
+    await new Promise<void>(resolve => finish = resolve)
+  } })
+  queue.submit({ source: 'simulation', text: '請確認' })
+  await vi.waitFor(() => expect(signal).toBeDefined())
+  queue.reset()
+  expect(signal?.aborted).toBe(true)
+  finish()
+  await queue.idle()
+})

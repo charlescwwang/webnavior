@@ -30,6 +30,29 @@ describe('segmented device requests', () => {
     expect(JSON.parse(String(network.mock.calls[0]?.[1]?.body))).toMatchObject({ segmented: true })
   })
 
+  it('notifies recovery progress before the slow continuation completes', async () => {
+    let finish!: (response: Response) => void
+    const onProgress = vi.fn()
+    const network = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ kind: 'SERVICE_RECOVERY_PROGRESS', stage: 'adjudication', status: 'started', continuationId: 'main', expiresAt: Date.now() + 15000 })).mockImplementationOnce(() => new Promise<Response>(resolve => finish = resolve))
+    const pending = decideKioskInteraction({ transcript: '請幫我確認', candidates: [], onProgress, budgetMs: 5000 })
+    await vi.waitFor(() => expect(onProgress).toHaveBeenCalledOnce())
+    expect(onProgress.mock.calls[0]?.[0]).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', status: 'started' })
+    expect(JSON.parse(String(network.mock.calls[0]?.[1]?.body)).budgetMs).toBe(5000)
+    finish(Response.json({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', modelCalls: 0, modelQuestions: 0 }))
+    expect(await pending).toMatchObject({ kind: 'NEEDS_ASSISTANT', modelQuestions: 0 })
+  })
+
+  it('allows recovery events after the full Jev question budget without treating them as Jev questions', async () => {
+    let index = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      const step = index++
+      return Response.json(step < 24 ? { kind: 'DECISION_PROGRESS', question: 'route', continuationId: `jev-${step}`, expiresAt: Date.now() + 15000, durationMs: 1 } : step < 28 ? { kind: 'SERVICE_RECOVERY_PROGRESS', stage: step < 26 ? 'adjudication' : 'review', status: step % 2 === 0 ? 'started' : 'completed', continuationId: `main-${step}`, expiresAt: Date.now() + 15000 } : { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', modelQuestions: 24 })
+    })
+    const onProgress = vi.fn()
+    expect(await decideKioskInteraction({ transcript: '請確認', candidates: [], onProgress })).toMatchObject({ kind: 'UNAVAILABLE', modelQuestions: 24 })
+    expect(onProgress).toHaveBeenCalledTimes(28)
+  })
+
   it('does not resume a replaced utterance or a repeated checkpoint', async () => {
     const checkpoint = { kind: 'DECISION_PROGRESS', continuationId: 'c1', question: 'route', expiresAt: Date.now() + 15000, durationMs: 20 }
     const network = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json(checkpoint))

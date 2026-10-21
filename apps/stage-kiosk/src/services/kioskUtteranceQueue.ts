@@ -8,6 +8,7 @@ export interface KioskUtterance {
 
 export interface KioskUtteranceTicket {
   isCurrent: () => boolean
+  signal: AbortSignal
 }
 
 export type KioskUtteranceReservation = {
@@ -38,6 +39,7 @@ export function createKioskUtteranceQueue(options: {
   const maxWaitMs = options.maxWaitMs ?? 15_000
   const pending: PendingUtterance[] = []
   const idleResolvers: Array<() => void> = []
+  let activeController: AbortController | undefined
   let activeItem: PendingUtterance | undefined
   let running = false
   let generation = 0
@@ -72,12 +74,15 @@ export function createKioskUtteranceQueue(options: {
           continue
         }
         try {
-          await options.process(utterance, { isCurrent: () => currentGeneration === generation })
+          const controller = new AbortController()
+          activeController = controller
+          await options.process(utterance, { isCurrent: () => currentGeneration === generation && !controller.signal.aborted, signal: controller.signal })
         }
         catch (error) {
           options.onError?.(utterance, error)
         }
         finally {
+          activeController = undefined
           activeItem = undefined
           publish()
         }
@@ -139,6 +144,7 @@ export function createKioskUtteranceQueue(options: {
 
   function reset() {
     generation++
+    activeController?.abort()
     activeItem?.settle()
     for (const item of pending.splice(0)) {
       item.settle()

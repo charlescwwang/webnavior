@@ -1,4 +1,4 @@
-import type { WebMcpToolExecution } from '@proj-airi/stage-ui/services/webmcp-adapter'
+import type { ToolExecution } from '@proj-airi/stage-shared/interactive-service'
 
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
@@ -40,12 +40,12 @@ function setupEntry(regionHeight = 500) {
     onCartChange: () => {},
     onMenuSelection: () => {},
   })
-  const listeners = new Set<(execution: WebMcpToolExecution) => void>()
+  const listeners = new Set<(execution: ToolExecution) => void>()
   const tools = shallowRef(runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })))
   const bridge = {
     tools: readonly(tools),
     availability: shallowRef<'ready'>('ready'),
-    onExecution: (listener: (execution: WebMcpToolExecution) => void) => {
+    onExecution: (listener: (execution: ToolExecution) => void) => {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
@@ -88,18 +88,20 @@ describe('kiosk-owned optional phone modal', () => {
     }
   })
 
-  it('retains the optional phone choice while the Agent browses food, then allows explicit skip', async () => {
+  // Report: this chat, 2026-10-21 — menu operations require an explicit phone choice.
+  it('blocks Agent browsing while the phone choice is pending, then allows explicit skip', async () => {
     const { screen, runtime } = setupEntry()
     try {
       await expect.element(screen.getByRole('dialog')).toBeVisible()
       await expect.element(screen.getByText('測試時可輸入：0912345678', { exact: true })).toBeVisible()
-      const result = await runtime.invokeForAgent('menu_recommend', { action: 'update' }) as { items: unknown[] }
-      expect(result.items.length).toBeGreaterThan(0)
+      await expect(runtime.invokeForAgent('menu_recommend', { action: 'update' })).rejects.toThrow('略過')
       await expect.element(screen.getByRole('dialog')).toBeVisible()
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'customer_entry' })
       await screen.getByRole('button', { name: '用按鈕略過' }).click()
       await expect.element(screen.getByText('菜單已開啟', { exact: true })).toBeVisible()
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
+      const result = await runtime.invokeForAgent('menu_recommend', { action: 'update' }) as { items: unknown[] }
+      expect(result.items.length).toBeGreaterThan(0)
     }
     finally {
       screen.unmount()

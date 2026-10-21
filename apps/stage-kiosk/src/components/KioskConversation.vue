@@ -12,8 +12,8 @@ import KioskAssistantPresence from './KioskAssistantPresence.vue'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 import KioskTextConsole from './kioskTextConsole.vue'
 
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
-import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
   activityStatus?: string
@@ -52,21 +52,14 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
 // Tool discovery describes assistant control, not whether the embedded menu
 // loaded successfully. Keep the service usable while that capability is absent.
 const serviceStatus = computed(() => {
-  if (!scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
+  if (!scenarioRegistry.activeScenario.value || interactiveServiceClient.availability.value === 'ready')
     return undefined
-  const reason = webMcpAdapter.unavailableReason.value
-  if (reason === 'unsupported-browser')
-    return t('stage.kiosk-agent.service-browser-unsupported')
-  if (reason === 'missing-health-check')
-    return t('stage.kiosk-agent.service-check-missing')
-  if (reason === 'compatibility-check-failed')
-    return t('stage.kiosk-agent.service-check-failed')
-  return t(webMcpAdapter.availability.value === 'unavailable'
+  return t(interactiveServiceClient.availability.value === 'unavailable'
     ? 'stage.kiosk-agent.service-manual'
     : 'stage.kiosk-agent.service-connecting')
 })
 const orderToolCallRenderers = computed(() => Object.fromEntries(
-  webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
+  interactiveServiceClient.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
 const chatHistory = useTemplateRef<InstanceType<typeof ChatHistory>>('chatHistory')
 let lateTailFollow: ReturnType<typeof setTimeout> | undefined

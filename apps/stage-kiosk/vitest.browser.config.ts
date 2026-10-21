@@ -8,6 +8,7 @@ import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  root: import.meta.dirname,
   // Shared components consume build metadata; use the same provider as Vite.
   plugins: [Vue(), Info(), Yaml()],
   test: {

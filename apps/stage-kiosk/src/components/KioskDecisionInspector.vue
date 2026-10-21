@@ -89,7 +89,7 @@ const routeLabels: Record<KioskDecisionEntry['route'], string> = {
               </dt><dd v-if="entry.reason">
                 {{ entry.reason }}
               </dd>
-              <dt>WebMCP 操作</dt><dd>{{ entry.operation ?? '未執行' }}</dd>
+              <dt>工具操作</dt><dd>{{ entry.operation ?? '未執行' }}</dd>
               <dt>授權結果</dt><dd>{{ entry.authorization ?? '不適用' }}</dd>
               <dt>Main Agent</dt><dd>{{ entry.agentStep ?? '未轉交' }}</dd>
               <dt>Jev 階段</dt><dd>{{ entry.systemOneStep ?? '尚未開始' }}</dd>

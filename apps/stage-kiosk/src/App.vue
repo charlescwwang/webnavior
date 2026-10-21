@@ -7,11 +7,11 @@ import { onMounted, onUnmounted, watch } from 'vue'
 import { RouterView } from 'vue-router'
 
 import { useKioskInteractiveServiceAgentInstructions } from './composables/useKioskInteractiveServices'
+import { interactiveServiceClient } from './services/interactiveServiceClient'
 import { initializeKioskRuntime } from './services/kiosk-runtime-initialization'
 import { scenarioRegistry } from './services/scenario-registry'
-import { webMcpAdapter } from './services/webmcp-adapter'
+import { createInteractiveServiceTools } from './tools/interactiveService'
 import { createScenarioNavigationPrompt, createScenarioNavigationTools } from './tools/scenario'
-import { createWebMcpTools } from './tools/webmcp'
 
 const inferencePreload = useInferencePreload()
 const llmToolsStore = useLlmToolsStore()
@@ -46,10 +46,12 @@ async function syncActiveScenarioTools() {
 
   if (generation !== scenarioSyncGeneration)
     return
-  await llmToolsStore.registerTools('webmcp', createWebMcpTools())
+  // This registry key also selects existing toolset prompts; it is independent
+  // of the browser transport and must survive the connection migration.
+  await llmToolsStore.registerTools('webmcp', createInteractiveServiceTools())
 }
 
-watch([scenarioRegistry.revision, scenarioRegistry.activeScenarioId, interactiveServiceAgentInstructions, webMcpAdapter.tools], () => void syncActiveScenarioTools(), { immediate: true })
+watch([scenarioRegistry.revision, scenarioRegistry.activeScenarioId, interactiveServiceAgentInstructions, interactiveServiceClient.tools], () => void syncActiveScenarioTools(), { immediate: true })
 
 onMounted(async () => {
   await kioskRuntimeReady

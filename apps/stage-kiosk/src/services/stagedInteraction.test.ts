@@ -1,4 +1,4 @@
-import type { WebMcpTool } from '@proj-airi/stage-ui/services/webmcp-adapter'
+import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 
 import type { CheckoutSnapshot } from '../../../order-menu/src/domain/checkout-flow'
 import type { MenuItem } from '../../../order-menu/src/domain/order-machine'
@@ -13,13 +13,79 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { decideInteraction } from '../../../server/src/services/domain/kiosk-interaction-decision'
 import { createRecommendationInvitation } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import { createDecisionStages } from '../../../server/src/services/domain/kiosk-interaction-decision/stages'
-import { runFastPath } from './kiosk-fast-path'
-import { createInvitationWindow, presentedQuestionFrom } from './questionPresentation'
+import { conversationDecisionStateFrom, runFastPath } from './kiosk-fast-path'
+import { createInvitationWindow, createMenuReplyWindow, presentedQuestionFrom, replyFromConversation, replyFromReceipt } from './questionPresentation'
 
 // Use the merchant fixture's names/aliases, not the older built-in demo menu.
 const merchantMenu: MenuItem[] = sourceMenu.items.map(item => ({ id: item.id, name: item.name, aliases: 'aliases' in item ? item.aliases : [], category: sourceMenu.categories.find(category => category.id === item.categoryId)!.name, price: item.price, imageUrl: item.image, description: item.description, available: item.available, optionGroups: item.optionGroups, recommendationTags: [] }))
 
 describe('staged decision through the actual ordering runtime', () => {
+  // Report: attachment a553fda2, complete but unmatched 大腸臭臭鍋一份; preserve the request through Main's lookup.
+  it('hands the recorded unmatched hotpot order to Main and presents a verified not-found reply', async () => {
+    const transcript = '大腸臭臭鍋一份'
+    const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => {
+      if (questions.route)
+        return { answers: { route: { choice: 'INCOMPLETE', confidence: 0.3499 } } }
+      if (questions.service)
+        return { answers: { service: { choice: 'REQUEST', confidence: 0.9977 } } }
+      if (questions.speech)
+        return { answers: { speech: { choice: 'REQUEST', confidence: 0.0919 } } }
+      return { answers: { serviceRequest: { choice: 'REQUEST', confidence: 0.9894 } } }
+    })
+    const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke }) })
+    expect(decision).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+    expect(invoke).toHaveBeenCalledTimes(4)
+    const state = conversationDecisionStateFrom(decision.decisionState, decision)!
+    expect(decision.decisionState).toMatchObject({ phase: 'ordering', productResolution: { status: 'none' }, catalogEvidence: { products: [], categories: [] } })
+    expect(state.phase).toBe('ordering')
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'hotpot', transcript, expectedMenuRevision: state.menuRevision, constraints: {} })
+    const receipt = await runtime.invokeForAgent('menu_get', { query: '大腸臭臭鍋' })
+    expect(receipt).toMatchObject({ items: [], customerMessage: expect.stringContaining('大腸臭臭鍋') })
+    const menuReply = createMenuReplyWindow()
+    menuReply.record('menu_get', receipt)
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'] }, { menu: menuReply, failureMessage: '錯誤提示' })).toMatchObject({ role: 'assistant', content: expect.stringContaining('大腸臭臭鍋') })
+    expect(await runtime.invokeForAgent('order_add_item', { itemId: 'beef-noodle-soup', quantity: 1 })).toMatchObject({ ok: false })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  })
+  // Report: attachment b0b98800, 2026-10-21; recorded intent confidence must not authorize a substituted dish.
+  it.each(['鱔魚意麵3份，不要蔥花，一份大辣兩份小辣', '牛肉麵3份，一份大辣兩份小辣'])('keeps the cart empty for an unrepresentable add request: %s', async (transcript) => {
+    const menu = merchantMenu.map(item => item.id === 'beef-noodle-soup' ? { ...item, optionGroups: [{ id: 'spice', label: '辣度', required: true, values: [{ id: 'hot', label: '大辣', priceDelta: 0 }, { id: 'mild', label: '小辣', priceDelta: 0 }] }] } : item)
+    const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const decide = vi.fn((request: Parameters<Parameters<typeof runFastPath>[0]['decide']>[0]) => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => questions.route ? { answers: { route: { choice: 'intent:add-item', confidence: 0.8762 } } } : questions.requestPurpose ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.8404 } } } : { answers: { cartRequest: { choice: 'SINGLE', confidence: 0.99 } } } }))
+    const result = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+    expect(decide.mock.calls[0]?.[0]).toHaveProperty('transcript', transcript)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0, lines: [] } })
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
+  })
+
+  // Report: attachment c1d194f6, 2026-10-21; the previous quantity prompt was spoken twice.
+  it('presents the quantity question once when the receipt already contains the same prompt', async () => {
+    const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '那我要排骨便當' })
+    const receipt = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    const question = receipt && typeof receipt === 'object' && 'pendingCustomerChoice' in receipt ? presentedQuestionFrom(receipt.pendingCustomerChoice) : undefined
+    expect(question?.question).toBe('請問炸排骨便當要幾份？')
+    const answer = replyFromReceipt(receipt, question)
+    expect(answer).toBe('請問炸排骨便當要幾份？')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  })
+
+  // Report: this chat, 2026-10-21; the visitor must choose phone or skip before any menu inquiry.
+  it('asks for phone or skip before a recorded broad menu inquiry and preserves the entry gate', async () => {
+    const display = vi.fn()
+    const skipped = vi.fn()
+    const runtime = createMenuToolRuntime({ menu: merchantMenu, orderingReady: () => false, onCustomerEntrySkipped: skipped, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: display })
+    const transcript = '那你們目前有賣什麼'
+    const result = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.9671 } } } : { answers: { phone: { choice: 'MENU', confidence: 0.9815 } } } }) })
+    expect(result).toMatchObject({ kind: 'CUSTOMER_ENTRY_REQUIRED' })
+    expect(display).not.toHaveBeenCalled()
+    expect(skipped).not.toHaveBeenCalled()
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'customer_entry' })
+    await expect(runtime.invoke('menu_get', { display: false })).rejects.toThrow('略過')
+  })
+
   // Report: this chat, 2026-10-20; typed 略過 at phone entry must still
   // execute the browser-owned skip even when visual presence is EMPTY.
   it('skips optional phone entry with empty presence when the utterance is admitted', async () => {
@@ -38,7 +104,7 @@ describe('staged decision through the actual ordering runtime', () => {
     const onCartChange = vi.fn()
     const runtime = createMenuToolRuntime({ orderingReady: () => false, onCustomerEntrySkipped: () => {}, onAction: () => {}, onCartChange, onMenuSelection: () => {} })
     const initialCartChanges = onCartChange.mock.calls.length
-    const execute = vi.fn((tool: WebMcpTool, input: Record<string, unknown>) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input))
+    const execute = vi.fn((tool: ServiceTool, input: Record<string, unknown>) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input))
     const onActionSelected = vi.fn()
     for (const { transcript, choice, expected } of [{ transcript: '你好', choice: 'GREET', expected: 'GREET' }, { transcript: '推薦一下', choice: 'ORDER', expected: 'CUSTOMER_ENTRY_REQUIRED' }, { transcript: '我要牛肉麵一份', choice: 'ORDER', expected: 'CUSTOMER_ENTRY_REQUIRED' }]) {
       const result = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute }, onActionSelected, decide: request => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => questions.service ? { answers: { service: { choice: choice === 'GREET' ? 'HELLO_ONLY' : 'REQUEST', confidence: 0.95 } } } : { answers: { phone: { choice, confidence: 0.95 } } } }) })
@@ -54,7 +120,7 @@ describe('staged decision through the actual ordering runtime', () => {
     const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
-    const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+    const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
     const result = await runFastPath({ isEnabled: async () => true, transcript: '我沒有要水餃，我是問有沒有', webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.99 } } } : { answers: { purpose: { choice: 'INQUIRY', confidence: 0.99 } } } }) })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', result: { customerMessage: expect.stringContaining('您是在詢問'), itemStatuses: [{ name: '水餃', status: 'available' }] } })
     expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
@@ -69,7 +135,7 @@ describe('staged decision through the actual ordering runtime', () => {
       const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: display })
       const window = createInvitationWindow()
       window.present(createRecommendationInvitation('I1', Date.now()))
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
       const invoke = vi.fn()
         .mockResolvedValueOnce({ answers: { route: { choice: 'intent:recommend', confidence: 0.95 } } })
         .mockResolvedValueOnce({ answers: { relation: { choice: 'intent:recommend', confidence: 0.4 } } })
@@ -146,7 +212,7 @@ describe('staged decision through the actual ordering runtime', () => {
     await runtime.invoke('checkout_choose_invoice', { method: 'donation' })
     const offered = await runtime.invokeForAgent('order_ask_question', { purpose: 'payment-method' }) as { pendingCustomerChoice: { questionId: string, question: string } }
     await runtime.invoke('kiosk_dialogue_presented', { content: offered.pendingCustomerChoice.question, questionId: offered.pendingCustomerChoice.questionId })
-    const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+    const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
     const invoke = vi.fn()
       .mockResolvedValueOnce({ answers: { route: { choice: `intent:select-payment:${method}`, confidence: 0.5289 } } })
       .mockResolvedValueOnce({ answers: { relation: { choice: `intent:select-payment:${method}`, confidence: 0.95 } } })
@@ -176,7 +242,7 @@ describe('staged decision through the actual ordering runtime', () => {
     const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const window = createInvitationWindow()
     window.present(createRecommendationInvitation('I1', Date.now()))
-    const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+    const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.requestPurpose
       ? { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.99 } } }
       : questions.cartRequest
@@ -210,7 +276,7 @@ describe('staged decision through the actual ordering runtime', () => {
         seating = { ...seating, revision: seating.revision + 1, partySize }
       })
       const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, seating: { context: () => seating, refresh: async () => {}, release: async () => {}, reset: async () => {}, reserve: async () => {}, setPartySize } })
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
       const present = async (result: unknown) => {
         const question = result && typeof result === 'object' && 'pendingCustomerChoice' in result ? presentedQuestionFrom(result.pendingCustomerChoice) : undefined
         if (question)
@@ -264,7 +330,7 @@ describe('staged decision through the actual ordering runtime', () => {
         onMenuSelection: () => {},
         onRecommendationsChange: display,
       })
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
       const run = (transcript: string, route: 'intent:search-menu' | 'intent:add-item' | 'answer') => runFastPath({ isEnabled: async () => true, transcript, webMcp: { tools, execute: (tool, input) => {
         const definition = runtime.toolDefinitions.find(definition => definition.name === tool.name)!
         return runtime.invoke(definition.name, input)
@@ -293,7 +359,9 @@ describe('staged decision through the actual ordering runtime', () => {
       } }) })
       expect((await run('我想吃麵', 'intent:search-menu')).kind).toBe('FAST_ACTION')
       expect(display).toHaveBeenLastCalledWith(expect.objectContaining({ itemIds: ['beef'] }))
-      expect((await run('我想吃麵，一碗', 'intent:add-item')).kind).toBe('FAST_ACTION')
+      expect((await run('我想吃麵，一碗', 'intent:add-item')).kind).toBe('NEEDS_ASSISTANT')
+      expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
+      expect((await run('我要牛肉麵，一碗', 'intent:add-item')).kind).toBe('FAST_ACTION')
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'configuration', waitingFor: { question: expect.stringContaining('辣度') } })
       expect((await run('有水餃嗎？', 'intent:search-menu')).kind).toBe('FAST_ACTION')
       expect(display).toHaveBeenLastCalledWith(expect.objectContaining({ itemIds: ['dumplings'] }))
@@ -322,7 +390,7 @@ describe('staged decision through the actual ordering runtime', () => {
     })
     const stages = createDecisionStages()
     const owner = { deviceId: 'fixture', visitorSessionId: 'fixture-session' }
-    const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
+    const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://ordering.test' }))
     const traces: unknown[] = []
     const run = (transcript: string, route: string) => runFastPath({ isEnabled: async () => true, transcript, webMcp: { tools, execute: (tool, input) => {
       const definition = runtime.toolDefinitions.find(definition => definition.name === tool.name)
@@ -331,7 +399,7 @@ describe('staged decision through the actual ordering runtime', () => {
       return runtime.invoke(definition.name, input)
     } }, onTrace: trace => traces.push(trace), decide: async (request) => {
       let result = await stages.start(owner, checkpoint => decideInteraction({ ...request, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: checkpoint(async (_state, questions) => ({ answers: Object.fromEntries(Object.keys(questions).map(question => [question, { choice: ({ requestPurpose: 'OPERATION', cartRequest: 'SINGLE' } as Record<string, string>)[question] ?? route, confidence: 0.99 }])) })) }))
-      while (result.kind === 'DECISION_PROGRESS')
+      while (result.kind === 'DECISION_PROGRESS' || result.kind === 'SERVICE_RECOVERY_PROGRESS')
         result = await stages.next(owner, result.continuationId)
       return result
     } })

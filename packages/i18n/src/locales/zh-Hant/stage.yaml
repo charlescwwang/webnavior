@@ -23,6 +23,14 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  service-recovery:
+    queued: 已收到，正在等待前一項處理完成…
+    confirming: 正在確認您的意思…
+    still-confirming: 還在確認，請稍候…
+    processing: 正在處理您的需求…
+    ignored: 這句沒有進行點餐操作。
+    uncertain: 我還不確定您的需求，請換個說法，或直接使用畫面操作。
+    failed: 目前暫時無法確認，請再試一次或使用畫面操作。
   voice-presence-ignored: 未確認現場有人，已忽略語音
   text-console:
     title: 文字輸入與 Trace
@@ -63,8 +71,7 @@ kiosk:
     skip: 用按鈕略過
     voice-hint: 填寫手機僅用於本次交易記錄，不會登入第三方點餐會員。
     test-phone-hint: 測試時可輸入：0912345678
-    query-reminder: 手機可以選填；要開始點餐，請說「略過」，或填寫手機。測試時可輸入 0912345678。
-    complete-first: 請先說「略過」，或填寫手機號碼；完成後就能為您推薦或點餐。測試時可輸入 0912345678。
+    complete-first: 請先填寫手機號碼，或說「略過」，就可以開始看菜單與點餐。
     failed: 無法確認是否已完成，請再選擇一次或使用語音略過。
     invalid: 請輸入 09 開頭的 10 碼手機號碼。
   welcome:
@@ -210,5 +217,5 @@ kiosk-agent:
   tool-limit: 助手已達本次處理上限，請確認畫面上已完成的步驟後再繼續。
   duplicate-tool-call: 助手重複要求同一操作，已停止以避免重複執行，請確認畫面。
   session-error: 無法建立交談，請確認 Kiosk 連線狀態。
-  no-reply: 助手沒有回傳可用的回答，請再試一次。
+  no-reply: 這次沒能完成回覆，請再試一次，或使用螢幕操作。
   decision-uncertain: 暫時無法確認您的意思，請再說清楚一點或使用螢幕操作。

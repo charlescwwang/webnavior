@@ -1,27 +1,87 @@
-import type { WebMcpTool } from '@proj-airi/stage-ui/services/webmcp-adapter'
+import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 
+import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
+import { parse } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
 
 import { priceEvidence } from '../../../order-menu/src/domain/pricing'
-import { conversationDecisionStateFrom, createIncompleteAsrSession, runFastPath } from './kiosk-fast-path'
+import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
+import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from './kiosk-fast-path'
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 import { createVoicePresenceGate } from './voicePresence'
 
-const candidateTool: WebMcpTool = {
+const candidateTool: ServiceTool = {
   description: 'Candidates',
   inputSchema: {},
   name: 'kiosk_fast_path_context',
   origin: 'http://localhost:5166',
 }
-const executeTool: WebMcpTool = {
+const executeTool: ServiceTool = {
   description: 'Execute semantic intent',
   inputSchema: {},
   name: 'kiosk_fast_path_execute',
   origin: 'http://localhost:5166',
 }
-const stateTool: WebMcpTool = { ...candidateTool, name: 'kiosk_interaction_state' }
+const stateTool: ServiceTool = { ...candidateTool, name: 'kiosk_interaction_state' }
+
+it('refreshes the real Menu contract without confusing neutral constraints with Jev constraints', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'fresh', transcript: '有100元以內不含豬肉的嗎', expectedMenuRevision: 0, readOnly: true, constraints: { maxPrice: 100, excludeIngredients: ['pork'] } })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const state = refreshConversationState(context, { phase: 'ordering', requireMenuRead: true, interactionState: { screen: 'cart_review', matchingCartLines: 1 }, waitingFor: { questionId: 'old', purpose: 'fulfillment', question: '內用？', expiresAt: Date.now() + 1000, choices: [] } })
+  expect(state.constraints).toMatchObject({ exclude: ['pork'], include: [], price: { maxPrice: 100 } })
+  expect(state.readOnly).toBe(true)
+  expect(state.requireMenuRead).toBe(true)
+  expect(state.waitingFor).toBeUndefined()
+  expect(state.interactionState).toBeUndefined()
+  expect(state.context?.taskId).toBe('fresh')
+})
 
 describe('kiosk System One fast path', () => {
+  // Report: this chat, 2026-10-21; attachment 66ed3c26 showed an unanswered customer bubble.
+  it('does not admit feedback from a recipient alone after a weak menu route', () => {
+    const admit = createDecisionFeedback()
+    const stage = { kind: 'DECISION_PROGRESS' as const, continuationId: 'test', expiresAt: 1, durationMs: 1 }
+    expect(admit({ ...stage, question: 'route', choice: 'intent:search-menu', confidence: 0.5001 })).toBe(false)
+    expect(admit({ ...stage, question: 'recipient', choice: 'KIOSK', confidence: 0.9986 })).toBe(false)
+    expect(admit({ ...stage, question: 'menuInquiry', choice: 'QUERY', confidence: 0.594 })).toBe(false)
+    expect(admit({ ...stage, question: 'serviceRequest', choice: 'BACKGROUND', confidence: 0.2639 })).toBe(false)
+  })
+
+  it('admits feedback only when both service meaning and recipient are confirmed', () => {
+    const admit = createDecisionFeedback()
+    const stage = { kind: 'DECISION_PROGRESS' as const, continuationId: 'test', expiresAt: 1, durationMs: 1 }
+    expect(admit({ ...stage, question: 'route', choice: 'intent:search-menu', confidence: 0.95 })).toBe(false)
+    expect(admit({ ...stage, question: 'recipient', choice: 'KIOSK', confidence: 0.95 })).toBe(true)
+    expect(admit({ ...stage, question: 'filterRequirement', choice: 'COVERED', confidence: 0.95 })).toBe(true)
+    const recover = createDecisionFeedback()
+    expect(recover({ ...stage, question: 'service', choice: 'REQUEST', confidence: 0.95 })).toBe(false)
+    expect(recover({ ...stage, question: 'serviceRequest', choice: 'REQUEST', confidence: 0.95 })).toBe(true)
+    expect(recover({ ...stage, question: 'serviceRequest', choice: 'BACKGROUND', confidence: 0.95 })).toBe(false)
+    expect(createDecisionFeedback()({ ...stage, question: 'recipient', choice: 'KIOSK', confidence: 0.95 })).toBe(false)
+  })
+
+  it.each(['IGNORE', 'INCOMPLETE', 'GREET'])('does not mistake a confident %s for a service request', (choice) => {
+    const admit = createDecisionFeedback()
+    const stage = { kind: 'DECISION_PROGRESS' as const, continuationId: 'test', expiresAt: 1, durationMs: 1 }
+    expect(admit({ ...stage, question: 'route', choice, confidence: 0.95 })).toBe(false)
+    expect(admit({ ...stage, question: 'recipient', choice: 'KIOSK', confidence: 0.95 })).toBe(false)
+  })
+
+  it.each([Number.NaN, 1.1, -0.1, 0.59, undefined])('rejects invalid or weak relevance confidence %s', (confidence) => {
+    expect(createDecisionFeedback()({ kind: 'DECISION_PROGRESS', continuationId: 'test', expiresAt: 1, durationMs: 1, question: 'serviceRequest', choice: 'REQUEST', confidence })).toBe(false)
+  })
+
+  // Report: this chat, 2026-10-21: a weak greeting IGNORE produced a retry prompt for 「哈哈哈 好啊好啊」.
+  it('keeps social uncertainty and unfinished speech silent while preserving real decision errors', () => {
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_GREETING' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'IGNORE' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'INCOMPLETE' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE' })).toBe(true)
+  })
+
   // Report: this chat, 2026-10-20; a visitor can leave while Jev is deciding.
   it('rejects a late voice action after local presence expires before execution', async () => {
     const gate = createVoicePresenceGate()
@@ -41,7 +101,7 @@ describe('kiosk System One fast path', () => {
     gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
     let now = 100
     const onExecuted = vi.fn()
-    const execute = vi.fn(async (tool: WebMcpTool) => {
+    const execute = vi.fn(async (tool: ServiceTool) => {
       if (tool.name === candidateTool.name)
         return { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }
       now = 1601
@@ -57,7 +117,7 @@ describe('kiosk System One fast path', () => {
   it('bypasses even application-resolved actions when disabled, preserving the pending question', async () => {
     const waitingFor = { questionId: 'party', purpose: 'party-size', question: '請問幾位？', expiresAt: Date.now() + 30_000, choices: [{ id: 'one', description: '一位' }] }
     const decide = vi.fn()
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === stateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === stateTool.name
       ? { phase: 'ordering', waitingFor, interactionState: { screen: 'cart_review', matchingCartLines: 1 } }
       : { phase: 'ordering', resolvedCandidateId: 'one', candidates: waitingFor.choices })
     const session = createIncompleteAsrSession()
@@ -73,7 +133,7 @@ describe('kiosk System One fast path', () => {
 
   it.each([true, false])('retains scope touch choices when semantic service is unavailable (enabled=%s)', async (enabled) => {
     const waitingFor = { questionId: 'scope-1', purpose: 'menu-query-scope', question: '請選擇查詢範圍', expiresAt: Date.now() + 30_000, choices: [{ id: 'SHOWN', description: '剛才推薦的' }, { id: 'CATALOG', description: '整份菜單' }] }
-    const execute = vi.fn(async (_tool: WebMcpTool) => ({ phase: 'query_scope', candidates: [], waitingFor }))
+    const execute = vi.fn(async (_tool: ServiceTool) => ({ phase: 'query_scope', candidates: [], waitingFor }))
     const result = await runFastPath({ isEnabled: async () => enabled, decide: async () => {
       throw new Error('provider unavailable')
     }, transcript: '好', webMcp: { tools: [candidateTool, executeTool, stateTool], execute } })
@@ -84,7 +144,7 @@ describe('kiosk System One fast path', () => {
   it('checks activation again on each turn so re-enabling restores Fast Path without reloading', async () => {
     const isEnabled = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true)
     const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:add-item' }))
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增水餃' }] }
       : { customerMessage: '已加入水餃' })
     const input = { isEnabled, decide, transcript: '水餃一份', webMcp: { execute, tools: [candidateTool, executeTool] } }
@@ -98,7 +158,7 @@ describe('kiosk System One fast path', () => {
 
   it.each(['returned', 'thrown', 'status'] as const)('hands off %s provider failures without executing or deleting context', async (failure) => {
     const waitingFor = { questionId: 'quantity', purpose: 'quantity', question: '幾份？', expiresAt: Date.now() + 30_000, choices: [] }
-    const execute = vi.fn(async (_tool: WebMcpTool) => ({ phase: 'configuration', waitingFor, candidates: [{ id: 'intent:set-quantity', description: '設定數量' }] }))
+    const execute = vi.fn(async (_tool: ServiceTool) => ({ phase: 'configuration', waitingFor, candidates: [{ id: 'intent:set-quantity', description: '設定數量' }] }))
     const decide = vi.fn(async () => {
       if (failure === 'thrown')
         throw new Error('HTTP 504')
@@ -139,7 +199,7 @@ describe('kiosk System One fast path', () => {
 
   it('hands off a failed Jev read review with its accepted receipt instead of repeating the lookup', async () => {
     const continuation = { answer: '有水餃。', observation: '已查詢', candidates: [{ id: 'read:recommend', description: '推薦' }] }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', menuRevision: 1, candidates: [{ id: 'intent:search-menu', description: '查詢' }] }
       : { customerMessage: '有水餃。', continuation, decisionTrace: { operationPlan: { toolName: 'menu_get' } } })
     const decide = vi.fn().mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 1 }).mockRejectedValueOnce(new Error('Jev timeout'))
@@ -151,7 +211,7 @@ describe('kiosk System One fast path', () => {
   })
 
   it('never retries or hands off an unknown mutation result as permission to replay it', async () => {
-    const execute = vi.fn(async (tool: WebMcpTool) => {
+    const execute = vi.fn(async (tool: ServiceTool) => {
       if (tool.name === executeTool.name)
         throw new Error('Result lost after submission')
       return { phase: 'ordering', candidates: [{ id: 'intent:start-checkout', description: '開始結帳' }] }
@@ -182,7 +242,7 @@ describe('kiosk System One fast path', () => {
     expect(execute).toHaveBeenCalledTimes(3)
   })
   it('forwards issued price choice IDs and retains verified conditions in handoff receipts', async () => {
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', priceEvidence: priceEvidence('100元以下'), constraints: { exclude: [], unresolvedPrice: true }, candidates: [{ id: 'intent:search-menu', description: '查詢' }] }
       : { customerMessage: '推薦便當', appliedPriceConditions: { maxPrice: 100 }, appliedFilters: { includeIngredients: [], excludeIngredients: [] }, decisionTrace: { operationPlan: { toolName: 'menu_recommend' } } })
     const result = await runFastPath({ isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', priceChoiceId: 'UPPER_INCLUSIVE' }), transcript: '100元以下', webMcp: { execute, tools: [candidateTool, executeTool] } })
@@ -198,7 +258,7 @@ describe('kiosk System One fast path', () => {
   })
   it('hands off a rejected understanding without replaying the accepted read or imposing its filters', async () => {
     const continueTool = { ...executeTool, name: 'kiosk_fast_path_continue' }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', candidates: [{ id: 'intent:search-menu', description: '查詢' }] }
       : { customerMessage: '含蝦便當', appliedFilters: { includeIngredients: ['shrimp'], excludeIngredients: [] }, decisionTrace: { operationPlan: { toolName: 'menu_get' } }, continuation: { answer: '含蝦便當', observation: '已查詢', candidates: [] } })
     const decide = vi.fn().mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 1 }).mockResolvedValueOnce({ kind: 'NEEDS_ASSISTANT', reason: 'DEVIATED' })
@@ -209,7 +269,7 @@ describe('kiosk System One fast path', () => {
     expect(decide).toHaveBeenCalledTimes(2)
   })
   it('keeps an accepted receipt when its history observer fails without retrying the operation', async () => {
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name ? { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '加入餐點' }] } : { customerMessage: '已加入兩份蝦捲' })
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name ? { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '加入餐點' }] } : { customerMessage: '已加入兩份蝦捲' })
     const onExecuted = vi.fn(async () => {
       throw new Error('History unavailable')
     })
@@ -234,7 +294,7 @@ describe('kiosk System One fast path', () => {
     expect(session.snapshot()).toBeUndefined()
   })
   it('does not report a rejected browser operation as completed', async () => {
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', candidates: [{ id: 'intent:start-checkout', description: '進入結帳' }] }
       : { ok: false, error: 'Checkout rejected' })
     const onExecuted = vi.fn()
@@ -263,6 +323,23 @@ describe('kiosk System One fast path', () => {
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ interactionState: { matchingCartLines: 0, screen: 'cart_review' } }) }))
     expect(conversationDecisionStateFrom(result.decisionState)).toMatchObject({ interactionState: { screen: 'cart_review' } })
   })
+  it.each([
+    { transcript: '先等一下，你們幾點關門？', reason: 'GENERAL_QUESTION', requireMenuRead: false },
+    { transcript: '先幫我看看飲料', reason: 'MENU_QUERY', requireMenuRead: true },
+  ] as const)('preserves a topic change into $reason without executing an old or guessed action', async ({ transcript, reason, requireMenuRead }) => {
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ phase: 'configuration', candidates: [], waitingFor: { questionId: 'q1', purpose: 'item-configuration', question: '水餃要幾份？', expiresAt: Date.now() + 30000, choices: [] } })
+      .mockResolvedValueOnce({ phase: 'ordering', candidates: [], catalogEvidence: { products: [], categories: [] } })
+    const decide = vi.fn()
+      .mockResolvedValueOnce({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelQuestions: 2 })
+      .mockResolvedValueOnce({ kind: 'NEEDS_ASSISTANT', reason, modelQuestions: 1 })
+    const result = await runFastPath({ isEnabled: async () => true, decide, transcript, webMcp: { execute, tools: [candidateTool, executeTool] } })
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason, decisionState: { phase: 'ordering' } })
+    expect(conversationDecisionStateFrom(result.decisionState, result)?.requireMenuRead === true).toBe(requireMenuRead)
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute).toHaveBeenLastCalledWith(candidateTool, { transcript, newRequestQuestionId: 'q1' })
+    expect(decide.mock.calls[1]?.[0]).toMatchObject({ transcript, maxQuestions: 22 })
+  })
   it('returns greeting without invoking an ordering tool or consuming a pending question', async () => {
     const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [], waitingFor: { questionId: 'q1', question: '要結帳嗎？', purpose: 'checkout-entry', choices: [], expiresAt: Date.now() + 30_000 } }))
     const decide = vi.fn(async () => ({ kind: 'GREET' as const, confidence: 0.95 }))
@@ -273,7 +350,7 @@ describe('kiosk System One fast path', () => {
   })
   it('revokes the exact pending confirmation before handing off a new request', async () => {
     const stateTool = { ...candidateTool, name: 'kiosk_interaction_state' }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'pending_confirmation', candidates: [{ id: 'intent:confirm:c1', description: '確認清空' }, { id: 'intent:cancel-confirmation:c1', description: '取消清空' }] }
       : tool.name === stateTool.name ? { phase: 'ordering' } : { customerMessage: '取消了' })
     const decide = vi.fn(async () => ({ kind: 'NEEDS_ASSISTANT' as const, reason: 'NEW_REQUEST' as const }))
@@ -283,7 +360,7 @@ describe('kiosk System One fast path', () => {
   })
   it('hands off verified constraints and the completed read, not only the original transcript', async () => {
     const continueTool = { ...executeTool, name: 'kiosk_fast_path_continue' }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', menuRevision: 7, candidates: [{ id: 'intent:search-menu', description: '查詢' }] }
       : { customerMessage: '找到雞肉便當。', appliedFilters: { excludeIngredients: ['pork'], includeIngredients: [] }, decisionTrace: { operationPlan: { toolName: 'menu_get' } }, continuation: { answer: '找到雞肉便當。', observation: '已查詢', candidates: [{ id: 'read:recommend', description: '補充推薦' }] } })
     const decide = vi.fn().mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 1 }).mockResolvedValueOnce({ kind: 'NEEDS_ASSISTANT' })
@@ -318,13 +395,13 @@ describe('kiosk System One fast path', () => {
   })
   it('keeps a completed read when the initial decision has exhausted its question budget', async () => {
     const continueTool = { ...executeTool, name: 'kiosk_fast_path_continue' }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name ? { candidates: [{ id: 'intent:search-menu', description: '查菜單' }] } : { customerMessage: '有水餃。', continuation: { candidates: [{ id: 'read:recommend', description: '補充推薦' }], answer: '有水餃。', observation: '成功' } })
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name ? { candidates: [{ id: 'intent:search-menu', description: '查菜單' }] } : { customerMessage: '有水餃。', continuation: { candidates: [{ id: 'read:recommend', description: '補充推薦' }], answer: '有水餃。', observation: '成功' } })
     const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:search-menu', modelQuestions: 24 }))
     expect(await runFastPath({ isEnabled: async () => true, decide, transcript: '有賣什麼', webMcp: { execute, tools: [candidateTool, executeTool, continueTool] } })).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
     expect(decide).toHaveBeenCalledTimes(1)
   })
   it('passes finite ingredient choices to Jev and forwards only its verified filters to the browser', async () => {
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name ? { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }], candidates: [{ id: 'intent:search-menu', description: '搜尋' }] } : { customerMessage: '找到雞肉便當。' })
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name ? { phase: 'ordering', ingredientReferences: [{ id: 'pork', label: '豬肉' }], candidates: [{ id: 'intent:search-menu', description: '搜尋' }] } : { customerMessage: '找到雞肉便當。' })
     const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'], includeIngredients: [] } }))
     await runFastPath({ isEnabled: async () => true, decide, transcript: '不要豬肉', webMcp: { execute, tools: [candidateTool, executeTool] } })
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ ingredientReferences: [{ id: 'pork', label: '豬肉' }] }) }))
@@ -335,7 +412,7 @@ describe('kiosk System One fast path', () => {
   })
   it('lets System One finish a completed lookup without an extra tool or loop', async () => {
     const continueTool = { ...executeTool, name: 'kiosk_fast_path_continue' }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { candidates: [{ id: 'intent:search-menu', description: '瀏覽菜單' }], phase: 'ordering' }
       : { customerMessage: '有水餃、牛肉麵。', continuation: { answer: '有水餃、牛肉麵。', observation: '菜單查詢成功', candidates: [{ id: 'read:recommend', description: '補充推薦' }] } })
     const decide = vi.fn().mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 1 }).mockResolvedValueOnce({ kind: 'COMPLETE' })
@@ -351,7 +428,7 @@ describe('kiosk System One fast path', () => {
   it('keeps the successful first answer if an optional read fails', async () => {
     const continueTool = { ...executeTool, name: 'kiosk_fast_path_continue' }
     const first = { customerMessage: '有水餃。', continuation: { answer: '有水餃。', observation: '查詢成功', candidates: [{ id: 'read:recommend', description: '推薦' }] } }
-    const execute = vi.fn(async (tool: WebMcpTool) => {
+    const execute = vi.fn(async (tool: ServiceTool) => {
       if (tool.name === candidateTool.name)
         return { candidates: [{ id: 'intent:search-menu', description: '菜單' }] }
       if (tool.name === continueTool.name)
@@ -367,7 +444,7 @@ describe('kiosk System One fast path', () => {
   it('executes only one offered read continuation even if its result offers another', async () => {
     const continueTool = { ...executeTool, name: 'kiosk_fast_path_continue' }
     const continuation = { answer: '有水餃。', observation: '查詢成功', candidates: [{ id: 'read:recommend', description: '推薦' }] }
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name ? { candidates: [{ id: 'intent:search-menu', description: '菜單' }] } : { customerMessage: '有水餃。', continuation })
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name ? { candidates: [{ id: 'intent:search-menu', description: '菜單' }] } : { customerMessage: '有水餃。', continuation })
     const decide = vi.fn().mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: 'intent:search-menu', modelQuestions: 1 }).mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: 'read:recommend', modelQuestions: 1 }).mockResolvedValueOnce({ kind: 'COMPLETE', modelQuestions: 1 })
     const onExecuted = vi.fn(async () => {})
     await runFastPath({ isEnabled: async () => true, decide, onExecuted, transcript: '有賣什麼，推薦一下', webMcp: { execute, tools: [candidateTool, executeTool, continueTool] } })
@@ -378,7 +455,7 @@ describe('kiosk System One fast path', () => {
     expect(onExecuted).toHaveBeenCalledTimes(2)
   })
   it('executes only the browser-produced candidate selected by Dasein', async () => {
-    const execute = vi.fn(async (tool: WebMcpTool) => tool.name === candidateTool.name
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { candidates: [{ description: 'Add shrimp roll.', id: 'intent:add:shrimp' }] }
       : { customerMessage: '已加入蝦捲。' })
     const decide = vi.fn(async () => ({ actionId: 'intent:add:shrimp' as const, confidence: 0.93, kind: 'FAST_ACTION' as const }))
@@ -468,7 +545,7 @@ describe('kiosk System One fast path', () => {
   // Report: this chat, 2026-10-19 — a verified unclear answer must remain answerable by voice.
   it('retains the owned clarification without cancelling it or requiring touch', async () => {
     const question = { questionId: 'clarification-1', purpose: 'item-clarification', question: '您指的是小辣水餃還是不辣水餃？', expiresAt: Date.now() + 30_000, choices: [{ id: 'clarify:0', description: '小辣水餃' }, { id: 'clarify:1', description: '不辣水餃' }, { id: 'clarify:cancel', description: '取消這次修改' }] }
-    const execute = vi.fn(async (tool: WebMcpTool, args?: Record<string, unknown>) => tool === executeTool ? { customerMessage: '已修改不辣水餃。' } : { phase: 'clarification', waitingFor: question, candidates: question.choices, ...(args?.transcript === '第二筆' ? { resolvedCandidateId: 'clarify:1' } : {}) })
+    const execute = vi.fn(async (tool: ServiceTool, args?: Record<string, unknown>) => tool === executeTool ? { customerMessage: '已修改不辣水餃。' } : { phase: 'clarification', waitingFor: question, candidates: question.choices, ...(args?.transcript === '第二筆' ? { resolvedCandidateId: 'clarify:1' } : {}) })
     const decide = vi.fn(async () => ({ kind: 'CLARIFICATION' as const }))
     await expect(runFastPath({ isEnabled: async () => true, decide, transcript: '那個', webMcp: { execute, tools: [candidateTool, executeTool] } })).resolves.toMatchObject({ kind: 'CLARIFICATION', prompt: question.question, question })
     expect(execute).toHaveBeenCalledTimes(1)

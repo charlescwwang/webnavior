@@ -1,23 +1,9 @@
+import type { ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-/** Adds one optional-phone reminder per customer, after a verified menu reply. */
-export function createCustomerEntryReminder() {
-  let reminded = false
-  return {
-    // The caller reads the phase immediately before presentation: the customer
-    // may have filled/skipped the phone while the menu lookup was in flight.
-    append(content: string, phase: KioskDecisionState['phase'] | undefined, reminder: string) {
-      if (reminded || phase !== 'customer_entry' || !content.trim() || !reminder.trim())
-        return content
-      reminded = true
-      return `${content} ${reminder}`
-    },
-    reset() {
-      reminded = false
-    },
-  }
-}
+import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
@@ -106,17 +92,22 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   question?: PresentedQuestion
   failureMessage: string
   requireMenuRead?: boolean
+  handoff?: { intent: string }
   /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
   customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
 }) {
-  // A factual MENU_QUERY can use the recommendation batch to render its price
-  // matches. Its semantic scope permits reads, never a phone skip or order edit;
-  // tool names alone must not turn those results into an entry prerequisite.
-  const entryRequired = result.requestedTools.some(name => (!options.requireMenuRead && ['menu_recommend', 'menu_show_recommendations'].includes(name)) || name === 'menu_select_item' || name.startsWith('menu_set_') || name.startsWith('order_') || name.startsWith('checkout_') || (name.startsWith('cart_') && name !== 'cart_get'))
-  if (options.customerEntry?.phase === 'customer_entry' && entryRequired)
+  // Entry must still be complete when the reply arrives: a session reset
+  // cannot expose an earlier menu receipt or let a stale task bypass phone choice.
+  const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
+  if (options.customerEntry?.phase === 'customer_entry' && (entryRequired || options.requireMenuRead))
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
   // A history lookup supplies conversation context, not a new commerce result.
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
+  // A true menu receipt cannot complete a known mutation task. Preserve the
+  // requested effect even when Main chooses a factual but unrelated lookup.
+  const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART'].includes(options.handoff?.intent ?? '')
+  if (operationRequired && !options.outcome && !options.question)
+    return { role: 'error' as const, content: options.failureMessage }
   const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
   if (result.status !== 'completed') {
     return receiptReply
@@ -225,4 +216,38 @@ export function questionReceiptFrom(result: unknown) {
     }
   }
   return result && typeof result === 'object' ? presentedQuestionFrom((result as Record<string, unknown>).pendingCustomerChoice) : undefined
+}
+
+/** Composes a tool-owned outcome with a validated question; raw pending fields grant no question authority. */
+export function replyFromReceipt(result: unknown, question?: PresentedQuestion) {
+  if (!result || typeof result !== 'object')
+    return undefined
+  const payload = result as Record<string, unknown>
+  const message = operationReplyFrom(payload)
+  // Quantity/option receipts often use the question itself as customerMessage.
+  // Compose through the same question policy as Main, instead of appending the
+  // raw pending field and then appending the validated question a second time.
+  if (message || question)
+    return replyWithQuestion(message ?? '', question)
+  const cart = payload.cart
+  if (cart && typeof cart === 'object') {
+    const itemCount = (cart as Record<string, unknown>).itemCount
+    if (typeof itemCount === 'number')
+      return itemCount === 0 ? '目前購物車是空的。' : `目前購物車共有 ${itemCount} 份餐點。`
+  }
+  return undefined
+}
+
+/** Service questions are read-only cues, never choices for an older Menu operation. */
+export function createServiceClarificationWindow() {
+  let active: ServiceClarification | undefined
+  return {
+    present(question: ServiceClarification) { active = { ...question } },
+    current(state: Parameters<typeof serviceContextKey>[0]) {
+      if (active && (active.expiresAt <= Date.now() || active.contextKey !== serviceContextKey(state)))
+        active = undefined
+      return active
+    },
+    reset() { active = undefined },
+  }
 }

@@ -23,6 +23,14 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
+  service-recovery:
+    queued: Received. Waiting for the previous request to finish…
+    confirming: Checking what you mean…
+    still-confirming: Still checking, please wait…
+    processing: Working on your request…
+    ignored: No ordering action was taken for this message.
+    uncertain: Please rephrase your request or use the screen.
+    failed: Unable to confirm right now. Please try again or use the screen.
   voice-presence-ignored: Ignored because local presence is unavailable
   text-console:
     title: Text input and trace
@@ -63,8 +71,7 @@ kiosk:
     skip: Skip with button
     voice-hint: Your phone is used only for this transaction record and does not sign in to the external ordering site.
     test-phone-hint: 'For testing, you can enter: 0912345678'
-    query-reminder: Your phone is optional. To start ordering, say “skip” or enter a phone number. For testing, you can enter 0912345678.
-    complete-first: Please say “skip” or enter a phone number first. Then I can recommend dishes or help you order. For testing, you can enter 0912345678.
+    complete-first: Enter your mobile number or say “skip” to browse the menu and order.
     failed: We could not confirm completion. Please choose again or ask the assistant to skip.
     invalid: Enter a 10-digit phone number starting with 09.
   welcome:
@@ -210,5 +217,5 @@ kiosk-agent:
   tool-limit: The assistant reached its processing limit. Check the completed steps on screen before continuing.
   duplicate-tool-call: The assistant requested a duplicate operation. It was stopped to avoid executing it twice. Please check the screen.
   session-error: The conversation could not be started. Please check the kiosk connection.
-  no-reply: The assistant did not return a usable reply. Please try again.
+  no-reply: I couldn’t finish the reply this time. Please try again or use the screen.
   decision-uncertain: Your meaning could not be confirmed. Please clarify or use the screen.

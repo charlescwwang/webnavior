@@ -1,10 +1,13 @@
 import type { PresenceState } from '@proj-airi/kiosk-proactive'
-import type { WebMcpTool } from '@proj-airi/stage-ui/services/webmcp-adapter'
+import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
+import type { ConversationContext, ConversationHandoff, ServiceClarification, ServiceRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
 
-import type { KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState, InteractionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import type { DecisionStageResult, KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState, InteractionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { KioskConversationDecisionState } from './kiosk-device'
 
 import { errorMessageFrom } from '@moeru/std'
+import { handoffSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { parse } from 'valibot'
 
 import { priceClarification } from '../../../order-menu/src/domain/pricing'
 import { normalizeTranscript } from '../../../server/src/services/domain/kiosk-interaction-decision/context'
@@ -33,6 +36,8 @@ export interface FastPathTiming {
 export type { KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
 export type FastPathResult = {
+  handoff?: ConversationHandoff
+  recovery?: ServiceRecovery
   decisionState?: FastPathDecisionState
   reason?: FastPathDecision['reason']
 } & (
@@ -45,9 +50,35 @@ export type FastPathResult = {
   | { confidence?: number, kind: 'FOLLOW_UP_ACTIVE' }
   | { kind: 'DEFERRED' }
   | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
+  | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
   | { kind: 'UNAVAILABLE' }
   | { kind: 'EXECUTION_FAILED', uncertain: boolean, result?: unknown }
 )
+
+/** Only failed service decisions warrant a retry prompt; social uncertainty stays silent. */
+export function shouldShowDecisionRetry(result: FastPathResult): boolean {
+  return result.kind === 'UNAVAILABLE' && result.reason !== 'UNCERTAIN_RECIPIENT' && result.reason !== 'UNCERTAIN_GREETING' && result.reason !== 'UNCERTAIN_SERVICE_REQUEST'
+}
+
+/** Owns checkpoint admission for one decision, never execution or transcript admission. */
+export function createDecisionFeedback(): (stage: Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }>) => boolean {
+  let serviceMeaning = false
+  let recipient = false
+  return (stage) => {
+    const confident = typeof stage.confidence === 'number' && Number.isFinite(stage.confidence) && stage.confidence >= 0.6 && stage.confidence <= 1
+    if (stage.question === 'route')
+      serviceMeaning = confident && (stage.choice?.startsWith('intent:') === true || ['GENERAL_QUESTION', 'MENU_QUERY', 'MULTI_ACTION', 'NEEDS_ASSISTANT'].includes(stage.choice ?? ''))
+    if (stage.question === 'recipient' || stage.question === 'service')
+      recipient = confident && (stage.choice === 'KIOSK' || stage.choice === 'REQUEST')
+    // This recovery question checks relevance and recipient together. A pure
+    // recipient answer cannot rescue a weak intent, as in everyday chatter.
+    if (stage.question === 'serviceRequest') {
+      serviceMeaning = confident && stage.choice === 'REQUEST'
+      recipient = serviceMeaning
+    }
+    return serviceMeaning && recipient
+  }
+}
 
 export interface IncompleteAsrSession {
   /** The next utterance may claim this separate fragment only in the same state. */
@@ -84,15 +115,15 @@ function unfinishedStateKey(state: FastPathDecisionState) {
 }
 
 interface WebMcpBridge {
-  execute: (tool: WebMcpTool, input: Record<string, unknown>) => Promise<unknown>
-  tools: readonly WebMcpTool[]
+  execute: (tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>
+  tools: readonly ServiceTool[]
 }
 
 const candidateToolName = 'kiosk_fast_path_context'
 const executeToolName = 'kiosk_fast_path_execute'
 
 /**
- * Executes one Dasein-selected operation against the same WebMCP runtime as
+ * Executes one Dasein-selected operation against the same Menu runtime as
  * the visible menu. The model only receives candidate IDs and descriptions;
  * input arguments always come back from the browser-produced candidate set.
  */
@@ -100,13 +131,14 @@ export async function runFastPath(input: {
   /** Uncached server activation check before any candidate or direct action. */
   isEnabled: () => Promise<boolean>
   activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
-  decide: (request: { candidates: FastPathCandidate[], decisionState?: FastPathDecisionState, includeTrace?: boolean, maxQuestions?: number, presenceState?: PresenceState, review?: { answer: string, observation: string }, signal?: AbortSignal, transcript: string }) => Promise<FastPathDecision>
+  decide: (request: { candidates: FastPathCandidate[], decisionState?: FastPathDecisionState, includeTrace?: boolean, maxQuestions?: number, presenceState?: PresenceState, review?: { answer: string, observation: string }, signal?: AbortSignal, recoveryUsed?: boolean, transcript: string }) => Promise<FastPathDecision>
   onExecuted?: (result: unknown) => Promise<void>
   onTrace?: (trace: { browserContext: unknown, decision: FastPathDecision, decisionSource?: 'application' | 'system-one', executionResult?: unknown, rawTranscript?: string, transcript: string }) => void
   onActionSelected?: (action: FastPathCandidate) => Promise<'DEFER' | void> | 'DEFER' | void
   isCurrent?: () => boolean
   presenceState?: PresenceState
   session?: IncompleteAsrSession
+  serviceClarification?: (state: FastPathDecisionState) => ServiceClarification | undefined
   transcript: string
   webMcp: WebMcpBridge
 }): Promise<FastPathResult> {
@@ -116,6 +148,7 @@ export async function runFastPath(input: {
   if (!input.transcript)
     return { kind: 'IGNORE' }
   let browserContext: unknown
+  let recoveryUsed = false
   let decisionState: FastPathDecisionState | undefined
   const handoff = async (reason: 'SYSTEM_ONE_DISABLED' | 'PROVIDER_FAILURE', failedDecision?: FastPathDecision): Promise<FastPathResult> => {
     if (input.isCurrent?.() === false)
@@ -159,7 +192,12 @@ export async function runFastPath(input: {
   // separate outcome so a lost mutation receipt cannot cause an Agent replay.
   const decide = async (request: Parameters<typeof input.decide>[0]): Promise<FastPathDecision> => {
     try {
-      return await input.decide(request)
+      const cue = request.decisionState && input.serviceClarification?.(request.decisionState)
+      if (cue && decisionState)
+        decisionState = { ...decisionState, serviceClarification: cue }
+      const result = await input.decide({ ...request, recoveryUsed, ...(cue ? { decisionState: { ...request.decisionState!, serviceClarification: cue } } : {}) })
+      recoveryUsed ||= result.recovery?.status === 'completed' || result.recovery?.status === 'failed'
+      return result
     }
     catch {
       return { kind: 'UNAVAILABLE', reason: 'PROVIDER_FAILURE' }
@@ -199,7 +237,7 @@ export async function runFastPath(input: {
     const resolvedCandidateId = rawCandidates && typeof rawCandidates === 'object' && 'resolvedCandidateId' in rawCandidates
       ? (rawCandidates as Record<string, unknown>).resolvedCandidateId
       : undefined
-    const applicationResolved = typeof resolvedCandidateId === 'string' && candidates.some(candidate => candidate.id === resolvedCandidateId)
+    const applicationResolved = (!decisionState || !input.serviceClarification?.(decisionState)) && typeof resolvedCandidateId === 'string' && candidates.some(candidate => candidate.id === resolvedCandidateId)
     let decision: FastPathDecision = applicationResolved
       ? { actionId: resolvedCandidateId, kind: 'FAST_ACTION' }
       : await decide({
@@ -209,6 +247,13 @@ export async function runFastPath(input: {
           ...(input.presenceState ? { presenceState: input.presenceState } : {}),
           transcript: input.transcript,
         })
+    if (decision.recovery?.contextKey) {
+      const current = decisionStateFrom(await input.webMcp.execute(candidateTool, { transcript: input.transcript }))
+      if ((decisionState?.waitingFor && decisionState.waitingFor.expiresAt <= Date.now()) || (decisionState?.serviceClarification && decisionState.serviceClarification.expiresAt <= Date.now()) || !current || serviceContextKey(current) !== serviceContextKey(decisionState ?? { phase: 'unknown' }) || input.isCurrent?.() === false)
+        return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', decisionState }
+      if (decision.kind === 'SERVICE_CLARIFICATION')
+        decision = { ...decision, question: { ...decision.question, contextKey: serviceContextKey(current) } }
+    }
     if (decision.kind === 'SCOPE_CHOICE') {
       const scopeTool = input.webMcp.tools.find(tool => tool.name === 'kiosk_query_scope')
       const questionId = decisionState?.waitingFor?.questionId
@@ -373,7 +418,7 @@ export async function runFastPath(input: {
     decisionState = completedReadState(decisionState, result)
     await notifyExecuted(result)
     if (result && typeof result === 'object' && (result as Record<string, unknown>).needsAssistant === true)
-      return { kind: 'NEEDS_ASSISTANT', ...(decisionState ? { decisionState } : {}) }
+      return { kind: 'NEEDS_ASSISTANT', ...(decisionState ? { decisionState } : {}), ...(typeof result === 'object' && result && 'handoff' in result ? { handoff: parse(handoffSchema, result.handoff) } : {}) }
     // There is at most one extra browser-issued read. The final review has
     // only COMPLETE/NEEDS_ASSISTANT, so it cannot create another read loop.
     if (result && typeof result === 'object' && 'continuation' in result) {
@@ -480,7 +525,28 @@ function completedReadState(state: FastPathDecisionState | undefined, result: un
 }
 
 /** Projects a browser-owned state snapshot into a non-sensitive conversation hint. */
-export function conversationDecisionStateFrom(value: unknown, decision?: Pick<FastPathDecision, 'reason'>): KioskConversationDecisionState | undefined {
+/** Replaces live facts while retaining only the current task's semantic authority. */
+export function refreshConversationState(context: ConversationContext, task?: KioskConversationDecisionState): KioskConversationDecisionState {
+  const { excludeIngredients, includeIngredients, dietary, ...price } = context.constraints
+  return {
+    ...task,
+    context,
+    phase: context.phase,
+    menuRevision: context.revisions.menu,
+    readOnly: task?.readOnly === true || context.readOnly,
+    handoff: context.handoff ?? task?.handoff,
+    constraints: { exclude: excludeIngredients, include: includeIngredients, ...(dietary ? { dietary } : {}), ...(Object.keys(price).length ? { price } : {}), ...(task?.constraints?.unresolvedPrice ? { unresolvedPrice: true } : {}) },
+    waitingFor: context.waitingFor,
+    paymentState: context.paymentState,
+    allowedPaymentMethods: context.allowedPaymentMethods,
+    fulfillmentModes: context.fulfillmentModes.filter((mode): mode is { id: 'dine-in' | 'takeout', label: string } => mode.id === 'dine-in' || mode.id === 'takeout'),
+    // Current screen/selection/cart live in context. An omitted question or
+    // focus retires the old one, rather than inheriting a historical snapshot.
+    interactionState: undefined,
+  }
+}
+
+export function conversationDecisionStateFrom(value: unknown, decision?: Pick<FastPathDecision, 'reason' | 'recovery'> & { handoff?: ConversationHandoff }): KioskConversationDecisionState | undefined {
   const state = decisionStateFrom(value)
   if (!state)
     return undefined
@@ -490,8 +556,8 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // references/recent focus alone are not current-utterance food evidence.
   const hasMealEvidence = (Array.isArray(state.catalogEvidence?.products) && state.catalogEvidence.products.length > 0)
     || (Array.isArray(state.catalogEvidence?.categories) && state.catalogEvidence.categories.length > 0)
-  // Phone-stage ordering keeps its independent fill/skip prerequisite; only
-  // its explicitly admitted factual MENU_QUERY uses this read contract.
+  // Phone-stage menu requests stop at the fill/skip prerequisite. This read
+  // contract applies to inquiries admitted after entry has completed.
   // An unresolved read can have no catalog match at all. Its fallback still
   // needs a lookup; absence of a known product is not permission for free prose.
   const unresolvedQuery = ['MENU_QUERY', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER'].includes(decision?.reason ?? '')
@@ -510,9 +576,11 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // guessed skip, entered phone number or order. It need not query the menu.
   const pendingCheckout = state.waitingFor?.purpose === 'checkout-entry' && state.waitingFor.expiresAt > Date.now()
   const protectedUncertainty = uncertainMeaning && (state.phase !== 'ordering' || pendingCheckout)
-  const readOnly = protectedUncertainty || ['MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
+  const readOnly = decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
     phase: state.phase,
+    ...(state.serviceClarification ? { serviceClarification: state.serviceClarification } : {}),
+    ...(decision?.handoff ? { handoff: decision.handoff } : {}),
     ...(requireMenuRead ? { requireMenuRead: true } : {}),
     ...(readOnly || state.readOnly === true ? { readOnly: true } : {}),
     ...(state.priceEvidence ? { priceEvidence: state.priceEvidence } : {}),
@@ -548,6 +616,7 @@ function decisionStateFrom(value: unknown) {
   const waitingFor = presentedQuestionFrom(state.waitingFor)
   return {
     phase: state.phase,
+    ...(state.serviceClarification && typeof state.serviceClarification === 'object' ? { serviceClarification: state.serviceClarification as ServiceClarification } : {}),
     ...(state.requireMenuRead === true ? { requireMenuRead: true } : {}),
     ...(state.readOnly === true ? { readOnly: true } : {}),
     ...(state.clarificationOffer && typeof state.clarificationOffer === 'object' && 'id' in state.clarificationOffer && typeof state.clarificationOffer.id === 'string' && 'label' in state.clarificationOffer && typeof state.clarificationOffer.label === 'string' ? { clarificationOffer: { id: state.clarificationOffer.id, label: state.clarificationOffer.label } } : {}),
@@ -564,7 +633,7 @@ function decisionStateFrom(value: unknown) {
     ...(Array.isArray(state.dietaryReferences) ? { dietaryReferences: state.dietaryReferences.filter((reference): reference is { id: 'vegetarian', label: string } => Boolean(reference && typeof reference === 'object' && reference.id === 'vegetarian' && typeof reference.label === 'string')) } : {}),
     ...(waitingFor ? { waitingFor } : {}),
     ...(typeof state.paymentState === 'string' ? { paymentState: state.paymentState } : {}),
-    ...(Array.isArray(state.allowedPaymentMethods) ? { allowedPaymentMethods: state.allowedPaymentMethods.filter((method): method is 'card' | 'mobile' => method === 'card' || method === 'mobile') } : {}),
+    ...(Array.isArray(state.allowedPaymentMethods) ? { allowedPaymentMethods: state.allowedPaymentMethods.filter((method): method is string => typeof method === 'string' && method.length > 0 && method.length <= 80) } : {}),
     ...(Array.isArray(state.references) ? { references: state.references as Array<{ label: string, refId: string }> } : {}),
     ...(state.constraints && typeof state.constraints === 'object' ? { constraints: state.constraints as FastPathDecisionState['constraints'] } : {}),
     ...(state.interactionState && typeof state.interactionState === 'object' ? { interactionState: state.interactionState as InteractionState } : {}),

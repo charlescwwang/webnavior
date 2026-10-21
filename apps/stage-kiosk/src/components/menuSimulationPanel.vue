@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
+
 import type { MenuPageState } from '../../../order-menu/src/domain/order-machine'
 import type { MenuTestSnapshot } from '../../../order-menu/src/webmcp'
-import type { createWebMcpAdapter } from '../services/webmcp-adapter'
 
 import { Button, FieldSelect } from '@proj-airi/ui'
 import { computed, onScopeDispose, shallowRef, watch } from 'vue'
@@ -9,7 +10,7 @@ import { useI18n } from 'vue-i18n'
 
 import { menuPageStates } from '../../../order-menu/src/domain/order-machine'
 
-const props = defineProps<{ bridge: Pick<ReturnType<typeof createWebMcpAdapter>, 'availability' | 'execute' | 'tools'> }>()
+const props = defineProps<{ bridge: Pick<ReturnType<typeof createInteractiveServiceClient>, 'availability' | 'execute' | 'tools'> }>()
 const { t } = useI18n()
 const items = shallowRef<MenuTestSnapshot['items']>([])
 const itemId = shallowRef('')

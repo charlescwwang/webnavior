@@ -3,7 +3,22 @@ import { describe, expect, it } from 'vitest'
 import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
-import { createCustomerEntryReminder, createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyWithQuestion } from './questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+
+it('does not let a menu read finish a known removal task', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', JSON.stringify({ items: [{ id: 'pork', name: '排骨便當' }], customerMessage: '目前查不到排骨飯。' }))
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], answer: '目前查不到排骨飯。' }, { menu, handoff: { intent: 'REMOVE_ITEM' }, failureMessage: '請確認要移除的餐點。' })
+  expect(result.content).toBe('請確認要移除的餐點。')
+})
+
+// Report: this chat, 2026-10-21; a resolved store FAQ must not require a menu receipt.
+it('allows verified service-information scope without granting an order mutation', () => {
+  const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] } }, { reason: 'GENERAL_QUESTION' })
+  expect(state).toHaveProperty('readOnly', true)
+  expect(state).not.toHaveProperty('requireMenuRead')
+  expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '營業時間為11:00到14:00。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, failureMessage: '未完成。' })).toEqual({ role: 'assistant', content: '營業時間為11:00到14:00。' })
+})
 
 // Report: this chat, 2026-10-20 — retracted order while the phone page is still visible.
 it('allows a no-tool acknowledgement for uncertain phone-stage meaning without authorizing any mutation', () => {
@@ -50,45 +65,12 @@ it('presents the application-owned query question without a choice panel or dish
   expect(receipt).not.toHaveProperty('presentation')
 })
 
-describe('optional phone reminder after a verified menu reply', () => {
-  const hint = '手機可以選填；要開始點餐，請填寫手機或按略過。'
-
-  it('appends once per customer while keeping menu queries and the phone choice available', async () => {
-    let ready = false
-    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    const reminder = createCustomerEntryReminder()
-    const menu = createMenuReplyWindow()
-    menu.record('menu_recommend', await runtime.invokeForAgent('menu_recommend', { action: 'update' }))
-    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))
-    expect(reminder.append(menu.reply(), state?.phase, hint)).toBe(`${menu.reply()} ${hint}`)
-    expect(reminder.append('水餃目前可以點。', state?.phase, hint)).toBe('水餃目前可以點。')
-    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'customer_entry' })
-    await runtime.invokeManual('customer_skip_phone', { confirmedByUser: true })
-    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
-    reminder.reset()
-    expect(reminder.append('推薦三樣餐點。', state?.phase, hint)).toBe(`推薦三樣餐點。 ${hint}`)
-  })
-
-  it('uses the current phase when the customer skipped during a menu query', async () => {
-    let ready = false
-    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    const reminder = createCustomerEntryReminder()
-    await runtime.invokeForAgent('menu_get', { query: '水餃' })
-    await runtime.invokeManual('customer_skip_phone', { confirmedByUser: true })
-    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))
-    expect(reminder.append('水餃目前可以點。', state?.phase, hint)).toBe('水餃目前可以點。')
-    expect(reminder.append('查詢結果。', undefined, hint)).toBe('查詢結果。')
-    expect(reminder.append('', 'customer_entry', hint)).toBe('')
-    expect(reminder.append('推薦三樣餐點。', 'customer_entry', hint)).toBe(`推薦三樣餐點。 ${hint}`)
-  })
-})
-
 describe('question presentation receipts', () => {
-  it('presents a verified factual price lookup at phone entry even when the Agent uses recommendation read tools', () => {
+  it('retains phone entry even when a stale factual lookup has a valid presentation receipt', () => {
     const menu = createMenuReplyWindow()
     menu.record('menu_recommend', { items: [{ id: 'bento', name: '炸排骨便當', price: 130 }], customerMessage: '推薦一項：炸排骨便當。' })
     const customerEntry = { phase: 'customer_entry', prompt: '請先填寫手機或選擇略過。' }
-    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend', 'menu_show_recommendations'] }, { menu, requireMenuRead: true, failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: '推薦一項：炸排骨便當。' })
+    expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend', 'menu_show_recommendations'] }, { menu, requireMenuRead: true, failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: customerEntry.prompt })
     expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_recommend', 'order_add_item'] }, { menu, requireMenuRead: true, failureMessage: '失敗。', customerEntry })).toEqual({ role: 'assistant', content: customerEntry.prompt })
   })
 
@@ -221,6 +203,16 @@ describe('question presentation receipts', () => {
     window.reset()
     expect(window.history()).toEqual([])
   })
+  // Report: attachment c1d194f6; one receipt carried the same text in outcome and pending question.
+  it('composes one validated question without duplicating the explicit outcome', () => {
+    expect(replyFromReceipt({ customerMessage: question.question, pendingCustomerChoice: question }, question)).toBe(question.question)
+    expect(replyFromReceipt({ customerMessage: `已設為自取。 ${question.question}`, pendingCustomerChoice: question }, question)).toBe(`已設為自取。 ${question.question}`)
+    expect(replyFromReceipt({ customerMessage: '已設為自取。', pendingCustomerChoice: question }, question)).toBe(`已設為自取。 ${question.question}`)
+    expect(replyFromReceipt({ pendingCustomerChoice: question }, question)).toBe(question.question)
+    expect(replyFromReceipt({ pendingCustomerChoice: question })).toBeUndefined()
+    expect(replyFromReceipt({ cart: { itemCount: 1 } })).toBe('目前購物車共有 1 份餐點。')
+  })
+
   it('renders a correlated question with a natural answer, without deriving authority from that answer', () => {
     expect(questionReceiptFrom('準備結帳嗎？')).toBeUndefined()
     expect(questionReceiptFrom(JSON.stringify({ pendingCustomerChoice: question }))).toEqual(question)

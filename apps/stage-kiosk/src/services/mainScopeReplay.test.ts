@@ -1,4 +1,4 @@
-import type { WebMcpTool } from '@proj-airi/stage-ui/services/webmcp-adapter'
+import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 
 import type { MenuItem } from '../../../order-menu/src/domain/order-machine'
 import type { MenuToolName } from '../../../order-menu/src/webmcp'
@@ -88,7 +88,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       const receipt = await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 2 })
       expect((await app.request(`/visitor-sessions/${session.id}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: JSON.stringify(receipt), metadata: { name: 'order_add_item', decisionRoute: 'fast_path' } }) })).status).toBe(201)
     }
-    const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+    const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
     const began = performance.now()
     const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(tool.name as MenuToolName, input) }, decide: async (request) => {
       const response = await app.request('/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ ...request, visitorSessionId: session.id }) })
@@ -325,7 +325,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
         const recorded = await app.request(`/visitor-sessions/${session.id}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind, content }) })
         expect(recorded.status).toBe(201)
       }
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
       const decide = async (request: Parameters<Parameters<typeof runFastPath>[0]['decide']>[0]) => {
         const response = await app.request('/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ ...request, visitorSessionId: session.id }) })
         expect(response.status).toBe(200)
@@ -365,7 +365,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       await runtime.invoke('kiosk_query_scope', { questionId: scopeOffer.pendingCustomerChoice.questionId, choice: 'CATALOG' })
       const started = await app.request('/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
       const { session } = await started.json() as { session: { id: string } }
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
       const decide = async (request: Parameters<Parameters<typeof runFastPath>[0]['decide']>[0]) => {
         const response = await app.request('/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ ...request, visitorSessionId: session.id }) })
         expect(response.status).toBe(200)
@@ -448,7 +448,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
         { role: 'user' as const, content: '推薦幾個餐點' },
         { role: 'assistant' as const, content: '推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 推薦3 項：炸排骨便當、打拋豬便當、紅燒牛肉麵。 單份基本售價：周氏蝦捲招牌便當 NT$145、椒麻雞便當 NT$135、泰式酸辣魚便當 NT$140、炸排骨便當 NT$130、打拋豬便當 NT$125、紅燒牛肉麵 NT$150。' },
       ] }
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
       const result = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, args) => runtime.invoke(tool.name as MenuToolName, args) }, decide: request => decideInteraction({ ...request, conversation, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (state, questions) => {
         const response = await fetch('http://projev.aikcitri.qzz.io/v1/systemone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, questions }), signal: AbortSignal.timeout(30_000) })
         expect(response.ok).toBe(true)
@@ -505,7 +505,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       await runtime.invoke('menu_recommend', { limit: 2 })
       const started = await app.request('/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
       const { session } = await started.json() as { session: { id: string } }
-      const tools: WebMcpTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
+      const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
       // Exercise the initial price interpretation and Main tool request too;
       // starting directly with an owned question misses entry-route failures.
       const decide = async (request: Parameters<Parameters<typeof runFastPath>[0]['decide']>[0]) => {

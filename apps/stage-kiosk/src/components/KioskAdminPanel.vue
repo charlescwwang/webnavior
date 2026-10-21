@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n'
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import MenuSimulationPanel from './menuSimulationPanel.vue'
 
-import { webMcpAdapter } from '../services/webmcp-adapter'
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 
 const props = defineProps<{
   device?: KioskDevice
@@ -66,7 +66,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
       </section>
 
       <slot name="device-settings" />
-      <MenuSimulationPanel v-if="development" :bridge="webMcpAdapter" />
+      <MenuSimulationPanel v-if="development" :bridge="interactiveServiceClient" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
 
       <section :class="['admin-section']">

@@ -3,13 +3,13 @@ import type { Tool } from '@xsai/shared-chat'
 import { rawTool } from '@xsai/tool'
 
 import { hostToolNames } from '../../../order-menu/src/hostTools'
-import { webMcpAdapter } from '../services/webmcp-adapter'
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 
 const kioskHostOnlyToolNames: ReadonlySet<string> = new Set(hostToolNames)
 
-/** Maps active native WebMCP tools into the tool format consumed by AIRI's LLM runtime. */
-export function createWebMcpTools(): Tool[] {
-  return webMcpAdapter.tools.value
+/** Maps active interactive service tools into the tool format consumed by AIRI's LLM runtime. */
+export function createInteractiveServiceTools(): Tool[] {
+  return interactiveServiceClient.tools.value
     // The host uses this read-only tool to construct Dasein's finite action
     // set. It is deliberately not an LLM capability: the Main Agent must not
     // learn an internal routing surface or use it as an alternate planner.
@@ -18,6 +18,6 @@ export function createWebMcpTools(): Tool[] {
       name: tool.name,
       description: tool.description,
       parameters: tool.inputSchema,
-      execute: async input => await webMcpAdapter.execute(tool, input as Record<string, unknown>),
+      execute: async input => await interactiveServiceClient.execute(tool, input as Record<string, unknown>),
     }))
 }

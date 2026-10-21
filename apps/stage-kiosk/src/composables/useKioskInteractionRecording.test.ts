@@ -18,6 +18,42 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  it('refreshes the context and offered tools before each Main round', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'fresh-context', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'read', type: 'function', function: { name: 'cart_get', arguments: '{}' } }] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '目前已進入發票步驟。' })
+    const read = rawTool({ name: 'cart_get', description: 'Read', parameters: { type: 'object', properties: {} }, execute: async () => ({ cart: { lines: [], total: 0 } }) })
+    const prepareRound = vi.fn().mockResolvedValueOnce({ decisionState: { phase: 'ordering' }, tools: [read] }).mockResolvedValueOnce({ decisionState: { phase: 'checkout_invoice' }, tools: [] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '查看訂單', [read], { prepareRound })).toMatchObject({ status: 'completed' })
+      expect(prepareRound).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[0]![0]).toMatchObject({ decisionState: { phase: 'ordering' } })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0]).toMatchObject({ decisionState: { phase: 'checkout_invoice' } })
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0].tools.map((tool: { function: { name: string } }) => tool.function.name)).not.toContain('cart_get')
+      const timing = kioskApi.appendKioskInteraction.mock.calls.find(([entry]) => entry.metadata?.source === 'main_task_metrics')?.[0]
+      expect(timing?.visitorSessionId).toBe('fresh-context')
+      expect(JSON.parse(timing!.content)).toMatchObject({ kind: 'main_task_metrics', modelRounds: 2, requestedToolCount: 1, interrupted: false })
+      expect(JSON.parse(timing!.content).durationMs).toBeGreaterThanOrEqual(0)
+    }
+    finally { scope.stop() }
+  })
+  it('uses the remaining turn budget instead of starting a fresh minute for Main', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'remaining-time', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockImplementation(async ({ signal }) => await new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('Timed out')), { once: true })
+      if (signal.aborted)
+        reject(new Error('Already timed out'))
+    }))
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const startedAt = performance.now()
+      expect(await recording.send('ordering', '請確認', [], { budgetMs: 20 })).toMatchObject({ status: 'failed', reason: 'timeout' })
+      expect(performance.now() - startedAt).toBeLessThan(1000)
+    }
+    finally { scope.stop() }
+  })
   // Report: this chat, session -_n4bX6MRFcoRGilxK9-_ entries14–21, 2026-10-19.
   it.each(['same-batch', 'continuation', 'broad-menu-get'] as const)('presents one recommendation batch per customer turn: %s', async (path) => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'recommendation-limit', state: 'active' } })
@@ -264,8 +300,26 @@ describe('useKioskInteractionRecording', () => {
     expect(await recording.send('restaurant-ordering', '清空', [tool], { onToolResult })).toMatchObject({ status: 'incomplete', answer: undefined })
     expect(execute).toHaveBeenCalledTimes(1)
     expect(onToolResult).not.toHaveBeenCalled()
-    expect(kioskApi.streamKioskConversationMessage).toHaveBeenLastCalledWith(expect.objectContaining({ toolResults: [expect.objectContaining({ content: expect.stringContaining('STALE_PLAN') })] }), expect.any(Function))
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledOnce()
+    expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'tool_result', content: expect.stringContaining('STALE_PLAN') }))
     scope.stop()
+  })
+
+  // Report: attachment a553fda2; the stored menu_get request followed a rejected phone skip and never executed.
+  it('reports the rejected stale phone operation instead of executing the subsequent hotpot lookup', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'hotpot-rejection', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'skip', type: 'function', function: { name: 'customer_skip_phone', arguments: '{}' } }] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'hotpot', type: 'function', function: { name: 'menu_get', arguments: '{"query":"大腸臭臭鍋"}' } }] })
+    const skip = vi.fn(async () => ({ ok: false, error: 'INVALID_PHASE' }))
+    const lookup = vi.fn(async () => ({ items: [] }))
+    const tools = [rawTool({ name: 'customer_skip_phone', description: 'Skip', parameters: { type: 'object', properties: {} }, execute: skip }), rawTool({ name: 'menu_get', description: 'Lookup', parameters: { type: 'object', properties: { query: { type: 'string' } } }, execute: lookup })]
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '大腸臭臭鍋一份', tools)).toMatchObject({ status: 'incomplete', reason: 'tool-rejected', requestedTools: ['customer_skip_phone'] })
+      expect(skip).toHaveBeenCalledOnce()
+      expect(lookup).not.toHaveBeenCalled()
+    }
+    finally { scope.stop() }
   })
   it('stops a bounded Agent task without claiming its unexecuted fifth round is complete', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
@@ -279,7 +333,9 @@ describe('useKioskInteractionRecording', () => {
     expect(execute).toHaveBeenCalledTimes(4)
     scope.stop()
   })
-  afterEach(() => vi.clearAllMocks())
+  // Rejected tools can stop before a queued continuation; do not leak its
+  // unused provider response into the following independent customer test.
+  afterEach(() => vi.resetAllMocks())
 
   it('creates one device session before saving ASR, proactive output, and its terminal state', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })

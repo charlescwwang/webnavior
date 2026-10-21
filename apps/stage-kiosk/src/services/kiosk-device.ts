@@ -1,8 +1,11 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
+import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
+
+import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
@@ -304,8 +307,11 @@ export async function isKioskFastPathEnabled() {
 
 /** Sends bounded choices; only provider failures, not semantic refusals, allow fallback. */
 export async function decideKioskInteraction(input: {
-  onProgress?: (stage: Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }>) => void
+  onProgress?: (stage: Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }> | ServiceRecoveryProgress) => void
   maxQuestions?: number
+  budgetMs?: number
+  recoveryUsed?: boolean
+  utteranceId?: number
   isCurrent?: () => boolean
   signal?: AbortSignal
   visitorSessionId?: string
@@ -322,10 +328,13 @@ export async function decideKioskInteraction(input: {
     body: JSON.stringify({ ...input, signal: undefined, onProgress: undefined, isCurrent: undefined, segmented: true }),
   })
   const consumed = new Set<string>()
-  while (result.kind === 'DECISION_PROGRESS') {
+  let jevQuestions = 0
+  while (result.kind === 'DECISION_PROGRESS' || result.kind === 'SERVICE_RECOVERY_PROGRESS') {
     if (input.isCurrent?.() === false)
       throw new Error('Decision replaced before continuation')
-    if (consumed.size >= decisionQuestionBudget || consumed.has(result.continuationId) || result.expiresAt <= Date.now())
+    if (result.kind === 'DECISION_PROGRESS' && ++jevQuestions > decisionQuestionBudget)
+      throw new Error('Jev question budget exhausted')
+    if (consumed.size >= decisionQuestionBudget + serviceRecoveryLimits.progressEvents || consumed.has(result.continuationId) || result.expiresAt <= Date.now())
       throw new Error('Decision continuation expired or exceeded its budget')
     consumed.add(result.continuationId)
     input.onProgress?.(result)
