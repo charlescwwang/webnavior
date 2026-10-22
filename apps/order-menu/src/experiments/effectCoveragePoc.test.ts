@@ -76,6 +76,16 @@ describe('independent effect and whole-request contract', () => {
     const invoke = answer(scenario.expected)
     const before = fixture.machine.getCart()
     const result = await inspectEffect({ candidateId: scenario.candidateId, context: fixture.context(), conversation: fixture.conversation, threshold: frozen.threshold, invoke })
+    // NOTICE: c09's frozen semantic gold remains MULTIPLE_REQUESTS. The Oct22
+    // domain guard now refers its separately named dishes before model inference;
+    // this updates only the current-runtime fixture, not the frozen experiment.
+    if (scenario.id === 'c09') {
+      expect(result.reason).toBe('DOMAIN_UNRESOLVED')
+      expect(result.resolution?.kind).toBe('NEEDS_ASSISTANT')
+      expect(invoke).not.toHaveBeenCalled()
+      expect(fixture.machine.getCart()).toEqual(before)
+      return
+    }
     expect(result.reason).toBe(scenario.expected)
     if (scenario.expected === 'MISSING_EFFECT' || scenario.expected === 'DOMAIN_UNRESOLVED')
       expect(invoke).not.toHaveBeenCalled()

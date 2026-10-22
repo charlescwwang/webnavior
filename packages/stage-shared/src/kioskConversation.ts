@@ -37,6 +37,8 @@ export const conversationContextSchema = pipe(object({
   constraints: object({ excludeIngredients: pipe(array(id), maxLength(100)), includeIngredients: pipe(array(id), maxLength(100)), dietary: optional(literal('vegetarian')), minPrice: optional(number()), maxPrice: optional(number()), minPriceExclusive: optional(boolean()), maxPriceExclusive: optional(boolean()), priceOrder: optional(literal('ASC')) }),
   phase: pipe(string(), maxLength(80)),
   screen: optional(pipe(string(), maxLength(80))),
+  /** Current rendered menu scope, separate from the complete catalog and cart. */
+  presentation: optional(object({ itemIds: pipe(array(id), maxLength(200)), category: pipe(string(), maxLength(200)), queries: pipe(array(label), maxLength(20)) })),
   revisions: object({ menu: revision, cart: revision, selectedItem: revision, checkout: revision, recommendation: optional(revision), seating: optional(revision) }),
   catalog: optional(object({
     complete: literal(true),
@@ -72,6 +74,15 @@ export const conversationContextSchema = pipe(object({
 
 export type ConversationContext = InferOutput<typeof conversationContextSchema>
 export type ConversationHandoff = InferOutput<typeof handoffSchema>
+
+/**
+ * Rejects bare assent as authority to choose one target from several.
+ * This is a negative guard only: names, ordinals and qualified answers still
+ * require the current question's normal resolution and authorization.
+ */
+export function isTargetAcknowledgement(transcript: string): boolean {
+  return /^(?:[對是好嗯]|對啊|對呀|對的|是的|沒錯|沒錯啊|好的|好啊|嗯嗯|yes|yeah|ok|okay)[\s，。！？,.!?]*$/iu.test(transcript.trim())
+}
 
 /** Result ownership is task-scoped; absence is a current-cart outcome, not a deletion receipt. */
 export interface ConversationOutcome {

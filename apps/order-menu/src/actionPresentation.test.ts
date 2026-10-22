@@ -28,20 +28,18 @@ describe('visible order actions', () => {
     { source: 'voice', itemId: 'beef-noodles', name: '牛肉麵' },
     { source: 'agent', itemId: 'beef-noodles', name: '牛肉麵' },
     { source: 'stepwise', itemId: 'beef-noodles', name: '牛肉麵' },
-  ] as const)('focuses newly added $name through $source while preserving the unanswered fulfillment question', async ({ source, itemId, name }) => {
+  ] as const)('closes newly added $name through $source while preserving the menu and unanswered fulfillment question', async ({ source, itemId, name }) => {
     const shown: string[][] = []
+    let visibleItemId: string | undefined
     const runtime = createMenuToolRuntime({
       menu: [
         { ...menu[0]!, id: 'pork-chop-bento', name: '炸排骨便當', aliases: [], optionGroups: [] },
         { ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [] },
         { ...menu[0]!, id: 'beef-noodles', name: '牛肉麵', aliases: [], optionGroups: [] },
       ],
-      onAction: (action) => {
-        if (action.targetId === itemId)
-          expect(shown.at(-1)).toEqual([itemId])
-      },
+      onAction: () => {},
       onCartChange: () => {},
-      onMenuSelection: () => {},
+      onMenuSelection: (id) => { visibleItemId = id },
       onRecommendationsChange: presentation => shown.push(presentation.itemIds),
     })
     await runtime.invoke('menu_get', { query: '炸排骨便當', display: true })
@@ -60,8 +58,8 @@ describe('visible order actions', () => {
       await runtime.invokeForAgent('cart_add_item')
     }
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 3, lines: [{ itemId: 'pork-chop-bento', quantity: 2 }, { itemId, quantity: 1 }] } })
-    expect(shown.at(-1)).toEqual([itemId])
-    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '這個' })).toMatchObject({ references: expect.arrayContaining([expect.objectContaining({ label: `剛展示的${name}` })]) })
+    expect(visibleItemId).toBeUndefined()
+    expect(shown).toEqual([['pork-chop-bento']])
     expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '內用' })).toMatchObject({ waitingFor: { purpose: 'fulfillment' } })
   })
 

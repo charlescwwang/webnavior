@@ -18,6 +18,46 @@ async function configuredCatalog(): Promise<CatalogSnapshot> {
 }
 
 describe('required order configuration', () => {
+  it.each(['agent', 'touch'] as const)('retires the completed draft when %s finishes a voice-started meal', async (source) => {
+    const catalog = await configuredCatalog()
+    const runtime = createMenuToolRuntime({ menu: catalog.items.map(item => ({ ...item, optionGroups: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    if (source === 'agent') {
+      await runtime.invokeForAgent('order_add_item', { itemId: 'beef-noodle-soup', quantity: 2 })
+    }
+    else {
+      await runtime.invokeManual('menu_select_item', { itemId: 'beef-noodle-soup' })
+      await runtime.invokeManual('menu_set_quantity', { quantity: 2 })
+      await runtime.invokeManual('cart_add_item')
+    }
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+  })
+
+  // Report: this chat, 2026-10-21 — close the completed dialog and keep browsing.
+  it('retains a suspended meal question without reopening its dialog after another meal is added', async () => {
+    const catalog = await configuredCatalog()
+    let visibleItemId: string | undefined
+    const runtime = createMenuToolRuntime({
+      menu: catalog.items.map(item => ({ ...item, optionGroups: [] })),
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: (id) => { visibleItemId = id },
+    })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    const interrupted = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要一份水餃' }) as { waitingFor: { questionId: string } }
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要一份水餃', newRequestQuestionId: interrupted.waitingFor.questionId })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    expect(result).toMatchObject({ cart: { itemCount: 1 }, pendingCustomerChoice: { question: '請問紅燒牛肉麵要幾份？' } })
+    expect(visibleItemId).toBeUndefined()
+    const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' }) as { candidates: Array<{ id: string, description: string }> }
+    const choice = answer.candidates.find(candidate => candidate.description.includes('2 份'))!
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: choice.id })).toMatchObject({ cart: { itemCount: 3 } })
+    expect(visibleItemId).toBeUndefined()
+  })
+
   it('corrects an unadded meal into an availability inquiry without reviving its quantity question', async () => {
     const catalog = await configuredCatalog()
     const runtime = createMenuToolRuntime({ menu: catalog.items.map(item => ({ ...item, optionGroups: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })

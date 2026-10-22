@@ -6,6 +6,7 @@ import type { IngredientFilters } from './domain/composition'
 import type { CartLine, CartSnapshot, MenuItem, Selection } from './domain/order-machine'
 import type { SeatingContext } from './domain/seating'
 
+import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { filterIngredients, mentionedDietaryReferences, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
 import { possibleMenuItems, productFragment, resolveCategories, resolveMenuItems } from './domain/menuIdentity'
 import { priceEvidence } from './domain/pricing'
@@ -134,7 +135,7 @@ type ResolutionResult
 
 /** A one-use authorization for a high-risk customer action. */
 export interface PendingConfirmation {
-  action: 'CANCEL_CHECKOUT' | 'CLEAR_CART' | 'CONFIRM_TAX_ID'
+  action: 'CANCEL_CHECKOUT' | 'CLEAR_CART' | 'CONFIRM_TAX_ID' | 'SET_FULFILLMENT'
   cartRevision?: number
   checkoutRevision?: number
   confirmationId: string
@@ -262,7 +263,7 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
       candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。'))
     // Target resolution is independent of intent selection: Jev receives one
     // candidate per operation, never one per product or cart line.
-    candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
+    candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或明確看全部時展示完整菜單，包含已看過餐點；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
     if (input.menuScrollSupported) {
       candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:up', '捲動菜單，顯示目前位置上方、較前段且接近開頭的內容；每次一個可視頁面，保留分類、推薦與購物車。', undefined, { direction: 'UP' }))
       candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:down', '捲動菜單，顯示目前位置下方、較後段且接近結尾的內容；每次一個可視頁面，保留分類、推薦與購物車。', undefined, { direction: 'DOWN' }))
@@ -274,8 +275,8 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
       candidates.push(candidate('ADD_ITEM', 'intent:add-item', '顧客要求購買或加點餐點，才建立訂購項目。匹配品名／別名只提供查詢對象，不是購買授權；詢問種類、款式、有哪些或有沒有都選查詢，不選新增。明確要點餐點但缺份數／選項仍可新增，由程式補問；分類須有明確份數才建立待選品項訂購。品項歧義由程式釐清，不自行挑選。'))
     if (!itemRefs.length && (!categoryRefs.length || priceEvidence(transcript)) && !possibleItems.length)
       candidates.push(candidate('RECOMMEND', 'intent:recommend', '顧客請系統挑選值得吃的餐點：開始一輪簡單推薦，最多三項；可套用已知分類、單份價格及飲食限制。不是列出整份菜單，也不是換掉剛推薦的一批。'))
-    if (!itemRefs.length && !categoryRefs.length && !possibleItems.length && input.recommendationConditions !== undefined)
-      candidates.push(candidate('RECOMMEND', 'intent:recommend-more', `顧客追問其他選擇、要求換一批或在已展示後要求看全部；依店家政策每次最多三項，排除已推薦餐點，沿用${input.recommendationConditions}，不展開整份菜單或重顯上一批。`, undefined, { more: 1 }))
+    if (!itemRefs.length && !categoryRefs.length && !possibleItems.length && (input.recommendationConditions !== undefined || input.presentationItemIds?.length))
+      candidates.push(candidate('RECOMMEND', 'intent:recommend-more', `顧客追問其他推薦、要求換一批；明確要求全部菜單應選 SEARCH_MENU 而非本項。每次最多三項，排除已推薦餐點，釋放前次精確單品查詢並保留有效的飲食條件，沿用${input.recommendationConditions ?? '目前的飲食條件'}，不展開整份菜單或重顯上一批。`, undefined, { more: 1 }))
     if (input.cart.lines.length)
       candidates.push(candidate('VIEW_CART', 'intent:view-cart', '查看目前購物車。'))
     if (selected || input.cart.lines.length) {
@@ -344,6 +345,13 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     phase = 'checkout_complete'
   }
 
+  if (checkout && ['checkout_membership', 'checkout_invoice', 'checkout_tax_id', 'checkout_payment_select'].includes(phase) && input.cart.lines.length) {
+    for (const mode of input.fulfillmentModes ?? [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }]) {
+      if (mode.id !== input.cart.fulfillmentMode)
+        candidates.push(candidate('SET_FULFILLMENT', `intent:set-fulfillment:${mode.id}`, `顧客要求改為${mode.label}；先確認返回訂單，確認後取消尚未付款的結帳並切換方式，尚未完成修改。`, undefined, { mode: mode.id }))
+    }
+  }
+
   if (possibleItems.length) {
     // Discovery fragments cannot redirect edits/removals to the selected item
     // or cart just because there is no verified target in this utterance.
@@ -409,7 +417,7 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     const definitions = {
       customer_entry: { purpose: 'customer-entry', question: '手機號碼可自願填寫，也可以選擇略過，直接開始點餐。', intents: ['SKIP_CUSTOMER_ENTRY'] },
       checkout_membership: { purpose: 'membership', question: '請掃描會員條碼，或選擇略過會員。', intents: ['SKIP_MEMBERSHIP'] },
-      checkout_invoice: { purpose: 'invoice', question: '請選擇手機載具、自然人憑證、公司統編，或略過並捐贈發票。', intents: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID'] },
+      checkout_invoice: { purpose: 'invoice', question: orderingMessages['zh-Hant'].checkout.invoiceQuestion, intents: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID'] },
       checkout_tax_id: { purpose: 'tax-id', question: context.checkout?.taxId ? `請確認畫面上的統編 ${context.checkout.taxId.split('').join(' ')} 是否正確。` : '請提供八位統編。', intents: ['SET_TAX_ID', 'CONFIRM_TAX_ID'] },
       checkout_payment_select: { purpose: 'payment-method', question: `請選擇${context.allowedPaymentMethods.map(method => paymentLabels[method]).join('或')}。`, intents: ['SELECT_PAYMENT'] },
     } as const
@@ -421,8 +429,6 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     intents = [...definition.intents]
   }
   const choices = context.candidates.filter(choice => intents.includes(choice.intent)).map(choice => ({ ...choice }))
-  if (purpose === 'invoice')
-    question = `請選擇發票方式：${choices.map(choice => choice.description).join(' ')} `.trim()
   if (purpose === 'checkout-entry') {
     for (const choice of choices)
       choice.description = '顧客同意開始結帳；進入會員與發票步驟。'
@@ -449,6 +455,12 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   // here would incorrectly promote a category member to an explicit product.
   const namedItemIds = new Set(context.targetConstraints.itemIds)
   const explicitMenuRefs = menuRefs.filter(reference => namedItemIds.has(reference.refId.slice(5)))
+  // Separately named dishes are a whole request, not alternatives for one target.
+  // Preserve that boundary even if a retained single-choice answer supplies a ref;
+  // otherwise one high-confidence choice silently discards the other dishes.
+  const namedSubjects = new Set(context.catalogEvidence.products.filter(product => product.source !== 'fragment').map(product => product.matchedText))
+  if (resolved.intent === 'ADD_ITEM' && explicitMenuRefs.length > 1 && namedSubjects.size > 1)
+    return { kind: 'NEEDS_ASSISTANT' }
   // A category match is browsing evidence, not a product identity. An unknown
   // dish can contain a category word (鱔魚意麵 -> 麵食); even one available
   // category member cannot become that dish. Preserve the original request for
@@ -681,7 +693,7 @@ export function configurationQuestion(plan: DomainPlan, menu: readonly MenuItem[
 
 /** The question is assembled exclusively from the revision-bound real refs. */
 export function buildClarificationPrompt(references: readonly DomainReference[]) {
-  return `您指的是${references.map(reference => reference.label).join('、')}？`
+  return orderingMessages['zh-Hant'].targetChoice.replace('{items}', references.map(reference => reference.label).join('或'))
 }
 
 /** Resolves only a spoken choice among the already-bound clarification refs. */
@@ -697,6 +709,8 @@ export function resolveClarificationReference(transcript: string, references: re
       || normalized === `第${chineseOrdinals[index]}筆`
       || normalized === `第${position}個`
       || normalized === `第${chineseOrdinals[index]}個`
+      || normalized === `第${position}項`
+      || normalized === `第${chineseOrdinals[index]}項`
   })
   return matches.length === 1 ? matches[0]!.refId : undefined
 }
@@ -717,8 +731,10 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
     case 'SEARCH_MENU':
       // Keep the customer's search intent in the trace while applying the
       // venue's bounded presentation policy through the recommendation tool.
-      if (plan.slots.scope === 'all' && !filters.dietary && !filters.excludeIngredients?.length && !filters.includeIngredients?.length)
+      if (plan.slots.scope === 'all' && Object.keys(filters).some(key => ['minPrice', 'maxPrice', 'priceOrder'].includes(key)))
         return { ...base, input: { ...(plan.slots.more ? { more: true } : {}), ...filters }, toolName: 'menu_recommend' }
+      if (plan.slots.scope === 'all')
+        return { ...base, input: { scope: 'catalog', display: true, ...filters }, toolName: 'menu_get' }
       return { ...base, input: { ...(plan.slots.queries ? { queries: JSON.parse(String(plan.slots.queries)) as string[] } : plan.slots.scope === 'all' ? { display: true } : plan.slots.category ? { category: plan.slots.category } : { query: plan.slots.query }), ...filters }, toolName: 'menu_get' }
     case 'RECOMMEND': return { ...base, input: { ...(plan.slots.more ? { more: true } : {}), ...(plan.slots.category ? { category: plan.slots.category } : {}), ...(plan.slots.needs ? { needs: [plan.slots.needs] } : {}), ...filters }, toolName: 'menu_recommend' }
     case 'SHOW_RECOMMENDATIONS': return { ...base, input: { itemIds: String(plan.slots.itemIds).split(',') }, toolName: 'menu_show_recommendations' }
@@ -771,10 +787,10 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
   const allowedByPhase: Record<KioskPhase, readonly KioskIntent[]> = {
     customer_entry: ['SKIP_CUSTOMER_ENTRY', 'SEARCH_MENU', 'RECOMMEND', 'SHOW_RECOMMENDATIONS'],
     ordering: ['ADD_ITEM', 'CLEAR_CART', 'RECOMMEND', 'REMOVE_ITEM', 'SEARCH_MENU', 'SCROLL_MENU', 'SELECT_ITEM', 'SET_FULFILLMENT', 'SET_OPTION', 'SET_QUANTITY', 'SHOW_RECOMMENDATIONS', 'START_CHECKOUT', 'VIEW_CART', 'SET_PARTY_SIZE', 'RESERVE_TABLES', 'RETURN_MENU'],
-    checkout_membership: ['SKIP_MEMBERSHIP', 'CANCEL_CHECKOUT'],
-    checkout_invoice: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID', 'CANCEL_CHECKOUT'],
-    checkout_tax_id: ['SET_TAX_ID', 'CONFIRM_TAX_ID', 'CANCEL_CHECKOUT'],
-    checkout_payment_select: ['SELECT_PAYMENT', 'CANCEL_CHECKOUT'],
+    checkout_membership: ['SKIP_MEMBERSHIP', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
+    checkout_invoice: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
+    checkout_tax_id: ['SET_TAX_ID', 'CONFIRM_TAX_ID', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
+    checkout_payment_select: ['SELECT_PAYMENT', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
     payment_locked: [],
     checkout_complete: [],
   }
@@ -843,6 +859,8 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
 export function requiresConfirmation(plan: OperationPlan, context: DecisionContext) {
   // Selecting a method opens the test scan step and remains reversible during
   // its countdown. Only the simulator's result proves payment authorization.
+  if (plan.intent === 'SET_FULFILLMENT' && context.checkout)
+    return true
   if (plan.intent === 'CLEAR_CART' || plan.intent === 'CONFIRM_TAX_ID')
     return true
   return plan.intent === 'CANCEL_CHECKOUT' && (context.checkout?.stage === 'payment' || Boolean(context.checkout?.carrierCode || context.checkout?.taxId))

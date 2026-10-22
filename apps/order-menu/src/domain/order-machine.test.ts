@@ -191,33 +191,14 @@ describe('createMenuToolRuntime', () => {
     await expect(runtime.invoke('order_set_fulfillment', { mode: 'takeout' })).resolves.toMatchObject({ customerMessage: '已設為自取。', cart: { fulfillmentMode: 'takeout' } })
   })
 
-  it('preserves one revision-bound recommendation continuation for an explicit food search', async () => {
-    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '有哪些不要豬肉的，也推薦一下' })
-    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { customerMessage: string, continuation: { candidates: Array<{ id: string }> }, presentation: { title: string } }
-    expect(result.customerMessage).toContain('我找到')
-    expect(result.presentation.title).toBe('成分篩選：排除豬肉')
-    expect(result.continuation.candidates).toHaveLength(1)
-    const candidateId = result.continuation.candidates[0]!.id
-    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId })).resolves.toMatchObject({ customerMessage: expect.stringContaining('推薦'), decisionTrace: { authorize: { kind: 'EXECUTE' } } })
-    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId })).rejects.toThrow('already consumed')
-  })
-
-  it('invalidates an unclaimed read continuation when a new utterance arrives', async () => {
+  // Report: docs/plans/2026-10-22-kiosk-field-investigation.md; a full catalog must not be replaced by a recommendation continuation.
+  it('presents a complete filtered catalog without scheduling a second recommendation batch', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '有哪些不要豬肉的' })
-    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { continuation: { candidates: Array<{ id: string }> } }
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '水餃多少錢' })
-    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId: result.continuation.candidates[0]!.id })).rejects.toThrow('already consumed')
-  })
-
-  it('rejects a read continuation when checkout revision changes', async () => {
-    let revision = 0
-    const runtime = createMenuToolRuntime({ checkout: checkoutController({ revision: () => revision }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '有哪些不要豬肉的' })
-    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { continuation: { candidates: Array<{ id: string }> } }
-    revision++
-    await expect(runtime.invoke('kiosk_fast_path_continue', { candidateId: result.continuation.candidates[0]!.id })).rejects.toThrow('current state')
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } })
+    expect(result).toMatchObject({ presentation: { kind: 'query-results', title: '成分篩選：排除豬肉' }, appliedFilters: { excludeIngredients: ['pork'] } })
+    expect(result).not.toHaveProperty('continuation')
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
   it('does not activate an unasked suggestion and preserves the unanswered question after a price lookup', async () => {
@@ -344,7 +325,6 @@ describe('createMenuToolRuntime', () => {
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     const afterAdding = await runtime.invoke('kiosk_fast_path_context') as { candidates: Array<{ id: string }>, references: Array<{ refId: string }> }
     expect(afterAdding.references).toEqual([
-      { label: '剛展示的周氏蝦捲', refId: 'ITEM_1' },
       { label: expect.stringContaining('周氏蝦捲'), refId: 'CART_LINE_1' },
     ])
     expect(afterAdding).toMatchObject({

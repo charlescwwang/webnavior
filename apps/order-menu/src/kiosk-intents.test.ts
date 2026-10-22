@@ -142,13 +142,13 @@ describe('kiosk intent routing', () => {
     const locked = deriveDecisionContext({ ...ready, checkout: { stage: 'payment', invoiceMethod: 'donation' }, paymentStatus: 'pending' })
     expect(locked.candidates).toEqual([])
   })
-  it('compiles broad menu exploration into bounded recommendations without inventing a target', () => {
+  it('compiles whole-menu browsing into an explicit complete catalog presentation', () => {
     const context = deriveDecisionContext({ ...base, transcript: '有賣什麼' })
     const resolution = resolveIntent(context.candidates.find(candidate => candidate.intent === 'SEARCH_MENU')!, context)
     expect(resolution).toMatchObject({ kind: 'PLAN', plan: { slots: { scope: 'all' } } })
     if (resolution.kind !== 'PLAN')
       throw new Error('Expected a menu exploration plan')
-    expect(compileOperationPlan(resolution.plan)).toMatchObject({ intent: 'SEARCH_MENU', toolName: 'menu_recommend', input: {} })
+    expect(compileOperationPlan(resolution.plan)).toMatchObject({ intent: 'SEARCH_MENU', toolName: 'menu_get', input: { scope: 'catalog', display: true } })
   })
 
   it('keeps a discussed dish separate from an unanswered question, with expiry and revision checks', () => {
@@ -286,7 +286,20 @@ describe('kiosk intent routing', () => {
       transcript: '我要蝦捲和牛肉麵',
     })
     expect(context.references.map(reference => reference.refId)).toEqual(['item:shrimp-roll', 'item:beef-noodle'])
-    expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'CLARIFICATION', candidateRefs: ['item:shrimp-roll', 'item:beef-noodle'] })
+    const add = context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!
+    expect(resolveIntent(add, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+    expect(resolveIntent(add, context, 'item:shrimp-roll')).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+  })
+
+  it('still clarifies one merchant alias shared by two dishes rather than treating it as two requests', () => {
+    const menu = [
+      { ...shrimpRoll, aliases: ['招牌餐'] },
+      { ...shrimpRoll, id: 'beef-noodle', name: '牛肉麵', aliases: ['招牌餐'] },
+    ]
+    const context = deriveDecisionContext({ ...base, menu, transcript: '招牌餐一份' })
+    const add = context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!
+    expect(resolveIntent(add, context)).toMatchObject({ kind: 'CLARIFICATION', candidateRefs: ['item:shrimp-roll', 'item:beef-noodle'] })
+    expect(resolveIntent(add, context, 'item:beef-noodle')).toMatchObject({ kind: 'PLAN', plan: { targetRef: 'item:beef-noodle', slots: { quantity: 1 } } })
   })
 
   it('keeps two matching cart lines as a bound clarification for the original remove intent', () => {

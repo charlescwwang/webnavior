@@ -263,10 +263,13 @@ describe('isolated resolver challenge contracts', () => {
     expect(result.after.itemCount).toBe(result.before.itemCount + 2)
     expect(result.phaseAfter).toBe('ordering')
   })
-  it('refuses singleton recovery for an ingredient question outside the experimental eligibility contract', async () => {
+  it('offers the named ingredient search without a duplicate shown-item reference from adding a meal', async () => {
     const fixture = await prepare('fulfillment', '水餃裡面會加花生嗎')
     const candidateId = readOnlyCandidate({ class: 'QUERY', confidence: 1, latency_ms: 0 }, 0.7, fixture.snapshot)
-    expect(candidateId).toBeUndefined()
+    // Adding no longer replaces browsing with the added dish. The named
+    // product has one reference rather than a second synthetic shown item.
+    expect(candidateId).toBe('intent:search-menu')
+    expect(await fixture.cart()).toMatchObject({ itemCount: 2 })
   })
   it('detects that repeat additions do not establish a multi-line ambiguity fixture', async () => {
     const fixture = await prepare('duplicates', '水餃那一份取消掉')

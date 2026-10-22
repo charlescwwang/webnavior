@@ -226,7 +226,13 @@ function travelDuration(from: { x: number, y: number }, to: { x: number, y: numb
   return Math.round(Math.min(agentCursorTiming.maximumTravelMs, Math.max(agentCursorTiming.minimumTravelMs, duration)))
 }
 
+let itemBrowsePosition: { x: number, y: number } | undefined
+
 async function animateAction(nextAction: AgentAction) {
+  // Selecting a card may scroll it into view before the dialog opens. Return
+  // to the customer's original browsing position when that dialog closes.
+  if (!selectedItemId.value && !nextAction.controlId && nextAction.targetId && menuItems.value.some(item => item.id === nextAction.targetId))
+    itemBrowsePosition ??= { x: window.scrollX, y: window.scrollY }
   cursorTargetId.value = nextAction.targetId
   showAgentCursor.value = true
 
@@ -238,8 +244,8 @@ async function animateAction(nextAction: AgentAction) {
     ? controlElements.get(nextAction.controlId) ?? (nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined)
     : nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined
   if (!target) {
-    if (nextAction.controlId?.startsWith('cart:remove:'))
-      throw new Error('The cart removal control is not visible.')
+    if (nextAction.controlId?.startsWith('cart:remove:') || nextAction.controlId?.startsWith('order:fulfillment:'))
+      throw new Error('The requested order control is not visible.')
     cursorPhase.value = 'resting'
     await waitForAgentCursor(agentCursorTiming.dwellMs)
     return
@@ -270,6 +276,21 @@ async function animateAction(nextAction: AgentAction) {
 }
 
 const agentControlsOrder = shallowRef(false)
+watch(selectedItemId, async (itemId, previousId) => {
+  if (itemId) {
+    itemBrowsePosition ??= { x: window.scrollX, y: window.scrollY }
+    return
+  }
+  const position = itemBrowsePosition
+  itemBrowsePosition = undefined
+  if (!previousId || !position)
+    return
+  await nextTick()
+  // An immediately reopened dialog owns its own position; an older close
+  // must not move the viewport underneath it.
+  if (!selectedItemId.value && !orderReviewOpen.value && !checkout.value)
+    window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' })
+})
 const runtime = createMenuToolRuntime({
   testing: import.meta.env.DEV,
   onMenuChanged: (items) => {
@@ -288,6 +309,7 @@ const runtime = createMenuToolRuntime({
     return selectedItem.value ? 'item_configuration' : 'menu'
   },
   visibleItemId: () => selectedItem.value?.id,
+  visibleItemIds: () => visibleMenuItems.value.map(item => item.id),
   fulfillmentModes: [],
   orderingReady: () => customerEntryStatus.value !== 'pending',
   onCustomerEntrySkipped: skipCustomerEntry,
@@ -364,11 +386,12 @@ const runtime = createMenuToolRuntime({
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
   onOrderSubmission: handleOrderSubmission,
-  onRecommendationsChange: (presentation) => {
+  onRecommendationsChange: async (presentation) => {
     returnToMenuForAdditionalItems()
     recommendations.value = presentation
     selectedPresentationSubjectId.value = undefined
     activeCategory.value = recommendedCategoryId
+    await nextTick()
   },
   onMenuPresentationActivity: async ({ state, toolName }) => {
     if (state === 'idle') {
