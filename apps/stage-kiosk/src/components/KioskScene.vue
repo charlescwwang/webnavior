@@ -1891,7 +1891,7 @@ async function sendConversationMessage(
             throw new Error('The Menu context belongs to a different task.')
           decisionState = refreshConversationState(context, decisionState)
           const allowed = new Set(context.allowedToolNames)
-          return { decisionState, tools: includeCatalog ? activeTools.value.filter(tool => allowed.has(tool.function.name)) : [] }
+          return { decisionState, tools: activeTools.value.filter(tool => allowed.has(tool.function.name)) }
         },
         onToolResult: (name, content) => {
           if (interactionTurn.isCurrent(turn)) {
@@ -1996,7 +1996,9 @@ async function sendConversationMessage(
     const entryPrompt = t('stage.kiosk.customer-entry.complete-first')
     const presented = replyFromConversation(reply, {
       menu: menuReply,
-      requireMenuRead: options.decisionState?.requireMenuRead,
+      requireMenuRead: decisionState?.requireMenuRead,
+      // A complete bare greeting is a service exchange even with System One off.
+      serviceReply: decisionState?.serviceReply === true || /^(?:你好|您好|嗨|哈囉|哈啰|hello|hi)[！!。.?？\s]*$/i.test(text),
       handoff: decisionState?.handoff,
       outcome: operationReply,
       question: questionReceipt,
@@ -2027,8 +2029,7 @@ async function sendConversationMessage(
       interactionTurn.advance(turn, 'speaking')
       // The server keeps operation prose only as an internal draft. Record
       // the validated customer reply once, even if the draft used the same words.
-      if (reply.requestedTools.some(name => name !== 'kiosk_session_history') || operationReply || questionReceipt || options.decisionState?.requireMenuRead)
-        await interactionRecording.append('assistant_text', answer, { questionId: questionReceipt?.questionId, source: 'verified_reply' })
+      await interactionRecording.append('assistant_text', answer, { questionId: questionReceipt?.questionId, source: 'verified_reply' })
       await acknowledgePresentedReply(answer, questionReceipt?.questionId, !mutationToolAttempted && !questionReceipt)
       await speakAssistantReply(answer, turn)
     }

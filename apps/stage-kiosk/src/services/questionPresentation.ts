@@ -13,12 +13,11 @@ import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 export function createMenuReplyWindow() {
   const messages = new Set<string>()
   const items = new Map<string, { name: string, price: number }>()
+  const operations = new Set<string>()
   let reads = 0
   let cartReply: string | undefined
   return {
     record(name: string, result: unknown) {
-      if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get'].includes(name))
-        return
       if (typeof result === 'string') {
         try {
           result = JSON.parse(result)
@@ -28,6 +27,12 @@ export function createMenuReplyWindow() {
       if (!result || typeof result !== 'object')
         return
       const payload = result as Record<string, unknown>
+      if (payload.ok === false)
+        return
+      if (typeof payload.customerMessage === 'string')
+        operations.add(name)
+      if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get'].includes(name))
+        return
       // An internal catalog lookup supplies evidence to the Agent, not dishes
       // to announce alongside the later filtered recommendation.
       if (name === 'menu_get' && payload.dataOnly === true)
@@ -68,6 +73,20 @@ export function createMenuReplyWindow() {
       else
         messages.add(names.length ? `我查到：${names.slice(0, 3).join('、')}。` : '目前沒有查到符合條件的餐點。')
     },
+    hasOperation(intent: string) {
+      const tools: Record<string, string[]> = {
+        ADD_ITEM: ['order_add_item', 'cart_add_item'],
+        REMOVE_ITEM: ['cart_remove_item'],
+        SET_QUANTITY: ['cart_set_line_quantity', 'menu_set_quantity'],
+        SET_OPTION: ['cart_set_line_option', 'menu_set_item_option'],
+        CLEAR_CART: ['cart_clear'],
+        SET_FULFILLMENT: ['order_set_fulfillment'],
+        START_CHECKOUT: ['checkout_start'],
+        SELECT_PAYMENT: ['checkout_select_payment'],
+        CANCEL_CHECKOUT: ['checkout_cancel'],
+      }
+      return tools[intent]?.some(name => operations.has(name)) === true
+    },
     hasReceipts: () => reads > 0 || cartReply !== undefined,
     reply() {
       // Without evidence, generated dish claims cannot become customer dialogue.
@@ -82,7 +101,7 @@ export function createMenuReplyWindow() {
 }
 
 /**
- * Resolves one Agent task for display: no-tool dialogue stays natural, while
+ * Resolves one Agent task for display: classified service prose stays natural, while
  * commerce attempts use current-turn receipts even if the model claims success.
  * Transport failures without receipts are errors, never a fabricated menu reply.
  */
@@ -92,6 +111,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   question?: PresentedQuestion
   failureMessage: string
   requireMenuRead?: boolean
+  /** Only a classified service FAQ may use generated prose without an operation receipt. */
+  serviceReply?: boolean
   handoff?: { intent: string }
   /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
   customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
@@ -105,8 +126,10 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
   // A true menu receipt cannot complete a known mutation task. Preserve the
   // requested effect even when Main chooses a factual but unrelated lookup.
-  const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART'].includes(options.handoff?.intent ?? '')
-  if (operationRequired && !options.outcome && !options.question)
+  const intent = options.handoff?.intent ?? ''
+  const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART', 'SET_FULFILLMENT', 'START_CHECKOUT', 'SELECT_PAYMENT', 'CANCEL_CHECKOUT'].includes(intent)
+  const configuringMeal = ['ADD_ITEM', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(options.question?.purpose ?? '')
+  if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal)
     return { role: 'error' as const, content: options.failureMessage }
   const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
   if (result.status !== 'completed') {
@@ -115,6 +138,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
       : { role: 'error' as const, content: options.failureMessage }
   }
   if (options.requireMenuRead && !receiptReply)
+    return { role: 'error' as const, content: options.failureMessage }
+  if (!receiptReply && !commerceAttempted && !options.requireMenuRead && !options.serviceReply)
     return { role: 'error' as const, content: options.failureMessage }
   const content = receiptReply || (commerceAttempted || options.requireMenuRead ? options.menu.reply() : result.answer)
   return content ? { role: 'assistant' as const, content } : { role: 'error' as const, content: options.failureMessage }

@@ -189,7 +189,7 @@ describe('useKioskInteractionRecording', () => {
     expect(recording.controlState.value).toBe('idle')
   })
   // Report: this chat, 2026-10-14 — 「嗨」 cannot reply with Fast Path disabled.
-  it.each([undefined, { phase: 'ordering' as const }])('presents a successful no-tool greeting for direct or handed-off context: %j', async (decisionState) => {
+  it.each([undefined, { phase: 'ordering' as const }])('allows no-tool prose only for an explicitly classified service reply: %j', async (decisionState) => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-greeting', state: 'active' } })
     kioskApi.streamKioskConversationMessage.mockResolvedValue({ agentMode: 'active', answer: '您好！需要什麼協助？', toolCalls: [] })
     const execute = vi.fn()
@@ -200,7 +200,7 @@ describe('useKioskInteractionRecording', () => {
       const result = await recording.send('restaurant-ordering', '嗨', [tool], { decisionState })
       expect(result?.status).toBe('completed')
       expect(execute).not.toHaveBeenCalled()
-      expect(replyFromConversation(result!, { menu: createMenuReplyWindow(), failureMessage: '失敗' })).toEqual({ role: 'assistant', content: '您好！需要什麼協助？' })
+      expect(replyFromConversation(result!, { menu: createMenuReplyWindow(), serviceReply: true, failureMessage: '失敗' })).toEqual({ role: 'assistant', content: '您好！需要什麼協助？' })
       expect(kioskApi.streamKioskConversationMessage.mock.calls[0][0].content).toBe('嗨')
       expect(kioskApi.streamKioskConversationMessage.mock.calls[0][0].decisionState).toEqual(decisionState)
     }

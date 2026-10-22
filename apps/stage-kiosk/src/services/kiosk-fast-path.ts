@@ -579,6 +579,7 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   const readOnly = decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
     phase: state.phase,
+    ...(decision?.reason === 'GENERAL_QUESTION' ? { serviceReply: true } : {}),
     ...(state.serviceClarification ? { serviceClarification: state.serviceClarification } : {}),
     ...(decision?.handoff ? { handoff: decision.handoff } : {}),
     ...(requireMenuRead ? { requireMenuRead: true } : {}),
