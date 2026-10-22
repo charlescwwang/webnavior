@@ -8,6 +8,7 @@
     "dev": "vite --host --port 5166",
     "preview": "vite preview",
     "test:run": "vitest run",
+    "test:history": "vitest run src/evaluation src/clarificationDiagnosis.test.ts src/targetIdentity.test.ts src/recommendationFlow.test.ts",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {

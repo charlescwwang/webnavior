@@ -7,7 +7,133 @@ accumulating history.
 
 ## Current State
 
-- Oct21 Kiosk OpenCC presentation fix is committed locally, NOT DEPLOYED.
+- User authorized configured Jev + LLM. First live smoke run on Oct22 used
+  Jev lookski Qwen/Qwen3.5-4B (runtime health confirmed) and configured Main alias
+  webnavior/chat -> qwen36 (actual upstream checkpoint not independently verified).
+  Existing Server `tests/experiments/kioskProviderReplay.test.ts` now has eight
+  synthetic cases and current per-round task/context/tool/reply wiring. Specified
+  state checks: 7 pass, 1 FAIL; not Jev semantic accuracy or DOM acceptance.
+  Mixed add+price inquiry was classified INQUIRY, handed off UNCERTAIN_FILTER
+  read-only with unresolved price; Main's seven menu_get calls were rejected,
+  five rounds exhausted, cart empty. Do not loosen guards or increase rounds as
+  a substitute for preserving both demands. Multi-add succeeded through app guard
+  and Main despite Jev SINGLE; bare 對 also selected index0 but was app-blocked.
+  Main's multi-add final reply names only the last dish, so reply completeness is
+  not proven. No failure retry or product prompt change. Live DB read-only enforced;
+  scratch visitor/health DB and POS simulator, real configured model requests.
+  Run 20261022-081236 log: /tmp/webnavior-configured-multidemand-20261022-081236.log.
+  Full findings/limits in the multi-demand plan's live-pilot section. No pre-run
+  frozen manifest, so not formal baseline; 48x3 and fixed12 Main still pending.
+
+- Multi-demand evaluation first historical batch IMPLEMENTED locally, no commit
+  or deployment. Plan/results: `docs/plans/2026-10-22-kiosk-multi-demand-evaluation.md`.
+  Order Menu `src/evaluation` owns sanitized source projections/provenance,
+  per-demand fact evaluator and offline runtime controls. R03/R04/R05 are partial
+  original excerpts verified from two local captures, with source/row hashes and
+  original dialogue/ASR/questions/receipts; R01/R02/R06 originals remain missing,
+  explicitly unscored. R03 includes the actual customer correction to TWO total:
+  truthful reporting of recorded THREE is not fulfilling that correction.
+  Test-only evaluator detects omissions/duplicates/options/prose-only completion,
+  missing presentation and unrelated cart writes when before-state is supplied.
+  Reply tests belong to Kiosk (`historicalReplies.test.ts`); importing them into
+  Menu pulled Kiosk recording/model types and was corrected at the test boundary,
+  without tsconfig changes. Both apps now have `test:history`: Menu54/Kiosk5 pass,
+  one known recommendation diagnosis skipped. Full Menu757/Kiosk233 pass with
+  existing optional skips; both scoped types and changed-file lint pass. No new
+  live inference, POS writes, DOM acceptance, root typecheck or product changes.
+  The 48 synthetic cases' full model runner, baseline144 turns, fixed12 Main
+  sessions and optional structure probe are still planned, not executed. Prior
+  Oct7 five-question extraction failed0/26; do not revive it or equate safe Main
+  handoff with semantic understanding. Keep historical contradictions, repaired
+  controls and actual live model outcomes separate.
+
+- Oct22 collective-choice fix is local, NOT committed/deployed. Separately named
+  ADD subjects hand off whole requests rather than becoming one-target choices;
+  shared aliases/category ambiguity still clarify. Shared negative assent guard
+  prevents high-confidence provider indices from interpreting bare 對/是的/好 as
+  a target. Server uses existing recipient admission then CLARIFICATION; Menu
+  rejects bypassed execution while retaining the pending demand. Question copy
+  explicitly asks for one name/position; 第N項 now resolves alongside 個/筆.
+  Historical collective diagnostic is now a default regression. Before-fix nine
+  focused assertions failed; Menu748/Kiosk231/decision422 and Chrome7 now pass.
+  Menu/Server scoped types and changed-file lint pass. The effect PoC c09 current
+  fixture now expects domain handoff before inference; frozen semantic gold and
+  experiment results are untouched. This prevents a partial add, not proof Main
+  completes every multi-dish demand. Remaining six historical families are not
+  addressed. See the Oct22 investigation's follow-up section.
+
+- Historical regression audit now covers Aug31 initial Menu/Kiosk baseline through
+  Oct22: 17 dated groups in the existing Oct22 field investigation, not an audit
+  of every historical production session. Added two cross-flow tests for food
+  exclusions/price/catalog/reset and old-clear-confirmation isolation from a new
+  same-dish cart. Menu737/Kiosk231/decision422/proactive24 pass; Chrome23 pass,
+  two completion-simulator tests skipped. Nine opt-in diagnostic assertions still
+  fail across seven families: collective multi-meal yes, mistaken fresh-vs-more,
+  off-topic admission (two), typo/fragment candidates (two), low-filter query,
+  weak-route new request and fulfillment. Conservative Main handoff and fragment
+  guards are not automatically bugs; original FAST expectations need contract
+  review. The first three families need priority. Two stale provider stubs now
+  supply explicitly synthetic recipient/admission answers so failures reach the
+  intended boundary; recorded route/relation and expected results are unchanged.
+  Final diagnostics: /tmp/historical-{menu,server}-diagnosis-final.log. No product
+  code, live model, POS write, deployment or commit in this audit. Cross-origin,
+  management login/SW and full Scene ASR failure acceptance remain separate gaps.
+
+- Oct22 field fixes are implemented locally, NOT committed/deployed. Source:
+  `docs/plans/2026-10-22-kiosk-field-investigation.md` (investigation, plan and
+  implementation validation). Its historical-regression matrix maps Oct21/22
+  reports to existing tests and live-acceptance gaps, with scoped replay commands.
+  Menu fieldRegression also tests browse-first/fulfillment-first sequences around
+  real 1+2 merged quantities and a later add, guarding cross-flow state leakage.
+  Decision payment IDs accept current linepay/jkopay;
+  Menu/POS still validates execution. Unknown no-tool operation prose is rejected;
+  known effects require same-turn matching receipts. JSON/SSE model text is draft
+  service_event; Kiosk stores the validated assistant reply once. Service FAQs and
+  bare greetings remain usable. Catalog inclusion no longer removes legal tools.
+  Fulfillment uses exact visible controls; missing target fails before cart writes.
+  An unpaid-checkout mode change issues one-use confirmation, then cancels checkout
+  before applying the mode; pending/uncertain payment remains locked. Whole menu is
+  `menu_get({scope:'catalog',display:true})`, includes seen dishes and updates actual
+  grid; other recommendations release precise subject scope. Named display:false
+  reads do not replace the grid. Context carries rendered item IDs/query scope,
+  and Menu awaits async Vue presentation callbacks. Standalone acknowledgements
+  no longer become greetings/recommendations; invoice question omits internal rules.
+  Menu733/Kiosk231/Server482 tests and scoped types/lint pass; domain422 rechecked
+  after final semantic edit. Chrome21 and Menu/Kiosk builds pass. Optional live
+  tests skipped. No root typecheck, real-model replay, service restart or deployment.
+  Prior local Oct21 Menu dialog/viewport changes below are preserved. Historical
+  field evidence (25 sessions/1122 entries) is in 0600
+  `/tmp/webnavior-20261022-{api.log,entries.json,decisions.json}`. Live field/model
+  acceptance remains necessary; public site still runs the older deployed build.
+
+- Oct21 post-add Menu behavior is implemented locally, NOT committed/deployed.
+  User chose 「關閉選單並保留目前菜單」. Selection no longer rewrites the
+  recommendation grid/category; closing restores the pre-selection viewport.
+  Successful add resumes an older unadded meal's question without reopening its
+  dialog. Test-only reproduction failed before the fix; Menu728 tests, scoped
+  types/lint/build pass. Isolated Chrome + local simulator verified dialog count0,
+  category便當, scrollY300 unchanged and one added便當. No live order/payment writes.
+  Root typecheck not run. README documents the new behavior.
+  Recent live session WpW9YM6aK7lDFgT-V1m3e exposes separate UNFIXED issues:
+  actual order_add_item x1 then x2 (seq22/28) merged to3; later Main claims
+  2/4/5/7 quantities, phone320 recorded, and displayed menu/price results without
+  matching tools. Only cart writes in the bounded session through seq330 are
+  those two adds. Route/serviceRequest/recovery can promote weak/background or
+  incomplete speech into UNCERTAIN_OPERATION Main; no-tool Main prose is accepted
+  as assistant_text and can pollute later history. Examples at15:18–15:22:
+  電話號碼是320; 再用電池; 一 二 三 四 五 六 七. Some recovery rounds correctly
+  ignore background; do not claim every admission has the same failure path.
+  Audit artifacts (0600): /tmp/webnavior-quantity-session-audit.json and
+  /tmp/webnavior-latest-parsed-decision-log.json. No new live model replay,
+  semantic thresholds/prompts, history or production services were changed.
+
+- Oct21 Kiosk OpenCC through 29962bf is DEPLOYED and verified. Public Kiosk
+  index-BR-bjDae.js and all 44 HTML-linked assets match staged SHA-256 hashes.
+  Clean Chrome stays at /kiosk/#/ without page errors; the deployed converter
+  maps 请确认这份订单。 to 請確認這份訂單。. Backup and release.json:
+  `/tmp/webnavior-opencc-release-20261021-561pnnz2` (deployed-verified).
+  Frontend-only release; API PID 2642311 and its start time, Menu, management
+  build and Nginx unchanged. API/DB/Redis/bridge and 7 catalog items pass.
   Reuses stage-ui's Taiwan Traditional converter for conversation/streaming
   text, errors, visible ASR, welcome/progress and diagnostic transcript headings;
   speech synthesis also receives converted text. Display copies preserve original
@@ -16,7 +142,8 @@ accumulating history.
   build and the once-run root typecheck pass. Root lint reports 2370 errors in
   unchanged baseline files; no unrelated cleanup. Browser tests prebundle OpenCC
   to avoid mid-run optimizer reloads. Changes are grouped into display, speech
-  and documentation commits on no_mcp; no remote push or deployment.
+  and documentation commits on no_mcp; no remote push. Reload existing Kiosk
+  tabs to load the OpenCC frontend.
   This does not fix background admission or unverified model success claims.
 
 - Oct21 `no_mcp` through efcce39 is DEPLOYED and verified at

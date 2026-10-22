@@ -41,6 +41,10 @@ current-draft correction/cancellation, and prints sanitized tool calls, replies
 and elapsed time. Timing separates Jev service requests, the decision flow,
 each Main Agent SSE request (including routing/network/persistence), and local
 tool execution; these are wall-clock measurements, not internal inference time.
+The `-t 'configured multi-demand acceptance'` subset checks eight synthetic
+cart/presentation scenarios with the configured models. It prints raw Jev
+choices separately from application protections; passing state checks do not
+prove semantic understanding. Presentation callbacks do not verify browser DOM.
 It does not test ASR/TTS or physical devices. Cross-app replay
 files live under `tests/experiments`, outside the Node-only Server source project.
 
@@ -233,6 +237,11 @@ finite filter checks remain distinct bounded decisions. Missing item options or
 serving quantity use application-owned `configuration` state: only its issued
 answers, cancel, IGNORE and NEW_REQUEST are available. Configuration/clarification
 route a topic change before parsing its concrete answer.
+In a multi-target `item-clarification` question, bare assent cannot authorize an
+index even if the provider returns one confidently. After the existing recipient
+check, the server retains the question as `CLARIFICATION`; background or uncertain
+recipients still cannot trigger a spoken retry. Single-meal Yes/No confirmation
+and ordinary checkout acceptance keep their existing authorization contracts.
 While asking quantity/options, a bare different catalog dish or category can
 route as NEW_REQUEST without an explicit ordering verb. Naming another dish
 does not authorize cancellation; explicit cancellation still uses its concrete
@@ -492,6 +501,11 @@ contract. A current compact catalog supports identity/price/option understanding
 without a compulsory second literal lookup; requested menu presentation still
 needs its tool receipt. The current snapshot replaces historical state, and tool
 scope intersects its allowed tools with offered tools. Phone skip stays host-owned.
+Decision and conversation transports accept bounded payment-method IDs from the
+current service, including LINE Pay and JKoPay; execution still validates the Menu's
+actual offered methods. Model prose is recorded as draft service events in both
+JSON and SSE flows. Only the host's validated final response becomes assistant
+history, so an unexecuted success claim cannot become an order fact.
 Initial and continuation requests use the same schema; inconsistent phase,
 read-only state or menu revision is rejected before provider execution.
 

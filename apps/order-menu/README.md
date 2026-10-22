@@ -25,7 +25,12 @@ action. On narrow screens with horizontal categories, the summary sits above a
 reserved bottom row for that action. Selecting the summary opens a dedicated
 order-review screen where customers can inspect customizations, edit
 quantities, remove items, choose dine-in or take-out, and explicitly advance to
-checkout. Kiosk owns the optional ten-digit phone dialog above the catalog, then
+checkout. Successful touch, Fast Path and Agent additions close the quantity/
+customization dialog and keep the current category, query results and browsing
+position. Selecting a dish does not replace the grid with that dish. A retained
+unfinished meal can supply the next spoken question without immediately opening
+another dialog; its next configuration action opens it when needed.
+Kiosk owns the optional ten-digit phone dialog above the catalog, then
 collects invoice details without another membership scan. It offers mobile
 carrier, citizen-certificate carrier, tax ID and donation; no paper invoice or
 automatic timeout donation is offered. Phone entry records this test transaction;
@@ -140,6 +145,21 @@ That device must also reach the configured `VITE_ORDER_MENU_SERVER_URL`.
 
 ## Run locally
 
+Historical evidence and deterministic boundary replays live in `src/evaluation`.
+Run `pnpm -F @proj-airi/order-menu test:history` for these and the related target,
+clarification and recommendation regressions. Captured excerpts include source
+file/row hashes, UTC times, original dialogue/ASR, question text and authoritative
+cart/presentation facts; private session/transport identifiers are omitted.
+Tests use checked-in projections and never read private `/tmp` captures or call a
+model. Three cases currently have partial evidence (R03–R05); R01/R02/R06 remain
+missing-evidence records and cannot count as passing incident replays.
+Recorded contradictions and repaired-action controls are scored separately.
+The test-only per-demand evaluator detects omissions, duplicate quantities,
+wrong option combinations, unsupported completion claims and unrelated changes
+when a before-cart snapshot is supplied. It measures facts, not customer consent
+or model accuracy. See `docs/plans/2026-10-22-kiosk-multi-demand-evaluation.md`
+for coverage and the still-pending live-model stages.
+
 Semantic target resolution tracks reference provenance (current utterance,
 qualified continuation, category, presentation, selection and cart). Named items
 and categories qualify mutation targets before historical focus can be used.
@@ -147,6 +167,14 @@ A category purchase with several real available dishes produces a revision-bound
 clarification. A sole category member is never substituted for an unmatched dish
 name: category-only purchase requests go to Main for resolution, preserving the
 original utterance. Intent confidence and category size do not identify a product.
+Separately named dishes in one ADD request go to Main as a whole request, even
+if the finite route mistakenly selects a single ADD. They are not alternatives
+in a one-item clarification. A shared merchant alias or category can still ask
+the customer to choose one real item. Bare assent such as 「對」 or 「是的」
+cannot choose the first item: the server retains the question after recipient
+admission, and the Menu independently rejects execution without a target choice.
+Names, ordinals (including 「第二項」), and qualified answers retain the existing
+resolution, expiry and revision checks.
 The same boundary applies to host-bound Main tasks: exact names/merchant aliases
 bound the product IDs that Main may select, configure or add. Category-only or
 discovery-fragment evidence permits lookup and clarification, not choosing a
@@ -363,7 +391,7 @@ Conversational `menu_recommend` calls require an explicit `action`:
 
 | Action | Browser-owned behavior |
 | --- | --- |
-| `continue` | Keep confirmed conditions and return the next unseen batch. No condition changes are allowed. |
+| `continue` | Return the next unseen batch, keeping dietary/category conditions. A previous precise meal query is released so other dishes can be found. No caller-supplied condition changes are allowed. |
 | `update` | Apply only supplied changes; retain other groups. New numeric price bounds replace the old price group. Sort-only changes retain bounds. Use `clear` to remove explicit groups. |
 | `reset` | Release browsing bounds/category/subject/needs/strategy; retain dietary restrictions, food exclusions, cart and shown history. |
 | `clarify` | Return one application-owned spoken question; do not query, present, consume a batch or change the cart. |
@@ -383,13 +411,22 @@ query actions, not literal product names. `menu_get(display:false)` remains an
 internal evidence read; customer-facing category browsing also uses explicit
 query actions, for example `menu_recommend({ action: 'update', category: '便當' })`.
 `menu_get({ category: '便當', display: true })` is rejected: its category field
-is for internal reads, while displayed `menu_get` results require a concrete
-meal query. Uncertain intent/scope uses `clarify`, while a clear new browsing
+is for internal reads. Displayed `menu_get` results require a concrete
+meal query or explicit `scope:catalog`. Uncertain intent/scope uses `clarify`, while a clear new browsing
 request may use `reset`. No additional choice card is created. On exhaustion,
 continuation asks whether to change the price range or food type and retains
 the last presentation. It does not relax conditions or recycle the same batch.
 
-The default is up to three distinct available dishes in POS catalog order;
+An explicit whole-menu request uses `menu_get({ scope: 'catalog', display: true })`.
+It presents all matching dishes, including previously viewed items, releases the
+old precise browsing subject, and retains dietary/ingredient exclusions. This is
+separate from three-item recommendations: neither `continue` nor `reset` is a
+whole-menu display. Data-only lookups, including named queries, never replace the
+dish grid. Presentation callbacks may return a promise; the runtime awaits Vue's
+update before reporting the result. Main context includes current grid item IDs
+and browsing subject separately from its complete catalog and actual cart.
+
+The recommendation default is up to three distinct available dishes in POS catalog order;
 this is not a popularity claim. Fewer matches are never padded. `limit:1` or `2`
 can narrow an explicit request. Prices are per-dish base prices, not order or
 customization budgets. `strategy` is offered only with current POS evidence for
@@ -425,7 +462,12 @@ without a viewport controller do not advertise it. No scrolling dependency is
 required. `cart_get` shows the order review by default (`display:false` is a data-only
 read). Both semantic and Agent fulfillment changes reveal the review and await
 control registration before animating the POS choice, then update the selected
-state. Reading the cart never replaces an active checkout/payment screen.
+state. Missing fulfillment controls fail visibly before the cart is changed.
+Changing mode during an unpaid checkout first creates a revision-bound confirmation;
+after confirmation the runtime returns to the order and applies the requested POS
+mode once. Pending/uncertain payment stays locked. Repeating the existing mode does
+not replay the animation, release seats or advance cart revisions.
+Reading the cart never replaces an active checkout/payment screen.
 The bottom cart summary is one full-width native button: summary text, item
 previews, padding and the orange action all open the same review once. Enter
 and Space work without separate handlers. Empty carts remain disabled; the
@@ -741,11 +783,10 @@ Spoken person-count updates first reveal/register the actual person-count select
 then await the existing cursor animation before one authoritative seating update.
 The cursor is visual feedback, not an additional DOM click or mutation. Manual
 selection continues to use the normal non-animated input path.
-`kiosk_fast_path_continue` permits at most one revision-bound, one-use
-recommendation read after an explicit food-condition lookup. Broad exploration
-already returns recommendations and does not offer that extra read.
-A new utterance invalidates the old offer. These host tools are not Main Agent tools; cart/payment mutations
-never participate in this read-only continuation.
+Whole-menu exploration now returns its complete filtered presentation directly,
+without scheduling a second recommendation read that could replace that grid.
+Internal host continuation tickets remain one-use and revision-bound; they are
+not Main Agent tools or authorization for cart/payment mutations.
 
 ## Current Main context and confirmed names
 

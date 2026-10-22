@@ -41,6 +41,13 @@ screen with the QR-code enrollment flow.
 
 ## Meal clarification
 
+`pnpm -F @proj-airi/stage-kiosk test:history` replays sanitized historical
+quantity and fulfillment claims through the current reply-grounding boundary.
+Shared evidence is checked in under Order Menu's test-only `src/evaluation`;
+reply tests stay in Kiosk so Menu does not import the Kiosk recording lifecycle.
+These offline tests do not call Jev/Main, and partial historical evidence is not
+reported as complete incident acceptance.
+
 The owned menu supports a small yes/no meal-clarification flow. The host requests
 it only after service admission and speaks/shows the exact browser-issued question
 in the conversation. No additional floating Yes/No card is mounted on the menu.
@@ -67,7 +74,13 @@ FAQs and phone entry omit catalog details. Jev's context/order/thresholds are
 unchanged; Stage Web is outside this integration.
 
 Known operation handoffs retain effect and resolved targets. A successful lookup
-of another dish cannot complete a known removal request. Owned confirmation
+of another dish cannot complete a known removal or fulfillment-change request.
+Unclassified no-tool prose cannot report an operation as completed. Classified
+service FAQs and bare greetings retain natural replies; uncertain operation turns
+need an application question or a matching receipt. The Server stores generated
+prose as draft service events, and the host records only its validated final reply
+as assistant history. Catalog inclusion and legal tool exposure are independent:
+omitting menu details does not silently remove valid state/question tools. Owned confirmation
 questions end the model loop without another completion call. Rejected tool
 batches persist their receipts and stop without a speculative continuation.
 The host records `main_task_metrics` service events with orchestration duration,

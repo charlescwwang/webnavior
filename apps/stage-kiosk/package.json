@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:run": "vitest run",
+    "test:history": "vitest run src/services/historicalReplies.test.ts src/services/fieldRegression.test.ts",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
