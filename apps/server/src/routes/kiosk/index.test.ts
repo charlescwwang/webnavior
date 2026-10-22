@@ -38,6 +38,16 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  // Report: docs/plans/2026-10-22-kiosk-field-investigation.md, payment HTTP400s.
+  it('accepts the current Menu LINE Pay and JKoPay decision payload', async () => {
+    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '街口支付', candidates: [{ id: 'intent:select-payment:jkopay', description: '街口支付' }], decisionState: { phase: 'checkout_payment_select', allowedPaymentMethods: ['linepay', 'jkopay'] } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
+  })
+
   it.each(['json', 'sse'])('records actual Main payload size and provider usage (%s)', async (transport) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => transport === 'json'
       ? Response.json({ choices: [{ message: { content: '您好。' } }], usage: { prompt_tokens: 123 } })
@@ -1097,7 +1107,7 @@ describe('kiosk routes', () => {
   })
 
   // Report: this chat, 2026-10-14 — successful greetings were hidden whenever menu tools were offered.
-  it.each([undefined, { phase: 'ordering' as const }])('persists a streamed greeting as dialogue with menu tools offered: %j', async (decisionState) => {
+  it.each([undefined, { phase: 'ordering' as const }])('keeps streamed prose as a draft until the host validates it: %j', async (decisionState) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '您好！需要什麼協助？' } }] }))
     const kioskService = createKioskService(db)
     const app = new Hono().route('/api/kiosk', createKioskRoutes({
@@ -1129,7 +1139,8 @@ describe('kiosk routes', () => {
     expect(events).toContain('您好！需要什麼協助？')
     expect(events).toContain('"type":"turn-finished"')
     const transcript = await kioskService.getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })
-    expect(transcript.entries.filter(entry => entry.kind === 'assistant_text').map(entry => entry.content)).toEqual(['您好！需要什麼協助？'])
+    expect(transcript.entries.filter(entry => entry.kind === 'assistant_text')).toEqual([])
+    expect(transcript.entries.some(entry => entry.kind === 'service_event' && entry.content === '您好！需要什麼協助？')).toBe(true)
     expect(complete.mock.calls[0]?.[0].body.messages).toContainEqual({ role: 'user', content: '嗨' })
   })
 

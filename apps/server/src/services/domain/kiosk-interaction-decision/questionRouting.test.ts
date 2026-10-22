@@ -52,7 +52,13 @@ describe('question context is not a routing prerequisite', () => {
     let routeCalls = 0
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => questions.route
       ? { answers: { route: routeCalls++ === 0 ? { choice: 'intent:set-fulfillment:dine-in', confidence: 0.2975 } : { choice: 'intent:add-item', confidence: 0.95 } } }
-      : { answers: { relation: { choice: 'NEW_REQUEST', confidence: 0.6718 } } })
+      : { answers: {
+          relation: { choice: 'NEW_REQUEST', confidence: 0.6718 },
+          // NOTICE: These later admission checks were not in the captured trace.
+          // Synthetic valid answers isolate recovery from an incomplete fixture.
+          recipient: { choice: 'KIOSK', confidence: 0.95 },
+          serviceRequest: { choice: 'REQUEST', confidence: 0.95 },
+        } })
     const result = await decideInteraction({
       transcript: '牛肉麵一碗',
       policy,

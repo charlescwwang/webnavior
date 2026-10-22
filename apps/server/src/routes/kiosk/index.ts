@@ -16,7 +16,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
-import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
+import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { currentContextInstructions } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
@@ -121,6 +121,7 @@ const conversationMessageSchema = object({
     unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
     fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
     waitingFor: optional(presentedQuestionSchema),
+    serviceReply: optional(boolean()),
     allowedPaymentMethods: optional(pipe(array(pipe(string(), minLength(1), maxLength(80))), maxLength(20))),
     interactionState: optional(interactionStateSchema),
     paymentState: optional(pipe(string(), maxLength(40))),
@@ -178,7 +179,7 @@ const interactionDecisionSchema = object({
     fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
     waitingFor: optional(presentedQuestionSchema),
     activeRequest: optional(object({ stage: picklist(['starting', 'thinking', 'tool_requested', 'mutating']), text: pipe(string(), regex(/\S/), maxLength(240)) })),
-    allowedPaymentMethods: optional(pipe(array(picklist(['card', 'mobile'])), maxLength(2))),
+    allowedPaymentMethods: optional(pipe(array(pipe(string(), minLength(1), maxLength(80))), maxLength(20))),
     checkoutSnapshot: optional(unknown()),
     constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(9)), include: optional(pipe(array(pipe(string(), maxLength(80))), maxLength(9))), dietary: optional(literal('vegetarian')), price: optional(priceConditionsSchema), unresolvedPrice: optional(boolean()) })),
     ingredientReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z_-]+$/), maxLength(40)), label: pipe(string(), maxLength(40)) })), maxLength(9))),
@@ -675,7 +676,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         content: answer.content,
         // Operation prose is a draft; only the host's validated receipt is
         // customer dialogue. Do not feed a competing question back as history.
-        kind: answer.toolCalls.length || result.output.decisionState?.requireMenuRead || requiresPresentedReply(result.output.toolResults) ? 'service_event' : 'assistant_text',
+        kind: 'service_event',
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -1041,7 +1042,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
         if (answer.content) {
           await input.kioskService.appendDeviceInteraction({
             content: answer.content,
-            kind: answer.toolCalls.length || input.decisionState?.requireMenuRead || requiresPresentedReply(input.toolResults) ? 'service_event' : 'assistant_text',
+            kind: 'service_event',
             deviceId: input.deviceId,
             visitorSessionId: input.transcript.session.id,
           })
@@ -1147,7 +1148,7 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   const currentTools = input.decisionState?.context?.allowedToolNames
   const agentTools = input.tools?.filter(tool => tool.function.name !== 'customer_skip_phone' && (!currentTools || currentTools.includes(tool.function.name) || tool.function.name === 'kiosk_session_history'))
   const available = input.decisionState?.readOnly
-    ? agentTools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(tool.function.name))
+    ? agentTools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'order_ask_question'].includes(tool.function.name))
     : agentTools
   // Read-only inquiries need a presented result, while operation tasks retain
   // their existing read-before-write contract and may continue to cart tools.

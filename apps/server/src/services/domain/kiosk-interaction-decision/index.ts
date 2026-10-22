@@ -2,6 +2,8 @@ import type { SystemOnePolicyInput, SystemOneQuestion } from '../kiosk-system-on
 import type { DecisionConversation } from './context'
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
+import { isTargetAcknowledgement } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import { normalizeTranscript } from './context'
 import { decisionQuestionBudget } from './contracts'
 import { createDecisionInstructions, serviceRequestInstruction } from './prompt'
@@ -207,6 +209,11 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     && (presented.purpose !== 'recommendation-invitation' || (phase === 'ordering' && !input.decisionState?.activeRequest))
     ? presented
     : undefined
+  // A standalone acknowledgement has no operation to resolve unless an
+  // actionable question is live. Do not turn high-confidence HELLO_ONLY
+  // misclassifications of 好/謝謝 into repeated greetings or menu mutations.
+  if (/^(?:謝謝|謝謝你|了解|知道了|收到)[。.!！,，、\s]*$/.test(input.transcript) || ((!waitingFor || waitingFor.purpose === 'customer-entry') && /^(?:[好嗯喔哦]|好的)[。.!！,，、\s]*$/.test(input.transcript)))
+    return { kind: 'IGNORE' }
   const invitation = waitingFor?.purpose === 'recommendation-invitation' ? waitingFor : undefined
   // The question owner supplies this turn's legal answers, including newly
   // parsed slot values. Dialogue text and purpose names cannot invent an answer.
@@ -220,7 +227,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         type: 'choice',
         instructions: '只判斷最後一句話的對象及目的。店員或本機是服務對象；被叫名字的同伴不是店員。前面的問題不代表本句正在回答。',
         criteria: {
-          GREET: '顧客只向服務中的店員／本機問好，沒有其他要求。',
+          GREET: '顧客明確向本機說你好、嗨等問候；好、嗯、謝謝、了解等附和不是問候。沒有其他要求。',
           IGNORE: '對同伴問好、約同伴移動或閒聊，沒有向店員／本機提出需求。',
           REQUEST: '顧客向店員／本機提出點餐、查詢、修改等需求，或回答操作問題。即使含問好，仍是需求而非純招呼。',
         },
@@ -278,7 +285,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
     try {
       const scope = (await invoke(state, { service: {
         type: 'choice',
-        instructions: '只分類 customerUtterance。HELLO_ONLY 僅限對本機單純問好，沒有問題或要求。只要有提問或操作需求就選 REQUEST，含問好也一樣。叫同伴名字問好或聊天選 BACKGROUND；被叫名字的同伴不是本機。對比：「你好」是 HELLO_ONLY；「你好，你是誰」「你好，請略過電話」是 REQUEST；「小陳你好，好久不見」是 BACKGROUND。',
+        instructions: '只分類 customerUtterance。HELLO_ONLY 僅限對本機單純問好，沒有問題或要求。「好」「嗯」「謝謝」「了解」是附和，不是問好，沒有新需求選 BACKGROUND；只有明確問候才選 HELLO_ONLY。只要有提問或操作需求就選 REQUEST，含問好也一樣。叫同伴名字問好或聊天選 BACKGROUND；被叫名字的同伴不是本機。對比：「你好」是 HELLO_ONLY；「你好，你是誰」「你好，請略過電話」是 REQUEST；「小陳你好，好久不見」是 BACKGROUND。',
         criteria: {
           HELLO_ONLY: '只有對店員／本機問好，例如你好、哈囉、早安，沒有其他內容。',
           REQUEST: '向本機提問、要求推薦／點餐／略過／填電話或回答問題。身分、用途、可否略過都是提問，不是單純問好。',
@@ -805,7 +812,13 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       return { kind: 'NEEDS_CLARIFICATION', confidence, ...trace }
     if ((phase === 'pending_confirmation' || phase === 'configuration' || phase === 'clarification' || phase === 'meal_confirmation') && answer?.choice === 'NEW_REQUEST')
       return typeof confidence === 'number' && confidence >= 0.6 ? { kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', confidence, ...trace } : { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
-    if (phase === 'clarification' && answer?.choice === 'CLARIFICATION') {
+    // Assent to a list is not a choice within it, even when the model selects
+    // a valid index confidently. Retain recipient admission before asking again.
+    const unqualifiedTargetAnswer = waitingFor?.purpose === 'item-clarification'
+      && questionChoices.filter(choice => choice.id.startsWith('clarify:') && !choice.id.endsWith(':cancel')).length > 1
+      && isTargetAcknowledgement(input.transcript)
+      && questionChoices.some(choice => choice.id === actionId)
+    if (phase === 'clarification' && (answer?.choice === 'CLARIFICATION' || unqualifiedTargetAnswer)) {
       if (confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1)
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
       // An unresolved target is not proof of who spoke. Qualify the literal
@@ -836,7 +849,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       const answerCriteria = Object.fromEntries(questionChoices.map(choice => [choice.id, choice.description]))
       const relationResult = await invoke(state, { relation: {
         type: 'choice',
-        instructions: `只解析最後一句顧客語音是否向店員回答有效問題「${waitingFor.question}」，以及具體回答哪個合法選項。第一輪路由只是待驗證假設，不能假定顧客已同意，不需維持第一輪選擇。依原句的肯定、否定、暫緩、值與對象區分效果；正在回答不等於同意。只能選下列已提供的答案，不猜值、商品或工具參數。問份數／規格時，單說另一個有菜單證據的品名或分類，屬 NEW_REQUEST，不是取消；不必帶「我要」「改成」。只重述原餐點不是取消。若拒絕後另提需求，選 NEW_REQUEST；無法確認選 UNCERTAIN。`,
+        instructions: `只解析最後一句顧客語音是否向店員回答有效問題「${waitingFor.question}」，以及具體回答哪個合法選項。第一輪路由只是待驗證假設，不能假定顧客已同意，不需維持第一輪選擇。「改內用」「改自取／外帶」是新的用餐方式要求，不是同意結帳、選發票或暫緩；應選新的需求，不繼承舊問題的操作。依原句的肯定、否定、暫緩、值與對象區分效果；正在回答不等於同意。只能選下列已提供的答案，不猜值、商品或工具參數。問份數／規格時，單說另一個有菜單證據的品名或分類，屬 NEW_REQUEST，不是取消；不必帶「我要」「改成」。只重述原餐點不是取消。若拒絕後另提需求，選 NEW_REQUEST；無法確認選 UNCERTAIN。`,
         criteria: {
           ...answerCriteria,
           ...(canClarify ? { CLARIFY_REQUEST: '確定向本機提出服務需求，但答案無法對應是／不是或當前設定；用真實提案再確認。背景／對象不明不可選。' } : {}),
