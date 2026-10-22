@@ -191,7 +191,7 @@ probe 使用相同 utterance／question／必要角色對話，不提供 gold、
 4. 用固定 12 條 Main session 及四條 DOM 流程檢查逐項完成；若現有架構無法保留未完成需求，明確記為功能缺口，不用測試端代替產品修復。
 5. 只有需要區分「會轉交」和「懂結構」時，再執行獨立單題 probe。對照結果後，才選擇改 prompt／候選描述、保留保守轉交，或另設計需求追蹤；不先決定要多加一個分類器。
 
-上列完整評測流程仍是規劃；已實作範圍與離線、真實模型 pilot 結果分別依下節記錄。沒有正式設定變更、部署或提交。
+上列完整評測流程仍是規劃；已實作範圍與離線、真實模型 pilot 結果分別依下節記錄。該階段沒有正式設定變更；後續提交／部署狀態見文末。
 
 ## 第一批本機實作：歷史資料與離線重播
 
@@ -248,3 +248,10 @@ KIOSK_PROVIDER_REPLAY=1 pnpm -F @proj-airi/server exec vitest run tests/experime
 ```
 
 本機原始結果：`/tmp/webnavior-configured-multidemand-20261022-081236.log`（權限 0600），包含 Jev 原始 choice／probability、執行工具收據及最終 cart／presentation callback。不是完整每輪 provider exchange manifest；未保存的資料不可追補成已捕獲。環境未開啟時，檔案可載入、24 個 live tests 全部跳過，這只是 env guard 驗證。新增 runner 的修改檔 lint 通過；沒有以離線 skip 當模型成功，也未執行全專案 typecheck。實際 DOM、ASR、正式裝置 profile 與 48 例 baseline 仍待驗。
+
+
+## 測試提交與場域實測版
+
+使用者後續授權 commit 及部署。`5795db6` 已提交歷史 fixture／來源定位、逐需求 evaluator、離線重播、Kiosk 歷史回覆測試、test:history 入口，以及 Server 設定模型八例 opt-in runner；測試與已知失敗均保留。沒有提交 credentials、私有原始 capture、資料庫 dump 或完整模型 log。未啟用 KIOSK_PROVIDER_REPLAY 時，模型測試明確跳過；啟用後 mixed-query-add 目前預期仍會暴露失敗，不把它改成成功斷言。
+
+2026-10-22 16:30 已將 `6666541` 至 `5795db6` 的修正更新到場域供實測。備份與驗證詳見 [場域更新紀錄](2026-10-22-kiosk-field-investigation.md)。部署檔案／服務健康檢查通過，不新增上述模型通過數，也不填補 48×3、固定 Main sessions、完整 DOM／ASR 或缺失歷史證據。重新載入實測站的 Kiosk 頁面後再開始收集現場案例。

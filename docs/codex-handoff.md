@@ -7,6 +7,31 @@ accumulating history.
 
 ## Current State
 
+- Oct22 user explicitly requested plain-language batch commits and deployment for
+  FIELD TESTING. Code/test commits on no_mcp: 6666541 Menu/browse/cart/fulfillment,
+  1eaf6a4 Server decisions/receipts, 2ab99ec Kiosk verified replies, 5795db6 historical
+  fixtures/evaluator/configured-model tests and docs. Those Oct21/22 local changes
+  below are now committed and DEPLOYED through 5795db6; old not-deployed labels
+  describe their implementation-time state. Public origin:
+  https://webnavior.aikcitri.qzz.io. API restarted Oct22 16:30:18 Taipei,
+  PID4107684; local livez/readyz confirm DB/Redis ok. Menu index-CC4ZOIK-.js and
+  Kiosk index-CLs9SjEN.js plus all 2/44 HTML-linked resources match staged SHA256.
+  Public /menu-api/health and catalog7 pass. Bridge process, management frontend
+  and Nginx unchanged. Backup/verified DB dump/staged artifacts/release.json:
+  /tmp/webnavior-field-release-20261022-e7vo7dwm (deployed-verified).
+  Deployment reused installed dependencies (no lock/dependency changes), rebuilt
+  schema package/Menu/Kiosk, no manual db:push or schema change. Standard sudo
+  restart required a password and direct systemctl timed out; verified owned pnpm
+  launcher was terminated, and existing systemd on-failure/control-group policy
+  restarted/cleaned up the service. No service policy or privilege changes.
+  Precommit checks: Menu757/Kiosk233/Server482 tests, focused Chrome2, one root
+  typecheck, changed-file lint and builds pass. Root lint has the same2370 existing
+  baseline errors, not fixed. Known mixed add+inquiry live-pilot failure remains;
+  this release supports field testing, not full model/ASR/physical POS acceptance.
+  Reload existing Kiosk pages. Historical sources remain partial3/missing3;
+  committed source projections are sanitized, private capture/log/DB dump are not
+  committed. A follow-up documentation commit records this deployment.
+
 - User authorized configured Jev + LLM. First live smoke run on Oct22 used
   Jev lookski Qwen/Qwen3.5-4B (runtime health confirmed) and configured Main alias
   webnavior/chat -> qwen36 (actual upstream checkpoint not independently verified).

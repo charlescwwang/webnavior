@@ -1,6 +1,6 @@
 # Webnavior Kiosk 10 月 22 日場域異常分析
 
-日期：2026-10-22，時間均為 Asia/Taipei。狀態：調查、修改規劃與本機實作完成；尚未 commit 或部署，真實模型／現場語音仍待驗收。
+日期：2026-10-22，時間均為 Asia/Taipei。狀態：調查、修改與測試已分批提交，2026-10-22 16:30 更新場域供實測；真實模型八例 pilot 有一例混合需求失敗，現場語音及完整流程仍待驗收。下文「未部署／未呼叫模型」為各階段當時狀態，以文末更新為準。
 
 今天主要問題集中在付款資料契約、操作回覆與實際狀態不一致，以及菜單查詢條件無法解除。公開入口與服務健康檢查目前正常，不能將這批互動失敗歸因於網域或服務停機。
 
@@ -396,3 +396,19 @@ Session ID 與 sequence 為上述資料庫快照的關聯鍵。25 個 session �
 驗證：Menu 全套 748 通過／176 跳過；Kiosk 231 通過／48 跳過；Server decision domain 422 通過／80 跳過；Chrome FieldState／RequiredConfiguration／OrderReviewFlow 共 7 通過。Menu／Server package typecheck、修改檔案 ESLint 與 diff 檢查通過；未跑全專案 typecheck。紀錄：`/tmp/collective-{menu-final,server-suite,kiosk-suite,browser,menu-types-final,server-types,lint-clean}.log`。
 
 其餘歷史問題未在這批修正。重新開啟 Menu 診斷後，ASR 名稱兩項、錯選 fresh 推薦一項仍失敗，見 `/tmp/collective-remaining-menu-diagnosis.log`；原集合肯定案例不再被跳過。本批保證上述明確邊界不發生部分寫入，尚未驗收真實模型是否完整接手、逐餐解析與完成全部多餐需求；沒有宣稱建立了所有需求的完成清單。未部署、commit、操作真實 POS 或呼叫真實模型。
+
+
+## 場域實測版更新（2026-10-22 16:30）
+
+使用者明確授權分批 commit，包含測試案例，並更新公開站供場域實測。本批提交：
+
+- `6666541`：保留瀏覽位置並同步菜單、購物車與用餐方式，包含對應回歸測試。
+- `1eaf6a4`：避免多候選誤選，依實際操作記錄點餐結果。
+- `2ab99ec`：依操作回執回覆，拒絕未完成的成功宣告，包含 Chrome 畫面測試。
+- `5795db6`：保存歷史對話節錄、逐需求 evaluator、離線控制及設定模型的 opt-in 測試與文件。
+
+已部署上述版本至 <https://webnavior.aikcitri.qzz.io/>。更新前備份舊 Menu／Kiosk 與 PostgreSQL，dump 已用 pg_restore --list 驗證；備份、staged builds、驗證結果位於 `/tmp/webnavior-field-release-20261022-e7vo7dwm`，release.json 狀態為 deployed-verified。沒有 schema、Nginx、管理前端、Bridge 或模型設定變更；保留舊雜湊資源供既有頁面載入，index 最後替換。API 於 16:30:18 重啟，PID 4107684。
+
+公開 Menu `index-CC4ZOIK-.js`、Kiosk `index-CLs9SjEN.js`，HTML 與直接連結的 2／44 項資源 SHA-256 全部吻合；API livez／readyz、DB／Redis、公開 `/menu-api/health` 及七項 catalog 正常。部署前 Menu 757、Kiosk 233、Server 482 項測試與 Chrome FieldState 2 項通過；本次依提交規範執行一次全專案 typecheck 並通過。修改檔 lint、建置及 diff 檢查通過；全專案 lint 仍有既存 2,370 項錯誤，未擴大修復。
+
+模型八例 smoke pilot 的狀態檢查 7 通過／1 失敗，詳見 [多需求測試設計與結果](2026-10-22-kiosk-multi-demand-evaluation.md)。混合加購＋詢價未修好；多品項與裸肯定仍有 Jev 原始誤判，Application 保護不能當語意理解成功。已提交的測試保留這些限制，未重試或降低門檻把結果改成全綠。此次部署驗證不包含現場語音、付款或正式 POS 驗收。場域端重新載入 Kiosk 頁面後開始實測。
