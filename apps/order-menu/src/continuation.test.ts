@@ -17,11 +17,11 @@ describe('customer order continuation links', () => {
     const pos = createInMemorySimulatorGateway('accepted', 'authorized', Date.now, 'after-order')
     const payments = vi.spyOn(pos, 'createPayment')
     const submissions = vi.spyOn(pos, 'submit')
-    const app = createPosBridgeApp({ allowedOrigin: 'http://menu.test', gateway: pos, tableAssignment: 'after-order' })
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://menu.test', gateway: pos, tableAssignment: 'after-order' })
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => app.request(String(input), init))
     const catalog = await pos.getCatalog()
     const item = catalog.items[0]!
-    const payment = await pos.createPayment(item.price, 'linepay')
+    const { payment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: item.price, method: 'linepay' }) })).json()
     const order = await (await app.request('/v1/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
       idempotencyKey: 'pickup-change-order-0001',
       cart: { catalogRevision: catalog.revision, fulfillmentMode: 'dine-in', paymentId: payment.id, itemCount: 1, total: item.price, lines: [{ id: 'line-1', itemId: item.id, name: item.name, options: {}, quantity: 1, unitPrice: item.price }] },

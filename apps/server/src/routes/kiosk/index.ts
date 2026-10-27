@@ -2,6 +2,7 @@ import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conv
 import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
+import type { createKioskPosGateway } from '../../services/adapters/kioskPos'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { KioskAgentInteractionState, KioskReplyFailureReason } from '../../services/domain/kiosk-agent-interaction'
 import type { KioskConversationDecisionState } from '../../services/domain/kiosk-interaction-decision/contracts'
@@ -16,6 +17,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
+import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { currentContextInstructions } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
@@ -29,6 +31,7 @@ import { resolveServiceHandoff } from '../../services/domain/kiosk-interaction-d
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
+import { isLoopbackOrigin } from '../../utils/origin'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
 export const kioskDeviceCookieName = 'airi_kiosk_device'
@@ -221,6 +224,10 @@ export interface KioskRoutesOptions {
   toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
+  /** Fixed upstream network boundary; no browser-supplied destinations. */
+  posGateway?: ReturnType<typeof createKioskPosGateway>
+  /** Exact public API origin for cookie-authenticated POS writes. */
+  apiOrigin?: string
 }
 
 /**
@@ -233,6 +240,34 @@ export interface KioskRoutesOptions {
 export function createKioskRoutes(options: KioskRoutesOptions) {
   const routes = new Hono<HonoEnv>()
   const decisionStages = createDecisionStages()
+
+  routes.all('/pos/*', async (c) => {
+    const path = c.req.path.split('/pos/')[1] ?? ''
+    if (!isPosRoute(path))
+      return c.json({ error: 'Unknown POS route.' }, 404)
+    if (!options.posGateway)
+      return c.json({ error: 'POS Bridge unavailable.' }, 503)
+    const origin = c.req.header('Origin')
+    // Separate localhost Vite/API ports are an explicit development policy;
+    // a public deployment accepts only its exact configured origin.
+    const localDevelopmentOrigin = options.apiOrigin && origin && isLoopbackOrigin(options.apiOrigin) && isLoopbackOrigin(origin)
+    if (options.apiOrigin && origin && origin !== options.apiOrigin && !localDevelopmentOrigin)
+      throw createForbiddenError('Untrusted POS origin')
+    if (!isPublicPosRoute(path))
+      await resolveAuthenticatedDevice(c, options.kioskService)
+    // A timeout may follow an upstream write. Never retry the request here.
+    try {
+      return await options.posGateway.forward({ path, method: c.req.method, credential: isPublicPosRoute(path) ? undefined : getCookie(c, kioskDeviceCookieName), body: c.req.method === 'GET' || c.req.method === 'HEAD' ? undefined : await c.req.arrayBuffer() })
+    }
+    catch { return c.json({ error: 'POS result unavailable; reconcile before retrying.' }, 503) }
+  })
+
+  // Payment verification must never run bootstrap's development-device
+  // replacement lifecycle or issue a new device cookie.
+  routes.get('/identity', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    return c.json({ device: { id: device.id, siteId: device.siteId } })
+  })
 
   routes.get('/bootstrap', async (c) => {
     const credential = getCookie(c, kioskDeviceCookieName)

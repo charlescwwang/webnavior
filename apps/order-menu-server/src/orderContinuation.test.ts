@@ -5,10 +5,10 @@ import { createInMemorySimulatorGateway } from './simulator'
 
 async function placeDineIn(mode: 'accepted' | 'uncertain' = 'accepted') {
   const gateway = createInMemorySimulatorGateway(mode, 'authorized', Date.now, 'after-order')
-  const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway, tableAssignment: 'after-order' })
+  const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway, tableAssignment: 'after-order' })
   const catalog = await gateway.getCatalog()
   const item = catalog.items[0]!
-  const payment = await gateway.createPayment(item.price, 'linepay')
+  const { payment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: item.price, method: 'linepay' }) })).json()
   const submission = {
     customerPhone: '0900000000',
     idempotencyKey: 'continuation-order-0001',

@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { createPosBridgeApp } from './app'
 import { createInMemorySimulatorGateway } from './simulator'
 
-async function acceptedOrder(gateway = createInMemorySimulatorGateway()) {
+async function acceptedOrder(gateway: ReturnType<typeof createInMemorySimulatorGateway>, app: ReturnType<typeof createPosBridgeApp>) {
   const catalog = await gateway.getCatalog()
-  const payment = await gateway.createPayment(145, 'card')
+  const { payment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 145, method: 'card' }) })).json()
   return {
     cart: {
       catalogRevision: catalog.revision,
@@ -23,11 +23,11 @@ describe('pOS Bridge contract', () => {
   it('shares one POS submission and receipt when the same order arrives concurrently', async () => {
     const gateway = createInMemorySimulatorGateway()
     let submitted = 0
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: { ...gateway, submit: async (submission) => {
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway: { ...gateway, submit: async (submission) => {
       submitted++
       return await gateway.submit(submission)
     } } })
-    const submission = await acceptedOrder(gateway)
+    const submission = await acceptedOrder(gateway, app)
     const send = () => app.request('/v1/orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
     const [first, second] = await Promise.all([send(), send()])
     expect(first.status).toBe(201)
@@ -37,16 +37,17 @@ describe('pOS Bridge contract', () => {
   })
   it('does not misreport an unavailable POS as an expired table hold', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: { ...gateway, getTableHold: async () => {
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway: { ...gateway, getTableHold: async () => {
       throw new Error('POS disconnected')
     } } })
-    expect((await app.request('/v1/seating/holds/unresolved')).status).toBe(503)
-    const available = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    const { hold } = await (await app.request('/v1/seating/holds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedRevision: 0, partySize: 2, tableIds: ['T1'], splitApproved: false }) })).json()
+    expect((await app.request(`/v1/seating/holds/${hold.id}`)).status).toBe(503)
+    const available = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
     expect((await available.request('/v1/seating/holds/expired')).status).toBe(404)
   })
   it('reserves through HTTP, locks the same hold to payment and occupies it exactly once', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
     const request = (path: string, body: unknown) => app.request(path, { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
     const held = await request('/v1/seating/holds', { expectedRevision: 0, partySize: 5, tableIds: ['T1', 'T2'], splitApproved: true })
     expect(held.status).toBe(201)
@@ -56,7 +57,7 @@ describe('pOS Bridge contract', () => {
     const { payment } = await paymentResponse.json() as { payment: { id: string } }
     expect((await app.request(`/v1/seating/holds/${hold.id}`, { method: 'DELETE' })).status).toBe(409)
     expect((await request('/v1/payments', { amount: 145, method: 'card', tableHoldId: hold.id })).status).toBe(503)
-    const order = await acceptedOrder(gateway)
+    const order = await acceptedOrder(gateway, app)
     const submission = { ...order, cart: { ...order.cart, fulfillmentMode: 'dine-in', tableHoldId: hold.id, paymentId: payment.id } }
     const result = await request('/v1/orders', submission)
     expect(result.status).toBe(201)
@@ -66,7 +67,7 @@ describe('pOS Bridge contract', () => {
   })
 
   it('rejects a stale table snapshot and simultaneous claims, without accepting silent splitting', async () => {
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: createInMemorySimulatorGateway() })
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway: createInMemorySimulatorGateway() })
     const reserve = (body: unknown) => app.request('/v1/seating/holds', { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
     expect((await reserve({ expectedRevision: 0, partySize: 5, tableIds: ['T1', 'T2'], splitApproved: false })).status).toBe(409)
     const results = await Promise.all([reserve({ expectedRevision: 0, partySize: 4, tableIds: ['T1'], splitApproved: false }), reserve({ expectedRevision: 0, partySize: 4, tableIds: ['T1'], splitApproved: false })])
@@ -89,17 +90,17 @@ describe('pOS Bridge contract', () => {
 
   it('rejects dine-in without a payment-bound hold and does not steal seats through a pickup order', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
-    const order = await acceptedOrder(gateway)
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const order = await acceptedOrder(gateway, app)
     const submit = (cart: unknown, idempotencyKey: string) => app.request('/v1/orders', { body: JSON.stringify({ cart, idempotencyKey }), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
     await expect((await submit({ ...order.cart, fulfillmentMode: 'dine-in' }, 'dine-without-hold-0001')).json()).resolves.toMatchObject({ order: { receipt: { status: 'rejected' } } })
-    const hold = await gateway.reserveTables({ expectedRevision: 0, partySize: 2, tableIds: ['T1'], splitApproved: false })
-    const payment = await gateway.createPayment(145, 'card', hold.id)
+    const { hold } = await (await app.request('/v1/seating/holds', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expectedRevision: 0, partySize: 2, tableIds: ['T1'], splitApproved: false }) })).json()
+    const { payment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 145, method: 'card', tableHoldId: hold.id }) })).json()
     await expect((await submit({ ...order.cart, tableHoldId: hold.id, paymentId: payment.id }, 'pickup-with-hold-0001')).json()).resolves.toMatchObject({ order: { receipt: { status: 'rejected' } } })
     expect((await gateway.getTableHold(hold.id))?.status).toBe('locked')
   })
   it('returns the simulator catalog through the browser-facing bridge', async () => {
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway: createInMemorySimulatorGateway() })
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway: createInMemorySimulatorGateway() })
 
     const response = await app.request('/v1/catalog', { headers: { Origin: 'http://localhost:5166' } })
 
@@ -119,8 +120,8 @@ describe('pOS Bridge contract', () => {
 
   it('returns one accepted test receipt for duplicate idempotency keys', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
-    const request = { body: JSON.stringify(await acceptedOrder(gateway)), headers: { 'Content-Type': 'application/json' }, method: 'POST' }
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const request = { body: JSON.stringify(await acceptedOrder(gateway, app)), headers: { 'Content-Type': 'application/json' }, method: 'POST' }
 
     const first = await app.request('/v1/orders', request)
     const second = await app.request('/v1/orders', request)
@@ -135,10 +136,10 @@ describe('pOS Bridge contract', () => {
 
   it('keeps rejected submissions reviewable instead of converting them into success', async () => {
     const gateway = createInMemorySimulatorGateway('rejected')
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
 
     const response = await app.request('/v1/orders', {
-      body: JSON.stringify(await acceptedOrder(gateway)),
+      body: JSON.stringify(await acceptedOrder(gateway, app)),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })
@@ -150,8 +151,8 @@ describe('pOS Bridge contract', () => {
 
   it('rejects a stale catalog revision before forwarding an order to the POS', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
-    const order = await acceptedOrder(gateway)
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const order = await acceptedOrder(gateway, app)
     const response = await app.request('/v1/orders', {
       body: JSON.stringify({ ...order, cart: { ...order.cart, catalogRevision: 'stale-revision' } }),
       headers: { 'Content-Type': 'application/json' },
@@ -166,8 +167,8 @@ describe('pOS Bridge contract', () => {
 
   it('rejects a submission without an idempotency key', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
-    const { idempotencyKey: _, ...withoutKey } = await acceptedOrder(gateway)
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const { idempotencyKey: _, ...withoutKey } = await acceptedOrder(gateway, app)
 
     const response = await app.request('/v1/orders', {
       body: JSON.stringify(withoutKey),
@@ -180,8 +181,8 @@ describe('pOS Bridge contract', () => {
 
   it('requires an authorized payment for the exact cart total', async () => {
     const gateway = createInMemorySimulatorGateway()
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
-    const order = await acceptedOrder(gateway)
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const order = await acceptedOrder(gateway, app)
     const { paymentId: _, ...unpaidCart } = order.cart
 
     const unpaid = await app.request('/v1/orders', {
@@ -191,7 +192,7 @@ describe('pOS Bridge contract', () => {
     })
     expect(unpaid.status).toBe(400)
 
-    const wrongAmountPayment = await gateway.createPayment(144, 'card')
+    const { payment: wrongAmountPayment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: 144, method: 'card' }) })).json()
     const wrongAmount = await app.request('/v1/orders', {
       body: JSON.stringify({ ...order, cart: { ...order.cart, paymentId: wrongAmountPayment.id }, idempotencyKey: 'wrong-amount-0001' }),
       headers: { 'Content-Type': 'application/json' },
@@ -202,9 +203,9 @@ describe('pOS Bridge contract', () => {
 
   it.each(['pending', 'rejected', 'uncertain'] as const)('does not submit a cart with a %s payment', async (paymentStatus) => {
     const gateway = createInMemorySimulatorGateway('accepted', paymentStatus)
-    const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway })
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
     const response = await app.request('/v1/orders', {
-      body: JSON.stringify(await acceptedOrder(gateway)),
+      body: JSON.stringify(await acceptedOrder(gateway, app)),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })

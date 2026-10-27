@@ -1,5 +1,14 @@
 import type { Env } from '../libs/env'
 
+/** Identifies HTTP(S) loopback origins for explicit local-development policies. */
+export function isLoopbackOrigin(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  }
+  catch { return false }
+}
+
 function getOriginFromUrl(url: string): string | undefined {
   try {
     return new URL(url).origin

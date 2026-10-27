@@ -88,6 +88,7 @@ import { createStripeRoutes } from './routes/stripe'
 import { createVoicePackRoutes } from './routes/voice-packs'
 import { createConfigKVService } from './services/adapters/config-kv'
 import { createEmailService } from './services/adapters/email'
+import { createKioskPosGateway } from './services/adapters/kioskPos'
 import { createPosthogSink } from './services/adapters/posthog'
 import { createAdminFluxGrantsService } from './services/domain/admin/flux-grants'
 import { createAdminRouterConfigService } from './services/domain/admin/router-config'
@@ -433,6 +434,8 @@ export async function buildApp(deps: AppDeps) {
       },
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
+      apiOrigin: new URL(deps.env.API_SERVER_URL).origin,
+      posGateway: createKioskPosGateway(deps.env.KIOSK_POS_BRIDGE_URL ?? 'http://127.0.0.1:5170/'),
       toolTraceObserver: process.env.NODE_ENV !== 'production'
         ? { record: input => console.info('[kiosk-tools]', input) }
         : undefined,

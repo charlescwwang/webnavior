@@ -28,6 +28,7 @@ function isPayment(value: unknown): value is PaymentIntent {
 /** Starts a customer-terminal payment without exposing that physical action as an Agent tool. */
 export async function createPayment(baseUrl: string, amount: number, method: PaymentMethod, tableHoldId?: string) {
   const response = await fetch(endpoint(baseUrl, 'v1/payments'), {
+    credentials: 'include',
     body: JSON.stringify({ amount, method, tableHoldId }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
@@ -40,7 +41,7 @@ export async function createPayment(baseUrl: string, amount: number, method: Pay
 
 /** Reads the immutable result for one payment attempt from the POS Bridge. */
 export async function getPayment(baseUrl: string, paymentId: string) {
-  const response = await fetch(endpoint(baseUrl, `v1/payments/${encodeURIComponent(paymentId)}`))
+  const response = await fetch(endpoint(baseUrl, `v1/payments/${encodeURIComponent(paymentId)}`), { credentials: 'include' })
   const payload = await response.json().catch(() => undefined) as { payment?: unknown } | undefined
   if (!response.ok || !isPayment(payload?.payment))
     throw new Error('無法確認付款結果，請交由門市人員查詢。')
@@ -94,6 +95,7 @@ export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => strin
       }
       try {
         const response = await fetch(endpoint(baseUrl, 'v1/orders'), {
+          credentials: 'include',
           body: JSON.stringify({ cart: { ...cart, ...(cart.fulfillmentMode === 'dine-in' ? { tableHoldId: tableHoldId() } : {}) }, idempotencyKey, customerPhone: customer?.phone() }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',

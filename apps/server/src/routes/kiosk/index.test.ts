@@ -38,6 +38,45 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  // Report: docs/research/2026-10-27-security-audit.md
+  it('proxies POS requests only for an enrolled device and rejects foreign origins and arbitrary paths', async () => {
+    const forward = vi.fn<NonNullable<KioskRoutesOptions['posGateway']>['forward']>(async () => Response.json({ payment: { id: 'scratch-payment' } }))
+    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'failed' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy, apiOrigin: 'https://kiosk.example.com', posGateway: { forward } }))
+    const path = '/api/kiosk/pos/v1/payments'
+    expect((await app.request(path, { method: 'POST', body: '{}' })).status).toBe(401)
+    expect(forward).not.toHaveBeenCalled()
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const cookie = enrolled.headers.get('Set-Cookie')!.split(';')[0]!
+    expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'https://attacker.example' }, body: '{}' })).status).toBe(403)
+    expect(forward).not.toHaveBeenCalled()
+    expect((await app.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'https://kiosk.example.com' }, body: '{}' })).status).toBe(200)
+    expect(forward).toHaveBeenCalledOnce()
+    expect(forward.mock.calls[0]![0]).toMatchObject({ path: 'v1/payments', method: 'POST', credential: cookie.split('=')[1] })
+    expect((await app.request('/api/kiosk/pos/v1/private-admin')).status).toBe(404)
+    expect(forward).toHaveBeenCalledOnce()
+    const local = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: false, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy, apiOrigin: 'http://localhost:5168', posGateway: { forward } }))
+    expect((await local.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://localhost:5166' }, body: '{}' })).status).toBe(200)
+    expect(forward).toHaveBeenCalledTimes(2)
+    // Existing enrolled credentials still bootstrap after development enrollment
+    // is disabled; customers do not need to register their browser again.
+    const closed = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: false, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy }))
+    expect((await closed.request('/api/kiosk/bootstrap', { headers: { Cookie: cookie } })).status).toBe(200)
+    expect((await closed.request('/api/kiosk/development/register', { method: 'POST' })).status).toBe(404)
+  })
+
+  it('verifies a legacy development device without automatically registering a replacement during payment', async () => {
+    const kioskService = createKioskService(db)
+    const registration = await kioskService.registerDevelopmentDevice({ registrationCode: '483920' })
+    const legacySite = await kioskService.createSite({ name: 'Legacy test site', slug: 'legacy-auth-check' })
+    await db.update(schema.kioskDevices).set({ siteId: legacySite.id }).where(eq(schema.kioskDevices.id, registration.device.id))
+    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway, runtimeModelPolicy }))
+    const response = await app.request('/api/kiosk/identity', { headers: { Cookie: `${kioskDeviceCookieName}=${registration.credential}` } })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ device: { id: registration.device.id, siteId: legacySite.id } })
+    expect(response.headers.get('Set-Cookie')).toBeNull()
+    expect(await db.query.kioskDevices.findMany()).toHaveLength(1)
+  })
+
   // Report: docs/plans/2026-10-22-kiosk-field-investigation.md, payment HTTP400s.
   it('accepts the current Menu LINE Pay and JKoPay decision payload', async () => {
     const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy }))

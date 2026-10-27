@@ -604,3 +604,20 @@ When the mobile dev server uses a non-localhost origin (for example `https://10.
 `ADDITIONAL_TRUSTED_ORIGINS=https://10.0.0.129:5273,https://198.18.0.1:5273`
 
 Restart the API server after changing this variable.
+
+### Public kiosk security configuration
+
+Test sign-in and six-digit development enrollment follow the original explicit
+`WEBNAVIOR_TEST_AUTH_ENABLED` / `KIOSK_DEVELOPMENT_REGISTRATION_ENABLED` flags
+and remain disabled when `NODE_ENV=production`. A public `API_SERVER_URL` does
+not override those flags. The test bearer identity follows `TEST_AUTH_TOKEN`.
+The extra public-origin restrictions were withdrawn at the operator's request;
+existing device credentials remain usable. Disable development identity flows
+when moving this test deployment to production.
+
+`/api/kiosk/pos/*` forwards only documented POS routes to the server-owned
+`KIOSK_POS_BRIDGE_URL` (default `http://127.0.0.1:5170/`). Payment, order and
+private table-hold requests require an enrolled device. Configure the Menu with
+this same-origin endpoint so the HttpOnly device cookie keeps its existing
+`/api/kiosk` scope. Catalog queries and continuation capabilities retain their
+own public access policy. The proxy never retries a write after a lost response.

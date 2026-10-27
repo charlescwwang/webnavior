@@ -19,8 +19,24 @@ The command starts two loopback-only servers:
 | POS simulator | `http://127.0.0.1:5171` | Development/test substitute for a real POS. |
 
 Set configuration in `apps/order-menu-server/.env.local`, using
-[`.env.example`](.env.example) as the template. The Bridge allows only the
-configured Order Menu origin, which defaults to `http://localhost:5166`.
+[`.env.example`](.env.example) as the template. CORS allows the configured Order Menu origin, which defaults to
+`http://localhost:5166`. CORS does not authorize payments or orders. The Bridge
+verifies the existing HttpOnly device cookie through
+`ORDER_MENU_KIOSK_API_URL` (default `http://127.0.0.1:5168`) through the
+read-only `/api/kiosk/identity` endpoint; verification does not enroll or
+replace devices. A failed or
+unavailable verification never permits a write.
+
+Configure the browser's `VITE_ORDER_MENU_SERVER_URL` to the same-origin API
+`/api/kiosk/pos` endpoint. This proxy accepts the existing `/api/kiosk` device
+cookie and forwards only documented POS paths to `KIOSK_POS_BRIDGE_URL`
+(default `http://127.0.0.1:5170/`). No provider or service secret is placed in
+browser configuration. Use a trailing slash for a configured upstream base URL.
+Catalog, seating snapshots and unexpired continuation capabilities remain
+available without a registered device. New devices require a controlled
+administrator enrollment flow; the old six-digit development registration is
+available with its explicit flag outside production. The public-origin
+restriction on that test flow was withdrawn at the operator's request.
 
 ## Simulator catalog
 
@@ -55,7 +71,10 @@ Replace those temporary records with the POS source once its menu API is ready.
 - `POST /v1/orders` accepts `{ idempotencyKey, cart }` and returns a submitted
   order with a receipt. The optional `customerPhone` is format-checked and
   exposed only as a masked label on the test continuation. The cart must include an authorized `paymentId` for the
-  same total; reusing a key returns the original result.
+  same server-verified total. The Bridge checks catalog options, quantities,
+  item counts and prices, isolates payments/holds by verified Site and device,
+  and prevents using one payment with multiple submission keys. Reusing a key
+  with the same cart returns its original result; changing its cart is rejected.
 - `POST /__simulator/mode` changes the simulator's next unseen order to
   `accepted`, `rejected`, or `uncertain`. It is development-only and is bound
   to loopback with the simulator.
@@ -196,3 +215,13 @@ diagnostic screens retain environment information; no live status is fabricated.
 The simulator is not a production POS dependency. A future vendor adapter
 implements the `PosGateway` port and is selected by deployment configuration;
 it must preserve the catalog and submission receipt contracts documented here.
+
+## Deployment boundary
+
+The current executable still starts a test simulator. Its resource ownership,
+receipts and replay protection are process-local. Restarting it discards those
+records, so restart only with no active checkout. An unresolved browser order
+must remain blocked for reconciliation after a restart. Persistent transaction
+ownership, provider-confirmed payment results, currency validation and durable
+idempotency are required before connecting live payments. This simulator's
+`authorized` response does not confirm a real charge.

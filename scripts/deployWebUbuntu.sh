@@ -116,7 +116,7 @@ corepack pnpm install --frozen-lockfile
 # Vite's --base makes static asset URLs valid below the Nginx subpaths.
 VITE_SERVER_URL="$origin" VITE_ORDER_MENU_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-web build
 VITE_API_SERVER_URL="$origin" VITE_ORDERING_SCENARIO_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
-VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
+VITE_ORDER_MENU_SERVER_URL="$origin/api/kiosk/pos" VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
 sudo install -d -m 0755 "$site_root/web" "$site_root/kiosk" "$site_root/menu"
 sudo rsync -a --delete apps/stage-web/dist/ "$site_root/web/"
