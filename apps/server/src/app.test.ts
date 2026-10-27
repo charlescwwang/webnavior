@@ -4,8 +4,41 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { buildApp } from './app'
 
+// Development identity flows follow explicit flags even on a public API origin.
+describe('public deployment enrollment policy', () => {
+  it('honors explicit development flags on a public configured API origin', async () => {
+    const { deps } = createTestDeps()
+    deps.env.API_SERVER_URL = 'https://kiosk.example.com'
+    deps.env.WEBNAVIOR_TEST_AUTH_ENABLED = 'true'
+    deps.env.KIOSK_DEVELOPMENT_REGISTRATION_ENABLED = 'true'
+    const { app } = await buildApp(deps)
+    const status = await app.request('/api/webnavior/test-auth/status')
+    expect(await status.json()).toEqual({ enabled: true })
+    // Invalid input proves the enrollment route exists without creating a device.
+    const enrollment = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    expect(enrollment.status).toBe(400)
+  })
+})
+
 // Report: this chat, 2026-10-26; four kiosk ASR size refusals were returned as500.
 describe('request size refusal', () => {
+  // Report: docs/research/2026-10-27-security-audit.md - unknown-length body limit.
+  it('rejects a streamed ASR request without Content-Length before provider dispatch', async () => {
+    const { deps } = createTestDeps()
+    const { app } = await buildApp(deps)
+    const body = new ReadableStream<Uint8Array>({ start(controller) {
+      controller.enqueue(new Uint8Array(600_000))
+      controller.enqueue(new Uint8Array(600_000))
+      controller.close()
+    } })
+    const request = new Request('http://localhost/api/kiosk/audio/transcriptions', { method: 'POST', body, duplex: 'half' })
+    expect(request.headers.has('Content-Length')).toBe(false)
+    const response = await app.request(request)
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ error: 'KIOSK_AUDIO_TOO_LARGE' })
+    expect(deps.llmRouter.route).not.toHaveBeenCalled()
+  })
+
   it('returns a specific 413 for oversized ASR uploads without calling the provider', async () => {
     const { deps } = createTestDeps()
     const { app } = await buildApp(deps)

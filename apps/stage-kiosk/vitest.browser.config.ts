@@ -17,6 +17,7 @@ export default defineConfig({
   // Shared components consume build metadata; use the same provider as Vite.
   plugins: [Vue(), Info(), Yaml()],
   test: {
+    api: { host: '127.0.0.1' },
     include: ['src/**/*.browser.test.ts'],
     browser: {
       enabled: true,
