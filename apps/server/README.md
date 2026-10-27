@@ -51,6 +51,26 @@ The `-t 'configured explanation recovery'` subset checks two synthetic informati
 questions against current Main instructions and the fresh-context reply renderer;
 it does not certify ASR, physical checkout or every possible model response.
 
+The separate opt-in audio replay reads the configured ASR connection and consumes
+provider quota without creating visitors, carts or payments. Supply a synthetic
+canonical 16kHz mono PCM16 WAV longer than40 seconds: initial two dumplings,
+correction to three, one bento, and an instruction not to check out. Credentials
+stay in the loaded environment; never use a customer recording for this fixture.
+
+```sh
+KIOSK_AUDIO_REPLAY=1 KIOSK_AUDIO_REPLAY_FIXTURE=/absolute/path/synthetic.wav pnpm run apply:env -- vitest run tests/experiments/kioskAudioReplay.test.ts
+```
+
+It exercises the production chunker, ASR gateway and whole-utterance queue,
+checking bounded uploads, correction order and one final delivery. It does not
+verify microphone capture, the HTTP device route, model interpretation or POS.
+
+Kiosk ASR uploads have a dedicated 1MiB body limit shared with the client audio
+contract. Oversized uploads return413 with `KIOSK_AUDIO_TOO_LARGE`; generic Hono
+HTTPException statuses are retained instead of being converted to500. Other
+JSON/media/asset limits remain separate. Clients split long final utterances into
+bounded WAV uploads and must not execute partial transcription results.
+
 ## Database migrations and deployment
 
 The Kiosk Profile's store-specific agent instructions (`agentInstructions`) are

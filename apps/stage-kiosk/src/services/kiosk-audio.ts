@@ -1,5 +1,54 @@
-const VAD_SAMPLE_RATE = 16_000
-const WAV_HEADER_BYTES = 44
+import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
+
+import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
+
+const VAD_SAMPLE_RATE = kioskAudioLimits.sampleRate
+const WAV_HEADER_BYTES = kioskAudioLimits.wavHeaderBytes
+
+/**
+ * Transcribes one final VAD utterance through bounded uploads. Chunks never
+ * become independent orders: only a completely successful utterance is returned.
+ * The caller's capture/session signal also cancels any remaining uploads.
+ */
+export async function transcribeKioskUtterance(samples: Float32Array, options: {
+  signal?: AbortSignal
+  /** Called only after a whole chunk succeeds, to renew the capture's inactivity deadline. */
+  onChunkTranscribed?: () => void
+  transcribe: (recording: Blob, signal?: AbortSignal, chunk?: KioskAudioChunk) => Promise<{ text: string }>
+}) {
+  const texts: string[] = []
+  const utteranceId = crypto.randomUUID()
+  const maximumSamples = VAD_SAMPLE_RATE * kioskAudioLimits.chunkSeconds
+  for (let start = 0; start < samples.length;) {
+    options.signal?.throwIfAborted()
+    let end = Math.min(samples.length, start + maximumSamples)
+    if (end < samples.length) {
+      const boundary = end
+      // Prefer a quiet 20ms window in the last second. Non-overlapping sample
+      // ranges preserve all audio once, including corrections across a boundary.
+      const windowSamples = VAD_SAMPLE_RATE / 50
+      let lowestEnergy = Number.POSITIVE_INFINITY
+      for (let position = boundary - VAD_SAMPLE_RATE; position + windowSamples <= boundary; position += windowSamples) {
+        let energy = 0
+        for (let index = position; index < position + windowSamples; index++)
+          energy += samples[index]! ** 2
+        if (energy <= lowestEnergy) {
+          lowestEnergy = energy
+          end = position + windowSamples
+        }
+      }
+    }
+    const chunk: KioskAudioChunk = { utteranceId, index: texts.length, sampleStart: start, sampleEnd: end, final: end === samples.length }
+    const { text } = await options.transcribe(createKioskVadRecording(samples.subarray(start, end)), options.signal, chunk)
+    options.signal?.throwIfAborted()
+    if (samples.length > maximumSamples && !text.trim())
+      throw new Error('ASR did not recognize every part of this utterance.')
+    texts.push(text.trim())
+    options.onChunkTranscribed?.()
+    start = end
+  }
+  return { text: texts.join('\n'), recording: createKioskVadRecording(samples) }
+}
 
 /**
  * Encodes a completed VAD segment as the WAV file stored and transcribed by

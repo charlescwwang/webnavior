@@ -60,8 +60,8 @@ import { useKioskWaitSpeech } from '../composables/useKioskWaitSpeech'
 import { setKioskLocale } from '../modules/i18n'
 import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
-import { createKioskVadRecording } from '../services/kiosk-audio'
-import { decideKioskInteraction, isKioskFastPathEnabled, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { transcribeKioskUtterance } from '../services/kiosk-audio'
+import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
@@ -680,8 +680,11 @@ async function processVoiceCandidate(
   voiceDiagnosticByUtterance.set(reservation.id, diagnosticId)
   let submitted = false
   try {
-    const recording = createKioskVadRecording(buffer)
-    const { text } = await transcribeKioskAudio(recording, candidate.signal)
+    const { recording, text } = await transcribeKioskUtterance(buffer, {
+      signal: AbortSignal.any([candidate.signal, reservation.signal]),
+      onChunkTranscribed: reservation.markTranscriptionProgress,
+      transcribe: transcribeKioskAudio,
+    })
     if (!allowsObservedVoice()) {
       updateVoiceDiagnostic(diagnosticId, { status: 'ignored' })
       return
@@ -699,8 +702,10 @@ async function processVoiceCandidate(
   }
   catch (error) {
     updateVoiceDiagnostic(diagnosticId, { status: 'failed' })
-    if (!candidate.signal.aborted)
+    if (!candidate.signal.aborted && !reservation.signal.aborted) {
+      pendingTranscript.value = t(error instanceof KioskDeviceRequestError && error.status === 413 ? 'stage.kiosk-agent.audio-too-large' : 'stage.kiosk-agent.audio-failed')
       console.error('Failed to process kiosk voice candidate:', error)
+    }
   }
   finally {
     reservation.cancel()

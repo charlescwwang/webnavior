@@ -41,9 +41,11 @@ import { initLogger, LoggerFormat, LoggerLevel, setGlobalHookPostLog, useLogger 
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { httpInstrumentationMiddleware } from '@hono/otel'
+import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
+import { HTTPException } from 'hono/http-exception'
 import { logger as honoLogger } from 'hono/logger'
 import { createLoggLogger, injeca, lifecycle } from 'injeca'
 
@@ -296,6 +298,10 @@ export async function buildApp(deps: AppDeps) {
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 })
   const characterAssetBodyLimit = bodyLimit({ maxSize: 64 * 1024 * 1024 })
   const kioskMediaBodyLimit = bodyLimit({ maxSize: 32 * 1024 * 1024 })
+  const kioskAudioBodyLimit = bodyLimit({
+    maxSize: kioskAudioLimits.requestBytes,
+    onError: c => c.json({ error: 'KIOSK_AUDIO_TOO_LARGE', message: '這段錄音超過上傳大小限制，請分次說明。' }, 413),
+  })
 
   const builtApp = app
     .use('*', sessionMiddleware(deps.auth, deps.env))
@@ -306,9 +312,15 @@ export async function buildApp(deps: AppDeps) {
         return characterAssetBodyLimit(c, next)
       if (/^\/api\/kiosk\/visitor-sessions\/[^/]+\/media$/.test(c.req.path))
         return kioskMediaBodyLimit(c, next)
+      if (c.req.path === '/api/kiosk/audio/transcriptions')
+        return kioskAudioBodyLimit(c, next)
       return defaultBodyLimit(c, next)
     })
     .onError((err, c) => {
+      // Hono middleware carries protocol statuses (notably body-limit413)
+      // as HTTPException. Keep them instead of presenting a provider outage.
+      if (err instanceof HTTPException)
+        return err.getResponse()
       if (err instanceof ApiError) {
         // Surface details + cause to the server-side log only. SEC-5 keeps
         // upstream body content (carried by `cause`) out of the client

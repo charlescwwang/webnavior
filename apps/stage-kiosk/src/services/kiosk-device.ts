@@ -1,4 +1,5 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
+import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
@@ -285,17 +286,24 @@ export async function recordKioskOrderResult(input: {
 }
 
 /** Builds the multipart request body for the device-authenticated ASR gateway. */
-export function createKioskTranscriptionBody(recording: Blob) {
+export function createKioskTranscriptionBody(recording: Blob, chunk?: KioskAudioChunk) {
   const body = new FormData()
   // useAudioRecorder serializes microphone samples as WAV/PCM. The filename
   // is part of the ASR protocol: providers may choose a decoder from it.
   body.set('file', recording, 'recording.wav')
+  if (chunk) {
+    body.set('utteranceId', chunk.utteranceId)
+    body.set('chunkIndex', String(chunk.index))
+    body.set('sampleStart', String(chunk.sampleStart))
+    body.set('sampleEnd', String(chunk.sampleEnd))
+    body.set('finalChunk', String(chunk.final))
+  }
   return body
 }
 
 /** Sends microphone bytes to the device-authenticated ASR gateway. */
-export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal) {
-  const body = createKioskTranscriptionBody(recording)
+export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal, chunk?: KioskAudioChunk) {
+  const body = createKioskTranscriptionBody(recording, chunk)
   const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST', signal })
   return await response.json() as { text: string }
 }

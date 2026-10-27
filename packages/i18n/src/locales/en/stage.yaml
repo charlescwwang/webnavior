@@ -206,6 +206,8 @@ kiosk-agent:
   service-unavailable: The menu connection was lost. New operations are paused; reconnect and check your existing order.
   service-reconnect: Reconnect menu
   service-recovered: The menu connection is restored. Earlier operations were not replayed; check your order before speaking again.
+  audio-too-large: This recording exceeds the upload limit. No request was executed; please speak in shorter turns.
+  audio-failed: Your speech could not be fully transcribed. No request was executed; please say it again.
   service-connecting: Connecting assistant controls. You can also use the service screen directly.
   service-manual: Assistant controls are unavailable for this service. Please use the service screen directly and check the result there.
   service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.

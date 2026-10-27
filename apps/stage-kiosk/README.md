@@ -712,6 +712,20 @@ respectively. The Kiosk receives this policy through its normal 15-second
 settings sync. Its audio buffer expands only while a visitor speaks, so a
 `9999 s` maximum does not allocate a large buffer at startup.
 
+Completed VAD utterances use 16kHz mono PCM16 WAV. ASR uploads contain at most
+20 seconds each, preferring a quiet boundary within the final second; all samples
+are included once. Each upload fits the dedicated 1MiB request limit, including
+multipart headroom. Transcripts are reassembled in sample order and enter the
+decision queue once, after every chunk succeeds. A failed/empty chunk, cancellation,
+expired capture reservation or visitor reset rejects the whole utterance; partial
+speech never becomes a separate order. Each successfully transcribed chunk
+renews a 15-second inactivity deadline; a stalled chunk aborts remaining uploads.
+The separate 15-second queue freshness window starts only after the complete
+transcript is ready, so successful long recognition does not expire merely from
+its total duration. Capture order and visitor-reset cancellation remain intact.
+The archival recording retains the complete original utterance. ASR413 is shown
+as an upload-size refusal, separately from incomplete recognition/provider failure.
+
 ### Local access
 
 The visitor experience does not display settings. Long-press the `AIRI 餐飲服務員` label for 1.2 seconds, then enter the PIN configured before starting the kiosk:

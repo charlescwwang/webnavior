@@ -206,6 +206,8 @@ kiosk-agent:
   service-unavailable: 菜單連線中斷，暫停新的代操作；請恢復連線並確認既有訂單。
   service-reconnect: 恢復菜單連線
   service-recovered: 菜單連線已恢復，未重送先前操作；請確認訂單後再說一次。
+  audio-too-large: 這段錄音超過上傳限制，這句未執行，請分次說明。
+  audio-failed: 這次語音未能完整辨識，尚未執行，請再說一次。
   service-connecting: 正在連接助手操作功能，您也可直接操作服務畫面。
   service-manual: 助手目前無法代操作此服務，請直接操作服務畫面；結果以該畫面為準。
   service-browser-unsupported: 此瀏覽器不支援助手代操作，請直接操作服務畫面。

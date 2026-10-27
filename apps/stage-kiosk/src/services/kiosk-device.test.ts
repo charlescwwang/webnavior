@@ -74,6 +74,14 @@ describe('segmented device requests', () => {
 })
 
 describe('createKioskTranscriptionBody', () => {
+  it('carries bounded chunk identity and original sample ranges without creating separate order requests', () => {
+    const body = createKioskTranscriptionBody(new Blob(['RIFF']), { utteranceId: 'utterance-1', index: 2, sampleStart: 640000, sampleEnd: 720000, final: true })
+    expect(body.get('utteranceId')).toBe('utterance-1')
+    expect(body.get('chunkIndex')).toBe('2')
+    expect(body.get('sampleStart')).toBe('640000')
+    expect(body.get('sampleEnd')).toBe('720000')
+    expect(body.get('finalChunk')).toBe('true')
+  })
   it('labels WAV microphone recordings with their actual container format', () => {
     const recording = new Blob(['RIFF'], { type: 'audio/wav' })
 

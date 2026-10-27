@@ -58,6 +58,10 @@ clarification while the application renders facts from a fresh snapshot. They
 never render model-supplied success prose or turn snapshot data into a write receipt.
 Offered payment labels are independent of phase-specific allowed operations.
 
+`@proj-airi/stage-shared/kiosk-audio` owns the PCM sample rate/width, WAV header,
+maximum upload chunk duration and request-byte ceiling. It describes transport,
+not Site VAD segmentation or authorization to execute an utterance.
+
 The same subpath exports service-recovery result/progress contracts, read-only
 service-clarification schema, domain-version/question correlation and shared time
 ceilings. `SERVICE_RECOVERY_PROGRESS` start is only provider work notification;

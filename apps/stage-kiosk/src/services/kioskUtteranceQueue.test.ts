@@ -119,6 +119,54 @@ describe('kiosk utterance queue', () => {
     expect(process).toHaveBeenCalledTimes(2)
   })
 
+  it('drops a complete transcript that has waited too long behind an active operation', async () => {
+    vi.useFakeTimers()
+    try {
+      let finish!: () => void
+      const onDrop = vi.fn()
+      const process = vi.fn(async () => {
+        await new Promise<void>(resolve => finish = resolve)
+      })
+      const queue = createKioskUtteranceQueue({ process, onDrop })
+      queue.submit({ source: 'simulation', text: '正在操作的一句' })
+      await Promise.resolve()
+      queue.submit({ source: 'asr', text: '等待的一句' })
+      await vi.advanceTimersByTimeAsync(15_001)
+      finish()
+      await queue.idle()
+      expect(process).toHaveBeenCalledTimes(1)
+      expect(onDrop).toHaveBeenCalledWith(expect.objectContaining({ text: '等待的一句' }), 'expired')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('aborts incomplete transcription on reset and ignores late progress or completion', async () => {
+    vi.useFakeTimers()
+    try {
+      const process = vi.fn(async () => {})
+      const queue = createKioskUtteranceQueue({ process })
+      const reservation = queue.reserve('asr')
+      if (reservation.kind !== 'ACCEPTED')
+        throw new Error('Expected capture reservation.')
+      reservation.markTranscriptionProgress()
+      queue.reset()
+      expect(reservation.signal.aborted).toBe(true)
+      reservation.markTranscriptionProgress()
+      reservation.complete({ text: '舊會話辨識完成' })
+      await vi.advanceTimersByTimeAsync(15_001)
+      await queue.idle()
+      expect(process).not.toHaveBeenCalled()
+      queue.submit({ source: 'simulation', text: '新會話' })
+      await queue.idle()
+      expect(process).toHaveBeenCalledTimes(1)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('invalidates waiting utterances when the visitor session resets', async () => {
     let release: (() => void) | undefined
     const pending = new Promise<void>((resolve) => {

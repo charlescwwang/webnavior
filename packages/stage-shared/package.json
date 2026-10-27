@@ -27,6 +27,7 @@
     "./webmcp": "./src/webmcp.ts",
     "./interactive-service": "./src/interactiveService.ts",
     "./kiosk-conversation": "./src/kioskConversation.ts",
+    "./kiosk-audio": "./src/kioskAudio.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts"
   },
   "scripts": {

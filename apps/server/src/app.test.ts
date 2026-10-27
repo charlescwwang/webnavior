@@ -4,6 +4,35 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { buildApp } from './app'
 
+// Report: this chat, 2026-10-26; four kiosk ASR size refusals were returned as500.
+describe('request size refusal', () => {
+  it('returns a specific 413 for oversized ASR uploads without calling the provider', async () => {
+    const { deps } = createTestDeps()
+    const { app } = await buildApp(deps)
+    const body = new FormData()
+    body.set('file', new Blob([new Uint8Array(1024 * 1024)], { type: 'audio/wav' }), 'recording.wav')
+    const upload = new Request('http://localhost/api/kiosk/audio/transcriptions', { method: 'POST', body })
+    const bytes = await upload.arrayBuffer()
+    upload.headers.set('Content-Length', String(bytes.byteLength))
+    const res = await app.request(upload.url, { method: 'POST', headers: upload.headers, body: bytes })
+    expect(res.status).toBe(413)
+    await expect(res.json()).resolves.toMatchObject({ error: 'KIOSK_AUDIO_TOO_LARGE' })
+    expect(deps.llmRouter.route).not.toHaveBeenCalled()
+  })
+
+  it('preserves the 413 status for oversized ordinary JSON requests', async () => {
+    const { deps } = createTestDeps()
+    const { app } = await buildApp(deps)
+    const body = JSON.stringify({ text: 'x'.repeat(1024 * 1024) })
+    const res = await app.request('/api/kiosk/interaction-decisions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': String(new TextEncoder().encode(body).byteLength) },
+      body,
+    })
+    expect(res.status).toBe(413)
+  })
+})
+
 function createTestDeps() {
   const authServerMetadata = {
     issuer: 'http://localhost:3000/api/auth',
