@@ -7,6 +7,59 @@ accumulating history.
 
 ## Current State
 
+- Oct26/27 conversation reliability repair is DEPLOYED Oct27 for FIELD TESTING,
+  originally from a source snapshot, then committed Oct27 at the user's request:
+  364f162 Menu controls, 5989a5e recovery/verified replies, 4d03c4a whole-utterance
+  ASR, baf9f83 browser test setup, plus this audit/handoff documentation batch.
+  Evidence, integrated plan and exact validation/limits are in
+  `docs/research/2026-10-26-kiosk-conversation-error-audit.md`. Missing Menu tools
+  no longer hand off to Main; context failures have their own reason. Same-document
+  recovery inspects original operation IDs and waits for settled calls, never
+  replays writes/reloads carts, and releases only the host's acknowledged/issued
+  task owner. Pending/missing/failed results or replacement documents stay blocked.
+  Structured information/clarification replies render fresh facts; operation and
+  display receipts remain required. Offered payment labels are separate from
+  phase-specific execution permission. Final VAD audio uploads use <=20s chunks,
+  preserve sample ranges/one utterance UUID and reassemble fully before decisions;
+  failed/empty/cancelled/expired chunks never execute partial speech.1MiB remains,
+  ASR413 is explicit; Oct27 separates15s ASR inactivity (renewed only after a
+  successful chunk) from15s ready-transcript queue freshness; published9999s VAD
+  remains. Regression reproduced3x6s chunks expiring before the fix; whole18s
+  success, stalled/empty later chunk, reset and stale queue protections now pass.
+  Empty cart now exposes real fulfillment controls. Empty history pages stop.
+  Initial62s field hang remains unproven. Menu757/Kiosk249/relatedServer506 unit
+  tests pass; scoped types5 packages, lint
+  and Menu/Kiosk builds pass. Oct27 Chrome18 transport +13 CheckoutActions/Focus/
+  FieldState pass, including never-settling presentation and lost refusal receipt.
+  Previous browser startup stall was root/Kiosk Vitest peer-instance mixing;
+  use `pnpm -F @proj-airi/stage-kiosk exec vitest`, not root runner with app config.
+  OpenCC prebundle resolves through owning stage-ui package. POS response-loss/
+  checkout-domain16 pass. Two synthetic
+  configured-model explanation cases pass with read-only live config/scratch cart;
+  no original customer log or production POS write. Oct27 configured ASR accepts
+  synthetic60s quiet-boundary and46s crossing-boundary recordings (three chunks,
+  two-to-three correction, bento and no-checkout facts preserved, one complete
+  queue delivery). New opt-in `tests/experiments/kioskAudioReplay.test.ts` uses a
+  supplied canonical synthetic WAV and read-only audio config; credentials stay
+  in env. No physical microphone/payment acceptance or Main semantic proof.
+  Private logs `/tmp/webnavior-reliability-*` and configured-explanation log are
+  outside Git. User authorized field deployment Oct27; matching Menu/Kiosk/Server
+  are now live. API restarted11:33:56 Taipei via systemctl, PID1530427;
+  livez/readyz and DB/Redis pass. Public Chrome verifies all48 HTML/linked assets:
+  Menu index-CtKt2yT4.js, Kiosk index-DUYoK-kc.js. Bridge health/catalog7 pass;
+  live oversized-ASR probe returns413 KIOSK_AUDIO_TOO_LARGE before auth/provider.
+  Fresh unauthenticated Kiosk loads device setup; no test device/order created.
+  Old frontends, verified PostgreSQL dump, changed/base sources, patch, build
+  logs and release.json (deployed-verified) are at
+  `/tmp/webnavior-reliability-release-20261027-e363hd7n`. Baseline HEAD eac50945;
+  source hashes identify the deployed snapshot; committed non-doc sources match
+  it. No dependency/schema/Nginx/management/Bridge changes or manual db:push.
+  Oct27 precommit root typecheck passed once; root lint has the same2370 existing
+  errors, while changed-file checks and all commit hooks pass. Retained old
+  hashed assets; reload existing Kiosk after ending any unfinished transaction
+  before starting field acceptance. Physical microphone/payment and original
+  initial62s cause remain unproven.
+
 - Oct22 user explicitly requested plain-language batch commits and deployment for
   FIELD TESTING. Code/test commits on no_mcp: 6666541 Menu/browse/cart/fulfillment,
   1eaf6a4 Server decisions/receipts, 2ab99ec Kiosk verified replies, 5795db6 historical
