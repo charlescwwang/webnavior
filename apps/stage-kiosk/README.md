@@ -765,6 +765,10 @@ consumed before notifying the parent. This does not deduplicate matching text or
 block later utterances while an earlier request is processing.
 Browser component regressions run separately from the Node unit suite:
 
+Use the package-scoped commands below. The root and Kiosk may resolve distinct
+Vitest/browser peer instances even at the same version; starting the root runner
+with the Kiosk config can stall before test collection.
+
 ```sh
 pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 # To use an installed Chrome instead of Playwright's downloaded Chromium:
