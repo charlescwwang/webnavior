@@ -18,7 +18,7 @@ cd webnavior
 bash scripts/deployWebUbuntu.sh --setup --origin http://192.168.1.10
 ```
 
-The setup installs Nginx and build prerequisites. Node.js `24.13.0` is installed
+The setup installs Nginx and build prerequisites. Node.js `24.22.1` is installed
 under `~/.local/opt/airi-web-node`, so it does not replace Ubuntu's system Node.js.
 
 Open:

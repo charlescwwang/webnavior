@@ -9,7 +9,7 @@
 # is exposed through this Nginx site's same-origin proxy routes.
 set -Eeuo pipefail
 
-readonly NODE_VERSION='24.13.0'
+readonly NODE_VERSION='24.22.1'
 readonly NODE_ARCHIVE="node-v${NODE_VERSION}-linux-x64.tar.xz"
 readonly NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_ARCHIVE}"
 
@@ -72,6 +72,11 @@ install_node_locally() {
     temporary_dir="$(mktemp -d)"
     trap 'rm -rf "$temporary_dir"' RETURN
     curl --fail --location --retry 3 --output "$temporary_dir/$NODE_ARCHIVE" "$NODE_URL"
+    curl --fail --location --retry 3 --output "$temporary_dir/SHASUMS256.txt" "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+    (
+      cd "$temporary_dir"
+      grep " ${NODE_ARCHIVE}\$" SHASUMS256.txt | sha256sum --check
+    )
     tar -xJf "$temporary_dir/$NODE_ARCHIVE" -C "$node_root"
   fi
 

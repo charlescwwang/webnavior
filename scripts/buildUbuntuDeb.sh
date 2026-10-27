@@ -45,18 +45,18 @@ installBuildToolchain() {
 
   userHome="$(getent passwd "$(id --user --name)" | cut -d: -f6)"
   toolDirectory="$userHome/.local/opt/airi-tools"
-  nodeDirectory="$toolDirectory/node-v24.13.0-linux-x64"
+  nodeDirectory="$toolDirectory/node-v24.22.1-linux-x64"
   if [[ -x "$nodeDirectory/bin/node" ]]; then
     export PATH="$nodeDirectory/bin:$PATH"
   elif ! command -v node >/dev/null || [[ "$(node --version)" != v24.* ]] || ! command -v corepack >/dev/null; then
     mkdir -p "$toolDirectory"
-    nodeArchive="$toolDirectory/node-v24.13.0-linux-x64.tar.xz"
+    nodeArchive="$toolDirectory/node-v24.22.1-linux-x64.tar.xz"
     nodeChecksums="$toolDirectory/SHASUMS256.txt"
-    curl --fail --location --output "$nodeArchive" https://nodejs.org/dist/v24.13.0/node-v24.13.0-linux-x64.tar.xz
-    curl --fail --location --output "$nodeChecksums" https://nodejs.org/dist/v24.13.0/SHASUMS256.txt
+    curl --fail --location --output "$nodeArchive" https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz
+    curl --fail --location --output "$nodeChecksums" https://nodejs.org/dist/v24.22.1/SHASUMS256.txt
     (
       cd "$toolDirectory"
-      grep ' node-v24.13.0-linux-x64.tar.xz$' "$nodeChecksums" | sha256sum --check
+      grep ' node-v24.22.1-linux-x64.tar.xz$' "$nodeChecksums" | sha256sum --check
     )
     tar --extract --xz --file "$nodeArchive" --directory "$toolDirectory"
     rm -f "$nodeArchive" "$nodeChecksums"

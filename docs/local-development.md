@@ -17,7 +17,7 @@
 | 項目 | 結果 |
 | --- | --- |
 | OS | Windows Home 25H2，build `26200.9168`（登錄產品標籤為 Windows 10 Home） |
-| Node.js | `24.13.0`（符合 repository `.tool-versions`） |
+| Node.js | `24.13.0`（當時 Windows 驗證版本；目前專案要求 `24.22.1`） |
 | pnpm | `10.33.0`（符合 root `packageManager`） |
 | Electron | `41.2.1`，原生相依已由 `electron-builder install-app-deps` 安裝 |
 | GPU | NVIDIA GeForce RTX 3060 Ti，driver `591.86`，8 GiB VRAM |
@@ -91,7 +91,7 @@ ROCm 只有在未來餐飲 Agent 自己承擔本機模型推論時才需評估�
 
 ### Windows → Linux 遷移檢查表
 
-1. 使用 Node `24.13.0` 與 pnpm `10.33.0`，重新執行 frozen-lockfile install；不要複製 Windows `node_modules`。
+1. 使用 Node `24.22.1` 與 pnpm `10.33.0`，重新執行 frozen-lockfile install；不要複製 Windows `node_modules`。
 2. 安裝目標發行版的 Chromium/Electron 所需系統 library，並確認 WebGL 與 Vulkan driver 正常。
 3. 以乾淨 profile 啟動 Web 及 Desktop，檢查 `navigator.gpu`、WebGL、Live2D/VRM Avatar 和 console。
 4. 為 NVIDIA、AMD/Mesa、無 GPU/軟體 fallback 各跑一次最小 smoke test；WebGPU 是 optional enhancement，不應阻斷文字聊天或 Avatar 的 WebGL fallback。
