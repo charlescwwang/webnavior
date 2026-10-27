@@ -80,7 +80,9 @@ const emit = defineEmits<{
       <span>總計</span><strong>{{ props.total }}</strong>
     </section>
 
-    <section v-if="props.lines.length > 0 && !props.completed" class="review-fulfillment" aria-labelledby="fulfillment-heading">
+    <!-- Fulfillment may be chosen before adding food; the Agent and touch UI
+         must expose the same legal controls even when the cart is empty. -->
+    <section v-if="props.fulfillmentModes.length > 0 && !props.completed" :class="['review-fulfillment']" aria-labelledby="fulfillment-heading">
       <div>
         <h3 id="fulfillment-heading">
           用餐方式

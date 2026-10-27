@@ -404,10 +404,10 @@ const runtime = createMenuToolRuntime({
     }
 
     menuPresentationLoadingTools.value = [...menuPresentationLoadingTools.value, toolName]
-    // Yield one paint before the synchronous catalog lookup replaces the grid,
-    // otherwise customers never see that the confirmed tool is doing work.
+    // Yield briefly for the skeleton without making the operation depend on
+    // an animation frame: background/hidden documents can suspend those frames.
     await nextTick()
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    await waitForAgentCursor(16)
   },
 })
 

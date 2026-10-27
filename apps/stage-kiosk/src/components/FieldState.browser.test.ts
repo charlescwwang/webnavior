@@ -37,7 +37,7 @@ it('replaces the real visible dish cards with the complete catalog and snapshots
 })
 
 // Report: same investigation, seq137/349/371; check actual selected DOM after each change.
-it('animates each exact fulfillment control and keeps repeated changes aligned with the cart and snapshot', async () => {
+it.each([false, true])('animates each exact fulfillment control and keeps repeated changes aligned with the cart and snapshot (empty=%s)', async (empty) => {
   const cart = shallowRef<CartSnapshot>({ fulfillmentMode: undefined, lines: [], itemCount: 0, total: 0 })
   const controls = new Map<string, HTMLElement>()
   const targets: string[] = []
@@ -72,7 +72,8 @@ it('animates each exact fulfillment control and keeps repeated changes aligned w
         controls.delete(id)
     },
   }) }))
-  await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+  if (!empty)
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
   for (const mode of ['dine-in', 'takeout', 'dine-in', 'takeout'] as FulfillmentMode[]) {
     await runtime.invokeForAgent('order_set_fulfillment', { mode })
     await nextTick()

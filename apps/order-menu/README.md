@@ -463,6 +463,9 @@ required. `cart_get` shows the order review by default (`display:false` is a dat
 read). Both semantic and Agent fulfillment changes reveal the review and await
 control registration before animating the POS choice, then update the selected
 state. Missing fulfillment controls fail visibly before the cart is changed.
+The review exposes fulfillment controls even for an empty cart, so choosing
+inner-store dining or pickup before adding a meal uses the same visible controls
+as later changes. Completed orders retain their existing restrictions.
 Changing mode during an unpaid checkout first creates a revision-bound confirmation;
 after confirmation the runtime returns to the order and applies the requested POS
 mode once. Pending/uncertain payment stays locked. Repeating the existing mode does
