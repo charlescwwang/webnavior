@@ -7,6 +7,49 @@ accumulating history.
 
 ## Current State
 
+- Oct27 security repair is DEPLOYED and committed in Oct28 batches on no_mcp:
+  1a046a8 Node runtime, 283a298 security dependencies/tests, 6af4536 POS
+  device authentication/cart validation; audit/handoff documentation follows.
+  Details/remaining work: `docs/research/2026-10-27-security-audit.md`.
+  User explicitly requested restoring original test sign-in and six-digit
+  development enrollment on Oct27. Extra public-origin identity restrictions
+  are withdrawn; original flags/NODE_ENV rules apply. POS auth/validation and
+  security package upgrades stay. Do not disable these test flows again without
+  a new request. Chrome verified test status enabled:true, invalid test-login
+  and numeric-enrollment bodies400, POS writes401, catalog7. Read-only identity
+  avoids bootstrap auto-replacement while validating payment devices. Scoped
+  restore tests31 plus3 route cases and Bridge44, types/lint pass. Checkpoint
+  path is recorded in `/tmp/webnavior-current-development-restoration-path`.
+  Unauthenticated POS writes still401.
+  Existing23 device credentials retained. Node24.22.1 installed with official
+  SHA256 check (not GPG); API/Bridge actual processes must both use it. Hono4.13.14,
+  adapter1.19.17, Better Auth family1.6.33, Vitest4.1.12; runtime ws/Zod/nanoid and
+  scoped protobuf/gRPC patches locked. Menu now uses `/api/kiosk/pos` BFF;
+  private fetches include existing HttpOnly device cookie. Bridge verifies with
+  owning API read-only `/api/kiosk/identity`, isolates Site/device resources and payment
+  reuse; cart totals/options server-checked, uncertain writes never retried.
+  Simulator ownership/idempotency remain in memory: no live payment approval.
+  Six-digit enrollment is restored; a future controlled enrollment is not
+  part of the user-approved change now.
+  Root env remains development/flags true: sudo requires a password; the
+  original test flows are intentionally enabled by user choice. Do not clear all device
+  credentials/sessions or claim no compromise; review existing-session evidence.
+  Supervisor restarts used own launchers after systemctl timed out, checking
+  on-failure/control-group/ownership and no recent customer entries first.
+  Rollback `/tmp/webnavior-security-repair-20261027-f7gtcwga`: private env/config,
+  verified pg_dump, sources/patch, web/menu/kiosk before assets, release.json.
+  Scoped types5 apps, affected lint/builds pass; Menu757/Kiosk249, Chrome61,
+  Bridge44, auth/body-limit39 and Kiosk routes61 tests pass. Public66 JS/CSS
+  hashes match. No production payment write, session mint or device enrollment.
+  Oct28 commit gate: full-project typecheck passed once; Server31, Bridge44,
+  Menu757 tests and affected-file lint pass. Root lint has existing errors;
+  its one task-file YAML key-order error was fixed and scoped lint rechecked.
+  All commit hooks run normally. This commit-only pass did not redeploy or restart.
+  Remaining (not automatically authorized): controlled enrollment, persistent real-POS ownership/reconciliation,
+  device/Site AI quota and concurrency, CI security checks, OTel family upgrades,
+  root-owned env/service isolation and other-project firewall coordination.
+  Full-workspace prod audit still9 critical/124 high; not deployed exploit counts.
+
 - Oct26/27 conversation reliability repair is DEPLOYED Oct27 for FIELD TESTING,
   originally from a source snapshot, then committed Oct27 at the user's request:
   364f162 Menu controls, 5989a5e recovery/verified replies, 4d03c4a whole-utterance
