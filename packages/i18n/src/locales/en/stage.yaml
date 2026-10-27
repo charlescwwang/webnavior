@@ -202,6 +202,10 @@ websocket-status:
   open-settings: Open connection settings
 
 kiosk-agent:
+  context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
+  service-unavailable: The menu connection was lost. New operations are paused; reconnect and check your existing order.
+  service-reconnect: Reconnect menu
+  service-recovered: The menu connection is restored. Earlier operations were not replayed; check your order before speaking again.
   service-connecting: Connecting assistant controls. You can also use the service screen directly.
   service-manual: Assistant controls are unavailable for this service. Please use the service screen directly and check the result there.
   service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.

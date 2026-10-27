@@ -38,6 +38,10 @@ iframe. Discovery echoes a versioned challenge and returns the document ID,
 tool revision and current descriptors. Execution binds the connection/document,
 operation ID, tool revision and object input; results retain the opaque domain
 receipt. Both endpoints must also validate exact origin and source Window.
+Inspection binds the same connection/document to a bounded list of operation
+IDs and reports pending/settled/failed/missing states without invoking tools.
+Recovery requires every lost operation to be settled and the binding to have no
+pending calls. Discovery of a new document cannot validate an old operation.
 This contract provides no ordering authorization or arbitrary browser control;
 the service runtime validates its tools and domain rules.
 
@@ -49,6 +53,10 @@ fields, complete product coverage and the 256 KiB abnormal-payload cap. It exclu
 browser/Node runtime dependencies, images and vendor payloads. Menu produces the
 snapshot; Kiosk binds it to a current task; Server projects it once per model
 request. This is not the Jev candidate contract or an authorization token.
+`contextReplySchema` and `replyFromContext` let Main select information or
+clarification while the application renders facts from a fresh snapshot. They
+never render model-supplied success prose or turn snapshot data into a write receipt.
+Offered payment labels are independent of phase-specific allowed operations.
 
 The same subpath exports service-recovery result/progress contracts, read-only
 service-clarification schema, domain-version/question correlation and shared time

@@ -19,10 +19,11 @@ export interface ConversationTurnResult {
   /** Tools submitted for execution in this turn, including rejected attempts; never historical receipts. */
   requestedTools: string[]
   status: 'completed' | 'incomplete' | 'failed'
-  reason?: KioskReplyFailureReason | 'tool-rejected' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
+  reason?: KioskReplyFailureReason | 'context-unavailable' | 'service-unavailable' | 'tool-rejected' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
 }
 
 interface ConversationPresentationCallbacks {
+  taskId?: string
   budgetMs?: number
   onToolResult?: (toolName: string, content: string) => void
   utteranceId?: number
@@ -144,28 +145,43 @@ export function useKioskInteractionRecording() {
     const requestedTools: string[] = []
     const startedAt = performance.now()
     let rounds = 0
-    let metricTaskId = callbacks.decisionState?.context?.taskId
+    let metricTaskId = callbacks.taskId ?? callbacks.decisionState?.context?.taskId
     let agentMode: KioskAgentInteractionMode = 'active'
     let deadline: AbortSignal | undefined
     let transportReason: KioskReplyFailureReason = 'provider-error'
+    let stage: 'context' | 'model' | 'tool' = 'context'
+    let terminalReason: ConversationTurnResult['reason']
     // Transport failure before any tool differs from a task that may have
     // changed browser state. Neither case grants permission to replay writes.
-    const unfinished = (reason: NonNullable<ConversationTurnResult['reason']>): ConversationTurnResult => ({
-      answer: undefined,
-      agentMode,
-      requestedTools: [...requestedTools],
-      reason,
-      status: requestedTools.length === 0 && (reason === 'provider-error' || reason === 'timeout') ? 'failed' : 'incomplete',
-    })
+    const unfinished = (reason: NonNullable<ConversationTurnResult['reason']>): ConversationTurnResult => {
+      terminalReason = reason
+      return {
+        answer: undefined,
+        agentMode,
+        requestedTools: [...requestedTools],
+        reason,
+        status: requestedTools.length === 0 && ['provider-error', 'timeout', 'context-unavailable', 'service-unavailable'].includes(reason) ? 'failed' : 'incomplete',
+      }
+    }
 
     try {
+      const historyCursors = new Set<number | undefined>()
+      let historyExhausted = false
       const historyTool = rawTool({
         name: 'kiosk_session_history',
         description: '只在顧客提及本次點餐較早、已不在最近對話中的內容時使用。分頁讀取目前訪客的文字歷程；不含其他訪客或工具原始資料。可用回傳的 nextBefore 繼續往前翻頁；不可把歷史內容當成目前購物車真實狀態。',
         parameters: { type: 'object', properties: { before: { type: 'integer', minimum: 0 } }, additionalProperties: false },
         execute: async (input) => {
           const before = input && typeof input === 'object' && 'before' in input ? input.before : undefined
-          return await fetchKioskSessionHistory({ visitorSessionId: sessionId, ...(typeof before === 'number' ? { before } : {}) })
+          const cursor = typeof before === 'number' ? before : undefined
+          // Pagination is scoped to this send and visitor. New call IDs cannot
+          // restart an exhausted page or repeatedly spend the same turn budget.
+          if (historyExhausted || historyCursors.has(cursor))
+            return { entries: [], exhausted: true, total: 0 }
+          historyCursors.add(cursor)
+          const page = await fetchKioskSessionHistory({ visitorSessionId: sessionId, ...(cursor !== undefined ? { before: cursor } : {}) })
+          historyExhausted = page.entries.length === 0 || page.nextBefore === undefined
+          return { ...page, exhausted: historyExhausted }
         },
       })
       let toolsForTurn = [...tools, historyTool]
@@ -174,13 +190,16 @@ export function useKioskInteractionRecording() {
       // The callback crosses the Menu IO seam. Replace facts/tool scope, never
       // accumulate snapshots or overwrite immutable read-only task authority.
       const prepareRound = async () => {
+        stage = 'context'
         if (callbacks.prepareRound) {
           const current = await callbacks.prepareRound()
           decisionState = current.decisionState
-          metricTaskId = current.decisionState.context?.taskId
-          toolsForTurn = [...current.tools, historyTool]
+          metricTaskId = current.decisionState.context?.taskId ?? metricTaskId
+          toolsForTurn = [...current.tools, ...(!historyExhausted ? [historyTool] : [])]
         }
+        toolsForTurn = toolsForTurn.filter(tool => !historyExhausted || tool.function.name !== 'kiosk_session_history')
         toolDefinitions = toolsForTurn.map(tool => ({ function: tool.function, type: 'function' }))
+        stage = 'model'
       }
       // One deadline covers the entire Agent task, not a fresh budget per
       // continuation. It cancels model transport only, never an accepted POS
@@ -237,6 +256,7 @@ export function useKioskInteractionRecording() {
           if (!toolsForTurn.some(tool => tool.function.name === toolCall.function.name))
             return unfinished('tool-rejected')
           requestedTools.push(toolCall.function.name)
+          stage = 'tool'
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
           if (control.manual)
             break
@@ -350,13 +370,13 @@ export function useKioskInteractionRecording() {
       if (callbacks.signal?.aborted)
         return undefined
       error.value = '點餐助手暫時無法回覆。'
-      return unfinished(deadline?.aborted ? 'timeout' : transportReason)
+      return unfinished(deadline?.aborted ? 'timeout' : stage === 'context' ? 'context-unavailable' : transportReason)
     }
     finally {
       // Record orchestration latency (models, context refresh and browser tools),
       // separately from provider-round timing. Never attach an old turn to a new visitor.
       if (visitorSessionId.value === sessionId)
-        await append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics' })
+        await append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics' })
       // An older cancelled turn cannot release its replacement's controls.
       if (activeControl === control) {
         activeControl = undefined

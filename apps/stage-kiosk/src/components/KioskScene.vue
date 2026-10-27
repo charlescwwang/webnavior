@@ -12,7 +12,7 @@ import type { KioskVoiceDiagnosticEntry } from './KioskVoiceDiagnostics.vue'
 import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&url'
 
 import { createAssistanceReminderWindow, createInteractionWindow, createPresenceWindow, defaultDeviceSettingsValues, defaultPresenceSettings, observationSettings } from '@proj-airi/kiosk-proactive'
-import { conversationContextSchema, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, replyFromContext, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
@@ -136,6 +136,9 @@ const { activeCardId } = storeToRefs(useAiriCardStore())
 const conversationMessages = shallowRef<ChatHistoryItem[]>([])
 const conversationWorkStatus = shallowRef<string>()
 const conversationActivitySteps = shallowRef<Array<{ label: string, state: 'done' | 'error' | 'executing' | 'selected', toolName: string }>>([])
+const serviceRecoveryBlocked = shallowRef(false)
+const serviceRecovering = shallowRef(false)
+watch([scenarioRegistry.activeScenarioId, scenarioRegistry.iframeRevision], () => serviceRecoveryBlocked.value = false)
 const conversationExecutionDurationMs = shallowRef<number>()
 const retryableConversationRequest = shallowRef<string>()
 const {
@@ -359,6 +362,25 @@ const conversationActivityStatus = computed(() => {
 })
 const interactionRecording = useKioskInteractionRecording()
 const agentOrderOwner = shallowRef<string>()
+// BEGIN can succeed in Menu before its reply is lost. Retain the issued owner
+// separately from acknowledged control so recovery can end only our own task.
+const pendingAgentOrderOwner = shallowRef<string>()
+watch(interactiveServiceClient.availability, (availability) => {
+  if (availability === 'unavailable' && (agentOrderOwner.value || pendingAgentOrderOwner.value))
+    serviceRecoveryBlocked.value = true
+})
+const stopToolDiagnostics = interactiveServiceClient.onExecution((event) => {
+  void interactionRecording.append('service_event', JSON.stringify({
+    kind: 'browser_tool_metrics',
+    connectionId: event.connectionId,
+    documentId: event.documentId,
+    operationId: event.operationId,
+    taskId: agentOrderOwner.value,
+    toolName: event.tool.name,
+    phase: event.phase,
+  }), { source: 'browser_tool_metrics' })
+})
+onUnmounted(stopToolDiagnostics)
 const manualControlPending = shallowRef(false)
 function requestManualOrderControl() {
   manualControlPending.value = true
@@ -886,7 +908,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       presenceState: presenceDecision.value?.state,
       session: incompleteAsrSession,
       transcript: utterance.text,
-      webMcp: { execute: interactiveServiceClient.execute, tools: interactiveServiceClient.tools.value },
+      webMcp: { availability: serviceRecoveryBlocked.value ? 'unavailable' : interactiveServiceClient.availability.value, execute: interactiveServiceClient.execute, tools: interactiveServiceClient.tools.value },
     })
     if (!ticket.isCurrent())
       return
@@ -938,6 +960,14 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         interactionTurn.complete(selectedTurn)
       if (utterance.source === 'simulation')
         asrSimulationStatus.value = message
+      finishVoiceDiagnostic(utterance.id, 'failed')
+      return
+    }
+    if (result.kind === 'SERVICE_UNAVAILABLE') {
+      serviceRecoveryBlocked.value = true
+      pendingTranscript.value = t('stage.kiosk-agent.service-unavailable')
+      asrSimulationStatus.value = pendingTranscript.value
+      updateDecisionEntry(utterance.id, { route: 'unavailable', agentStep: pendingTranscript.value })
       finishVoiceDiagnostic(utterance.id, 'failed')
       return
     }
@@ -1751,6 +1781,11 @@ async function sendConversationMessage(
   existingTurn?: ReturnType<typeof interactionTurn.begin>,
   options: { deadlineAt?: number, appendUserMessage?: boolean, decisionEntryId?: number, decisionState?: KioskConversationDecisionState, utteranceId?: number, waitSpeech?: boolean } = {},
 ) {
+  if (serviceRecoveryBlocked.value || interactiveServiceClient.availability.value !== 'ready') {
+    serviceRecoveryBlocked.value = true
+    conversationWorkStatus.value = t('stage.kiosk-agent.service-unavailable')
+    return
+  }
   // A new typed message is a deliberate correction, unlike unverified ambient
   // speech. Stop any audible reply before beginning the replacement turn.
   if (!existingTurn && interactionTurn.phase.value === 'speaking')
@@ -1856,6 +1891,7 @@ async function sendConversationMessage(
     if (!interactionTurn.isCurrent(turn))
       return
     if (taskTool && decisionState?.menuRevision !== undefined) {
+      pendingAgentOrderOwner.value = taskId
       const binding = await interactiveServiceClient.execute(taskTool, {
         action: 'BEGIN',
         transcript: text,
@@ -1865,10 +1901,13 @@ async function sendConversationMessage(
         ...(decisionState.handoff ? { handoff: decisionState.handoff } : {}),
         constraints: { excludeIngredients: decisionState.constraints?.exclude ?? [], includeIngredients: decisionState.constraints?.include ?? [], ...(decisionState.constraints?.dietary ? { dietary: decisionState.constraints.dietary } : {}), ...decisionState.constraints?.price, ...(decisionState.constraints?.unresolvedPrice || (decisionState.priceEvidence && !decisionState.constraints) ? { unresolvedPrice: true } : {}) },
       })
-      if (!binding || typeof binding !== 'object' || !('ok' in binding) || binding.ok !== true)
+      if (!binding || typeof binding !== 'object' || !('ok' in binding) || binding.ok !== true) {
+        pendingAgentOrderOwner.value = undefined
         throw new Error('Agent task could not be bound to the current menu.')
+      }
       taskBound = true
       agentOrderOwner.value = taskId
+      pendingAgentOrderOwner.value = undefined
       manualControlPending.value = false
       if (!interactionTurn.isCurrent(turn))
         return
@@ -1878,6 +1917,7 @@ async function sendConversationMessage(
       text,
       activeTools.value,
       {
+        taskId,
         utteranceId: options.utteranceId,
         budgetMs: options.deadlineAt ? Math.max(1, options.deadlineAt - Date.now()) : undefined,
         ...(decisionState ? { decisionState } : {}),
@@ -1994,12 +2034,25 @@ async function sendConversationMessage(
     if (!interactionTurn.isCurrent(turn))
       return
     const entryPrompt = t('stage.kiosk.customer-entry.complete-first')
+    let replyContext: KioskConversationDecisionState['context']
+    if (reply.requestedTools.every(name => name === 'kiosk_session_history') && reply.answer?.trim().startsWith('{')) {
+      const contextTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_conversation_context')
+      if (contextTool)
+        replyContext = parse(conversationContextSchema, await interactiveServiceClient.execute(contextTool, { includeCatalog: true }))
+      if (!interactionTurn.isCurrent(turn))
+        return
+      if (replyContext && replyFromContext(reply.answer, replyContext)?.kind === 'clarification' && replyContext.waitingFor)
+        questionReceipt = await validatedQuestionReceipt({ pendingCustomerChoice: replyContext.waitingFor })
+      if (!interactionTurn.isCurrent(turn))
+        return
+    }
     const presented = replyFromConversation(reply, {
       menu: menuReply,
       requireMenuRead: decisionState?.requireMenuRead,
       // A complete bare greeting is a service exchange even with System One off.
       serviceReply: decisionState?.serviceReply === true || /^(?:你好|您好|嗨|哈囉|哈啰|hello|hi)[！!。.?？\s]*$/i.test(text),
       handoff: decisionState?.handoff,
+      context: replyContext,
       outcome: operationReply,
       question: questionReceipt,
       failureMessage: t(`stage.kiosk-agent.${reply.reason ?? 'no-reply'}`),
@@ -2008,6 +2061,9 @@ async function sendConversationMessage(
     if (entryPhase === 'customer_entry' && presented.content === entryPrompt)
       questionReceipt = undefined
     const answer = presented.role === 'assistant' ? presented.content : undefined
+    if (!interactionTurn.isCurrent(turn))
+      return
+    await interactionRecording.append('service_event', JSON.stringify({ kind: 'main_presentation_metrics', taskId, status: presented.role === 'assistant' ? 'presented' : 'rejected', ...(presented.role === 'error' ? { reason: reply.reason ?? 'unverified-reply' } : {}) }), { source: 'main_presentation_metrics' })
     if (!interactionTurn.isCurrent(turn))
       return
     finishConversationProgress(turn.id)
@@ -2030,7 +2086,9 @@ async function sendConversationMessage(
       // The server keeps operation prose only as an internal draft. Record
       // the validated customer reply once, even if the draft used the same words.
       await interactionRecording.append('assistant_text', answer, { questionId: questionReceipt?.questionId, source: 'verified_reply' })
-      await acknowledgePresentedReply(answer, questionReceipt?.questionId, !mutationToolAttempted && !questionReceipt)
+      // Information does not answer or revoke the browser's pending ordering
+      // question. A selected clarification retains its real question ID above.
+      await acknowledgePresentedReply(answer, questionReceipt?.questionId, !replyContext && !mutationToolAttempted && !questionReceipt)
       await speakAssistantReply(answer, turn)
     }
   }
@@ -2087,6 +2145,40 @@ function retryConversationMessage() {
   if (lastMessage?.role === 'error')
     conversationMessages.value = conversationMessages.value.slice(0, -1)
   void sendConversationMessage(text, undefined, { appendUserMessage: false })
+}
+
+async function recoverOrderingService() {
+  if (serviceRecovering.value || currentAgentRequest())
+    return
+  serviceRecovering.value = true
+  serviceRecoveryBlocked.value = true
+  try {
+    await interactiveServiceClient.recover()
+    const contextTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_conversation_context')
+    const taskTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_agent_task')
+    if (!contextTool || !taskTool)
+      throw new Error('Menu recovery tools are unavailable.')
+    const context = parse(conversationContextSchema, await interactiveServiceClient.execute(contextTool, { includeCatalog: false }))
+    if (context.taskId && context.taskId !== agentOrderOwner.value && context.taskId !== pendingAgentOrderOwner.value)
+      throw new Error('The prior task belongs to another owner; keep ordering paused.')
+    if (context.taskId) {
+      const released = await interactiveServiceClient.execute(taskTool, { action: 'END', taskId: context.taskId })
+      if (!released || typeof released !== 'object' || !('ok' in released) || released.ok !== true)
+        throw new Error('The settled task could not release order control.')
+    }
+    agentOrderOwner.value = undefined
+    pendingAgentOrderOwner.value = undefined
+    manualControlPending.value = false
+    retryableConversationRequest.value = undefined
+    serviceRecoveryBlocked.value = false
+    pendingTranscript.value = t('stage.kiosk-agent.service-recovered')
+    conversationWorkStatus.value = undefined
+  }
+  catch (error) {
+    conversationWorkStatus.value = t('stage.kiosk-agent.service-unavailable')
+    console.warn('[stage-kiosk] ordering recovery remains paused:', error)
+  }
+  finally { serviceRecovering.value = false }
 }
 
 function describeToolActivity(toolName: string, state: 'executing' | 'done' | 'error' | 'selected') {
@@ -2233,6 +2325,8 @@ onUnmounted(() => {
       </section>
       <KioskAssistantThoughtBubble :progress="visibleProgress" />
       <KioskConversation
+        :service-recovery-blocked="serviceRecoveryBlocked"
+        :service-recovering="serviceRecovering"
         class="conversation-region"
         :activity-status="conversationActivityStatus"
         :activity-steps="conversationActivitySteps"
@@ -2244,11 +2338,12 @@ onUnmounted(() => {
         :messages="conversationMessages"
         :streaming-assistant-message="streamingAssistantMessage"
         :pending-transcript="pendingTranscript"
-        :retry-available="Boolean(retryableConversationRequest) || decisionStatus?.retryable === true"
+        :retry-available="!serviceRecoveryBlocked && interactiveServiceClient.availability.value === 'ready' && (Boolean(retryableConversationRequest) || decisionStatus?.retryable === true)"
         :sending="conversationSending"
         :font-size="conversationFontSize"
         :voice-conversation-only="props.voiceConversationOnly"
         @retry-message="retryConversationMessage"
+        @recover-service="recoverOrderingService"
         @simulate-asr="simulateAsrTranscript"
       />
     </section>

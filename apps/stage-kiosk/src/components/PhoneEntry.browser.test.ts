@@ -52,7 +52,8 @@ function setupEntry(regionHeight = 500) {
     execute: async (tool: { name: string }, input: Record<string, unknown>) => {
       const definition = tools.value.find(candidate => candidate.name === tool.name)!
       const result = await runtime.invoke(definition.name, input)
-      for (const listener of listeners) listener({ phase: 'resolved', tool: definition, input, result })
+      const execution: ToolExecution = { connectionId: 'phone-fixture', documentId: 'phone-document', operationId: crypto.randomUUID(), phase: 'resolved', tool: definition, input, result }
+      for (const listener of listeners) listener(execution)
       return result
     },
   }

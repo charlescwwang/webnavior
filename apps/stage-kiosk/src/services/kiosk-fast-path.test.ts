@@ -38,6 +38,15 @@ it('refreshes the real Menu contract without confusing neutral constraints with 
 })
 
 describe('kiosk System One fast path', () => {
+  // Report: this chat, 2026-10-26; 44 zero-round failures after iframe tools were revoked.
+  it('does not hand disconnected menu speech to Main or call a model', async () => {
+    const decide = vi.fn()
+    const isEnabled = vi.fn(async () => true)
+    const result = await runFastPath({ transcript: '我要水餃', isEnabled, decide, webMcp: { availability: 'unavailable', tools: [], execute: vi.fn() } })
+    expect(result.kind).toBe('SERVICE_UNAVAILABLE')
+    expect(decide).not.toHaveBeenCalled()
+    expect(isEnabled).not.toHaveBeenCalled()
+  })
   // Report: this chat, 2026-10-21; attachment 66ed3c26 showed an unanswered customer bubble.
   it('does not admit feedback from a recipient alone after a weak menu route', () => {
     const admit = createDecisionFeedback()

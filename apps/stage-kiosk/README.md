@@ -77,7 +77,11 @@ Known operation handoffs retain effect and resolved targets. A successful lookup
 of another dish cannot complete a known removal or fulfillment-change request.
 Unclassified no-tool prose cannot report an operation as completed. Classified
 service FAQs and bare greetings retain natural replies; uncertain operation turns
-need an application question or a matching receipt. The Server stores generated
+need an application question, a matching receipt, or a structured information
+selection rendered from a fresh Menu context. Information selections cover
+payment methods, fulfillment modes, literal menu-name facts and clarification;
+they cannot contain operation-success prose. Offered payment methods are separate
+from phase-specific payment execution permissions. The Server stores generated
 prose as draft service events, and the host records only its validated final reply
 as assistant history. Catalog inclusion and legal tool exposure are independent:
 omitting menu details does not silently remove valid state/question tools. Owned confirmation
@@ -236,6 +240,12 @@ and approved URL after load. A five-second handshake admits tools; replacing
 the frame revokes old descriptors and pending calls. Discovery alone can retry.
 Tool execution has a sixty-second receipt deadline and never automatically retries
 an operation; a lost receipt revokes tools because the write may already exist.
+Disconnected speech does not repeatedly enter Main Agent. **恢復菜單連線**
+rebinds the same document and inspects the original operation IDs without
+replaying them. Recovery waits until all accepted calls have settled, reads fresh
+Menu state and ends only a host-owned settled task. Pending/missing results,
+another task owner, and a replacement document remain blocked; recovery does not
+reload the iframe, clear a cart, advance recommendations or retry a payment.
 The Menu preserves its task locks, tool authorization, recommendation state and
 cart/checkout rules. Matching Kiosk/Menu versions are required. Native WebMCP,
 Origin-Trial and iframe `allow="tools"` are not required for this path.

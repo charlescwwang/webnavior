@@ -1,9 +1,9 @@
-import type { ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ConversationContext, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
@@ -114,6 +114,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   /** Only a classified service FAQ may use generated prose without an operation receipt. */
   serviceReply?: boolean
   handoff?: { intent: string }
+  /** Fresh snapshot read after the model/tool loop; never a historical context. */
+  context?: ConversationContext
   /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
   customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
 }) {
@@ -136,6 +138,13 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     return receiptReply
       ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
       : { role: 'error' as const, content: options.failureMessage }
+  }
+  if (!receiptReply && !commerceAttempted && options.context) {
+    const information = replyFromContext(result.answer, options.context)
+    // A display-required request still needs a presentation receipt. Only an
+    // application-owned clarification may pause it without claiming completion.
+    if (information && (!options.requireMenuRead || information.kind === 'clarification'))
+      return { role: 'assistant' as const, content: information.content }
   }
   if (options.requireMenuRead && !receiptReply)
     return { role: 'error' as const, content: options.failureMessage }

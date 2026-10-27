@@ -18,6 +18,45 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat, 2026-10-26; XCUxZDdu entries236–365 contain 44 zero-round tasks.
+  it('reports missing Menu context separately before any model request', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'missing-menu-context', state: 'active' } })
+    const prepareRound = vi.fn(async () => {
+      throw new Error('Current Menu context is unavailable.')
+    })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      for (const content of ['請介紹菜單', '還能繼續嗎']) {
+        const result = await recording.send('ordering', content, [], { prepareRound })
+        expect(result).toMatchObject({ status: 'failed', reason: 'context-unavailable', requestedTools: [] })
+        expect(recording.controlState.value).toBe('idle')
+      }
+      expect(prepareRound).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage).not.toHaveBeenCalled()
+      const metrics = kioskApi.appendKioskInteraction.mock.calls
+        .filter(([entry]) => entry.metadata?.source === 'main_task_metrics')
+        .map(([entry]) => JSON.parse(entry.content))
+      expect(metrics).toHaveLength(2)
+      expect(metrics[0]).toMatchObject({ modelRounds: 0, requestedToolCount: 0, interrupted: false, failureStage: 'context', reason: 'context-unavailable' })
+      expect(metrics[1]).toMatchObject({ modelRounds: 0, requestedToolCount: 0, interrupted: false })
+    }
+    finally { scope.stop() }
+  })
+
+  it('stops offering exhausted history instead of spending every model round on before:0', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'empty-history', state: 'active' } })
+    kioskApi.fetchKioskSessionHistory.mockResolvedValue({ entries: [], total: 1 })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'history-1', type: 'function', function: { name: 'kiosk_session_history', arguments: '{"before":0}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '請問想查詢哪一道餐點？' })
+    const recording = useKioskInteractionRecording()
+    expect(await recording.send('ordering', '剛才呢', [])).toMatchObject({ status: 'completed' })
+    expect(kioskApi.fetchKioskSessionHistory).toHaveBeenCalledTimes(1)
+    expect(kioskApi.streamKioskConversationMessage.mock.lastCall![0].tools).toEqual([])
+    expect(kioskApi.streamKioskConversationMessage.mock.lastCall![0].toolResults[0].content).toContain('"exhausted":true')
+  })
+
   it('refreshes the context and offered tools before each Main round', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'fresh-context', state: 'active' } })
     kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'read', type: 'function', function: { name: 'cart_get', arguments: '{}' } }] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '目前已進入發票步驟。' })

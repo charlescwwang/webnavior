@@ -1,6 +1,6 @@
 import type { InferOutput } from 'valibot'
 
-import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, string } from 'valibot'
+import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string } from 'valibot'
 
 const id = pipe(string(), minLength(1), maxLength(200))
 const label = pipe(string(), maxLength(500))
@@ -66,6 +66,8 @@ export const conversationContextSchema = pipe(object({
   checkout: optional(object({ stage: pipe(string(), maxLength(80)), invoiceMethod: optional(pipe(string(), maxLength(80))), taxId: optional(pipe(string(), maxLength(8))), carrierRegistered: boolean(), citizenRegistered: boolean() })),
   seating: optional(object({ partySize: optional(quantity), ready: boolean(), revision })),
   allowedPaymentMethods: pipe(array(id), maxLength(20)),
+  /** Offered methods; unlike allowedPaymentMethods, this does not grant phase-specific execution. */
+  paymentMethods: optional(pipe(array(object({ id, label })), maxLength(20))),
   fulfillmentModes: pipe(array(object({ id, label })), maxLength(20)),
   waitingFor: optional(conversationQuestionSchema),
   retainedRequests: pipe(array(object({ id, itemId: id, status: picklist(['active', 'suspended']) })), maxLength(20)),
@@ -74,6 +76,53 @@ export const conversationContextSchema = pipe(object({
 
 export type ConversationContext = InferOutput<typeof conversationContextSchema>
 export type ConversationHandoff = InferOutput<typeof handoffSchema>
+
+/** A model may select a factual reply, but cannot supply operation-success prose. */
+export const contextReplySchema = strictObject({
+  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification']),
+  subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
+})
+
+/**
+ * Renders an information/clarification selection from fresh service-owned facts.
+ * It grants no operation authority and never treats a snapshot as a write receipt.
+ */
+export function replyFromContext(answer: string | undefined, context: ConversationContext) {
+  let value: unknown
+  try {
+    value = JSON.parse(answer ?? '')
+  }
+  catch { return undefined }
+  const selection = safeParse(contextReplySchema, value)
+  if (!selection.success)
+    return undefined
+  const kind = selection.output.kind
+  if (selection.output.kind === 'clarification') {
+    const content = context.waitingFor && context.waitingFor.expiresAt > Date.now()
+      ? context.waitingFor.question
+      : '請再說明你想查詢或調整的內容。'
+    return { kind, content }
+  }
+  if (selection.output.kind === 'payment-methods') {
+    const methods = context.paymentMethods
+    return { kind, content: methods?.length ? `目前支援${methods.map(method => method.label).join('、')}。` : '目前沒有可確認的付款方式，請查看付款畫面或詢問服務人員。' }
+  }
+  if (selection.output.kind === 'fulfillment-modes')
+    return { kind, content: context.fulfillmentModes.length ? `目前提供${context.fulfillmentModes.map(mode => mode.label).join('、')}。` : '目前沒有可確認的取餐方式，請詢問服務人員。' }
+  if (!context.entryComplete || !context.catalog?.complete || !selection.output.subjects?.length)
+    return undefined
+  const normalize = (text: string) => text.normalize('NFKC').trim().toLocaleLowerCase()
+  const content = selection.output.subjects.map((subject) => {
+    const name = normalize(subject)
+    const items = context.catalog!.items.filter(item => [item.name, item.category, ...item.aliases].some(label => normalize(label) === name))
+    // Literal coverage does not establish semantic absence or authorize a
+    // substitute. Keep the wording limited to what this complete catalog lists.
+    return items.length
+      ? `${items.map(item => `${item.name}，單份基本售價 NT$${item.price}${item.availability === 'sold-out' ? '，目前售完' : item.availability === 'available' ? '' : '，可供狀態需確認'}`).join('；')}。`
+      : `目前菜單沒有標示「${subject}」，請問你指的是哪一道餐點？`
+  }).join(' ')
+  return { kind, content }
+}
 
 /**
  * Rejects bare assent as authority to choose one target from several.

@@ -1,9 +1,56 @@
+import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
+import { parse } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
 import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+
+// Report: this chat, 2026-10-26; XCUxZDdu entries213–217 and LtPeoyq9 entries45–49.
+it.each([
+  { phase: 'ordering', answer: '我們目前菜單中沒有湯包。' },
+  { phase: 'checkout_payment_select', answer: '目前支援 LINE Pay 與街口支付。' },
+])('retains the guard against unsupported free-prose facts after uncertain handoff in $phase', ({ phase, answer }) => {
+  const state = conversationDecisionStateFrom({ phase }, { reason: 'UNCERTAIN_OPERATION' })
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer }, {
+    menu: createMenuReplyWindow(),
+    requireMenuRead: state?.requireMenuRead,
+    serviceReply: state?.serviceReply,
+    failureMessage: '這次沒能完成回覆，請再試一次，或使用螢幕操作。',
+  })
+  // Free prose is still not evidence. Structured replies below obtain facts
+  // from a fresh context instead of trusting the model's claimed answer.
+  expect(result.role).toBe('error')
+  expect(result.content).toBe('這次沒能完成回覆，請再試一次，或使用螢幕操作。')
+})
+
+// Report: this chat, 2026-10-26; explanations were blocked despite available Menu facts.
+it('answers structured information and clarification from the current context without authorizing a write', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  context.paymentMethods = [{ id: 'linepay', label: 'LINE Pay' }, { id: 'jkopay', label: '街口支付' }]
+  context.allowedPaymentMethods = ['linepay', 'jkopay']
+  const present = (value: unknown) => replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: JSON.stringify(value) }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' })
+  expect(present({ kind: 'payment-methods' })).toEqual({ role: 'assistant', content: '目前支援LINE Pay、街口支付。' })
+  expect(present({ kind: 'menu-information', subjects: ['湯包'] })).toEqual({ role: 'assistant', content: '目前菜單沒有標示「湯包」，請問你指的是哪一道餐點？' })
+  expect(present({ kind: 'clarification' }).role).toBe('assistant')
+  expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['kiosk_session_history'], answer: '{"kind":"clarification"}' }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' }).role).toBe('assistant')
+  expect(present({ kind: 'payment-methods', answer: '已完成付款。' }).role).toBe('error')
+  expect(present({ kind: 'operation-result', answer: '已加入水餃。' }).role).toBe('error')
+  const before = context.cart
+  expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(before)
+})
+
+it('requires fresh complete catalog evidence and retains display and mutation receipt requirements', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const result = { status: 'completed' as const, agentMode: 'active' as const, requestedTools: [], answer: JSON.stringify({ kind: 'menu-information', subjects: ['水餃'] }) }
+  expect(replyFromConversation(result, { menu: createMenuReplyWindow(), context, requireMenuRead: true, failureMessage: '未展示。' }).role).toBe('error')
+  expect(replyFromConversation(result, { menu: createMenuReplyWindow(), context, handoff: { intent: 'ADD_ITEM' }, failureMessage: '未加入。' }).role).toBe('error')
+  context.catalog = undefined
+  expect(replyFromConversation(result, { menu: createMenuReplyWindow(), context, failureMessage: '資料不足。' }).role).toBe('error')
+})
 
 it('does not let a menu read finish a known removal task', () => {
   const menu = createMenuReplyWindow()

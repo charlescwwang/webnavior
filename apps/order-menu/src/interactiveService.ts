@@ -10,7 +10,7 @@ import validators from 'virtual:menu-tool-validators'
 
 import { defineInvokeHandler } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/window-message'
-import { discoverService, discoveryRequestSchema, executeServiceTool, executionRequestSchema, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
+import { discoverService, discoveryRequestSchema, executeServiceTool, executionRequestSchema, inspectionRequestSchema, inspectService, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
 import { parse } from 'valibot'
 
 /** Binds the current Menu document to one approved parent; runtime retains all commerce state. */
@@ -24,7 +24,7 @@ export function connectInteractiveService(runtime: ReturnType<typeof createMenuT
     targetOrigin: hostOrigin,
     expectedOrigin: hostOrigin,
   })
-  let active: { id: string, operations: Map<string, { fingerprint: string, result: Promise<unknown> }> } | undefined
+  let active: { id: string, operations: Map<string, { fingerprint: string, result: Promise<unknown>, status: 'pending' | 'settled' | 'failed' }> } | undefined
   let toolsRevision = 0
   let fingerprint = ''
 
@@ -74,12 +74,26 @@ export function connectInteractiveService(runtime: ReturnType<typeof createMenuT
         : Promise.resolve({ ok: false, error: 'INVALID_TOOL_INPUT', recovery: 'Check the tool schema and retry only with valid arguments.' })
       // Cache before awaiting, including in-flight operations. No eviction within a
       // binding: an old repeated ID must never become a second commerce operation.
-      active.operations.set(request.operationId, { fingerprint: operationFingerprint, result: operation })
+      const accepted = { fingerprint: operationFingerprint, result: operation, status: 'pending' as 'pending' | 'settled' | 'failed' }
+      active.operations.set(request.operationId, accepted)
+      void operation.then(() => accepted.status = 'settled', () => accepted.status = 'failed')
     }
     const result = await operation
     // A binding replacement may not cancel a write already admitted by the runtime.
     // Returning its receipt is safe; the old host context has already been revoked.
     return { connectionId: request.connectionId, documentId, operationId: request.operationId, result }
+  })
+
+  defineInvokeHandler(connection.context, inspectService, (raw) => {
+    const request = parse(inspectionRequestSchema, raw)
+    if (!active || active.id !== request.connectionId || request.documentId !== documentId)
+      throw new Error('STALE_CONNECTION: Cannot inspect operations from another binding.')
+    return {
+      connectionId: active.id,
+      documentId,
+      pendingCount: [...active.operations.values()].filter(operation => operation.status === 'pending').length,
+      operations: request.operationIds.map(operationId => ({ operationId, status: active!.operations.get(operationId)?.status ?? 'missing' as const })),
+    }
   })
 
   return () => {

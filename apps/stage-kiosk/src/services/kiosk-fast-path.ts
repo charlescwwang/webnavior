@@ -52,6 +52,7 @@ export type FastPathResult = {
   | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
   | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
   | { kind: 'UNAVAILABLE' }
+  | { kind: 'SERVICE_UNAVAILABLE' }
   | { kind: 'EXECUTION_FAILED', uncertain: boolean, result?: unknown }
 )
 
@@ -115,6 +116,7 @@ function unfinishedStateKey(state: FastPathDecisionState) {
 }
 
 interface WebMcpBridge {
+  availability?: 'idle' | 'loading' | 'ready' | 'unavailable'
   execute: (tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>
   tools: readonly ServiceTool[]
 }
@@ -147,6 +149,10 @@ export async function runFastPath(input: {
   input = { ...input, transcript: transcript.normalized, onTrace: trace => onTrace?.({ ...trace, rawTranscript: transcript.raw }) }
   if (!input.transcript)
     return { kind: 'IGNORE' }
+  // Missing tools after a transport failure are not an administrator disabling
+  // System One. Do not admit ambient speech into a Main task without Menu IO.
+  if (input.webMcp.availability !== undefined && input.webMcp.availability !== 'ready')
+    return { kind: 'SERVICE_UNAVAILABLE' }
   let browserContext: unknown
   let recoveryUsed = false
   let decisionState: FastPathDecisionState | undefined

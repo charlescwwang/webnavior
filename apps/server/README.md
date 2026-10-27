@@ -47,6 +47,9 @@ choices separately from application protections; passing state checks do not
 prove semantic understanding. Presentation callbacks do not verify browser DOM.
 It does not test ASR/TTS or physical devices. Cross-app replay
 files live under `tests/experiments`, outside the Node-only Server source project.
+The `-t 'configured explanation recovery'` subset checks two synthetic information
+questions against current Main instructions and the fresh-context reply renderer;
+it does not certify ASR, physical checkout or every possible model response.
 
 ## Database migrations and deployment
 

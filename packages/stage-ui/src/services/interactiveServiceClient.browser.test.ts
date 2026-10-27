@@ -12,6 +12,62 @@ import { createInteractiveServiceClient } from './interactiveServiceClient'
 const cleanups: Array<() => void> = []
 afterEach(() => cleanups.splice(0).reverse().forEach(cleanup => cleanup()))
 
+// Report: this chat, 2026-10-26; recover a lost receipt without replaying its write.
+it('blocks recovery while an accepted write is pending and reconnects the same cart only after it settles', async () => {
+  const { client, tool } = await setup('?slow')
+  const events: string[] = []
+  client.onExecution(event => events.push(event.phase))
+  await expect(client.execute(tool('order_add_item'), { itemId: 'dish-0', quantity: 1 }, AbortSignal.timeout(30))).rejects.toBeDefined()
+  expect(client.availability.value).toBe('unavailable')
+  await expect(client.recover()).rejects.toBeDefined()
+  expect(client.tools.value).toEqual([])
+  await new Promise(resolve => setTimeout(resolve, 400))
+  await client.recover()
+  expect(client.availability.value).toBe('ready')
+  expect(events).toEqual(['called', 'failed'])
+  const cart = client.tools.value.find(candidate => candidate.name === 'cart_get')!
+  expect(await client.execute(cart, { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'dish-0', quantity: 1 }] } })
+})
+
+it('refuses to recover an uncertain operation into a replacement document', async () => {
+  const { client, frame, url, tool } = await setup('?slow')
+  await expect(client.execute(tool('order_add_item'), { itemId: 'dish-0', quantity: 1 }, AbortSignal.timeout(30))).rejects.toBeDefined()
+  const loaded = new Promise<void>(resolve => frame.addEventListener('load', () => resolve(), { once: true }))
+  frame.src = url.href
+  await loaded
+  await expect(client.recover()).rejects.toBeDefined()
+  expect(client.availability.value).toBe('unavailable')
+  expect(client.tools.value).toEqual([])
+})
+
+// Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md; first tool never returned.
+it('keeps a never-settling presentation blocked across recovery attempts without replaying the action', async () => {
+  const { client, frame, url, tool } = await setup('?hang')
+  const actions: unknown[] = []
+  const onMessage = (event: MessageEvent) => {
+    if (event.source === frame.contentWindow && event.origin === url.origin && event.data?.source === 'menu-test-action')
+      actions.push(event.data.action)
+  }
+  window.addEventListener('message', onMessage)
+  cleanups.push(() => window.removeEventListener('message', onMessage))
+  await expect(client.execute(tool('order_add_item'), { itemId: 'dish-0', quantity: 1 }, AbortSignal.timeout(100))).rejects.toBeDefined()
+  expect(actions).toHaveLength(1)
+  await expect(client.recover()).rejects.toBeDefined()
+  await expect(client.recover()).rejects.toBeDefined()
+  expect(client.availability.value).toBe('unavailable')
+  expect(client.tools.value).toEqual([])
+  expect(actions).toHaveLength(1)
+})
+
+it('recovers a definitive presentation refusal after a lost response while retaining an empty cart', async () => {
+  const { client, tool } = await setup('?slow&reject-action')
+  await expect(client.execute(tool('order_add_item'), { itemId: 'dish-0', quantity: 1 }, AbortSignal.timeout(30))).rejects.toBeDefined()
+  await new Promise(resolve => setTimeout(resolve, 150))
+  await client.recover()
+  const cart = client.tools.value.find(candidate => candidate.name === 'cart_get')!
+  expect(await client.execute(cart, { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
 async function setup(query = '', fixture = 'menuFrame') {
   const url = new URL(`/src/services/fixtures/${fixture}.html${query}`, window.location.href)
   url.hostname = url.hostname === 'localhost' ? '127.0.0.1' : 'localhost'

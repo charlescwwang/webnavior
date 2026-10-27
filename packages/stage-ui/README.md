@@ -61,6 +61,14 @@ Only discovery retries; lost execution receipts revoke admission and must not
 be treated as proof that a commerce operation did not happen. It does not grant
 access to unmodified third-party pages or fall back to native WebMCP.
 
+After a lost execution receipt, `recover()` reuses the original connection ID
+and document, inspects the accepted operation IDs and admits tools only when all
+operations have settled. It never replays their inputs. Pending/failed/missing
+operations or a replacement document keep admission revoked. Hosts must read
+current domain state and release only their own settled task before resuming;
+successful transport recovery does not establish payment success. Execution
+notifications include connection/document/operation IDs for bounded diagnostics.
+
 Run the focused real cross-origin Chrome tests from the workspace root:
 `VITEST_BROWSER_CHANNEL=chrome pnpm exec vitest run --config packages/stage-ui/vitest.interactiveService.config.ts`.
 

@@ -1810,6 +1810,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             ...(selection?.itemId ? { selection: { itemId: selection.itemId, quantity: selection.quantity, options: optionsFor(selection.options) } } : {}),
             paymentState: options.checkout?.paymentStatus() ?? 'idle',
             allowedPaymentMethods: context.allowedPaymentMethods,
+            paymentMethods: (options.checkout?.paymentMethods ?? []).map(id => ({ id, label: paymentLabels[id] })),
             fulfillmentModes: [...fulfillmentModes],
             ...(checkout ? { checkout: { stage: checkout.stage, invoiceMethod: checkout.invoiceMethod, ...(context.phase === 'checkout_tax_id' ? { taxId: checkout.taxId } : {}), carrierRegistered: Boolean(checkout.carrierCode), citizenRegistered: Boolean(checkout.citizenCode) } } : {}),
             ...(context.seating ? { seating: { partySize: context.seating.partySize, ready: context.seating.ready, revision: context.seating.revision } } : {}),

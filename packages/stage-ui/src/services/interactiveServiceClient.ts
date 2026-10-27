@@ -3,7 +3,7 @@ import type { ServiceTool, ToolExecution } from '@proj-airi/stage-shared/interac
 import { defineInvoke } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/window-message'
 import { errorMessageFrom } from '@moeru/std'
-import { discoverService, discoveryResultSchema, executeServiceTool, executionResultSchema, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
+import { discoverService, discoveryResultSchema, executeServiceTool, executionResultSchema, inspectionResultSchema, inspectService, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
 import { parse } from 'valibot'
 import { readonly, shallowRef, toRaw } from 'vue'
 
@@ -22,12 +22,15 @@ export function createInteractiveServiceClient() {
   let readiness: Promise<void> | undefined
   let activeUrl: string | undefined
   let activeWindow: Window | undefined
+  let failedBinding: typeof binding
+  let recovery: Promise<void> | undefined
+  const unsettled = new Set<string>()
 
   function publish(event: ToolExecution) {
     listeners.forEach(listener => listener(event))
   }
 
-  function activate(serviceUrl?: string, frameWindow?: Window | null) {
+  function activate(serviceUrl?: string, frameWindow?: Window | null, resume?: NonNullable<typeof binding>) {
     connection?.dispose(new Error('互動服務頁面已切換。'))
     connection = undefined
     binding = undefined
@@ -38,6 +41,10 @@ export function createInteractiveServiceClient() {
     activeUrl = serviceUrl
     activeWindow = frameWindow ?? undefined
     availability.value = 'idle'
+    if (!resume) {
+      failedBinding = undefined
+      unsettled.clear()
+    }
     if (!serviceUrl || !frameWindow)
       return
     const origin = new URL(serviceUrl).origin
@@ -51,7 +58,7 @@ export function createInteractiveServiceClient() {
     })
     connection = current
     availability.value = 'loading'
-    const connectionId = crypto.randomUUID()
+    const connectionId = resume?.connectionId ?? crypto.randomUUID()
     const challenge = crypto.randomUUID()
     const discover = defineInvoke(current.context, discoverService)
     readiness = (async () => {
@@ -69,6 +76,15 @@ export function createInteractiveServiceClient() {
             throw new Error('互動服務連線驗證失敗。')
           if (new Set(response.tools.map(tool => tool.name)).size !== response.tools.length)
             throw new Error('互動服務工具名稱重複。')
+          if (resume) {
+            if (response.documentId !== resume.documentId)
+              throw new Error('菜單頁面已更換，不能沿用先前的訂單操作。')
+            const status = parse(inspectionResultSchema, await defineInvoke(current.context, inspectService)({ connectionId, documentId: resume.documentId, operationIds: [...unsettled] }, { signal: AbortSignal.timeout(1000) }))
+            if (status.connectionId !== connectionId || status.documentId !== resume.documentId || status.pendingCount !== 0 || status.operations.length !== unsettled.size || status.operations.some(operation => !unsettled.has(operation.operationId) || operation.status !== 'settled'))
+              throw new Error('先前操作仍未完成或結果無法確認，暫停恢復代操作。')
+            unsettled.clear()
+            failedBinding = undefined
+          }
           binding = { connectionId, documentId: response.documentId, toolsRevision: response.toolsRevision }
           tools.value = response.tools.map(tool => ({ ...tool, origin }))
           availability.value = 'ready'
@@ -97,7 +113,7 @@ export function createInteractiveServiceClient() {
     void readiness.catch(() => {})
   }
 
-  async function execute(tool: ServiceTool, input: Record<string, unknown>) {
+  async function execute(tool: ServiceTool, input: Record<string, unknown>, signal?: AbortSignal) {
     const current = connection
     const currentBinding = binding
     if (!current || !currentBinding || availability.value !== 'ready')
@@ -107,7 +123,9 @@ export function createInteractiveServiceClient() {
     if (!tools.value.includes(toRaw(tool)))
       throw new Error('工具已失效，請重新確認目前菜單。')
     const operationId = crypto.randomUUID()
-    publish({ phase: 'called', tool, input })
+    unsettled.add(operationId)
+    const correlation = { connectionId: currentBinding.connectionId, documentId: currentBinding.documentId, operationId }
+    publish({ ...correlation, phase: 'called', tool, input })
     try {
       // Native execution serialized JSON before reaching the page. Preserve that
       // contract and remove Vue proxies before structured-clone based transport.
@@ -117,18 +135,20 @@ export function createInteractiveServiceClient() {
         operationId,
         name: tool.name,
         input: serializedInput,
-      }, { signal: AbortSignal.timeout(60_000) }))
+      }, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000) }))
       if (connection !== current || response.connectionId !== currentBinding.connectionId || response.documentId !== currentBinding.documentId || response.operationId !== operationId)
         throw new Error('工具回應不屬於目前頁面。')
       const result = response.result
+      unsettled.delete(operationId)
       if (result && typeof result === 'object' && 'interaction' in result && result.interaction && typeof result.interaction === 'object' && 'status' in result.interaction && result.interaction.status === 'completed')
         completionRevision.value++
-      publish({ phase: 'resolved', tool, input, result })
+      publish({ ...correlation, phase: 'resolved', tool, input, result })
       return result
     }
     catch (caught) {
       if (connection === current) {
-        publish({ phase: 'failed', tool, input, error: errorMessageFrom(caught) ?? '工具執行結果無法確認。' })
+        failedBinding = currentBinding
+        publish({ ...correlation, phase: 'failed', tool, input, error: errorMessageFrom(caught) ?? '工具執行結果無法確認。' })
         // A lost receipt can hide a committed write. Revoke admission; do not retry or unlock it.
         error.value = '工具執行結果無法確認，請確認目前畫面後再繼續。'
         availability.value = 'unavailable'
@@ -141,7 +161,7 @@ export function createInteractiveServiceClient() {
   }
 
   return {
-    activate,
+    activate: (serviceUrl?: string, frameWindow?: Window | null) => activate(serviceUrl, frameWindow),
     availability: readonly(availability),
     completionRevision: readonly(completionRevision),
     error: readonly(error),
@@ -149,6 +169,24 @@ export function createInteractiveServiceClient() {
     tools: readonly(tools),
     execute,
     refresh: () => activate(activeUrl, activeWindow),
+    /** Rebinds the same document only after all accepted calls have settled. */
+    recover: async () => {
+      if (availability.value === 'ready')
+        return
+      if (recovery)
+        return await recovery
+      const resume = failedBinding
+      if (!resume)
+        throw new Error('請先確認菜單頁面已載入。')
+      recovery = (async () => {
+        activate(activeUrl, activeWindow, resume)
+        await readiness
+      })()
+      try {
+        await recovery
+      }
+      finally { recovery = undefined }
+    },
     waitUntilReady: async () => {
       await readiness
       if (availability.value === 'unavailable')

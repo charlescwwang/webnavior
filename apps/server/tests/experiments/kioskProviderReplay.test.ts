@@ -409,12 +409,30 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     }
     expect(completed, JSON.stringify({ message: 'Provider tool loop must finish within five rounds', calls, answer })).toBe(true)
     const livePhase = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))?.phase
-    const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, requestedTools }, { menu, question, outcome: operationReply, handoff: decisionState.handoff, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
+    const replyContext = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
     expect(presented.role).toBe('assistant')
     await recordReply(presented.content)
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId })
     return { answer: presented.content, calls, blockedTools, mainAgentRequests, toolMs: Math.round(toolMs) }
   }
+
+  // Report: this chat, 2026-10-26. Synthetic questions; production DB is read-only.
+  it.each([
+    { transcript: '有湯包嗎？', expected: ['湯包'] },
+    { transcript: '請說明內用和自取，先不要修改訂單。', expected: ['內用', '自取'] },
+  ])('configured explanation recovery: $transcript', async ({ transcript, expected }) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    expect(started.status).toBe(201)
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    const reply = await agent(transcript, { phase: 'ordering', readOnly: true })
+    for (const text of expected)
+      expect(reply.answer).toContain(text)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    process.stdout.write(`[configured-explanation] ${JSON.stringify({ transcript, answer: reply.answer, toolCalls: reply.calls.map(call => call.name) })}\n`)
+  }, 60_000)
 
   // Plan: docs/plans/2026-10-22-kiosk-multi-demand-evaluation.md.
   // New artificial utterances only. Actual configured models are used; a Jev

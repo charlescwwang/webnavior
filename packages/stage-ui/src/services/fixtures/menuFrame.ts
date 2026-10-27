@@ -9,6 +9,8 @@ import { createMenuToolRuntime } from '../../../../../apps/order-menu/src/webmcp
 
 const origin = new URL(document.referrer).origin
 const slow = new URL(window.location.href).searchParams.has('slow')
+const hang = new URL(window.location.href).searchParams.has('hang')
+const rejectAction = new URL(window.location.href).searchParams.has('reject-action')
 let ready = !new URL(window.location.href).searchParams.has('phone')
 let checkout: CheckoutSnapshot | undefined
 let revision = 0
@@ -32,6 +34,12 @@ const runtime = createMenuToolRuntime({
     window.parent.postMessage({ source: 'menu-test-action', action }, origin)
     if (slow)
       await new Promise(resolve => setTimeout(resolve, 80))
+    // Fault injection stays inside this disposable iframe: simulate a UI wait
+    // that never completes, or a presentation failure before the cart write.
+    if (hang)
+      await new Promise<void>(() => {})
+    if (rejectAction)
+      throw new Error('Synthetic presentation failure')
   },
   onCartChange: () => {},
   onMenuSelection: () => {},

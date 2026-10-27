@@ -33,12 +33,15 @@ const props = defineProps<{
   pendingTranscript?: string
   retryAvailable?: boolean
   sending: boolean
+  serviceRecoveryBlocked?: boolean
+  serviceRecovering?: boolean
   streamingAssistantMessage?: ChatHistoryItem
   voiceConversationOnly: boolean
 }>()
 
 const emit = defineEmits<{
   retryMessage: []
+  recoverService: []
   simulateAsr: [transcript: string]
 }>()
 
@@ -76,6 +79,8 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
 // Tool discovery describes assistant control, not whether the embedded menu
 // loaded successfully. Keep the service usable while that capability is absent.
 const serviceStatus = computed(() => {
+  if (props.serviceRecoveryBlocked)
+    return t('stage.kiosk-agent.service-unavailable')
   if (!scenarioRegistry.activeScenario.value || interactiveServiceClient.availability.value === 'ready')
     return undefined
   return t(interactiveServiceClient.availability.value === 'unavailable'
@@ -176,6 +181,14 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     />
     <p v-if="serviceStatus" class="service-status" role="status">
       {{ toTaiwanTraditionalChinese(serviceStatus) }}
+      <button
+        v-if="props.serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
+        type="button"
+        :disabled="props.sending || props.serviceRecovering"
+        @click="emit('recoverService')"
+      >
+        {{ t('stage.kiosk-agent.service-reconnect') }}
+      </button>
     </p>
   </section>
 </template>
