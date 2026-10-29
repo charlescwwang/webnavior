@@ -911,7 +911,7 @@ export async function createApp() {
       envelopeCrypto: dependsOn.envelopeCrypto,
       // Dialogue-bearing payloads are local diagnostics, not production logs.
       traceObserver: process.env.NODE_ENV !== 'production'
-        ? { record: trace => console.info(`[kiosk-interaction-decisions ${trace.phase === 'request' ? '->' : '<-'} Jev]`, JSON.stringify(trace, null, 2)) }
+        ? { record: trace => console.info(`[kiosk-interaction-decisions ${trace.phase === 'request' ? '->' : '<-'} System One]`, JSON.stringify(trace, null, 2)) }
         : undefined,
     }),
   })

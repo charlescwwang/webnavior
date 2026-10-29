@@ -118,7 +118,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   context?: ConversationContext
   /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
   customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
-}) {
+}): { role: 'assistant' | 'error', content: string, clarification?: true } {
   // Entry must still be complete when the reply arrives: a session reset
   // cannot expose an earlier menu receipt or let a stale task bypass phone choice.
   const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
@@ -126,13 +126,30 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
   // A history lookup supplies conversation context, not a new commerce result.
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
+  // A completed no-tool draft cannot establish facts or operation success.
+  // With fresh context we can still ask for meaning in the character's voice.
+  // Never take this path after an attempted operation or a transport failure:
+  // those need their actual receipt/result-unknown policy, not a new question.
+  const clarification = result.status === 'completed' && !commerceAttempted && options.context
+    ? replyFromContext('{"kind":"clarification"}', options.context)
+    : undefined
+  const unresolved = clarification
+    ? { role: 'assistant' as const, content: clarification.content, clarification: true as const }
+    : { role: 'error' as const, content: options.failureMessage }
   // A true menu receipt cannot complete a known mutation task. Preserve the
   // requested effect even when Main chooses a factual but unrelated lookup.
   const intent = options.handoff?.intent ?? ''
   const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART', 'SET_FULFILLMENT', 'START_CHECKOUT', 'SELECT_PAYMENT', 'CANCEL_CHECKOUT'].includes(intent)
   const configuringMeal = ['ADD_ITEM', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(options.question?.purpose ?? '')
+  // Clarification pauses an unexecuted demand; it never completes the mutation
+  // or consumes an old confirmation. Any attempted tool keeps receipt rules.
+  if (result.status === 'completed' && result.reply?.kind === 'clarification' && !commerceAttempted && options.context) {
+    const clarification = replyFromContext(JSON.stringify(result.reply), options.context)
+    if (clarification)
+      return { role: 'assistant' as const, content: clarification.content }
+  }
   if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal)
-    return { role: 'error' as const, content: options.failureMessage }
+    return unresolved
   const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
   if (result.status !== 'completed') {
     return receiptReply
@@ -140,16 +157,16 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
       : { role: 'error' as const, content: options.failureMessage }
   }
   if (!receiptReply && !commerceAttempted && options.context) {
-    const information = replyFromContext(result.answer, options.context)
+    const information = replyFromContext(result.reply ? JSON.stringify(result.reply) : result.answer, options.context)
     // A display-required request still needs a presentation receipt. Only an
     // application-owned clarification may pause it without claiming completion.
     if (information && (!options.requireMenuRead || information.kind === 'clarification'))
       return { role: 'assistant' as const, content: information.content }
   }
   if (options.requireMenuRead && !receiptReply)
-    return { role: 'error' as const, content: options.failureMessage }
+    return unresolved
   if (!receiptReply && !commerceAttempted && !options.requireMenuRead && !options.serviceReply)
-    return { role: 'error' as const, content: options.failureMessage }
+    return unresolved
   const content = receiptReply || (commerceAttempted || options.requireMenuRead ? options.menu.reply() : result.answer)
   return content ? { role: 'assistant' as const, content } : { role: 'error' as const, content: options.failureMessage }
 }

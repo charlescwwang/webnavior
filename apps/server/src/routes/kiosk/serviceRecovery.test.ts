@@ -17,7 +17,7 @@ it('delivers Main recovery start over HTTP before the provider runs and finishes
     isEnabled: async () => true,
     maxActionCandidates: async () => 22,
     getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }),
-    decide: async (_state, questions) => ({ answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: ({ route: 'INCOMPLETE', service: 'REQUEST', speech: 'REQUEST', serviceRequest: 'UNCERTAIN' } as Record<string, string>)[key], confidence: key === 'route' || key === 'speech' ? 0.2 : 0.99 }])) }),
+    decide: async (_state, questions) => ({ answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: ({ admission: 'UNCERTAIN' } as Record<string, string>)[key], confidence: key === 'route' || key === 'speech' ? 0.2 : 0.99 }])) }),
   }
   const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(await mockDB(schema)), llmGateway: { complete }, runtimeModelPolicy: { modelFor: async () => 'mock-main' }, systemOne }))
   const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
@@ -43,7 +43,18 @@ it('delivers Main recovery start over HTTP before the provider runs and finishes
   expect(result).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', status: 'completed', admission: 'service' })
   if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')
     throw new Error('Expected recovery completion')
+  result = await (await app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })).json() as DecisionStageResult
+  expect(result).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', stage: 'review', status: 'started' })
+  if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')
+    throw new Error('Expected independent service review')
+  const reviewing = app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })
+  await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2))
+  finish(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: '{"admission":"service","disposition":"assistant"}' } }] } }] }))
+  result = await (await reviewing).json() as DecisionStageResult
+  expect(result).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', stage: 'review', status: 'completed' })
+  if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')
+    throw new Error('Expected completed independent review')
   const final = await (await app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })).json()
-  expect(final).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', modelCalls: jevQuestions, modelQuestions: jevQuestions, recovery: { status: 'completed' } })
+  expect(final).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelCalls: jevQuestions, modelQuestions: jevQuestions, recovery: { status: 'completed' } })
   expect(final).not.toHaveProperty('actionId')
 })

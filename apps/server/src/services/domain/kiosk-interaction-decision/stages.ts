@@ -1,14 +1,14 @@
 import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskDecisionTrace } from '.'
-import type { SystemOneQuestion } from '../kiosk-system-one'
+import type { SystemOneQuestion, SystemOneResponse } from '../kiosk-system-one'
 import type { DecisionStageResult, KioskInteractionDecision } from './contracts'
 
 import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import { decisionQuestionBudget } from './contracts'
 
-type Invoke = (state: string, questions: Record<string, SystemOneQuestion>) => Promise<{ answers?: Record<string, unknown> }>
+type Invoke = (state: string, questions: Record<string, SystemOneQuestion>) => Promise<SystemOneResponse>
 type RecoveryProgress = Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>
 interface Owner { deviceId: string, visitorSessionId?: string }
 interface Checkpoint {
@@ -97,6 +97,7 @@ export function createDecisionStages() {
       }
       const checkpoint = (invoke: Invoke): Invoke => async (state, questions) => {
         const answers: Record<string, unknown> = {}
+        let selectionMode: SystemOneResponse['selectionMode']
         for (const [question, value] of Object.entries(questions)) {
           assertCurrent()
           if (calls >= decisionQuestionBudget)
@@ -114,10 +115,14 @@ export function createDecisionStages() {
           }
           assertCurrent()
           Object.assign(answers, result.answers)
+          // This is adapter-owned evidence, not a client continuation answer.
+          // Preserve it across the checkpoint or a valid SLM label would be
+          // mistaken for a malformed Jev answer missing confidence.
+          selectionMode = result.selectionMode
           const answer = result.answers?.[question] as { choice?: unknown, confidence?: unknown } | undefined
-          await pause({ kind: 'DECISION_PROGRESS', question, durationMs: performance.now() - startedAt, ...(typeof answer?.choice === 'string' ? { choice: answer.choice } : {}), ...(typeof answer?.confidence === 'number' ? { confidence: answer.confidence } : {}) })
+          await pause({ kind: 'DECISION_PROGRESS', question, durationMs: performance.now() - startedAt, ...(result.selectionMode ? { selectionMode: result.selectionMode } : {}), ...(typeof answer?.choice === 'string' ? { choice: answer.choice } : {}), ...(typeof answer?.confidence === 'number' ? { confidence: answer.confidence } : {}) })
         }
-        return { answers }
+        return { answers, ...(selectionMode ? { selectionMode } : {}) }
       }
       // The job promise settles every current HTTP wait. An aborted provider
       // that ignores its signal cannot retain a client wait beyond the deadline.

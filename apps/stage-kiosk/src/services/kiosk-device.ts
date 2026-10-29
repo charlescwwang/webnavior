@@ -1,6 +1,6 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
 import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
-import type { ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -100,7 +100,7 @@ export type KioskConversationStreamEvent
   = | { type: 'turn-started' }
     | { text: string, type: 'assistant-delta' }
     | { toolCall: KioskToolCall, type: 'tool-requested' }
-    | { agentMode: KioskAgentInteractionMode, answer?: string, toolCalls: KioskToolCall[], type: 'turn-finished' }
+    | { agentMode: KioskAgentInteractionMode, answer?: string, reply?: ContextReply, toolCalls: KioskToolCall[], type: 'turn-finished' }
     | { message: string, reason: KioskReplyFailureReason, type: 'turn-failed' }
 
 const apiBaseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')

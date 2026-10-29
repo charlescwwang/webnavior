@@ -202,6 +202,8 @@ websocket-status:
   open-settings: Open connection settings
 
 kiosk-agent:
+  retry-stale: The screen or order has changed. Please tell me what you need now.
+  retry-busy: Another request is still being processed. Please try again shortly.
   context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
   service-unavailable: The menu connection was lost. New operations are paused; reconnect and check your existing order.
   service-reconnect: Reconnect menu
@@ -223,5 +225,20 @@ kiosk-agent:
   tool-limit: The assistant reached its processing limit. Check the completed steps on screen before continuing.
   duplicate-tool-call: The assistant requested a duplicate operation. It was stopped to avoid executing it twice. Please check the screen.
   session-error: The conversation could not be started. Please check the kiosk connection.
-  no-reply: I couldn’t finish the reply this time. Please try again or use the screen.
-  decision-uncertain: Your meaning could not be confirmed. Please clarify or use the screen.
+  no-reply: I couldn’t finish the reply this time. Please try again.
+  result-unknown: The operation result is uncertain. Please check the menu, cart or order currently shown.
+  reply-incomplete: This reply is incomplete. Please try again or explain your request.
+  decision-uncertain: I couldn’t understand your request. Please say it again.
+
+system-one:
+  slm-profile-name: 'Local SLM'
+  slm-label: 'SLM (field test, OpenAI compatible)'
+  slm-option: 'SLM (field test, OpenAI compatible / Docker Model Runner)'
+  model-setup-hint: 'Choose an engine and model, save, then run readiness. SLM returns one choice without reasoning text or tool authority.'
+  slm-base-url-hint: 'Use the OpenAI-compatible API root. Local Docker Model Runner usually uses http://127.0.0.1:12434/engines/v1 without /chat/completions.'
+  available-models: 'Available models'
+  read-models: 'Read available models'
+  discovery-hint: 'Read available IDs from /models. Readiness calls the selected model. Discovery does not mean the model is loaded.'
+  panel-description: 'Choose Dasein open-jev, lookski/openjev or SLM for Kiosk Fast Path. They share staged admission, demand and operation selection. SLM returns one choice. Readiness checks connectivity with a real decision; semantic quality requires separate testing.'
+  policy-description: 'Jev and SLM first separate service, greeting, background and uncertainty, then select demand and operation groups. The application owns candidates, confirmation, payment and WebMCP authorization. Complex requests reach Main intact.'
+  policy-hint: 'Custom instructions apply to demand interpretation after admission. They cannot expand service scope or operation authority. Existing custom text is preserved; restore and save the default to use the concise current policy.'

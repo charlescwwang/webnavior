@@ -7,6 +7,7 @@ import { asc, eq } from 'drizzle-orm'
 
 import { createBadRequestError, createConflictError, createNotFoundError } from '../../../utils/error'
 import { defaultDecisionInstruction } from '../kiosk-interaction-decision/prompt'
+import { createChoiceRequest, readChoice } from './slm'
 
 import * as schema from '../../../schemas'
 
@@ -27,15 +28,23 @@ export interface SystemOneProfileUpdateInput extends SystemOneProfileInput {
   clearApiKey?: boolean
 }
 
-/** The model actually loaded by one of the supported local System One servers. */
+/** Runtime model identity, or an SLM catalog which still requires real readiness. */
 export interface SystemOneRuntimeModel {
   modelId: string
+  /** SLM model catalog; this is discovery, not proof that a model is loaded or ready. */
+  modelIds?: string[]
 }
 
 export interface SystemOneQuestion {
   criteria?: Record<string, string> | string[]
   instructions: string
   type: 'choice' | 'noul' | 'score'
+}
+
+/** Only the SLM adapter may mark a validated label as unscored. Upstream Jev payloads cannot opt in. */
+export interface SystemOneResponse {
+  answers?: Record<string, unknown>
+  selectionMode?: 'unscored'
 }
 
 /** Editable semantic instruction and optional store-specific addition for System One. */
@@ -46,7 +55,7 @@ export interface SystemOnePolicyInput {
 
 /** Correlates one provider round trip without including credential headers. */
 export type SystemOneTrace = { requestId: string, endpoint: string } & (
-  | { phase: 'request', payload: { state: string, questions: Record<string, SystemOneQuestion> } }
+  | { phase: 'request', payload: { state: string, questions: Record<string, SystemOneQuestion> } | ReturnType<typeof createChoiceRequest>['body'] }
   | { phase: 'response', status: number, durationMs: number, payload: unknown }
   | { phase: 'failed', durationMs: number, error: string }
 )
@@ -112,14 +121,14 @@ export function createKioskSystemOneService(options: {
 
   /**
    * Reads the implementation-specific health payload rather than pretending
-   * that both local servers expose a selectable model catalog. Dasein reports
-   * `model`; lookski reports `model_id`.
+   * that Jev servers expose a selectable catalog. Dasein reports `model`;
+   * lookski reports `model_id`. SLM discovers /models; readiness is separate.
    */
-  async function inspectRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs'>): Promise<SystemOneRuntimeModel> {
-    const endpoint = new URL('health', `${input.baseURL.replace(/\/+$/u, '')}/`)
+  async function inspectRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs' | 'plaintextKey'>): Promise<SystemOneRuntimeModel> {
+    const endpoint = new URL(input.implementation === 'slm' ? 'models' : 'health', `${input.baseURL.replace(/\/+$/u, '')}/`)
     let response: Response
     try {
-      response = await fetchImpl(endpoint, { signal: AbortSignal.timeout(input.timeoutMs) })
+      response = await fetchImpl(endpoint, { signal: AbortSignal.timeout(input.timeoutMs), ...(input.plaintextKey?.trim() ? { headers: { Authorization: `Bearer ${input.plaintextKey.trim()}` } } : {}) })
     }
     catch (cause) {
       throw createBadRequestError('無法連線至 System One health endpoint，請確認服務位址與網路。', 'KIOSK_SYSTEM_ONE_HEALTH_UNAVAILABLE', cause)
@@ -128,6 +137,13 @@ export function createKioskSystemOneService(options: {
       throw createBadRequestError('System One health endpoint 拒絕請求。', 'KIOSK_SYSTEM_ONE_HEALTH_REJECTED')
 
     const payload: unknown = await response.json().catch(() => null)
+    if (input.implementation === 'slm') {
+      const data = payload && typeof payload === 'object' && 'data' in payload ? payload.data : undefined
+      const modelIds = Array.isArray(data) ? data.flatMap(model => model && typeof model === 'object' && 'id' in model && typeof model.id === 'string' && model.id.trim() ? [model.id] : []) : []
+      if (!modelIds.length)
+        throw createBadRequestError('SLM models endpoint 未回傳可選模型。', 'KIOSK_SYSTEM_ONE_HEALTH_INVALID')
+      return { modelId: modelIds[0]!, modelIds }
+    }
     const modelKey = input.implementation === 'dasein' ? 'model' : 'model_id'
     const modelId = payload && typeof payload === 'object' && modelKey in payload
       ? (payload as Record<string, unknown>)[modelKey]
@@ -191,8 +207,11 @@ export function createKioskSystemOneService(options: {
   async function readiness(profileId: string) {
     const profile = await find(profileId)
     try {
-      const body = await invoke(profile, 'ready', { ready: { type: 'noul', instructions: 'Is the System One model ready?' } })
-      if (!body.answers?.ready)
+      const body = profile.implementation === 'slm'
+        ? await invoke(profile, 'Connection check. Choose READY.', { ready: { type: 'choice', instructions: 'For this connection check select READY.', criteria: { READY: 'The required answer for this connection check.', NOT_READY: 'Any other answer.' } } })
+        : await invoke(profile, 'ready', { ready: { type: 'noul', instructions: 'Is the System One model ready?' } })
+      const ready = body.answers?.ready
+      if (!ready || (profile.implementation === 'slm' && (typeof ready !== 'object' || !('choice' in ready) || ready.choice !== 'READY')))
         throw new Error('System One response did not contain the readiness answer')
       const [updated] = await options.db.update(schema.kioskSystemOneProfiles).set({ lastCheckedAt: new Date(), lastCheckError: null, verifiedAt: new Date() }).where(eq(schema.kioskSystemOneProfiles.id, profile.id)).returning()
       return publicProfile(updated)
@@ -222,11 +241,6 @@ export function createKioskSystemOneService(options: {
       throw cause
     }
   }
-  /**
-   * lookski/OpenJEV currently raises IndexError at 27 choice criteria. Reserve
-   * four of its 26 safe slots for control outcomes; Dasein supports the normal
-   * browser action ceiling.
-   */
   /** Reads activation only; an unhealthy active provider is still enabled. */
   async function isEnabled() {
     const profile = await options.db.query.kioskSystemOneProfiles.findFirst({ where: eq(schema.kioskSystemOneProfiles.isActive, true) })
@@ -235,6 +249,8 @@ export function createKioskSystemOneService(options: {
 
   async function maxActionCandidates() {
     const profile = await options.db.query.kioskSystemOneProfiles.findFirst({ where: eq(schema.kioskSystemOneProfiles.isActive, true) })
+    // Flat diagnostic replays retain their engine ceiling. Runtime staged
+    // routing preserves all issued candidates and bounds each question to six.
     return profile?.implementation === 'lookski' ? 22 : 253
   }
   async function activate(profileId: string) {
@@ -251,14 +267,18 @@ export function createKioskSystemOneService(options: {
       throw createNotFoundError('找不到 System One profile。', 'KIOSK_SYSTEM_ONE_PROFILE_NOT_FOUND')
     return profile
   }
-  async function invoke(profile: schema.KioskSystemOneProfile, state: string, questions: Record<string, SystemOneQuestion>) {
-    const endpoint = new URL('v1/systemone', `${profile.baseURL.replace(/\/+$/, '')}/`)
+  async function invoke(profile: schema.KioskSystemOneProfile, state: string, questions: Record<string, SystemOneQuestion>): Promise<SystemOneResponse> {
+    const entries = Object.entries(questions)
+    if (profile.implementation === 'slm' && entries.length !== 1)
+      throw new Error('SLM requires one staged question per request')
+    const choiceRequest = profile.implementation === 'slm' ? createChoiceRequest(profile.modelId, state, entries[0]![1]) : undefined
+    const endpoint = new URL(choiceRequest ? 'chat/completions' : 'v1/systemone', `${profile.baseURL.replace(/\/+$/, '')}/`)
     const correlation = { requestId: crypto.randomUUID(), endpoint: `${endpoint.origin}${endpoint.pathname}` }
     const startedAt = performance.now()
     let responseRecorded = false
     const key = decryptKey(profile)
     try {
-      const payload = { state, questions }
+      const payload = choiceRequest?.body ?? { state, questions }
       // This is the fully assembled provider body, including dialogue and
       // policy, not the smaller browser request. URL credentials/headers stay
       // outside the diagnostic envelope.
@@ -282,7 +302,11 @@ export function createKioskSystemOneService(options: {
         throw new Error(`System One returned HTTP ${response.status}`)
       if (parseError)
         throw parseError
-      return responsePayload as { answers?: Record<string, unknown> }
+      if (choiceRequest)
+        return { selectionMode: 'unscored', answers: { [entries[0]![0]]: { choice: readChoice(responsePayload, choiceRequest) } } }
+      // Untrusted Jev payloads cannot opt into SLM's unscored-selection policy.
+      const body = responsePayload as SystemOneResponse
+      return { answers: body.answers }
     }
     catch (error) {
       if (!responseRecorded)

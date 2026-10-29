@@ -10,7 +10,7 @@ export type WebnaviorAiConnectionKind = 'llama-cpp' | 'ollama' | 'openai-compati
 /** AI responsibilities managed centrally for all Webnavior Kiosks. */
 export type WebnaviorAiCapability = 'chat' | 'vision' | 'asr' | 'tts'
 /** A Jev-wire-compatible System One server implementation. */
-export type KioskSystemOneImplementation = 'dasein' | 'lookski'
+export type KioskSystemOneImplementation = 'dasein' | 'lookski' | 'slm'
 
 /** A cached model record discovered from an upstream's catalog. */
 export interface WebnaviorAiDiscoveredModel {
@@ -59,7 +59,7 @@ export const webnaviorAiCapabilitySelections = pgTable('webnavior_ai_capability_
 
 /**
  * One Server-owned System One connection selectable for Kiosk Fast Path. It is
- * deliberately separate from AI capability profiles: it scores typed decisions
+ * deliberately separate from AI capability profiles: it answers typed decisions
  * rather than serving chat, speech, vision, or embeddings.
  */
 export const kioskSystemOneProfiles = pgTable('kiosk_system_one_profiles', {

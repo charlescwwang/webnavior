@@ -58,7 +58,7 @@ export type FastPathResult = {
 
 /** Only failed service decisions warrant a retry prompt; social uncertainty stays silent. */
 export function shouldShowDecisionRetry(result: FastPathResult): boolean {
-  return result.kind === 'UNAVAILABLE' && result.reason !== 'UNCERTAIN_RECIPIENT' && result.reason !== 'UNCERTAIN_GREETING' && result.reason !== 'UNCERTAIN_SERVICE_REQUEST'
+  return result.kind === 'UNAVAILABLE' && (result.reason === 'PROVIDER_FAILURE' || result.reason === 'INVALID_CHOICE' || result.reason === 'CANDIDATE_BUDGET' || result.reason === 'SYSTEM_ONE_DISABLED')
 }
 
 /** Owns checkpoint admission for one decision, never execution or transcript admission. */
@@ -67,6 +67,13 @@ export function createDecisionFeedback(): (stage: Extract<DecisionStageResult, {
   let recipient = false
   return (stage) => {
     const confident = typeof stage.confidence === 'number' && Number.isFinite(stage.confidence) && stage.confidence >= 0.6 && stage.confidence <= 1
+    if (stage.question === 'admission') {
+      // The new gate checks recipient and service relevance together. The
+      // server's SLM marker permits progress feedback, never a browser action.
+      const admitted = (confident || stage.selectionMode === 'unscored') && stage.choice === 'SERVICE'
+      serviceMeaning = admitted
+      recipient = admitted
+    }
     if (stage.question === 'route')
       serviceMeaning = confident && (stage.choice?.startsWith('intent:') === true || ['GENERAL_QUESTION', 'MENU_QUERY', 'MULTI_ACTION', 'NEEDS_ASSISTANT'].includes(stage.choice ?? ''))
     if (stage.question === 'recipient' || stage.question === 'service')
@@ -580,11 +587,14 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // a partial order edit. Keep that restriction through Agent continuations.
   // An uncertain phone choice grants conversation/read authority, never a
   // guessed skip, entered phone number or order. It need not query the menu.
-  const pendingCheckout = state.waitingFor?.purpose === 'checkout-entry' && state.waitingFor.expiresAt > Date.now()
-  const protectedUncertainty = uncertainMeaning && (state.phase !== 'ordering' || pendingCheckout)
+  // Service admission says this utterance deserves a response, not which
+  // mutation it authorizes. A resolved effect/target handoff retains its own
+  // tool restrictions; otherwise uncertainty stays read-only in every phase.
+  const protectedUncertainty = uncertainMeaning && !decision?.handoff
   const readOnly = decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
     phase: state.phase,
+    ...(state.revisions ? { revisions: state.revisions } : {}),
     ...(decision?.reason === 'GENERAL_QUESTION' ? { serviceReply: true } : {}),
     ...(state.serviceClarification ? { serviceClarification: state.serviceClarification } : {}),
     ...(decision?.handoff ? { handoff: decision.handoff } : {}),

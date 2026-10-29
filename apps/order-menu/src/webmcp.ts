@@ -16,7 +16,7 @@ import type { ScrollDirection, ScrollResult } from './menuScroll'
 import type { MenuToolDefinition, MenuToolName } from './toolDefinitions'
 
 import { errorMessageFrom } from '@moeru/std'
-import { conversationContextSchema, handoffSchema, isTargetAcknowledgement } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, handoffSchema, isTargetAcknowledgement, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { parse } from 'valibot'
 
 import { ingredientDefinitions, vegetarianIngredients } from '../../order-menu-server/src/domain/composition'
@@ -1969,7 +1969,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           issuedFastPathContext = {
             candidates: new Map(context.candidates.map(candidate => [candidate.id, candidate])),
             context,
-            expiresAt: Date.now() + 15_000,
+            // This is an ordinary intent lease, not customer confirmation.
+            // Staged SLM inference may exceed one checkpoint's 15s window.
+            // The full-turn limit still bounds it; authorization below checks
+            // live phase/revisions, while confirmation/answer expiry is separate.
+            expiresAt: Date.now() + serviceRecoveryLimits.turnMs,
             interruptedQuestion,
           }
           return {
@@ -2123,7 +2127,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             decision = issuedFastPathContext?.candidates.get(candidateId)
             resolutionContext = issuedFastPathContext?.context
           }
-          if (!decision || !resolutionContext || (!chosenRef && (!issuedFastPathContext || Date.now() > issuedFastPathContext.expiresAt)))
+          if (!decision || !resolutionContext || (!chosenRef && (!issuedFastPathContext || Date.now() >= issuedFastPathContext.expiresAt)))
             throw new Error('The selected Kiosk intent has expired. Resolve the latest customer state again.')
           const interrupted = issuedFastPathContext?.interruptedQuestion
           if (interrupted && (interrupted.kind === 'configuration' ? pendingConfiguration?.id : pendingFastPathClarification?.id) !== interrupted.id)
@@ -2160,6 +2164,12 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             resolutionContext = { ...resolutionContext, constraints: { ...resolutionContext.constraints, exclude: filters.excludeIngredients, include: filters.includeIngredients, ...(filters.dietary ? { dietary: filters.dietary } : {}) } }
           }
           const resolution = resolveIntent(decision, resolutionContext, chosenRef)
+          // Only an effect that answers the old question inherits its expiry.
+          // An independent new order may still be valid after that question's
+          // answer window closes, within this intent lease and live revisions.
+          const answersQuestion = resolution.kind === 'PLAN' && (resolution.plan.questionId || decision.intent === 'DEFER_QUESTION')
+          if (answersQuestion && resolutionContext.waitingFor && resolutionContext.waitingFor.expiresAt <= Date.now())
+            throw new Error('The issued question answer has expired. Resolve the retained question again.')
           if (decision.intent === 'REMOVE_ITEM' && resolution.kind === 'NEEDS_ASSISTANT' && resolutionContext.productResolution.status === 'exact' && resolutionContext.targetConstraints.itemIds.length && !currentContext.cart.lines.some(line => resolutionContext.targetConstraints.itemIds.includes(line.itemId))) {
             const itemIds = resolutionContext.targetConstraints.itemIds
             const labels = currentContext.menu.filter(item => itemIds.includes(item.id)).map(item => item.name)

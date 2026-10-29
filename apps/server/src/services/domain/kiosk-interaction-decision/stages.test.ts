@@ -7,6 +7,24 @@ import { createDecisionStages } from './stages'
 describe('segmented bounded decisions', () => {
   afterEach(() => vi.useRealTimers())
 
+  it('preserves unscored SLM labels through every checkpoint without inventing confidence', async () => {
+    const stages = createDecisionStages()
+    const owner = { deviceId: 'slm-checkpoints' }
+    const choices: Record<string, string> = { admission: 'SERVICE', purpose: 'SINGLE', family: 'ITEM', operation: 'intent:add-item', operationRequest: 'OPERATION', operationCoverage: 'SINGLE' }
+    const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ selectionMode: 'unscored' as const, answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: choices[key] }])) }))
+    let result = await stages.start(owner, checkpoint => decideInteraction({ routing: 'staged', transcript: '水餃一份', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:add-item', description: '新增水餃' }], decisionState: { phase: 'ordering' }, includeTrace: true, invoke: checkpoint(invoke) }))
+    const questions: string[] = []
+    while (result.kind === 'DECISION_PROGRESS') {
+      expect(result).toHaveProperty('selectionMode', 'unscored')
+      expect(result).not.toHaveProperty('confidence')
+      questions.push(result.question)
+      result = await stages.next(owner, result.continuationId)
+    }
+    expect(questions).toEqual(['admission', 'purpose', 'family', 'operation', 'operationRequest', 'operationCoverage'])
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', modelQuestions: 6 })
+    expect(result).not.toHaveProperty('confidence')
+  })
+
   it('keeps the raw weak handoff checkpoint but finishes unavailable without superseding the invitation', async () => {
     const stages = createDecisionStages()
     const owner = { deviceId: 'weak-handoff', visitorSessionId: 's1' }

@@ -79,9 +79,19 @@ export type ConversationHandoff = InferOutput<typeof handoffSchema>
 
 /** A model may select a factual reply, but cannot supply operation-success prose. */
 export const contextReplySchema = strictObject({
-  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification']),
+  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification', 'greeting', 'acknowledgement', 'hearing-check']),
   subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
 })
+
+/** Validated non-operation outcome; customer facts are rendered from fresh context. */
+export type ContextReply = InferOutput<typeof contextReplySchema>
+
+/** Shared gateway tool-call shape, without provider credentials or runtime dependencies. */
+export interface ConversationToolCall {
+  function: { arguments: string, name: string }
+  id: string
+  type: 'function'
+}
 
 /**
  * Renders an information/clarification selection from fresh service-owned facts.
@@ -97,10 +107,15 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   if (!selection.success)
     return undefined
   const kind = selection.output.kind
+  if (selection.output.kind === 'greeting')
+    return { kind, content: '您好，請問需要什麼協助？' }
+  if (selection.output.kind === 'acknowledgement')
+    return { kind, content: '好的，請繼續告訴我您的需求。' }
+  if (selection.output.kind === 'hearing-check')
+    return { kind, content: '有收到您的這句話，請問需要什麼協助？' }
   if (selection.output.kind === 'clarification') {
-    const content = context.waitingFor && context.waitingFor.expiresAt > Date.now()
-      ? context.waitingFor.question
-      : '請再說明你想查詢或調整的內容。'
+    // Generic meaning uncertainty must not revive a pending purchase question.
+    const content = '剛才沒有理解清楚，請再說一次您想詢問或調整的內容。'
     return { kind, content }
   }
   if (selection.output.kind === 'payment-methods') {

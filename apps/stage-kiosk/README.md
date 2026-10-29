@@ -92,10 +92,29 @@ model rounds and tool count; these include context/tool waiting but exclude TTS.
 Server separately records provider round sizes/latency/usage. Neither metric
 stores the prompt or implies successful POS submission.
 
+## Verified conversation replies and retries
+
+Non-operation answers use the Server's finite `respond_to_customer` tool and a
+shared typed reply. The host renders current payment/menu facts or neutral
+clarification, greeting, acknowledgement and hearing-check text. Unverified model
+prose is not streamed into these customer replies. A malformed/no-tool draft gets
+one selection repair with only the original utterance and fresh context, without
+commerce tools; invalid selection clarifies, while provider failure remains an error.
+Operation success still requires its browser receipt.
+
+A manual conversation retry retains the original text and request lineage, reads
+fresh session/document/domain versions, then enters the normal utterance queue
+and decision flow. Changed ownership, cart, checkout or active question expires
+it; double clicks cannot submit twice. Recommendations, displayed menus and writes
+are not transparently replayed after an uncertain result. Ordinary semantic
+uncertainty is not a technical-failure retry prompt.
+
 ## Uncertain service recovery
 
 An eligible, valid Jev service abstention can request one no-commerce Main
-adjudication, followed only on a valid UNCERTAIN by one richer contextual review.
+adjudication, followed on REQUEST or UNCERTAIN by one richer contextual review.
+Admission and understanding are separate: unclear service speech asks for meaning
+before Main receives a task; it does not revive an older ordering question.
 This is separate from a real Main Agent task: it admits service meaning, never
 an operation. A review can ignore, abstain, hand off the original request, or
 create a read-only service question. Its answer cannot consume an older Menu
@@ -219,6 +238,17 @@ ordering chat without deleting its durable transcript. Deploy host and menu
 together for the `interruptsQuestion` presentation field.
 
 ## Registered interactive pages
+
+For an admitted service request whose operation remains unresolved, the Host
+keeps Main read-only in every phase unless a resolved effect handoff supplies
+the existing narrower tool authorization. Service admission alone cannot modify
+a cart or fulfillment mode. After a completed Main turn with no business tool
+attempt, the Host reads fresh Menu context and can replace unverified prose with
+an application-owned spoken clarification. This follows the assistant message
+path without a retry button or an invented operation result, and owns the next
+answer instead of reviving an older purchase question. Provider failures and
+attempted operations retain their failure/receipt rules; unknown write results
+are never silently retried.
 
 The Kiosk can host multiple customer interaction pages while keeping ordering as
 its primary flow. In administrator mode, open **互動服務** to add or edit the
@@ -650,8 +680,10 @@ delegated local overrides. Site defaults cover camera capture (off, JPEG snapsho
 event clip, or continuous video), VLM, performance, and VAD; observation,
 greetings, reminders, timing, detection zones, and the MediaPipe face-confidence
 threshold (`0.40`–`0.80`, default `0.60`) have shared defaults and can be overridden
-per device. New devices have local controls locked
-and observation/greetings/reminders disabled. Old browser-local observation
+per device. Newly enrolled devices override observation, greetings, reminders
+and voice diagnostics to enabled, with greeting trigger `mixed` (any signal).
+Those five settings permit local adjustment from enrollment. Other fields remain
+locked unless delegated; existing saved device settings are unchanged. Old browser-local observation
 preferences are no longer authoritative and are not migrated automatically.
 
 The **Presence vision mode** setting is per-device and supports `face_only`

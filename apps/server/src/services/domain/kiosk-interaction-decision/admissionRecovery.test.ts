@@ -11,12 +11,12 @@ const response = (args: unknown) => Response.json({ choices: [{ message: { tool_
 afterEach(() => vi.useRealTimers())
 
 it('recovers admitted service without replaying an operation or inventing Jev confidence', async () => {
-  const complete = vi.fn(async () => response({ choice: 'REQUEST' }))
+  const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'REQUEST' })).mockResolvedValueOnce(response({ admission: 'service', disposition: 'assistant' }))
   const result = await recoverServiceRequest(eligible, { ...context, complete })
-  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', recovery: { status: 'completed', admission: 'service', disposition: 'assistant' } })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', recovery: { status: 'completed', admission: 'service', disposition: 'assistant', stage: 'review' } })
   expect(result).not.toHaveProperty('actionId')
   expect(result).not.toHaveProperty('confidence')
-  expect(complete).toHaveBeenCalledTimes(1)
+  expect(complete).toHaveBeenCalledTimes(2)
 })
 
 it('uses richer context once after a valid uncertain adjudication', async () => {
@@ -63,12 +63,16 @@ it('publishes recovery start before waiting for a slow model, without counting a
     throw new Error('Expected recovery progress')
   const next = stages.next(owner, first.continuationId)
   await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1))
+  complete.mockResolvedValueOnce(response({ admission: 'service', disposition: 'assistant' }))
   finish(response({ choice: 'REQUEST' }))
   const completed = await next
   expect(completed).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', status: 'completed', admission: 'service' })
   if (completed.kind !== 'SERVICE_RECOVERY_PROGRESS')
     throw new Error('Expected completion progress')
-  expect(await stages.next(owner, completed.continuationId)).toMatchObject({ kind: 'NEEDS_ASSISTANT', modelCalls: 0, modelQuestions: 0 })
+  let nextStage = await stages.next(owner, completed.continuationId)
+  for (let remaining = 0; remaining < 4 && nextStage.kind === 'SERVICE_RECOVERY_PROGRESS'; remaining++)
+    nextStage = await stages.next(owner, nextStage.continuationId)
+  expect(nextStage).toMatchObject({ kind: 'NEEDS_ASSISTANT', modelCalls: 0, modelQuestions: 0 })
 })
 
 it.each(['new-request', 'clarification-answer'] as const)('separates a service-clarification answer from an independent request: %s', async (requestKind) => {
@@ -109,4 +113,14 @@ it('includes slow progress acknowledgements in the combined twenty-second recove
   await vi.advanceTimersByTimeAsync(20000)
   expect(await pending).toMatchObject({ kind: 'UNAVAILABLE', recovery: { status: 'failed', failure: 'timeout', stage: 'review' } })
   expect(complete).toHaveBeenCalledTimes(2)
+})
+
+// Report: Oct28 attached weak scroll/service decision; service admission is not understood meaning.
+it.each(['是 是 帶刀刀', '我想請你幫忙，那個，我還沒說清楚。'])('clarifies admitted speech without assigning an old menu topic: %s', async (transcript) => {
+  const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'REQUEST' })).mockResolvedValueOnce(response({ admission: 'service', disposition: 'clarify', question: '剛才沒有理解清楚，請再說一次您的需求。' }))
+  const result = await recoverServiceRequest(eligible, { ...context, transcript, complete })
+  expect(result.kind).toBe('SERVICE_CLARIFICATION')
+  expect(result).not.toHaveProperty('actionId')
+  expect(complete).toHaveBeenCalledTimes(2)
+  expect(JSON.stringify(complete.mock.calls[1]![0])).toContain('目前這句的意思清楚')
 })

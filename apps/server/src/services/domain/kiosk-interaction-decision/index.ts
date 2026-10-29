@@ -1,4 +1,4 @@
-import type { SystemOnePolicyInput, SystemOneQuestion } from '../kiosk-system-one'
+import type { SystemOnePolicyInput, SystemOneQuestion, SystemOneResponse } from '../kiosk-system-one'
 import type { DecisionConversation } from './context'
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
@@ -7,6 +7,7 @@ import { isTargetAcknowledgement } from '@proj-airi/stage-shared/kiosk-conversat
 import { normalizeTranscript } from './context'
 import { decisionQuestionBudget } from './contracts'
 import { createDecisionInstructions, serviceRequestInstruction } from './prompt'
+import { decideStagedInteraction } from './routing'
 
 export type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
@@ -41,13 +42,15 @@ export interface KioskDecisionTrace {
   rawTranscript?: string
 }
 
-interface DecisionInput {
+export interface DecisionInput {
+  /** Runtime uses staged routing; omitted only for frozen flat-contract diagnostic replays. */
+  routing?: 'staged'
   conversation?: DecisionConversation
   review?: { answer: string, observation: string }
   candidates: readonly KioskActionCandidate[]
   decisionState?: KioskDecisionState
   includeTrace?: boolean
-  invoke: (state: string, questions: Record<string, SystemOneQuestion>) => Promise<{ answers?: Record<string, unknown> }>
+  invoke: (state: string, questions: Record<string, SystemOneQuestion>) => Promise<SystemOneResponse>
   maxActionCandidates?: number
   maxQuestions?: number
   policy: SystemOnePolicyInput
@@ -65,6 +68,8 @@ const recipientQuestion: SystemOneQuestion = {
 
 /** Converts the current eligible action set into a finite System One choice. */
 export async function decideInteraction(input: DecisionInput): Promise<KioskInteractionDecision> {
+  if (input.routing === 'staged')
+    return decideStagedInteraction(input)
   let modelCalls = 0
   let modelQuestions = 0
   const admission: { recipient: 'unchecked' | 'unknown' | 'kiosk' | 'other', uncertainMeaning: boolean, invalidAnswer: boolean } = { recipient: 'unchecked', uncertainMeaning: false, invalidAnswer: false }
@@ -376,11 +381,11 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
   const criteria: Record<string, string> = followUp
     ? { IGNORE: '與點餐無關的背景話語，沒有向店員回答或提出需求。' }
     : {
-        INCOMPLETE: '顧客正在說一個可點餐操作但語句明顯尚未說完，例如「我要一份……」；不能因缺少數量、規格、唯一 target 或對應候選而選此項。完整訂購但無合法新增候選應選 NEEDS_ASSISTANT。Kiosk 會安靜等待下一句，不能執行操作。',
+        INCOMPLETE: '顧客正在說一個可點餐操作但語句明顯尚未說完，例如「我要一份……」；不能因缺少數量、規格、唯一 target 或對應候選而選此項。完整訂購但無合法新增候選應選 NEEDS_ASSISTANT。已向本機求助但說不清楚要做什麼，是需要釐清的完整求助，選NEEDS_ASSISTANT；不是安靜等待更多訂購字詞。Kiosk 會安靜等待下一句，不能執行操作。',
         GREET: '只向店員／本機打招呼，沒有提出點餐、查詢或其他需求。招呼加點餐必須選點餐意圖；對同伴打招呼屬 IGNORE。',
         IGNORE: '叫同伴名字向他說話或提問，即使詢問餐點種類、報品名或要求操作，也屬此項。其他背景討論、招呼、閒聊或對已完成資訊回答的單純附和，沒有向店員／本機提出服務需求。不能因向本機提出的有效需求缺資料就選 IGNORE。',
         MULTI_ACTION: '顧客這一句向店員／本機明確要求兩個以上獨立的點餐服務操作；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。多個子句、一般討論或抱怨不等於多項操作。',
-        NEEDS_ASSISTANT: '向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。顧客已表達要點餐點，但只有 possible／fragment 商品證據、沒有合法新增候選時也選此項，交接確認品名；這不是語句未完成，不改成查詢。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。',
+        NEEDS_ASSISTANT: '向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理；向本機求助但說不清楚需求也交接釐清，不猜操作。顧客已表達要點餐點，但只有 possible／fragment 商品證據、沒有合法新增候選時也選此項，交接確認品名；這不是語句未完成，不改成查詢。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。',
       }
   if (input.review) {
     for (const key of Object.keys(criteria)) delete criteria[key]
@@ -593,8 +598,9 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         ? { choice: 'READ_ONLY', confidence: purpose.confidence }
         : (await invoke(JSON.stringify({ customerUtterance: input.transcript, proposedAction: proposedEffect, cartItems: cartReferences.map(reference => reference.label), lastAddedMeal: input.decisionState?.interactionState?.lastAddedItemName }), { cartRequest: {
             type: 'choice',
-            instructions: '只判斷 customerUtterance 的整句效果和說話對象，不規劃步驟、不選商品或數量。SINGLE：向本機提出的整句需求，完全只有 proposedAction 這一個效果。HANDOFF：向本機要求換成另一道餐點，或整句還有 proposedAction 沒涵蓋的服務需求；不要只做其中一半。「水餃不要，改牛肉麵」「水餃換牛肉麵一份」「剛才那份改牛肉麵」都是更換既有餐點，要交接整句；不能因為有新增替代品項，就當成只新增。「再加一份牛肉麵」只是新增。「水餃改兩份」只是改數量。更換目標不在菜單也屬 HANDOFF，不核對有沒有賣。對同伴說話選 BACKGROUND；對象或意思不明選 UNCERTAIN。',
+            instructions: '只判斷 customerUtterance 的整句效果和說話對象，不規劃步驟、不選商品或數量。SINGLE：向本機提出的整句需求，完全只有 proposedAction 這一個效果。新增是增加份數，不是指定既有品項最後總數；指定總份數選TOTAL（有提供時），否則HANDOFF。HANDOFF：向本機要求換成另一道餐點，或整句還有 proposedAction 沒涵蓋的服務需求；不要只做其中一半。「水餃不要，改牛肉麵」「水餃換牛肉麵一份」「剛才那份改牛肉麵」都是更換既有餐點，要交接整句；不能因為有新增替代品項，就當成只新增。「再加一份牛肉麵」只是新增。「水餃改兩份」只是改數量。更換目標不在菜單也屬 HANDOFF，不核對有沒有賣。對同伴說話選 BACKGROUND；對象或意思不明選 UNCERTAIN。',
             criteria: {
+              ...(selected.id === 'intent:add-item' && cartReferences.length ? { TOTAL: '顧客指定購物車既有餐點最後的總份數，不是再多加這些份數。這是改既有數量，不是新增；例如原有一份，最後共兩份，就是把總數設為二，不是變成三。' } : {}),
               SINGLE: '顧客不是在問資訊，而是要求執行 proposedAction 這一件事。直接報品名加份數的點單短句也是訂購，不必有「我要」。沒有另外要求更換、取消、查詢或其他操作。',
               HANDOFF: '向本機要求把原品項換成另一道餐點，或還有提案之外的其他服務需求。單純加點、移除或改數量若與提案相符，是 SINGLE。',
               BACKGROUND: '對同伴說話或背景聊天，沒有向本機提出需求。',
@@ -603,7 +609,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
           } })).answers?.cartRequest as { choice?: string, confidence?: number } | undefined
       if (trace.trace)
         trace.trace.semanticCheck = { kind: 'cart-operation-coverage', proposedAction: selected.id, purpose, answer: coverage }
-      if (!coverage || !['SINGLE', 'HANDOFF', 'BACKGROUND', 'UNCERTAIN', ...(readOnly ? ['READ_ONLY'] : [])].includes(String(coverage.choice)))
+      if (!coverage || !['SINGLE', 'HANDOFF', 'BACKGROUND', 'UNCERTAIN', ...(selected.id === 'intent:add-item' && cartReferences.length ? ['TOTAL'] : []), ...(readOnly ? ['READ_ONLY'] : [])].includes(String(coverage.choice)))
         return { kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE', ...trace }
       if (coverage.choice === 'HANDOFF' && typeof coverage.confidence === 'number' && Number.isFinite(coverage.confidence) && coverage.confidence >= 0 && coverage.confidence < 0.6 && cartReferences.length) {
         // Weak coverage cannot authorize the proposed partial mutation. Qualify
@@ -634,7 +640,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', ...trace }
       if (coverage.choice === 'BACKGROUND')
         return { kind: 'IGNORE', confidence: coverage.confidence, ...trace }
-      if (unresolvedOperation || coverage.choice === 'READ_ONLY' || coverage.choice === 'HANDOFF' || confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1) {
+      if (unresolvedOperation || coverage.choice === 'READ_ONLY' || ['HANDOFF', 'TOTAL'].includes(String(coverage.choice)) || confidence === undefined || !Number.isFinite(confidence) || confidence < 0.6 || confidence > 1) {
         // Coverage alone is not admission: mentioning a complete replacement
         // to a companion must not promote a weak route into an Agent task.
         // Isolate the literal utterance so cart/history cannot imply consent.
@@ -667,7 +673,7 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
           selected = search
         }
         else {
-          return { kind: 'NEEDS_ASSISTANT', reason: coverage.choice === 'HANDOFF' ? 'NEW_REQUEST' : 'UNCERTAIN_OPERATION', confidence: coverage.confidence, ...trace }
+          return { kind: 'NEEDS_ASSISTANT', reason: ['HANDOFF', 'TOTAL'].includes(String(coverage.choice)) ? 'NEW_REQUEST' : 'UNCERTAIN_OPERATION', confidence: coverage.confidence, ...trace }
         }
       }
     }
@@ -695,8 +701,8 @@ async function decideBoundedInteraction(input: DecisionInput): Promise<KioskInte
       const search = categories.length ? eligibleCandidates.find(candidate => candidate.id === 'intent:search-menu') : undefined
       const speech = (await invoke(JSON.stringify({ customerUtterance: input.transcript, matchedCategories: categories.map(category => category.label), previousCustomerUtterance: input.conversation?.messages.findLast(message => message.role === 'user')?.content }), { speech: {
         type: 'choice',
-        instructions: '已確認顧客向本機說話，只分類最後這一句。只說「我要一份……」「我想要……」而尚未說餐點，是 INCOMPLETE。只報分類、分類加「呢」「之類的」可承接上一句菜單查詢，是 QUERY，不必有動詞。前句不能替未完句補餐點。已說餐點但缺份數或規格，不算未說完。不得猜品項、份數、加入或取消。',
-        criteria: { ...(search ? { QUERY: '完整的分類瀏覽或詢問，即使只報上述分類名稱；沒有指定購買。' } : {}), INCOMPLETE: '只說起頭或數量，停在餐點／需求還沒說出來的位置，例如「我要一份……」。', REQUEST: '已表達其他完整服務需求，例如詢問、投訴、比較或訂購；不是起頭或數量後尚未說完。' },
+        instructions: '已確認顧客向本機說話，只分類最後這一句。只說「我要一份……」「我想要……」而尚未說餐點，是 INCOMPLETE。只報分類、分類加「呢」「之類的」可承接上一句菜單查詢，是 QUERY，不必有動詞。前句不能替未完句補餐點。已說餐點但缺份數或規格，不算未說完。明確向本機求助卻無法說清楚需求，是完整求助選REQUEST，讓後續釐清意思，不當成訂購起頭等待。不得猜品項、份數、加入或取消。',
+        criteria: { ...(search ? { QUERY: '完整的分類瀏覽或詢問，即使只報上述分類名稱；沒有指定購買。' } : {}), INCOMPLETE: '只說起頭或數量，停在餐點／需求還沒說出來的位置，例如「我要一份……」。', REQUEST: '已表達完整的求助、詢問、投訴、比較或訂購；明確求助但說不清楚目的仍是完整求助，不能猜操作；不是訂購起頭或數量後尚未說完。' },
       } })).answers?.speech as { choice?: string, confidence?: number } | undefined
       if (trace.trace)
         trace.trace.semanticCheck = { kind: 'unfinished-speech', service: scope, speech }

@@ -8,6 +8,68 @@ import { authorize, compileOperationPlan, createQuestion, deriveDecisionContext,
 import { createMenuToolRuntime } from './webmcp'
 
 describe('action-bound customer questions', () => {
+  // Report: this conversation — local SLM completed correct add routes at 16s,
+  // after the former ordinary intent ticket had already expired at 15s.
+  it('executes an unchanged ordinary intent after a 20-second staged decision', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲一份' })
+      vi.advanceTimersByTime(20_000)
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still rejects an ordinary intent when the cart changes during model work', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲一份' })
+      await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+      vi.advanceTimersByTime(20_000)
+      await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).rejects.toThrow()
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('expires an ordinary intent beyond the full decision-turn budget', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲一份' })
+      vi.advanceTimersByTime(60_001)
+      await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).rejects.toThrow('expired')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not shorten an independent order to an unrelated question deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+      const offer = await runtime.invoke('order_set_fulfillment', { mode: 'takeout' }) as { pendingCustomerChoice: { questionId: string, question: string } }
+      await runtime.invoke('kiosk_dialogue_presented', { content: offer.pendingCustomerChoice.question, questionId: offer.pendingCustomerChoice.questionId })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲再加一份' })
+      vi.advanceTimersByTime(40_000)
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('revokes an operation confirmation when the assistant answers a side question', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })

@@ -8,7 +8,8 @@ const responseSchema = object({ choices: array(object({ message: object({ tool_c
 /** Resolves generic Main handoffs without weakening evidence requirements for food or orders. */
 export async function resolveServiceHandoff(decision: KioskInteractionDecision, transcript: string, state: KioskDecisionState | undefined, complete: (body: Record<string, unknown>) => Promise<Response>): Promise<KioskInteractionDecision> {
   const mentions = state?.catalogEvidence
-  if (decision.kind !== 'NEEDS_ASSISTANT' || decision.reason !== undefined || state?.phase === 'customer_entry' || mentions?.products.length || mentions?.categories.length)
+  const genericRequest = decision.reason === undefined || (decision.reason === 'NEW_REQUEST' && state?.phase === 'ordering')
+  if (decision.kind !== 'NEEDS_ASSISTANT' || !genericRequest || state?.phase === 'customer_entry' || mentions?.products.length || mentions?.categories.length)
     return decision
   const startedAt = performance.now()
   let choice: 'SERVICE_INFO' | 'MEAL_REQUEST' | 'UNCERTAIN' = 'UNCERTAIN'

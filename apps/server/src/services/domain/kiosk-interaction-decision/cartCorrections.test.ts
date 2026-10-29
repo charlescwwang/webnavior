@@ -360,3 +360,16 @@ describe('whole-request coverage for cart changes', () => {
     expect(result).not.toHaveProperty('answeredQuestionId')
   })
 })
+
+// Report: Oct28 configured conversation pilot D01, existing1 + final total2 was incorrectly added to3.
+it.each(['REQUEST', 'BACKGROUND'] as const)('never executes an ADD when total quantity requires whole-request handoff (%s)', async (recipient) => {
+  const invoke = vi.fn(async (_text: string, questions: Record<string, SystemOneQuestion>) => ({ answers: {
+    ...(questions.route ? { route: { choice: 'intent:add-item', confidence: 0.9347 } } : {}),
+    ...(questions.requestPurpose ? { requestPurpose: { choice: 'OPERATION', confidence: 0.9025 } } : {}),
+    ...(questions.cartRequest ? { cartRequest: { choice: 'TOTAL', confidence: 0.96 } } : {}),
+    ...(questions.service ? { service: { choice: recipient, confidence: 0.99 } } : {}),
+  } }))
+  const result = await decideInteraction({ transcript: '我的水餃總共要兩份', candidates, decisionState: state, policy, invoke })
+  expect(result.kind).toBe(recipient === 'REQUEST' ? 'NEEDS_ASSISTANT' : 'IGNORE')
+  expect(result).not.toHaveProperty('actionId')
+})

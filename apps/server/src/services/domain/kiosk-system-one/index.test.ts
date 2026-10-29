@@ -35,6 +35,39 @@ describe('kiosk System One profiles', () => {
     expect(stored?.apiKeyCiphertext).toMatch(/^v1\./)
   })
 
+  it('discovers SLM models without treating discovery as readiness', async () => {
+    fetchImpl.mockResolvedValueOnce(Response.json({ data: [{ id: 'local-qwen' }, { id: 'another-model' }] }))
+    await expect(service.inspectRuntimeModel({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', timeoutMs: 5000, plaintextKey: 'private' })).resolves.toEqual({ modelId: 'local-qwen', modelIds: ['local-qwen', 'another-model'] })
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toBe('http://127.0.0.1:12434/engines/v1/models')
+    expect(fetchImpl.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer private' })
+    expect(await service.isEnabled()).toBe(false)
+  })
+
+  it('verifies and selects an SLM through the normal profile lifecycle without manufacturing confidence', async () => {
+    const profile = await service.save({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', modelId: 'local-qwen', name: 'SLM', plaintextKey: 'private', timeoutMs: 5000 })
+    fetchImpl.mockImplementation(async () => Response.json({ choices: [{ finish_reason: 'length', message: { content: 'A' } }] }))
+    await expect(service.activate(profile.id)).rejects.toThrow('readiness')
+    await service.readiness(profile.id)
+    await service.activate(profile.id)
+    const decision = await service.decide('顧客語音：你好', { admission: { type: 'choice', instructions: 'Choose.', criteria: { GREET: 'Greeting', BACKGROUND: 'Background' } } })
+    expect(decision).toEqual({ selectionMode: 'unscored', answers: { admission: { choice: 'GREET' } } })
+    const request = JSON.parse(String(fetchImpl.mock.lastCall?.[1]?.body))
+    expect(String(fetchImpl.mock.lastCall?.[0])).toBe('http://127.0.0.1:12434/engines/v1/chat/completions')
+    expect(request).toMatchObject({ model: 'local-qwen', max_tokens: 1, chat_template_kwargs: { enable_thinking: false } })
+    expect(request).not.toHaveProperty('tools')
+    fetchImpl.mockResolvedValueOnce(Response.json({ choices: [{ finish_reason: 'stop', message: { content: 'A because...' } }] }))
+    await expect(service.decide('顧客語音：你好', { admission: { type: 'choice', instructions: 'Choose.', criteria: { GREET: 'Greeting', BACKGROUND: 'Background' } } })).rejects.toThrow('SLM_CONTRACT_INVALID')
+    await expect(db.query.kioskSystemOneProfiles.findFirst()).resolves.toMatchObject({ verifiedAt: null, isActive: true })
+  })
+
+  it('does not let a Jev response claim unscored SLM authority', async () => {
+    const profile = await service.save({ baseURL: 'https://lookski.example', implementation: 'lookski', modelId: 'qwen', name: 'Jev', timeoutMs: 5000 })
+    fetchImpl.mockImplementation(async () => Response.json({ selectionMode: 'unscored', answers: { ready: { noul: 1 }, route: { choice: 'IGNORE' } } }))
+    await service.readiness(profile.id)
+    await service.activate(profile.id)
+    await expect(service.decide('hello', { route: { type: 'choice', instructions: 'Choose.', criteria: { GREET: 'Greeting', IGNORE: 'Background' } } })).resolves.toEqual({ answers: { ready: { noul: 1 }, route: { choice: 'IGNORE' } } })
+  })
+
   it('persists an editable System One prompt while allowing the built-in prompt to remain current', async () => {
     await expect(service.getPolicy()).resolves.toMatchObject({ decisionInstruction: '', defaultDecisionInstruction: expect.any(String), storeInstruction: '', updatedAt: null })
 

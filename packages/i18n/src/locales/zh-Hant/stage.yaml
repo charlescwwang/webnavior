@@ -29,7 +29,7 @@ kiosk:
     still-confirming: 還在確認，請稍候…
     processing: 正在處理您的需求…
     ignored: 這句沒有進行點餐操作。
-    uncertain: 我還不確定您的需求，請換個說法，或直接使用畫面操作。
+    uncertain: 剛才沒有理解清楚，請再說一次您的需求。
     failed: 目前暫時無法確認，請再試一次或使用畫面操作。
   voice-presence-ignored: 未確認現場有人，已忽略語音
   text-console:
@@ -202,6 +202,8 @@ websocket-status:
   open-settings: 開啟連線設定
 
 kiosk-agent:
+  retry-stale: 畫面或訂單已變更，請重新說明您目前的需求。
+  retry-busy: 目前仍有語句正在處理，請稍後再試。
   context-unavailable: 菜單資料暫時無法取得，這句尚未完成，請確認連線後再說一次。
   service-unavailable: 菜單連線中斷，暫停新的代操作；請恢復連線並確認既有訂單。
   service-reconnect: 恢復菜單連線
@@ -223,5 +225,20 @@ kiosk-agent:
   tool-limit: 助手已達本次處理上限，請確認畫面上已完成的步驟後再繼續。
   duplicate-tool-call: 助手重複要求同一操作，已停止以避免重複執行，請確認畫面。
   session-error: 無法建立交談，請確認 Kiosk 連線狀態。
-  no-reply: 這次沒能完成回覆，請再試一次，或使用螢幕操作。
-  decision-uncertain: 暫時無法確認您的意思，請再說清楚一點或使用螢幕操作。
+  no-reply: 這次回覆尚未完成，請再試一次。
+  result-unknown: 暫時無法確認這次操作結果，請先確認畫面目前呈現的菜單、購物車或訂單。
+  reply-incomplete: 這句回覆尚未完成，請再試一次或重新說明您的需求。
+  decision-uncertain: 剛才沒有理解清楚，請再說一次您的需求。
+
+system-one:
+  slm-profile-name: '店內 SLM'
+  slm-label: 'SLM（實測，OpenAI 相容）'
+  slm-option: 'SLM（實測，OpenAI 相容／Docker Model Runner）'
+  model-setup-hint: '選擇決策引擎與模型，再儲存並執行 readiness。SLM 只回傳單一選項，沒有推論文字或工具權限。'
+  slm-base-url-hint: '填 OpenAI 相容 API 根網址；本機 Docker Model Runner 通常是 http://127.0.0.1:12434/engines/v1，不加 /chat/completions。'
+  available-models: '可用模型'
+  read-models: '讀取可用模型'
+  discovery-hint: '從 /models 讀取可用模型；選定後的 readiness 會實際呼叫此模型。清單不代表已載入。'
+  panel-description: '可選擇 Dasein open-jev、lookski/openjev 或 SLM 作為 Kiosk Fast Path。共用服務入場、需求與操作分層；SLM 只輸出單一選項。readiness 以真實決策確認部署可用，語意效果另需實測。'
+  policy-description: 'Jev 與 SLM 共用分層判斷：先區分服務、招呼、背景與不確定，再判斷需求及小組操作。候選、確認、付款與 WebMCP 執行資格由程式控制；複雜需求保留整句轉交 Main Agent。'
+  policy-hint: '自訂提示與店家補充套用在服務入場後的需求判斷，不會擴大第一層服務範圍或操作權限。舊自訂內容會保留；還原為系統預設後儲存，可使用目前較精簡的提示。'

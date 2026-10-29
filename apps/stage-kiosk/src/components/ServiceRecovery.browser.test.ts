@@ -41,7 +41,7 @@ it('paints text progress and elapsed time before the delayed model finishes, the
   await expect.poll(() => progress.state.value?.elapsedMs).toBeGreaterThanOrEqual(250)
   await expect.element(screen.getByLabelText('本輪對話處理耗時')).toBeVisible()
   complete()
-  await expect.element(screen.getByText('我還不確定您的需求，請換個說法，或直接使用畫面操作。')).toBeVisible()
+  await expect.element(screen.getByText('剛才沒有理解清楚，請再說一次您的需求。')).toBeVisible()
   expect(progress.state.value?.pending).toBe(false)
   await expect.element(screen.getByText('正在確認您的意思…')).not.toBeInTheDocument()
 })

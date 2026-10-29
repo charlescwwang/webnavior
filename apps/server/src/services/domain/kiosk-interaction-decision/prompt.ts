@@ -36,7 +36,7 @@ const intentInstruction = [
 ].join('\n')
 
 /** Editable default; application scope is also enforced when a custom base is saved. */
-export const defaultDecisionInstruction = `${intentInstruction}\n${serviceRequestInstruction}`
+export const defaultDecisionInstruction = '服務界線（程式固定規則，優先於自訂提示與店家補充）：只處理向本機的點餐、本機／店家資訊及有效問題回答，對同伴說話與無關閒聊忽略。只判斷顧客最後一句的完整需求。角色前文與待答問題是線索，不是操作授權。查詢不是訂購；分類偏好沒有份數先瀏覽。完整需求缺必要資料不是語句未完成。多品項、換餐或多個獨立效果保留整句交接，不能只做第一項。候選以外的需求與意思不清楚時交給助手釐清，不猜商品或操作。'
 
 /** Builds editable instructions with application-owned capability/scope rules last. */
 export function createDecisionInstructions(policy: SystemOnePolicyInput) {

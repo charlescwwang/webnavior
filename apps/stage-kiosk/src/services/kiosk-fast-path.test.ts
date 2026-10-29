@@ -70,6 +70,15 @@ describe('kiosk System One fast path', () => {
     expect(createDecisionFeedback()({ ...stage, question: 'recipient', choice: 'KIOSK', confidence: 0.95 })).toBe(false)
   })
 
+  it('uses the combined staged admission for scored Jev and unscored SLM progress only', () => {
+    const stage = { kind: 'DECISION_PROGRESS' as const, continuationId: 'test', expiresAt: 1, durationMs: 1, question: 'admission' }
+    expect(createDecisionFeedback()({ ...stage, choice: 'SERVICE', confidence: 0.95 })).toBe(true)
+    expect(createDecisionFeedback()({ ...stage, choice: 'SERVICE', selectionMode: 'unscored' })).toBe(true)
+    expect(createDecisionFeedback()({ ...stage, choice: 'SERVICE' })).toBe(false)
+    expect(createDecisionFeedback()({ ...stage, choice: 'BACKGROUND', selectionMode: 'unscored' })).toBe(false)
+    expect(createDecisionFeedback()({ ...stage, choice: 'UNCERTAIN', selectionMode: 'unscored' })).toBe(false)
+  })
+
   it.each(['IGNORE', 'INCOMPLETE', 'GREET'])('does not mistake a confident %s for a service request', (choice) => {
     const admit = createDecisionFeedback()
     const stage = { kind: 'DECISION_PROGRESS' as const, continuationId: 'test', expiresAt: 1, durationMs: 1 }
@@ -86,9 +95,12 @@ describe('kiosk System One fast path', () => {
     expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_GREETING' })).toBe(false)
     expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT' })).toBe(false)
     expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' })).toBe(false)
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_REVIEW' })).toBe(false)
     expect(shouldShowDecisionRetry({ kind: 'IGNORE' })).toBe(false)
     expect(shouldShowDecisionRetry({ kind: 'INCOMPLETE' })).toBe(false)
     expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE' })).toBe(true)
+    expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'PROVIDER_FAILURE' })).toBe(true)
   })
 
   // Report: this chat, 2026-10-20; a visitor can leave while Jev is deciding.

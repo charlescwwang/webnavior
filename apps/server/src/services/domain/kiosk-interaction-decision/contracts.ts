@@ -50,7 +50,7 @@ export interface KioskDecisionState {
 }
 
 /** Safe handoff facts; completed reads do not authorize any later mutation. */
-export type KioskConversationDecisionState = Pick<KioskDecisionState, 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff, serviceReply?: boolean }
+export type KioskConversationDecisionState = Pick<KioskDecisionState, 'revisions' | 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff, serviceReply?: boolean }
 
 /** A finite semantic outcome. Food slots are chosen from application-issued references. */
 export type KioskInteractionDecision = {
@@ -93,6 +93,8 @@ export type DecisionStageResult = KioskInteractionDecision | ServiceRecoveryProg
   question: string
   choice?: string
   confidence?: number
+  /** Adapter-validated label with no calibrated probability; presentation only. */
+  selectionMode?: 'unscored'
   durationMs: number
 }
 

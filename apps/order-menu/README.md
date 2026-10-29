@@ -543,6 +543,14 @@ a fresh `cart_get` receipt, then
 uses `cart_set_line_quantity`, `cart_set_line_option`, or `cart_remove_item`
 directly instead of removing and re-adding a meal. `cart_clear` also requires
 an explicit customer confirmation and is unavailable after POS acceptance.
+Ordinary Fast Path candidate leases allow the shared 60-second decision-turn
+budget, so staged SLM decisions taking over 15 seconds can still execute when
+state is unchanged. This lease does not extend customer consent: an effect bound
+to a question retains that question's expiry, and high-risk confirmation keeps
+its own 15-second one-use record. Independent new orders do not inherit an
+unrelated question deadline. Execution still checks live phase and revisions;
+a cart/menu/checkout change invalidates the old operation.
+
 In Kiosk voice mode, Fast Path chooses bounded semantic intents; this menu
 resolves real targets and authorizes the resulting tool operation.
 Main Agent mutations also pass through its current phase, target, revision,

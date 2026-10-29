@@ -1,4 +1,5 @@
 import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { ContextReply } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { Tool } from '@xsai/shared-chat'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
@@ -15,6 +16,7 @@ import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistor
 /** Outcome of one bounded Agent task, including accepted work before a failure. */
 export interface ConversationTurnResult {
   answer?: string
+  reply?: ContextReply
   agentMode: KioskAgentInteractionMode
   /** Tools submitted for execution in this turn, including rejected attempts; never historical receipts. */
   requestedTools: string[]
@@ -362,7 +364,7 @@ export function useKioskInteractionRecording() {
       }
       if (response.toolCalls.length)
         return unfinished(control.manual ? 'manual-control' : signal.aborted ? 'timeout' : 'tool-limit')
-      return { answer: response.answer, agentMode, requestedTools, status: 'completed' }
+      return { answer: response.answer, reply: response.reply, agentMode, requestedTools, status: 'completed' }
     }
     catch {
       if (control.manual)
