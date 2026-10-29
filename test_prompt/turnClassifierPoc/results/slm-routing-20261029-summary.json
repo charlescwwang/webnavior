@@ -1,0 +1,824 @@
+{
+  "date": "2026-10-29",
+  "scope": "Synthetic historical-family route diagnostic; not full-flow or production acceptance",
+  "datasetHash": "0592f2ef0ec7e755c085c594bb8b655a420d32a5b33fb09ea3e4f6a8545b0b00",
+  "cases": [
+    {
+      "id": "p07",
+      "text": "能不能看看紅茶",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "serviceScope": "SERVICE",
+      "candidateCount": 8
+    },
+    {
+      "id": "p13",
+      "text": "店員，剛才要的牛肉麵怎麼沒出現在訂單裡",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "serviceScope": "SERVICE",
+      "candidateCount": 16
+    },
+    {
+      "id": "p18",
+      "text": "我改外帶，不在這裡吃了",
+      "accepted": [
+        "intent:set-fulfillment:takeout"
+      ],
+      "serviceScope": "SERVICE",
+      "candidateCount": 12
+    },
+    {
+      "id": "p29",
+      "text": "牛肉麵兩碗，水餃再一份",
+      "accepted": [
+        "MULTI_ACTION",
+        "NEEDS_ASSISTANT"
+      ],
+      "serviceScope": "SERVICE",
+      "candidateCount": 8
+    },
+    {
+      "id": "p31",
+      "text": "排骨便當撤掉，換牛肉麵一碗",
+      "accepted": [
+        "MULTI_ACTION",
+        "NEEDS_ASSISTANT"
+      ],
+      "serviceScope": "SERVICE",
+      "candidateCount": 16
+    },
+    {
+      "id": "p37",
+      "text": "阿宏，我覺得牛肉麵比便當好吃，你覺得呢",
+      "accepted": [
+        "IGNORE"
+      ],
+      "serviceScope": "BACKGROUND",
+      "candidateCount": 16
+    },
+    {
+      "id": "p40",
+      "text": "哦，了解了，謝謝",
+      "accepted": [
+        "IGNORE"
+      ],
+      "serviceScope": "BACKGROUND",
+      "candidateCount": 9
+    },
+    {
+      "id": "p43",
+      "text": "我原本要改成……等我想一下",
+      "accepted": [
+        "INCOMPLETE"
+      ],
+      "serviceScope": "UNCERTAIN",
+      "candidateCount": 12
+    },
+    {
+      "id": "p09",
+      "text": "店員，水餃幫我拿一份",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "serviceScope": "SERVICE",
+      "candidateCount": 8
+    },
+    {
+      "id": "greeting-control",
+      "text": "您好",
+      "accepted": [
+        "GREET"
+      ],
+      "serviceScope": "GREET",
+      "candidateCount": 8
+    }
+  ],
+  "rules": {
+    "flatComparison": "original and compact share candidate IDs, count, order, state and gold; instructions and descriptions change together",
+    "serviceScope": "different, coarser four-label task; scores never pooled with flat route",
+    "budget": "60 calls / 8 minutes / 35 seconds each / stop on 3 consecutive errors",
+    "tuning": "none after inference; preflight missing description failed before inference then map completed"
+  },
+  "actual": {
+    "calls": 60,
+    "elapsedMs": 202771,
+    "summary": [
+      {
+        "variant": "original",
+        "provider": "jev",
+        "attempted": 10,
+        "correct": 3,
+        "httpMedianMs": 420.0
+      },
+      {
+        "variant": "original",
+        "provider": "slm",
+        "attempted": 10,
+        "correct": 4,
+        "httpMedianMs": 12702.0
+      },
+      {
+        "variant": "compact",
+        "provider": "jev",
+        "attempted": 10,
+        "correct": 9,
+        "httpMedianMs": 277.5
+      },
+      {
+        "variant": "compact",
+        "provider": "slm",
+        "attempted": 10,
+        "correct": 9,
+        "httpMedianMs": 3961.5
+      },
+      {
+        "variant": "scope",
+        "provider": "jev",
+        "attempted": 10,
+        "correct": 10,
+        "httpMedianMs": 196.5
+      },
+      {
+        "variant": "scope",
+        "provider": "slm",
+        "attempted": 10,
+        "correct": 10,
+        "httpMedianMs": 2209.5
+      }
+    ],
+    "rows": [
+      {
+        "id": "p07",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "intent:search-menu"
+        ],
+        "choice": "intent:add-item",
+        "correct": false,
+        "ms": 1119
+      },
+      {
+        "id": "p07",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "intent:search-menu"
+        ],
+        "choice": "intent:add-item",
+        "correct": false,
+        "ms": 14131
+      },
+      {
+        "id": "p13",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "INCOMPLETE",
+        "correct": false,
+        "ms": 349
+      },
+      {
+        "id": "p13",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "INCOMPLETE",
+        "correct": false,
+        "ms": 13757
+      },
+      {
+        "id": "p18",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "intent:set-fulfillment:takeout"
+        ],
+        "choice": "intent:set-fulfillment:takeout",
+        "correct": true,
+        "ms": 446
+      },
+      {
+        "id": "p18",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "intent:set-fulfillment:takeout"
+        ],
+        "choice": "intent:set-fulfillment:takeout",
+        "correct": true,
+        "ms": 12324
+      },
+      {
+        "id": "p29",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "intent:add-item",
+        "correct": false,
+        "ms": 365
+      },
+      {
+        "id": "p29",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "intent:add-item",
+        "correct": false,
+        "ms": 11142
+      },
+      {
+        "id": "p31",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "intent:remove-item",
+        "correct": false,
+        "ms": 526
+      },
+      {
+        "id": "p31",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "intent:remove-item",
+        "correct": false,
+        "ms": 14410
+      },
+      {
+        "id": "p37",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "NEEDS_ASSISTANT",
+        "correct": false,
+        "ms": 377
+      },
+      {
+        "id": "p37",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "NEEDS_ASSISTANT",
+        "correct": false,
+        "ms": 14398
+      },
+      {
+        "id": "p40",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "INCOMPLETE",
+        "correct": false,
+        "ms": 417
+      },
+      {
+        "id": "p40",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "IGNORE",
+        "correct": true,
+        "ms": 11657
+      },
+      {
+        "id": "p43",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "INCOMPLETE"
+        ],
+        "choice": "intent:defer-question",
+        "correct": false,
+        "ms": 423
+      },
+      {
+        "id": "p43",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "INCOMPLETE"
+        ],
+        "choice": "intent:defer-question",
+        "correct": false,
+        "ms": 13080
+      },
+      {
+        "id": "p09",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "intent:add-item"
+        ],
+        "choice": "intent:add-item",
+        "correct": true,
+        "ms": 428
+      },
+      {
+        "id": "p09",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "intent:add-item"
+        ],
+        "choice": "intent:add-item",
+        "correct": true,
+        "ms": 11351
+      },
+      {
+        "id": "greeting-control",
+        "variant": "original",
+        "provider": "jev",
+        "expected": [
+          "GREET"
+        ],
+        "choice": "GREET",
+        "correct": true,
+        "ms": 322
+      },
+      {
+        "id": "greeting-control",
+        "variant": "original",
+        "provider": "slm",
+        "expected": [
+          "GREET"
+        ],
+        "choice": "GREET",
+        "correct": true,
+        "ms": 11196
+      },
+      {
+        "id": "p07",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "intent:search-menu"
+        ],
+        "choice": "intent:search-menu",
+        "correct": true,
+        "ms": 3438
+      },
+      {
+        "id": "p07",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "intent:search-menu"
+        ],
+        "choice": "intent:search-menu",
+        "correct": true,
+        "ms": 266
+      },
+      {
+        "id": "p13",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "NEEDS_ASSISTANT",
+        "correct": true,
+        "ms": 5624
+      },
+      {
+        "id": "p13",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "NEEDS_ASSISTANT",
+        "correct": true,
+        "ms": 251
+      },
+      {
+        "id": "p18",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "intent:set-fulfillment:takeout"
+        ],
+        "choice": "intent:set-fulfillment:takeout",
+        "correct": true,
+        "ms": 4389
+      },
+      {
+        "id": "p18",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "intent:set-fulfillment:takeout"
+        ],
+        "choice": "intent:set-fulfillment:takeout",
+        "correct": true,
+        "ms": 329
+      },
+      {
+        "id": "p29",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "intent:add-item",
+        "correct": false,
+        "ms": 3534
+      },
+      {
+        "id": "p29",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "intent:add-item",
+        "correct": false,
+        "ms": 289
+      },
+      {
+        "id": "p31",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "MULTI_ACTION",
+        "correct": true,
+        "ms": 5468
+      },
+      {
+        "id": "p31",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "MULTI_ACTION",
+          "NEEDS_ASSISTANT"
+        ],
+        "choice": "MULTI_ACTION",
+        "correct": true,
+        "ms": 295
+      },
+      {
+        "id": "p37",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "IGNORE",
+        "correct": true,
+        "ms": 5364
+      },
+      {
+        "id": "p37",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "IGNORE",
+        "correct": true,
+        "ms": 365
+      },
+      {
+        "id": "p40",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "IGNORE",
+        "correct": true,
+        "ms": 3375
+      },
+      {
+        "id": "p40",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "IGNORE"
+        ],
+        "choice": "IGNORE",
+        "correct": true,
+        "ms": 192
+      },
+      {
+        "id": "p43",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "INCOMPLETE"
+        ],
+        "choice": "INCOMPLETE",
+        "correct": true,
+        "ms": 4481
+      },
+      {
+        "id": "p43",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "INCOMPLETE"
+        ],
+        "choice": "INCOMPLETE",
+        "correct": true,
+        "ms": 323
+      },
+      {
+        "id": "p09",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "intent:add-item"
+        ],
+        "choice": "intent:add-item",
+        "correct": true,
+        "ms": 3341
+      },
+      {
+        "id": "p09",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "intent:add-item"
+        ],
+        "choice": "intent:add-item",
+        "correct": true,
+        "ms": 250
+      },
+      {
+        "id": "greeting-control",
+        "variant": "compact",
+        "provider": "slm",
+        "expected": [
+          "GREET"
+        ],
+        "choice": "GREET",
+        "correct": true,
+        "ms": 3279
+      },
+      {
+        "id": "greeting-control",
+        "variant": "compact",
+        "provider": "jev",
+        "expected": [
+          "GREET"
+        ],
+        "choice": "GREET",
+        "correct": true,
+        "ms": 197
+      },
+      {
+        "id": "p07",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 197
+      },
+      {
+        "id": "p07",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 2607
+      },
+      {
+        "id": "p13",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 170
+      },
+      {
+        "id": "p13",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 1743
+      },
+      {
+        "id": "p18",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 204
+      },
+      {
+        "id": "p18",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 2081
+      },
+      {
+        "id": "p29",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 170
+      },
+      {
+        "id": "p29",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 2338
+      },
+      {
+        "id": "p31",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 216
+      },
+      {
+        "id": "p31",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 1784
+      },
+      {
+        "id": "p37",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "BACKGROUND"
+        ],
+        "choice": "BACKGROUND",
+        "correct": true,
+        "ms": 271
+      },
+      {
+        "id": "p37",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "BACKGROUND"
+        ],
+        "choice": "BACKGROUND",
+        "correct": true,
+        "ms": 1786
+      },
+      {
+        "id": "p40",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "BACKGROUND"
+        ],
+        "choice": "BACKGROUND",
+        "correct": true,
+        "ms": 196
+      },
+      {
+        "id": "p40",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "BACKGROUND"
+        ],
+        "choice": "BACKGROUND",
+        "correct": true,
+        "ms": 2647
+      },
+      {
+        "id": "p43",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "UNCERTAIN"
+        ],
+        "choice": "UNCERTAIN",
+        "correct": true,
+        "ms": 161
+      },
+      {
+        "id": "p43",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "UNCERTAIN"
+        ],
+        "choice": "UNCERTAIN",
+        "correct": true,
+        "ms": 2077
+      },
+      {
+        "id": "p09",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 183
+      },
+      {
+        "id": "p09",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "SERVICE"
+        ],
+        "choice": "SERVICE",
+        "correct": true,
+        "ms": 2669
+      },
+      {
+        "id": "greeting-control",
+        "variant": "scope",
+        "provider": "jev",
+        "expected": [
+          "GREET"
+        ],
+        "choice": "GREET",
+        "correct": true,
+        "ms": 429
+      },
+      {
+        "id": "greeting-control",
+        "variant": "scope",
+        "provider": "slm",
+        "expected": [
+          "GREET"
+        ],
+        "choice": "GREET",
+        "correct": true,
+        "ms": 2533
+      }
+    ]
+  },
+  "latencyNote": "Different deployment hardware; HTTP medians are not model speed ranking."
+}

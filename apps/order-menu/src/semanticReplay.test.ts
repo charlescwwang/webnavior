@@ -3,17 +3,22 @@ import type { SystemOneQuestion } from '../../server/src/services/domain/kiosk-s
 import type { CheckoutSnapshot } from './domain/checkout-flow'
 import type { MenuItem } from './domain/order-machine'
 import type { SeatingContext } from './domain/seating'
+import type { SemanticReplayCase as Scenario } from './experiments/semanticReplayCases'
 
+import { errorMessageFrom } from '@moeru/std'
 import { afterAll, describe, expect, it } from 'vitest'
 
 import { decideInteraction } from '../../server/src/services/domain/kiosk-interaction-decision'
 import { createRecommendationInvitation } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import { createChoiceRequest, readChoice } from '../../server/src/services/domain/kiosk-system-one/slm'
 import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
+import { semanticReplayCases as scenarios } from './experiments/semanticReplayCases'
 import { createMenuToolRuntime } from './webmcp'
 
 const replayUrl = process.env.KIOSK_SYSTEM_ONE_REPLAY_URL
 const variant = process.env.KIOSK_PROMPT_VARIANT ?? 'baseline'
 const observations: Array<Record<string, unknown>> = []
+const slmObservations: Array<Record<string, unknown>> = []
 
 // Frozen instruction text from the reported route, without its customer state,
 // dialogue, identifiers or model answers. Never read attachments during replay.
@@ -64,46 +69,6 @@ const descriptions = {
     'intent:add-item': '顧客明確要求新增訂購，才建立餐點項目；詢問販售、價格或份量不是訂購。品名／別名是對象證據，不是訂購授權。分類加明確訂購數量可建立待選品項；歧義由程式釐清，不自行挑選。',
   },
 }
-
-type Setup = 'empty' | 'fulfillment' | 'checkout' | 'party' | 'invitation'
-interface Scenario {
-  id: string
-  transcript: string
-  setup: Setup
-  expected: string
-  partition: 'development' | 'holdout'
-}
-
-// Written before running either variant. Holdout wording must not be used to
-// tune the proposal after its results are visible.
-const scenarios: Scenario[] = [
-  { id: 'query-alone', transcript: '有牛肉麵嗎？', setup: 'empty', expected: 'intent:search-menu', partition: 'development' },
-  { id: 'query-after-adds', transcript: '有牛肉麵嗎？', setup: 'fulfillment', expected: 'intent:search-menu', partition: 'development' },
-  { id: 'query-at-checkout', transcript: '有牛肉麵嗎？', setup: 'checkout', expected: 'intent:search-menu', partition: 'development' },
-  { id: 'add-name', transcript: '我想吃牛肉麵', setup: 'fulfillment', expected: 'intent:add-item', partition: 'development' },
-  { id: 'add-alias', transcript: '排骨便當來一份', setup: 'empty', expected: 'intent:add-item', partition: 'development' },
-  { id: 'category-alone', transcript: '我想吃麵', setup: 'fulfillment', expected: 'intent:search-menu', partition: 'development' },
-  { id: 'category-quantity', transcript: '我想吃麵，一碗', setup: 'fulfillment', expected: 'intent:add-item', partition: 'development' },
-  { id: 'add-interruption', transcript: '再加一份水餃', setup: 'checkout', expected: 'intent:add-item', partition: 'development' },
-  { id: 'modify', transcript: '水餃改兩份', setup: 'fulfillment', expected: 'intent:set-quantity', partition: 'development' },
-  { id: 'remove', transcript: '水餃不要了', setup: 'fulfillment', expected: 'intent:remove-item', partition: 'development' },
-  { id: 'view-item', transcript: '看牛肉麵', setup: 'fulfillment', expected: 'intent:select-item', partition: 'development' },
-  { id: 'fulfillment-answer', transcript: '內用', setup: 'fulfillment', expected: 'intent:set-fulfillment:dine-in', partition: 'development' },
-  { id: 'delayed-party-answer', transcript: '一位', setup: 'party', expected: 'intent:set-party-size', partition: 'development' },
-  { id: 'checkout-consent', transcript: '好', setup: 'checkout', expected: 'intent:start-checkout', partition: 'development' },
-  { id: 'checkout-refusal', transcript: '先不要', setup: 'checkout', expected: 'intent:defer-question', partition: 'development' },
-  { id: 'invitation-consent', transcript: '好啊', setup: 'invitation', expected: 'intent:recommend', partition: 'development' },
-  { id: 'invitation-refusal', transcript: '不用', setup: 'invitation', expected: 'IGNORE', partition: 'development' },
-  { id: 'recommend', transcript: '推薦幾樣餐點', setup: 'empty', expected: 'intent:recommend', partition: 'development' },
-  { id: 'query-price', transcript: '牛肉麵多少錢？', setup: 'fulfillment', expected: 'intent:search-menu', partition: 'holdout' },
-  { id: 'query-portion', transcript: '水餃一份有幾顆？', setup: 'checkout', expected: 'intent:search-menu', partition: 'holdout' },
-  { id: 'add-colloquial', transcript: '來碗牛肉麵', setup: 'checkout', expected: 'intent:add-item', partition: 'holdout' },
-  { id: 'category-other', transcript: '突然想吃便當', setup: 'fulfillment', expected: 'intent:search-menu', partition: 'holdout' },
-  { id: 'background', transcript: '小林，我們去旁邊聊', setup: 'checkout', expected: 'IGNORE', partition: 'holdout' },
-  { id: 'unfinished', transcript: '我要一份……', setup: 'empty', expected: 'INCOMPLETE', partition: 'holdout' },
-  { id: 'greeting-add', transcript: '你好，水餃來一份', setup: 'checkout', expected: 'intent:add-item', partition: 'holdout' },
-  { id: 'cart', transcript: '看一下我點了什麼', setup: 'fulfillment', expected: 'intent:view-cart', partition: 'holdout' },
-]
 
 // Ordinary product names with entirely synthetic prices/data; no customer or
 // merchant catalog is loaded. No gateway can submit an order or take payment.
@@ -196,6 +161,52 @@ describe('synthetic replay fixture contracts', () => {
       expect(snapshot.waitingFor?.purpose).toBe('checkout-entry')
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: scenario.setup === 'empty' || scenario.setup === 'invitation' ? 0 : 2 } })
   })
+})
+
+describe.skipIf(process.env.KIOSK_SLM_MENU !== '1')('staged SLM and real isolated Menu effects', () => {
+  afterAll(() => {
+    for (const observation of slmObservations)
+      process.stdout.write(`${JSON.stringify({ semanticSlmSummaryRow: true, ...observation })}\n`)
+  })
+
+  it.each(scenarios)('$id [$partition]', async (scenario) => {
+    const baseURL = process.env.KIOSK_SLM_URL ?? 'http://127.0.0.1:12434/engines/v1'
+    if (!['127.0.0.1', 'localhost', '[::1]'].includes(new URL(baseURL).hostname))
+      throw new Error('SLM Menu replay requires a local endpoint')
+    const { snapshot, messages, runtime } = await prepare(scenario)
+    const before = await runtime.invoke('cart_get', { display: false }) as { cart: { itemCount: number } }
+    let requests = 0
+    const started = Date.now()
+    const decision = await decideInteraction({ routing: 'staged', candidates: snapshot.candidates, decisionState: snapshot, transcript: scenario.transcript, conversation: { messages }, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true, invoke: async (state, questions) => {
+      const key = Object.keys(questions)[0]!
+      const request = createChoiceRequest(process.env.KIOSK_SLM_MODEL ?? 'huggingface.co/unsloth/qwen3.5-4b-gguf:latest', state, questions[key]!)
+      requests++
+      const response = await fetch(`${baseURL.replace(/\/+$/u, '')}/chat/completions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request.body), signal: AbortSignal.timeout(35_000) })
+      if (!response.ok)
+        throw new Error(`SLM HTTP ${response.status}`)
+      return { selectionMode: 'unscored', answers: { [key]: { choice: readChoice(await response.json(), request) } } }
+    } })
+    const actual = decision.kind === 'FAST_ACTION' ? decision.actionId : decision.kind
+    let receipt: unknown
+    let executionError: string | undefined
+    try {
+      if (decision.kind === 'FAST_ACTION')
+        receipt = await runtime.invoke('kiosk_fast_path_execute', { candidateId: decision.actionId })
+    }
+    catch (error) {
+      // A domain refusal is evidence too. Retain the selected route and final
+      // cart before failing this case; do not drop it from the complete report.
+      executionError = errorMessageFrom(error) ?? 'EXECUTION_REJECTED'
+    }
+    const after = await runtime.invoke('cart_get', { display: false }) as { cart: { itemCount: number } }
+    slmObservations.push({ id: scenario.id, expected: scenario.expected, actual, reason: decision.reason, requests, elapsedMs: Date.now() - started, cartBefore: before.cart.itemCount, cartAfter: after.cart.itemCount, receipt, executionError })
+    // Keep strict original intent gold, including cases now safely handed to
+    // Main. A handoff is not a demonstrated completion of that customer task.
+    expect(actual).toBe(scenario.expected)
+    expect(executionError).toBeUndefined()
+    if (['intent:search-menu', 'intent:select-item', 'intent:view-cart', 'IGNORE', 'INCOMPLETE'].includes(scenario.expected))
+      expect(after.cart.itemCount).toBe(before.cart.itemCount)
+  }, 180_000)
 })
 
 describe.skipIf(!replayUrl)('synthetic semantic prompt comparison', () => {

@@ -1,0 +1,225 @@
+{
+  "caseId": "p31",
+  "utterance": "排骨便當撤掉，換牛肉麵一碗",
+  "candidateCount": 16,
+  "expectedEffects": [
+    "NEEDS_ASSISTANT",
+    "MULTI_ACTION"
+  ],
+  "selectedEffect": "intent:remove-item",
+  "label": "L",
+  "rawResponse": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "L"
+        },
+        "logprobs": {
+          "content": [
+            {
+              "id": 43,
+              "token": "L",
+              "bytes": [
+                76
+              ],
+              "logprob": -0.8749430179595947,
+              "top_logprobs": [
+                {
+                  "id": 43,
+                  "token": "L",
+                  "bytes": [
+                    76
+                  ],
+                  "logprob": -0.8749430179595947
+                },
+                {
+                  "id": 32,
+                  "token": "A",
+                  "bytes": [
+                    65
+                  ],
+                  "logprob": -1.7164347171783447
+                },
+                {
+                  "id": 41,
+                  "token": "J",
+                  "bytes": [
+                    74
+                  ],
+                  "logprob": -2.0115530490875244
+                },
+                {
+                  "id": 35,
+                  "token": "D",
+                  "bytes": [
+                    68
+                  ],
+                  "logprob": -2.508384943008423
+                },
+                {
+                  "id": 39,
+                  "token": "H",
+                  "bytes": [
+                    72
+                  ],
+                  "logprob": -2.610365152359009
+                },
+                {
+                  "id": 47,
+                  "token": "P",
+                  "bytes": [
+                    80
+                  ],
+                  "logprob": -2.67128586769104
+                },
+                {
+                  "id": 34,
+                  "token": "C",
+                  "bytes": [
+                    67
+                  ],
+                  "logprob": -4.454708576202393
+                },
+                {
+                  "id": 40,
+                  "token": "I",
+                  "bytes": [
+                    73
+                  ],
+                  "logprob": -4.484268665313721
+                },
+                {
+                  "id": 38,
+                  "token": "G",
+                  "bytes": [
+                    71
+                  ],
+                  "logprob": -5.0459465980529785
+                },
+                {
+                  "id": 33,
+                  "token": "B",
+                  "bytes": [
+                    66
+                  ],
+                  "logprob": -5.558712482452393
+                },
+                {
+                  "id": 45,
+                  "token": "N",
+                  "bytes": [
+                    78
+                  ],
+                  "logprob": -5.575160980224609
+                },
+                {
+                  "id": 36,
+                  "token": "E",
+                  "bytes": [
+                    69
+                  ],
+                  "logprob": -6.350076675415039
+                },
+                {
+                  "id": 42,
+                  "token": "K",
+                  "bytes": [
+                    75
+                  ],
+                  "logprob": -6.596325397491455
+                },
+                {
+                  "id": 37,
+                  "token": "F",
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -6.662672519683838
+                },
+                {
+                  "id": 44,
+                  "token": "M",
+                  "bytes": [
+                    77
+                  ],
+                  "logprob": -6.850401401519775
+                },
+                {
+                  "id": 48,
+                  "token": "Q",
+                  "bytes": [
+                    81
+                  ],
+                  "logprob": -7.16527795791626
+                },
+                {
+                  "id": 46,
+                  "token": "O",
+                  "bytes": [
+                    79
+                  ],
+                  "logprob": -7.3529052734375
+                },
+                {
+                  "id": 248068,
+                  "token": "<think>",
+                  "bytes": [
+                    60,
+                    116,
+                    104,
+                    105,
+                    110,
+                    107,
+                    62
+                  ],
+                  "logprob": -8.081367492675781
+                },
+                {
+                  "id": 49,
+                  "token": "R",
+                  "bytes": [
+                    82
+                  ],
+                  "logprob": -8.204299926757812
+                },
+                {
+                  "id": 50,
+                  "token": "S",
+                  "bytes": [
+                    83
+                  ],
+                  "logprob": -8.299577713012695
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1793238557,
+    "model": "model.gguf",
+    "system_fingerprint": "b1-3191462",
+    "object": "chat.completion",
+    "usage": {
+      "completion_tokens": 1,
+      "prompt_tokens": 1448,
+      "total_tokens": 1449
+    },
+    "id": "chatcmpl-MIlp6NU9wuorRSoej9dWzAIGUy7MQqjy",
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 1448,
+      "prompt_ms": 8497.383,
+      "prompt_per_token_ms": 5.868358425414365,
+      "prompt_per_second": 170.4054059938219,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_per_token_ms": 0.001,
+      "predicted_per_second": 1000000
+    }
+  },
+  "scope": "Recorded SLM response, not a fresh curl result; synthetic historical snapshot, no execution."
+}

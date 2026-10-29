@@ -1,0 +1,1174 @@
+{
+  "policyVersion": "initial-staged-before-write-guards",
+  "scope": "26 synthetic cases; real local SLM plus isolated Menu, no Main or field acceptance",
+  "fieldAcceptance": false,
+  "cases": 26,
+  "rows": [
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "query-alone",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "MENU_QUERY",
+      "requests": 3,
+      "elapsedMs": 6511,
+      "cartBefore": 0,
+      "cartAfter": 0
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "query-after-adds",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "MENU_QUERY",
+      "requests": 3,
+      "elapsedMs": 8835,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "query-at-checkout",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "MENU_QUERY",
+      "requests": 3,
+      "elapsedMs": 8683,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "add-name",
+      "expected": "intent:add-item",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "MENU_QUERY",
+      "requests": 3,
+      "elapsedMs": 8842,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "add-alias",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "requests": 4,
+      "elapsedMs": 8256,
+      "cartBefore": 0,
+      "cartAfter": 1,
+      "receipt": {
+        "item": {
+          "available": true,
+          "id": "bento",
+          "name": "炸排骨便當",
+          "description": "人工測試餐點",
+          "category": "便當",
+          "price": 90,
+          "recommendationTags": [],
+          "optionGroups": []
+        },
+        "line": {
+          "id": "line-d11307e0-664a-4710-8d3e-2a8d17d7c402",
+          "itemId": "bento",
+          "name": "炸排骨便當",
+          "quantity": 1,
+          "options": {},
+          "unitPrice": 90
+        },
+        "cart": {
+          "lines": [
+            {
+              "id": "line-d11307e0-664a-4710-8d3e-2a8d17d7c402",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 90
+            }
+          ],
+          "total": 90,
+          "itemCount": 1
+        },
+        "customerMessage": "已將炸排骨便當加入購物車，共 1 份。",
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "91463382-b9fe-4b28-b68f-fce626239121",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 1,
+            "checkout": 0
+          },
+          "expiresAt": 1793258958846
+        },
+        "decisionTrace": {
+          "authorize": {
+            "kind": "EXECUTE"
+          },
+          "operationPlan": {
+            "expectedRevisions": {
+              "cart": 0,
+              "selectedItem": 0,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "bento",
+              "quantity": 1
+            },
+            "targetRef": "item:bento",
+            "input": {
+              "itemId": "bento",
+              "quantity": 1
+            },
+            "toolName": "order_add_item"
+          },
+          "resolveIntent": {
+            "kind": "PLAN",
+            "plan": {
+              "expectedRevisions": {
+                "cart": 0,
+                "selectedItem": 0,
+                "menu": 0
+              },
+              "intent": "ADD_ITEM",
+              "slots": {
+                "itemId": "bento",
+                "quantity": 1
+              },
+              "targetRef": "item:bento"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [
+                  "bento"
+                ],
+                "categories": [],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "item:bento"
+              ],
+              "eligible": [
+                "item:bento"
+              ],
+              "rejected": [],
+              "origins": {
+                "item:bento": "utterance"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "category-alone",
+      "expected": "intent:search-menu",
+      "actual": "INCOMPLETE",
+      "requests": 2,
+      "elapsedMs": 6040,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "category-quantity",
+      "expected": "intent:add-item",
+      "actual": "intent:search-menu",
+      "requests": 4,
+      "elapsedMs": 11529,
+      "cartBefore": 2,
+      "cartAfter": 2,
+      "receipt": {
+        "dataOnly": false,
+        "catalog": {
+          "isSimulated": true,
+          "sourceName": "周氏蝦捲公開產品資料",
+          "sourceUrl": "https://www.chous.com.tw/chous/products.html"
+        },
+        "categories": [
+          "麵",
+          "便當",
+          "點心",
+          "飲料"
+        ],
+        "ingredientDefinitions": [
+          {
+            "id": "pork",
+            "label": "豬肉",
+            "aliases": [
+              "豬肉"
+            ]
+          },
+          {
+            "id": "beef",
+            "label": "牛肉",
+            "aliases": [
+              "牛肉"
+            ]
+          },
+          {
+            "id": "chicken",
+            "label": "雞肉",
+            "aliases": [
+              "雞肉"
+            ]
+          },
+          {
+            "id": "seafood",
+            "label": "海鮮",
+            "aliases": [
+              "海鮮"
+            ]
+          },
+          {
+            "id": "shrimp",
+            "label": "蝦",
+            "aliases": [
+              "蝦"
+            ]
+          },
+          {
+            "id": "fish",
+            "label": "魚",
+            "aliases": [
+              "魚"
+            ]
+          },
+          {
+            "id": "egg",
+            "label": "蛋",
+            "aliases": [
+              "雞蛋",
+              "蛋"
+            ]
+          },
+          {
+            "id": "milk",
+            "label": "奶",
+            "aliases": [
+              "牛奶",
+              "奶"
+            ]
+          },
+          {
+            "id": "rice",
+            "label": "米飯",
+            "aliases": [
+              "米飯"
+            ]
+          },
+          {
+            "id": "wheat",
+            "label": "麵粉",
+            "aliases": [
+              "麵粉"
+            ]
+          },
+          {
+            "id": "vegetables",
+            "label": "青菜",
+            "aliases": [
+              "青菜",
+              "蔬菜"
+            ]
+          }
+        ],
+        "fulfillmentModes": [
+          {
+            "id": "dine-in",
+            "label": "內用"
+          },
+          {
+            "id": "takeout",
+            "label": "自取"
+          }
+        ],
+        "items": [
+          {
+            "available": true,
+            "id": "noodle",
+            "name": "紅燒牛肉麵",
+            "description": "人工測試餐點",
+            "category": "麵",
+            "price": 100,
+            "recommendationTags": [],
+            "optionGroups": []
+          }
+        ],
+        "matchKind": "literal",
+        "itemStatuses": [],
+        "requestedQueries": [],
+        "excludedItemIds": [],
+        "appliedFilters": {
+          "excludeIngredients": [],
+          "includeIngredients": []
+        },
+        "appliedPriceConditions": {},
+        "availability": "MATCHES",
+        "customizable": [],
+        "unknownCompositionItems": [],
+        "customerMessage": "我找到：紅燒牛肉麵。",
+        "presentation": {
+          "kind": "query-results",
+          "itemIds": [
+            "noodle"
+          ],
+          "subjects": [
+            {
+              "id": "category:麵",
+              "itemIds": [
+                "noodle"
+              ],
+              "label": "麵"
+            }
+          ],
+          "title": "麵餐點"
+        },
+        "decisionTrace": {
+          "authorize": {
+            "kind": "EXECUTE"
+          },
+          "operationPlan": {
+            "expectedRevisions": {
+              "menu": 0
+            },
+            "intent": "SEARCH_MENU",
+            "slots": {
+              "category": "麵"
+            },
+            "targetRef": "category:%E9%BA%B5",
+            "input": {
+              "category": "麵"
+            },
+            "toolName": "menu_get"
+          },
+          "resolveIntent": {
+            "kind": "PLAN",
+            "plan": {
+              "expectedRevisions": {
+                "menu": 0
+              },
+              "intent": "SEARCH_MENU",
+              "slots": {
+                "category": "麵"
+              },
+              "targetRef": "category:%E9%BA%B5"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [],
+                "categories": [
+                  "麵"
+                ],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "category:%E9%BA%B5"
+              ],
+              "eligible": [
+                "category:%E9%BA%B5"
+              ],
+              "rejected": [],
+              "origins": {
+                "category:%E9%BA%B5": "category",
+                "item:noodle": "category",
+                "cart:line-b6fa8ee9-0578-4164-a9f8-339f15dad5a5": "cart",
+                "cart:line-12068212-0e4b-4327-8d47-446375b933d1": "cart"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "add-interruption",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "requests": 4,
+      "elapsedMs": 11244,
+      "cartBefore": 2,
+      "cartAfter": 3,
+      "receipt": {
+        "item": {
+          "available": true,
+          "id": "dumplings",
+          "name": "水餃",
+          "description": "人工測試餐點",
+          "category": "點心",
+          "price": 60,
+          "recommendationTags": [],
+          "optionGroups": []
+        },
+        "line": {
+          "id": "line-ed32ec7f-ec91-43ce-a214-0af26d23c6f6",
+          "itemId": "dumplings",
+          "name": "水餃",
+          "quantity": 2,
+          "options": {},
+          "unitPrice": 60
+        },
+        "cart": {
+          "fulfillmentMode": "takeout",
+          "lines": [
+            {
+              "id": "line-0ffca4f7-10b0-4fca-a489-d725b05480e5",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 90
+            },
+            {
+              "id": "line-ed32ec7f-ec91-43ce-a214-0af26d23c6f6",
+              "itemId": "dumplings",
+              "name": "水餃",
+              "quantity": 2,
+              "options": {},
+              "unitPrice": 60
+            }
+          ],
+          "total": 210,
+          "itemCount": 3
+        },
+        "customerMessage": "已將水餃加入購物車，共 2 份。",
+        "nextStep": "Confirm the cart with the customer. Call checkout_start only after explicit customer consent.",
+        "pendingCustomerChoice": {
+          "questionId": "8dab159c-b1b6-4ef0-ac7b-6f934aa4dc89",
+          "purpose": "checkout-entry",
+          "phase": "ordering",
+          "question": "要進入結帳流程嗎？",
+          "choices": [
+            {
+              "description": "顧客同意開始結帳；進入會員與發票步驟。",
+              "id": "intent:start-checkout",
+              "intent": "START_CHECKOUT"
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 4,
+            "checkout": 0
+          },
+          "expiresAt": 1793258987663
+        },
+        "decisionTrace": {
+          "authorize": {
+            "kind": "EXECUTE"
+          },
+          "operationPlan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "targetRef": "item:dumplings",
+            "input": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "toolName": "order_add_item"
+          },
+          "resolveIntent": {
+            "kind": "PLAN",
+            "plan": {
+              "expectedRevisions": {
+                "cart": 3,
+                "selectedItem": 4,
+                "menu": 0
+              },
+              "intent": "ADD_ITEM",
+              "slots": {
+                "itemId": "dumplings",
+                "quantity": 1
+              },
+              "targetRef": "item:dumplings"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [
+                  "dumplings"
+                ],
+                "categories": [],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "item:dumplings"
+              ],
+              "eligible": [
+                "item:dumplings"
+              ],
+              "rejected": [],
+              "origins": {
+                "item:dumplings": "utterance",
+                "cart:line-0ffca4f7-10b0-4fca-a489-d725b05480e5": "cart",
+                "cart:line-ed32ec7f-ec91-43ce-a214-0af26d23c6f6": "cart"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "modify",
+      "expected": "intent:set-quantity",
+      "actual": "intent:add-item",
+      "requests": 4,
+      "elapsedMs": 11556,
+      "cartBefore": 2,
+      "cartAfter": 4,
+      "receipt": {
+        "item": {
+          "available": true,
+          "id": "dumplings",
+          "name": "水餃",
+          "description": "人工測試餐點",
+          "category": "點心",
+          "price": 60,
+          "recommendationTags": [],
+          "optionGroups": []
+        },
+        "line": {
+          "id": "line-73bf89d1-d0a5-436f-992a-6dc80bfc52d2",
+          "itemId": "dumplings",
+          "name": "水餃",
+          "quantity": 3,
+          "options": {},
+          "unitPrice": 60
+        },
+        "cart": {
+          "lines": [
+            {
+              "id": "line-d2c3ad74-c08e-4bda-b7c2-0b74401cdc4d",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 90
+            },
+            {
+              "id": "line-73bf89d1-d0a5-436f-992a-6dc80bfc52d2",
+              "itemId": "dumplings",
+              "name": "水餃",
+              "quantity": 3,
+              "options": {},
+              "unitPrice": 60
+            }
+          ],
+          "total": 270,
+          "itemCount": 4
+        },
+        "customerMessage": "已將水餃加入購物車，共 3 份。",
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "ff7a0702-1f92-4c0f-8049-d62bc36b9e3d",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 3,
+            "checkout": 0
+          },
+          "expiresAt": 1793258999220
+        },
+        "decisionTrace": {
+          "authorize": {
+            "kind": "EXECUTE"
+          },
+          "operationPlan": {
+            "expectedRevisions": {
+              "cart": 2,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 2
+            },
+            "targetRef": "item:dumplings",
+            "input": {
+              "itemId": "dumplings",
+              "quantity": 2
+            },
+            "toolName": "order_add_item"
+          },
+          "resolveIntent": {
+            "kind": "PLAN",
+            "plan": {
+              "expectedRevisions": {
+                "cart": 2,
+                "selectedItem": 4,
+                "menu": 0
+              },
+              "intent": "ADD_ITEM",
+              "slots": {
+                "itemId": "dumplings",
+                "quantity": 2
+              },
+              "targetRef": "item:dumplings"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [
+                  "dumplings"
+                ],
+                "categories": [],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "item:dumplings"
+              ],
+              "eligible": [
+                "item:dumplings"
+              ],
+              "rejected": [],
+              "origins": {
+                "item:dumplings": "utterance",
+                "cart:line-d2c3ad74-c08e-4bda-b7c2-0b74401cdc4d": "cart",
+                "cart:line-73bf89d1-d0a5-436f-992a-6dc80bfc52d2": "cart"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "remove",
+      "expected": "intent:remove-item",
+      "actual": "IGNORE",
+      "requests": 1,
+      "elapsedMs": 2804,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "view-item",
+      "expected": "intent:select-item",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "MENU_QUERY",
+      "requests": 3,
+      "elapsedMs": 8804,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "fulfillment-answer",
+      "expected": "intent:set-fulfillment:dine-in",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "NEW_REQUEST",
+      "requests": 2,
+      "elapsedMs": 5457,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "delayed-party-answer",
+      "expected": "intent:set-party-size",
+      "actual": "INCOMPLETE",
+      "requests": 2,
+      "elapsedMs": 5833,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "checkout-consent",
+      "expected": "intent:start-checkout",
+      "actual": "GREET",
+      "requests": 1,
+      "elapsedMs": 2490,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "checkout-refusal",
+      "expected": "intent:defer-question",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "UNCERTAIN_OPERATION",
+      "requests": 3,
+      "elapsedMs": 7701,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "invitation-consent",
+      "expected": "intent:recommend",
+      "actual": "IGNORE",
+      "requests": 1,
+      "elapsedMs": 2010,
+      "cartBefore": 0,
+      "cartAfter": 0
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "invitation-refusal",
+      "expected": "IGNORE",
+      "actual": "IGNORE",
+      "requests": 1,
+      "elapsedMs": 2015,
+      "cartBefore": 0,
+      "cartAfter": 0
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "recommend",
+      "expected": "intent:recommend",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "MENU_QUERY",
+      "requests": 2,
+      "elapsedMs": 4067,
+      "cartBefore": 0,
+      "cartAfter": 0
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "query-price",
+      "expected": "intent:search-menu",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "UNCERTAIN_FILTER",
+      "requests": 3,
+      "elapsedMs": 8984,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "query-portion",
+      "expected": "intent:search-menu",
+      "actual": "intent:add-item",
+      "requests": 4,
+      "elapsedMs": 11486,
+      "cartBefore": 2,
+      "cartAfter": 3,
+      "receipt": {
+        "item": {
+          "available": true,
+          "id": "dumplings",
+          "name": "水餃",
+          "description": "人工測試餐點",
+          "category": "點心",
+          "price": 60,
+          "recommendationTags": [],
+          "optionGroups": []
+        },
+        "line": {
+          "id": "line-f90c1155-6db5-46d2-8048-8e16ce9879c4",
+          "itemId": "dumplings",
+          "name": "水餃",
+          "quantity": 2,
+          "options": {},
+          "unitPrice": 60
+        },
+        "cart": {
+          "fulfillmentMode": "takeout",
+          "lines": [
+            {
+              "id": "line-e67901ac-b1c1-439c-9e59-d38757741fb1",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 90
+            },
+            {
+              "id": "line-f90c1155-6db5-46d2-8048-8e16ce9879c4",
+              "itemId": "dumplings",
+              "name": "水餃",
+              "quantity": 2,
+              "options": {},
+              "unitPrice": 60
+            }
+          ],
+          "total": 210,
+          "itemCount": 3
+        },
+        "customerMessage": "已將水餃加入購物車，共 2 份。",
+        "nextStep": "Confirm the cart with the customer. Call checkout_start only after explicit customer consent.",
+        "pendingCustomerChoice": {
+          "questionId": "6c5968b7-aaf3-4fb6-bc3c-907210543d5e",
+          "purpose": "checkout-entry",
+          "phase": "ordering",
+          "question": "要進入結帳流程嗎？",
+          "choices": [
+            {
+              "description": "顧客同意開始結帳；進入會員與發票步驟。",
+              "id": "intent:start-checkout",
+              "intent": "START_CHECKOUT"
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 4,
+            "checkout": 0
+          },
+          "expiresAt": 1793259060884
+        },
+        "decisionTrace": {
+          "authorize": {
+            "kind": "EXECUTE"
+          },
+          "operationPlan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "targetRef": "item:dumplings",
+            "input": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "toolName": "order_add_item"
+          },
+          "resolveIntent": {
+            "kind": "PLAN",
+            "plan": {
+              "expectedRevisions": {
+                "cart": 3,
+                "selectedItem": 4,
+                "menu": 0
+              },
+              "intent": "ADD_ITEM",
+              "slots": {
+                "itemId": "dumplings",
+                "quantity": 1
+              },
+              "targetRef": "item:dumplings"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [
+                  "dumplings"
+                ],
+                "categories": [],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "item:dumplings"
+              ],
+              "eligible": [
+                "item:dumplings"
+              ],
+              "rejected": [],
+              "origins": {
+                "item:dumplings": "utterance",
+                "cart:line-e67901ac-b1c1-439c-9e59-d38757741fb1": "cart",
+                "cart:line-f90c1155-6db5-46d2-8048-8e16ce9879c4": "cart"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "add-colloquial",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "requests": 4,
+      "elapsedMs": 11526,
+      "cartBefore": 2,
+      "cartAfter": 2,
+      "receipt": {
+        "customerMessage": "請問紅燒牛肉麵要幾份？",
+        "pendingConfiguration": {
+          "id": "d7b6ed94-13b9-45a6-8a17-25e00567e56b"
+        },
+        "pendingCustomerChoice": {
+          "questionId": "8cc67a2c-2b2d-44d4-a871-c5d7c73da253",
+          "purpose": "item-configuration",
+          "question": "請問紅燒牛肉麵要幾份？",
+          "expiresAt": 1793259072412,
+          "choices": [
+            {
+              "id": "configure:8cc67a2c-2b2d-44d4-a871-c5d7c73da253:cancel",
+              "description": "顧客明確表示取消／不要這筆尚未加入的餐點時才選，保留購物車；單說另一個品名或分類不是取消。"
+            },
+            {
+              "id": "configure:8cc67a2c-2b2d-44d4-a871-c5d7c73da253:inquiry",
+              "description": "顧客糾正不是要點這道，而是在問有沒有：放棄這筆未加入的需求，查詢同一餐點是否可點；不變更購物車、不猜份數。",
+              "requiresHighConfidence": true
+            }
+          ]
+        },
+        "decisionTrace": {
+          "resolveIntent": {
+            "kind": "CONFIGURATION",
+            "plan": {
+              "expectedRevisions": {
+                "cart": 3,
+                "selectedItem": 4,
+                "menu": 0
+              },
+              "intent": "ADD_ITEM",
+              "slots": {
+                "itemId": "noodle"
+              },
+              "targetRef": "item:noodle"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [
+                  "noodle"
+                ],
+                "categories": [],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "item:noodle"
+              ],
+              "eligible": [
+                "item:noodle"
+              ],
+              "rejected": [],
+              "origins": {
+                "item:noodle": "utterance",
+                "cart:line-4794b332-59d3-4ad3-9d7b-3feb1d4b3c21": "cart",
+                "cart:line-f9417629-e7ba-4202-84f9-4163530abe48": "cart"
+              }
+            }
+          },
+          "operationPlan": null,
+          "authorize": null
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "category-other",
+      "expected": "intent:search-menu",
+      "actual": "IGNORE",
+      "requests": 1,
+      "elapsedMs": 2868,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "background",
+      "expected": "IGNORE",
+      "actual": "IGNORE",
+      "requests": 1,
+      "elapsedMs": 2525,
+      "cartBefore": 2,
+      "cartAfter": 2
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "unfinished",
+      "expected": "INCOMPLETE",
+      "actual": "INCOMPLETE",
+      "requests": 2,
+      "elapsedMs": 4067,
+      "cartBefore": 0,
+      "cartAfter": 0
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "greeting-add",
+      "expected": "intent:add-item",
+      "actual": "intent:add-item",
+      "requests": 4,
+      "elapsedMs": 11435,
+      "cartBefore": 2,
+      "cartAfter": 3,
+      "receipt": {
+        "item": {
+          "available": true,
+          "id": "dumplings",
+          "name": "水餃",
+          "description": "人工測試餐點",
+          "category": "點心",
+          "price": 60,
+          "recommendationTags": [],
+          "optionGroups": []
+        },
+        "line": {
+          "id": "line-b13c3acd-c452-447f-b0ea-31b2203b611c",
+          "itemId": "dumplings",
+          "name": "水餃",
+          "quantity": 2,
+          "options": {},
+          "unitPrice": 60
+        },
+        "cart": {
+          "fulfillmentMode": "takeout",
+          "lines": [
+            {
+              "id": "line-9101670f-a6d5-47f2-85b1-af46f8aaf984",
+              "itemId": "bento",
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 90
+            },
+            {
+              "id": "line-b13c3acd-c452-447f-b0ea-31b2203b611c",
+              "itemId": "dumplings",
+              "name": "水餃",
+              "quantity": 2,
+              "options": {},
+              "unitPrice": 60
+            }
+          ],
+          "total": 210,
+          "itemCount": 3
+        },
+        "customerMessage": "已將水餃加入購物車，共 2 份。",
+        "nextStep": "Confirm the cart with the customer. Call checkout_start only after explicit customer consent.",
+        "pendingCustomerChoice": {
+          "questionId": "f9c79e7a-df65-4fd1-bb20-c51383b4ab17",
+          "purpose": "checkout-entry",
+          "phase": "ordering",
+          "question": "要進入結帳流程嗎？",
+          "choices": [
+            {
+              "description": "顧客同意開始結帳；進入會員與發票步驟。",
+              "id": "intent:start-checkout",
+              "intent": "START_CHECKOUT"
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 4,
+            "checkout": 0
+          },
+          "expiresAt": 1793259093311
+        },
+        "decisionTrace": {
+          "authorize": {
+            "kind": "EXECUTE"
+          },
+          "operationPlan": {
+            "expectedRevisions": {
+              "cart": 3,
+              "selectedItem": 4,
+              "menu": 0
+            },
+            "intent": "ADD_ITEM",
+            "slots": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "targetRef": "item:dumplings",
+            "input": {
+              "itemId": "dumplings",
+              "quantity": 1
+            },
+            "toolName": "order_add_item"
+          },
+          "resolveIntent": {
+            "kind": "PLAN",
+            "plan": {
+              "expectedRevisions": {
+                "cart": 3,
+                "selectedItem": 4,
+                "menu": 0
+              },
+              "intent": "ADD_ITEM",
+              "slots": {
+                "itemId": "dumplings",
+                "quantity": 1
+              },
+              "targetRef": "item:dumplings"
+            },
+            "targetResolution": {
+              "constraints": {
+                "itemIds": [
+                  "dumplings"
+                ],
+                "categories": [],
+                "exclude": [],
+                "include": []
+              },
+              "candidates": [
+                "item:dumplings"
+              ],
+              "eligible": [
+                "item:dumplings"
+              ],
+              "rejected": [],
+              "origins": {
+                "item:dumplings": "utterance",
+                "cart:line-9101670f-a6d5-47f2-85b1-af46f8aaf984": "cart",
+                "cart:line-b13c3acd-c452-447f-b0ea-31b2203b611c": "cart"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "semanticSlmSummaryRow": true,
+      "id": "cart",
+      "expected": "intent:view-cart",
+      "actual": "NEEDS_ASSISTANT",
+      "reason": "UNCERTAIN_OPERATION",
+      "requests": 4,
+      "elapsedMs": 10310,
+      "cartBefore": 2,
+      "cartAfter": 2
+    }
+  ]
+}

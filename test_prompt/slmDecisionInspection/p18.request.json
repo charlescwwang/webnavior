@@ -1,0 +1,21 @@
+{
+  "model": "huggingface.co/unsloth/qwen3.5-4b-gguf:latest",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a precise decision engine. You do not generate text. You answer only with the exact label requested."
+    },
+    {
+      "role": "user",
+      "content": "<state>\n近期角色標記對話：[{\"role\":\"user\",\"content\":\"先訂排骨便當一份\"},{\"role\":\"assistant\",\"content\":\"已將炸排骨便當加入購物車，共 1 份。\"},{\"role\":\"user\",\"content\":\"店內吃\"},{\"role\":\"assistant\",\"content\":\"已設為內用。\"}]\n正在等待回答的問題：{\"questionId\":\"238c60c1-4384-45d9-85fa-01c2980196de\",\"purpose\":\"party-size\",\"question\":\"請問幾位用餐？\",\"expiresAt\":1791458245116,\"choices\":[{\"id\":\"intent:defer-question\",\"description\":\"顧客只拒絕或暫緩目前問題，沒有提出其他需求；保留訂單與設定。\"}]}\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"購物車第1筆炸排骨便當（最近加入）\",\"refId\":\"CART_LINE_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"none\",\"count\":0,\"references\":[]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[],\"categories\":[]}\n互動焦點：{\"matchingCartLines\":0,\"lastAddedItemName\":\"炸排骨便當\",\"seating\":{\"ready\":false,\"question\":\"請問幾位用餐？\"}}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：我改外帶，不在這裡吃了\n</state>\n\nQuestion:\n這是歷史點餐情境的當時快照。只判斷最後一句顧客對本機要求的效果，只選本次候選。不執行操作。查詢販售、價格、瀏覽與想吃分類但沒數量，不是新增訂購；明確指定餐點訂購才新增。改既有數量、移除與內外帶依各候選，不因舊待答問題忽略新需求。省略回答只承接當時有效問題；對已完成資訊單純附和選IGNORE。漏單核對、未知成分或不能完整處理的需求選NEEDS_ASSISTANT。同句多項獨立需求選MULTI_ACTION，不能只做第一項。對同伴說話選IGNORE；話語本身中斷才選INCOMPLETE，缺少唯一品項或數量不是未說完。只能選目前提供的候選，不猜缺少的資料。\n\nA. 顧客正在說一個可點餐操作但語句尚未完成；Kiosk 會安靜等待下一句，不能執行操作。\nB. 只向店員／本機打招呼，沒有提出點餐、查詢或其他需求。招呼加點餐必須選點餐意圖；對同伴打招呼屬 IGNORE。\nC. 與點餐服務無關的背景話語、對同伴的討論、招呼或閒聊，無論完整與否，以及對已完成資訊回答的單純附和；沒有向店員／本機提出服務需求。不能因有效需求的 target 不唯一或缺少資料就選 IGNORE。\nD. 顧客這一句向店員／本機明確要求兩個以上獨立的點餐服務操作；單一步驟無法完整完成，應保留整句交給 Main Agent，不可只執行其中一步。多個子句、一般討論或抱怨不等於多項操作。\nE. 向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。\nF. 查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。\nG. 顧客請系統挑選值得吃的餐點：開始一輪簡單推薦，最多三項；可套用已知分類、單份價格及飲食限制。不是列出整份菜單，也不是換掉剛推薦的一批。\nH. 查看目前購物車。\nI. 明確要求清空整個購物車。\nJ. 顧客重申本次內用；維持原設定與未回答問題，不表示暫緩或拒絕。\nK. 這筆訂單設為自取，釋放尚未付款的暫留桌位。\nL. 顧客只拒絕或暫緩目前問題，沒有提出其他需求；保留訂單與設定。 若本句是在回答有效問題「請問幾位用餐？」，只能承接這個效果；明確獨立需求仍可直接選其合法意圖。\n\nAnswer with exactly one letter."
+    }
+  ],
+  "stream": false,
+  "temperature": 0,
+  "max_tokens": 1,
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  },
+  "logprobs": true,
+  "top_logprobs": 20
+}

@@ -1,0 +1,20 @@
+{
+  "sourceLogHash": "dc97c7d9d228af5827b63b65bfc45d51f417e9dd208223eed86436a1361c7546",
+  "date": "2026-10-29",
+  "modelId": "huggingface.co/unsloth/qwen3.5-4b-gguf:latest",
+  "fullRequests": "Exact captured request bodies; no gold fields, same options/order as historical SLM run.",
+  "reducedRequest": "p07 only: identical state, system, policy and generation settings; manually retain NEEDS_ASSISTANT/SEARCH_MENU/SELECT_ITEM/ADD_ITEM, remap letters. Untested; manual shortlist is not a validated production selector.",
+  "files": {
+    "p07.fourOptions.options.json": "a1e7d14717d5584d82f22556ea9e96adecb8c10fc67127cf74561d1b286a3548",
+    "p07.fourOptions.request.json": "0114e0c28c7de37573cae6ca3c4ff08b2fcd234feff39f0d1243878e3237d3f5",
+    "p07.options.json": "d4c1169f1206114661187fbdc5e7aa09c93cd5f08dcdc16117332c60497a4bcb",
+    "p07.recorded.json": "a5366ea9e77f700b0eff3198e22849e5d11f4b6b087e4b9a25f18b11dcda2970",
+    "p07.request.json": "1423e9e487fdf055997113220a036dcd7a8c5ca2f30bcb26c0293c4a6d2d0f81",
+    "p18.options.json": "ec85ec47f5f169340869b3adecb721f173dc3d1af47f7d7628b1946bcd70ed78",
+    "p18.recorded.json": "774d2862f7f6c634b581754d39f8a64b308229793320b7ee9398c8dccc52fc75",
+    "p18.request.json": "0a6a57f9bd90918d1cc7ff7f3d0c0d26c8b6fcbc96117cee8592027484f821f6",
+    "p31.options.json": "3cd9fc28617ea69760440c9ef9c475a31fc83ceb22784a24dcb8872efd9b93b9",
+    "p31.recorded.json": "d83c3d11b75c856c678bc1585ad61f8f98e2d533d42cbded51a3e47f1cf88aa6",
+    "p31.request.json": "5845d54c2e59aad2dd5e42df873e54fe53e52a464563e6d3b9973f725da3bb53"
+  }
+}

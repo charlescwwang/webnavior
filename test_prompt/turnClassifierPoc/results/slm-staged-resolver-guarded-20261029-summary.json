@@ -1,0 +1,375 @@
+{
+  "engine": "slm",
+  "source": "resolver",
+  "cases": 40,
+  "actualRequests": 114,
+  "elapsedMs": 282227,
+  "modelId": "huggingface.co/unsloth/qwen3.5-4b-gguf:latest",
+  "policyHash": "f89cfc3db18b1512ca0820c2b7fc0e718e1cd54cd4eac4060bcb9439b8e54939",
+  "sourceHash": "5593460697f53ae36e0ff377ce386d4b332691ce4fa5003bcc3ed81ede761faa",
+  "scope": "Staged routing labels only; no Main, browser action, ASR or field acceptance.",
+  "fieldAcceptance": false,
+  "rows": [
+    {
+      "id": "resolver:r01",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MATCH",
+      "questions": 4
+    },
+    {
+      "id": "resolver:r02",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 5
+    },
+    {
+      "id": "resolver:r03",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 5
+    },
+    {
+      "id": "resolver:r04",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r05",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r06",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "resolver:r07",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "intent:add-item",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "resolver:r08",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 6
+    },
+    {
+      "id": "resolver:r09",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "resolver:r10",
+      "accepted": [
+        "intent:select-item"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "resolver:r11",
+      "accepted": [
+        "intent:view-cart"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r12",
+      "accepted": [
+        "intent:start-checkout"
+      ],
+      "observed": "intent:start-checkout",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "resolver:r13",
+      "accepted": [
+        "intent:recommend"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r14",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r15",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r16",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r17",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "resolver:r18",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "intent:add-item",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "resolver:r19",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r20",
+      "accepted": [
+        "intent:set-quantity"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "resolver:r21",
+      "accepted": [
+        "intent:set-quantity"
+      ],
+      "observed": "intent:set-quantity",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "resolver:r22",
+      "accepted": [
+        "intent:remove-item"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r23",
+      "accepted": [
+        "intent:remove-item"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 5
+    },
+    {
+      "id": "resolver:r24",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r25",
+      "accepted": [
+        "intent:set-party-size"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 6
+    },
+    {
+      "id": "resolver:r26",
+      "accepted": [
+        "intent:set-party-size"
+      ],
+      "observed": "IGNORE",
+      "status": "APPLICATION_GAP",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r27",
+      "accepted": [
+        "intent:set-fulfillment:dine-in"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r28",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r29",
+      "accepted": [
+        "intent:start-checkout"
+      ],
+      "observed": "GREET",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r30",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "GREET",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r31",
+      "accepted": [
+        "intent:defer-question"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r32",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r33",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r34",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "resolver:r35",
+      "accepted": [
+        "INCOMPLETE"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r36",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "IGNORE",
+      "status": "MATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r37",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "IGNORE",
+      "status": "MATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r38",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "resolver:r39",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 3
+    },
+    {
+      "id": "resolver:r40",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    }
+  ],
+  "policyVersion": "staged-with-independent-write-purpose-and-whole-effect-checks"
+}

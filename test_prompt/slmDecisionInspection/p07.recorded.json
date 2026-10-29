@@ -1,0 +1,225 @@
+{
+  "caseId": "p07",
+  "utterance": "能不能看看紅茶",
+  "candidateCount": 8,
+  "expectedEffects": [
+    "intent:search-menu"
+  ],
+  "selectedEffect": "intent:add-item",
+  "label": "H",
+  "rawResponse": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "H"
+        },
+        "logprobs": {
+          "content": [
+            {
+              "id": 39,
+              "token": "H",
+              "bytes": [
+                72
+              ],
+              "logprob": -0.7886850833892822,
+              "top_logprobs": [
+                {
+                  "id": 39,
+                  "token": "H",
+                  "bytes": [
+                    72
+                  ],
+                  "logprob": -0.7886850833892822
+                },
+                {
+                  "id": 37,
+                  "token": "F",
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -0.8376733660697937
+                },
+                {
+                  "id": 32,
+                  "token": "A",
+                  "bytes": [
+                    65
+                  ],
+                  "logprob": -2.5907328128814697
+                },
+                {
+                  "id": 38,
+                  "token": "G",
+                  "bytes": [
+                    71
+                  ],
+                  "logprob": -3.8159983158111572
+                },
+                {
+                  "id": 33,
+                  "token": "B",
+                  "bytes": [
+                    66
+                  ],
+                  "logprob": -5.031414031982422
+                },
+                {
+                  "id": 34,
+                  "token": "C",
+                  "bytes": [
+                    67
+                  ],
+                  "logprob": -5.108165740966797
+                },
+                {
+                  "id": 36,
+                  "token": "E",
+                  "bytes": [
+                    69
+                  ],
+                  "logprob": -6.543046951293945
+                },
+                {
+                  "id": 35,
+                  "token": "D",
+                  "bytes": [
+                    68
+                  ],
+                  "logprob": -7.361320495605469
+                },
+                {
+                  "id": 248068,
+                  "token": "<think>",
+                  "bytes": [
+                    60,
+                    116,
+                    104,
+                    105,
+                    110,
+                    107,
+                    62
+                  ],
+                  "logprob": -7.535276412963867
+                },
+                {
+                  "id": 40,
+                  "token": "I",
+                  "bytes": [
+                    73
+                  ],
+                  "logprob": -8.498716354370117
+                },
+                {
+                  "id": 41,
+                  "token": "J",
+                  "bytes": [
+                    74
+                  ],
+                  "logprob": -10.044206619262695
+                },
+                {
+                  "id": 71,
+                  "token": "h",
+                  "bytes": [
+                    104
+                  ],
+                  "logprob": -10.114574432373047
+                },
+                {
+                  "id": 69,
+                  "token": "f",
+                  "bytes": [
+                    102
+                  ],
+                  "logprob": -10.282991409301758
+                },
+                {
+                  "id": 45,
+                  "token": "N",
+                  "bytes": [
+                    78
+                  ],
+                  "logprob": -10.476936340332031
+                },
+                {
+                  "id": 42,
+                  "token": "K",
+                  "bytes": [
+                    75
+                  ],
+                  "logprob": -10.623003005981445
+                },
+                {
+                  "id": 7584,
+                  "token": "(F",
+                  "bytes": [
+                    40,
+                    70
+                  ],
+                  "logprob": -10.674714088439941
+                },
+                {
+                  "id": 44,
+                  "token": "M",
+                  "bytes": [
+                    77
+                  ],
+                  "logprob": -11.041921615600586
+                },
+                {
+                  "id": 43,
+                  "token": "L",
+                  "bytes": [
+                    76
+                  ],
+                  "logprob": -11.068765640258789
+                },
+                {
+                  "id": 50,
+                  "token": "S",
+                  "bytes": [
+                    83
+                  ],
+                  "logprob": -11.103005409240723
+                },
+                {
+                  "id": 49,
+                  "token": "R",
+                  "bytes": [
+                    82
+                  ],
+                  "logprob": -11.115991592407227
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1793238452,
+    "model": "model.gguf",
+    "system_fingerprint": "b1-3191462",
+    "object": "chat.completion",
+    "usage": {
+      "completion_tokens": 1,
+      "prompt_tokens": 923,
+      "total_tokens": 924
+    },
+    "id": "chatcmpl-Cy6pTw5SY1sQxyjld4VdZMIYabevfC8X",
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 923,
+      "prompt_ms": 5210.039,
+      "prompt_per_token_ms": 5.644679306608884,
+      "prompt_per_second": 177.15798288650046,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_per_token_ms": 0.001,
+      "predicted_per_second": 1000000
+    }
+  },
+  "scope": "Recorded SLM response, not a fresh curl result; synthetic historical snapshot, no execution."
+}

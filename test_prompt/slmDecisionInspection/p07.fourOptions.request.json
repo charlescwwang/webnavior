@@ -1,0 +1,21 @@
+{
+  "model": "huggingface.co/unsloth/qwen3.5-4b-gguf:latest",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a precise decision engine. You do not generate text. You answer only with the exact label requested."
+    },
+    {
+      "role": "user",
+      "content": "<state>\n近期角色標記對話：[]\n正在等待回答的問題：null\n現場 presence：未知\n目前 phase：ordering\n目前可見畫面：unknown\n付款狀態：idle\n結帳畫面摘要：{}\n允許的付款方式：[]\nPOS 提供的用餐方式：[{\"id\":\"dine-in\",\"label\":\"內用\"},{\"id\":\"takeout\",\"label\":\"自取\"}]\n真實 domain references：[{\"label\":\"紅茶\",\"refId\":\"ITEM_1\"}]\n本句商品名稱證據（possible 不是已確認 target）：{\"status\":\"exact\",\"count\":1,\"references\":[{\"label\":\"紅茶\",\"refId\":\"ITEM_1\"}]}\n本句菜單匹配來源（name 是品名、alias 是店家別名、fragment 只是可能片段；分類項數不等於顧客指定品名）：{\"products\":[{\"label\":\"紅茶\",\"matchedText\":\"紅茶\",\"source\":\"name\"}],\"categories\":[]}\n互動焦點：{\"matchingCartLines\":0}\n已解析限制：{\"exclude\":[],\"include\":[]}\n本次已完成查詢：[]\n本句有限食材 references：[]\n本句有限飲食條件 references：[]\n本句提及但資料不能驗證的條件 references：[]\n進行中需求：{}\n顧客語音：能不能看看紅茶\n</state>\n\nQuestion:\n這是歷史點餐情境的當時快照。只判斷最後一句顧客對本機要求的效果，只選本次候選。不執行操作。查詢販售、價格、瀏覽與想吃分類但沒數量，不是新增訂購；明確指定餐點訂購才新增。改既有數量、移除與內外帶依各候選，不因舊待答問題忽略新需求。省略回答只承接當時有效問題；對已完成資訊單純附和選IGNORE。漏單核對、未知成分或不能完整處理的需求選NEEDS_ASSISTANT。同句多項獨立需求選MULTI_ACTION，不能只做第一項。對同伴說話選IGNORE；話語本身中斷才選INCOMPLETE，缺少唯一品項或數量不是未說完。只能選目前提供的候選，不猜缺少的資料。\n\nA. 向店員／本機提出的點餐服務需求超出有限候選：需要餐點比較、推薦原因、未提供的飲食資料或其他服務推理。無關話語即使有疑問或解釋語氣仍是 IGNORE；不能因有「問題」就交給助手。已提供的食材包含／排除及飲食條件查詢不屬於此項。\nB. 查詢餐點、分類、價格、成分／飲食條件，回答有哪些或有沒有。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。\nC. 查看或編輯已解析的餐點，但不建立訂購項目。\nD. 新增本句明確指定品名／店家別名或有效上下文承接的餐點；分類加明確份數可建立待選品項訂購。只說想吃某分類但沒有數量是瀏覽，不因分類只剩一項就訂購。品項歧義由程式釐清，不自行挑選。\n\nAnswer with exactly one letter."
+    }
+  ],
+  "stream": false,
+  "temperature": 0,
+  "max_tokens": 1,
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  },
+  "logprobs": true,
+  "top_logprobs": 20
+}

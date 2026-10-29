@@ -1,0 +1,229 @@
+{
+  "caseId": "p18",
+  "utterance": "我改外帶，不在這裡吃了",
+  "candidateCount": 12,
+  "expectedEffects": [
+    "intent:set-fulfillment:takeout"
+  ],
+  "selectedEffect": "intent:defer-question",
+  "label": "L",
+  "rawResponse": {
+    "choices": [
+      {
+        "finish_reason": "length",
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "L"
+        },
+        "logprobs": {
+          "content": [
+            {
+              "id": 43,
+              "token": "L",
+              "bytes": [
+                76
+              ],
+              "logprob": -0.7725846171379089,
+              "top_logprobs": [
+                {
+                  "id": 43,
+                  "token": "L",
+                  "bytes": [
+                    76
+                  ],
+                  "logprob": -0.7725846171379089
+                },
+                {
+                  "id": 42,
+                  "token": "K",
+                  "bytes": [
+                    75
+                  ],
+                  "logprob": -1.2363450527191162
+                },
+                {
+                  "id": 32,
+                  "token": "A",
+                  "bytes": [
+                    65
+                  ],
+                  "logprob": -1.5563980340957642
+                },
+                {
+                  "id": 35,
+                  "token": "D",
+                  "bytes": [
+                    68
+                  ],
+                  "logprob": -3.655637502670288
+                },
+                {
+                  "id": 33,
+                  "token": "B",
+                  "bytes": [
+                    66
+                  ],
+                  "logprob": -5.517119884490967
+                },
+                {
+                  "id": 34,
+                  "token": "C",
+                  "bytes": [
+                    67
+                  ],
+                  "logprob": -5.786265850067139
+                },
+                {
+                  "id": 40,
+                  "token": "I",
+                  "bytes": [
+                    73
+                  ],
+                  "logprob": -6.960019588470459
+                },
+                {
+                  "id": 39,
+                  "token": "H",
+                  "bytes": [
+                    72
+                  ],
+                  "logprob": -7.404260158538818
+                },
+                {
+                  "id": 248068,
+                  "token": "<think>",
+                  "bytes": [
+                    60,
+                    116,
+                    104,
+                    105,
+                    110,
+                    107,
+                    62
+                  ],
+                  "logprob": -7.4649786949157715
+                },
+                {
+                  "id": 36,
+                  "token": "E",
+                  "bytes": [
+                    69
+                  ],
+                  "logprob": -7.840369701385498
+                },
+                {
+                  "id": 41,
+                  "token": "J",
+                  "bytes": [
+                    74
+                  ],
+                  "logprob": -7.860391139984131
+                },
+                {
+                  "id": 37,
+                  "token": "F",
+                  "bytes": [
+                    70
+                  ],
+                  "logprob": -8.956012725830078
+                },
+                {
+                  "id": 45,
+                  "token": "N",
+                  "bytes": [
+                    78
+                  ],
+                  "logprob": -9.353362083435059
+                },
+                {
+                  "id": 75,
+                  "token": "l",
+                  "bytes": [
+                    108
+                  ],
+                  "logprob": -9.47117805480957
+                },
+                {
+                  "id": 44,
+                  "token": "M",
+                  "bytes": [
+                    77
+                  ],
+                  "logprob": -9.614967346191406
+                },
+                {
+                  "id": 38,
+                  "token": "G",
+                  "bytes": [
+                    71
+                  ],
+                  "logprob": -9.742330551147461
+                },
+                {
+                  "id": 74,
+                  "token": "k",
+                  "bytes": [
+                    107
+                  ],
+                  "logprob": -9.760969161987305
+                },
+                {
+                  "id": 49,
+                  "token": "R",
+                  "bytes": [
+                    82
+                  ],
+                  "logprob": -10.181203842163086
+                },
+                {
+                  "id": 50,
+                  "token": "S",
+                  "bytes": [
+                    83
+                  ],
+                  "logprob": -10.369146347045898
+                },
+                {
+                  "id": 15666,
+                  "token": "Answer",
+                  "bytes": [
+                    65,
+                    110,
+                    115,
+                    119,
+                    101,
+                    114
+                  ],
+                  "logprob": -10.455144882202148
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1793238513,
+    "model": "model.gguf",
+    "system_fingerprint": "b1-3191462",
+    "object": "chat.completion",
+    "usage": {
+      "completion_tokens": 1,
+      "prompt_tokens": 1174,
+      "total_tokens": 1175
+    },
+    "id": "chatcmpl-stJq2pQRJjxtUTbwYpdAod2BICLfUI2x",
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 1174,
+      "prompt_ms": 6679.107,
+      "prompt_per_token_ms": 5.689188245315162,
+      "prompt_per_second": 175.7720006581718,
+      "predicted_n": 1,
+      "predicted_ms": 0.001,
+      "predicted_per_token_ms": 0.001,
+      "predicted_per_second": 1000000
+    }
+  },
+  "scope": "Recorded SLM response, not a fresh curl result; synthetic historical snapshot, no execution."
+}
