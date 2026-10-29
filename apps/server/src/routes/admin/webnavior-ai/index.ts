@@ -35,7 +35,7 @@ const selectionSchema = object({
 
 const systemOneProfileSchema = object({
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
-  implementation: picklist(['dasein', 'lookski']),
+  implementation: picklist(['dasein', 'lookski', 'slm']),
   modelId: pipe(string(), nonEmpty('modelId is required'), maxLength(300)),
   name: pipe(string(), nonEmpty('name is required'), maxLength(120)),
   plaintextKey: optional(pipe(string(), maxLength(8192))),
@@ -44,7 +44,8 @@ const systemOneProfileSchema = object({
 
 const systemOneRuntimeModelSchema = object({
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
-  implementation: picklist(['dasein', 'lookski']),
+  implementation: picklist(['dasein', 'lookski', 'slm']),
+  plaintextKey: optional(pipe(string(), maxLength(8192))),
   timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
 })
 

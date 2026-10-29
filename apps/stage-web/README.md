@@ -39,6 +39,15 @@ override a restrictive response header.
 The Webnavior admin Kiosk pages separate retained customer records from device
 configuration:
 
+The **Kiosk AI 能力 → System One 快速決策** panel supports Dasein, lookski and
+SLM (OpenAI-compatible, including Docker Model Runner). SLM discovers `/models`,
+lets the operator choose a model, then requires a real readiness decision before
+activation. The URL is the API root reachable from Server, for example
+`http://127.0.0.1:12434/engines/v1` on the same host. Saved profile edits invalidate
+readiness. Only one Fast Path profile is active; adding SLM does not switch it
+on automatically or change Main's model. The concise default prompt affects
+post-admission demand interpretation; existing custom prompts remain saved.
+
 - **Kiosk 使用歷程** groups retained records into customer interactions,
   greeting-only observations, and empty records. Greeting-only evidence remains
   retained but is excluded by the default filter. An administrator can select

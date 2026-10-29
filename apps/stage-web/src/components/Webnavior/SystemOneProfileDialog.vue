@@ -4,20 +4,23 @@ import type { SystemOneProfile, SystemOneProfileInput, SystemOneRuntimeModel } f
 import { Button, Input } from '@proj-airi/ui'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
 import { reactive, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 type ProfileForm = SystemOneProfileInput & { plaintextKey: string }
-
 const props = defineProps<{
   busy: boolean
-  inspectRuntimeModel: (input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs'>) => Promise<SystemOneRuntimeModel>
+  inspectRuntimeModel: (input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs' | 'plaintextKey'>) => Promise<SystemOneRuntimeModel>
   open: boolean
   profile?: SystemOneProfile
 }>()
+
 const emit = defineEmits<{
   'save': [input: SystemOneProfileInput]
   'update:open': [open: boolean]
   'update': [profileId: string, input: SystemOneProfileInput]
 }>()
+
+const { t } = useI18n()
 
 function createForm(): ProfileForm {
   return { baseURL: 'http://localhost:8000', implementation: 'dasein', modelId: '', name: '店內 Dasein', plaintextKey: '', timeoutMs: 5000 }
@@ -25,6 +28,24 @@ function createForm(): ProfileForm {
 
 const form = reactive(createForm())
 const runtimeModel = shallowRef<SystemOneRuntimeModel>()
+
+function changeImplementation() {
+  runtimeModel.value = undefined
+  form.modelId = ''
+  if (['店內 Dasein', '店內 lookski', '店內 SLM', t('stage.system-one.slm-profile-name')].includes(form.name))
+    form.name = form.implementation === 'slm' ? t('stage.system-one.slm-profile-name') : form.implementation === 'lookski' ? '店內 lookski' : '店內 Dasein'
+  if (form.implementation === 'slm' && form.baseURL === 'http://localhost:8000') {
+    form.baseURL = 'http://127.0.0.1:12434/engines/v1'
+    form.timeoutMs = 30_000
+  }
+  else if (form.implementation !== 'slm' && form.baseURL === 'http://127.0.0.1:12434/engines/v1') {
+    form.baseURL = 'http://localhost:8000'
+  }
+}
+
+watch(() => form.baseURL, () => {
+  runtimeModel.value = undefined
+})
 
 watch(() => props.open, (open) => {
   if (!open)
@@ -42,8 +63,10 @@ async function inspectModel() {
     baseURL: form.baseURL.trim(),
     implementation: form.implementation,
     timeoutMs: form.timeoutMs,
+    ...(form.plaintextKey.trim() ? { plaintextKey: form.plaintextKey.trim() } : {}),
   })
-  form.modelId = runtimeModel.value.modelId
+  if (!runtimeModel.value.modelIds?.includes(form.modelId))
+    form.modelId = runtimeModel.value.modelId
 }
 
 function save() {
@@ -75,7 +98,7 @@ function save() {
               {{ props.profile ? '編輯 System One profile' : '新增 System One profile' }}
             </DialogTitle>
             <p :class="['mb-0 mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300']">
-              先讀取目前服務實際載入的模型，再儲存並執行 readiness。
+              {{ t('stage.system-one.model-setup-hint') }}
             </p>
           </div>
           <button type="button" :class="['rounded p-1 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800']" aria-label="關閉 System One 設定" @click="emit('update:open', false)">
@@ -90,15 +113,16 @@ function save() {
           </label>
           <label :class="['flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200']">
             System One implementation
-            <select v-model="form.implementation" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']" :disabled="props.busy">
+            <select v-model="form.implementation" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']" :disabled="props.busy" @change="changeImplementation">
               <option value="dasein">Dasein open-jev</option>
               <option value="lookski">lookski/openjev</option>
+              <option value="slm">{{ t('stage.system-one.slm-option') }}</option>
             </select>
           </label>
           <label :class="['flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 sm:col-span-2']">
             System One Base URL
             <Input v-model="form.baseURL" :disabled="props.busy" type="url" placeholder="例如：http://127.0.0.1:8000" />
-            <span :class="['text-xs font-normal leading-5 text-slate-500 dark:text-slate-400']">填 API Server 可連到的網址，不要加上 <code>/v1/systemone</code>。</span>
+            <span :class="['text-xs font-normal leading-5 text-slate-500 dark:text-slate-400']">{{ form.implementation === 'slm' ? t('stage.system-one.slm-base-url-hint') : '填 API Server 可連到的網址，不要加上 /v1/systemone。' }}</span>
           </label>
           <label :class="['flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200']">
             決策逾時（毫秒）
@@ -113,14 +137,14 @@ function save() {
         <div :class="['mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800']">
           <div :class="['min-w-60 flex-1']">
             <p :class="['m-0 text-sm font-medium text-slate-700 dark:text-slate-200']">
-              目前載入模型
+              {{ form.implementation === 'slm' ? t('stage.system-one.available-models') : '目前載入模型' }}
             </p>
             <p :class="['mb-0 mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400']">
-              Dasein 從 <code>/health.model</code>、lookski 從 <code>/health.model_id</code> 讀取；這是服務啟動時固定的模型。
+              {{ form.implementation === 'slm' ? t('stage.system-one.discovery-hint') : 'Dasein 從 /health.model、lookski 從 /health.model_id 讀取服務啟動時固定的模型。' }}
             </p>
           </div>
           <Button variant="secondary" :disabled="props.busy || !form.baseURL.trim()" @click="inspectModel">
-            讀取目前模型
+            {{ form.implementation === 'slm' ? t('stage.system-one.read-models') : '讀取目前模型' }}
           </Button>
           <p v-if="runtimeModel" :class="['m-0 text-sm text-emerald-700 dark:text-emerald-300']">
             偵測到：{{ runtimeModel.modelId }}
@@ -129,6 +153,9 @@ function save() {
 
         <label :class="['mt-4 flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200']">
           Backend 模型識別
+          <select v-if="runtimeModel?.modelIds?.length" v-model="form.modelId" :disabled="props.busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']">
+            <option v-for="modelId in runtimeModel.modelIds" :key="modelId" :value="modelId">{{ modelId }}</option>
+          </select>
           <Input v-model="form.modelId" :disabled="props.busy" placeholder="請先讀取目前模型" />
         </label>
 
