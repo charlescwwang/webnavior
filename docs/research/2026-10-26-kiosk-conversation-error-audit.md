@@ -237,3 +237,140 @@ Jev journal 確認湯包推薦及付款方式案例走過 `serviceRequest:REQUES
 | 盤查與部署文件 | 本文件所屬提交 | 保存調查證據、驗證結果、部署位置與尚待現場驗收項目 |
 
 提交前依CONTRIBUTING規範跑一次全專案typecheck，通過；root lint仍有與既有紀錄相同的2370項錯誤，未擴大修復無關檔案。修改檔檢查與每批既有nano-staged提交鉤子通過。驗證log為`/tmp/webnavior-oct27-commit-{typecheck,lint}.log`。已提交的程式與部署來源快照逐檔比對一致，這次提交沒有額外變更線上行為。
+
+
+## 10/28 兩台機台再次失敗：回覆契約未閉合
+
+本節為使用者新增 trace 的唯讀續查，不代表前述修正已涵蓋本案。附件 SHA-256：`ac3fcb5a86572589141784d46449a869a5bdf9a5474f783afee83ea865c846f5`。本輪沒有修改產品程式、模型設定、部署或重啟服務，也沒有將原始顧客對話重送模型。
+
+後續使用者已要求開始規劃；整體修正、測試矩陣及發布門檻以[10/28對話修正計畫](../plans/2026-10-28-kiosk-conversation-repair.md)為準，目前仍未實作／部署。這份盤查保留證據與限制，不另複製一套修正規格。
+
+### 範圍及可排除項
+
+10/28 09:39:21–09:45:24 Taipei，取得兩個 device、三個 session 的365筆互動。兩個實際對話會話分別為 session `6pNT8…` 與 `lwYtT…`，第三個只有初始事件。私有快照 `/tmp/webnavior-20261028-interactions-private.json`，SHA-256 `3789d05617379dd04dd7bf28338302ebaa53569752b935c89dffabce4f6de565`；今日 journal `/tmp/webnavior-20261028-api-private.log`，均0600，不提交原始資料。
+
+- API PID2028803、10/27 19:08:17啟動，active；readyz 的DB／Redis均ok。
+- 三個 session 的 agent mode 均active、noProgressCount均0，沒有進入touch_preferred。因此「幾句後叫自己操作」在本案主要是錯誤出口文案，不是累積三次就撤銷語音服務。
+- 13個 Main task metrics，sum(modelRounds)=19，interrupted全false；7個 presentation presented、6個rejected，拒絕原因全是unverified-reply，六個task皆零工具。這是此段有限紀錄，不能當全站成功率。17個round metrics與19個task自報輪數也不能混算為完整provider追蹤。
+- browser_tool_metrics有113個called、113個resolved。本段沒有發現先前44次modelRounds:0的工具失聯鏈；配對總數不代表每個操作效果正確。
+- 部署 Menu／Kiosk HTML hash 與本機dist一致；這只能核對伺服器靜態版本，沒有取得兩台瀏覽器實際載入的bundle ID，不能據此完全排除舊分頁。
+
+### 六次畫面拒絕與正常文字的格式斷點
+
+| Session／sequence | Main草稿／現象 | 呈現結果 |
+| --- | --- | --- |
+| lwYtT…31→37 | 已略過後再次「略過」；Main回答開始點餐並問餐點種類 | unverified-reply |
+| lwYtT…68→76 | Main問內用還是自取，沒有操作回執或應用程式問題 | unverified-reply |
+| lwYtT…86→93 | 「這邊聽得到」並列舉分類 | unverified-reply |
+| lwYtT…135→142 | Main列出菜單並說可協助點餐，沒有本輪工具 | unverified-reply |
+| 6pNT8…152→162 | 「可以，目前可接收LINE Pay和街口支付」 | unverified-reply |
+| 6pNT8…174→185 | 附件原句；Main稱LINE Pay、街口支付且「支持刷卡」 | unverified-reply；不能把這段整句直接放行當事實 |
+
+`currentContextInstructions`要求非操作資訊／澄清輸出四種JSON selector；`createSystemInstructions`的「獨立對話與工具使用」又允許一般對話、非操作釐清直接自然語言回答。Main今天實際生成普通文字，沒有格式強制或有界修復步驟。
+
+Host `KioskScene.vue`只有在零工具／僅history且answer以`{`開頭時，才讀fresh context並進`replyFromContext`。`questionPresentation.ts`對沒有回執、沒有serviceReply資格、又未成功解析selector的文字回error；本輪`UNCERTAIN_OPERATION`不自動取得serviceReply資格。最後`stage.kiosk-agent.no-reply`顯示「這次沒能完成回覆，請再試一次，或使用螢幕操作。」所以「模型有回覆」仍能呈現成請顧客自己操作。
+
+這是producer／consumer契約與恢復流程未閉合，不代表每一段草稿都應該通過。操作假成功、錯誤付款品牌／刷卡宣告仍須攔下；也不能把所有UNCERTAIN_OPERATION改成serviceReply繞過驗證。
+
+### 語意及對話恢復另有缺口
+
+附件原句「是 是 帶刀刀」：Jev route選scroll-menu:up，confidence0.5777；destination選OTHER、0.2081；serviceRequest選REQUEST但僅0.3556。Application沒有直接捲動，而是發起recovery；Main裁決admission=service、disposition=assistant，最終NEEDS_ASSISTANT／UNCERTAIN_OPERATION。這證明原本不確定的聲音能再次被提升為服務需求，不證明知道顧客到底要什麼。必須把服務相關、意思清楚及操作授權分開。
+
+另有可追溯的答非所問：
+
+- 「水果」呼叫menu_recommend action:clarify（seq92），工具固定回「你想調整價位，還是換餐點種類？」；「這邊可以刷刀嗎」再次呼叫同工具（seq125），同一句回覆再次呈現。工具回執真實，不代表所選工具符合本句。
+- 「所以就看收音好不好」後Main的fulfillment-modes selector被呈現為「目前提供內用、自取」（lwYtT…59）。結構／事實有效不能取代語意相關性。
+- 推薦出現在「光明 需要的」「我越過手機登記，現在…」之後；這些文字與先前歡迎／略過手機回覆部分相似，值得核對原音及TTS重疊。但沒有聽原始錄音或取得聲源時間線，不把ASR誤辨、TTS回授、說話人或原意寫成已證實原因。
+
+### 修正順序與驗收缺口
+
+1. 統一Main回覆契約；將說明／澄清、事實選擇、操作結果分開，使用可驗證的結構化出口，不只靠prompt要求JSON。格式失配應有一次有界修復或安全的語音釐清，不能直接變通用手動操作錯誤；寫入或結果不明仍不可自動重送。
+2. 保留意思不確定的狀態；服務admission不能默認完整需求已解析。補救後若仍無法確定，只釐清本句，不猜付款、捲動或推薦。新主題應撤銷不相關舊查詢問題，零結果／工具固定問句不能冒充對本句的理解。
+3. 驗語意相關性，不只驗selector schema及工具是否成功。付款／訂單事實仍以新context／回執渲染；不放行未證實的「支持刷卡」。
+4. 將本次連續對話加入來源明確的回歸，另用合成語音比較「同一文字→實際Jev→補救→Main→可見回覆」，以及TTS播放中收音／回授。先前兩個configured explanation只測清楚人工問句及指定readOnly前態，沒有涵蓋這種含雜訊、題目切換、回覆格式偏離的連續鏈。
+
+本輪針對既有reply／historicalReplies測試重跑49項通過；它驗證當前保護及手寫JSON控制，不能反證六次現場拒絕不存在。紀錄 `/tmp/webnavior-20261028-reply-diagnosis-tests.log`。沒有全專案typecheck、真實模型重播或聲學驗收；這是診斷結果與下一修復單位，沒有宣稱修好。
+
+
+### 10/28 補充：按「再試一次」後誤查水果
+
+使用者補充重試後顯示「目前沒有符合條件的餐點」。同一原始快照已能對上完整序列（6pNT8…）：seq170 user_text為「是 是 帶刀刀」；seq174 Main草稿為付款／刷卡說明；seq185呈現拒絕。seq187再次保存相同user_text，seq191卻呼叫`menu_recommend({action:"update",query:"水果"})`；seq193的真實結果queries=[水果]、availability=NONE、customerMessage為「目前沒有符合條件的餐點」，seq207呈現通過、seq208顯示該文字。這不是對目前整份菜單或本句的可靠結論，而是對更早「水果」主題的查詢結果；13輪樣本中的這次「presented」也不代表服務語意成功。
+
+程式可確認的重試缺口：`retryableConversationRequest`只保存string。`retryConversationMessage`的Main失敗分支直接呼叫`sendConversationMessage(text, undefined, {appendUserMessage:false})`，沒有傳入原decisionState／utteranceId／decisionEntryId，也不經原先ASR→Jev／recovery路徑；它是一個帶舊歷史的新Main任務。`sendConversationMessage`之後會補讀目前browser snapshot，所以不能說完全沒有新情境；真正缺失的是原句服務資格、不確定原因、交接效果與重試關聯。模型仍見舊水果歷史，選錯查詢後回覆層只驗收據，不驗這個查詢是否完成當前原句，於是錯誤「有回執地通過」。trace不足以還原模型內部為何選水果，但選取舊主題的實際工具呼叫已證實。
+
+修復不可只重送舊decisionState或舊確認票據：重試需保留原request／原句與明確的不確定狀態，對新browser revisions／session／document重新驗證；未確認寫入仍不重送。對語意未明的原句先沿原理解／釐清路徑恢復，禁止用舊查詢結果冒充本次完成。應新增「水果→新問題→回覆被拒→按重試」的跨流程回歸，驗真正重試按鈕而非手動再次送清楚文字。本節仍為調查，未修改產品重試邏輯。
+
+
+### 2026-10-28 後續實作狀態
+
+本次原因已進入本機實作：typed非操作回覆、服務意思覆核、原句retry與新狀態驗證，並新增新裝置預設政策。尚未commit或部署。驗證結果、真實模型失敗與尚未完成範圍集中記於 [修復計畫](../plans/2026-10-28-kiosk-conversation-repair.md#2026-10-28-實作與驗證狀態)，避免把本稽核的舊程式觀測誤當新版結果。實際啟用的外部Jev目前500 CUDA故障，完整模型驗收仍未通過；本機另一個openjev服務的重啟不等於恢復該端點，也不能反推早上原始報告原因。
+
+## 2026-10-29：取消便當誤設自取、Main回覆被拒
+
+本節為新的唯讀調查，前節CUDA狀態是當時觀測，不是本日仍故障的結論。附件SHA-256 `3395857cb38e8a57a14a80f35d72cf2e3f09da312fc2f974e27e241683ee2a44`；本機同一會話116筆entry與journal可對上附件recoveryId、utteranceId=7及原句。不送原始對話進任何模型，不修改程式／模型設定、不重啟／部署。私有證據為`/tmp/webnavior-20261029-session-private.json`、`/tmp/webnavior-20261029-main-diagnosis-private.log`。
+
+### 語意首層負擔與開源對照
+
+附件首題route有21個候選，state1497字元、instructions3618字元、criteria序列化JSON1943字元；合計約7058字元，不是token數，也不含HTTP／模型模板。首題把服務資格、語句完整度、複合需求、操作意圖、畫面導航及助手交接混成一個選擇。description亦混入執行效果、禁止事項、後續問題和例外優先序。這是工程設計上偏重且難以互斥的契約；尚未做受控消融，不能宣布字數或候選數是已證實唯一原因。
+
+檢視的開源原始範例：
+
+- [lookski/openjev demo.py](https://github.com/lookski/openjev/blob/main/demo.py)：一題只問處理部門，billing／technical／sales三項各短詞描述；另以不同問題詢問情緒、緊急度。不是把部門、情緒與緊急度放在同一候選表。
+- [JustVugg/colibri System One文件](https://github.com/JustVugg/colibri/blob/main/docs/systemone.md)：同樣將department、urgency、severity分開；choice一行描述一項，範例department為三類。這是另一個實作的設計參考，不代表目前外部OpenJev具備同樣cache或品質。
+- [can-you-fool-jev](https://github.com/huseyinbabal/can-you-fool-jev)：1000題公開挑戰的轉換範例使用短問題與短label，有些criteria描述為空；作者明列標註爭議及措辭敏感性。這是公開題庫，不能與本專案先前已跑的題數混同，也不據此建議中文業務候選一律刪空描述。
+
+建議首層改為少量、同層級的服務分流，例如SERVICE（向本機的訂購／查詢／更正／取消／投訴及店家資訊）、GREET（只有招呼）、BACKGROUND（對他人或無關）、UNCERTAIN（對象／需求不明）。只輸入本句、必要角色前文與當前問題；招呼帶需求選SERVICE。「不是要自取」是服務更正，不因沒有點新菜就忽略。語句完整度與實際操作在後續階段處理；不確定應能語音澄清，不能直接映成重試／自行操作。保留低信心與操作防護；不是簡單縮短所有description就啟用。
+
+第二層再處理資訊／單一操作／複合或爭議需求，只有必要分支才展開操作候選。取消加更正、多品項或替換應保留整句交接；Main仍需核對當前需求與工具效果，因本案已證明單純轉Main不足以避免錯誤。此為建議架構，尚未實作／驗證，不推定SLM一定因而改善。
+
+### 不是Main停機：有回覆但未完成需求
+
+API systemd為active/running；127.0.0.1:5168/livez與readyz正常，DB／Redis ok。這只證明服務基礎狀態；Main可用性的直接證據是本次模型回合與工具收據。
+
+前一輪utterance6「我不要便當了」：
+
+1. seq73為本句，seq78模型回合約1045ms；seq79唯一操作呼叫是`order_set_fulfillment({mode:"takeout"})`，不是移除便當。
+2. seq82回執確認真的設為自取；cart仍有招牌便當與水餃各一份，itemCount=2。這是執行了不符原句的操作，不是只有畫面／文字不同步。
+3. seq86 Main草稿卻聲稱便當已移除、僅有水餃，沒有相應移除工具；seq87共2輪模型、1個requested tool。
+4. seq94呈現通過，seq95依真實回執只顯示「已設為自取。要進入結帳流程嗎？」。回執層避免呈現不存在的移除成功，但未阻止模型選了無授權語意的用餐方式操作，也未確認取消需求完成。
+
+附件utterance7「我不要便當了，哪有說我要自取」：
+
+1. Jev route選defer-question confidence0.5031；relation選NEW_REQUEST 0.3014；serviceRequest選REQUEST 0.323。三題均answered，約576／224／290ms，沒有timeout或CUDA錯誤；不是只看最高機率就代表可靠。
+2. recovery與seq100一致：adjudication約398ms，service／assistant，最終NEEDS_ASSISTANT，reason UNCERTAIN_OPERATION。
+3. seq106 Main模型回合約562ms、firstOutput474ms；seq107自然文字問內用／自取，沒有處理取消便當；seq111為1輪、requestedToolCount=0、未中斷、任務約778ms。
+4. seq116 `main_presentation_metrics`為rejected／`unverified-reply`。因此「再試一次」對應未通過呈現驗證的Main答案，不是模型當掉。當前Host仍會在沒有可信操作回執或有效結構化回覆時拒絕呈現，不能用無條件放行自然文字繞過。
+
+需要同時處理三個責任：首層分流不要過早選具體操作；Main不能把取消便當做成自取、也不能假稱移除；合法的澄清要有可呈現契約及有界恢復。使用者未指定新的用餐方式，不能自動反向改成內用。此調查沒有執行新模型探測、測試或修復，也沒有聲稱只改首層即可修好Main。
+
+### 10/29 設計依據與因果界線補充
+
+SERVICE／GREET／BACKGROUND／UNCERTAIN四類只是服務分流提案，沒有實作或修改後成績。分類依據是呼叫方下一步要做什麼，而非列出全部可操作業務意圖：SERVICE進需求理解、GREET用固定招呼、BACKGROUND不打擾、UNCERTAIN保留不確定性。只有招呼才選GREET，招呼加取消／查詢仍是SERVICE；已知向本機提出取消／抱怨，不因無法解析操作target就改成BACKGROUND或丟失原句。
+
+四類不是完整語音狀態機。「我要一份……」需保留語句完整度／等待機制，不能一律把不確定變成追問或要求自行操作。分流、完整度、操作選擇的責任要一起設計；不為了把第一題限制四個label而把複雜條件重新塞進四段長description。首層只需原句、必要角色前文與當前問題；具體購物車目標、操作參數、完整菜單與寫入授權在後續擁有模組處理。
+
+設計規則：description簡述同層級的正向定義，題目指令交代少量優先序，執行副作用／版本驗證／工具合法性由Application持有；不把執行細節、負面例外與歷史修補規則重複塞入所有候選。開源例子支持這種責任拆分的可讀性，不證明本場域改成四類就能提高正確率。必須保留歷史取消／查詢／未說完／裸肯定／背景對話／語音重試案例驗證；未量測前只能陳述預期行為，不能宣稱修改已成功。
+
+Main事故可確認的分類是「選錯工具造成實際誤操作」加「沒有移除卻宣告移除的狀態幻覺」。後者屬不實完成宣告；前者可能包含語意理解、前文牽引、交接契約或工具授權範圍問題，不能用一句模型幻覺取代根因調查。紀錄保存正確user_text，現有Server組裝亦會把input.content加入user訊息；但沒有捕獲該次完整上游Main request，不能完全排除當時組裝／版本／歷史影響。沒有timeout證據，也沒有服務停機證據。
+
+現有`webmcp.ts`的invokeForAgent會檢查allowedToolNames與revision，且當handoff.intent可對應intentTools時限制操作／lineIds；未解析成明確handoff的開放任務，不等於具備同樣的效果限制。工具合法、phase正確與回執真實，只證明「可以執行且執行了」，不證明「顧客要求這個操作」。因此需在寫入前保留原需求效果邊界、禁止未表達的用餐方式變更，在寫入後分別核對完成項與未完成項；無法確定target時語音澄清，不猜取消對象，也不猜內用／自取。不能靠放寬回覆驗證來修復。
+
+### 10/29 其他實作、模型輸入與thinking補查
+
+不僅參考lookski；補查下列原始專案，均未安裝或執行：
+
+| 專案／原始範例 | 觀察與適用界線 |
+| --- | --- |
+| [Strands Decider工具介入](https://github.com/strands-labs/strands-decider/blob/main/examples/strands/tool_call_intervention.py) | before_tool_call分別問參數是否出自使用者、是否應先釐清；程式選Proceed／Guide。與本案缺少的寫入前語意界線相關；原作者明示示範問題／門檻不可直接當正式政策 |
+| [Together tev1 decide.py](https://github.com/togethercomputer/tev1/blob/main/examples/decide.py) | state／question／options分離，選項有key及description；溫度0、有限字母輸出、thinking=false、驗合法label。程式接受2–24項，不能把範例當成「只能少量候選」的證據；專用決策模型與通用Qwen亦不等價 |
+| [Colibri System One](https://github.com/JustVugg/colibri/blob/main/docs/systemone.md) | 部門、緊急度與嚴重度分題，單題描述短而聚焦；另一推論實作，不推定其快取行為適用於現場OpenJev |
+| [kataras/jev用法](https://github.com/kataras/jev#usage) | 單一closed question與具體criteria，確認API組裝；它是client，不能當另一模型的品質證據 |
+| [can-you-fool-jev轉換規則](https://github.com/huseyinbabal/can-you-fool-jev#how-a-row-becomes-a-request) | 1000題公開人工挑戰，短問題／label，標註爭議及措辭影響明列；未在此機器跑完，不與本專案題數混算 |
+
+Strands示範可參考插入點與可語音恢復的介入方式，不直接移植0.45門檻，也不新增一個未驗證模型作唯一寫入授權者。本專案過去effect review已有誤接受紀錄；需要先保住程式擁有的效果、target、版本與實際回執契約。
+
+模型的「認為／記得」無法由輸出直接證實。確定的是同一輪系統工具回執仍有便當，而Main生成與之矛盾的移除完成草稿；可能把待辦或想完成的效果敘述成已完成，但這只是解釋假說。另查到`compactToolResultForModel`在已有完整catalog context時會移除工具回執的cart／selection，依賴每輪刷新後的current context提供真實狀態。因此「原始回執有cart」不等於「那份完整cart逐字送入模型」。seq83／84確有刷新context的呼叫，但缺少當次實際上游body，仍需捕獲模型最終投影才能確認是否正確供應最新cart。不可未經驗證就說是模型忽略已看見的完整快照，也不可反向宣布壓縮就是根因。
+
+唯讀核對Redis有效runtime／router：Main alias `webnavior/chat`，upstream model `qwen36`、enableThinking=false、timeoutMs=60000。router依upstream設定覆寫每輪chat_template_kwargs.enable_thinking，包括工具延續；目前不是可由單次caller直接翻轉的開關。這是設定與程式路徑證據，不是當次上游已遵守開關或實際權重身份的完整證明。此次未改正式設定或呼叫模型。
+
+下階段建議先做寫入前／回覆前界線與必要的最終模型輸入可觀測性，再縮分流契約。thinking不作防護替代品：現場暫不全域開啟，另在隔離相同Main路徑以6條歷史合成情境各跑off／on一次（12條鏈、全輪8分鐘上限、無限時延長或調prompt重跑），保持候選／工具／初態與規則一致，記正確工具、遺漏需求、錯誤副作用、完成宣告與延遲，確認後端確實遵守模式。此為未執行建議，不是已取得thinking收益；若確有改善再設獨立profile／路由試用複合更正任務。有限決策SLM維持非思考單一結果契約。

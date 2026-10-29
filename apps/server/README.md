@@ -26,6 +26,79 @@ For local observability infrastructure, use:
 docker compose -f apps/server/docker-compose.otel.yml up -d
 ```
 
+The experimental SLM decision transport is not registered as a production
+provider and never fabricates Jev confidence. Its offline contract checks run with:
+
+```sh
+pnpm -F @proj-airi/server exec vitest run tests/experiments/slmDecision.test.ts
+```
+
+For the complete compatible source inventory, see
+`test_prompt/slmDecisionInspection/README.md`. `slmFullCoverage.test.ts` is opt-in
+with `KIOSK_SLM_FULL=1` and a frozen `KIOSK_SLM_FULL_MANIFEST`. Exact private
+history is permitted only against local DMR. It retains missing/unscored/not-run
+records and reports each task group separately; no sample cap is used to stand
+in for full regression coverage. Its question-first/cache-enabled transport is
+a separate experimental version from the small routing control below.
+
+`KIOSK_ROUTING_EXPERIMENT=1 pnpm -F @proj-airi/server exec vitest run
+tests/experiments/slmRoutingExperiment.test.ts --maxWorkers 1` runs a bounded
+comparison with the configured Jev and local DMR. Load the Server environment
+first. Ten synthetic historical-family/control cases use frozen expectations;
+original and concise variants keep state, candidate IDs/count/order identical.
+A separate four-label service gate changes the task and is scored separately.
+The cap is 60 requests/eight minutes, 35 seconds each, stopping after three
+consecutive errors. It reads the live profile into an isolated database without
+changing configuration or invoking Main/orders. Preserve private stdout and the
+source manifest; the repository summary contains no credentials. Passing the
+runner means complete valid responses, not model-quality or field acceptance.
+
+The opt-in local DMR capability replay uses synthetic input and no database or
+order actions. It records first long questions, short controls, actual backend
+cache counters and raw responses in a new private `/tmp/webnavior-slm-replay-*`
+directory. Semantic mismatches fail the tests; a valid schema is not accuracy.
+
+```sh
+KIOSK_SLM_PROBE=1 KIOSK_SLM_CACHE_REPEATS=19 pnpm -F @proj-airi/server exec vitest run tests/experiments/slmCapabilityReplay.test.ts --maxWorkers 1
+```
+
+`KIOSK_SLM_URL` defaults to `http://127.0.0.1:12434/engines/v1` and
+`KIOSK_SLM_MODEL` to `huggingface.co/unsloth/qwen3.5-4b-gguf:latest`.
+The default cache repetition count is 3; explicit values must be 2–19. It has
+an outbound cap of 120 requests/10 minutes and stops after three consecutive
+errors. The first-plus-followups controls intentionally vary instruction length;
+they do not claim that production runs eighteen identical questions.
+
+For a configured-model replay, `KIOSK_SLM_SHADOW=1` captures up to 24 real Jev
+checkpoint inputs, then evaluates them serially against DMR after the scenarios.
+This avoids changing Jev deadlines and never returns SLM decisions to Menu. Its
+raw agreement with Jev is not gold accuracy or full independent SLM-path coverage.
+The common provider budget includes these shadow calls. Preserve private output
+and source identity, including failures; do not send original customer data.
+See `docs/plans/2026-10-28-kiosk-slm-evaluation.md` for acceptance limits.
+
+For a bounded task-level comparison, load the configured Server environment and
+run `KIOSK_SLM_QUICK=1 pnpm -F @proj-airi/server exec vitest run
+tests/experiments/slmQuickComparison.test.ts --maxWorkers 1`. It reads the active
+Jev profile, copies it to an isolated database, and sends only synthetic text to
+Jev and local DMR. Sixteen cases have expectations specified before inference;
+both candidate orders are tested without retuning. The run caps inference at
+66 HTTP calls/seven minutes, with per-call timeouts and three-error termination.
+Save stdout privately: it contains full requests/responses but no credential
+headers. This compares raw task categories, not actual order execution or
+production confidence; it is skipped by default and is not field acceptance.
+
+`KIOSK_SLM_HISTORY=1 pnpm -F @proj-airi/server exec vitest run
+tests/experiments/slmHistoricalFailures.test.ts --maxWorkers 1` tests only local
+SLM against the existing archived failures from the frozen 44-case experiment.
+It preserves historical state/candidate descriptions, uses a concise SLM policy,
+and keeps the original expected effects out of the prompt. Missing candidate
+effects are reported separately; multi-action handoff accepts either explicit
+MULTI_ACTION or NEEDS_ASSISTANT. No Jev, database, Main Agent or order calls occur.
+The single run is capped at seven minutes, 30 seconds per request and three
+consecutive transport errors. Save stdout privately. Semantic mismatches fail
+the test; root-choice success does not establish complete-flow recovery.
+
 The opt-in cross-app provider replay uses the configured Jev and Main Agent
 upstreams, the actual SSE route, and the owned Menu/Kiosk tool and reply runtime.
 Run from `apps/server` with local provider configuration available:
@@ -47,6 +120,15 @@ choices separately from application protections; passing state checks do not
 prove semantic understanding. Presentation callbacks do not verify browser DOM.
 It does not test ASR/TTS or physical devices. Cross-app replay
 files live under `tests/experiments`, outside the Node-only Server source project.
+The `-t 'configured conversation repair'` subset contains 20 synthetic chains
+(12 development, 8 reserved). `KIOSK_REPAIR_PILOT=1` selects six development
+chains; `KIOSK_REPAIR_REPEATS=3` runs each selected chain three times. It uses the
+normal decision/recovery route and conditional Main, with production retry
+ownership checks. A 600 outbound-request/30-minute cap counts actual Jev HTTP
+(including readiness) and router upstream attempts; three consecutive Jev failures
+stop further inference. Failed/partial runs are not acceptance, and injected
+pre-decision failures do not test transport or a browser click. Keep source/config
+identity with private logs and do not revise reserved expectations to fit results.
 The `-t 'configured explanation recovery'` subset checks two synthetic information
 questions against current Main instructions and the fresh-context reply renderer;
 it does not certify ASR, physical checkout or every possible model response.
@@ -79,321 +161,125 @@ no extra store instructions to the agent prompt. Non-empty content is limited to
 8,000 characters. The snapshot still carries the string field.
 
 In non-production mode, the Server console prints
-`[kiosk-interaction-decisions -> Jev]` followed by the provider endpoint and exact
-`state` / `questions` payload, including server-loaded dialogue and policy.
+`[kiosk-interaction-decisions -> System One]` followed by the provider endpoint and exact
+provider payload, including server-loaded dialogue and policy (SLM logs the
+actual Chat Completions body).
 Each segmented question has its own entry; readiness probes are labelled by their
-question key too. `[kiosk-interaction-decisions <- Jev]` prints the original
+question key too. `[kiosk-interaction-decisions <- System One]` prints the original
 response (including model/usage fields), HTTP status and round-trip duration.
 Request and response share a random `requestId`; failed requests also log that
 ID and the error. Non-JSON HTTP error bodies remain visible. Authorization
 headers and API keys are excluded. Production
 does not attach this observer because the payload may contain visitor dialogue.
 
-Kiosk interaction decisions receive typed, finite operational-question receipts
-and role-labelled session context, never bottom-level WebMCP candidates. Each
-utterance selects its route first. Pending questions are understanding context,
-not prerequisites: independent legal requests do not ask invitation acceptance,
-speech qualification or old-question relation first. Only a selected effect tied
-to a current question asks for a concrete answer from that question's currently
-legal choices, or NEW_REQUEST/BACKGROUND/UNCERTAIN. The `relation` question key
-is retained in traces, but generic ANSWER is no longer an accepted result.
-The question owner supplies newly parsed values such as party size and tax ID;
-Server never infers answer choices from the purpose name. The initial route is
-a hypothesis, not assumed consent, and the concrete answer may correct it.
-A browser-owned `query_scope` question uses the configured Main chat model,
-not Jev. Authenticated `/api/kiosk/interaction-decisions` returns a finite
-`SCOPE_CHOICE`; only the browser owner can consume its question ID and execute
-the bounded read. The checkpoint uses temperature0 and receives question text,
-ordered labels and confirmed conditions, excluding opaque IDs/expiry numbers.
-Elliptical and temporal references are interpreted against the two scope objects
-in the active question, without requiring verbatim option labels. Uncertain or
-invalid proposals keep the conversational question pending. There is no floating
-scope option panel. This does not authorize cart
-writes; independent requests return to ordinary intent/price qualification.
+Kiosk Fast Path supports three isolated System One implementations: Dasein
+open-jev, lookski/openjev, and a label-only OpenAI-compatible SLM. The admin
+profile lifecycle remains save → real readiness → activate. Connection/model/key
+changes revoke readiness and deactivate that profile; discovery alone cannot
+activate it. Only one profile is active. SLM does not replace Main, Menu or POS.
+The implementation column is PostgreSQL text, so adding the `slm` value does not
+require a new database migration.
 
-Kiosk sends `segmented:true`: every Jev question gets a separate provider request
-and returns a `DECISION_PROGRESS`
-checkpoint before the next question. Authenticated
-`POST /api/kiosk/interaction-decisions/:id` consumes a device/session-scoped
-checkpoint once, within 15 seconds. Client answers/plans are never accepted.
-New decisions replace old checkpoints; process restart expires in-memory work.
-Non-segmented requests remain available for diagnostic replay, not direct-tool
-routing. Conditions are asked only after a read route is selected. The complete
-utterance, including continuation/review, has a 24-question ceiling; this is a
-safety limit, not a normal request count. Pending questions cannot remove
-state-valid explicit new actions; implicit meal mutations still need real target
-or slot evidence, so a bare acknowledgment cannot repeat an order. A concrete
-answer requires numeric confidence >= 0.6; a weak initial question-related route
-may reach this check rather than being rejected first. Before browser execution,
-one final policy separates valid semantic uncertainty from malformed answers.
-An uncertain finite choice may become `NEEDS_ASSISTANT / UNCERTAIN_OPERATION`
-only after an independently reliable `serviceRequest:REQUEST` decision confirms
-an actual request for Kiosk service or a valid service answer. Recipient `KIOSK`
-alone is insufficient: addressing the machine does not turn everyday chatter into
-a service request. Confirmed companion speech stays ignored; unknown recipients
-are not repeatedly reclassified. The bounded service check uses the complete
-utterance, real references and only an unexpired pending question, within the
-remaining question budget. `BACKGROUND` stays ignored; weak/unknown relevance
-returns silent `UNCERTAIN_SERVICE_REQUEST`. This check replaces the final
-recipient-only recovery for an otherwise unclassified semantic abstention.
-Confirmed background and genuinely unfinished speech retain their normal paths.
-Uncertain recipient, invalid confidence/choice and exhausted budget grant no
-new authority. Handoff never consumes a question, supersedes an invitation, or
-executes the guessed operation. Weak action proposals also relinquish Fast Path.
-Main receives the original utterance; merely matching a meal name does not force
-a menu lookup. Confirmation/configuration/checkout uncertainty is read-only;
-ordinary ordering still validates each Main tool against fresh browser state.
-Already-executed reads and lost mutation receipts retain their separate recovery
-protocols. Confidence is not a separate proof of task relevance.
-These scores are not calibrated correctness rates. The browser owns live revisions,
-phase checks and one-use high-risk confirmation.
+For Docker Model Runner, use the API root
+`http://127.0.0.1:12434/engines/v1` **as reachable by the API Server**. Container
+installations must use their reachable host/service address. `/models` discovers
+available IDs; it does not prove a model is loaded. The saved model ID is sent to
+`/chat/completions` during readiness and each decision. Bearer keys are encrypted
+at rest and never returned to the browser. See the
+[DMR API reference](https://docs.docker.com/ai/model-runner/api-reference/).
+Jev still inspects `/health.model` or `/health.model_id` and calls `/v1/systemone`.
 
-Device-authenticated `GET /api/kiosk/interaction-decisions/status` reports live
-System One activation with `Cache-Control: no-store`, without invoking the model.
-Activation and provider health are distinct: an unhealthy active profile remains
-enabled and keeps the existing next-turn readiness/recovery behavior. With no
-active profile, decision requests return `NEEDS_ASSISTANT / SYSTEM_ONE_DISABLED`
-after device/session validation. The Kiosk host also checks activation before
-application-resolved Fast Path actions. `PROVIDER_FAILURE` responses or failed
-decision transport trigger a guarded Main Agent handoff; semantic refusals do
-not. The original utterance, session and completed read receipts are retained,
-and browser authorization still governs every operation. A lost browser mutation
-receipt is not a provider fallback and must not be replayed automatically.
+All authenticated runtime decisions use the same staged policy:
 
-The application appends a fixed service-scope instruction after both the editable
-System One prompt and store note, without overwriting either saved field. Active
-configuration/clarification/confirmation routes receive the same scope rule, not
-the full ordinary intent prompt. Background discussion remains `IGNORE` even if
-it contains questions, complaints, explanations or unfinished clauses.
-`NEEDS_ASSISTANT` means a request addressed to this kiosk for ordering service
-that finite choices cannot handle; `MULTI_ACTION` requires multiple independent
-service operations, not merely multiple clauses. Menu-name evidence is not
-required for legitimate food comparisons, dietary queries or contextual replies.
-These prompt boundaries do not guarantee the model cannot misclassify speech;
-live semantic accuracy is distinct from deterministic admission tests.
+1. `admission` has exactly SERVICE / GREET / BACKGROUND / UNCERTAIN. It checks
+   service relevance and recipient together, without exposing operations.
+2. `purpose` distinguishes a single operation, a live-question answer, a rich
+   query, an intact Main handoff, unfinished speech, or unclear meaning.
+3. A single operation selects MENU / ITEM / CART / SERVICE / CHECKOUT from the
+   currently legal groups, then selects one browser-issued leaf. Large MENU
+   groups have an additional lookup/recommendation/navigation distinction.
 
-Ordinary ordering decisions classify intent first, then perform the recipient,
-question-relation and condition checks required by that intent. The standalone
-recipient-first admission pass was removed: a broad recipient guess must not
-promote unrelated chatter into a service request. Phone entry and proposal
-clarification retain their existing phase-specific service checks. Segmented
-clients receive provisional checkpoints; a route alone grants neither customer
-progress feedback nor menu/order execution authority.
-Recipient admission alone does not establish an actionable service request.
-An uncertain greeting-purpose check returns `UNAVAILABLE/UNCERTAIN_GREETING`;
-clients keep it silent rather than prompting for a clearer order or escalating
-the guessed greeting. Its original model choice and confidence remain in Trace.
+Each question has at most six choices. Empty, unfamiliar or oversized leaf
+sets hand off the intact utterance instead of dropping candidates. Descriptions
+name one distinction; executor details stay in the browser. Multiple dishes,
+replacement and multiple independent effects hand off before any single action.
+Before an independent order write, separate small questions verify that the
+customer is requesting an operation and that the proposed effect covers the
+whole utterance. Neither a family nor a leaf selection supplies that proof.
+Question-bound answers keep their exact separate ticket contract.
+Rich food/price conditions go to Main as a guarded read task; this staged policy
+does not run the older flat classifier's ingredient extraction forwards. Literal
+price choices still use the existing bounded Main resolver before read binding.
+Missing or unsupported prices keep the unresolved-price guard. No unfiltered
+recommendation or guessed amount is authorized by this handoff.
 
-For ordinary ordering ADD/REMOVE/quantity/option proposals, `requestPurpose`
-first distinguishes an inquiry from an operation using the literal utterance.
-Balanced examples use the current browser-matched subject without authorizing
-that example as an order. A separate `cartRequest` check verifies that the
-proposed single effect covers the whole utterance, including the first item.
-Real `CART_LINE_` references supply existing-order context, not purchase consent.
-Replacing one dish with another must
-reach Main Agent intact; a confident ADD or REMOVE must not execute half the
-request. The original route remains in `rawAnswer`; `semanticCheck` and staged
-exchanges record the coverage check. A recovered pure query re-enters normal
-SEARCH_MENU filter/price validation; it cannot open a quantity draft. A recovered
-query or replacement/weak-route handoff additionally
-verifies recipient using the isolated utterance, so companion speech cannot be
-promoted merely because it describes a valid change. When the original route and
-operation purpose are reliable but `SINGLE` coverage is uncertain, an independent
-recipient check and confirmed service relevance may hand the complete utterance
-to Main as `UNCERTAIN_OPERATION`.
-This handoff grants no Fast Path mutation; Main must resolve and validate each
-effect, including quantity changes combined with additions. Uncertain coverage or
-recipient preserves the cart and pending fulfillment question. Thresholds are
-unchanged. A weak purpose answer grants no authority and does not override
-independently reliable original-route and whole-effect checks. A weak route
-still cannot execute; coverage plus recipient verification may hand it to Main.
-Mutation proposals add two small model questions; recovered
-inquiries use the purpose result directly, then verify the recipient. Reads
-verify KIOSK/OTHER/UNCERTAIN using only the current utterance,
-before the existing filter/price questions retain their original evidence. Already
-verified question answers/recovered queries do not repeat scope. A weak Agent
-handoff first verifies the recipient. In ordering, a second narrow check may
-independently establish a pure menu inquiry, even for an unfamiliar dish. This
-also covers weak search/recommendation routes when no recommendation question
-is pending: a budget follow-up can compete with the next-batch intent without
-authorizing that batch change. The recovery admits factual lookup only and
-qualifies the current utterance's price before handoff, never the weak operation. A
-question-relation NEW_REQUEST likewise verifies recipient before Agent admission.
-The handoff's price checkpoint receives only the original current utterance and
-its literal amounts. Previous budgets and scope answers remain with query-scope
-handling; they cannot compete with a fresh explicitly stated price boundary.
-When Jev abstains on price interpretation, Main independently chooses from the
-same browser-issued price choices before binding the read-only Agent task.
-This distinguishes a factual 「多少錢？」 inquiry from a price filter without
-guessing amounts or lowering Jev thresholds. Trace `priceResolution` records
-Main's choice and duration separately from Jev's counters. Missing, malformed
-or unavailable Main results preserve the unresolved-price guard; an accepted
-unsupported choice still requires clarification. This step grants no order
-mutation authority.
-Price instructions distinguish inclusive bounds from explicitly excluded endpoints;
-literal amount evidence does not create an additional budget requirement.
-This is bounded coverage, not a generic action planner or arbitrary multi-action
-execution guarantee.
+Phone entry uses the same admission gate followed by one small phone question.
+Only the issued skip candidate can skip entry. Negated skips and permission
+questions are not consent; menu/order demands retain CUSTOMER_ENTRY_REQUIRED.
+An uncertain phone effect may reach the bounded Main phone resolver **after**
+service admission. An uncertain recipient cannot reach that effect resolver.
+Main's ordinary browser-tool list still excludes `customer_skip_phone`.
 
-Main receives explicit browser query actions (`continue`, `update`, `reset`,
-`clarify`) instead of reconstructing whether omitted arguments reset conditions.
-The Menu runtime owns their state transitions and dietary/history preservation;
-see the Menu README for the tool contract. Relative requests are not meal names.
-Read-only tool selection uses temperature zero. A single non-presenting
-`menu_recommend` receipt with `queryAction:clarify` settles JSON and SSE replies
-with its application-owned question, without another provider call or tools.
-Mixed receipts, named lookups and malformed payloads cannot take this shortcut.
-The customer answers by voice; no new floating choice panel is created.
+Live question answers select only currently issued effects and carry the exact
+`answeredQuestionId`. Expired/unresolved answers cannot authorize an operation.
+An independent request supersedes an invitation by ID; uncertain meaning does
+not consume it. Configuration/confirmation topic changes retain the existing
+browser reroute/revocation protocol. Active-request and unfinished-fragment
+relations are separate finite questions, not implicit duplicate operations.
+Browser phase, target, revisions, quantities/options and one-use high-risk
+confirmation remain mandatory. A route is never an operation receipt.
 
-Unmatched named dishes cannot be widened into a category or general
-recommendations. `filterPresence: UNRESOLVED_SUBJECT` retains the original
-utterance for an Agent lookup. Factual inquiries and unresolved filter/price
-handoffs carry `decisionState.readOnly`; the host resends it on each read-task
-continuation. Server tool selection stays read-only, and the owned menu task
-blocks order changes independently of model behavior. Successful lookup does
-not grant purchase or fulfillment authority. A new customer request starts a
-fresh task; ordinary mutation tasks retain their first-request-only snapshot.
+Jev answers retain their real confidence and must meet the existing 0.6 routing
+threshold. SLM sends `temperature:0`, `max_tokens:1`, no tools and
+`chat_template_kwargs.enable_thinking:false`. It must return one exact allowed
+letter with no reasoning, explanation or tool call. Only the adapter maps this
+letter to the issued choice ID and stamps `selectionMode:unscored`; an upstream
+Jev response cannot claim this stamp. SLM supplies no confidence, synthetic
+probability or reused Jev threshold. This contract does not certify model accuracy.
 
-The route decision is not followed by a generic second speech classifier using
-the same evidence. Concrete current-question answers, greeting-recipient and
-finite filter checks remain distinct bounded decisions. Missing item options or
-serving quantity use application-owned `configuration` state: only its issued
-answers, cancel, IGNORE and NEW_REQUEST are available. Configuration/clarification
-route a topic change before parsing its concrete answer.
-In a multi-target `item-clarification` question, bare assent cannot authorize an
-index even if the provider returns one confidently. After the existing recipient
-check, the server retains the question as `CLARIFICATION`; background or uncertain
-recipients still cannot trigger a spoken retry. Single-meal Yes/No confirmation
-and ordinary checkout acceptance keep their existing authorization contracts.
-While asking quantity/options, a bare different catalog dish or category can
-route as NEW_REQUEST without an explicit ordering verb. Naming another dish
-does not authorize cancellation; explicit cancellation still uses its concrete
-answer and relation check. An uncertain relation preserves the pending meal.
-NEW_REQUEST requests one bounded host reroute, not automatic draft cancellation:
-lookups retain the meal; a new foreground meal suspends it without inheriting
-its slots, then resumes it after completion.
-Uncertain concrete answers fail closed. Unfinished speech continuation is also
-an optional route, not a pre-route gate for complete new requests. High-risk
-confirmations still revoke their exact authorization before handing a new
-request to Agent.
+`segmented:true` emits one device/session-scoped, one-use DECISION_PROGRESS
+checkpoint per question before evaluating the next. The SLM stamp survives those
+checkpoints so labels are not rejected as malformed Jev scores. It permits
+progress feedback, never execution. Clients cannot supply continuation answers.
+Each utterance, including review, retains the 24-question ceiling. New decisions
+replace prior checkpoints; restart expires in-memory work. Non-segmented calls
+use the same staged policy.
 
-Category names with conversational endings such as `呢`, `的有嗎` or `之類的`
-are complete browsing requests when addressed to the kiosk. In ordinary
-ordering, an `INCOMPLETE` with low/missing confidence or current category
-matches is rechecked using small recipient and speech questions. A reliable
-category query rejoins the normal search/filter/price validation; it does not
-answer an older fulfillment question or authorize ordering. Background or
-unknown recipients grant no action, admitted unresolved needs reach the Agent,
-and reliable unfinished speech still waits. This recovery uses the existing
-question budget; ordinary successful read routes add no recovery calls. Traces
-keep the first `rawAnswer` and record the recovery in `semanticCheck`/`exchanges`.
+An uncertain service recipient stays unavailable; a valid UNCERTAIN or weak
+scored admission can use the existing bounded Main service recovery. After reliable service
+admission, an unclear operation or later provider failure becomes a read-only
+UNCERTAIN_OPERATION handoff so the character can clarify. No guessed effect is
+executed. A failed provider answer clears that profile's readiness; a later turn
+performs a real readiness probe before using it again. Failed mutations and lost
+receipts remain distinct and are never automatically replayed.
 
-Optional-phone entry uses small recipient and phone-choice decisions. Short
-skips are complete answers, not unfinished food orders. Negated skips and
-permission questions do not authorize skipping; background speech stays quiet.
-Direct greetings return `GREET` from the first small decision and use
-the host's fixed greeting without an Agent call or completing the phone question.
-Greetings addressed to a named companion stay background; a greeting combined
-with a request follows that request instead of hiding it behind `GREET`.
-Only the current browser-issued skip candidate may advance entry, and phone
-values never enter this decision context. Menu inquiries, recommendations and
-ordering requests return `CUSTOMER_ENTRY_REQUIRED` for a fixed host reminder to fill or skip first;
-they do not start the Agent or authorize a browser operation. Identity, store
-service information and phone FAQs stay ordinary dialogue. An entry prerequisite must never be described as an empty menu.
-After a reliable `REQUEST` recipient decision, an uncertain finite phone choice
-is independently resolved by Main using only `SKIP_PHONE`, `KEEP_PHONE` or
-`UNCERTAIN`, without exposing browser tools or the weak Jev proposal. Only
-`SKIP_PHONE` rejoins the current browser-issued skip candidate and its normal
-authorization/execution path. Phone-stage `UNCERTAIN_SERVICE_REQUEST` may
-also use this bounded validator after a confirmed recipient; this does not admit
-open conversation. Other or malformed proposals preserve the original result:
-either the read-only `UNCERTAIN_OPERATION` handoff or silent service abstention,
-with no menu operation or required menu lookup. Same-utterance order retractions follow the final intent
-and may be acknowledged without a tool. The optional trace's `phoneResolution`
-records the separate Main choice and duration; `modelCalls`/`modelQuestions`
-continue to count the Jev checkpoints, without inventing a Main confidence score.
-General Main conversation tools exclude `customer_skip_phone` on initial calls
-and continuations, including continuations without a phase snapshot. Only the
-finite phone path owns skipping entry; historical phone reminders must not
-trigger a rejected skip after the customer has already entered the menu.
-Uncertain recipients and malformed provider answers still fail closed.
-Factual price queries wait for phone entry or explicit skip, then resolve the
-same browser-issued price interpretations as other ordering reads. Uncertain or
-unsupported bounds remain guarded clarification, never an unfiltered menu reply.
-Price questions receive literal amounts in customer state and finite alternatives
-only in their own criteria. Do not repeat all alternative descriptions in the
-state or food-filter capability list: the small classifier otherwise treats an
-inclusive proposal as the customer's words. Ingredient presence excludes pure
-price conditions; the validated price and ingredient filters intersect in Menu.
+The editable prompt and store note apply after admission to demand interpretation;
+program-owned candidates and safety instructions retain precedence. Blank means
+the current concise default. Existing custom text is preserved until the operator
+chooses to restore the default. Frozen flat-policy replays deliberately omit
+`routing:staged` in `decideInteraction`; they remain historical diagnostics and
+are not the authenticated runtime policy or evidence for this new tree.
 
-Owned-menu clarification uses a browser-issued `clarificationOffer` and
-`NEEDS_CLARIFICATION`, not a blanket fallback for UNAVAILABLE. During a meal
-subject change or an unconfirmed name fragment, Jev first checks the service
-recipient, then the request purpose with small finite questions. Unclear recipient
-returns `UNCERTAIN_RECIPIENT` and remains silent. An admitted but unclear purpose
-can ask the one real proposal question. `meal_confirmation` then uses short
-YES/NO choices in one call, mapped to that exact browser question; it cannot pay
-or add an item without the remaining slots. Price evidence keeps its existing
-bounded interpretation path. These checks are specific to clarification, not a
-generic extra speech classifier on normal routes.
+Read-result review compares the original request with actual receipts using
+SATISFIED / DEVIATED / UNCERTAIN. It cannot issue a second operation. A review
+failure hands off the preserved receipts once rather than restarting a read or
+replaying a mutation. Host presentation continues to require verified results;
+model prose cannot claim that a cart action succeeded.
 
-For a pending cart-target clarification, `CLARIFICATION` means the directed
-customer reply still needs disambiguation, not permission to cancel or switch
-to touch. Its route must reach the existing0.6 confidence threshold, followed by
-an independent literal-recipient check. Companion speech is ignored; weak or
-unknown recipients remain unavailable. Qualified replies retain the same owned
-question and expiry for another voice answer. Target selection compares complete
-attributes and negation rather than only shared dish-name fragments.
+A browser-owned `query_scope` question continues to use Main's bounded
+SCOPE_CHOICE path with its exact ticket. Menu owns query actions (`continue`,
+`update`, `reset`, `clarify`) and their condition/history transitions. A named
+lookup cannot silently widen to unrelated recommendations. Read tasks remain
+read-only across continuations; a later independent customer request starts a
+fresh task. Unresolved service meaning never grants Main order-write authority.
 
-Product evidence distinguishes exact names, unconfirmed literal catalog matches,
-absence and overflow. Model target choices remain finite (five), not an entire
-category. `catalogEvidence` carries bounded matched text with name/merchant-alias/
-fragment provenance and category member counts, not actual item IDs. Category-only
-preferences browse; a singleton category never implies a named order. Explicit
-serving quantities retain the category-order route. Inferred suffix uniqueness
-is discovery-only evidence, not mutation authority.
-Missing quantity/options are order slots, not evidence of unfinished speech.
-The application-owned route instructions keep this distinction even with saved
-custom prompts. An expressed purchase with only possible/fragment evidence and
-no legal add candidate uses the browser's simple confirmation when eligible,
-otherwise routes to Main Agent for clarification, rather than INCOMPLETE, a
-substituted search, or an unverified purchase. An actually cut-off request can
-still wait for continuation.
-The existing condition question contrasts product lookup, ingredient
-filtering, combined requirements and uncertainty; product lookup does not spend
-ingredient-polarity forwards. Combined/uncertain requirements hand off intact.
-Read-result review compares the original utterance and role context with the
-explicitly tentative understanding and actual receipts. `SATISFIED` with sufficient
-confidence maps to application `COMPLETE`; `DEVIATED` / `UNCERTAIN` hand off once,
-never restart the route. Kiosk retains accepted receipts but removes a rejected
-understanding's mandatory filter authority before Main Agent handoff. At most one
-extra read and one final review remain; no mutation/payment replay is introduced.
-
-Pure greetings to the clerk/kiosk return GREET, separately from companion or
-background greetings (IGNORE). A greeting combined with an order still selects
-the ordering intent. Ordinary ordering GREET choices receive one finite recipient/purpose check;
-uncertain answers fail closed. No greeting is offered as a clarification answer,
-confirmation, read-continuation result or ordering command.
-
-Every bounded question receives the explicit phase and the same role-labelled
-interaction context. Diagnostic requests return actual model-call counts and
-ordered question/answer exchanges, durations and rejection reasons, including
-exchanges completed before a provider failure. Raw speech is retained separately
-from conservative whitespace/control-character normalization; short replies,
-pronouns and numerals in dish names are not removed. Agent handoffs carry finite
-conditions and completed read receipts, not previous model plans as facts.
-
-Menu decisions carry finite ingredient/dietary references. Read actions require
-bounded filter-coverage and polarity validation; unsupported or uncertain
-conditions go to the Assistant instead of silently becoming unfiltered reads.
-The application owns recipe matching and the vegetarian policy; the Server
-returns finite slots, not recipe deductions or invented dietary claims.
-
-POS fulfillment choices and labels accompany both decision and Agent requests.
-Operation questions are application-owned. Agent operation drafts are retained
-as service events, not customer dialogue; the host records the validated reply
-actually presented. Model-only tool results omit deployment/provenance labels,
-without changing durable receipts or payment/order status.
+Raw diagnostic traces retain actual questions, answers, durations and model-call
+counts. Short replies and original ASR text are retained; only whitespace/control
+artifacts are normalized. For staged SLM validation, the complete 1,114-record
+inventory is a first-gate protocol replay, not four-way semantic gold or ordering
+acceptance. All 44 archived route scenarios and the 26 synthetic real-Menu
+scenarios are separate guarded live suites. See
+[`test_prompt/slmDecisionInspection/README.md`](../../test_prompt/slmDecisionInspection/README.md).
 
 `MENU_QUERY` handoffs require current-turn menu evidence after phone entry has
 been completed or explicitly skipped. Other ordering handoffs with current-utterance product/category
@@ -418,19 +304,18 @@ return `CUSTOMER_ENTRY_REQUIRED` without Main. Main can still explain store fact
 and phone/identity questions, but receives no menu/order tools at phone entry. A read-only internal `menu_get(display:false)` does not satisfy
 presentation: the continuation still requires a menu tool until a customer-facing
 receipt exists. Initial
-JSON/SSE completions restrict tools to `menu_get`/`menu_recommend` and require a
-tool call. A no-tool provider answer stays diagnostic prose, and Kiosk refuses
-to publish it as a food claim. Normal identity/phone dialogue is unaffected.
+JSON/SSE completions require a fresh `menu_get`/`menu_recommend` receipt for
+menu presentation. Before that receipt, the internal `respond_to_customer` tool
+may only select clarification. Non-operation replies carry a validated typed
+selection, rendered from fresh facts by Kiosk. Prose or a malformed selection
+gets one no-commerce selection repair using the original request and fresh
+context, never the unverified draft; a second malformed selection clarifies.
+Provider failure remains technical failure. Questions that authorize operations
+remain owned by the browser runtime; Main cannot invent `order_ask_question`
+authority. Identity/phone information remains available.
 Menu verification targets the disputed names using `menu_get.verifyClaim`, not
 an unrelated recommendation batch. Current-meal cancellation and corrective
 availability inquiries use finite choices tied to the browser's live question.
-
-Weak cart-change coverage and weak compound routes may recover a complete
-replacement through separate recipient and replacement-semantic checks when
-real cart lines exist, before inquiry-only recovery. The
-original utterance goes to Main Agent without a partial mutation or a fulfillment
-answer. Target resolution and replacement legality remain owned by Menu tools;
-the speech classifier does not decide whether a dish exists or can be replaced.
 
 Main Agent continuations retain the completed tool exchanges of the current
 customer request, paired by `toolCallId` within that latest user turn. Each result
@@ -448,21 +333,11 @@ diagnostics, not completed customer requests. When ordering tools are offered,
 Agent prose remains an internal draft even if the model skipped a lookup; only
 the host's receipt-grounded answer enters customer dialogue.
 
-Proactive actions may return a structured `recommendation-invitation` when the
-host confirms an idle ordering phase without a service question. Its acceptance
-can select only the existing recommendation candidate, never ordering/payment.
-Invitation choices use intent:recommend for explicit acceptance and
-DECLINE_INVITATION for refusal, consistently in state and route criteria.
-They use the same concrete-answer check as service questions, not an additional
-invitation-specific route-confidence gate. Low-confidence concrete answers retain
-the invitation; a verified independent request
-follows normal routing and returns `supersededQuestionId`. The host retains the
-invitation record as superseded, without letting a later acknowledgment revive
-it. Actual acceptance/refusal returns `answeredQuestionId`; failed recommendation
-validation does not consume an acceptance. Both IDs match the current invitation
-and current utterance ticket before affecting its foreground state. Unanswered
-service questions survive intervening queries; service-owned questions keep
-priority. No additional WebMCP tool or customer-facing choice is introduced.
+Proactive ordering invitations remain browser-owned. Their finite acceptance can
+recommend, never add or pay. Decline and independent-request supersession retain
+the original question's session history without reviving stale authorization.
+Only a resolved answer carries `answeredQuestionId`; uncertain meaning retains
+the current invitation.
 
 Applying Webnavior AI bindings now compiles Ollama chat/vision profiles with
 `ollamaKeepAlive: -1`. The gateway sends `keep_alive: -1` per Ollama upstream

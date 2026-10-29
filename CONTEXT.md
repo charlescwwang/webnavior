@@ -52,7 +52,7 @@ System Manager.
 
 `PriceEvidence` is browser-issued literal currency, price/comparison amounts or
 unitless numeric ranges with finite semantic interpretations, not a verified
-budget. Jev selects `priceChoiceId`; the browser
+budget. The decision path or bounded Main resolver selects `priceChoiceId`; the browser
 checks it against its one-use context. `PriceConditions` constrain a single
 dish's POS base price (bounds/exclusivity/ascending order), never quantity or a
 whole-order allocation. Read tools apply them before ranking and limiting.
@@ -65,7 +65,11 @@ or `IGNORE`, `INCOMPLETE`, `FOLLOW_UP_ACTIVE`, `MULTI_ACTION` (routed to Main Ag
 provides the current phase, finite real domain references and bounded,
 role-labelled current-session dialogue; System One never
 owns menu, cart, checkout, payment, POS, or WebMCP tool selection.
-Route selection precedes concrete question-answer validation. A pending question is an
+Runtime first chooses service / greeting / background / uncertain, then demand
+shape, legal operation group and issued leaf (at most six choices per question).
+Jev uses genuine confidence; a strict label-only SLM has no confidence. Both
+retain the same browser authorization. Rich queries and compound demands reach
+Main intact; a leaf is not an execution receipt. A pending question is an
 understanding cue, not a prerequisite for new requests. Only a selected effect
 that depends on that question resolves its specific legal answer; being an
 answer alone does not mean consent. An uncertain answer neither consumes the

@@ -7,6 +7,295 @@ accumulating history.
 
 ## Current State
 
+- Oct29 user explicitly authorized plain-language batch commits after field
+  deployment. Commits:907db15 new-device defaults;9c702f6 staged routing, SLM
+  transport and verified character replies/retry guards;efd8e82 admin SLM
+  selection;bd70eb3 historical fixtures/runners/results; documentation follows.
+  Commit validation:Server213, Kiosk123, Menu26 and Chrome3 tests pass; Python
+  coverage provenance checks7 pass. Initial full typecheck found a new browser
+  test name-type mismatch; resolved by looking up the issued Menu definition,
+  then scoped Kiosk and full-project typecheck passed. Changed-file ESLint and
+  all normal commit hooks pass. Root lint initially2373 errors:3 current JSON
+  formatting errors fixed;2370 previously recorded errors remain out of scope.
+  Recorded inspection request/response manifest hashes preserved. Only tests
+  and documentation changed since deployment; production sources still match
+  the release snapshot. No push, model inference rerun, redeployment or profile
+  switch in this commit task.
+
+- Oct29 user requested field deployment: API, management Web, Kiosk and Menu
+  published to https://webnavior.aikcitri.qzz.io for testing. API restarted
+  17:57:33 Taipei, PID503794; readyz DB/Redis and Bridge health pass. Isolated
+  public browser verifies all75 HTML/linked asset hashes, no page errors;
+  admin SLM form discovers local DMR models including Qwen3.5-4B. Existing
+  RTXPROjev remains active; existing1060-character custom policy preserved.
+  Restore/save default explicitly to adopt concise policy; staged routing is
+  already active. No new SLM profile saved/activated, DB migration, dependency
+  installation or Nginx change; subsequent commits are listed above. Fresh browser Kiosk loads enrollment;
+  no test device, cart or payment created. Existing Kiosks need reload after
+  finishing any transaction. Backup (verified pg_dump, old three frontends,
+  staged builds, source hashes, logs, release.json):
+  /tmp/webnavior-slm-field-release-20261029-05dh4hst. Standard systemctl timed
+  out and sudo required password; verified owned launcher was killed and
+  unchanged systemd on-failure/control-group restarted it. This deployment
+  proves availability, not model semantic acceptance; limitations below stand.
+
+- Oct29 user-authorized implementation: candidate tree + selectable SLM DONE
+  and subsequently field-deployed/committed above, no profile switch. Runtime HTTP hardcodes
+  `routing:staged`; direct flat API remains frozen diagnostic policy only.
+  Four-way admission -> demand -> legal family/leaf, <=6 choices/question,
+  no candidate truncation. Independent writes additionally require operation
+  purpose + whole-effect coverage. Typed live answers retain exact ticket;
+  rich conditions hand to read-only Main, not partial filters.
+  `kiosk-system-one/slm.ts` compiles/parses strict one-token letters, thinking off,
+  no tools/reasoning, no fabricated confidence. Adapter alone stamps unscored;
+  Jev cannot spoof it. Checkpoints/UI progress preserve that stamp. Admin adds
+  slm, /models discovery, model selection, real readiness and existing encrypted
+  lifecycle; SLM label says field test. TEXT implementation needs no DDL.
+  Concise default affects post-admission interpretation; custom text preserved.
+  New Menu ordinary intent lease follows shared 60s turn budget; state revisions
+  still bind execution. Question-dependent effects keep question expiry;
+  independent orders do not inherit unrelated deadlines; confirmation stays15s.
+  Tests reproduced old20s expiry + unrelated30s cap, then verified these guards.
+  Real evidence:1114-source first-gate protocol,1115HTTP,0 errors,29min,NO semantic
+  accuracy; all44 SLM guarded22/43+1gap, resolver all40 12/39+1gap; same44 Jev
+  18/43+1gap,104HTTP,normal responses,NOT model ranking/full recovery acceptance.
+  SLM Menu all26 after lease fix:6/26 original route labels,0 execution errors,
+  no observed query/background cart increases. Most mismatches hand to Main;
+  ignored/unfinished valid requests remain. p32/p35 add proposals now hand off;
+  query-portion originally cart2->3, now guarded. Two16s valid adds now cart2->3.
+  Initial/guarded/lease versions retained separately under results/*staged*;
+  exact table/limits in docs/plans/2026-10-28-kiosk-slm-evaluation.md.
+  DO NOT call collection completeness semantic success or claim replacement
+  acceptance. No further model tuning/reruns needed this unit; all real jobs
+  have completed. No live Main/audio/multi-device/POS certification.
+  Scoped verification:119 Menu question/configuration/clarification/intent tests,
+  31 routing/checkpoint tests,72 Kiosk tests and3 Chrome tests pass;profile/SLM
+  wire/admin tests passed in focused Server runs. Server/Web/Kiosk/Menu scoped
+  typechecks,changed-file ESLint and diff check pass;root typecheck not run.
+  Live semantic suites intentionally exit nonzero after retaining all rows.
+
+
+- Oct29 FULL SOURCE SLM evaluation COMPLETED after user rejected sample shrink.
+  Safe artifact test_prompt/turnClassifierPoc/results/slm-full-20261029-summary.json;
+  source1114 records/986 distinct literal texts,1382 assessments including44
+  complete route-layout controls (same source caseIds,not new samples).1380
+  actual local DMR requests,65.1min batch elapsed.771 scorable source records,
+  1038 scored assessments;338 unscored,3 missing prompts,2 source candidate gaps
+  (p24 appears twice across layouts).No aggregate accuracy across unlike tasks.
+  Core full44 route:question-first26/43,state-first30/43;resolver21/39;forms294/400.
+  Semantic setup18/26;chains50/64 step labels,NOT real Main/tool/UI execution.
+  Legacy requirement profile84/130 fields,only1/26 all fields;generative projection
+  62/160,only1/40 all fields;not adopted runtime contracts. Review16/29,3 pre-model
+  domain rejections. Recent provisional form gold40/104,22 unscored;older316
+  outputs all unscored,NOT passed accuracy. Keep original gold,do not rerun failures.
+  Decision:do NOT directly replace Jev with this SLM connection. Neither full
+  layout passes historical contracts;not a current Jev-v-SLM ranking and not a
+  conclusion against all SLM designs. Earlier ten-case9/10/4-way10/10 are only
+  controls,NOT substitution acceptance. At that earlier study adapter/admin did not yet exist; see the completed
+  implementation above. Calibration and full Main/ASR/UI acceptance remain
+  unvalidated. No deployment.
+  All model sessions DONE;no further inference needed this unit. Private logs:
+  /tmp/webnavior-full-coverage-20261029-031307.log,then
+  /tmp/webnavior-full-coverage-pending-20261029-034833.log,
+  /tmp/webnavior-full-coverage-older-20261029-040325.log,
+  /tmp/webnavior-full-coverage-state-first-20261029-041551.log;each has manifest.
+  Frozen manifests /tmp/webnavior-full-coverage-{manifest,pending-manifest,
+  older-manifest,state-first-manifest}.json;full request/response only private.
+  First batch had one harness deadline truncation p40 at3224ms;no captured answer.
+  Declared continuation completed it once,original attempt retained explicitly in
+  interruptedAttempts. No other provider/format errors or remaining NOT_RUN.
+  Upcoming runner reserves full request deadline before starting. Summary verifies
+  input/parent hashes;ordinary errors and semantic answers cannot be overwritten.
+  Model inspect confirms unchanged d5b494629720… Qwen3.5-4B GGUF digest.
+  Scripts under test_prompt/slmDecisionInspection/:captureFullCoverage.py (readonly
+  SQL,no LIMIT),prepareFullCoverage.py (all sources,new snapshot labels must be
+  reviewed),summarizeFullCoverage.py (safe report),testFullCoverage.py.52 offline
+  checks pass (19 transport,26 semantic fixtures,7 provenance/privacy/continuity),
+  changed TS ESLint and diff check pass;no full-project typecheck. Pure fixture
+  moved unchanged to order-menu experiments/semanticReplayCases.ts;shared test
+  compact contract slmRoutingQuestions.ts. No production behavior change this
+  quantity task,no config/order mutation,commit or deploy. Prior repair local.
+
+- Oct29 latest user four-goal unit: real bounded routing experiment completed,
+  slmRoutingExperiment.test.ts,60 requests in202.8s. Nine archived synthetic
+  historical-family cases + greeting control; frozen gold/hash, no retuning.
+  Original Jev3/10,SLM4/10; same candidates/count/order/state with concise
+  instruction+descriptions both9/10; separate4-way service task both10/10.
+  Four-way is coarser,NOT full operation success or isolated candidate-count
+  effect. Both concise variants miss p29 compound -> ADD only. SLM supports a
+  simplified first-gate alternative,NOT drop-in full replacement acceptance.
+  Summary test_prompt/turnClassifierPoc/results/slm-routing-20261029-summary.json;
+  private /tmp/webnavior-routing-experiment-20261029-024744.log*. No config/Main/
+  order mutations. Existing earlier results below remain scoped diagnostics.
+  Local code: unresolved UNCERTAIN_OPERATION without effect handoff now read-only
+  all phases; explicit qualified NEW_REQUEST still writable. Completed no-tool
+  unverified prose + fresh context becomes owned assistant clarification,never
+  fake success; KioskScene records recovery and owns next answer. Tool attempts/
+  transport failures keep receipt/error policy.124 Kiosk unit +2 Chrome +22
+  Server reply/SLM transport +12 Menu context tests,Kiosk typecheck pass. Browser uses presenter/
+  real component/Menu,not live Main or physical speech. Still uncommitted and
+  undeployed; production SLM adapter/admin and full-flow acceptance NOT done.
+
+- Remaining actual-flow acceptance: verify loaded Server/Kiosk/Menu identity
+  and final model-visible facts;keep requested effects distinct from tool
+  success;run small6-family full-flow acceptance from the repair plan. Latest
+  local guards are not certification of the field cancellation chain. Quick
+  31/32,historical5/26 and latest routing scores are different task contracts,
+  not model ranking. Main thinking-on comparison remains unperformed.
+
+- Oct29 new attachment cancellation/fulfillment issue investigated READ-ONLY.
+  Audit appended to docs/research/2026-10-26-kiosk-conversation-error-audit.md.
+  Attachment sha3395857c…,matched116 live entries; original private log/session
+  /tmp/webnavior-20261029-{main-diagnosis-private.log,session-private.json}.
+  Main NOT crashed in this case: utterance7 model562ms,1 round,0 tools,reply
+  ignored cancellation and asked fulfillment; presentation rejected unverified-
+  reply. Earlier utterance6 cancellation actually called SET_FULFILLMENT takeout,
+  receipt still bento+dumplings; model draft falsely claimed bento removed.
+  Receipt rendering suppressed fake removal but accepted unrelated actual mode
+  operation. API live/ready and DB/Redis healthy; no Jev timeout/CUDA in trace.
+  Root21 choices,instructions3618chars,state1497,criteriaJSON1943. Open-source
+  OpenJev/colibri examples separate short single-property questions; architecture
+  suggestion:4-way service/greeting/background/uncertain first,operations later.
+  Not implemented or validated; do not just shorten text or allow all prose.
+  No new model calls,config changes,restart,tests,commit or deployment.
+  Follow-up: also inspected Strands before_tool_call intervention, Together tev1
+  examples/decide.py,Colibri,kataras SDK and public1000 challenge (not run here).
+  Strands grounding/prematurity questions illustrate a seam,NOT adopted thresholds
+  or a reliable new semantic gate. Effective Redis Main is webnavior/chat ->qwen36,
+  enableThinking=false,timeout60s. Router overrides per-upstream thinking each
+  round;caller flip alone cannot enable it. Keep field setting unchanged pending
+  bounded isolated Main off/on comparison (proposed6 synthetic chains x2,8min).
+  Important: tool-result compaction can strip cart/selection when latest context
+  has catalog,so raw stored cart != exact model-visible cart. Context refresh was
+  recorded,but full upstream request was not. False removal is proven; whether
+  model ignored visible cart or misread projection is not. Audit records limits.
+
+- Oct29 user clarified: test SLM against prior Jev problems only, no need to rerun
+  Jev. slmHistoricalFailures.test.ts now selects27 archived baseline contract
+  failures from existing frozen44; p24 missing expected candidate is Application
+  gap,26 testable. SLM-only26 HTTP in188.6s:5 expected root choices,21 mismatches,
+  zero transport/format errors. Live test deliberately FAILS semantic assertions.
+  Exact archived synthetic state/candidate descriptions; frozen concise SLM
+  instruction instead of old long Jev policy,thinking off,label token,no retuning.
+  Original gold; needsAll root accepts MULTI_ACTION or NEEDS_ASSISTANT before run.
+  Wrong query->ADD,mode->defer,compound->partial persist. Do not directly replace
+  Jev with this adapter configuration based on historical evidence,NOT speed or
+  current Jev ranking. Root pass does NOT prove old full-flow failure recovered.
+  Correct progress overcount:27 selected/26 testable,not28/27. No Jev/Main/DB/order
+  calls,config change,commit/deploy. Stop this bounded evaluation; no hours-long
+  expansion or repeated user instructions. Evidence /tmp/webnavior-slm-history-
+  20261029-014652.log and manifest/summary.18 offline transport tests pass,history
+  guarded by env;ESLint/diff pass. See plan for family breakdown/scope exclusions.
+
+- Oct29 urgent comparison completed: slmQuickComparison.test.ts ran16 synthetic
+  cases x2 candidate orders x2 real providers,64 calls in63.6s. Expectations
+  frozen before inference; same semantic inputs, short label SLM prompt,no tuning.
+  Jev31/32,SLM30/32,zero transport/format/defined non-operation-to-operation
+  errors. Both unstable on isolated 對; SLM also INFO/CLARIFY on audio query.
+  Not a quality ranking,holdout,32 independent cases or full-flow acceptance.
+  Preregistered candidate rule (>=Jev,>=29/32,no unsafe,no instability) not met.
+  Retain Jev for urgent field repair;SLM remains viable alternative. Withdraw20s
+  as primary rejection rationale: short-prompt SLM median1.615s, Jev0.218s under
+  different hardware,not model speed ranking. No evidence switching alone fixes
+  UI/recovery. No more hours of tests or repeated user instructions this round.
+  Private raw/source manifest /tmp/webnavior-slm-quick-20261029-013907.log*.
+  Live collection passed;quality rule not passed.18 offline transport tests pass,
+  quick skipped by default;ESLint/diff check pass. No activation/commit/deploy.
+
+- Oct28 SLM evaluation implementation STARTED with user approval. Plan/results:
+  docs/plans/2026-10-28-kiosk-slm-evaluation.md. No admin/production provider
+  wiring, activation, DB settings change, commit or deployment. Existing 4B is
+  loaded via authorized test calls; no download/configure/restart.
+  New test-only slmDecision transport supports strict JSON and one-token labels,
+  rejects invalid/thought/tool output, never fakes Jev confidence.18 unit cases
+  pass. Opt-in slmCapabilityReplay saves private raw requests/responses and hashes;
+  actual71-request controls show partial prefix reuse1901 tokens (13.7s->3.0s),
+  cache0 on short repeats/changed early state. Shortened instructions caused
+  GREET/ADD->SEARCH;71 repeated controls35match is NOT independent accuracy.
+  Aligned lookski-template9 controls6match; no gold changed, both failures kept.
+  Thinking on/off and enum conflict live probes2 pass (3HTTP), no CUDA error.
+  DMR1.1.14/client1.2.6, llama.cpp fingerprint b1-3191462, existing4B digest
+  d5b494629720…, Q4_K Medium per load logs, CPU_Mapped/CPU_REPACK buffers;
+  GPU acceleration not verified. Do not compare hardware timing as model merit.
+  KIOSK_SLM_SHADOW=1 captures24 Jev inputs and evaluates AFTER original scenarios
+  to avoid changing deadlines. Actual24/24 valid,22 agree (not gold accuracy),
+  root median20.03s/followups1.62s. Top20 covers all candidate labels22/24; two
+  omit2 of20. Missing probabilities cannot be zero-filled or used as confidence.
+  Raw log/manifest/summary /tmp/webnavior-slm-shadow-20261028-083255.log*;
+  cap evidence /tmp/webnavior-slm-replay-{CXKwOR,X7GYcV}, live-extra log.
+  Original Jev/Main pilot still5/6 with D09 unresolved; no SLM-path acceptance.
+  Corpus26 semantic+44 experimental+20 chains overlaps unknown; historical3
+  partial/3missing. Manifest/gold/calibration/holdout still pending; not training.
+  Fairness audit: NO winner/accuracy conclusion. Both shadow disagreements are
+  D03 explicit-but-unclear help: Jev INCOMPLETE/BACKGROUND vs SLM
+  NEEDS_ASSISTANT/UNCERTAIN; SLM may better fit clarification, not two errors.
+  Jev-selected checkpoints and Jev-developed contracts are drop-in diagnostics,
+  not neutral system comparison; hardware/quant/template also differ.
+  Next quality gate: source/family manifest and independently reviewed gold,
+  equal tuning budget, untouched holdout, fixed-checkpoint paired comparison
+  followed by each provider's own full path. Alternative SLM decomposition is
+  a separate system experiment. Cache/performance work remains separate.
+  Preserve current Jev behavior and all logs; no production/admin activation.
+
+- Oct28 integrated conversation repair is implemented locally, NOT committed or
+  deployed. Plan/status: docs/plans/2026-10-28-kiosk-conversation-repair.md.
+  Server-only respond_to_customer tool -> shared typed reply -> Host current-fact
+  rendering; malformed prose gets one no-commerce repair, then neutral clarification.
+  Service admission now requires richer meaning review before Main handoff.
+  Retry uses original text/lineage through normal queue/decision flow with fresh
+  session/iframe/domain revisions; display/recommendation/write attempts cannot
+  transparently replay. Ordinary uncertainty is not a technical error prompt.
+  New enrollment overrides observation/greeting/reminder/voiceDiagnostics=true,
+  triggerMode=mixed, delegates these five fields locally; old records unchanged.
+  Scoped Server517, Host256 and Chrome5 passed; later two JSON/SSE repair tests
+  also passed. Menu757 baseline passed; Kiosk/Menu builds pass. See plan for final
+  type/lint status and exact limited browser coverage.
+  Actual configured Main-only information cases2 pass. Combined-model pilot1
+  2/6 pass exposed quantity-total, incomplete-meaning and missing-query issues;
+  fixes now have local regressions but full-model acceptance remains OPEN.
+  User repaired active Jev/CUDA; actual inference now works. Restored pilot
+  20261028-050538:3/6; two failures were harness missing synonym 查不到 (fixed
+  assertion without changing outcome/gold), one real request-for-help IGNORE.
+  Clarified existing admission/speech instructions: explicit help with unclear
+  purpose is service, not background. Pilot20261028-050654:5/6,61 outbound HTTP
+  including health, no provider/CUDA failures. D01/D03/D05/D06/D11 pass; D09 retry
+  of intentionally unfinished inquiry returns INCOMPLETE, expected clarification.
+  Keep this as unresolved behavior/expectation discrepancy; do not lower gates,
+  force all incomplete speech to Main, or change frozen gold to claim acceptance.
+  Full20x3/reserved, complete Browser matrix, audio/two-device checks pending;
+  no new queue implemented, no commit/API/Bridge/frontend deployment.
+  Logs/manifests /tmp/webnavior-conversation-repair-pilot-20261028-050{538,654}.*.
+  Actual Main-only information cases2 also pass. Historical originals stay local.
+  Earlier CUDA fault is historical and not proven cause of morning complaints;
+  local AMD openjev restart was unrelated to actual external endpoint recovery.
+
+- Oct28 two-device conversation complaint investigated READ-ONLY, no runtime fix,
+  commit or deployment this turn. New trace sha ac3fcb5a… and actual365 entries
+  across3sessions/2devices (09:39–09:45 Taipei). See Oct28 continuation in
+  docs/research/2026-10-26-kiosk-conversation-error-audit.md.13Main tasks,6 presentation
+  unverified-reply rejections, all6 zero tools; all sessions active/noProgress0.
+  This is not touch_preferred escalation or the old modelRounds0 transport chain.
+  Main outputs natural prose while currentContextInstructions requires4 JSON
+  selectors; independent-conversation prompt also permits plain clarification.
+  Host only fetches replyContext for JSON-looking answers. Invalid format has no
+  bounded repair and becomes generic "use screen" error. Do NOT allow all raw
+  prose: captured draft also falsely claims card support. Valid selectors can
+  still be irrelevant (audio-test utterance -> fulfillment modes); menu_recommend
+  clarify repeated price/category question on fruit and possible payment speech.
+  Recovery promotes weak Jev to service without resolving meaning. Original audio/
+  TTS echo and actual two-client loaded bundle IDs remain unverified. API/DB/Redis
+  healthy; server HTML matches dist. Private captures are /tmp/webnavior-20261028-*
+  (0600), do not commit/send original sessions to models. Existing reply tests
+  pass but do not cover complete noisy multi-turn pipeline; next work must unify
+  output contract/recovery and test relatedness, not lower confidence or remove
+  operation/receipt guards.
+  Follow-up: retry of same "是 是 帶刀刀" at6pNT8 seq187 issues query水果
+  (seq191), NONE receipt193 -> presented207/message208. Main retry stores only
+  string and calls sendConversationMessage with no original decisionState or
+  utterance correlation, bypassing ASR/Jev recovery; fresh snapshot is read but
+  original uncertainty/handoff lost. Do not replay stale state/tickets to fix it;
+  preserve request meaning/correlation and revalidate fresh browser ownership.
+
 - Oct27 security repair is DEPLOYED and committed in Oct28 batches on no_mcp:
   1a046a8 Node runtime, 283a298 security dependencies/tests, 6af4536 POS
   device authentication/cart validation; audit/handoff documentation follows.
@@ -2572,9 +2861,9 @@ their existence alone does not mean an item has been implemented.
 ### Webnavior management / Kiosk
 
 - Webnavior Kiosk now has a System One Fast Path. Each encrypted profile selects
-  either Dasein open-jev or lookski/openjev, with its URL, model identifier,
-  timeout, readiness and active status; both use a real `/v1/systemone`
-  readiness call. The Kiosk sends its final ASR transcript, explicit phase,
+  Dasein open-jev, lookski/openjev or SLM, with its URL, model identifier,
+  timeout, readiness and active status; Jev uses real `/v1/systemone` readiness, while SLM uses a strict
+  choice through `/chat/completions`. The Kiosk sends its final ASR transcript, explicit phase,
   finite domain references, and a small set of phase-legal semantic intents to
   the one active profile. The model cannot see or invent WebMCP tools, cart
   line IDs, prices, payment outcomes, or POS commands. The internal candidate
