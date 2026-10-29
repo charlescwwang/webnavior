@@ -101,6 +101,14 @@ export const defaultDeviceSettings: DeviceSettings = {
   localOverrides: {},
 }
 
+/** Birth policy for newly enrolled devices; existing saved overrides remain authoritative. */
+export const newDeviceSettings: DeviceSettings = {
+  version: 1,
+  localControls: ['observationEnabled', 'greetingEnabled', 'reminderEnabled', 'triggerMode', 'voiceDiagnosticsEnabled'],
+  overrides: { observationEnabled: true, greetingEnabled: true, reminderEnabled: true, triggerMode: 'mixed', voiceDiagnosticsEnabled: true },
+  localOverrides: {},
+}
+
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   observationEnabled: false,
   greetingEnabled: false,

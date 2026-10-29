@@ -26,7 +26,11 @@ independent decisions:
   Vision analysis; and
 - `mediaRetention`: the future deployment-controlled retention mode.
 
-All defaults are deliberately off. In particular, enabling a future Vision
+The base interaction policy defaults are off. Server enrollment explicitly uses
+`newDeviceSettings`: observation, greeting, reminder and voice diagnostics are
+overridden on, trigger mode is `mixed`, and these five fields allow local changes.
+Existing device records retain their saved policy; `defaultDeviceSettings` remains
+the empty persisted baseline. In particular, enabling a future Vision
 feature does not open the camera by itself, and no frame or clip is stored by
 this package. A host must explicitly connect a camera, event gate, provider,
 and deployment storage policy before visual assistance can occur.

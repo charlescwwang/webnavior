@@ -6,7 +6,7 @@ import type { KioskAgentInteractionState } from '../kiosk-agent-interaction'
 
 import { createHash, randomBytes } from 'node:crypto'
 
-import { defaultDeviceSettingsValues, resolveDeviceSettings } from '@proj-airi/kiosk-proactive'
+import { defaultDeviceSettingsValues, newDeviceSettings, resolveDeviceSettings } from '@proj-airi/kiosk-proactive'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { array, boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
@@ -374,7 +374,7 @@ export function createKioskService(db: Database): KioskService {
 
   async function createDevice(input: { siteId: string, label: string, registrationMethod: KioskRegistrationMethod }) {
     return await db.transaction(async (tx) => {
-      const [device] = await tx.insert(schema.kioskDevices).values(input).returning()
+      const [device] = await tx.insert(schema.kioskDevices).values({ ...input, settings: structuredClone(newDeviceSettings) }).returning()
       const release = await tx.query.kioskProfileReleases.findFirst({
         where: eq(schema.kioskProfileReleases.siteId, input.siteId),
         orderBy: [desc(schema.kioskProfileReleases.revision)],
