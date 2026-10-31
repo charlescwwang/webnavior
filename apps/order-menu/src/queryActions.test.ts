@@ -49,6 +49,16 @@ describe('explicit conversational query actions', () => {
     expect(present).toHaveBeenCalledTimes(1)
   })
 
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 live replay.
+  it('checks repeated continuation prices against retained conditions without changing them', async () => {
+    await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 150 })
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 150, limit: 3 })).toMatchObject({ queryAction: 'continue', appliedPriceConditions: { maxPrice: 150 }, items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 151 })).rejects.toThrow('continue')
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', minPrice: 0 })).rejects.toThrow('continue')
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: '150' })).rejects.toThrow()
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  })
+
   it('does not accept changed conditions as continuation or an implicit action', async () => {
     await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 200 })).rejects.toThrow('continue')
     await expect(runtime.invokeForAgent('menu_recommend', {})).rejects.toThrow('action')

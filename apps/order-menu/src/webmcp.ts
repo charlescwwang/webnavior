@@ -482,7 +482,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   // interrupted older turn cannot clear its successor's verified conditions.
   // Target IDs come from the host-bound utterance, never from Agent lookup
   // arguments. An empty list requires a new customer confirmation; a contextual
-  // short reply still uses the existing finite question/selection path.
+  // short reply may retain a unique domain-resolved pre-task presentation reference with a quantity.
   let agentTask: { taskId: string, transcript: string, handoff?: ConversationHandoff, expectedRevisions?: KioskRevisions, allowedToolNames?: string[], returnToMenu?: boolean, targetItemIds?: string[], broadMenuQuery: boolean, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number, querySubjects?: QueryPresentationSubject[] } | undefined
   let waitingFor: PendingQuestion | undefined
   let offeredQuestion: typeof waitingFor
@@ -1728,10 +1728,21 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
           const source = deriveDecisionContext({ ...currentFastPathContext(), transcript: requiredString(input, 'transcript') })
           let targetItemIds: string[] = []
-          if (source.productResolution.status === 'exact')
+          if (source.productResolution.status === 'exact') {
             targetItemIds = source.productResolution.references.map(reference => reference.refId.slice('item:'.length))
-          else if (source.catalogEvidence.products.length || source.catalogEvidence.categories.length || source.productResolution.status === 'overflow')
+          }
+          else if (source.catalogEvidence.products.length || source.catalogEvidence.categories.length || source.productResolution.status === 'overflow') {
             targetItemIds = []
+          }
+          else {
+            // Freeze only a target the domain can already resolve from the
+            // pre-task presentation and an explicit quantity. A later Agent lookup cannot
+            // manufacture a referent for an otherwise unbound request.
+            const addition = source.candidates.find(candidate => candidate.intent === 'ADD_ITEM')
+            const resolved = addition && resolveIntent(addition, source)
+            if (resolved?.kind === 'PLAN' && resolved.plan.targetRef && source.referenceOrigins[resolved.plan.targetRef] === 'presentation' && typeof resolved.plan.slots.quantity === 'number' && typeof resolved.plan.slots.itemId === 'string')
+              targetItemIds = [resolved.plan.slots.itemId]
+          }
           agentTask = { taskId, transcript: requiredString(input, 'transcript'), ...(input.handoff ? { handoff: parse(handoffSchema, input.handoff) } : {}), targetItemIds, broadMenuQuery: source.catalogEvidence.products.length === 0 && source.catalogEvidence.categories.length === 0, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000 }
           options.onAgentControlChange?.(true)
           return { ok: true }
@@ -2358,6 +2369,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       const { action: _action, clear, ...patch } = input
       if ('more' in patch)
         throw new Error('Use an explicit action instead of more.')
+      if (action === 'continue') {
+        // Repeated price fields are expectations, never a condition update.
+        // Main can restate the active bound when requesting another batch;
+        // verify every supplied value before removing it from the update patch.
+        // A changed/new bound still fails without consuming the next batch.
+        const expectedPrices = priceConditions(patch)
+        for (const key of Object.keys(expectedPrices) as Array<keyof PriceConditions>) {
+          if (!recommendationBatch || expectedPrices[key] !== recommendationBatch.prices[key])
+            throw new Error('continue cannot change query conditions.')
+          delete patch[key]
+        }
+      }
       if ((action === 'continue' || action === 'clarify') && (clear !== undefined || Object.keys(patch).some(key => key !== 'limit')))
         throw new Error(`${action} cannot change query conditions.`)
       if (action === 'continue' && recommendationBatch && recommendationBatch.menuRevision !== machine.getRevisions().menu)
