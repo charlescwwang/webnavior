@@ -211,6 +211,7 @@ export function useKioskInteractionRecording() {
       if (control.manual)
         return unfinished('manual-control')
       const seenCalls = new Set<string>()
+      let toolSelectionRepaired = false
       // One customer turn owns one displayed recommendation batch. Internal
       // evidence reads and named comparisons remain available after it; only a
       // new send() may admit another recommendation, including more:true.
@@ -245,6 +246,13 @@ export function useKioskInteractionRecording() {
           break
         const toolResults = []
         let batchRejected = false
+        // Reject the whole proposal before any sibling call can execute. This
+        // feedback means no effect occurred in this batch, not a retry of a write.
+        const unknownTools = response.toolCalls.filter(call => !toolsForTurn.some(tool => tool.function.name === call.function.name))
+        if (unknownTools.length && toolSelectionRepaired)
+          return unfinished('tool-rejected')
+        if (unknownTools.length)
+          toolSelectionRepaired = true
         // A model batch can mix reads and writes. Serial execution prevents
         // cart/checkout writes from racing one another or their preceding read.
         for (const toolCall of response.toolCalls) {
@@ -255,8 +263,14 @@ export function useKioskInteractionRecording() {
           if (seenCalls.has(toolCall.id))
             return unfinished('duplicate-tool-call')
           seenCalls.add(toolCall.id)
-          if (!toolsForTurn.some(tool => tool.function.name === toolCall.function.name))
-            return unfinished('tool-rejected')
+          if (unknownTools.length) {
+            toolResults.push({
+              name: toolCall.function.name,
+              toolCallId: toolCall.id,
+              content: JSON.stringify({ ok: false, executed: false, error: unknownTools.includes(toolCall) ? 'UNKNOWN_TOOL' : 'BATCH_NOT_EXECUTED', availableToolNames: toolsForTurn.map(tool => tool.function.name), message: '這批提案完全未執行。請依原始需求與最新事實，僅使用本輪提供的工具及必要參數重新提出；不可重做先前已成功的操作。' }),
+            })
+            continue
+          }
           requestedTools.push(toolCall.function.name)
           stage = 'tool'
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')

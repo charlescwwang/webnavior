@@ -1,7 +1,11 @@
+import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { rawTool } from '@xsai/tool'
+import { parse } from 'valibot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
+import { menu } from '../../../order-menu/src/domain/order-machine'
+import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { createMenuReplyWindow, replyFromConversation } from '../services/questionPresentation'
 import { useKioskInteractionRecording } from './useKioskInteractionRecording'
 
@@ -18,6 +22,81 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30, seq200–227.
+  it.each([false, true])('completes quantity changes after at most one unexecuted invalid proposal (legal=%s)', async (legal) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'quantity-diagnosis', state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], category: '點心', price: 80, optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 3 })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'quantity-diagnosis', transcript: '水餃三份改成兩份', expectedMenuRevision: parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).revisions.menu, constraints: {} })
+    await runtime.invoke('kiosk_conversation_context')
+    const cart = await runtime.invoke('cart_get', { display: false }) as { cart: { lines: Array<{ id: string }> } }
+    const lineId = cart.cart.lines[0]!.id
+    const definition = runtime.toolDefinitions.find(tool => tool.name === 'cart_set_line_quantity')!
+    const execute = vi.fn(async (args: Record<string, unknown>) => runtime.invokeForAgent('cart_set_line_quantity', args))
+    const tool = rawTool({ name: definition.name, description: definition.description, parameters: definition.inputSchema, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'quantity', type: 'function', function: { name: legal ? 'cart_set_line_quantity' : 'cart_update_item', arguments: JSON.stringify(legal ? { lineId, quantity: 2 } : { lineId }) } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: legal ? [] : [{ id: 'corrected-quantity', type: 'function', function: { name: 'cart_set_line_quantity', arguments: JSON.stringify({ lineId, quantity: 2 }) } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '水餃三份改成兩份', [tool])
+      if (legal) {
+        expect(result?.status).toBe('completed')
+        expect(execute).toHaveBeenCalledOnce()
+        expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+      }
+      else {
+        expect(result).toMatchObject({ status: 'completed', requestedTools: ['cart_set_line_quantity'] })
+        expect(execute).toHaveBeenCalledOnce()
+        expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(3)
+        expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0].toolResults).toMatchObject([{ name: 'cart_update_item', toolCallId: 'quantity', content: expect.stringContaining('UNKNOWN_TOOL') }])
+        expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+      }
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
+  it('stops after a second unknown proposal without executing either batch', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'bounded-tool-repair', state: 'active' } })
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tool = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'bad-1', type: 'function', function: { name: 'unknown', arguments: '{}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'bad-2', type: 'function', function: { name: 'unknown-again', arguments: '{}' } }] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '加一份', [tool])).toMatchObject({ status: 'incomplete', reason: 'tool-rejected', requestedTools: [] })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+      expect(execute).not.toHaveBeenCalled()
+    }
+    finally { scope.stop() }
+  })
+
+  it('does not execute a valid sibling before correcting an unknown tool in the same batch', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'atomic-proposal', state: 'active' } })
+    const execute = vi.fn(async () => ({ ok: true, customerMessage: '已加入。' }))
+    const tool = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'valid-sibling', type: 'function', function: { name: 'order_add_item', arguments: '{}' } }, { id: 'unknown-sibling', type: 'function', function: { name: 'unknown', arguments: '{}' } }] })
+      .mockImplementationOnce(async ({ toolResults }) => {
+        expect(execute).not.toHaveBeenCalled()
+        expect(toolResults).toMatchObject([{ toolCallId: 'valid-sibling', content: expect.stringContaining('BATCH_NOT_EXECUTED') }, { toolCallId: 'unknown-sibling', content: expect.stringContaining('UNKNOWN_TOOL') }])
+        return { agentMode: 'active', toolCalls: [{ id: 'corrected', type: 'function', function: { name: 'order_add_item', arguments: '{}' } }] }
+      })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '加一份', [tool])).toMatchObject({ status: 'completed', requestedTools: ['order_add_item'] })
+      expect(execute).toHaveBeenCalledOnce()
+    }
+    finally { scope.stop() }
+  })
+
   // Report: this chat, 2026-10-26; XCUxZDdu entries236–365 contain 44 zero-round tasks.
   it('reports missing Menu context separately before any model request', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'missing-menu-context', state: 'active' } })
@@ -479,7 +558,7 @@ describe('useKioskInteractionRecording', () => {
     scope.stop()
   })
 
-  it('sends the current payment phase on the first Main Agent request only', async () => {
+  it('refreshes the payment phase after an actual tool round without replaying stale methods', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
     kioskApi.streamKioskConversationMessage
       .mockResolvedValueOnce({ agentMode: 'active', answer: undefined, toolCalls: [{ id: 'call-1', type: 'function', function: { arguments: '{}', name: 'menu_get' } }] })
@@ -490,10 +569,15 @@ describe('useKioskInteractionRecording', () => {
       throw new Error('Expected interaction recording to initialize.')
 
     const decisionState = { phase: 'checkout_payment_select', paymentState: 'idle', allowedPaymentMethods: ['card', 'mobile'] as Array<'card' | 'mobile'> }
-    await recording.send('restaurant-ordering', '信用卡', [], { decisionState })
+    // NOTICE: The previous fixture offered no menu_get tool, so it never reached
+    // a continuation and its stale-state assertion passed without testing a round.
+    const tool = rawTool({ name: 'menu_get', description: 'Read', parameters: { type: 'object', properties: {} }, execute: async () => ({ items: [] }) })
+    const prepareRound = vi.fn().mockResolvedValueOnce({ decisionState, tools: [tool] }).mockResolvedValueOnce({ decisionState: { phase: 'checkout_invoice' }, tools: [] })
+    await recording.send('restaurant-ordering', '信用卡', [tool], { decisionState, prepareRound })
 
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
     expect(kioskApi.streamKioskConversationMessage.mock.calls[0]?.[0].decisionState).toEqual(decisionState)
-    expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].decisionState).toBeUndefined()
+    expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].decisionState).toEqual({ phase: 'checkout_invoice' })
     scope.stop()
   })
 

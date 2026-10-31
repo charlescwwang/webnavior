@@ -142,8 +142,9 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART', 'SET_FULFILLMENT', 'START_CHECKOUT', 'SELECT_PAYMENT', 'CANCEL_CHECKOUT'].includes(intent)
   const configuringMeal = ['ADD_ITEM', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(options.question?.purpose ?? '')
   // Clarification pauses an unexecuted demand; it never completes the mutation
-  // or consumes an old confirmation. Any attempted tool keeps receipt rules.
-  if (result.status === 'completed' && result.reply?.kind === 'clarification' && !commerceAttempted && options.context) {
+  // or consumes an old confirmation. Reads may precede a clarification; attempted
+  // writes still require their actual receipt or result-unknown policy.
+  if (result.status === 'completed' && result.reply?.kind === 'clarification' && result.requestedTools.every(name => ['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name)) && options.context) {
     const clarification = replyFromContext(JSON.stringify(result.reply), options.context)
     if (clarification)
       return { role: 'assistant' as const, content: clarification.content }

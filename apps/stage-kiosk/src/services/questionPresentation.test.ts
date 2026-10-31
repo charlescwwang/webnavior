@@ -384,3 +384,15 @@ it('renders a typed hearing check without inventing fulfillment or payment facts
   expect(reply.content).not.toContain('內用')
   expect(reply.content).not.toContain('刷卡')
 })
+
+// Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
+it('presents a reviewed clarification after reads instead of replacing it with menu availability', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { items: [], customerMessage: '沒有查到。' })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], reply: { kind: 'clarification' } }, { menu, context, failureMessage: '失敗。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('詢問或調整')
+  expect(reply.content).not.toContain('沒有查到')
+})
