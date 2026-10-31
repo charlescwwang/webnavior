@@ -56,6 +56,8 @@ export type KioskConversationDecisionState = Pick<KioskDecisionState, 'revisions
 export type KioskInteractionDecision = {
   /** Selected application-issued interpretation; never model-authored amounts. */
   recovery?: ServiceRecovery
+  /** Main skill selection is distinct from JEV scores; execution still validates the issued candidate. */
+  resolvedBy?: 'main-skill'
   priceChoiceId?: string
   /** Correlated conversational invitation consumed by this answer, never mutation permission. */
   answeredQuestionId?: string

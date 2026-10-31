@@ -55,6 +55,8 @@ export async function selectReply(input: {
   calls: ConversationToolCall[]
   context: ConversationContext
   requireMenuRead?: boolean
+  /** Disable a second provider repair after the task has already been reviewed. */
+  repair?: boolean
   complete: (body: Record<string, unknown>) => Promise<Response>
 }): Promise<{ reply: ContextReply, repaired: boolean }> {
   const read = (calls: Pick<ConversationToolCall, 'function'>[]) => {
@@ -69,6 +71,8 @@ export async function selectReply(input: {
   const selected = read(input.calls)
   if (selected)
     return { reply: selected, repaired: false }
+  if (input.repair === false)
+    return { reply: { kind: 'clarification' }, repaired: false }
   // The original request and fresh facts are authoritative. Draft text is not
   // supplied: a false card/payment claim must not become repair evidence.
   const response = await input.complete({

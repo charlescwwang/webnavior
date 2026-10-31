@@ -40,3 +40,10 @@ it('cannot use an information selector to finish a required menu presentation wi
   expect(complete).toHaveBeenCalledTimes(1)
   expect(complete.mock.calls[0]![0].tools).toMatchObject([{ function: { parameters: { properties: { kind: { enum: ['clarification'] } } } } }])
 })
+
+// Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
+it('does not issue another provider call when a reviewed reply is malformed', async () => {
+  const complete = vi.fn(async () => result({ kind: 'payment-methods' }))
+  expect(await selectReply({ repair: false, context: parse(conversationContextSchema, facts), calls: [], complete })).toEqual({ reply: { kind: 'clarification' }, repaired: false })
+  expect(complete).not.toHaveBeenCalled()
+})

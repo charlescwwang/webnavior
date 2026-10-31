@@ -135,8 +135,15 @@ export async function recoverServiceRequest(decision: KioskInteractionDecision, 
       // review must understand this utterance before Main receives tool authority.
       if (stage === 'adjudication')
         continue
-      if (disposition === 'clarify' && question)
+      if (disposition === 'clarify' && question) {
+        // The customer already answered our service question. Renewing another
+        // recovery question here can trap every later utterance in this gate.
+        // Main gets the retained question and current answer for browsing or a
+        // domain-owned follow-up; uncertain meaning still grants no write access.
+        if (input.state?.serviceClarification)
+          return { ...decision, kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', recovery: { ...recovery, disposition: 'assistant', readOnly: true } }
         return { ...decision, kind: 'SERVICE_CLARIFICATION', question: { questionId: crypto.randomUUID(), question, sourceUtterance: input.transcript, contextKey, expiresAt: Date.now() + 30_000 }, recovery }
+      }
       return { ...decision, kind: 'NEEDS_ASSISTANT', reason: requestKind === 'clarification-answer' ? 'UNCERTAIN_OPERATION' : 'NEW_REQUEST', recovery }
     }
     if (stage === 'review')

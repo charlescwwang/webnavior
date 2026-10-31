@@ -142,7 +142,7 @@ export async function runFastPath(input: {
   activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
   decide: (request: { candidates: FastPathCandidate[], decisionState?: FastPathDecisionState, includeTrace?: boolean, maxQuestions?: number, presenceState?: PresenceState, review?: { answer: string, observation: string }, signal?: AbortSignal, recoveryUsed?: boolean, transcript: string }) => Promise<FastPathDecision>
   onExecuted?: (result: unknown) => Promise<void>
-  onTrace?: (trace: { browserContext: unknown, decision: FastPathDecision, decisionSource?: 'application' | 'system-one', executionResult?: unknown, rawTranscript?: string, transcript: string }) => void
+  onTrace?: (trace: { browserContext: unknown, decision: FastPathDecision, decisionSource?: 'application' | 'system-one' | 'main-skill', executionResult?: unknown, rawTranscript?: string, transcript: string }) => void
   onActionSelected?: (action: FastPathCandidate) => Promise<'DEFER' | void> | 'DEFER' | void
   isCurrent?: () => boolean
   presenceState?: PresenceState
@@ -320,7 +320,7 @@ export async function runFastPath(input: {
     }
     if (decision.kind === 'CONTINUE_INCOMPLETE')
       return { kind: 'UNAVAILABLE', decisionState }
-    const decisionSource = applicationResolved ? 'application' : 'system-one'
+    const decisionSource = applicationResolved ? 'application' : decision.resolvedBy === 'main-skill' ? 'main-skill' : 'system-one'
     decisionState = resolvedPriceState(decisionState, decision)
     if (decision.reason === 'UNSUPPORTED_PRICE')
       return { kind: 'CLARIFICATION', prompt: priceClarification, decisionState }

@@ -124,3 +124,30 @@ it.each(['是 是 帶刀刀', '我想請你幫忙，那個，我還沒說清楚�
   expect(complete).toHaveBeenCalledTimes(2)
   expect(JSON.stringify(complete.mock.calls[1]![0])).toContain('目前這句的意思清楚')
 })
+
+// Field report: Oct30 repeated 「請問您想點什麼餐點？」 after 好、對、飯、吃飯.
+it.each(['好', '對', '飯', '吃飯'])('hands an answered service clarification to Main instead of renewing the same gate: %s', async (transcript) => {
+  const serviceClarification = { questionId: 'field-ordering', question: '請問您想點什麼餐點？', sourceUtterance: '我想吃飯', contextKey: 'field-context', expiresAt: Date.now() + 30000 }
+  const complete = vi.fn(async (_body: Record<string, unknown>) => response({ admission: 'service', disposition: 'clarify', question: '請問您想點什麼餐點？', requestKind: 'clarification-answer' }))
+  const result = await recoverServiceRequest(eligible, { ...context, transcript, state: { phase: 'ordering', serviceClarification }, complete })
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result.reason).toBe('UNCERTAIN_OPERATION')
+  expect(result.recovery).toMatchObject({ status: 'completed', admission: 'service', disposition: 'assistant', readOnly: true })
+  expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
+  expect(complete).toHaveBeenCalledTimes(1)
+  const payload = complete.mock.calls[0]![0]
+  expect(JSON.stringify(payload)).toContain(transcript)
+  expect(JSON.stringify(payload)).toContain('我想吃飯')
+})
+
+it.each([
+  { admission: 'background', disposition: 'ignore', expected: 'IGNORE' },
+  { admission: 'uncertain', disposition: 'abstain', expected: 'UNAVAILABLE' },
+])('does not escalate an unadmitted clarification answer: $admission', async ({ admission, disposition, expected }) => {
+  const complete = vi.fn(async () => response({ admission, disposition, requestKind: 'clarification-answer' }))
+  const result = await recoverServiceRequest(eligible, { ...context, state: { phase: 'ordering', serviceClarification: { questionId: 'service', question: '需要什麼協助？', sourceUtterance: '幫我', contextKey: 'key', expiresAt: Date.now() + 30000 } }, complete })
+  expect(result.kind).toBe(expected)
+  expect(result).not.toHaveProperty('question')
+  expect(complete).toHaveBeenCalledTimes(1)
+})

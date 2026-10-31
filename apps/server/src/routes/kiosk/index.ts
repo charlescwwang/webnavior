@@ -12,7 +12,7 @@ import type { HonoEnv } from '../../types/hono'
 
 import { randomInt, randomUUID } from 'node:crypto'
 
-import { conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { contextReplySchema, conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
@@ -20,6 +20,7 @@ import { array, boolean, check, integer, literal, maxLength, maxValue, minLength
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { clarificationTool, currentContextInstructions, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
+import { orderingInstructions, orderingSkill, resolveOrderingIntent } from '../../services/domain/kiosk-conversation-skills'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
 import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
@@ -412,6 +413,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       const bounded = validCue ? { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_SERVICE_REQUEST' as const, recovery: { status: 'eligible' as const } } : await decideInteraction({ ...decisionInput, invoke, routing: 'staged' })
       const priced = await resolvePriceHandoff(bounded, result.output.transcript, result.output.review ? undefined : result.output.decisionState?.priceEvidence, completeResolution)
       let decision = result.output.review ? priced : await resolveServiceHandoff(priced, result.output.transcript, result.output.decisionState, completeResolution)
+      if (!result.output.review)
+        decision = await resolveOrderingIntent(decision, decisionInput, completeResolution)
+      signal.throwIfAborted()
       const skip = result.output.candidates.find(candidate => candidate.id === 'intent:skip-customer-entry')
       // Phone resolution is an effect decision, so it requires completed
       // service admission. An uncertain recipient cannot authorize a skip.
@@ -444,9 +448,14 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         complete: (body, abortSignal) => options.llmGateway.complete({ modelName, body, abortSignal }),
       })
       signal.throwIfAborted()
-      if (result.output.visitorSessionId && recovered.recovery?.rounds?.length)
-        await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: JSON.stringify({ kind: 'service_recovery_metrics', ...recovered.recovery }), metadata: { source: 'service_recovery_metrics', utteranceId: result.output.utteranceId } })
-      return recovered
+      // Recovery may be the first stage to admit this turn. Qualify its price
+      // evidence now, before the Host binds an unresolved-price Menu task.
+      // Already-issued choices skip the resolver, preserving the one-pass budget.
+      const qualified = await resolvePriceHandoff(recovered, result.output.transcript, result.output.decisionState?.priceEvidence, completeResolution)
+      signal.throwIfAborted()
+      if (result.output.visitorSessionId && qualified.recovery?.rounds?.length)
+        await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: JSON.stringify({ kind: 'service_recovery_metrics', ...qualified.recovery }), metadata: { source: 'service_recovery_metrics', utteranceId: result.output.utteranceId } })
+      return qualified
     }
     return c.json(result.output.segmented
       ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, (checkpoint, progress, signal) => decide(checkpoint(options.systemOne!.decide), progress, signal), { signal: c.req.raw.signal, timeoutMs: result.output.budgetMs })
@@ -913,10 +922,16 @@ interface KioskCompletion {
   metrics?: { replyRepairRequests?: number, requestBytes: number, contextBytes: number, messageBytes: number, toolBytes: number, taskId?: string, durationMs: number, firstOutputMs?: number, inputTokens?: number }
 }
 
+// Completion review preserves the original request and its exact scoped tools;
+// a draft success claim is never supplied as evidence or an operation plan.
+const completionReviewInstruction = '本輪尚未有完成顧客需求的工具回執。結束前，重新核對原始顧客需求、相關真實對話與最新情境：查到資料不代表已完成新增、修改或展示下一批推薦。顧客要求看餐點或換其他推薦時，即使完整菜單已在情境內，仍須呼叫 menu_recommend 等展示工具更新畫面，不能只在文字列出餐點，也不能把泛指「其他餐點」交給 menu-information 當品名。條件不變且還有下一批時只傳 {"action":"continue"}，可另加 limit，不能重填 maxPrice、category、excludeItemIds 或其他既有條件，條件由程式保留。承接顧客明確指涉的餐點與份數；資訊已足夠且本輪有授權時，呼叫正確工具完成尚未執行的需求，不要再查已確認的資料或重做已成功的操作。只使用本次提供的工具與參數，不擴大權限、不猜同意、不自行付款。若只是詢問資訊，或仍有必要歧義，使用 respond_to_customer 選擇相應資訊或 clarification；沒有操作成功回執不可宣稱完成。'
+
 // Measure the actual serialized request after projection/compaction, not raw POS size.
 function inputMetrics(body: { messages: unknown, tools?: unknown }, context?: KioskConversationDecisionState['context']) {
   const encoder = new TextEncoder()
   return {
+    skillId: orderingSkill.id,
+    skillVersion: orderingSkill.version,
     requestBytes: encoder.encode(JSON.stringify(body)).byteLength,
     messageBytes: encoder.encode(JSON.stringify(body.messages)).byteLength,
     toolBytes: body.tools ? encoder.encode(JSON.stringify(body.tools)).byteLength : 0,
@@ -1020,7 +1035,11 @@ async function completeKioskReply(input: {
   const sizes = inputMetrics(body, input.decisionState?.context)
   const startedAt = performance.now()
   const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, modelName, body })
-  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName)
+  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, tools: input.tools ?? [], toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName, async () => parseAssistantReply(await input.llmGateway.complete({
+    abortSignal: input.abortSignal,
+    modelName,
+    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${completionReviewInstruction}` } : message) },
+  })))
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
 
@@ -1144,10 +1163,11 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
     throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
 
   const catalogItemIds = input.decisionState?.context?.catalog ? new Set(input.decisionState.context.catalog.items.map(item => item.id)) : undefined
+  const systemInstructions = createKioskSystemInstructions(input)
   const body = {
     model: modelName,
     messages: [
-      { role: 'system', content: createKioskSystemInstructions(input) },
+      { role: 'system', content: systemInstructions },
       ...toConversationMessages(input.transcript.entries, input.toolResults.map(result => result.toolCallId), conversationScope(input.decisionState), Boolean(input.content), catalogItemIds),
       ...input.toolResults.map(toolResult => ({
         role: 'tool',
@@ -1165,24 +1185,63 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
   const response = await input.llmGateway.complete({ abortSignal: input.signal, modelName, body })
   const answer = await finishConversationReply(input, await parseKioskReplyStream(response, onTextDelta, () => {
     firstOutputMs ??= performance.now() - startedAt
-  }), modelName)
+  }), modelName, async () => parseAssistantReply(await input.llmGateway.complete({
+    abortSignal: input.signal,
+    modelName,
+    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${completionReviewInstruction}` } : message) },
+  })))
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(firstOutputMs !== undefined ? { firstOutputMs } : {}), ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
 
 /** Consumes only the Server reply tool; browser effects still use their own receipts. */
 async function finishConversationReply(
-  input: Pick<KioskReplyStreamInput, 'decisionState' | 'toolResults' | 'llmGateway'> & { signal?: AbortSignal },
+  input: Pick<KioskReplyStreamInput, 'content' | 'decisionState' | 'toolResults' | 'tools' | 'llmGateway' | 'kioskService' | 'transcript'> & { signal?: AbortSignal },
   answer: KioskCompletion,
   modelName: string,
+  review: () => Promise<KioskCompletion>,
 ): Promise<KioskCompletion> {
   const context = input.decisionState?.context
   if (!context)
     return answer
+  let clarificationRequested = false
+  if (answer.toolCalls.length === 1 && answer.toolCalls[0]!.function.name === replyTool.function.name) {
+    try {
+      const selected = safeParse(contextReplySchema, JSON.parse(answer.toolCalls[0]!.function.arguments))
+      clarificationRequested = selected.success && selected.output.kind === 'clarification'
+    }
+    catch {
+      // Malformed selectors still use the bounded reply repair below.
+    }
+  }
+  const reads = new Set(['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'])
+  // Only the latest customer task may be resumed. A previous customer's effect
+  // must neither suppress this review nor be repeated as part of this request.
+  const taskEntries = input.content ? [] : input.transcript.entries.slice(input.transcript.entries.findLastIndex(entry => entry.kind === 'user_text') + 1)
+  const effectAttempted = input.toolResults.some(result => !reads.has(result.name)) || taskEntries.some(entry => entry.kind === 'tool_result' && typeof entry.metadata?.name === 'string' && !reads.has(entry.metadata.name))
+  const reviewed = input.transcript.entries.some(entry => entry.kind === 'service_event' && entry.metadata?.source === 'main_completion_review' && entry.metadata.taskId === context.taskId)
+  const hasOperations = input.tools.some(tool => context.allowedToolNames.includes(tool.function.name) && !reads.has(tool.function.name) && !['customer_skip_phone', 'order_ask_question'].includes(tool.function.name))
+  let completionReviewed = false
+  // A read-only semantic handoff can also draft a recommendation without
+  // presenting it. Review with its original read tools before the reply-only
+  // selector removes that capability; the same task marker bounds both paths.
+  const unpresentedRead = context.readOnly && !answer.toolCalls.length && !hasMenuReply(input.toolResults) && input.tools.some(tool => context.allowedToolNames.includes(tool.function.name) && ['menu_get', 'menu_recommend'].includes(tool.function.name))
+  const unfinishedOperation = !context.readOnly && !input.decisionState?.readOnly && hasOperations
+  if (context.taskId && context.phase === 'ordering' && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && !clarificationRequested && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
+    // Reserve the one review before the provider call. Later continuations of
+    // this task cannot spend another review or restart an attempted operation.
+    await input.kioskService.appendDeviceInteraction({ deviceId: input.transcript.session.deviceId, visitorSessionId: input.transcript.session.id, kind: 'service_event', content: 'agent.completion_review', metadata: { source: 'main_completion_review', taskId: context.taskId } })
+    answer = await review()
+    completionReviewed = true
+  }
   const browserCalls = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
-  if (browserCalls.length || input.toolResults.some(result => result.name !== 'kiosk_session_history'))
-    return { ...answer, toolCalls: browserCalls }
-  const selected = await selectReply({ answer: answer.content, calls: answer.toolCalls, context, requireMenuRead: input.decisionState?.requireMenuRead === true && (input.decisionState.readOnly === true || !context.catalog?.complete), complete: body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }) })
-  return { ...answer, toolCalls: [], reply: selected.reply, replyRepairRequests: Number(selected.repaired) }
+  // A completed read review may be followed by a real presentation receipt.
+  // Preserve that receipt for the Host instead of turning the task marker into
+  // a synthetic clarification. Mutable tasks still require their effect review.
+  const presentedRead = context.readOnly && hasMenuReply(input.toolResults)
+  if (browserCalls.length || (!completionReviewed && (!reviewed || presentedRead) && input.toolResults.some(result => result.name !== 'kiosk_session_history')))
+    return { ...answer, toolCalls: browserCalls, replyRepairRequests: Number(completionReviewed) }
+  const selected = await selectReply({ repair: !completionReviewed && !reviewed, answer: answer.content, calls: answer.toolCalls, context, requireMenuRead: input.decisionState?.requireMenuRead === true && (input.decisionState.readOnly === true || !context.catalog?.complete), complete: body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }) })
+  return { ...answer, toolCalls: [], reply: selected.reply, replyRepairRequests: Number(completionReviewed) + Number(selected.repaired) }
 }
 
 // A semantic food handoff must obtain a fresh read before any generated
@@ -1363,10 +1422,9 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       ? { content: input.profile.snapshot.characterCard.postHistoryInstructions, title: '每次回覆都必須遵守的角色規則' }
       : undefined,
     input.actionPrompt ? { content: createAssistantActionInstructions(input.actionPrompt), title: '本次主動互動任務' } : undefined,
-    { content: '你可以獨立處理顧客需求，不依賴 System One 分類。招呼、一般對話及非操作性的釐清在提供respond_to_customer時必須透過該工具選擇回覆種類，由畫面依最新事實呈現；未提供時才依本輪受限服務範圍回答，不需要為了回覆招呼而查菜單。拒絕或否定某餐點不代表指定替代餐點。「不想吃飯」可能是不想用餐，也可能是不吃米飯；未確認前不可自行推成想吃麵、排除米飯或同意換一批。需求不明先釐清；若本輪要求查菜單，查詢只取得事實，不代表顧客已要求推薦或接受替代餐點。餐點、價格、選項與訂單狀態以本輪完整情境或最新工具資料為準；缺少完整情境才先查詢工具，不以歷史猜測；新增、修改、移除、付款等操作必須執行工具，沒有成功回執不可宣稱已完成。顧客問「有某類餐點嗎／有哪些」時，本輪先呼叫菜單查詢並直接展示、說出查到的品項，不先問要不要看。分類只能使用工具 schema 或 POS 回傳的精確 category；不得自行改寫或猜分類名稱。顧客答應上一則看餐點的提議時，應承接該需求執行查詢，不再重複同一個提議。', title: '獨立對話與工具使用' },
     input.decisionState?.serviceClarification ? { content: `目前服務釐清只是理解線索，不授權操作或回答舊 Menu 問題：${JSON.stringify(input.decisionState.serviceClarification)}`, title: '服務釐清' } : undefined,
     { content: '店名、營業時間、付款方式、發票、點餐管道與取餐／送餐方式，可依角色與店別設定中明確提供的店家服務資訊簡短回答，不必為此查菜單。沒有提供的資訊明確說明無法確認，不能自行補上營業日、支付品牌、發票載具規則、網址、候餐時間或配送保證。服務介紹不是操作授權：說明可自取或機器人送餐不代表已變更用餐方式、派送或完成訂單。實際可選付款與用餐方式、即時訂單與配送狀態仍以最新工具回傳為準；若與店家一般介紹不一致，說明當前可用選項，不猜測或承諾。', title: '店家服務資訊與即時操作分界' },
-    { content: '查詢語意由你依本句與相關對話理解，不依賴前置意圖名稱。menu_recommend 必須選 action：continue 沿用條件換批；update 新增或只修改明示條件，包含第一輪查詢，只有本句同時明確要求不同餐點才加 excludeShown:true，不得沿用前句換批或無更多結果的語意；單純改價位或分類的新條件查詢不可排除已展示的符合品項；reset 顧客明確重新挑選時清除瀏覽限制，保留飲食限制與已展示歷史；clarify 意圖或範圍不明時只回傳語音問題。原條件已無更多結果，顧客只泛指其他而未明示改哪個範圍時，選 clarify，不重試或自行重置；明確不限價格用 update 並 clear:[price]，不是重置所有條件。query／queries 只放具體商品名稱，泛指其他品項、別的或先前那些不是品名；具體陌生品名先比對本輪完整菜單；可能是別稱時提出真實候選並確認，不因字面查無就直接說沒有。沒有完整菜單時用 menu_get 查原名。條件由程式保存，不從歷史重填整組舊條件，不用省略參數或 more 表達動作。clarify 只傳 {action:clarify}，不填 customerMessage 或 question；工具回傳的 customerMessage 是本輪語音追問，不再查資料、推薦或改寫成找不到商品。', title: '查詢動作與條件狀態' },
+    { content: orderingInstructions(), title: '已載入的點餐技能' },
     { content: '操作問題由點餐系統依 POS 與目前狀態產生。工具回傳 pendingCustomerChoice 時，不另寫或重複詢問問題，由畫面呈現該問題。用餐方式名稱必須取自最新 POS fulfillmentModes，不自行將 takeout 解讀成外帶。環境、資料來源與測試標記僅供內部紀錄，不向顧客敘述；只回報工具證實的訂單與付款狀態。pending 或 uncertain 不可宣稱付款或訂單成功。', title: '顧客回覆與操作問題分界' },
   ].filter((section): section is { content: string, title: string } => Boolean(section?.content)).map(section => `【${section.title}】\n${section.content}`).join('\n\n')
 }

@@ -39,3 +39,27 @@ it('keeps the guard after a Main failure and skips Main for an already resolved 
   expect(await resolvePriceHandoff({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_FILTER', priceChoiceId: 'INFORMATION' }, '多少錢', evidence, complete)).toHaveProperty('priceChoiceId', 'INFORMATION')
   expect(complete).toHaveBeenCalledOnce()
 })
+
+it('qualifies an admitted recovery without changing its meaning or read authority', async () => {
+  const recovery = { status: 'completed' as const, admission: 'service' as const, disposition: 'assistant' as const, readOnly: true }
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_price_choice', arguments: '{"choice":"UPPER_INCLUSIVE"}' } }] } }] }))
+  const result = await resolvePriceHandoff({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', recovery }, '100元以下', evidence, complete)
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', priceChoiceId: 'UPPER_INCLUSIVE', recovery })
+  expect(complete).toHaveBeenCalledOnce()
+  expect(result).not.toHaveProperty('actionId')
+})
+
+it('does not qualify a provider failure or repeat an existing price decision', async () => {
+  const complete = vi.fn(async () => Response.json({}))
+  expect(await resolvePriceHandoff({ kind: 'NEEDS_ASSISTANT', reason: 'PROVIDER_FAILURE' }, '100元以下', evidence, complete)).not.toHaveProperty('priceChoiceId')
+  expect(await resolvePriceHandoff({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', priceChoiceId: 'UPPER_INCLUSIVE', recovery: { status: 'completed', admission: 'service' } }, '100元以下', evidence, complete)).toHaveProperty('priceChoiceId', 'UPPER_INCLUSIVE')
+  expect(complete).not.toHaveBeenCalled()
+})
+
+it.each(['UNCERTAIN_OPERATION', 'NEW_REQUEST', 'MENU_QUERY', 'UNRESOLVED_FILTER'] as const)('qualifies admitted semantic handoff %s without granting operation authority', async (reason) => {
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_price_choice', arguments: '{"choice":"UPPER_INCLUSIVE"}' } }] } }] }))
+  const result = await resolvePriceHandoff({ kind: 'NEEDS_ASSISTANT', reason }, '100元以下', evidence, complete)
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason, priceChoiceId: 'UPPER_INCLUSIVE' })
+  expect(result).not.toHaveProperty('actionId')
+  expect(complete).toHaveBeenCalledOnce()
+})

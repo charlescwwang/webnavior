@@ -145,12 +145,39 @@ describe('kiosk routes', () => {
     const events = transport === 'sse' ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))) : []
     const final = transport === 'sse' ? events.find(event => event.type === 'turn-finished') : JSON.parse(text)
     expect(final.reply).toEqual({ kind: 'payment-methods' })
+    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@1')
     expect(final.toolCalls).toEqual([])
     expect(complete).toHaveBeenCalledTimes(2)
     expect(complete.mock.calls[1]![0].body.tools).toEqual([replyTool])
     expect(JSON.stringify(complete.mock.calls[1]![0].body)).not.toContain('已付款成功')
     expect(events.some(event => event.type === 'assistant-delta')).toBe(false)
     expect(events.some(event => event.type === 'tool-requested')).toBe(false)
+  })
+
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 alternatives replay.
+  it('reviews a read-only draft with the original menu tools before narrowing to reply selection', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+      .mockImplementationOnce(async () => Response.json({ choices: [{ message: { content: '推薦炸排骨便當。' } }] }))
+      .mockImplementationOnce(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'next', type: 'function', function: { name: 'menu_recommend', arguments: '{"action":"continue"}' } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'current', capturedAt: Date.now(), taskId: 'alternatives', sourceUtterance: '還有其他的嗎', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['menu_recommend'] }
+    const tools = [{ type: 'function', function: { name: 'menu_recommend', description: '換推薦', parameters: { type: 'object', properties: {} } } }]
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase: 'ordering', readOnly: true, context } }) })
+    expect(response.status).toBe(200)
+    const final = await response.json() as { toolCalls: { function: { name: string } }[] }
+    expect(final.toolCalls).toMatchObject([{ function: { name: 'menu_recommend' } }])
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(complete.mock.calls[1]![0].body.tools).toEqual([...tools, replyTool])
+    expect(JSON.stringify(complete.mock.calls[1]![0].body.messages)).toContain('展示下一批推薦')
+    complete.mockImplementationOnce(async () => Response.json({ choices: [{ message: { content: '推薦炸排骨便當。' } }] }))
+    const continued = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ tools, decisionState: { phase: 'ordering', readOnly: true, context }, toolResults: [{ name: 'menu_recommend', toolCallId: 'next', content: JSON.stringify({ items: [{ id: 'pork', name: '炸排骨便當' }], presentation: { kind: 'recommendation', itemIds: ['pork'] }, customerMessage: '推薦炸排骨便當。' }) }] }) })
+    expect(continued.status).toBe(200)
+    expect(await continued.json()).not.toHaveProperty('reply.kind', 'clarification')
+    expect(complete).toHaveBeenCalledTimes(3)
   })
 
   it.each([false, true])('supplies one complete current catalog without forcing an extra lookup (continuation=%s)', async (continuation) => {
