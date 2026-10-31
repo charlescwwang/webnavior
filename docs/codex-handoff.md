@@ -7,6 +7,148 @@ accumulating history.
 
 ## Current State
 
+- Oct31 user explicitly authorized batch commits. Formal source now lives on
+  branch `codex/kiosk-production-recovery` in this isolated worktree, derived from
+  e8491ec. Code commits:09a6786 Menu targets/continuation prices; a5bc0e0 Host
+  tool-batch/receipt protection;06d4f0b Main ordering skill, service/price/question
+  handoff and integration/live replay fixtures. Documentation follows separately.
+  Existing deployed runtime remains independent; committing does not switch it.
+  Do not push or merge other branches without request. Original no_mcp and dirty
+  codex/slm-jev-experiments were read-only inspected, not changed. The experiment
+  branch still starts at e8491ec and has uncommitted work; preserve that work before
+  integrating this formal branch. Compare Jev/SLM against the SAME Main skill,
+  Menu/Host, fixtures and isolated test runtime/DB/provider settings, not live
+  production selections. Source worktree isolation alone does not isolate DB.
+  Commit-gate pnpm lint and pnpm typecheck each attempted once: global lint fails
+  only in untouched legacy code/docs/scripts; no changed files reported. Root
+  types fail in plugin-sdk-tamagotchi/electron-vueuse missing module declarations.
+  No unrelated cleanup and no repeat root check. Relevant scoped types/lint and
+  3/3 full live acceptance remain passed; Menu15/Host88 targeted tests also pass.
+  All code commits used normal nano-staged/moeru-lint hooks (no skip/--no-verify).
+
+- DEPLOYED Oct31 after user sudo switch at18:39:56 Taipei:
+  `/home/aimax/.local/share/webnavior/releases/ordering-skill-20261031-182642`.
+  Systemd active, API WorkingDirectory is its runtime/apps/server. Manifest
+  deployed-origin-verified;3190 release hashes and47 origin frontend assets
+  verified, livez/readyz200, DB/Redis ok. Browser IAB opens public Kiosk registration
+  page and loaded /kiosk/assets/index-D1UL0_nW.js matching release HTML; no test
+  device/session/order created. publicBrowserVerified:true. Generic HTTP client
+  public HTTPS got403; browser loaded normally, so do not claim public byte-hash
+  verification or infer an origin outage. agent-browser installed CLI lacks
+  required skills command; IAB was fallback. No production model dialogue replay.
+  Runtime cloned from previous Oct30 release with only4 API source overlays;
+  rebuilt Menu/Kiosk preserve production URLs and /menu/ base. No DB schema,
+  provider or admin changes, no commit. Rollback (only if user requests/needed)
+  uses same release/switch-release.py --rollback and exact prior runtime/frontends.
+  Original shared checkout and other experiments are still excluded.
+
+- Oct31 user explicitly requested investigation, planning and implementation of
+  Jev first, then Main with a skill. Implemented in isolated
+  kiosk-main-recovery and deployed via the release above; no commit. Previously there was no runtime
+  skill loading on this route: repository `.agents/skills` are developer tools.
+  New Server domain `kiosk-conversation-skills` owns built-in `ordering@1`
+  (workflow, tools, missing slots and completion). JSON/SSE use the same procedure;
+  two old route workflow paragraphs moved there, not duplicated. Main round
+  metrics include skill/version. First version is code-managed, not editable UI.
+  One bounded Main selection handles admitted UNCERTAIN_OPERATION, ordinary
+  ordering, exactly one exact product and browser-issued meal effects. It also resumes still-live Menu item-configuration answers by
+  question/candidate intersection and answeredQuestionId. It does
+  not author tool args, quantities/targets or JEV confidence; explicit readonly,
+  recovery, phone/checkout, unresolved prices and ambiguous/compound needs do
+  not gain authority. Invalid/provider-failed selection preserves prior handoff.
+  Browser still compiles/validates candidates and owns slot/question lifecycle.
+  `resolvedBy:main-skill` and Host trace source distinguish Main from JEV.
+
+- Oct31 user requested full acceptance and explicitly removed the call allowance
+  for THIS acceptance. Cumulative ledger is now informational; do not infer
+  unlimited future tests or deployment permission. Original120 cap superseded
+  for this acceptance; no further confirmation was needed/requested.
+  First fresh six-turn run failed on final '兩份': JEV service high, purpose
+  SINGLE0.5429/ANSWER0.4228, confidence0.4515. Skill handled a new exact meal
+  but not its owned slot answer, so Host rebound readOnly and Main browsed.
+  Added live item-configuration question recovery: candidate/choice intersection,
+  retain answeredQuestionId; expired/wrong-purpose/unissued/readonly denied.
+  Browser still checks phase, question ownership, expiry, revisions and one-use
+  execution. New weak-answer route/Host/Menu repro failed before/pass after.
+
+- FULL SIX-TURN LIVE ACCEPTANCE NOW PASS3/3 in fresh scratch DB/session per run:
+  100元→其他→200元其他→還有其他→我要水餃→兩份. All retain budget,
+  present unseen batches, ask quantity without early cart write, then actually
+  cart dumplings2,total160 with receipt. Same configured Jev/Main and role
+  across runs; unseeded full flow, real routes/Host/Menu and provider requests.
+  Successful artifacts `/tmp/webnavior-budget-order-skill-full-answer-fix-20261031`
+  and `skill-full-repeat-2/-3-20261031` JSONL/logs are private0600; source hash
+  metadata and sanitized evidence recorded in existing audit. Successful3 runs
+  used26calls each,9.248/10.540/8.916s (including scratch setup, not GPU timing).
+  No formal Session/cart/POS/payment writes, no deployment or commit. This proves
+  this current-menu synthetic six-turn path, not112 planned scripts, ASR, every
+  skill or changed-menu resilience. Source100員 remains outside this驗收.
+  Final scoped checks: Server92 and Kiosk79 tests pass; Server/Kiosk types and
+  changed lint pass. Full root typecheck not run. Acceptance for this flow is
+  complete; do not extend testing or deploy without a new request.
+
+- User clarified ownership: THIS chat maintains the production version and its
+  correctness/stability/release gates; the OTHER chat explores SLM versus Jev
+  selection and cooperation. V1 references below are historical workspace context,
+  not its current sole purpose. Keep separate worktrees/branches. Experimental
+  model/prompt/routing changes require an explicit adoption decision and production
+  integration validation; do not message or modify the other chat's work.
+
+- Oct30 user requested planning after further field screenshots. Active plan:
+  docs/plans/2026-10-28-kiosk-conversation-repair.md, Oct30 section supersedes
+  historical statuses below. Planning only: no new code/prompt/model/deployment
+  changes this turn. Plan fixes baseline/traces first, then budget+other choices,
+  question/quantity/completion boundaries, identity/service replies and invalid
+  diagnostics; expanded plan16 families,112 planned scripts (existing32 + new48
+  functional +32 adversarial), state/receipt/UI oracles. Not yet materialized
+  or run. Real replay full reconstructable set plus24 predetermined high-risk
+  flows3x, proposed total cap1500 calls/60min; smoke12 is not acceptance.
+  Keep current production policy; do not merge original checkout's paused V1.
+  Original32-flow evaluation supplies regressions, not new-rule expectations.
+
+- Oct30 service-clarification loop hotfix is now DEPLOYED: release fix.json says
+  deployed and runtime SHA matches prepared repair. This corrects prior pending
+  notes. Decision456/80 skipped + Server types/lint passed, no full real-model
+  flow acceptance. Later screenshot Session eCda22nNnyhWzB5rMVvsM shows 一百份
+  not parsed (existing quantity1–20), followed by Main menu_recommend instead
+  of order; identity also becomes greeting. Budget screenshot not yet traced
+  end-to-end; do not assign a single cause. Review-invalid raw response missing.
+
+- Oct30 Main quantity repair implemented ONLY in isolated worktree
+  `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`, base e8491ec.
+  Host rejects unknown-name batches before any effects and permits one corrected
+  proposal; actual rejected/uncertain writes still stop. Server ordering tasks
+  without effects get one scoped completion review (Session/taskId reservation),
+  preserving source/history/tools; no readOnly/payment/confirmation expansion.
+  Menu freezes only unique pre-task presentation targets with a quantity, fixing
+  omitted-name additions without letting later lookups authorize a substitute.
+  JSON/SSE scratch Cart regressions cover add3/edit3->2 and bounded failures;
+  Kiosk96 + Menu65 + Server69 =230 offline tests pass; live2 also pass.
+  three affected app typechecks and Menu/Kiosk builds pass, no root typecheck.
+  After initial auto-review denial, user explicitly approved the configured
+  qwen36 credential/egress; the same two-case synthetic replay passed at17:11
+  Taipei (5.68s including setup): real Host loop, actual add3/edit3->2 and receipt
+  presentation. Scratch API/DB/Menu, development persona, direct provider;
+  not a full semantic/ASR/POS acceptance. User then authorized deployment.
+  Prepared independent release at
+  /home/aimax/.local/share/webnavior/releases/main-recovery-20261030-191156;
+  6251 files verified, production Menu base=/menu/, new/rollback API imports pass.
+  User switched at19:24 Taipei; API now runs from the independent release.
+  Initial frontend build omitted ignored production Vite settings: Kiosk called
+  localhost and Menu lacked public POS/embedding settings. Corrected both builds
+  and published frontend-only at19:32; origin47 checks pass, public browser loads
+  corrected Kiosk, bootstrap reaches API (401 expected for unenrolled browser),
+  invalid enrollment payload returns400. No test device created; successful
+  enrollment still needs user retry. Release keeps before/after hotfix assets
+  and now validates compiled API/scenario/POS URLs before publishing.
+  Script installs only one WorkingDirectory drop-in,
+  publishes HTML after API health, and auto-rolls back to clean Oct29 snapshot
+  rather than dirty checkout. Current origin47 asset checks and DB/Redis pass.
+  No commit or production order writes.
+  See latest sections of docs/research/2026-10-26-kiosk-conversation-error-audit.md
+  and Kiosk README. Separate active chat edits V1 policy in original checkout;
+  do not merge/deploy that policy as part of this repair.
+
 - Oct29 user explicitly authorized plain-language batch commits after field
   deployment. Commits:907db15 new-device defaults;9c702f6 staged routing, SLM
   transport and verified character replies/retry guards;efd8e82 admin SLM

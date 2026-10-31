@@ -392,6 +392,37 @@ or frontend failure.
 pnpm -F @proj-airi/server-schema build
 ```
 
+## Main conversation skill
+
+`src/services/domain/kiosk-conversation-skills` owns the built-in `ordering@1`
+procedure: applicability, inquiry versus purchase, missing-slot handling, browsing,
+cart edits and receipt-based completion. Main JSON/SSE instruction assembly loads
+this same version instead of keeping separate copies of the workflow text in
+route wiring. `main_round_metrics` includes `skillId` and `skillVersion`. These are
+application runtime skills, separate from repository `.agents/skills` used by
+contributors. This first version is code-managed, not an editable skill platform.
+
+After reliable service admission, an `UNCERTAIN_OPERATION` in the ordinary
+ordering phase can use this skill for one Main intent selection when this turn
+has exactly one exact product reference. It also handles an admitted uncertain
+answer to a still-live Menu-owned item-configuration question: only the
+intersection of that question's choices and the current candidates is offered,
+and the selected effect retains its `answeredQuestionId`. Expired or unrelated
+questions cannot be resumed. Only browser-issued meal effects are offered; Main
+cannot supply a target, quantity, tool arguments, checkout effect
+or JEV confidence. A valid selection returns an issued `FAST_ACTION` with
+`resolvedBy:main-skill`; its trace separately records skill/version, Main call
+count and duration while retaining the real JEV counts. Browser candidate
+compilation still owns target/slot resolution, revision checks, domain questions
+and execution. A missing quantity therefore opens the existing Menu question
+instead of binding the customer request to a permanently read-only Agent task.
+
+Explicit read-only tasks, recovered read-only service answers, phone/checkout,
+ambiguous or multiple products, unresolved prices, invalid/partial proposals and
+provider failure retain the prior handoff. Skill instructions do not grant writes.
+General Main still uses its existing scoped tools for demands outside this bounded
+recovery; this version does not claim full alias/multi-meal recovery coverage.
+
 ## Main conversation context and measurements
 
 Kiosk Main messages accept the neutral `stage-shared/kiosk-conversation`
@@ -399,6 +430,14 @@ contract. A current compact catalog supports identity/price/option understanding
 without a compulsory second literal lookup; requested menu presentation still
 needs its tool receipt. The current snapshot replaces historical state, and tool
 scope intersects its allowed tools with offered tools. Phone skip stays host-owned.
+A read-only task that drafts prose without a fresh menu receipt can use the same
+single task-scoped completion review before reply-only selection. That review
+retains read tools so a request for another batch can actually update the display;
+it never grants order writes. A subsequent successful presentation receipt ends
+the read normally; the review marker must not synthesize a clarification in its
+place. Continue calls retain runtime conditions and normally supply only action
+plus an optional limit. Repeated prices are equality-checked by Menu, never used
+to modify the active conditions.
 Decision and conversation transports accept bounded payment-method IDs from the
 current service, including LINE Pay and JKoPay; execution still validates the Menu's
 actual offered methods. Model prose is recorded as draft service events in both
@@ -438,7 +477,18 @@ provider input tokens are present only if reported. No provider errors, prompts
 or hidden reasoning are persisted in those events. A read-only service question
 has a 30s lifetime; its next utterance uses one contextual review directly, which
 separates clarification answers from independent new requests. A clarification
-answer remains read-only when formally handed to Main.
+answer remains read-only when formally handed to Main. A recovered service request with unresolved
+price evidence completes the existing finite price resolution before the Host
+binds its Menu task. The resolver uses only this turn's issued choices, preserves
+the handoff's read authority and skips already-resolved prices. Admitted semantic
+handoffs also qualify price evidence when Jev cannot choose an operation. One
+amount in a single-dish exploration is a base-price upper bound; explicit multi-dish
+or whole-order allocation remains unsupported. Failed resolution
+keeps the price guard active. If that review admits
+service but still asks for clarification after the customer has already answered
+a service question, it hands the retained context to read-only Main instead of
+creating another recovery question. Main can browse or ask a domain-owned
+follow-up; this does not authorize an order or accept malformed review output.
 
 ## Kiosk system archives
 

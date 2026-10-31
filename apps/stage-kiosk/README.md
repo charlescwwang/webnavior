@@ -35,6 +35,17 @@ KIOSK_DEVELOPMENT_REGISTRATION_ENABLED=true pnpm --filter @proj-airi/server dev
 VITE_API_SERVER_URL=http://localhost:5168 pnpm --filter @proj-airi/stage-kiosk dev
 ```
 
+For a public deployment, build with `VITE_API_SERVER_URL` and
+`VITE_SERVER_URL` set to the public API origin, and
+`VITE_ORDERING_SCENARIO_URL` set to the public Menu URL. These values are
+compiled into the browser bundle; changing Server environment variables after
+building does not update them. An isolated worktree does not inherit ignored
+`.env.production.local` files. Verify the compiled registration destination,
+not only static asset hashes, before publishing. Build the embedded Menu with
+its matching `VITE_AIRI_ORIGIN`, `VITE_ORDER_MENU_SERVER_URL`, and
+`VITE_ORDER_MENU_PUBLIC_URL`, plus the deployment's `/menu/` base path.
+
+
 The Server omits this endpoint unless the flag is exactly `true`, and always
 omits it when `NODE_ENV=production`. A production kiosk will replace this
 screen with the QR-code enrollment flow.
@@ -119,7 +130,9 @@ This is separate from a real Main Agent task: it admits service meaning, never
 an operation. A review can ignore, abstain, hand off the original request, or
 create a read-only service question. Its answer cannot consume an older Menu
 purchase/payment question. Independent new requests leave that clarification
-without inheriting its authority.
+without inheriting its authority. After the customer answers a service
+question, an admitted review that still requests clarification hands the context
+to read-only Main rather than renewing the recovery question indefinitely.
 
 `SERVICE_RECOVERY_PROGRESS` reaches the host before the provider starts. Explicit
 text shows receipt immediately, elapsed time, and a longer-wait message after
@@ -378,15 +391,42 @@ Kiosk. Preserve the full-page manual-input check when evaluating any CSS fix.
 ## Anonymous customer sessions
 
 Main Agent accepts both direct requests with Fast Path disabled and Jev handoffs
-through the same conversation loop. A completed turn without commerce tools can
-present natural model dialogue (for example, a greeting). Offering menu tools
-alone does not require a menu receipt or discard the answer. History-only reads
-also retain conversational replies. Once commerce tools are attempted, the host
-presents accepted current-turn menu/cart/operation/question receipts rather than
-model success prose. Rejected tools are not automatically replayed. No-tool
-prose relies on the model instructions to avoid unsupported commerce claims;
-this path does not perform a second semantic classification or guarantee that
-all model-written factual claims are grounded.
+through the same conversation loop. With current Menu context, customer text is
+rendered from validated reply selectors or actual tool receipts; draft success
+claims are not displayed as completed operations.
+
+An unknown tool name causes a preflight rejection of its entire proposed batch,
+before any sibling tool executes. The Host returns correlated `UNKNOWN_TOOL` /
+`BATCH_NOT_EXECUTED` results and allows one corrected proposal using refreshed
+facts and the current tool list. It never maps an unknown name or invents missing
+arguments. A second invalid proposal ends the task. Actual execution rejection,
+timeout or uncertain writes retain their existing stop/result-unknown behavior.
+
+An ordering task that ends without an operation may receive one completion
+review, preserving its original utterance, related dialogue, current facts and
+exact scoped tools. `main_completion_review` records this reservation by visitor
+session and task ID. Existing read-only authority, customer entry, checkout and
+payment boundaries are unchanged; a previous operation attempt suppresses review.
+The review can propose the missing operation or return a validated information /
+clarification selector. It shares the existing turn deadline and tool budgets;
+it is not an additional Jev classifier or permission grant. After the single
+review, malformed prose falls back to clarification without another provider
+repair. Once effects occur, displayed results still require actual receipts.
+
+Offline regressions for this flow run with:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/fieldQuantityRecovery.test.ts src/composables/useKioskInteractionRecording.test.ts src/services/questionPresentation.test.ts
+```
+
+`mainQuantityReplay.test.ts` is disabled by default. Its
+`KIOSK_MAIN_QUANTITY_REPLAY=1` opt-in uses the selected provider metadata in the
+existing local `/tmp/webnavior-main-scope-profile.json` fixture and a locally
+provided `LLM_ROUTER_MASTER_KEY`. It sends two synthetic scenarios, application
+instructions and a scratch menu/cart to that provider, consuming model quota.
+Provider credential use and external egress require explicit authorization.
+The Host, HTTP API and database are isolated; it never calls production Kiosk,
+POS or payment endpoints. Never commit the private profile or decryption key.
 
 Internal `menu_get(display:false)` results carry `dataOnly:true`. They provide
 catalog evidence to Main Agent and are excluded from customer reply receipts,
@@ -857,3 +897,22 @@ question presentation or speech playback. A disconnected browser cannot prove
 release; restart the session to replace that document rather than unlocking on
 a timer. This control currently applies to Main Agent tasks; Fast Path retains
 its existing execution flow.
+
+
+### Main ordering skill handoff
+
+An admitted weak JEV operation may be independently selected by Main's built-in
+`ordering@1` skill. The decision marks `resolvedBy:main-skill`; Host traces use
+`decisionSource:main-skill` rather than attributing the selection to JEV. The Host
+still executes only a currently issued Menu candidate. Menu owns the resulting
+quantity/configuration question and later answer; skill loading never sets a
+blanket mutable flag or changes payment/confirmation authority.
+
+`src/services/orderingSkill.test.ts` exercises actual route/Host/Menu ordering
+through the quantity answer and a query-only counterpart. The opt-in
+`budgetOrderReplay.test.ts` additionally accepts `KIOSK_BUDGET_REPLAY_FLOW=meal-skill`
+for a single live meal-request probe after two reconstructed synthetic prefix
+turns. It proves that single handoff, not a fresh full dialogue. `core` runs four
+live turns; the default remains six. Keep private artifacts and aggregate provider
+call/time limits across runs; a passing fixture or single probe is not deployment
+acceptance.

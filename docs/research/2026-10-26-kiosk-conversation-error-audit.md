@@ -374,3 +374,381 @@ Strands示範可參考插入點與可語音恢復的介入方式，不直接移�
 唯讀核對Redis有效runtime／router：Main alias `webnavior/chat`，upstream model `qwen36`、enableThinking=false、timeoutMs=60000。router依upstream設定覆寫每輪chat_template_kwargs.enable_thinking，包括工具延續；目前不是可由單次caller直接翻轉的開關。這是設定與程式路徑證據，不是當次上游已遵守開關或實際權重身份的完整證明。此次未改正式設定或呼叫模型。
 
 下階段建議先做寫入前／回覆前界線與必要的最終模型輸入可觀測性，再縮分流契約。thinking不作防護替代品：現場暫不全域開啟，另在隔離相同Main路徑以6條歷史合成情境各跑off／on一次（12條鏈、全輪8分鐘上限、無限時延長或調prompt重跑），保持候選／工具／初態與規則一致，記正確工具、遺漏需求、錯誤副作用、完成宣告與延遲，確認後端確實遵守模式。此為未執行建議，不是已取得thinking收益；若確有改善再設獨立profile／路由試用複合更正任務。有限決策SLM維持非思考單一結果契約。
+
+
+## 2026-10-30 最新對話：Main 加點／數量修改斷點
+
+本節為隔離診斷，未修改產品程式、正式設定、模型或部署。基準為最後提交
+`e8491ec`，worktree：`/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`。
+原工作區另有其他聊天正在實作的 V1 政策，不混入本次診斷。
+
+### 正式環境與證據範圍
+
+- Nginx 5169 原站實際供應的 Menu／Kiosk HTML 與 `/var/www/airi` 一致；
+  Menu 4 個、Kiosk 579 個部署快照檔案均與 10/29 發布版本相同。
+- API 仍是 PID503794，10/29 17:57:33 Taipei 啟動；啟動命令為 tsx，沒有 watch。
+- 本次涉及的 Menu webmcp、Server kiosk route、conversationContext、Host recording
+  與 questionPresentation，隔離 HEAD 的 SHA-256 均符合 10/29 release manifest。
+- 唯讀取得最新 Session 的230筆 entry，時間10/30 13:30:54–13:38:54 Taipei。
+  原文與該 Session 綁定的 Profile 只保留 `/tmp/webnavior-20261030-session-private.json`
+  與 `/tmp/webnavior-20261030-session-profile-private.json`，權限0600，不提交原始資料。
+- Profile 的 agentInstructions 為空；角色卡沒有 `cart_update_item` 或禁止改餐指令。
+  沒有發現 touch_preferred／decision_guidance 事件。
+
+### 現場三段失敗與成功對照
+
+| Entry sequence | 現象 | 已確認的斷點 |
+| --- | --- | --- |
+| 111–138 | 「那我要三份」只得到「水餃目前可以點」。Main 依序查 menu_get、cart_get，空 Cart，沒有新增 | 查詢回執可結束沒有明確 operation handoff 的 Main 回合；呈現完成不代表購買需求完成 |
+| 146–154 | 再明講「三份水餃」 | Fast Path order_add_item 成功，Cart 水餃3份 |
+| 160–175 | 「改成兩份」；Main 草稿宣稱已改2份 | requestedToolCount=0；一次 reply repair 後呈現泛用 clarification，並未修改 |
+| 185–194 | 「調整」後系統問是否由3改2；後續 recovery 兩次 invalid | 沒有形成有效的修改執行；未保存完整後續輸入，不補造其內容 |
+| 200–227 | 「水餃三份改成兩份」 | Main 先查菜單與仍為3份的 Cart，之後提出不存在的 cart_update_item，僅 lineId、沒有 quantity；Host 在呼叫工具前終止為 tool-rejected，沒有對應執行回執 |
+
+部署版正確修改工具為 `cart_set_line_quantity`，必填 `lineId`、`quantity`。
+錯名不能自動映射，更不能由程式猜 quantity 後代替顧客下單。
+
+### 離線重現
+
+新增4項 baseline 行為重現／控制測試，沿用真實 Menu runtime、真實 Host loop
+和既有 API mock 邊界；另新增1項真實 Server route＋記憶體 PGlite 測試。
+這些測試是對已知錯誤輸出的處理驗證，不是模型語意準確率或修復驗收。
+
+1. 加點只完成 menu_get／cart_get，Host 顯示水餃可點，但權威 Cart 仍空。
+2. Main 零工具的成功草稿進 selectReply，只剩 respond_to_customer，
+   修復無法呼叫修改工具；最後為泛用 clarification，Cart仍3份。
+3. 錯誤工具名稱進 Host，修改執行次數0、模型只呼叫1次、Cart仍3份。
+4. 相同情境改用合法 cart_set_line_quantity，真實 runtime 確實改為2份。
+5. 重建 HTTP 請求中，正確修改工具及必填參數有送給 Main；不存在的工具不在
+   schema，但 Server 將其提案原樣傳回 Host，沒有在這個邊界提供恢復。
+
+檢查結果：Kiosk兩個測試檔34項通過；Server新route測試1項通過、64項未選跑。
+未執行根目錄typecheck、真實模型重播、POS、付款或正式訂單操作。
+
+### 已定位範圍與修復邊界
+
+- `finishConversationReply`／`selectReply`：沒有操作的輸出只進非操作回覆修復。
+  這能防止假成功，但不能恢復尚未完成的操作。
+- `useKioskInteractionRecording.send`：工具不在當輪清單時直接結束，沒有將
+  「此提案未執行」回傳模型供有限次修正。真實執行被拒／結果不明應維持分開處理。
+- `replyFromConversation`：只在已知 handoff intent 時核對相應操作回執；
+  未分類的加點需求若只拿到讀取結果，仍可能被呈現成已完成回合。
+- 最小修復應先覆蓋「執行前錯名」的有限次重新提案，再處理原需求未完成卻只
+  回資訊／澄清的任務完成判定。不得擴大readOnly、付款、確認或版本授權，
+  也不得自動重送可能已生效的寫入。
+
+尚未證實：當時每輪完整provider request／工具清單、錯名生成的模型內因、
+完整權重身份及與早期版本的因果差異。當時只有request大小／token等metrics，
+重建請求不能冒充原始wire。因此不能把錯名歸因為JEV、角色卡、模型版本切換，
+也不能宣稱所有現場修改失敗都由同一原因造成。本輪尚未實作產品修復。
+
+
+## 2026-10-30 隔離修復：工具提案恢復與原需求完成檢查
+
+本節接續上節診斷，仍在 e8491ec 的隔離 worktree；沒有混入原工作區另一聊天的
+V1 禁止修改政策，沒有 commit、正式部署或正式訂單操作。
+
+- Host 對整批工具名稱先預檢；只要有未知名稱，整批均不執行。每筆call ID均取得
+  `UNKNOWN_TOOL` 或 `BATCH_NOT_EXECUTED`、executed:false，再更新目前facts／tools，
+  讓Main重提一次。第二次未知提案即停止。既有執行拒絕、結果不明、逾時、手動接管、
+  duplicate ID、四批／十六工具及共同60秒預算不變。
+- Server 在 ordering／非唯讀／尚無操作嘗試、且有當輪操作工具的任務結束前，
+  最多做一次 completion review。沿用原始需求、相關對話、最新facts與完全相同工具；
+  不把假成功草稿當證據。Session＋taskId的 `main_completion_review` 事件在呼叫前保留
+  次數，後續讀取延續不能重新開始。明確有效的clarification不增加review；付款、
+  checkout、customer_entry及readOnly不擴權。已嘗試寫入不走這條恢復。
+- review回傳的工具仍經原Host／Menu授權；其後格式不合規只澄清，不再額外呼叫
+  非操作修復。讀取後的有效clarification不會被舊菜單可點文案取代。
+- Menu BEGIN 原本只保留字面商品IDs，漏接「那我要三份」。現在僅沿用既有
+  resolveIntent 能唯一解析、來源為任務前presentation、且含份數的target；固定在
+  BEGIN，不允許後來查詢授權新商品。沒有展示、多品項、單純附和及另查替代商品
+  仍拒絕。未增加語言分類器、猜測工具名稱或生成份數。
+
+驗證包含真實HTTP JSON／SSE＋scratch PGlite＋真實Menu，固定模型輸出先重現失敗、
+修復後驗實際Cart：省略品名新增3份、3改2成功。另驗第二次錯名停止、混合批次不部分
+執行、執行拒絕不重送、只review一次、查詢後未操作須澄清及指涉隔離。這些離線結果
+不等同目前真實Main模型的語意驗收。
+
+最終離線驗證：Kiosk96項、Menu65項、Server69項，共230項通過；真實模型2項預設跳過。
+Changed-file ESLint與git diff --check通過。Server／Menu／Kiosk package-scoped
+typecheck通過；Menu與Kiosk build通過。
+新checkout缺少的既有dist產物透過對應套件build補齊，沒有修改tsconfig、exports、
+版本或依賴。未跑root typecheck。既有大型chunk／預覽資產等build警告未擴大修復。
+
+兩項 opt-in 合成 Main＋真正Host迴圈測試位於
+`apps/stage-kiosk/src/services/mainQuantityReplay.test.ts`，正常離線測試仍預設跳過。
+首次執行被自動審核拒絕後，使用者明確授權「好，可以送去」，才重新執行同一命令；
+沒有透過其他路徑繞過審核。2026-10-30 17:11:10 Taipei 開始的兩案均通過，
+測試總時間5.68秒（含測試環境初始化），原始log保存於
+`/tmp/webnavior-main-quantity-live.log`，權限0600。
+
+沿用已配置 qwen36／thinking=false／60秒timeout，直接呼叫既有provider endpoint
+`https://syqvzpveyn.aikcitri.qzz.io/v1`。合成句「那就幫我點三份」確實新增水餃3份；
+「這份數量改成兩份」確實由3改2。兩案的真正Host loop均正常結束，回覆由成功的
+ADD_ITEM／SET_QUANTITY回執支持，未呈現泛用不理解訊息。
+
+這是當次配置下兩案的實際模型＋工具流程驗證，不是全餐單、多輪穩定率、現場語音、
+付款或POS驗收。API／DB／Menu均為scratch，使用開發persona而非原始顧客完整Session；
+未將現場對話重新送入模型、未修改provider參數或正式設定。沒有提交或部署；
+可進入這次修復的發布審查，但不得把原工作區未提交V1政策一起發布。
+
+
+### 2026-10-30 發布準備：待管理員切換
+
+使用者授權進行部署後，已準備獨立發布快照：
+`/home/aimax/.local/share/webnavior/releases/main-recovery-20261030-191156`。
+完整性預檢6251個檔案通過。runtime內沒有連回原checkout／worktree應用原始碼的
+symlink，只重用已安裝的第三方pnpm store與工具shim。新API與Oct29 rollback API
+均通過單純module import檢查，未在準備階段啟動服務或連接正式DB。
+
+Menu以正式 `--base=/menu/` 重建；Kiosk本身固定 `/kiosk/`。新舊前端、原systemd
+unit／drop-in及乾淨的Oct29 API回復來源均已保存。既有API release manifest的
+15個生產來源中，13個維持相同、2個是本次刻意修改的route／conversationContext。
+管理Web、模型設定與DB schema不在發布範圍。
+
+正式API仍從開發checkout執行，因此不能直接重啟該路徑。切換腳本只新增
+`/etc/systemd/system/webnavior-api.service.d/90-main-recovery.conf` 的WorkingDirectory，
+保留既有ExecStart、User與EnvironmentFile，指向獨立runtime。發布先上傳資產、API
+健康後才原子替換HTML；保留舊hash資產給現有分頁。失敗自動切換baseline-api並回復
+原Menu／Kiosk；不回到已含V1編輯的開發目錄。
+
+目前狀態仍為 `prepared-awaiting-admin-switch`。`sudo -n -l` 回覆需要密碼，尚未執行
+管理員切換。正式原站47個HTML／直接資產檢查與備份一致；現行API livez／readyz、
+DB／Redis均正常。待使用者在本機終端執行：
+
+```sh
+sudo python3 /home/aimax/.local/share/webnavior/releases/main-recovery-20261030-191156/switch-release.py
+```
+
+腳本與DEPLOY.md都在該release目錄，支援唯讀 `--check` 與管理員 `--rollback`。
+切換成功後仍需核對公開網域、更新release.json／本文件，才能宣稱正式發布完成。
+
+
+### 2026-10-30 發布後註冊失敗與修正
+
+使用者於19:24完成管理員切換，API從獨立 release runtime 啟動。
+初次前端建置漏帶原工作區 Git 忽略的 `.env.production.local`：Kiosk
+註冊 chunk 內含 `http://localhost:5168`，Menu也缺正式POS與embedding來源。
+靜態資源雜湊與API健康檢查不足以驗證這些編譯時設定；這是本次發布造成的回歸。
+
+重現先前發布 chunk 的 localhost 目標後，以原有 Kiosk 正式建置設定及
+Menu 正式 API/origin/public URL 重建，保留 `/kiosk/`、`/menu/` 基底。
+19:32前端修正上線，不重啟API；47項來源HTML/直接資源檢查通過。
+正式公開瀏覽器載入新入口 `index-Jt3csSMg.js`，bootstrap 已抵達正式API，
+未註冊瀏覽器回401符合預期；註冊路由以空資料回400，未建立設備。
+尚未宣稱實際設備註冊完成，待使用者重新整理後重試。
+
+release 的 `frontend-origin-hotfix/` 保存修正前後檔案及manifest，
+`switch-release.py` 已新增編譯後註冊API、Menu scenario及POS目標檢查。
+新建置preflight通過；原有230離線/2個模型測試無需因純建置設定重跑。
+沒有修改模型、資料庫、另一工作區V1規則或提交commit。
+
+
+### 2026-10-30 連續服務釐清循環：修復待部署
+
+現場Session `HmfwjMy74UzFO2jp7zhCj` 的16至21號輸入依序為
+「好、好、好、對、飯、吃飯」；六輪均產生 `source:service_clarification` 的
+「請問您想點什麼餐點？」及新questionId，尚未交給Main任務。
+這是服務review重建問題的循環，與前一Session的review `invalid` 是兩個症狀。
+該invalid沒有保存原始provider回應，不能由本次截圖推定具體不符欄位。
+
+先新增四個失敗重現測試，再修正serviceRecovery：已有serviceClarification、
+當輪review仍確認service但選clarify時，交給readOnly Main並保留上下文；
+初次釐清、背景、uncertain及invalid行為保留。不加入關鍵字放行，不把肯定詞
+直接作為購買授權，不增加模型呼叫。決策模組456通過/80跳過、Server型別與
+兩檔lint通過。這證明交接契約；尚無完整真實模型對話驗證。
+
+正式API未更新。現有release的 `clarification-loop-fix/apply.py --check`
+通過；備妥單檔修復、備份與自動回復。套用與重啟需要本機sudo驗證。
+沒有commit或正式訂單操作。
+
+
+### 2026-10-30 正式版續作：預算／其他的逐輪診斷與價格交接修復
+
+另一聊天的SLM/Jev實驗已移至獨立worktree，本輪只修改kiosk-main-recovery。
+正式API仍使用既有release；下列修復尚未部署，未執行外部模型或正式訂單操作。
+
+唯讀Session `eCda22nNnyhWzB5rMVvsM`：
+
+| sequence | 實際輸入／工具／結果 | 已確認偏差／限制 |
+|---|---|---|
+| 584–606 | 我要吃麵→menu_recommend update(category:麵食)→牛肉麵 | 這是後續仍保留麵食分類的來源；保留分類本身不能直接判錯。 |
+| 612–627 | 我有一百員，可以吃什麼→150元牛肉麵價格 | 原句是「員」，現有priceEvidence不產生金額證據；沒有原始Main wire，不能判定模型是否忽略了已解析的100元上限。輸出仍未回答可負擔選項。 |
+| 633–654 | 我有200員→update(maxPrice:200)→牛肉麵 | Main自行提了200，Menu正確保留麵食與maxPrice200；尚無證據是filterPrices比較失效。 |
+| 660–676 | 有其他的嗎→泛用澄清 | 該輪沒有新的業務工具，未提供其他結果／耗盡說明。 |
+| 681–695 | service recovery review admitted/readOnly:true→有其他不超過兩百元的嗎→update(maxPrice:200)→ok:false/priceClarification | 價格解析安排在service recovery之前，當時UNAVAILABLE會跳過；recovery後沒有再解析，Host因此保留unresolvedPrice。 |
+| 706–728 | 有其他的嗎→update(maxPrice:200,limit:3)→同一牛肉麵 | Main選update，沒有continue／excludeShown，Menu依既有update語意重播。不能一概改所有update為continue，因合法重新查看也使用update。 |
+
+跨真實route、Host及Menu的三個合成重現先以普通斷言失敗，皆缺
+price.maxPrice200且unresolvedPrice:true。它們重建現場可確認的服務review邊界，
+不冒充當時完整provider回應。修復後移除expected-failure標記：route在recovery
+完成後對尚未解析的當輪價格證據呼叫既有resolvePriceHandoff；該函數接受已完成
+service recovery的交接，不改原reason、readOnly或操作目標。已有priceChoiceId不重跑，
+沒有service admission不放行；無效價格回應維持guard，沿用同一signal／turn budget。
+
+三個整合案例均確認Host保留maxPrice200、unresolvedPrice:false，接著正常BEGIN
+唯讀Menu task，update讀取成功且Cart保持空。Server相關36項、Kiosk相關6項通過，
+兩個opt-in真實provider測試跳過；Server／Kiosk scoped typecheck與changed lint通過。
+原本100員辨識、其他推薦的Main工具選擇，以及完整對話／真實模型仍未驗收。
+沒有新增關鍵字放行、修改價格篩選政策或解除唯讀／購物車驗證。
+
+
+### 2026-10-31 限定真實模型驗收：目前首個偏離邊界
+
+使用者明確允許80次／5分鐘合成對話，讀取現有Jev/Main設定並在程序內解密，
+Session／Cart全在隔離PGlite，無POS／付款。正式組態只SELECT。當前Jev為
+Qwen/Qwen3.5-4B，Main為qwen36。私有wire `/tmp/webnavior-budget-order-*-20261031.jsonl`
+不得直接公開。五輪合計60次、26,553ms，未部署。
+
+1. initial：SERVICE已入場、purpose低信心→UNCERTAIN_OPERATION；價格resolver因reason
+   不符舊白名單跳過。Main提maxPrice100正確但unresolvedPrice使Menu拒絕。
+2. admitted：補齊語意交接後，Main價格resolver選UNSUPPORTED；提示把單份探索也視為
+   整單預算。按既有計畫契約修正為單金額／無多份分配的探索可選單份上限。
+3. exploration／presentation：前三輪通過。第四輪只口述下一批，文字修復只提供
+   respond_to_customer，模型將泛指其他餐點當subjects，畫面仍舊批。單加主提示無效。
+4. readreview：既有單次完成審查擴及沒有本輪展示回執的只讀文字草稿，仍限定原讀工具。
+   第四輪開始呼叫continue，卻帶maxPrice200，被既有工具拒絕。沒有放寬或忽略該驗證；
+   更新review提示明確只傳action／可選limit，最新提示未真實驗收。
+
+新路由重現先失敗（toolCalls空）再通過（保留menu_recommend）。六個預算交接案例、
+既有數量恢復及相關Server路由／恢復／價格測試合計92通過；lint、Kiosk types通過。
+Server types新增測試tuple widening已修正，scoped rerun通過。不跑root typecheck。
+完整六輪至兩份水餃入車尚未通過；不能用前三輪或mock成功宣稱正式修復。
+
+
+### 2026-10-31 追加限定驗收：真正的操作交接阻塞
+
+使用者追加40次／3分鐘，沿用原provider、合成輸入及隔離Session／Cart。
+原80次剩20，故累計上限120；目前114次、48013ms，沒有再執行外部呼叫。
+新增三份私有wire為authorized-extension、price-expectation、core-cart。
+
+- authorized-extension：同樣在continue重填maxPrice200被拒，額外提示無效。
+- price-expectation：Menu將重填價格當一致性預期，只有完全相同才接受；新值、
+  不同值及錯型別仍拒絕。回歸先失敗再通過，原changed-price拒絕測試保留。
+  真實第四輪展示新一批炸排骨、打拋豬、牛肉麵，價位均<=200，沒有重播舊批。
+  但Server已reviewed標記使接續即便已有回執仍selectReply(repair:false)→泛用clarification。
+  本地修正只讀成功回執不被標記蓋掉；mutable未完成需求仍保留既有完成審查。
+- core-cart：為節省剩餘23次，明示只跑原始四輪100元→其他→我要水餃→兩份，
+  不冒充完整六輪。前兩輪成功。第三輪Jev可靠SERVICE與SINGLE，但family的MENU/ITEM分類低信心，回
+  UNCERTAIN_OPERATION；Host將agent task綁readOnly，實際Main工具清單沒有新增。
+  Main先clear price推薦別餐、再cart_get與重複menu_get，達四工具上限而incomplete。
+  未問數量、未加車，第四輪沒有執行。這不是POS新增回執丟失。
+
+後續應先設計Main獨立釐清原句操作與目標後，如何接回現有Menu合法性驗證；
+不能因SERVICE或品名字面命中就放寬所有不確定回合。此項尚未實作，正式問題
+仍未解決，無部署或commit。最新Server route65、Host/數量/呈現60、Menu query actions9
+通過；Menu／Server／Kiosk scoped types與修改檔案lint通過。六輪真實成功驗收仍欠缺，不能宣稱可上線。
+
+
+### 2026-10-31 Main ordering@1 技能實作與單輪真實證據
+
+查詢確認正式路徑沒有獨立runtime skill；`.agents/skills`是開發代理的技能。
+原Main兩段流程提示移至Server domain的版本化ordering@1，JSON／SSE及有限
+需求接手共用。同時明確記錄skill版本與決策來源，不把Main選擇算成Jev confidence。
+
+新增route／Host／Menu測試先重現NEEDS_ASSISTANT卡住；修正後Jev服務及單需求
+高信心、family低信心時，Main依技能從當輪候選選ADD_ITEM，Menu補問幾份，
+實際呈現問題後「兩份」加車2；「有水餃嗎」只讀、無購買問題、Cart0。未改
+全域readOnly；此第一版只處理ordinary ordering的單一exact商品。既有readOnly／
+service recovery、phone／checkout、歧義、多品項、未解價格仍不提升權限。
+無效、額外參數、多tool calls及provider失敗不授權、不重試寫入。
+
+Server87、Kiosk78測試通過；型別發現測試const陣列readonly與Vitest array-spread
+參數形狀問題，均修正並重跑21個skill單元測試；Server／Kiosk scoped types及lint
+通過。未跑root typecheck，無commit與部署。
+
+先前授權剩6次，使用其中4次做meal-skill單輪診斷：scratch前置重建「100元→其他」
+兩個既有成功情境，只把其後「我要水餃」送新Jev／Main。Jev3calls後family低信心；
+Main1call載入ordering@1，在744.54ms選intent:add-item；Host來源main-skill，Menu
+產生「請問水餃要幾份？」且Cart0。Artifact skill-probe JSONL私有0600。總2612ms，
+累計118calls／50625ms，剩2calls。這證明單輪真實技能接手；沒有新完整六輪或
+真實「兩份」入車證據，不能以此宣稱所有正式對話已修復或可上線。
+
+
+### 2026-10-31 完整六輪驗收：有效問題接手修正後3/3通過
+
+使用者「那就驗收阿」後已開始新驗收，接著明確「此次不限額度」；移除本次
+累計呼叫閘門，保留程序timeout／取消。沒有外推為部署或未來任務無限授權。
+
+第一次完整run `skill-full-acceptance`前五輪正常，最後「兩份」失敗。Jev服務
+0.9371，purpose SINGLE0.5429／ANSWER0.4228，confidence0.4515→UNCERTAIN_OPERATION。
+當前Menu真的有水餃數量問題及quantity2／cancel／inquiry有限選項，但初版skill
+只支援ordering新餐點，故未接手。新增configuration的有效item-configuration問題
+恢復，僅可選waitingFor.choices與當輪候選交集；回傳原answeredQuestionId。
+不從歷史取問題、不擴大工具權限；過期／錯purpose／未發行／readOnly仍不呼叫Main。
+弱答句的route／Host／Menu重現先失敗再通過；技能unit26、Host skill3通過。
+
+之後同一劇本以真實provider及全新PGlite／Session獨立重播：
+
+| run | 六輪 | 呼叫 | 程序耗時 | 最終cart |
+|---|---|---|---|---|
+| skill-full-answer-fix | 全通過 | 26 | 9248ms | 水餃2份，160元 |
+| skill-full-repeat-2 | 全通過 | 26 | 10540ms | 水餃2份，160元 |
+| skill-full-repeat-3 | 全通過 | 26 | 8916ms | 水餃2份，160元 |
+
+每輪實際結果：
+
+| 顧客原句 | Menu／顧客可見結果 |
+|---|---|
+| 我有一百元，可以吃什麼 | 水餃80元符合；Cart0 |
+| 有其他的嗎 | 沒有其他符合者，不放寬100元；Cart0 |
+| 改成兩百元以內，看看其他餐點 | 蝦捲145／椒麻雞135／酸辣魚140；Cart0 |
+| 還有其他的嗎 | 排骨130／打拋豬125／牛肉麵150，無重播舊批；Cart0 |
+| 我要水餃 | 問「水餃要幾份？」；Cart0，不自行一份 |
+| 兩份 | skill保留當前quantity問題ID，Menu真實新增；Cart2、total160與成功回執 |
+
+三次configuration一致、flow stages1–6且seededPrefix:false；外部provider非mock，
+API transport接真實scratch routes、Host與Menu，catalog用現有7品項simulator。
+第二三次另強化oracle：耗盡句不以單一「其他」字眼判通過；價格仍<=100；
+問數量前Cart0；最終total須為當輪單價乘2。第一次raw結果也符合這些加強條件。
+私有JSONL／log及source hashes在/tmp，勿公開raw prompts／credentials。耗時含
+scratch及網路，不是GPU推論benchmark。未操作正式Session／POS／付款或部署。
+本驗收只涵蓋這條文字合成流程，未聲稱ASR、跨菜單、112劇本或全部技能已通過。
+
+
+最終scoped驗證：Server92、Kiosk79離線測試通過，Server／Kiosk types與修改檔案lint
+通過。三次provider設定一致、全新未seed六輪與Cart結果另經私有摘要核對。
+`/tmp/webnavior-skill-six-turn-acceptance-20261031.sources.json`保存驗收後的來源SHA
+及三次摘要（capturedAfterRuns:true，不冒稱事前hash凍結）。Production程式於三次
+成功間未再修改；判定器第二次起加強，第一次實際結果也符合。此流程驗收完成，
+不自動擴張至其他案例或部署。
+
+
+### 2026-10-31 部署準備完成，等待本機sudo
+
+使用者已要求部署。發布包ordering-skill-20261031-182642以當前正式Oct30 runtime
+為基底，只覆蓋4個API差異；Kiosk／Menu正式建置通過並檢查註冊、scenario與POS
+編譯網址。3190檔案hash、API載入、正式服務健康（db／redis正常）通過。腳本
+保留舊runtime與前端備份，切換失敗自動回復，不改schema／provider／管理後台。
+實際sudo -n執行回password required，未切換正式服務；這不是自動審核拒絕。
+需本機sudo執行release/switch-release.py，再核對deployed-origin-verified與公開資產。
+
+
+### 2026-10-31 已部署並完成部署後核對
+
+使用者執行sudo腳本回報deployed-origin-verified。再次核對systemd API路徑為
+ordering-skill-20261031-182642/runtime/apps/server，18:39:56 Taipei啟動且active。
+3190發布hash通過，47個原站HTML／入口資產一致，livez／readyz與DB／Redis正常。
+公開IAB可見Kiosk註冊頁，DOM入口index-D1UL0_nW.js與本次發布HTML一致。
+未建立測試設備、Session或訂單，未進行正式模型對話。Generic HTTP automation
+向公開HTTPS被403拒絕，IAB正常載入；不能宣稱公開HTTPS逐byte hash核對成功。
+agent-browser技能指令與安裝版本不合，已用IAB備援完成只讀頁面檢查。
+Manifest publicBrowserVerified已記true並列明核對範圍。使用者環境可刷新頁面載入
+新前端；部署已完成，保留既有可回復路徑，沒有commit或schema／provider變更。
+
+
+### 2026-10-31 正式基線分批提交與實驗接續
+
+使用者明確要求分批commit。建立codex/kiosk-production-recovery，分批提交Menu
+目標／換批價格、Host工具批次／完成回覆、Main skill與交接整合測試，以及文件。
+前三批09a6786、a5bc0e0、06d4f0b；正式runtime獨立，不因git commit重啟或改版。
+
+依CONTRIBUTING於commit階段完整lint及typecheck各跑一次。完整lint只指出未修改
+的舊chat／audio測試、研究文件與實驗腳本等；沒有本次變更檔案。完整types止於
+plugin-sdk-tamagotchi與electron-vueuse缺少模組宣告。保留失敗日誌，不宣稱全專案
+通過，不修無關問題或重跑全專案。既有scoped檢查／3次完整真實驗收通過，另於
+提交前驗Menu15、Host88通過。逐批正常pre-commit hook通過，未略過檢查。
+
+SLM／Jev實驗分支及原工作區未變動。實驗工作樹尚有未提交內容，須先保存再整合
+正式分支；比較時固定相同Main skill、Menu／Host與資料fixture，使用獨立測試
+服務／資料庫／provider設定。只切git分支不能防止共用正式DB模型設定互相影響。

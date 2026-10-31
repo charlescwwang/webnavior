@@ -180,8 +180,11 @@ bound the product IDs that Main may select, configure or add. Category-only or
 discovery-fragment evidence permits lookup and clarification, not choosing a
 replacement, even after a successful alternative/full-catalog read. Only a new
 customer task with an explicit product choice replaces that restriction. Tasks
-without lexical product/category evidence retain the existing contextual-answer
-flow; this is a target bound, not a new language classifier or purchase consent.
+without lexical product/category evidence may retain a unique, domain-resolved
+pre-task presentation reference when the utterance supplies a serving quantity.
+This target is frozen at BEGIN; later Agent lookups cannot create or replace it.
+Multiple displayed dishes and bare assent remain unbound and require clarification.
+This is a target bound, not a new language classifier or purchase consent.
 An add request with multiple values for one POS option group also goes to Main;
 one value must not silently replace split-per-serving options for the whole order.
 Category-only preferences such as 「我想吃麵」 or 「我突然想吃便當」 browse
@@ -391,7 +394,7 @@ Conversational `menu_recommend` calls require an explicit `action`:
 
 | Action | Browser-owned behavior |
 | --- | --- |
-| `continue` | Return the next unseen batch, keeping dietary/category conditions. A previous precise meal query is released so other dishes can be found. No caller-supplied condition changes are allowed. |
+| `continue` | Return the next unseen batch, keeping dietary/category conditions. A previous precise meal query is released so other dishes can be found. No caller-supplied condition changes are allowed. Repeated price fields are checked as expectations against the retained values; a new or different bound is rejected without consuming a batch. |
 | `update` | Apply only supplied changes; retain other groups. New numeric price bounds replace the old price group. Sort-only changes retain bounds. Use `clear` to remove explicit groups. |
 | `reset` | Release browsing bounds/category/subject/needs/strategy; retain dietary restrictions, food exclusions, cart and shown history. |
 | `clarify` | Return one application-owned spoken question; do not query, present, consume a batch or change the cart. |
