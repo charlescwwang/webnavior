@@ -563,6 +563,22 @@ quantity, the `order_add_item` tool performs that whole operation in one
 Agent call while the menu still visibly steps through each change. The
 `order_set_fulfillment` tool and the visible menu buttons use the same state, so
 an order cannot be confirmed before the customer chooses how it will be served.
+Meal quantities remain limited to20 per identical cart line. Tool syntax accepts
+an original positive integer count (including200); the domain validates20 before
+any cart commit and returns a typed `quantity-limit` refusal. This keeps a business
+limit distinct from malformed input and prevents a provider from treating20 as
+permission to reduce the customer's200. Before dispatch, Server preserves a single
+explicit oversized count directly; with multiple explicit counts it asks Main
+to bind only those original numbers to the proposed call IDs. A number absent
+from the utterance cannot pass that review. This review adds no provider call
+to ordinary counts or monetary budgets. No automatic reduction or split orders.
+In a mixed request, legal items may be added while oversized items are refused;
+Host presents their actual success receipts together with the Menu-owned limit
+message. Existing cart lines and rejected variants remain intact, including a
+quantity/option edit that would merge an identical line past20. Q01 incident
+scripts retain direct-Main and Jev/Main examples, budget-number and correction
+counterexamples; failures and final accepted reruns are tracked separately.
+
 The current venue offers **內用 / 自取**. Immediate self-pickup uses the existing
 `takeout` order code in tool calls and POS submissions; it has no reservation or
 pickup-time requirement. Menu buttons, returned choices and semantic candidates

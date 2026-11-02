@@ -7,6 +7,41 @@ accumulating history.
 
 ## Current State
 
+- Nov2 QUANTITY LIMIT REPAIR ACCEPTED AND COMMITTED; DEPLOYMENT PREPARATION.
+  Production repair checkout remains `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`,
+  branch `codex/kiosk-production-recovery`; do not edit the separate experiment checkout.
+  User retained20 and subsequently clarified that legal siblings SHOULD be added.
+  Exact field utterance was200 signature +200 pork, not the illustrative200/100.
+  Domain rejects oversized counts/merged lines before commit with typed receipt;
+  Host retains successful sibling receipts and presents refusal without generic unfinished error.
+  Tool syntax keeps original positive counts; business cap remains20. Main must not clamp/split.
+  Menu publishes raw count evidence; Server preserves a sole explicit oversized count directly,
+  otherwise constrains Main's per-call quantity review to numbers actually spoken. The review
+  also prevents a never-added quantity correction from replacing unrelated cart lines.
+  Ordinary counts/budgets add no provider review. Multiple explicit counts bypass finite
+  first-count compilation and retain full text for Main. Admitted bulk orders cannot turn
+  into recommendation/price clarification.16 Q01 scripts (both channels) preserve all cases.
+  User authorized THIS isolated synthetic batch with existing Jev/Main and no preset quota.
+  Final runs40..55 allpass on identical source,94 calls;241 total including failures.
+  Proof `/tmp/webnavior-quantity-limit-acceptance.json`; ledger
+  `/tmp/webnavior-quantity-limit-20261102.ledger.json` is CLOSED-ACCEPTED.
+  Every failure remains linked to its corrected final run in conversationFindings.json;
+  earlier whole-batch expectations are preserved with the user's policy revision.
+  Menu868pass/202skip; fixed field332pass/3skip; shared9pass; Server routes79 and
+  skills/context69pass (counts overlap). All4 affected package types and changed lint pass.
+  User requested plain-Chinese batch commits and deployment:66e2f6a Menu/contracts,
+  7021c61 Main/Host, b03713a permanent failures/tests; documentation is the fourth group.
+  Normal hooks pass. Hook changed only redundant regex hyphen escapes in2Menu files;
+  exact reverse-byte audit `/tmp/webnavior-quantity-hook-audit.json` matches accepted source,
+  with Menu868 tests repeated; do not pretend these are new provider runs.
+  Root lint failed on2368 errors in untouched files (log /tmp/webnavior-quantity-commit-lint.log);
+  scoped changes/hooks pass. Existing unrelated root types are not rerun.
+  No public browser/live ordering/POS/payment tests. Package Menu/Kiosk builds use public
+  API/Menu URLs. Builder /tmp/prepare-webnavior-quantity-release.py must copy active
+  checkout-navigation runtime and exactly5API/shared overlays, include model proof plus
+  syntax audit, and require clean committed source. Production switch needs sudo.
+  Production remains the checkout-navigation release until switch is verified.
+
 - Nov2 CHECKOUT NAVIGATION / CONFIRMATION COMMITTED, DEPLOYED AND VERIFIED.
   User returned from array-microphone assessment to latest ordering attempt.
   Latest field session evidence is private /tmp/webnavior-latest-ordering-20261102.json;

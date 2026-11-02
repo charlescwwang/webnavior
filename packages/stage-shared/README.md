@@ -82,3 +82,14 @@ service-clarification schema, domain-version/question correlation and shared tim
 ceilings. `SERVICE_RECOVERY_PROGRESS` start is only provider work notification;
 service admission must be established independently, and neither grants a Menu
 operation ticket. It carries no fabricated Jev confidence.
+
+## Quantity-limit refusal
+
+`kiosk-conversation` owns the20-serving policy constant, the current Menu
+`quantityPolicy` projection (including raw `mentionedCounts` evidence) and strict `quantityLimitRejectionSchema` receipt.
+Count evidence grants no order authority; semantic negation/item binding remains
+Main-owned. A refusal proves that the named operation did not execute; it does not roll back
+other successful operations. Hosts retain successful sibling receipts and show
+them together with the refusal. Do not retry, reduce or split the rejected count.
+A model may select `quantity-limit` for a factual policy reply; customer-facing
+wording comes from the current Menu projection rather than model success prose.
