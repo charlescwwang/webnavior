@@ -7,7 +7,7 @@ accumulating history.
 
 ## Current State
 
-- Nov2 CHECKOUT NAVIGATION / CONFIRMATION ACCEPTED; COMMIT/DEPLOY REQUEST ACTIVE.
+- Nov2 CHECKOUT NAVIGATION / CONFIRMATION COMMITTED, DEPLOYED AND VERIFIED.
   User returned from array-microphone assessment to latest ordering attempt.
   Latest field session evidence is private /tmp/webnavior-latest-ordering-20261102.json;
   additional meal DID succeed; dine-in was explicitly selected earlier, not defaulted.
@@ -43,15 +43,18 @@ accumulating history.
   preserve accepted runtime hashes, and start from active invoice-main release.
   Builder /tmp/prepare-webnavior-navigation-release.py enforces clean committed
   source, closed212-call proof,14 final cases,3 expected API overlays and build logs.
-  Prepared path is written to /tmp/webnavior-navigation-release-path; inspect its
-  release.json and run switch-release.py --check before publication. Uses the
-  full Menu/Kiosk/API switch from invoice-kinds, not the API-only invoice-main switch.
-  sudo -n true requires a local password, so admin switch cannot be run unattended;
-  finish all packaging/preflight before providing the exact command to the user.
-  No deployment has occurred yet. After user switch output, independently verify
-  active WorkingDirectory, livez/readyz and origin files; then update actual state.
-  Earlier API-only invoice-main release IS active: read-only systemctl confirms
-  invoice-main-20261102-141409/runtime/apps/server. Origin47/health not rechecked here.
+  User completed sudo switch. Release:
+  /home/aimax/.local/share/webnavior/releases/checkout-navigation-20261102-153615.
+  Source head084d795; runtime changes committed in e4350fe/80c9aa3, tests c36e0f1.
+  Independent postdeploy verification passed3189release hashes,47Nginx origin files,
+  accepted API hashes and livez/readyz DB/Redis. API WorkingDirectory matches this
+  release's runtime/apps/server. Evidence:
+  /tmp/webnavior-navigation-postdeploy-verification.json.
+  Public browser ordering/payment not exercised; publicBrowserVerified:false and
+  productionOrderingFlowTested:false. Existing Kiosks must reload before testing
+  new confirmation/navigation; no live order/POS/payment was created for validation.
+  Rollback runtime/frontends preserved in release backup. No provider/config changes.
+  Earlier API-only invoice-main release is now the rollback baseline, not active.
   Array audio remains assessment-only; Python supplied by user is not integrated.
 
 - Nov2 USER REQUESTED PLAIN-CHINESE BATCH COMMITS THEN DEPLOYMENT.
