@@ -7,7 +7,7 @@ accumulating history.
 
 ## Current State
 
-- Nov2 QUANTITY LIMIT REPAIR ACCEPTED AND COMMITTED; DEPLOYMENT PREPARATION.
+- Nov2 QUANTITY LIMIT REPAIR COMMITTED; RELEASE PREPARED, AWAITING ADMIN SWITCH.
   Production repair checkout remains `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`,
   branch `codex/kiosk-production-recovery`; do not edit the separate experiment checkout.
   User retained20 and subsequently clarified that legal siblings SHOULD be added.
@@ -40,7 +40,12 @@ accumulating history.
   API/Menu URLs. Builder /tmp/prepare-webnavior-quantity-release.py must copy active
   checkout-navigation runtime and exactly5API/shared overlays, include model proof plus
   syntax audit, and require clean committed source. Production switch needs sudo.
-  Production remains the checkout-navigation release until switch is verified.
+  Prepared release: /home/aimax/.local/share/webnavior/releases/quantity-limit-20261102-165521.
+  Package3189files, exactly5API/shared overlays,16accepted scripts plus all failures/audit.
+  switch-release.py --check passed; sudo -n publication stopped before changes because a
+  password is required. User must run sudo python3 <release>/switch-release.py, then
+  independently verify health, active WorkingDirectory and origin hashes before claiming live.
+  Production remains checkout-navigation-20261102-153615 until switch is verified.
 
 - Nov2 CHECKOUT NAVIGATION / CONFIRMATION COMMITTED, DEPLOYED AND VERIFIED.
   User returned from array-microphone assessment to latest ordering attempt.
