@@ -2,9 +2,12 @@ import type { Composition } from '../../../order-menu-server/src/domain/composit
 import type { RecommendationSignal } from '../../../order-menu-server/src/domain/recommendation'
 import type { MenuPageState } from './menuPageState'
 
+import { orderQuantityMaximum } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import cuttlefishBallImageUrl from '../assets/cuttlefish-ball.svg'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+import { QuantityLimitError } from './quantityPolicy'
 
 export { menuPageStates } from './menuPageState'
 export type { MenuPageState } from './menuPageState'
@@ -635,8 +638,10 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
 
   function setQuantity(quantity: number) {
     const current = selectedOrThrow()
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20)
-      throw new Error('Quantity must be an integer from 1 to 20.')
+    if (Number.isInteger(quantity) && quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(quantity)
+    if (!Number.isInteger(quantity) || quantity < 1)
+      throw new Error('Quantity must be a positive integer.')
     current.quantity = quantity
     revisions.selectedItem += 1
     return { ...current, options: { ...current.options } }
@@ -663,6 +668,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
       options: { ...current.options },
       unitPrice: resolveUnitPrice(item, current.options),
     }
+    if (line.quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(line.quantity)
     // All validation precedes this synchronous commit. No callback can observe
     // a missing original or an extra replacement, including a merge into an
     // already-present equivalent line. Failure leaves the original cart intact.
@@ -695,6 +702,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   }
 
   function setCartLineQuantity(lineId: string, quantity: number) {
+    if (Number.isInteger(quantity) && quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(quantity)
     if (!Number.isInteger(quantity) || quantity < 1)
       throw new Error('Cart line quantity must be a positive integer.')
 
@@ -719,14 +728,17 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (!group?.values.some(value => value.id === valueId))
       throw new Error(`Invalid option ${groupId}:${valueId} for ${item.name}.`)
 
+    const nextOptions = { ...line.options, [groupId]: valueId }
+    const matchingLine = cart.find(candidate => candidate.id !== line.id && candidate.itemId === line.itemId && hasSameOptions(candidate.options, nextOptions))
+    if (matchingLine && matchingLine.quantity + line.quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(matchingLine.quantity + line.quantity)
+    // Validate the resulting merged count before changing options or revisions.
     invalidatePayment()
-    line.options = { ...line.options, [groupId]: valueId }
-    line.unitPrice = resolveUnitPrice(item, line.options)
+    line.options = nextOptions
+    line.unitPrice = resolveUnitPrice(item, nextOptions)
     revisions.cart += 1
 
-    // Preserve the one-line-per-identical-choice invariant after an edit. The
-    // remaining line keeps its stable ID so a caller can continue editing it.
-    const matchingLine = cart.find(candidate => candidate.id !== line.id && candidate.itemId === line.itemId && hasSameOptions(candidate.options, line.options))
+    // Preserve the one-line-per-identical-choice invariant after an edit.
     if (matchingLine) {
       matchingLine.quantity += line.quantity
       cart.splice(lineIndex, 1)

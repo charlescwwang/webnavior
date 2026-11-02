@@ -5,7 +5,21 @@ import { array, boolean, check, integer, literal, maxLength, maxValue, minLength
 const id = pipe(string(), minLength(1), maxLength(200))
 const label = pipe(string(), maxLength(500))
 const revision = pipe(number(), integer(), minValue(0))
-const quantity = pipe(number(), integer(), minValue(0), maxValue(20))
+/** Menu policy shared with tool contracts; not a provider confidence threshold. */
+export const orderQuantityMaximum = 20
+const quantity = pipe(number(), integer(), minValue(0), maxValue(orderQuantityMaximum))
+/** A proven business refusal before an effect, never a retryable malformed tool input. */
+export const quantityLimitRejectionSchema = strictObject({
+  ok: literal(false),
+  executed: literal(false),
+  rejection: literal('quantity-limit'),
+  error: literal('QUANTITY_LIMIT'),
+  toolName: id,
+  maximum: literal(orderQuantityMaximum),
+  requestedQuantity: pipe(number(), integer(), minValue(orderQuantityMaximum + 1)),
+  customerMessage: pipe(string(), minLength(1), maxLength(2000)),
+})
+export type QuantityLimitRejection = InferOutput<typeof quantityLimitRejectionSchema>
 /** Menu-owned validation failures issued before any effect; one correction may be requested. */
 export const toolInputRejectionSchema = strictObject({
   ok: literal(false),
@@ -73,6 +87,7 @@ export const conversationContextSchema = pipe(object({
   readOnly: boolean(),
   constraints: object({ excludeIngredients: pipe(array(id), maxLength(100)), includeIngredients: pipe(array(id), maxLength(100)), dietary: optional(literal('vegetarian')), minPrice: optional(number()), maxPrice: optional(number()), minPriceExclusive: optional(boolean()), maxPriceExclusive: optional(boolean()), priceOrder: optional(literal('ASC')) }),
   unavailableConditions: optional(pipe(array(object({ id, label })), maxLength(100))),
+  quantityPolicy: optional(object({ maximum: literal(orderQuantityMaximum), mentionedCounts: optional(pipe(array(pipe(number(), integer(), minValue(0))), maxLength(100))), message: pipe(string(), minLength(1), maxLength(2000)) })),
   phase: pipe(string(), maxLength(80)),
   screen: optional(pipe(string(), maxLength(80))),
   /** Current rendered menu scope, separate from the complete catalog and cart. */
@@ -120,7 +135,7 @@ export type ConversationHandoff = InferOutput<typeof handoffSchema>
 
 /** A model may select a factual reply, but cannot supply operation-success prose. */
 export const contextReplySchema = strictObject({
-  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information']),
+  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'quantity-limit', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information']),
   topic: optional(picklist(['identity', 'capabilities', 'location', 'hours', 'other', 'menu-kind'])),
   subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
 })
@@ -155,6 +170,8 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     return { kind, content: '好的，請繼續告訴我您的需求。' }
   if (selection.output.kind === 'hearing-check')
     return { kind, content: '有收到您的這句話，請問需要什麼協助？' }
+  if (kind === 'quantity-limit')
+    return context.entryComplete && context.quantityPolicy ? { kind, content: context.quantityPolicy.message } : undefined
   if (selection.output.kind === 'clarification') {
     // Generic meaning uncertainty must not revive a pending purchase question.
     const content = selection.output.topic === 'menu-kind'

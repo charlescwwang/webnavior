@@ -27,6 +27,7 @@ import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFi
 import { itemMatchesQuery, possibleMenuItems } from './domain/menuIdentity'
 import { catalogInfo, createOrderMachine, itemAvailability, ItemSelectionError, menuPageState, menuPageStates } from './domain/order-machine'
 import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription } from './domain/pricing'
+import { mentionedServingCounts, QuantityLimitError, rejectQuantity } from './domain/quantityPolicy'
 import { createQueryScope } from './domain/queryScope'
 import { hostToolNames } from './hostTools'
 import { authorize, buildClarificationPrompt, compileOperationPlan, configurationQuestion, createConfirmation, createQuestion, deriveDecisionContext, describeQuestion, describeRequest, intentRecovery, questionIsCurrent, resolveClarificationReference, resolveIntent, targetReferenceLimit, validateConfirmation } from './kiosk-intents'
@@ -463,6 +464,8 @@ function recommendationPresentation(input: Record<string, unknown>): Recommendat
 
 /** Builds an LLM-readable retry result instead of allowing browser mediation to hide the validation error. */
 function invocationFailure(name: MenuToolName, error: unknown) {
+  if (error instanceof QuantityLimitError)
+    return rejectQuantity(name, error.quantity)!
   if (error instanceof ItemSelectionError)
     return { ok: false, rejection: error.rejection, customerMessage: error.message, recovery: 'Keep the cart and let the customer choose another item; do not retry automatically.' }
   const message = errorMessageFrom(error) ?? 'The requested menu operation could not be completed.'
@@ -980,6 +983,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       result = await invokeOperation(name, input, onAction, undefined, queryTask)
     }
     catch (error) {
+      if (error instanceof QuantityLimitError)
+        return invocationFailure(name, error)
       if (error instanceof ItemSelectionError)
         options.onMenuChanged?.(machine.getMenu())
       throw error
@@ -1972,6 +1977,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const optionsFor = (values: Record<string, string>) => Object.entries(values).map(([groupId, valueId]) => ({ groupId, valueId }))
           const cart = context.cart
           const snapshot: ConversationContext = {
+            quantityPolicy: { maximum: 20, mentionedCounts: mentionedServingCounts(agentTask?.transcript ?? ''), message: orderingMessages['zh-Hant'].quantityLimit },
             contextId: crypto.randomUUID(),
             capturedAt: Date.now(),
             phase,
@@ -2238,6 +2244,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             if (!choice?.slots)
               throw new Error('The configuration answer was not offered by this session.')
             pending.issued = undefined
+            const answerRejection = rejectQuantity('order_add_item', choice.slots.quantity)
+            if (answerRejection)
+              return answerRejection
             pending.plan = { ...pending.plan, slots: { ...choice.slots } }
             const question = configurationQuestion(pending.plan, currentContext.menu, pending.id)
             if (question) {
@@ -2245,6 +2254,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               return { customerMessage: question.prompt, pendingConfiguration: { id: pending.id }, decisionTrace: { resolveIntent: { kind: 'CONFIGURATION', plan: pending.plan }, operationPlan: null, authorize: null } }
             }
             const operation = compileOperationPlan(pending.plan)
+            const quantityRejection = rejectQuantity(operation.toolName, operation.input.quantity ?? operation.slots.quantity)
+            if (quantityRejection)
+              return quantityRejection
             const authorization = authorize(operation, currentContext)
             pendingConfiguration = undefined
             if (authorization.kind !== 'EXECUTE')
@@ -2366,6 +2378,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             return { customerMessage: mealMessages.alreadyAbsent.replace('{items}', labels.join('、')), outcome: { status: 'already-absent', intent: 'REMOVE_ITEM', itemIds }, cart: machine.getCart(), decisionTrace: { resolveIntent: resolution, operationPlan: null, authorize: null } }
           }
           if (resolution.kind === 'CONFIGURATION') {
+            const quantityRejection = rejectQuantity('order_add_item', resolution.plan.slots.quantity)
+            if (quantityRejection)
+              return quantityRejection
             if (!revisionsMatch(resolution.plan.expectedRevisions, currentContext.revisions) || currentContext.phase !== 'ordering')
               throw new Error('STALE_PLAN: The meal changed before requesting its options.')
             // Explicit new orders also preserve unfinished meals. Jev only sees
@@ -2402,6 +2417,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             return { decisionTrace: { authorize: null, operationPlan: null, resolveIntent: resolution }, handoff, needsAssistant: true }
           }
           const operation = compileOperationPlan(resolution.plan)
+          const quantityRejection = rejectQuantity(operation.toolName, operation.input.quantity ?? operation.slots.quantity)
+          if (quantityRejection)
+            return quantityRejection
           const authorization = authorize(operation, currentContext)
           if (authorization.kind === 'BLOCKED')
             throw new Error(`The selected Kiosk intent is blocked: ${authorization.reason}.`)
@@ -2494,6 +2512,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (groups.some(group => typeof group === 'string') && new Set(groups).size !== groups.length)
         return { ok: false, executed: false, toolName: name, error: 'INVALID_OPTION_COMBINATION', message: '這次加購未執行。每筆order_add_item的每個groupId只能選一個valueId。同一道餐不同規格須分別呼叫，每筆使用顧客指定的各自份數；例如一份大辣和一份小辣是兩個呼叫各quantity:1，不能quantity:2加兩個spice。不要重做本輪已成功的操作。' }
     }
+    const quantityRejection = rejectQuantity(name, input.quantity)
+    if (quantityRejection)
+      return quantityRejection
     const result = await executeAgentOperation(name, input)
     // Only this task's accepted write may advance a same-batch plan. Reads
     // never rebase an external cart change or revive a confirmation ticket.
@@ -2948,6 +2969,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     invokeForAgent,
     /** Approved iframe transport entry; domain refusals remain structured tool receipts. */
     executeTool: async (name: MenuToolName, input: Record<string, unknown>) => {
+      const quantityRejection = rejectQuantity(name, input.quantity)
+      if (quantityRejection)
+        return quantityRejection
       try {
         return isKioskHostOnlyToolName(name) ? await invoke(name, input) : await invokeForAgent(name, input)
       }

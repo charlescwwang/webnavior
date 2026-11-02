@@ -15,6 +15,7 @@ import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { invoiceDraftReady } from './domain/checkout-flow'
 import { filterIngredients, mentionedDietaryReferences, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
 import { possibleMenuItems, productFragment, resolveCategories, resolveMenuItems } from './domain/menuIdentity'
+import { parseNumericSlot } from './domain/numericSlots'
 import { priceEvidence } from './domain/pricing'
 import { partySizeSlot } from './domain/seating'
 import { paymentLabels } from './pos-bridge'
@@ -473,6 +474,11 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   if (!resolved)
     return { kind: 'IGNORE' }
   const transcript = context.transcript?.trim() ?? ''
+  // One finite operation cannot determine which of several explicit counts
+  // survives a correction or split order. Keep the whole utterance for Main;
+  // selecting the first count can reject a negated200 or invent the wrong order.
+  if (['ADD_ITEM', 'SET_QUANTITY'].includes(resolved.intent) && [...normalizeSlotNumbers(transcript).matchAll(/(?:^|[^\d.-])(\d+)\s*[份個碗杯]/g)].length > 1)
+    return { kind: 'NEEDS_ASSISTANT' }
   if (resolved.intent === 'SEARCH_MENU' && ['possible', 'overflow'].includes(context.productResolution.status) && !context.searchInterpretation)
     return { kind: 'NEEDS_ASSISTANT' }
   const menuRefs = context.references.filter(reference => reference.refId.startsWith('item:'))
@@ -1021,8 +1027,8 @@ function extractTaxId(transcript: string) {
 
 function quantityFromTranscript(transcript: string, allowBare = false) {
   const normalized = normalizeSlotNumbers(transcript)
-  const matched = /(?:^|\D)(20|1\d|[1-9])\s*[份個碗杯]/.exec(normalized)
-    ?? (allowBare ? /^(?:要|改成|[改再])?\s*(20|1\d|[1-9])\s*$/.exec(normalized) : null)
+  const matched = /(?:^|[^\d.-])(\d+)\s*[份個碗杯]/.exec(normalized)
+    ?? (allowBare ? /^(?:要|改成|[改再])?\s*(\d+)\s*$/.exec(normalized) : null)
   return matched ? Number(matched[1]) : undefined
 }
 
@@ -1036,7 +1042,9 @@ function optionSlotsFromTranscript(item: MenuItem, transcript: string) {
 // Normalize only local numeric slots, never the ASR text used for item names.
 // A 顆 value is an option; it must not become the number of servings.
 function normalizeSlotNumbers(transcript: string) {
-  const digits: Record<string, number> = { 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
   return transcript.replace(/[\uFF10-\uFF19]/g, digit => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
-    .replace(/二十|十[一二三四五六七八九]?|[一二兩三四五六七八九]/g, token => String(token === '二十' ? 20 : token.startsWith('十') ? 10 + (digits[token.slice(1)] ?? 0) : digits[token]))
+    .replace(/[零〇一二兩两三四五六七八九十百千萬万]+/g, (token) => {
+      const value = parseNumericSlot(token)
+      return value === undefined ? token : String(value)
+    })
 }
