@@ -13,7 +13,7 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
   it.each([
     { invoice: 'carrier' },
     { invoice: 'donation' },
-  ] as const)('shows both reward and table-binding QR after automatic payment with invoice $invoice', async ({ invoice }) => {
+  ] as const)('shows reward without phone handoff after automatic payment with invoice $invoice', async ({ invoice }) => {
     const completed = shallowRef(false)
     const orderContinuationUrl = shallowRef<string>()
     const registry = createScenarioRegistry()
@@ -33,7 +33,7 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
       setup: () => () => h('div', [
         h('iframe', { title: 'Test menu', srcdoc: `<div id="app"></div><script type="module" src="${entryUrl}"></script>` }),
         completed.value
-          ? h(CustomerSessionCompletion, { orderContinuationUrl: orderContinuationUrl.value, settings: {
+          ? h(CustomerSessionCompletion, { settings: {
               enabled: true,
               surveyUrl: 'https://reward.example/test',
               displayDurationSeconds: 300,
@@ -84,9 +84,9 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
       // also deferred the host-owned reward. Acceptance must notify the host now.
       await vi.waitFor(() => expect(completed.value).toBe(true), { timeout: 15_000 })
       await expect.element(screen.getByRole('heading', { name: '測試獎勵頁' })).toBeVisible()
-      await expect.element(screen.getByRole('img', { name: 'stage.customer-session.completion.order-qr-alt' })).toBeVisible()
+      await expect.element(screen.getByRole('img', { name: 'stage.customer-session.completion.order-qr-alt' })).not.toBeInTheDocument()
       expect(orderContinuationUrl.value).toContain('http://localhost:5166/?continuation=')
-      await expect.element(screen.getByRole('link')).toHaveAttribute('href', orderContinuationUrl.value!)
+      await expect.element(screen.getByRole('link', { name: 'stage.customer-session.completion.order-link' })).not.toBeInTheDocument()
     }
     finally {
       stop()

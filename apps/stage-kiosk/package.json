@@ -9,8 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:run": "vitest run",
-    "test:history": "vitest run src/services/historicalReplies.test.ts src/services/fieldRegression.test.ts",
-    "typecheck": "vue-tsc --noEmit"
+    "test:history": "pnpm run test:ordering-regressions",
+    "typecheck": "vue-tsc --noEmit",
+    "test:ordering-regressions": "pnpm -w exec vitest run --project kiosk-field-regressions && pnpm -F @proj-airi/server exec vitest run src/services/domain/kiosk-conversation-skills/index.test.ts src/services/domain/kiosk-agent-interaction/conversationContext.test.ts && pnpm -F @proj-airi/stage-shared exec vitest run src/kioskConversation.test.ts"
   },
   "dependencies": {
     "@formkit/auto-animate": "catalog:",
