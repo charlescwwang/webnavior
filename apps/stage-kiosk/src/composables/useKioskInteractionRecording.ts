@@ -1,12 +1,12 @@
 import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
-import type { ContextReply, ConversationQuestion } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ConversationQuestion, QuantityLimitRejection } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { Tool } from '@xsai/shared-chat'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 
-import { conversationQuestionSchema, serviceRecoveryLimits, toolInputRejectionSchema } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationQuestionSchema, quantityLimitRejectionSchema, serviceRecoveryLimits, toolInputRejectionSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { executeTool } from '@xsai/shared-chat'
 import { rawTool } from '@xsai/tool'
 import { safeParse } from 'valibot'
@@ -16,6 +16,7 @@ import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistor
 
 /** Outcome of one bounded Agent task, including accepted work before a failure. */
 export interface ConversationTurnResult {
+  rejection?: QuantityLimitRejection
   answer?: string
   reply?: ContextReply
   agentMode: KioskAgentInteractionMode
@@ -275,6 +276,10 @@ export function useKioskInteractionRecording() {
         // Reject the whole proposal before any sibling call can execute. This
         // feedback means no effect occurred in this batch, not a retry of a write.
         const unknownTools = response.toolCalls.filter(call => !toolsForTurn.some(tool => tool.function.name === call.function.name))
+        // Each item is independent: refuse oversized counts without retrying
+        // or reducing them; legal siblings may still execute in this batch.
+        let quantityRejection: QuantityLimitRejection | undefined
+
         if (unknownTools.length && toolSelectionRepaired)
           return unfinished('tool-rejected')
         if (unknownTools.length)
@@ -339,6 +344,20 @@ export function useKioskInteractionRecording() {
           }
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           const content = serializeToolResultContent(result.message.content)
+          let parsedContent: unknown
+          try {
+            parsedContent = JSON.parse(content)
+          }
+          catch {
+            // Unstructured transport errors cannot claim a known business refusal.
+          }
+          const limit = safeParse(quantityLimitRejectionSchema, parsedContent)
+          if (limit.success && limit.output.toolName === toolCall.function.name) {
+            quantityRejection = limit.output
+            toolResults.push({ content, name: toolCall.function.name, toolCallId: toolCall.id })
+            callbacks.onToolActivity?.(toolCall.function.name, 'done')
+            continue
+          }
           let rejected = result.completionToolResult.isError
           try {
             const payload = JSON.parse(content)
@@ -389,6 +408,11 @@ export function useKioskInteractionRecording() {
         }
         if (signal.aborted)
           return unfinished('timeout')
+        if (quantityRejection && !batchRejected) {
+          for (const result of toolResults)
+            await append('tool_result', result.content, { name: result.name })
+          return { agentMode, requestedTools, status: pendingChoice ? 'waiting' : 'completed', rejection: quantityRejection, ...(pendingChoice ? { question: pendingChoice, deferredTools } : {}) }
+        }
         // The model cannot complete a need that still requires a customer
         // answer. Publish its owned question now; another model continuation
         // could erase that question or guess the missing slots.

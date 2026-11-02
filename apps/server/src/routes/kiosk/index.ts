@@ -19,7 +19,7 @@ import { array, boolean, check, integer, literal, maxLength, maxValue, minLength
 
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
-import { clarificationTool, currentContextInstructions, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
+import { clarificationTool, currentContextInstructions, preserveRequestedQuantities, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { orderingInstructions, orderingSkill, resolveOrderingIntent } from '../../services/domain/kiosk-conversation-skills'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
@@ -951,7 +951,7 @@ interface KioskCompletion {
 
 // Completion review preserves the original request and its exact scoped tools;
 // a draft success claim is never supplied as evidence or an operation plan.
-const completionReviewInstruction = '本輪尚未有完成顧客需求的工具回執。要求打開購物車須cart_get(display:true)；返回訂單須checkout_cancel；pending_confirmation的同意或取消須order_answer_confirmation，不能選發票代替。結束前，重新核對原始顧客需求、相關真實對話與最新情境：查到資料不代表已完成新增、修改或展示下一批推薦。顧客要求看餐點或換其他推薦時，即使完整菜單已在情境內，仍須呼叫 menu_recommend 等展示工具更新畫面，不能只在文字列出餐點，也不能把泛指「其他餐點」交給 menu-information 當品名。條件不變且還有下一批時只傳 {"action":"continue"}，可另加 limit，不能重填 maxPrice、category、excludeItemIds 或其他既有條件，條件由程式保留。承接顧客明確指涉的餐點與份數；資訊已足夠且本輪有授權時，呼叫正確工具完成尚未執行的需求，不要再查已確認的資料或重做已成功的操作。只使用本次提供的工具與參數，不擴大權限、不猜同意、不自行付款。若只是詢問資訊，或仍有必要歧義，使用 respond_to_customer 選擇相應資訊或 clarification；沒有操作成功回執不可宣稱完成。'
+const completionReviewInstruction = '先核對quantityPolicy：超量品項不能減量、拆單或加入；同句合法品項仍須照常加入。將同句合法與超量品項放在同一批工具提案，各自驗證；全部超量時使用respond_to_customer({"kind":"quantity-limit"})明說上限，不轉成clarification、不清空購物車。本輪尚未有完成顧客需求的工具回執。要求打開購物車須cart_get(display:true)；返回訂單須checkout_cancel；pending_confirmation的同意或取消須order_answer_confirmation，不能選發票代替。結束前，重新核對原始顧客需求、相關真實對話與最新情境：查到資料不代表已完成新增、修改或展示下一批推薦。顧客要求看餐點或換其他推薦時，即使完整菜單已在情境內，仍須呼叫 menu_recommend 等展示工具更新畫面，不能只在文字列出餐點，也不能把泛指「其他餐點」交給 menu-information 當品名。條件不變且還有下一批時只傳 {"action":"continue"}，可另加 limit，不能重填 maxPrice、category、excludeItemIds 或其他既有條件，條件由程式保留。承接顧客明確指涉的餐點與份數；資訊已足夠且本輪有授權時，呼叫正確工具完成尚未執行的需求，不要再查已確認的資料或重做已成功的操作。只使用本次提供的工具與參數，不擴大權限、不猜同意、不自行付款。若只是詢問資訊，或仍有必要歧義，使用 respond_to_customer 選擇相應資訊或 clarification；沒有操作成功回執不可宣稱完成。'
 
 // Measure the actual serialized request after projection/compaction, not raw POS size.
 function inputMetrics(body: { messages: unknown, tools?: unknown }, context?: KioskConversationDecisionState['context']) {
@@ -1298,7 +1298,7 @@ async function finishConversationReply(
   if (answer.toolCalls.length === 1 && answer.toolCalls[0]!.function.name === replyTool.function.name) {
     try {
       const selected = safeParse(contextReplySchema, JSON.parse(answer.toolCalls[0]!.function.arguments))
-      clarificationRequested = selected.success && selected.output.kind === 'clarification'
+      clarificationRequested = selected.success && ['clarification', 'quantity-limit'].includes(selected.output.kind)
     }
     catch {
       // Malformed selectors still use the bounded reply repair below.
@@ -1334,7 +1334,10 @@ async function finishConversationReply(
     answer = await review()
     completionReviewed = true
   }
-  const browserCalls = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
+  const proposedBrowserCalls = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
+  const browserCalls = await preserveRequestedQuantities(context, proposedBrowserCalls, body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }))
+  if (!browserCalls)
+    return { toolCalls: [], reply: { kind: 'clarification' } }
   // A completed read review may be followed by a real presentation receipt.
   // Preserve that receipt for the Host instead of turning the task marker into
   // a synthetic clarification. Mutable tasks still require their effect review.
@@ -1394,7 +1397,16 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   const scopedTools = input.decisionState?.readOnly
     ? agentTools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'order_ask_question'].includes(tool.function.name))
     : agentTools
-  const available = [...(scopedTools ?? []), ...(input.decisionState?.context ? [replyTool] : [])]
+  const bulkOrder = input.decisionState?.context?.catalog?.complete && !input.decisionState.readOnly && input.decisionState.context.quantityPolicy?.mentionedCounts?.some(count => count > input.decisionState!.context!.quantityPolicy!.maximum)
+  // An admitted order containing oversized counts needs count validation or a
+  // policy refusal. A recommendation/price question cannot resolve that order.
+  // After a receipt, normal completion presentation remains available.
+  const policyReply = bulkOrder && !input.toolResults?.length
+    ? { ...replyTool, function: { ...replyTool.function, parameters: { ...replyTool.function.parameters, properties: { ...replyTool.function.parameters.properties, kind: { type: 'string', enum: ['quantity-limit', 'clarification'] } } } } }
+    : replyTool
+  const available = [...(scopedTools?.filter(tool => !bulkOrder || !['menu_recommend', 'menu_show_recommendations'].includes(tool.function.name)) ?? []), ...(input.decisionState?.context ? [policyReply] : [])]
+  if (bulkOrder && !input.toolResults?.length)
+    return { ...generation, tools: available, tool_choice: 'required' as const }
   // Read-only inquiries need a presented result, while operation tasks retain
   // their existing read-before-write contract and may continue to cart tools.
   const readCompleted = input.decisionState?.readOnly ? hasMenuReply(input.toolResults ?? []) : Boolean(input.toolResults?.length)

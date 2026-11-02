@@ -68,7 +68,7 @@ import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { isKioskConversationRetrySafeTool, resumeConversationRetry } from '../services/kioskConversationRetry'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
-import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationRejectionMessage, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { createVoicePresenceGate } from '../services/voicePresence'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
@@ -936,10 +936,10 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       continue
     }
     if (result.kind === 'EXECUTION_FAILED') {
-      const receipt = result.result && typeof result.result === 'object' ? result.result as Record<string, unknown> : undefined
-      const knownRejection = !result.uncertain && receipt?.rejection === 'item-selection' && typeof receipt.customerMessage === 'string'
+      const rejectedMessage = operationRejectionMessage(result.result, result.uncertain)
+      const knownRejection = Boolean(rejectedMessage)
       const message = knownRejection
-        ? String(receipt.customerMessage).slice(0, 2_000)
+        ? rejectedMessage!
         : result.uncertain
           ? '暫時無法確認這次操作結果，請先確認畫面上的購物車或訂單，不要重複付款。'
           : '這次操作未完成，請確認畫面後再試一次或使用螢幕操作。'

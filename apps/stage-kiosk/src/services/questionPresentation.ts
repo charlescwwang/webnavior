@@ -3,7 +3,8 @@ import type { ConversationContext, ConversationQuestion as PresentedQuestion, Se
 import type { KioskDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-import { replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { quantityLimitRejectionSchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { safeParse } from 'valibot'
 
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
@@ -140,6 +141,14 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
   if (options.customerEntry?.phase === 'customer_entry' && (entryRequired || options.requireMenuRead))
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
+  const rejection = safeParse(quantityLimitRejectionSchema, result.rejection)
+  if (rejection.success)
+    return { role: 'assistant', content: [options.menu.operationReply(), rejection.output.customerMessage, result.question?.question].filter(Boolean).join(' ') }
+  if (result.status === 'completed' && result.reply?.kind === 'quantity-limit' && options.context) {
+    const policy = replyFromContext(JSON.stringify(result.reply), options.context)
+    if (policy)
+      return { role: 'assistant', content: [options.menu.operationReply(), policy.content].filter(Boolean).join(' ') }
+  }
   // A history lookup supplies conversation context, not a new commerce result.
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
   // A completed no-tool draft cannot establish facts or operation success.
@@ -278,6 +287,17 @@ export function operationReplyFrom(result: unknown): string | undefined {
     return undefined
   const message = (result as Record<string, unknown>).customerMessage
   return typeof message === 'string' && message.trim() ? message : undefined
+}
+
+/** Presents only service-owned business refusals whose effects are known not to have executed. */
+export function operationRejectionMessage(result: unknown, uncertain = false): string | undefined {
+  if (uncertain)
+    return
+  const limit = safeParse(quantityLimitRejectionSchema, result)
+  if (limit.success)
+    return limit.output.customerMessage
+  if (result && typeof result === 'object' && 'rejection' in result && result.rejection === 'item-selection' && 'customerMessage' in result && typeof result.customerMessage === 'string')
+    return result.customerMessage.trim().slice(0, 2000) || undefined
 }
 
 /** Only explicit tool receipts can create question context; free assistant text cannot. */
