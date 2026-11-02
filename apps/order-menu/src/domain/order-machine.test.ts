@@ -291,6 +291,7 @@ describe('createMenuToolRuntime', () => {
       'cart_set_line_quantity',
       'cart_set_line_option',
       'cart_clear',
+      'order_answer_confirmation',
       'cart_get',
       'order_set_fulfillment',
       'checkout_start',

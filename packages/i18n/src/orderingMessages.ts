@@ -5,6 +5,7 @@ export const orderingMessages = {
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
     queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
     checkout: {
+      retainedFulfillment: '目前為{mode}。',
       invoiceQuestion: '請選擇手機載具、自然人憑證、公司統編，或略過並捐贈發票。',
       invoiceConfirmed: '已確認發票資料，請選擇付款方式。',
       invoiceConfirmQuestion: '請確認畫面上的發票資料，確認後選擇付款方式。',
@@ -82,6 +83,7 @@ export const orderingMessages = {
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
     queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
     checkout: {
+      retainedFulfillment: 'This order is set to {mode}. ',
       invoiceQuestion: 'Choose a mobile carrier, citizen certificate, business tax ID, or skip and donate the invoice.',
       invoiceConfirmed: 'Invoice details confirmed. Please choose a payment method.',
       invoiceConfirmQuestion: 'Confirm the invoice details shown on screen to continue to payment methods.',

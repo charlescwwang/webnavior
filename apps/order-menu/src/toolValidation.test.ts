@@ -20,3 +20,10 @@ it('uses the current POS capability enum and retains non-top-level constraints',
   expect(validators.menu_recommend!({ input: { action: 'update', category: '便當', includeIngredients: ['invented'] }, enums: {} })).toBe(false)
   expect(validators.menu_get!({ input: { queries: ['水餃', '水餃'] }, enums: {} })).toBe(false)
 })
+
+it('validates the bound confirmation identifier and affirmative or negative answer', () => {
+  expect(validators.order_answer_confirmation!({ input: { confirmationId: 'ticket', confirmedByUser: true }, enums: {} })).toBe(true)
+  expect(validators.order_answer_confirmation!({ input: { confirmationId: 'ticket', confirmedByUser: false }, enums: {} })).toBe(true)
+  expect(validators.order_answer_confirmation!({ input: { confirmationId: 'ticket', confirmedByUser: '確認' }, enums: {} })).toBe(false)
+  expect(validators.order_answer_confirmation!({ input: { confirmedByUser: true }, enums: {} })).toBe(false)
+})

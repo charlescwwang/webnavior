@@ -97,6 +97,9 @@ interface PendingFastPathClarification {
 }
 
 interface PendingFastPathConfirmation {
+  /** The proposing task cannot answer its own question before a new customer turn. */
+  taskId?: string
+  presented?: boolean
   cart: string
   operation: OperationPlan
   record: PendingConfirmation
@@ -837,6 +840,38 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       && authorize(pending.operation, context).kind !== 'BLOCKED'
   }
 
+  function confirmationSnapshot(context: DecisionContext) {
+    const pending = pendingFastPathConfirmation
+    if (!pending)
+      return
+    const valid = confirmationIsValid(pending, context)
+    const confirmationId = pending.record.confirmationId
+    const choices = [
+      { id: `intent:confirm:${confirmationId}`, description: confirmationMessage(pending.operation, fulfillmentModes) },
+      { id: `intent:cancel-confirmation:${confirmationId}`, description: '取消剛才待確認的操作，保留目前訂單及結帳進度。' },
+    ]
+    const question: PresentedQuestion = {
+      questionId: confirmationId,
+      purpose: 'operation-confirmation',
+      question: confirmationMessage(pending.operation, fulfillmentModes),
+      expiresAt: pending.record.expiresAt,
+      choices,
+    }
+    // Keep expired/stale intent visible to Main: bare assent must not become
+    // a choice for the underlying invoice page. Only a fresh request may replace it.
+    return {
+      phase: 'pending_confirmation' as const,
+      waitingFor: question,
+      candidates: valid ? choices : [],
+      ...(valid && pending.presented ? { intentRecovery: { kind: 'answer' as const, questionId: confirmationId, candidateIds: choices.map(choice => choice.id) } } : {}),
+      menuRevision: context.revisions.menu,
+      revisions: context.revisions,
+      retainedRequests: retainedRequests(context),
+      interactionState: { ...context.interactionState, pendingAction: pending.record.action },
+      paymentState: options.checkout?.paymentStatus() ?? 'idle',
+    }
+  }
+
   async function announce(
     label: string,
     targetId?: string,
@@ -1058,6 +1093,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             pendingFastPathConfirmation = undefined
             issuedFastPathContext = undefined
           }
+          if (pendingFastPathConfirmation && input.questionId === pendingFastPathConfirmation.record.confirmationId && confirmationIsValid(pendingFastPathConfirmation, currentFastPathContext()))
+            pendingFastPathConfirmation.presented = true
           if (offeredQuestion && offeredQuestion.phase === currentFastPathContext().phase && questionIsCurrent(offeredQuestion, currentFastPathRevisions(), Date.now()) && input.questionId === offeredQuestion.questionId) {
             finishQuestion('superseded')
             waitingFor = rememberQuestion({ ...offeredQuestion }, 'pending')
@@ -1074,6 +1111,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
 
           const current = currentFastPathContext()
+          const confirmation = confirmationSnapshot(current)
+          if (confirmation && confirmation.waitingFor.questionId === input.questionId && confirmation.waitingFor.expiresAt > Date.now() && pendingFastPathConfirmation && confirmationIsValid(pendingFastPathConfirmation, current))
+            return { pendingCustomerChoice: confirmation.waitingFor }
           const mealQuestion = mealClarification.question(current)
           if (mealQuestion?.questionId === input.questionId)
             return { pendingCustomerChoice: mealQuestion }
@@ -1651,10 +1691,12 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           await revealReview(onAction)
           await announce('進入結帳', undefined, { controlId: 'checkout:start' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).start()
+          const mode = fulfillmentModes.find(mode => mode.id === machine.getCart().fulfillmentMode)?.label
+          const modeMessage = mode ? orderingMessages['zh-Hant'].checkout.retainedFulfillment.replace('{mode}', mode) : ''
           clearMealProgress()
           return {
             checkout,
-            customerMessage: checkout.stage === 'invoice' ? '已進入結帳，請選擇發票方式。' : '已進入結帳，請顧客掃描會員條碼或選擇略過。',
+            customerMessage: `${modeMessage}${checkout.stage === 'invoice' ? '已進入結帳，請選擇發票方式。' : '已進入結帳，請顧客掃描會員條碼或選擇略過。'}`,
             nextStep: checkout.stage === 'invoice' ? 'Ask for invoice handling. Membership entry was already completed before ordering.' : 'Wait for the customer to scan their membership barcode, or call checkout_skip_membership only when the customer asks to skip it.',
           }
         }
@@ -1848,8 +1890,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             await options.seating?.refresh()
           const context = currentFastPathContext()
           const checkout = options.checkout?.snapshot()
-          const active = mealConfirmationSnapshot(context) ?? configurationSnapshot(context)
-          const phase = active?.phase ?? (pendingFastPathConfirmation && confirmationIsValid(pendingFastPathConfirmation, context) ? 'pending_confirmation' : context.phase)
+          const confirmation = confirmationSnapshot(context)
+          const active = confirmation ?? mealConfirmationSnapshot(context) ?? configurationSnapshot(context)
+          const phase = active?.phase ?? context.phase
           const question = active?.waitingFor ?? (context.waitingFor ? describeQuestion(context.waitingFor) : undefined)
           // A known target needs its original operation, not a second alias
           // confirmation that discards quantities or option combinations.
@@ -1858,6 +1901,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           let allowedToolNames = names
           if (phase === 'customer_entry') {
             allowedToolNames = []
+          }
+          else if (confirmation && !agentTask?.readOnly) {
+            const pending = pendingFastPathConfirmation
+            const valid = pending && confirmationIsValid(pending, context)
+            const confirmationTools = ['cart_get', 'seating_get']
+            if (valid && pending.presented && pending.taskId !== agentTask?.taskId)
+              confirmationTools.push('order_answer_confirmation')
+            // Expiry does not grant invoice choices. A new explicit request may
+            // instead propose a fresh return or mode change, with its own ticket.
+            if (!valid)
+              confirmationTools.push('order_set_fulfillment', 'checkout_cancel')
+            allowedToolNames = names.filter(name => confirmationTools.includes(name))
           }
           else if (agentTask?.readOnly || ['configuration', 'clarification', 'meal_confirmation', 'pending_confirmation'].includes(phase)) {
             // Read-only recovery does not reopen menu browsing during checkout.
@@ -1912,6 +1967,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             // independently qualified browsing scope.
             allowedToolNames = allowedToolNames.filter(name => !['menu_recommend', 'menu_show_recommendations'].includes(name))
           }
+          if (!confirmation)
+            allowedToolNames = allowedToolNames.filter(name => name !== 'order_answer_confirmation')
           const optionsFor = (values: Record<string, string>) => Object.entries(values).map(([groupId, valueId]) => ({ groupId, valueId }))
           const cart = context.cart
           const snapshot: ConversationContext = {
@@ -1948,7 +2005,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             fulfillmentModes: [...fulfillmentModes],
             ...(checkout ? { checkout: { stage: checkout.stage, invoiceMethod: checkout.invoiceMethod, ...(context.phase === 'checkout_tax_id' ? { taxId: checkout.taxId } : {}), invoiceDraftReady: invoiceDraftReady(checkout), carrierRegistered: Boolean(checkout.carrierCode), citizenRegistered: Boolean(checkout.citizenCode) } } : {}),
             ...(context.seating ? { seating: { partySize: context.seating.partySize, ready: context.seating.ready, revision: context.seating.revision } } : {}),
-            ...(question && question.expiresAt > Date.now() ? { waitingFor: question } : {}),
+            ...(question && (confirmation || question.expiresAt > Date.now()) ? { waitingFor: question } : {}),
             retainedRequests: retainedRequests(context),
             ...(intentRecovery(context) ? { intentRecovery: intentRecovery(context) } : {}),
             ...(active?.intentRecovery ? { intentRecovery: active.intentRecovery } : {}),
@@ -1975,6 +2032,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
 
           const context = currentFastPathContext()
+          const operationConfirmation = confirmationSnapshot(context)
+          if (operationConfirmation)
+            return operationConfirmation
           const confirmation = mealConfirmationSnapshot(context)
           if (confirmation)
             return confirmation
@@ -2080,25 +2140,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const configuration = interruptedQuestion || mealRerouted ? undefined : configurationSnapshot(context, transcript, true)
           if (configuration)
             return configuration
-          if (pendingFastPathConfirmation) {
-            if (!confirmationIsValid(pendingFastPathConfirmation, context)) {
-              pendingFastPathConfirmation = undefined
-            }
-            else {
-              return {
-                candidates: [
-                  { description: `確認剛才顯示的${pendingFastPathConfirmation.record.action}操作。`, id: `intent:confirm:${pendingFastPathConfirmation.record.confirmationId}` },
-                  { description: '取消剛才待確認的操作，保留目前訂單。', id: `intent:cancel-confirmation:${pendingFastPathConfirmation.record.confirmationId}` },
-                ],
-                interactionState: { ...context.interactionState, pendingAction: pendingFastPathConfirmation.record.action },
-                retainedRequests: retainedRequests(context),
-                menuRevision: context.revisions.menu,
-                revisions: context.revisions,
-                phase: 'pending_confirmation',
-                paymentState: options.checkout?.paymentStatus() ?? 'idle',
-              }
-            }
-          }
+          const operationConfirmation = confirmationSnapshot(context)
+          if (operationConfirmation)
+            return operationConfirmation
           if (!interruptedQuestion && pendingFastPathClarification) {
             const pending = pendingFastPathClarification
             if (pending.context.phase !== context.phase || !revisionsMatch(pending.expectedRevisions, context.revisions)) {
@@ -2365,6 +2409,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const confirmationId = crypto.randomUUID()
             const createdAt = Date.now()
             pendingFastPathConfirmation = {
+              taskId: agentTask?.taskId,
               cart: cartFingerprint(machine.getCart()),
               operation: { ...operation, questionId: undefined },
               record: createConfirmation({
@@ -2382,7 +2427,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             // confirmation record now owns authority for the exact operation.
             finishQuestion('answered')
             offeredQuestion = undefined
-            return { customerMessage: confirmationMessage(operation, fulfillmentModes), decisionTrace: { authorize: authorization, operationPlan: operation, resolveIntent: resolution }, pendingConfirmation: { action: operation.intent, confirmationId } }
+            return { customerMessage: confirmationMessage(operation, fulfillmentModes), decisionTrace: { authorize: authorization, operationPlan: operation, resolveIntent: resolution }, pendingConfirmation: { action: operation.intent, confirmationId }, pendingCustomerChoice: confirmationSnapshot(currentContext)!.waitingFor }
           }
           if (interrupted && (operation.intent === 'ADD_ITEM' || operation.intent === 'SELECT_ITEM')) {
             if (operation.intent === 'ADD_ITEM')
@@ -2465,10 +2510,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     // answer fulfillment, or replace a pending question. New tasks reset this.
     if (agentTask?.readOnly && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question'].includes(name))
       throw new Error('This task only authorizes menu reads; order changes require a new customer request.')
+    if (name === 'order_answer_confirmation') {
+      const pending = pendingFastPathConfirmation
+      if (!pending || !pending.presented || (agentTask && pending.taskId === agentTask.taskId) || input.confirmationId !== pending.record.confirmationId || typeof input.confirmedByUser !== 'boolean' || !confirmationIsValid(pending, currentFastPathContext()))
+        throw new Error('STALE_PLAN: This confirmation is not a current presented action for this customer turn.')
+      return await invoke('kiosk_fast_path_execute', { candidateId: `intent:${input.confirmedByUser ? 'confirm' : 'cancel-confirmation'}:${pending.record.confirmationId}` })
+    }
     // cart_get normally offers a fresh fulfillment question even for data-only
     // reads. Return a current snapshot without an offer or screen transition.
-    if (agentTask?.readOnly && name === 'cart_get')
+    if (agentTask?.readOnly && name === 'cart_get') {
+      if (input.display === true)
+        await revealReview(options.onAction)
       return { cart: machine.getCart() }
+    }
     // A failed named lookup leaves this customer's request unresolved. Do not
     // execute a partial removal or silently substitute another meal. This latch
     // belongs to the host-bound task; only a new task/customer turn resets it.
@@ -2656,6 +2710,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (!item || !filterPrices([item], agentTask.prices).length)
         throw new Error('Selected item violates the current task price conditions.')
     }
+    // Reaffirming an already selected mode has no checkout side effect. Use
+    // the same no-op receipt as touch/Fast Path before asking change consent.
+    if (name === 'order_set_fulfillment' && input.mode === context.cart.fulfillmentMode)
+      return await invoke(name, input)
     if (name === 'checkout_start' && context.cart.lines.length > 0 && !context.cart.fulfillmentMode)
       throw new Error('Choose dine-in or self-pickup before starting checkout.')
     if (cartLineToolNames.has(name) && context.phase === 'ordering') {
@@ -2823,6 +2881,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       const createdAt = Date.now()
       const confirmationId = crypto.randomUUID()
       pendingFastPathConfirmation = {
+        taskId: agentTask?.taskId,
         cart: cartFingerprint(context.cart),
         operation,
         record: createConfirmation({
@@ -2836,7 +2895,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           selectedItemRevision: context.revisions.selectedItem,
         }),
       }
-      return { customerMessage: confirmationMessage(operation, fulfillmentModes), pendingConfirmation: { action: operation.intent, confirmationId } }
+      return { customerMessage: confirmationMessage(operation, fulfillmentModes), pendingConfirmation: { action: operation.intent, confirmationId }, pendingCustomerChoice: confirmationSnapshot(context)!.waitingFor }
     }
     if (authorize(operation, currentFastPathContext()).kind !== 'EXECUTE')
       throw new Error('The Agent WebMCP operation became stale before execution.')
