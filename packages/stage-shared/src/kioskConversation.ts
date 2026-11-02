@@ -165,18 +165,18 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     return undefined
   const kind = selection.output.kind
   if (selection.output.kind === 'greeting')
-    return { kind, content: '您好，請問需要什麼協助？' }
+    return { kind, content: '您好，需要點餐或查詢菜單嗎？' }
   if (selection.output.kind === 'acknowledgement')
-    return { kind, content: '好的，請繼續告訴我您的需求。' }
+    return { kind, content: '好的，您可以繼續告訴我想點的餐點或訂單調整。' }
   if (selection.output.kind === 'hearing-check')
-    return { kind, content: '有收到您的這句話，請問需要什麼協助？' }
+    return { kind, content: '有收到您的這句話，您可以繼續說明想點的餐點或訂單調整。' }
   if (kind === 'quantity-limit')
     return context.entryComplete && context.quantityPolicy ? { kind, content: context.quantityPolicy.message } : undefined
   if (selection.output.kind === 'clarification') {
     // Generic meaning uncertainty must not revive a pending purchase question.
     const content = selection.output.topic === 'menu-kind'
       ? '目前菜單未提供可確認符合這個種類的餐點，您想改看哪一類？'
-      : '剛才沒有理解清楚，請再說一次您想詢問或調整的內容。'
+      : '剛才沒有理解清楚，請再說一次您想查詢的餐點或訂單調整。'
     return { kind, content }
   }
   if (selection.output.kind === 'payment-methods') {
@@ -190,12 +190,12 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     // source those facts are explicitly unavailable, never inferred from persona.
     const topic = selection.output.topic
     if (topic === 'identity')
-      return { kind, content: '我是這台機台的服務助手，可以協助您查詢餐點與操作點餐流程。' }
+      return { kind, content: '我是這台機台的點餐助手，可以協助您查詢餐點與操作點餐流程。' }
     if (topic === 'capabilities')
-      return { kind, content: context.entryComplete ? '我可以協助查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；操作後會依實際結果回覆。' : '我可以先說明服務；選擇填寫手機或略過後，可以查詢菜單、點餐與核對訂單。' }
+      return { kind, content: context.entryComplete ? '我可以協助查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；操作後會依實際結果回覆。' : '我可以先說明點餐方式；選擇填寫手機或略過後，可以查詢菜單、點餐與核對訂單。' }
     if (topic === 'location' || topic === 'hours')
       return { kind, content: `目前服務資料未提供可確認的${topic === 'location' ? '店內位置或路線' : '營業時間'}，請詢問現場店員。` }
-    return { kind, content: '目前沒有足夠資料確認這個問題，請提供更多說明，或詢問現場店員。' }
+    return { kind, content: '這部分目前無法確認，請詢問現場店員；我可以協助查詢菜單、點餐與調整訂單。' }
   }
   if (!context.entryComplete || !context.catalog?.complete || !selection.output.subjects?.length)
     return undefined
