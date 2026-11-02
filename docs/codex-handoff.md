@@ -7,6 +7,19 @@ accumulating history.
 
 ## Current State
 
+- Nov2 ORDERING-SCOPED COPY ONLY: user explicitly rejected expanding decisions,
+  prompts, states or reply-rotation mechanisms. Exactly7existing literals in
+  packages/stage-shared/src/kioskConversation.ts now focus on menu/order assistance.
+  No new branches/types/model rules. Historical incident wording remains untouched.
+  9existing shared conversation tests and normal commit hook pass. User requested
+  plain-Chinese batch commits and deployment. Audit /tmp/webnavior-ordering-copy-audit.json
+  proves exact7string substitutions against active quantity-limit release; no provider calls.
+  Builder /tmp/prepare-webnavior-ordering-copy-release.py rebuilds Menu/Kiosk with public
+  URLs and overlays only this1shared source into the active runtime. Closed16-model
+  quantity acceptance is not rerun or represented as fresh validation for this wording edit.
+  Release path after packaging: /tmp/webnavior-ordering-copy-release-path.
+  Final switch needs sudo; independently verify deployment before claiming live.
+
 - Nov2 QUANTITY LIMIT REPAIR COMMITTED, DEPLOYED AND INDEPENDENTLY VERIFIED.
   Production repair checkout remains `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`,
   branch `codex/kiosk-production-recovery`; do not edit the separate experiment checkout.
