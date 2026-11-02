@@ -214,6 +214,27 @@ describe('kiosk routes', () => {
     expect(complete.mock.calls[1]![0].body.tools).toEqual([...tools, replyTool])
   })
 
+  // Report: this chat, Nov2; returning to order and confirmation ended in prose only.
+  it.each(['return', 'answer'] as const)('reviews omitted checkout navigation %s before removing browser tools', async (method) => {
+    const name = method === 'return' ? 'checkout_cancel' : 'order_answer_confirmation'
+    const phase = method === 'return' ? 'checkout_invoice' : 'pending_confirmation'
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+      .mockImplementationOnce(async () => Response.json({ choices: [{ message: { content: '請按畫面上的確認繼續。' } }] }))
+      .mockImplementationOnce(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'confirm', type: 'function', function: { name, arguments: '{"confirmedByUser":true}' } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'invoice', capturedAt: Date.now(), taskId: 'invoice', sourceUtterance: method === 'return' ? '回到訂單頁面' : '確認', phase, entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 1, selectedItem: 0, checkout: 1 }, cart: { itemCount: 1, total: 80, lines: [] }, checkout: { stage: 'invoice', invoiceMethod: 'carrier', invoiceDraftReady: false, carrierRegistered: false, citizenRegistered: false }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [name] }
+    const tools = [{ type: 'function', function: { name, description: '確認已填資料', parameters: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } } }]
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase, context } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ toolCalls: [{ function: { name } }] })
+    expect(complete).toHaveBeenCalledTimes(2)
+    expect(complete.mock.calls[1]![0].body.tools).toEqual([...tools, replyTool])
+  })
+
   // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 alternatives replay.
   it.each([false, true].flatMap(selector => [false, true].map(readOnly => ({ selector, readOnly }))))('preserves accepted menu receipts after one draft review (selector=$selector, readOnly=$readOnly)', async ({ selector, readOnly }) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()

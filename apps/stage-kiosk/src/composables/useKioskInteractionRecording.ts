@@ -353,7 +353,7 @@ export function useKioskInteractionRecording() {
 
             const question = safeParse(conversationQuestionSchema, payload?.pendingCustomerChoice)
             if (!rejected && question.success) {
-              if (['menu-query-scope', 'confirm-meal', 'item-configuration', 'item-clarification', 'membership', 'invoice', 'tax-id', 'payment-method'].includes(question.output.purpose))
+              if (['menu-query-scope', 'confirm-meal', 'item-configuration', 'item-clarification', 'operation-confirmation', 'membership', 'invoice', 'tax-id', 'payment-method'].includes(question.output.purpose))
                 pendingChoice = question.output
             }
             // A displayed full catalog also completes the turn's presentation.

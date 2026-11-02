@@ -317,6 +317,8 @@ describe('useKioskInteractionRecording', () => {
   // Report: live112 C13-A2, attempt723; after opening checkout Main
   // answered new invoice/payment questions itself within the same tool loop.
   it.each([
+    // Report: Nov2 navigation acceptance; Main continued after proposing a mode change.
+    { purpose: 'operation-confirmation', name: 'order_set_fulfillment' },
     { purpose: 'membership', name: 'checkout_start' },
     { purpose: 'invoice', name: 'checkout_start' },
     { purpose: 'tax-id', name: 'checkout_request_tax_id' },

@@ -951,7 +951,7 @@ interface KioskCompletion {
 
 // Completion review preserves the original request and its exact scoped tools;
 // a draft success claim is never supplied as evidence or an operation plan.
-const completionReviewInstruction = '本輪尚未有完成顧客需求的工具回執。結束前，重新核對原始顧客需求、相關真實對話與最新情境：查到資料不代表已完成新增、修改或展示下一批推薦。顧客要求看餐點或換其他推薦時，即使完整菜單已在情境內，仍須呼叫 menu_recommend 等展示工具更新畫面，不能只在文字列出餐點，也不能把泛指「其他餐點」交給 menu-information 當品名。條件不變且還有下一批時只傳 {"action":"continue"}，可另加 limit，不能重填 maxPrice、category、excludeItemIds 或其他既有條件，條件由程式保留。承接顧客明確指涉的餐點與份數；資訊已足夠且本輪有授權時，呼叫正確工具完成尚未執行的需求，不要再查已確認的資料或重做已成功的操作。只使用本次提供的工具與參數，不擴大權限、不猜同意、不自行付款。若只是詢問資訊，或仍有必要歧義，使用 respond_to_customer 選擇相應資訊或 clarification；沒有操作成功回執不可宣稱完成。'
+const completionReviewInstruction = '本輪尚未有完成顧客需求的工具回執。要求打開購物車須cart_get(display:true)；返回訂單須checkout_cancel；pending_confirmation的同意或取消須order_answer_confirmation，不能選發票代替。結束前，重新核對原始顧客需求、相關真實對話與最新情境：查到資料不代表已完成新增、修改或展示下一批推薦。顧客要求看餐點或換其他推薦時，即使完整菜單已在情境內，仍須呼叫 menu_recommend 等展示工具更新畫面，不能只在文字列出餐點，也不能把泛指「其他餐點」交給 menu-information 當品名。條件不變且還有下一批時只傳 {"action":"continue"}，可另加 limit，不能重填 maxPrice、category、excludeItemIds 或其他既有條件，條件由程式保留。承接顧客明確指涉的餐點與份數；資訊已足夠且本輪有授權時，呼叫正確工具完成尚未執行的需求，不要再查已確認的資料或重做已成功的操作。只使用本次提供的工具與參數，不擴大權限、不猜同意、不自行付款。若只是詢問資訊，或仍有必要歧義，使用 respond_to_customer 選擇相應資訊或 clarification；沒有操作成功回執不可宣稱完成。'
 
 // Measure the actual serialized request after projection/compaction, not raw POS size.
 function inputMetrics(body: { messages: unknown, tools?: unknown }, context?: KioskConversationDecisionState['context']) {
@@ -1327,7 +1327,7 @@ async function finishConversationReply(
   const invoiceConfirmationAvailable = context.checkout?.invoiceDraftReady === true
     && ((context.phase === 'checkout_invoice' && context.allowedToolNames.includes('checkout_confirm_invoice'))
       || (context.phase === 'checkout_tax_id' && context.allowedToolNames.includes('checkout_confirm_tax_id')))
-  if (context.taskId && (context.phase === 'ordering' || invoiceConfirmationAvailable) && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && !clarificationRequested && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
+  if (context.taskId && (context.phase === 'ordering' || context.phase === 'pending_confirmation' || context.allowedToolNames.includes('checkout_cancel') || invoiceConfirmationAvailable) && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && !clarificationRequested && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
     // Reserve the one review before the provider call. Later continuations of
     // this task cannot spend another review or restart an attempted operation.
     await input.kioskService.appendDeviceInteraction({ deviceId: input.transcript.session.deviceId, visitorSessionId: input.transcript.session.id, kind: 'service_event', content: 'agent.completion_review', metadata: { source: 'main_completion_review', taskId: context.taskId } })

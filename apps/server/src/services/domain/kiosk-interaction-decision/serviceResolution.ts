@@ -60,7 +60,7 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
 你只判斷本句完整目的，選一種交接，不選商品或執行操作。
 SERVICE_INFORMATION_ONLY：本機身分能力、店家一般服務資訊、確認有沒有收到語音、了解／先問店員等非操作結束回應。
 MENU_INFORMATION_ONLY：純餐點、成分、價格、推薦的資訊查詢。ORDER_INFORMATION_ONLY：核對購物車／訂單目前內容或狀態，保持唯讀，不設定用餐方式或開始結帳。改瀏覽價格、種類或換推薦批次仍是查詢，不是替換購物車。整句最後已否定或撤回的操作不能算仍成立；只問有沒有就保持查詢。「核對訂單／看訂單／查購物車」選ORDER_INFORMATION_ONLY且是唯讀，不能設內用或開始結帳。
-ORDER_MUTATION：明確要求新增、修改、替換、取消、設定用餐方式或回答操作問題；混合資訊與操作仍保留全部明確操作。只有資料缺漏交Menu補問。
+ORDER_MUTATION：也包含操作畫面導覽，例如「返回上一頁」「回到訂單頁面」「離開結帳」；這些要求實際離開目前結帳畫面，不能因含有「訂單」就選ORDER_INFORMATION_ONLY。在結帳畫面要求回到訂單，必須保留返回操作；單純查詢訂單內容才是ORDER_INFORMATION_ONLY。明確要求新增、修改、替換、取消、設定用餐方式或回答操作問題；混合資訊與操作仍保留全部明確操作。只有資料缺漏交Menu補問。
 CLARIFY_SERVICE：確定向本機求助，但沒有說清服務目的；只有指代且當輪沒有可唯一解析對象時，先問指的是哪一道，不推薦替代、不從目錄猜選；已明確指定餐點但缺份數／規格仍交ORDER_MUTATION由Menu補問。包含含糊求助後只說先不要變更，不能因操作未明當成背景。
 BACKGROUND：確定向同伴談話、引述或無本機需求的背景內容。Jev已判為服務的含糊求助不能僅因意思不明改成背景。
 UNCERTAIN：無法確認服務對象，或尚未說完且沒有完整求助目的。
