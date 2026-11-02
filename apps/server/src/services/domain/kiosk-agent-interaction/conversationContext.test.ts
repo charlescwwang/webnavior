@@ -2,7 +2,7 @@ import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-convers
 import { parse } from 'valibot'
 import { expect, it, vi } from 'vitest'
 
-import { replyTool, selectReply } from './conversationContext'
+import { currentContextInstructions, replyTool, selectReply } from './conversationContext'
 
 const facts = { contextId: 'current', capturedAt: 1, taskId: 'task', sourceUtterance: '可以用哪種方式付款？', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], paymentMethods: [{ id: 'linepay', label: 'LINE Pay' }], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] }
 
@@ -46,4 +46,14 @@ it('does not issue another provider call when a reviewed reply is malformed', as
   const complete = vi.fn(async () => result({ kind: 'payment-methods' }))
   expect(await selectReply({ repair: false, context: parse(conversationContextSchema, facts), calls: [], complete })).toEqual({ reply: { kind: 'clarification' }, repaired: false })
   expect(complete).not.toHaveBeenCalled()
+})
+
+// Shared-progress plan: a semantic read-only handoff must not erase known meal slots.
+it('retains draft facts in Main instructions when a read-only turn omits the catalog', () => {
+  const context = parse(conversationContextSchema, { ...facts, retainedRequests: [{ id: 'draft', itemId: 'meal', status: 'active', quantity: 2, options: [], missing: { quantity: false, optionGroupIds: ['size'] }, expectedRevisions: { menu: 1 } }] })
+  const instructions = currentContextInstructions(context)
+  const current = JSON.parse(instructions.split('\n').at(-1)!)
+  expect(current.retainedRequests).toEqual(context.retainedRequests)
+  expect(current).not.toHaveProperty('cart')
+  expect(instructions).toContain('本輪只允許資訊查詢')
 })

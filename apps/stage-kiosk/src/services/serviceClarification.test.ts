@@ -33,3 +33,20 @@ it('rejects a recovered decision if the cart changed while Main was deciding', a
   expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
 })
+
+// Report: frozen live112 C07-A2, attempt552; validating completed service
+// recovery reread the decision producer and replaced its current answer ticket.
+it('revalidates recovered configuration context without issuing another answer lease', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_fast_path_context', { transcript: '我要周氏蝦捲' })
+  await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+  let questionId: string | undefined
+  const result = await runFastPath({ transcript: '好', isEnabled: async () => true, decide: async (request) => {
+    questionId = request.decisionState?.waitingFor?.questionId
+    return { kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', recovery: { status: 'completed', admission: 'service', disposition: 'assistant', contextKey: serviceContextKey(request.decisionState!) } }
+  }, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result.decisionState?.waitingFor?.questionId).toBe(questionId)
+  expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ waitingFor: { questionId } })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})

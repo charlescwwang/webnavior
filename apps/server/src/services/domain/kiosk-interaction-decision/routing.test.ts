@@ -56,7 +56,7 @@ describe('staged Fast Path routing', () => {
   it('does not turn service admission or an invalid leaf into operation authority', async () => {
     const invoke = provider(['SERVICE', 'SINGLE', 'SERVICE', 'intent:clear-cart'])
     const result = await decideInteraction({ routing: 'staged', policy, candidates, transcript: '不要便當了，哪有說外帶', invoke })
-    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+    expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE' })
     expect(result).not.toHaveProperty('actionId')
   })
 
@@ -83,7 +83,7 @@ describe('staged Fast Path routing', () => {
   it('binds an answer to the exact live question and rejects an expired answer', async () => {
     const question = { questionId: 'ticket-1', purpose: 'confirm-action', question: '確定清空嗎？', expiresAt: Date.now() + 30_000, choices: [{ id: 'confirm:ticket-1', description: '明確同意清空' }] }
     const input = { routing: 'staged' as const, policy, candidates: [{ id: 'confirm:ticket-1', description: '明確同意清空' }], transcript: '對', decisionState: { phase: 'pending_confirmation', waitingFor: question } }
-    const answer = await decideInteraction({ ...input, invoke: provider(['SERVICE', 'ANSWER', 'confirm:ticket-1']) })
+    const answer = await decideInteraction({ ...input, invoke: provider(['SERVICE', 'ANSWER', 'confirm:ticket-1', 'OPERATION', 'SINGLE']) })
     expect(answer).toMatchObject({ kind: 'FAST_ACTION', actionId: 'confirm:ticket-1', answeredQuestionId: 'ticket-1' })
     const expired = await decideInteraction({ ...input, decisionState: { ...input.decisionState, waitingFor: { ...question, expiresAt: Date.now() - 1 } }, invoke: provider(['SERVICE', 'ANSWER']) })
     expect(expired).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
@@ -168,7 +168,7 @@ describe('staged Fast Path routing', () => {
   })
 
   it('rejects an add hypothesis when independent purpose identifies a factual inquiry', async () => {
-    const result = await decideInteraction({ routing: 'staged', policy, candidates, decisionState: { phase: 'ordering' }, transcript: '牛肉麵可以不加香菜嗎', invoke: provider(['SERVICE', 'SINGLE', 'ITEM', 'intent:add-item', 'INFORMATION']) })
+    const result = await decideInteraction({ routing: 'staged', policy, candidates, decisionState: { phase: 'ordering', catalogEvidence: { products: [{ label: '牛肉麵', matchedText: '牛肉麵', source: 'name' }], categories: [] } }, transcript: '牛肉麵可以不加香菜嗎', invoke: provider(['SERVICE', 'SINGLE', 'ITEM', 'intent:add-item', 'INFORMATION']) })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY' })
     expect(result).not.toHaveProperty('actionId')
   })
@@ -178,4 +178,24 @@ describe('staged Fast Path routing', () => {
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
     expect(result).not.toHaveProperty('actionId')
   })
+})
+
+// Reports: live112 C08-F1/C12-F1, total correction became a new-meal confirmation.
+it.each([0.5, 0.95])('hands uncertain purpose to Main when Menu issued a request recovery scope (%s)', async (confidence) => {
+  const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
+    const key = Object.keys(questions)[0]!
+    return { answers: { [key]: { choice: key === 'admission' ? 'SERVICE' : 'UNCERTAIN', confidence: key === 'admission' ? 0.95 : confidence } } }
+  })
+  const result = await decideInteraction({ routing: 'staged', policy, candidates, transcript: '水餃總共改三份', invoke, decisionState: { phase: 'ordering', clarificationOffer: { id: 'offer', label: '水餃' }, intentRecovery: { kind: 'request', candidateIds: ['intent:set-quantity'] } } })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+  expect(result).not.toHaveProperty('actionId')
+})
+
+// Report: live112 C14-F2: dine-in correction was consumed by a checkout invitation.
+it('verifies whole-effect coverage even after Jev hypothesizes an answer to checkout', async () => {
+  const invoke = provider(['SERVICE', 'ANSWER', 'intent:start-checkout', 'OPERATION', 'HANDOFF'])
+  const choice = { id: 'intent:start-checkout', description: '開始結帳，不修改用餐方式' }
+  const result = await decideInteraction({ routing: 'staged', policy, candidates: [choice], transcript: '更正，我要內用', invoke, decisionState: { phase: 'ordering', waitingFor: { questionId: 'checkout', purpose: 'checkout-entry', question: '要進入結帳嗎？', expiresAt: Date.now() + 30000, choices: [choice] } } })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
+  expect(result).not.toHaveProperty('answeredQuestionId')
 })

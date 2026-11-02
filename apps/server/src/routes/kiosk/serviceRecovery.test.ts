@@ -12,7 +12,11 @@ import * as schema from '../../schemas'
 
 it('delivers Main recovery start over HTTP before the provider runs and finishes with the original Jev count', async () => {
   let finish!: (response: Response) => void
-  const complete = vi.fn(() => new Promise<Response>(resolve => finish = resolve))
+  const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(({ body }) => {
+    if (JSON.stringify(body.tools).includes('resolve_service_scope'))
+      return Promise.resolve(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"UNCERTAIN"}' } }] } }] }))
+    return new Promise<Response>(resolve => finish = resolve)
+  })
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
     isEnabled: async () => true,
     maxActionCandidates: async () => 22,

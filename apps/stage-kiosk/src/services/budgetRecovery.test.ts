@@ -27,6 +27,8 @@ it.each([true, false].flatMap(clarified => ['有其他不超過兩百元的嗎',
   if (clarified)
     window.present({ questionId: 'budget-clarification', question: '請再說一次您想詢問或調整的內容。', sourceUtterance: '有其他的嗎', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 })
   const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
+    if (JSON.stringify(body.tools).includes('resolve_service_scope'))
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"MENU_INFORMATION_ONLY"}' } }] } }] })
     const price = JSON.stringify(body.tools).includes('resolve_price_choice')
     const args = price ? { choice: 'UPPER_INCLUSIVE' } : { admission: 'service', disposition: 'assistant', requestKind: 'new-request' }
     return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: price ? 'resolve_price_choice' : 'resolve_service_request', arguments: JSON.stringify(args) } }] } }] })
@@ -53,7 +55,7 @@ it.each([true, false].flatMap(clarified => ['有其他不超過兩百元的嗎',
   expect(result.kind).toBe('NEEDS_ASSISTANT')
   expect(systemOne.decide).toHaveBeenCalledTimes(clarified ? 0 : 2)
   expect(result.decisionState?.constraints).toMatchObject({ price: { maxPrice: 200 }, unresolvedPrice: false })
-  expect(complete).toHaveBeenCalledTimes(clarified ? 2 : 1)
+  expect(complete).toHaveBeenCalledTimes(clarified ? 3 : 2)
   const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'budget-recovery', transcript, expectedMenuRevision: context.revisions.menu, constraints: { ...result.decisionState?.constraints?.price, unresolvedPrice: result.decisionState?.constraints?.unresolvedPrice === true }, readOnly: true })
   const receipt = await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 200 })

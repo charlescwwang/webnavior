@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildConversationContext, conversationEntries, normalizeTranscript } from './context'
+import { buildConversationContext, buildDecisionMessages, conversationEntries, normalizeTranscript } from './context'
 
 describe('system One conversation context', () => {
   it('retains failed decisions as diagnostics, not completed customer requests', () => {
@@ -41,4 +41,13 @@ describe('system One conversation context', () => {
     expect(context.messages.reduce((sum, message) => sum + message.content.length, 0)).toBeLessThanOrEqual(4_000)
     expect(context.messages.at(-1)).toMatchObject({ role: 'assistant', content: '99'.repeat(200) })
   })
+})
+
+// Report: live112 D09, current request was shadowed by preceding dialogue.
+it('keeps history data before the exact current user message across Main stages', () => {
+  const history = { messages: [{ role: 'user', content: '我還沒說清楚' }] }
+  const messages = buildDecisionMessages('依技能釐清需求', history, '我現在要問付款方式')
+  expect(messages.map(message => message.role)).toEqual(['system', 'user', 'user'])
+  expect(JSON.parse(messages[1]!.content)).toEqual(history)
+  expect(messages.at(-1)!.content).toBe('我現在要問付款方式')
 })

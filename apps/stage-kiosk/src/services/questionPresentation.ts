@@ -1,6 +1,6 @@
-import type { ConversationContext, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ConversationContext, ConversationQuestion as PresentedQuestion, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
 
-import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import type { KioskDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
 import { replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
@@ -14,6 +14,7 @@ export function createMenuReplyWindow() {
   const messages = new Set<string>()
   const items = new Map<string, { name: string, price: number }>()
   const operations = new Set<string>()
+  const outcomes: string[] = []
   let reads = 0
   let cartReply: string | undefined
   return {
@@ -27,10 +28,20 @@ export function createMenuReplyWindow() {
       if (!result || typeof result !== 'object')
         return
       const payload = result as Record<string, unknown>
-      if (payload.ok === false)
+      if (payload.ok === false || payload.dataOnly === true)
         return
-      if (typeof payload.customerMessage === 'string')
+      const question = questionReceiptFrom(payload)
+      const waiting = ['item-configuration', 'confirm-meal', 'item-clarification', 'menu-query-scope'].includes(question?.purpose ?? '')
+      if (typeof payload.customerMessage === 'string' && !waiting)
         operations.add(name)
+      if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name)) {
+        const message = operationReplyFrom(payload)
+        // Only the current question may be spoken. Earlier operation receipts
+        // remain, but their superseded follow-up prompts cannot be revived.
+        const outcome = question && message ? message.replace(question.question, '').trim() : message
+        if (outcome && !waiting)
+          outcomes.push(outcome)
+      }
       if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get'].includes(name))
         return
       // An internal catalog lookup supplies evidence to the Agent, not dishes
@@ -87,6 +98,11 @@ export function createMenuReplyWindow() {
       }
       return tools[intent]?.some(name => operations.has(name)) === true
     },
+    operationReply(fallback?: string) {
+      if (!outcomes.length)
+        return fallback
+      return outcomes.join(' ')
+    },
     hasReceipts: () => reads > 0 || cartReply !== undefined,
     reply() {
       // Without evidence, generated dish claims cannot become customer dialogue.
@@ -140,7 +156,10 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   // requested effect even when Main chooses a factual but unrelated lookup.
   const intent = options.handoff?.intent ?? ''
   const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART', 'SET_FULFILLMENT', 'START_CHECKOUT', 'SELECT_PAYMENT', 'CANCEL_CHECKOUT'].includes(intent)
-  const configuringMeal = ['ADD_ITEM', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(options.question?.purpose ?? '')
+  // The loop result is diagnostic; only the final Menu-validated question
+  // supplied by the Host may be presented after release/manual state changes.
+  const question = options.question
+  const configuringMeal = ['ADD_ITEM', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(question?.purpose ?? '')
   // Clarification pauses an unexecuted demand; it never completes the mutation
   // or consumes an old confirmation. Reads may precede a clarification; attempted
   // writes still require their actual receipt or result-unknown policy.
@@ -149,9 +168,13 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     if (clarification)
       return { role: 'assistant' as const, content: clarification.content }
   }
-  if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal)
-    return unresolved
-  const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
+  if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal) {
+    const accepted = options.menu.operationReply()
+    return accepted ? { role: 'assistant', content: `${accepted} ${options.failureMessage}` } : unresolved
+  }
+  const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.menu.operationReply(options.outcome), question)
+  if (result.status === 'waiting')
+    return question && receiptReply ? { role: 'assistant', content: receiptReply } : { role: 'error', content: options.failureMessage }
   if (result.status !== 'completed') {
     return receiptReply
       ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
@@ -228,7 +251,7 @@ export function presentedQuestionFrom(value: unknown): PresentedQuestion | undef
       return undefined
     choices.push({ id: choice.id, description: choice.description })
   }
-  return { questionId: question.questionId, purpose: question.purpose, question: question.question, expiresAt: question.expiresAt, choices }
+  return { questionId: question.questionId, ...(typeof question.requestId === 'string' ? { requestId: question.requestId } : {}), purpose: question.purpose, question: question.question, expiresAt: question.expiresAt, choices }
 }
 
 /** Ensures the correlated question is visible; text matching only avoids duplicate rendering. */

@@ -1,3 +1,4 @@
+import type { CheckoutSnapshot } from '../../../order-menu/src/domain/checkout-flow'
 import type { KioskRoutesOptions } from '../../../server/src/routes/kiosk'
 import type { FastPathDecision } from './kiosk-fast-path'
 
@@ -5,7 +6,9 @@ import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-convers
 import { parse } from 'valibot'
 import { expect, it, vi } from 'vitest'
 
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
 import { menu } from '../../../order-menu/src/domain/order-machine'
+import { orderingIncidents } from '../../../order-menu/src/evaluation/orderingIncidents'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { mockDB } from '../../../server/src/libs/mock-db'
 import { createKioskRoutes } from '../../../server/src/routes/kiosk'
@@ -16,11 +19,52 @@ import { questionReceiptFrom } from './questionPresentation'
 import * as schema from '../../../server/src/schemas'
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 core-cart.
-async function createHarness(choice: 'intent:add-item' | 'intent:search-menu', weakAnswer = false) {
-  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [], price: 80 }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+async function createHarness(choice: 'intent:add-item' | 'intent:search-menu' | 'intent:set-fulfillment:dine-in' | 'intent:set-fulfillment:takeout' | 'intent:start-checkout' | 'intent:defer-question' | 'confirm-meal', weakAnswer = false, route: 'jev' | 'main' | 'uncertain' = 'main') {
+  let checkoutState: CheckoutSnapshot | undefined
+  let checkoutRevision = 0
+  const checkoutStart = vi.fn(() => {
+    checkoutRevision++
+    checkoutState = beginCheckout('collected')
+    return checkoutState
+  })
+  const payment = vi.fn(async () => {
+    throw new Error('Payment is outside checkout-entry tests.')
+  })
+  const update = (next: CheckoutSnapshot) => {
+    checkoutRevision++
+    checkoutState = next
+    return next
+  }
+  const runtime = createMenuToolRuntime({ checkout: {
+    snapshot: () => checkoutState,
+    revision: () => checkoutRevision,
+    paymentStatus: () => undefined,
+    assertCanRestart: () => {},
+    restart: () => {
+      checkoutState = undefined
+      checkoutRevision++
+    },
+    cancel: () => {
+      checkoutState = undefined
+      checkoutRevision++
+    },
+    start: checkoutStart,
+    skipMembership: () => update(skipMembership(checkoutState!)),
+    chooseInvoice: method => update(chooseInvoiceMethod(checkoutState!, method)),
+    requestTaxId: () => update(requestTaxId(checkoutState!)),
+    setTaxId: value => update(setTaxIdDraft(checkoutState!, value)),
+    confirmInvoice: () => update(confirmInvoiceDraft(checkoutState!)),
+    confirmTaxId: () => update(confirmTaxId(checkoutState!)),
+    selectPayment: payment,
+  }, menu: [{ ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [], price: 80 }, { ...menu[0]!, id: 'fried-pork-chop-bento', name: '炸排骨便當', aliases: ['排骨便當'], optionGroups: [], price: 130 }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
-    const tools = body.tools as Array<{ function: { parameters: { properties: { choice: { enum: string[] } } } } }>
-    const selected = tools[0]!.function.parameters.properties.choice.enum.find(id => id.includes(':quantity:2')) ?? choice
+    const tools = body.tools as Array<{ function: { name: string, parameters: { properties: { choice: { enum: string[] } } } } }>
+    const choices = tools[0]!.function.parameters.properties.choice.enum
+    if (tools[0]!.function.name === 'verify_ordering_answer')
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: '{"choice":"COMPLETE"}' } }] } }] })
+    if (tools[0]!.function.name === 'resolve_service_scope')
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ choice: route === 'uncertain' ? 'UNCERTAIN' : 'ORDER_MUTATION' }) } }] } }] })
+    const selected = route === 'uncertain' ? 'UNCERTAIN' : choice === 'confirm-meal' ? choices.find(id => id.endsWith(':yes')) : choices.find(id => id.includes(':quantity:2')) ?? choice
     return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ choice: selected }) } }] } }] })
   })
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
@@ -29,20 +73,24 @@ async function createHarness(choice: 'intent:add-item' | 'intent:search-menu', w
     getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }),
     decide: vi.fn<NonNullable<KioskRoutesOptions['systemOne']>['decide']>(async (_state, questions) => ({ answers: Object.fromEntries(Object.keys(questions).map((key) => {
       const choices = Object.keys(questions[key]!.criteria ?? {})
-      let choice: string | undefined
+      let selected: string | undefined
       if (key === 'admission')
-        choice = 'SERVICE'
+        selected = 'SERVICE'
       else if (key === 'purpose')
-        choice = JSON.parse(_state).customerUtterance === '兩份' ? 'ANSWER' : 'SINGLE'
+        selected = ['兩份', '內用', '自取', '好', '先不要', '對，一份'].includes(JSON.parse(_state).customerUtterance) ? 'ANSWER' : 'SINGLE'
       else if (key === 'family')
-        choice = 'MENU'
+        selected = route === 'jev' && choice === 'intent:add-item' ? 'ITEM' : 'MENU'
       else if (key === 'review')
-        choice = 'SATISFIED'
+        selected = 'SATISFIED'
+      else if (key === 'operationRequest')
+        selected = 'OPERATION'
+      else if (key === 'operationCoverage')
+        selected = 'SINGLE'
       else if (key === 'operation')
-        choice = choices.find(id => id.includes('quantity'))
-      if (!choice || !choices.includes(choice))
+        selected = choices.find(id => id.includes('quantity')) ?? (choice === 'confirm-meal' ? choices.find(id => id.endsWith(':yes')) : choice)
+      if (!selected || !choices.includes(selected))
         throw new Error(`Unexpected fixture question: ${key}`)
-      return [key, { choice, confidence: key === 'family' ? 0.2025 : weakAnswer && key === 'purpose' && JSON.parse(_state).customerUtterance === '兩份' ? 0.4515 : 0.99 }]
+      return [key, { choice: selected, confidence: route === 'jev' ? 0.99 : key === 'family' ? 0.2025 : weakAnswer && key === 'purpose' && ['兩份', '內用', '自取', '好', '先不要', '對，一份'].includes(JSON.parse(_state).customerUtterance) ? 0.4515 : 0.99 }]
     })) })),
   }
   const app = createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(await mockDB(schema)), llmGateway: { complete }, runtimeModelPolicy: { modelFor: async () => 'synthetic-main' }, systemOne })
@@ -60,7 +108,7 @@ async function createHarness(choice: 'intent:add-item' | 'intent:search-menu', w
     decisions.push(decision)
     return decision
   }, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.test' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
-  return { runtime, execute, complete, decisions, sources }
+  return { runtime, execute, complete, decisions, sources, checkoutStart, payment }
 }
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 core-cart.
@@ -83,8 +131,14 @@ it.each([false, true])('resumes the owned quantity question after Main skill han
   expect(decisions[0]).toMatchObject({ resolvedBy: 'main-skill', modelCalls: 3 })
   expect(decisions[0]).not.toHaveProperty('confidence')
   expect(sources).toContain('main-skill')
-  expect(complete).toHaveBeenCalledTimes(weakAnswer ? 2 : 1)
-  expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@1')
+  expect(complete).toHaveBeenCalledTimes(weakAnswer ? 3 : 1)
+  expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@2')
+  if (weakAnswer) {
+    const messages = complete.mock.calls[1]![0].body.messages as Array<{ role: string, content: string }>
+    const facts = JSON.parse(messages.find(message => message.role === 'user')!.content)
+    expect(facts.retainedRequests).toMatchObject([{ itemId: 'dumplings', sourceUtterance: '我要水餃', options: [], missing: { quantity: true, optionGroupIds: [] } }])
+    expect(facts.retainedRequests[0]).not.toHaveProperty('quantity')
+  }
 })
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 core-cart.
@@ -97,4 +151,89 @@ it('uses the same skill handoff for an inquiry without creating a purchase or qu
   expect(context.waitingFor).toBeUndefined()
   expect(context.presentation?.itemIds).toEqual(['dumplings'])
   expect(complete).toHaveBeenCalledOnce()
+})
+
+// Report: user field report, Oct31: fulfillment answer was replaced by recommendations.
+it.each(['dine-in', 'takeout'] as const)('sets fulfillment after weak answer without recommending or adding food: %s', async (mode) => {
+  const { runtime, execute, complete, decisions } = await createHarness(`intent:set-fulfillment:${mode}`, true)
+  const added = await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+  const question = questionReceiptFrom(added)
+  expect(question?.purpose).toBe('fulfillment')
+  await runtime.invoke('kiosk_dialogue_presented', { content: question!.question, questionId: question!.questionId })
+  const result = await execute(mode === 'dine-in' ? orderingIncidents.fulfillment.turns[1].customer : '自取')
+  expect(result.kind).toBe('FAST_ACTION')
+  expect(decisions[0]).toMatchObject({ actionId: `intent:set-fulfillment:${mode}`, answeredQuestionId: question!.questionId, resolvedBy: 'main-skill' })
+  const cart = await runtime.invoke('cart_get')
+  expect(cart).toMatchObject({ cart: { fulfillmentMode: mode, itemCount: 1, total: 80 } })
+  expect(complete).toHaveBeenCalledTimes(2)
+})
+
+// Report: Oct31 checkout-entry invitation -> 好 incorrectly became acknowledgement.
+it.each([{ text: orderingIncidents.checkoutAssent.turns[1].customer, choice: 'intent:start-checkout', starts: 1 }, { text: '先不要', choice: 'intent:defer-question', starts: 0 }] as const)('answers checkout invitation without selecting payment: $text', async ({ text, choice, starts }) => {
+  const { runtime, execute, decisions, checkoutStart, payment } = await createHarness(choice, true)
+  await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+  const receipt = await runtime.invoke('order_set_fulfillment', { mode: 'dine-in' })
+  const question = questionReceiptFrom(receipt)
+  expect(question?.purpose).toBe('checkout-entry')
+  await runtime.invoke('kiosk_dialogue_presented', { content: question!.question, questionId: question!.questionId })
+  expect((await execute(text)).kind).toBe('FAST_ACTION')
+  expect(decisions[0]).toMatchObject({ actionId: choice, answeredQuestionId: question!.questionId })
+  expect(checkoutStart).toHaveBeenCalledTimes(starts)
+  expect(payment).not.toHaveBeenCalled()
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, total: 80 } })
+  expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).phase).toBe(starts ? 'checkout_invoice' : 'ordering')
+})
+
+// Report: Oct31 field: single dish shown -> 那我要一份 -> recommendation instead of cart addition.
+it('orders one portion of the single just-presented dish after an uncertain operation handoff', async () => {
+  const { runtime, execute, complete } = await createHarness('intent:add-item')
+  const incident = orderingIncidents.omittedName
+  const shown = await runtime.invoke('menu_get', { query: '排骨便當' })
+  await runtime.invoke('kiosk_dialogue_presented', { content: incident.turns[0].observedReply })
+  expect(shown).toMatchObject({ presentation: { itemIds: [incident.expectedCart.itemId] } })
+  const result = await execute(incident.turns[1].customer)
+  expect(result.kind).toBe('FAST_ACTION')
+  expect(complete).toHaveBeenCalledOnce()
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { lines: [{ itemId: incident.expectedCart.itemId, quantity: incident.expectedCart.quantity }], itemCount: 1, total: incident.expectedCart.total } })
+})
+
+// Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Nov1 exact incident.
+it('2026-11-01-meal-confirmation-quantity replays the retained name-confirmation incident through Host and Menu', async () => {
+  const incident = orderingIncidents.mealConfirmation
+  const { runtime, execute, complete } = await createHarness('confirm-meal', true)
+  const lookup = await runtime.invoke('menu_get', { query: '排骨飯' })
+  expect(lookup).toHaveProperty('customerMessage', incident.turns[0].observedReply)
+  await runtime.invoke('kiosk_dialogue_presented', { content: incident.turns[0].observedReply })
+  const context = await runtime.invoke('kiosk_fast_path_context', { transcript: incident.turns[1].customer }) as { clarificationOffer: { id: string } }
+  const offer = await runtime.invoke('kiosk_fast_path_clarify', { questionId: context.clarificationOffer.id })
+  const question = questionReceiptFrom(offer)!
+  expect(question.question).toBe(incident.turns[1].observedReply)
+  await runtime.invoke('kiosk_dialogue_presented', { content: question.question, questionId: question.questionId })
+  const result = await execute(incident.turns[2].customer)
+  expect(result.kind).toBe('FAST_ACTION')
+  expect(complete).toHaveBeenCalledTimes(2)
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { lines: [{ itemId: incident.expectedCart.itemId, quantity: incident.expectedCart.quantity }], itemCount: 1, total: incident.expectedCart.total } })
+})
+
+it.each(['jev', 'main', 'uncertain'] as const)('keeps the same quantity draft through direct Jev, Main recovery or abstention: %s', async (route) => {
+  const { runtime, execute, complete } = await createHarness('intent:add-item', true, route)
+  await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃' })
+  const started = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+  const question = questionReceiptFrom(started)!
+  await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+  const before = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const result = await execute('兩份')
+  const after = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  if (route === 'uncertain') {
+    expect(result.kind).toBe('NEEDS_ASSISTANT')
+    expect(after.cart.itemCount).toBe(0)
+    expect(after.retainedRequests).toEqual(before.retainedRequests)
+    expect(after.waitingFor?.requestId).toBe(before.retainedRequests[0]!.id)
+  }
+  else {
+    expect(result.kind).toBe('FAST_ACTION')
+    expect(after.cart.lines).toMatchObject([{ itemId: 'dumplings', quantity: 2 }])
+    expect(after.retainedRequests).toEqual([])
+  }
+  expect(complete).toHaveBeenCalledTimes(route === 'jev' ? 0 : 2)
 })

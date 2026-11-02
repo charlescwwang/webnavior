@@ -432,11 +432,6 @@ const customerSessionButtonLabel = computed(() => (
 const { idleDiagnosticsEnabled, presenceDiagnosticsEnabled, decisionDiagnosticsEnabled } = useKioskDiagnostics()
 const showDevelopmentDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
-const orderContinuationUrl = shallowRef<string>()
-watch(customerSessionState, (state) => {
-  if (state === 'standby')
-    orderContinuationUrl.value = undefined
-})
 const proactiveSettings = computed(() => observationSettings(props.deviceSettings ?? defaultDeviceSettingsValues))
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
@@ -2219,8 +2214,6 @@ function describeToolActivity(toolName: string, state: 'executing' | 'done' | 'e
 }
 
 async function handleScenarioCompleted(message?: InteractionLifecycleMessage) {
-  if (message?.orderContinuationUrl)
-    orderContinuationUrl.value = message.orderContinuationUrl
   if (customerSessionState.value === 'completing')
     return
   // A direct iframe click may emit `activity` and `completed` back-to-back.
@@ -2431,7 +2424,6 @@ onUnmounted(() => {
     <CustomerSessionCompletion
       v-if="customerSessionState === 'completing'"
       :settings="feedbackInvitationSettings"
-      :order-continuation-url="orderContinuationUrl"
       @finish="finishCustomerSessionCompletion"
     />
     <video ref="proactiveCamera" class="proactive-camera" muted playsinline aria-hidden="true" />

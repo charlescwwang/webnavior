@@ -5,14 +5,14 @@ import type { KioskProfileSnapshot } from '../../schemas/kiosk'
 import type { createKioskPosGateway } from '../../services/adapters/kioskPos'
 import type { KioskService } from '../../services/domain/kiosk'
 import type { KioskAgentInteractionState, KioskReplyFailureReason } from '../../services/domain/kiosk-agent-interaction'
-import type { KioskConversationDecisionState } from '../../services/domain/kiosk-interaction-decision/contracts'
+import type { KioskConversationDecisionState, KioskInteractionDecision } from '../../services/domain/kiosk-interaction-decision/contracts'
 import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
 import type { HonoEnv } from '../../types/hono'
 
 import { randomInt, randomUUID } from 'node:crypto'
 
-import { contextReplySchema, conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { contextReplySchema, conversationContextSchema, conversationRequestSchema, handoffSchema, intentRecoverySchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
@@ -88,6 +88,7 @@ const interactionStateSchema = object({
 
 const presentedQuestionSchema = object({
   questionId: pipe(string(), minLength(1), maxLength(120)),
+  requestId: optional(pipe(string(), minLength(1), maxLength(200))),
   purpose: pipe(string(), minLength(1), maxLength(60)),
   question: pipe(string(), minLength(1), maxLength(500)),
   expiresAt: number(),
@@ -124,6 +125,8 @@ const conversationMessageSchema = object({
     completedReads: optional(pipe(array(object({ toolName: pipe(string(), maxLength(80)), customerMessage: pipe(string(), maxLength(2_000)) })), maxLength(2))),
     unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
     fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
+    retainedRequests: optional(pipe(array(conversationRequestSchema), maxLength(20))),
+    intentRecovery: optional(intentRecoverySchema),
     waitingFor: optional(presentedQuestionSchema),
     serviceReply: optional(boolean()),
     allowedPaymentMethods: optional(pipe(array(pipe(string(), minLength(1), maxLength(80))), maxLength(20))),
@@ -181,6 +184,8 @@ const interactionDecisionSchema = object({
     unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
     menuRevision: optional(pipe(number(), integer(), minValue(0))),
     fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
+    retainedRequests: optional(pipe(array(conversationRequestSchema), maxLength(20))),
+    intentRecovery: optional(intentRecoverySchema),
     waitingFor: optional(presentedQuestionSchema),
     activeRequest: optional(object({ stage: picklist(['starting', 'thinking', 'tool_requested', 'mutating']), text: pipe(string(), regex(/\S/), maxLength(240)) })),
     allowedPaymentMethods: optional(pipe(array(pipe(string(), minLength(1), maxLength(80))), maxLength(20))),
@@ -408,30 +413,43 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
           throw new Error('No Main model is configured for bounded resolution.')
         return await options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal })
       }
+      // Both Jev admission and later Main recovery must reach the same finite
+      // phone-effect decision. Recovery admits a request; it does not perform it.
+      const resolvePhone = async (decision: KioskInteractionDecision): Promise<KioskInteractionDecision> => {
+        const skip = result.output.candidates.find(candidate => candidate.id === 'intent:skip-customer-entry')
+        // Phone resolution is an effect decision, so it requires completed
+        // service admission. An uncertain recipient cannot authorize a skip.
+        const unresolvedPhone = decision.kind === 'NEEDS_ASSISTANT' && (decision.reason === 'UNCERTAIN_OPERATION' || (decision.reason === 'NEW_REQUEST' && decision.recovery?.admission === 'service')) && !decision.recovery?.readOnly
+        if (!result.output.review && result.output.decisionState?.phase === 'customer_entry' && unresolvedPhone && skip) {
+          const modelName = await options.runtimeModelPolicy.modelFor('chat')
+          if (modelName) {
+            const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal }))
+            const trace = result.output.includeTrace ? { trace: { ...(decision.trace && typeof decision.trace === 'object' ? decision.trace : {}), phoneResolution: resolution } } : {}
+            if (resolution.choice === 'BACKGROUND')
+              return { kind: 'IGNORE', modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(decision.recovery ? { recovery: decision.recovery } : {}), ...trace }
+            if (resolution.choice === 'SKIP_PHONE') {
+              const waitingFor = result.output.decisionState.waitingFor
+              return { kind: 'FAST_ACTION' as const, actionId: skip.id, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(decision.recovery ? { recovery: decision.recovery } : {}), ...(waitingFor?.purpose === 'customer-entry' ? { answeredQuestionId: waitingFor.questionId } : {}), ...trace }
+            }
+            decision = { ...decision, ...trace }
+          }
+        }
+        return decision
+      }
       const cue = result.output.decisionState?.serviceClarification
       const validCue = cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(result.output.decisionState!)
       const bounded = validCue ? { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_SERVICE_REQUEST' as const, recovery: { status: 'eligible' as const } } : await decideInteraction({ ...decisionInput, invoke, routing: 'staged' })
       const priced = await resolvePriceHandoff(bounded, result.output.transcript, result.output.review ? undefined : result.output.decisionState?.priceEvidence, completeResolution)
-      let decision = result.output.review ? priced : await resolveServiceHandoff(priced, result.output.transcript, result.output.decisionState, completeResolution)
-      if (!result.output.review)
+      let decision = priced
+      if (!result.output.review) {
+        // A live Menu-issued answer is the smallest semantic decision. If Main
+        // abstains, independently qualify the whole request; a diagnostic trace
+        // alone never means its purpose was understood.
         decision = await resolveOrderingIntent(decision, decisionInput, completeResolution)
-      signal.throwIfAborted()
-      const skip = result.output.candidates.find(candidate => candidate.id === 'intent:skip-customer-entry')
-      // Phone resolution is an effect decision, so it requires completed
-      // service admission. An uncertain recipient cannot authorize a skip.
-      const unresolvedPhone = decision.kind === 'NEEDS_ASSISTANT' && decision.reason === 'UNCERTAIN_OPERATION'
-      if (!result.output.review && result.output.decisionState?.phase === 'customer_entry' && unresolvedPhone && skip) {
-        const modelName = await options.runtimeModelPolicy.modelFor('chat')
-        if (modelName) {
-          const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal }))
-          const trace = result.output.includeTrace ? { trace: { ...(decision.trace && typeof decision.trace === 'object' ? decision.trace : {}), phoneResolution: resolution } } : {}
-          if (resolution.choice === 'SKIP_PHONE') {
-            const waitingFor = result.output.decisionState.waitingFor
-            return { kind: 'FAST_ACTION' as const, actionId: skip.id, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(waitingFor?.purpose === 'customer-entry' ? { answeredQuestionId: waitingFor.questionId } : {}), ...trace }
-          }
-          decision = { ...decision, ...trace }
-        }
+        decision = await resolveServiceHandoff(decision, result.output.transcript, result.output.decisionState, completeResolution, decisionInput.conversation)
       }
+      signal.throwIfAborted()
+      decision = await resolvePhone(decision)
       if (result.output.review || result.output.recoveryUsed || decision.recovery?.status !== 'eligible')
         return decision
       const modelName = await options.runtimeModelPolicy.modelFor('chat')
@@ -451,7 +469,16 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       // Recovery may be the first stage to admit this turn. Qualify its price
       // evidence now, before the Host binds an unresolved-price Menu task.
       // Already-issued choices skip the resolver, preserving the one-pass budget.
-      const qualified = await resolvePriceHandoff(recovered, result.output.transcript, result.output.decisionState?.priceEvidence, completeResolution)
+      let qualified = await resolvePhone(recovered)
+      qualified = await resolvePriceHandoff(qualified, result.output.transcript, result.output.decisionState?.priceEvidence, completeResolution)
+      // Recovery can be the first stage to understand a new named request.
+      // Apply the same Menu-issued scope once after admission, rather than
+      // permanently freezing an answer to a general service question as a read.
+      const interpreted = qualified.resolvedBy === 'main-skill'
+      if (!interpreted) {
+        qualified = await resolveServiceHandoff(qualified, result.output.transcript, result.output.decisionState, completeResolution, decisionInput.conversation)
+        qualified = await resolveOrderingIntent(qualified, decisionInput, completeResolution)
+      }
       signal.throwIfAborted()
       if (result.output.visitorSessionId && qualified.recovery?.rounds?.length)
         await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: JSON.stringify({ kind: 'service_recovery_metrics', ...qualified.recovery }), metadata: { source: 'service_recovery_metrics', utteranceId: result.output.utteranceId } })
@@ -936,6 +963,16 @@ function inputMetrics(body: { messages: unknown, tools?: unknown }, context?: Ki
     messageBytes: encoder.encode(JSON.stringify(body.messages)).byteLength,
     toolBytes: body.tools ? encoder.encode(JSON.stringify(body.tools)).byteLength : 0,
     contextBytes: context ? encoder.encode(JSON.stringify(context)).byteLength : 0,
+    // Retain readiness/capability evidence without recording invoice identifiers.
+    // This distinguishes missing input from an omitted Main operation in the
+    // deployed Host path; text receipts alone cannot establish either cause.
+    ...(context?.checkout
+      ? {
+          checkoutStage: context.checkout.stage,
+          invoiceDraftReady: context.checkout.invoiceDraftReady ?? null,
+          invoiceConfirmationOffered: Array.isArray(body.tools) && body.tools.some(tool => ['checkout_confirm_invoice', 'checkout_confirm_tax_id'].includes(tool?.function?.name)),
+        }
+      : {}),
     ...(context?.taskId ? { taskId: context.taskId } : {}),
   }
 }
@@ -1035,10 +1072,10 @@ async function completeKioskReply(input: {
   const sizes = inputMetrics(body, input.decisionState?.context)
   const startedAt = performance.now()
   const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, modelName, body })
-  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, tools: input.tools ?? [], toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName, async () => parseAssistantReply(await input.llmGateway.complete({
+  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, tools: input.tools ?? [], toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName, async instruction => parseAssistantReply(await input.llmGateway.complete({
     abortSignal: input.abortSignal,
     modelName,
-    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${completionReviewInstruction}` } : message) },
+    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${instruction ?? completionReviewInstruction}` } : message) },
   })))
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
@@ -1185,10 +1222,10 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
   const response = await input.llmGateway.complete({ abortSignal: input.signal, modelName, body })
   const answer = await finishConversationReply(input, await parseKioskReplyStream(response, onTextDelta, () => {
     firstOutputMs ??= performance.now() - startedAt
-  }), modelName, async () => parseAssistantReply(await input.llmGateway.complete({
+  }), modelName, async instruction => parseAssistantReply(await input.llmGateway.complete({
     abortSignal: input.signal,
     modelName,
-    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${completionReviewInstruction}` } : message) },
+    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${instruction ?? completionReviewInstruction}` } : message) },
   })))
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(firstOutputMs !== undefined ? { firstOutputMs } : {}), ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
@@ -1198,11 +1235,65 @@ async function finishConversationReply(
   input: Pick<KioskReplyStreamInput, 'content' | 'decisionState' | 'toolResults' | 'tools' | 'llmGateway' | 'kioskService' | 'transcript'> & { signal?: AbortSignal },
   answer: KioskCompletion,
   modelName: string,
-  review: () => Promise<KioskCompletion>,
+  review: (instruction?: string) => Promise<KioskCompletion>,
 ): Promise<KioskCompletion> {
   const context = input.decisionState?.context
   if (!context)
     return answer
+  const reads = new Set(['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'])
+  // A bounded review precedes execution when a read proposal invents a category
+  // equivalence or requests an unchanged update. Both are semantic ambiguities,
+  // not permission for the program to guess a different query action.
+  let queryReview: string | undefined
+  let inferredCategory: string | undefined
+  if (context.taskId && context.sourceUtterance) {
+    for (const call of answer.toolCalls) {
+      if (call.function.name !== 'menu_recommend' || !context.allowedToolNames.includes(call.function.name))
+        continue
+      try {
+        const args = JSON.parse(call.function.arguments)
+        const categoryNeedsReview = typeof args.category === 'string' && !context.sourceUtterance.includes(args.category)
+        if (categoryNeedsReview)
+          inferredCategory = args.category
+        const saved = context.queryState && { category: context.queryState.category, ...context.queryState.prices, ...context.queryState.filters }
+        const unchangedUpdate = args.action === 'update' && saved && Object.entries(args).every(([key, value]) => key === 'action' || key === 'limit' || (key in saved && JSON.stringify(value) === JSON.stringify(saved[key as keyof typeof saved])))
+        if (categoryNeedsReview || unchangedUpdate)
+          queryReview = `這個查詢提案尚未執行：${JSON.stringify(args)}。請獨立核對本句${JSON.stringify(context.sourceUtterance)}與完整菜單及queryState。${categoryNeedsReview ? '提案使用的分類不在顧客原句；分類相近不代表結果符合，務必核對餐點本身是否屬於顧客所問種類。沒有符合的種類時，保留原詞用menu_get query查證或釐清，不能以最近的分類代替。' : ''}${unchangedUpdate ? '提案update沒有變更任何保存條件。顧客要求其他時必須continue，已耗盡也用continue回報無更多；若只是重看原結果才保留update，不把重提分類當新條件。' : ''}只產生正確的本輪唯讀工具，不宣稱已執行。`
+      }
+      catch {
+        // Malformed arguments remain the owned input validator's responsibility.
+      }
+    }
+  }
+  const queryReviewed = input.transcript.entries.some(entry => entry.kind === 'service_event' && entry.metadata?.source === 'main_query_review' && entry.metadata.taskId === context.taskId)
+  if (queryReview && !queryReviewed) {
+    await input.kioskService.appendDeviceInteraction({ deviceId: input.transcript.session.deviceId, visitorSessionId: input.transcript.session.id, kind: 'service_event', content: 'agent.query_review', metadata: { source: 'main_query_review', taskId: context.taskId } })
+    if (inferredCategory) {
+      const response = await input.llmGateway.complete({ modelName, abortSignal: input.signal, body: { temperature: 0, messages: [
+        { role: 'system', content: '只判斷提出的餐點是否符合顧客實際詢問的食物種類。FIT須有品名／描述的明確依據；分類字義接近或同屬食物不足以證明符合。UNCONFIRMED表示不符合、沒有依據或無法確認。只呼叫verify_menu_kind，不推薦或操作。' },
+        { role: 'user', content: JSON.stringify({ customerUtterance: context.sourceUtterance, proposedCategory: inferredCategory, proposedItems: context.catalog?.items.filter(item => item.category === inferredCategory).map(item => ({ name: item.name, description: item.description })) ?? [] }) },
+      ], tools: [{ type: 'function', function: { name: 'verify_menu_kind', parameters: { type: 'object', properties: { choice: { type: 'string', enum: ['FIT', 'UNCONFIRMED'] } }, required: ['choice'], additionalProperties: false } } }], tool_choice: 'required' } })
+      const verification = await parseAssistantReply(response)
+      const call = verification.toolCalls.length === 1 ? verification.toolCalls[0] : undefined
+      let fits = false
+      try {
+        const selected = call?.function.name === 'verify_menu_kind' ? safeParse(object({ choice: picklist(['FIT', 'UNCONFIRMED']) }), JSON.parse(call.function.arguments)) : undefined
+        fits = response.ok && selected?.success === true && selected.output.choice === 'FIT'
+      }
+      catch {
+        // A malformed review cannot establish that an inferred category fits.
+      }
+      if (!fits)
+        answer = { toolCalls: [{ id: crypto.randomUUID(), type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"clarification","topic":"menu-kind"}' } }] }
+    }
+    else {
+      answer = await review(queryReview)
+      // Reviewing a read proposal cannot introduce a new mutation. Any later
+      // order effect still belongs to the ordinary whole-request tool loop.
+      if (answer.toolCalls.some(call => !reads.has(call.function.name) && call.function.name !== replyTool.function.name))
+        answer = { toolCalls: [{ id: crypto.randomUUID(), type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"clarification"}' } }] }
+    }
+  }
   let clarificationRequested = false
   if (answer.toolCalls.length === 1 && answer.toolCalls[0]!.function.name === replyTool.function.name) {
     try {
@@ -1213,20 +1304,30 @@ async function finishConversationReply(
       // Malformed selectors still use the bounded reply repair below.
     }
   }
-  const reads = new Set(['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'])
   // Only the latest customer task may be resumed. A previous customer's effect
   // must neither suppress this review nor be repeated as part of this request.
   const taskEntries = input.content ? [] : input.transcript.entries.slice(input.transcript.entries.findLastIndex(entry => entry.kind === 'user_text') + 1)
-  const effectAttempted = input.toolResults.some(result => !reads.has(result.name)) || taskEntries.some(entry => entry.kind === 'tool_result' && typeof entry.metadata?.name === 'string' && !reads.has(entry.metadata.name))
+  // Selection/configuration only prepares a draft. It is not a cart write and
+  // must not suppress the single completion review for an unexecuted purchase.
+  const preparation = new Set(['menu_select_item', 'menu_set_item_option', 'menu_set_quantity'])
+  const effectAttempted = input.toolResults.some(result => !reads.has(result.name) && !preparation.has(result.name)) || taskEntries.some(entry => entry.kind === 'tool_result' && typeof entry.metadata?.name === 'string' && !reads.has(entry.metadata.name) && !preparation.has(entry.metadata.name))
   const reviewed = input.transcript.entries.some(entry => entry.kind === 'service_event' && entry.metadata?.source === 'main_completion_review' && entry.metadata.taskId === context.taskId)
   const hasOperations = input.tools.some(tool => context.allowedToolNames.includes(tool.function.name) && !reads.has(tool.function.name) && !['customer_skip_phone', 'order_ask_question'].includes(tool.function.name))
   let completionReviewed = false
   // A read-only semantic handoff can also draft a recommendation without
   // presenting it. Review with its original read tools before the reply-only
   // selector removes that capability; the same task marker bounds both paths.
-  const unpresentedRead = context.readOnly && !answer.toolCalls.length && !hasMenuReply(input.toolResults) && input.tools.some(tool => context.allowedToolNames.includes(tool.function.name) && ['menu_get', 'menu_recommend'].includes(tool.function.name))
+  const cartReadCompleted = !input.decisionState?.requireMenuRead && input.toolResults.some(result => result.name === 'cart_get')
+  const unpresentedRead = input.decisionState?.requireMenuRead === true && context.readOnly && !cartReadCompleted && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name) && !hasMenuReply(input.toolResults) && input.tools.some(tool => context.allowedToolNames.includes(tool.function.name) && ['menu_get', 'menu_recommend'].includes(tool.function.name))
   const unfinishedOperation = !context.readOnly && !input.decisionState?.readOnly && hasOperations
-  if (context.taskId && context.phase === 'ordering' && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && !clarificationRequested && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
+  // Invoice entry has the same unexecuted-operation risk as ordering: prose
+  // repair removes browser tools, so review first while the valid draft's
+  // confirmation remains available. Main still decides whether this utterance
+  // confirms, declines, edits or asks; readiness never authorizes submission.
+  const invoiceConfirmationAvailable = context.checkout?.invoiceDraftReady === true
+    && ((context.phase === 'checkout_invoice' && context.allowedToolNames.includes('checkout_confirm_invoice'))
+      || (context.phase === 'checkout_tax_id' && context.allowedToolNames.includes('checkout_confirm_tax_id')))
+  if (context.taskId && (context.phase === 'ordering' || invoiceConfirmationAvailable) && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && !clarificationRequested && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
     // Reserve the one review before the provider call. Later continuations of
     // this task cannot spend another review or restart an attempted operation.
     await input.kioskService.appendDeviceInteraction({ deviceId: input.transcript.session.deviceId, visitorSessionId: input.transcript.session.id, kind: 'service_event', content: 'agent.completion_review', metadata: { source: 'main_completion_review', taskId: context.taskId } })
@@ -1237,8 +1338,31 @@ async function finishConversationReply(
   // A completed read review may be followed by a real presentation receipt.
   // Preserve that receipt for the Host instead of turning the task marker into
   // a synthetic clarification. Mutable tasks still require their effect review.
-  const presentedRead = context.readOnly && hasMenuReply(input.toolResults)
-  if (browserCalls.length || (!completionReviewed && (!reviewed || presentedRead) && input.toolResults.some(result => result.name !== 'kiosk_session_history')))
+  const taskReadReceipts = [...input.toolResults, ...taskEntries.flatMap(entry => entry.kind === 'tool_result' && typeof entry.metadata?.name === 'string' ? [{ name: entry.metadata.name, content: entry.content }] : [])]
+  // A named lookup does not complete a requested purchase. A rendered browse
+  // presentation may survive later evidence reads in this same task, while an
+  // unexecuted mutable demand still receives the bounded clarification below.
+  const browsePresented = hasMenuReply(taskReadReceipts.filter(result => ['menu_recommend', 'menu_show_recommendations'].includes(result.name)))
+  const presentedRead = browsePresented || (context.readOnly && hasMenuReply(taskReadReceipts))
+  // Accepted Menu facts are customer-visible receipts. A generic Main
+  // clarification cannot erase them or create a new service-question gate.
+  const completedReceipt = input.toolResults.some((result) => {
+    if (result.name === 'kiosk_session_history')
+      return false
+    try {
+      const payload = JSON.parse(result.content)
+      if (payload && typeof payload === 'object' && payload.executed === false)
+        return false
+    }
+    catch {
+      // An unparseable operation receipt retains its existing outcome policy;
+      // it cannot establish that a write was safely left unexecuted.
+    }
+    // Cart evidence alone cannot complete a mutable, unbound order request.
+    // Actual effects still use receipts; pure information reads retain theirs.
+    return context.readOnly || (!reads.has(result.name) && !preparation.has(result.name))
+  })
+  if (browserCalls.length || presentedRead || (!clarificationRequested && !completionReviewed && !reviewed && completedReceipt))
     return { ...answer, toolCalls: browserCalls, replyRepairRequests: Number(completionReviewed) }
   const selected = await selectReply({ repair: !completionReviewed && !reviewed, answer: answer.content, calls: answer.toolCalls, context, requireMenuRead: input.decisionState?.requireMenuRead === true && (input.decisionState.readOnly === true || !context.catalog?.complete), complete: body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }) })
   return { ...answer, toolCalls: [], reply: selected.reply, replyRepairRequests: Number(completionReviewed) + Number(selected.repaired) }
@@ -1255,6 +1379,11 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
     const history = [...(input.tools?.filter(tool => tool.function.name === 'kiosk_session_history') ?? []), ...(input.decisionState.context ? [replyTool] : [])]
     return history?.length ? { ...generation, tools: history } : generation
   }
+  // Qualification already established a non-menu service response. Offering
+  // browsing tools here lets a pause turn into an unrelated menu clarification.
+  // Keep the same typed reply boundary used for factual service information.
+  if (input.decisionState?.serviceReply && !input.decisionState.requireMenuRead && input.decisionState.context)
+    return { ...generation, tools: [replyTool], tool_choice: 'required' as const }
   // A qualified inquiry stays read-only across every continuation. A fresh
   // customer request creates a new task; a menu receipt cannot grant writes.
   // Phone skip is exclusively owned by the finite phone resolver/browser
@@ -1389,6 +1518,9 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
   }
   return [
     { content: createCharacterInstructions(input.profile.snapshot), title: '角色與店別設定' },
+    input.decisionState?.serviceReply && !input.decisionState.requireMenuRead
+      ? { content: '本輪已確認為非餐點操作的服務回應。只用respond_to_customer回答當句，不另查詢、推薦或改問價位／種類。依完整當句仍成立的目的選kind：只有暫緩或附和才選acknowledgement，保留草稿與待答問題；同句另有資訊問題必須回答該問題，例如確認收音選hearing-check、身分選service-information。不能因前半句拒絕操作就忽略後半句問題。', title: '已確認的服務回應範圍' }
+      : undefined,
     interaction ? { content: createInteractionInstructions(interaction, conversationScope(input.decisionState)), title: '本次點餐互動規則' } : undefined,
     input.decisionState?.context ? { content: currentContextInstructions(input.decisionState.context, input.decisionState.requireMenuRead === true), title: '目前有效點餐情境' } : undefined,
     input.decisionState && !input.decisionState.context

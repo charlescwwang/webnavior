@@ -262,3 +262,9 @@ it('requires a presented menu receipt rather than internal data or a failed look
   expect(hasMenuReply([{ name: 'menu_recommend', content: JSON.stringify({ items: [] }) }])).toBe(true)
   expect(hasMenuReply([{ name: 'menu_get', content: JSON.stringify({ items: [{ id: 'dumplings' }] }) }])).toBe(true)
 })
+
+// Report: live112 C12-F1; cart_get was compacted to {} while Main inspected it.
+it('keeps the authoritative cart inspection receipt even when the catalog is already supplied', () => {
+  const cart = { lines: [{ id: 'line', itemId: 'dish', quantity: 2 }], total: 160 }
+  expect(JSON.parse(compactToolResultForModel('cart_get', JSON.stringify({ cart }), new Set(['dish'])))).toEqual({ cart })
+})

@@ -143,11 +143,15 @@ it.each(['好', '對', '飯', '吃飯'])('hands an answered service clarificatio
 
 it.each([
   { admission: 'background', disposition: 'ignore', expected: 'IGNORE' },
-  { admission: 'uncertain', disposition: 'abstain', expected: 'UNAVAILABLE' },
-])('does not escalate an unadmitted clarification answer: $admission', async ({ admission, disposition, expected }) => {
+  { admission: 'uncertain', disposition: 'abstain', expected: 'SERVICE_CLARIFICATION' },
+])('keeps unadmitted answers non-operational: $admission', async ({ admission, disposition, expected }) => {
   const complete = vi.fn(async () => response({ admission, disposition, requestKind: 'clarification-answer' }))
   const result = await recoverServiceRequest(eligible, { ...context, state: { phase: 'ordering', serviceClarification: { questionId: 'service', question: '需要什麼協助？', sourceUtterance: '幫我', contextKey: 'key', expiresAt: Date.now() + 30000 } }, complete })
   expect(result.kind).toBe(expected)
-  expect(result).not.toHaveProperty('question')
+  if (admission === 'uncertain')
+    expect(result).toHaveProperty('question.question', '請說明您想查詢的餐點或要做的操作，我才能接著協助。')
+  else
+    expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
   expect(complete).toHaveBeenCalledTimes(1)
 })
