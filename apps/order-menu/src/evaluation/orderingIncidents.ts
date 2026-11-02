@@ -44,6 +44,14 @@ export const orderingIncidents = {
  */
 export const reportedIncidentEvidence = [
   {
+    id: 'reported-20261102-checkout-navigation-confirmation',
+    source: 'User-confirmed Nov2 14:51–14:58 attempt; private read-only production transcript and tool receipts retained',
+    utterances: ['幫我打開購物車', '我要自取', '確認', '返回上一頁', '回到訂單頁面'],
+    observed: 'Open-cart returned acknowledgement without an effect. Confirmation of return-and-change-to-takeout called checkout_choose_invoice(carrier). Return requests read history/cart and remained on invoice; original meals and dine-in remained. Additional meal succeeded and is not classified as a failed addition.',
+    gaps: ['Browser visuals are not in the server trace; synthetic screen-owner and browser checks are separate from the captured evidence.'],
+    syntheticScripts: ['N01-M-F1', 'N01-J-F1', 'N01-M-A1', 'N01-J-A1', 'N01-M-V1', 'N01-J-V1', 'N01-M-R1', 'N01-J-R1'],
+  },
+  {
     id: 'reported-20261102-invoice-confirmation',
     source: 'user report Nov2; read-only failing session evidence saved privately',
     utterances: ['已經輸入', '輸入完成', '確認', '送出'],
@@ -104,8 +112,8 @@ export const reportedIncidentEvidence = [
 /** Post-deployment regressions run separately; the accepted112 gold stays frozen. */
 interface IncidentConversationScript extends ConversationScript {
   /** Typed customer input goes straight to Main, without finite Jev selection. */
-  channel?: 'main-direct'
-  initial: ConversationScript['initial'] & { invoiceDraft?: { method: 'carrier' | 'citizen' | 'tax-id', code: string } }
+  channel?: 'main-direct' | 'jev-main'
+  initial: ConversationScript['initial'] & { checkout?: boolean, invoiceDraft?: { method: 'carrier' | 'citizen' | 'tax-id', code: string } }
 }
 
 export const incidentConversationScripts: IncidentConversationScript[] = [
@@ -207,5 +215,37 @@ for (const kind of invoiceKinds) {
       initial: { entry: 'ready', cart: [{ itemId: 'dumplings', quantity: 1 }], fulfillment: 'takeout', invoiceDraft: { method: kind.method, code: kind.code } },
       steps: [{ text, sameCart: true, phase: confirms ? 'checkout_payment_select' : kind.method === 'tax-id' ? 'checkout_tax_id' : 'checkout_invoice', checkoutStarts: 0, forbidden: confirms ? '已付款|付款成功' : '已確認發票資料|已確認統編|付款成功' }],
     })
+  }
+}
+
+// Nov2 live navigation failures: both direct Main and normal Jev→Main routing.
+// Seeded invoice preconditions are explicit; these are not full historical replays.
+for (const channel of ['main-direct', 'jev-main'] as const) {
+  const key = channel === 'main-direct' ? 'M' : 'J'
+  const base = {
+    channel,
+    source: 'reported-20261102-checkout-navigation-confirmation',
+    group: 'checkout-navigation',
+    provenance: 'Synthetic invoice entry with retained dine-in and one meal; actual screen owner is observed.',
+    catalog: 'current' as const,
+    initial: { entry: 'ready' as const, cart: [{ itemId: 'dumplings', quantity: 1 }], fulfillment: 'dine-in' as const, checkout: true },
+  }
+  for (const [index, text] of ['確認', '好', '可以，就改自取'].entries()) {
+    incidentConversationScripts.push({ ...base, id: `N01-${key}-F${index + 1}`, kind: 'functional', title: `結帳改自取後回答：${text}`, steps: [
+      { text: '我要自取', sameCart: true, fulfillment: 'dine-in', phase: 'pending_confirmation', purpose: 'operation-confirmation' },
+      { text, sameCart: true, fulfillment: 'takeout', phase: 'ordering', screen: 'cart_review', forbidden: '已選擇手機載具|付款成功' },
+    ] })
+  }
+  incidentConversationScripts.push({ ...base, id: `N01-${key}-A1`, kind: 'adversarial', title: '取消改自取，保留內用結帳', steps: [
+    { text: '我要自取', sameCart: true, phase: 'pending_confirmation', purpose: 'operation-confirmation' },
+    { text: '取消，還是內用', sameCart: true, fulfillment: 'dine-in', phase: 'checkout_invoice', screen: 'checkout', forbidden: '已選擇手機載具|已設為自取' },
+  ] })
+  incidentConversationScripts.push({ ...base, initial: { ...base.initial, checkout: false }, id: `N01-${key}-V1`, kind: 'functional', title: '實際打開購物車', steps: [
+    { text: '幫我打開購物車', sameCart: true, screen: 'cart_review' },
+  ] })
+  for (const [index, text] of ['回到訂單頁面', '返回上一頁'].entries()) {
+    incidentConversationScripts.push({ ...base, id: `N01-${key}-R${index + 1}`, kind: 'functional', title: `發票入口：${text}`, steps: [
+      { text, sameCart: true, fulfillment: 'dine-in', phase: 'ordering', screen: 'cart_review', forbidden: '請選擇手機載具' },
+    ] })
   }
 }

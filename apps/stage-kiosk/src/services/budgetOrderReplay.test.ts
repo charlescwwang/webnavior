@@ -151,8 +151,14 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
     checkoutState = next
     return next
   }
+  let reviewOpen = false
   let entryReady = script?.initial.entry !== 'pending'
-  const runtime = createMenuToolRuntime({ orderingReady: () => entryReady, onCustomerEntrySkipped: () => entryReady = true, menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, ...(checkoutProbe
+  const runtime = createMenuToolRuntime({ ...(script?.group === 'checkout-navigation'
+    ? { screen: () => checkoutState ? 'checkout' as const : reviewOpen ? 'cart_review' as const : 'menu' as const, onReviewRequested: () => {
+        if (!checkoutState)
+          reviewOpen = true
+      } }
+    : {}), orderingReady: () => entryReady, onCustomerEntrySkipped: () => entryReady = true, menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, ...(checkoutProbe
     ? { checkout: {
         snapshot: () => checkoutState,
         revision: () => checkoutRevision,
@@ -164,6 +170,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
           checkoutRevision++
         },
         cancel: () => {
+          reviewOpen = true
           checkoutState = undefined
           checkoutRevision++
         },
@@ -237,6 +244,12 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
       }
       if (script.initial.fulfillment)
         await runtime.invoke('order_set_fulfillment', { mode: script.initial.fulfillment })
+      if (incidentScript?.initial.checkout) {
+        updateCheckout(beginCheckout('collected'))
+        record('fixturePrefix', { checkoutEntry: true, synthetic: true, historicalReplay: false })
+      }
+      if (script.group === 'checkout-navigation' && !incidentScript?.initial.checkout)
+        reviewOpen = false
       if (incidentScript?.initial.invoiceDraft) {
         const draft = incidentScript.initial.invoiceDraft
         updateCheckout(draft.method === 'tax-id'

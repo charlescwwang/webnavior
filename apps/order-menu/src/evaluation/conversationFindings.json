@@ -2319,6 +2319,76 @@
         "turn": 1,
         "text": "牛肉麵跟水餃各一份"
       }
+    },
+    {
+      "batch": "checkout-navigation-20261102",
+      "scriptId": "N01-M-F1",
+      "attempt": 1,
+      "sourceHash": "149bee93ff314f4185d9efe02717545f3ce4d8863f87da622258fea5c16489e4",
+      "artifact": "webnavior-order-navigation-20261102-001-N01-M-F1.jsonl",
+      "artifactSha256": "87b918ba07a24f2fb0df6a9f5205fbdc0d827abd92e2eeb0674a58657bd4b3d4",
+      "calls": 3,
+      "errors": [
+        "Host continued after asking operation confirmation; later unoffered tool proposal rejected the turn."
+      ],
+      "diagnosis": [
+        "Host continued after asking operation confirmation; later unoffered tool proposal rejected the turn."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "我要自取",
+        "answer": "No presented reply; turn rejected after continuing past its new confirmation."
+      },
+      "fixedByAcceptedRuns": [
+        21
+      ]
+    },
+    {
+      "batch": "checkout-navigation-20261102",
+      "scriptId": "N01-J-A1",
+      "attempt": 14,
+      "sourceHash": "aca2c776a7fde7712a01d343b2192855e893748aa24d1723f947f9e9b3d8c73c",
+      "artifact": "webnavior-order-navigation-20261102-014-N01-J-A1.jsonl",
+      "artifactSha256": "62aa7eac2c8fa6c99e27fa47e90e4bb37fc3e3846944dca90bff30f7fe6948c4",
+      "calls": 14,
+      "errors": [
+        "Expected phase checkout_invoice, received pending_confirmation"
+      ],
+      "diagnosis": [
+        "After cancelling mode change, reaffirming dine-in incorrectly offered a second change confirmation."
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "取消，還是內用",
+        "answer": "已取消剛才的確認，結帳進度保留；繼續操作前請重新確認。 需要先返回訂單才能改為內用，要返回並更改嗎？請回答確認或取消。"
+      },
+      "fixedByAcceptedRuns": [
+        31
+      ]
+    },
+    {
+      "batch": "checkout-navigation-20261102",
+      "scriptId": "N01-J-R1",
+      "attempt": 16,
+      "sourceHash": "aca2c776a7fde7712a01d343b2192855e893748aa24d1723f947f9e9b3d8c73c",
+      "artifact": "webnavior-order-navigation-20261102-016-N01-J-R1.jsonl",
+      "artifactSha256": "79b96ad6b4b9eac2add4bd95e2b85d63880deefebdf41c6ee8c60fb89e7c8997",
+      "calls": 8,
+      "errors": [
+        "Expected screen cart_review, received checkout",
+        "Expected phase ordering, received checkout_invoice"
+      ],
+      "diagnosis": [
+        "Return-to-order was classified as an information read; cart_get preserved invoice screen."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "回到訂單頁面",
+        "answer": "目前訂單：水餃 1 份。合計 NT$80。"
+      },
+      "fixedByAcceptedRuns": [
+        33
+      ]
     }
   ],
   "capturedThroughAttempt": 299,
@@ -3349,5 +3419,110 @@
         "manifestSha256": "f2fadb12a7b2bba922ac354574f7434771d116e2274482cc4351086af26da416"
       }
     ]
+  },
+  "checkoutNavigationAcceptance": {
+    "scope": "14 synthetic explicit invoice/order preconditions through direct Main and Jev/Main; original112 gold unchanged. Screen-owner assertions plus separate real-component browser checks; not a full replay of the private field session.",
+    "calls": 212,
+    "finalCalls": 86,
+    "finalRuns": [
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34
+    ],
+    "finalSourceHash": "7d1ee2025fe42be5d4f18b19aea7d59e4ae5816902c569c98e233f1bf7f7dc42",
+    "runtimeHash": "a8fdd1647a0336e1824127f31f4a6d205314c905ed8873e644392ff43353e357",
+    "finalArtifacts": [
+      {
+        "scriptId": "N01-M-F1",
+        "artifact": "webnavior-order-navigation-20261102-021-N01-M-F1.jsonl",
+        "sha256": "9d291462fea25fd4f209aebcb881ace8beb1a013abd9827923fec1bca324388c"
+      },
+      {
+        "scriptId": "N01-M-F2",
+        "artifact": "webnavior-order-navigation-20261102-022-N01-M-F2.jsonl",
+        "sha256": "6bc665c7df857e14a1aebf518a15c60812e176512aa406a16653a94ed386f985"
+      },
+      {
+        "scriptId": "N01-M-F3",
+        "artifact": "webnavior-order-navigation-20261102-023-N01-M-F3.jsonl",
+        "sha256": "29e242a8c3bba2db2d7613a7117b7688dc200a9f041026aef75f603144521e23"
+      },
+      {
+        "scriptId": "N01-M-A1",
+        "artifact": "webnavior-order-navigation-20261102-024-N01-M-A1.jsonl",
+        "sha256": "68061b5f2ad31a05001dbe7ec6a8c73c7531a734326067ce2e241891c494ad3d"
+      },
+      {
+        "scriptId": "N01-M-V1",
+        "artifact": "webnavior-order-navigation-20261102-025-N01-M-V1.jsonl",
+        "sha256": "819b864a71596ddbb4c51b1670b422a7c523ffdc8f6beecac013b1db67fbcd40"
+      },
+      {
+        "scriptId": "N01-M-R1",
+        "artifact": "webnavior-order-navigation-20261102-026-N01-M-R1.jsonl",
+        "sha256": "6e03f2c61e02c79240b5e9140c176fd048f6f964b6e813f0e19c1f7d6eb9aa10"
+      },
+      {
+        "scriptId": "N01-M-R2",
+        "artifact": "webnavior-order-navigation-20261102-027-N01-M-R2.jsonl",
+        "sha256": "4a2b6feb729636fbe4e9ecda0a8a539e62f9c39b9bde9971e5b89948b745de5e"
+      },
+      {
+        "scriptId": "N01-J-F1",
+        "artifact": "webnavior-order-navigation-20261102-028-N01-J-F1.jsonl",
+        "sha256": "3773156741ccd41d5446c30fa9ff18fdc805a8104c1d1c9c334cd4dedbfad05c"
+      },
+      {
+        "scriptId": "N01-J-F2",
+        "artifact": "webnavior-order-navigation-20261102-029-N01-J-F2.jsonl",
+        "sha256": "bba93a26e046660e6f4b2b728e760c497946300ba7df024fbb8e12789f602b69"
+      },
+      {
+        "scriptId": "N01-J-F3",
+        "artifact": "webnavior-order-navigation-20261102-030-N01-J-F3.jsonl",
+        "sha256": "92ec97fa4d00ceb1128ef0815f769539d0b5948b555e69764a3e413614769e8d"
+      },
+      {
+        "scriptId": "N01-J-A1",
+        "artifact": "webnavior-order-navigation-20261102-031-N01-J-A1.jsonl",
+        "sha256": "b54e5539bc63f438eb38c02ae8c23db278a6e3e9fd178dab83c7b3314d334e8f"
+      },
+      {
+        "scriptId": "N01-J-V1",
+        "artifact": "webnavior-order-navigation-20261102-032-N01-J-V1.jsonl",
+        "sha256": "fb135c0be3944f7bb404094af16e3692d3c25e251ceb05c74e9214041d16caa0"
+      },
+      {
+        "scriptId": "N01-J-R1",
+        "artifact": "webnavior-order-navigation-20261102-033-N01-J-R1.jsonl",
+        "sha256": "a1ba30d233de1534ee652fd704a1b9ea8d6989b112184be1e36d54cfe4a840cb"
+      },
+      {
+        "scriptId": "N01-J-R2",
+        "artifact": "webnavior-order-navigation-20261102-034-N01-J-R2.jsonl",
+        "sha256": "3fa4862972cb950462976635a3e4b5f3465dd5f1595b9194b226be7c1eb593de"
+      }
+    ],
+    "privateFieldEvidence": {
+      "artifact": "webnavior-latest-ordering-20261102.json",
+      "sha256": "96873cfb0025b5ef0b7dceb31c80cc6d25cdc9314f7a1e89788d8e0fe7b1a7e6"
+    },
+    "failedAttemptsRetained": [
+      1,
+      14,
+      16
+    ],
+    "status": "accepted-not-deployed"
   }
 }

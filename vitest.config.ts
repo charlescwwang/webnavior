@@ -20,6 +20,7 @@ export default defineConfig({
             'apps/stage-kiosk/src/services/priceHandoff.test.ts',
             'apps/stage-kiosk/src/services/serviceClarification.test.ts',
             'apps/order-menu/src/questions.test.ts',
+            'apps/order-menu/src/checkoutNavigation.test.ts',
             'apps/order-menu/src/seatingRuntime.test.ts',
             'apps/order-menu/src/queryActions.test.ts',
             'apps/order-menu/src/evaluation/conversationMatrix.test.ts',

@@ -1,3 +1,5 @@
+import type { ConversationContext } from '@proj-airi/stage-shared/kiosk-conversation'
+
 /** Frozen synthetic dialogue gold. Never include assessment fields in provider input. */
 export interface ExpectedLine { itemId: string, quantity: number, options?: Record<string, string> }
 /** Expected facts after one customer turn; omitted fields are deliberately unconstrained. */
@@ -17,6 +19,7 @@ export interface MatrixStep {
   reply?: string
   forbidden?: string
   purpose?: string
+  screen?: ConversationContext['screen']
   phase?: string
   fulfillment?: 'dine-in' | 'takeout'
   ready?: boolean

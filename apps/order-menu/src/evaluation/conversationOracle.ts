@@ -21,6 +21,8 @@ export function assessScriptTurn(step: MatrixStep, observed: { before: Conversat
     errors.push(`Expected fulfillment ${step.fulfillment}`)
   if (step.ready !== undefined && after.entryComplete !== step.ready)
     errors.push(`Expected entryComplete ${step.ready}`)
+  if (step.screen && after.screen !== step.screen)
+    errors.push(`Expected screen ${step.screen}, received ${after.screen}`)
   if (step.phase && after.phase !== step.phase)
     errors.push(`Expected phase ${step.phase}, received ${after.phase}`)
   if (step.purpose && after.waitingFor?.purpose !== step.purpose)
