@@ -8,7 +8,8 @@ it('checks nested tool inputs, integers, bounds and exact fields without modifyi
   expect(validators.order_add_item!(valid)).toBe(true)
   expect(valid).toEqual(before)
   expect(validators.order_add_item!({ input: { itemId: 'dish', quantity: '2' }, enums: {} })).toBe(false)
-  expect(validators.order_add_item!({ input: { itemId: 'dish', quantity: 21 }, enums: {} })).toBe(false)
+  // Business limits return a typed refusal; schema must preserve the original count.
+  expect(validators.order_add_item!({ input: { itemId: 'dish', quantity: 200 }, enums: {} })).toBe(true)
   expect(validators.order_add_item!({ input: { itemId: 'dish', options: [{ groupId: 'spice' }] }, enums: {} })).toBe(false)
   expect(validators.order_add_item!({ input: { itemId: 'dish', options: [{ groupId: 'spice', valueId: 'hot', extra: true }] }, enums: {} })).toBe(false)
 })

@@ -35,7 +35,7 @@ import { createEnvelopeCrypto } from '../../../server/src/utils/envelope-crypto'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
 import { conversationDecisionStateFrom, refreshConversationState, runFastPath } from './kiosk-fast-path'
 import { resumeConversationRetry } from './kioskConversationRetry'
-import { createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation } from './questionPresentation'
+import { createMenuReplyWindow, createServiceClarificationWindow, operationRejectionMessage, operationReplyFrom, questionReceiptFrom, replyFromConversation } from './questionPresentation'
 
 import * as schema from '../../../server/src/schemas'
 
@@ -442,6 +442,9 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         if (fast.kind === 'FAST_ACTION') {
           answer = operationReplyFrom(fast.result) ?? ''
           question = questionReceiptFrom(fast.result)
+        }
+        else if (fast.kind === 'EXECUTION_FAILED') {
+          answer = operationRejectionMessage(fast.result, fast.uncertain) ?? ''
         }
         else if (fast.kind === 'CLARIFICATION') {
           answer = fast.prompt

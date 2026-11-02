@@ -44,6 +44,14 @@ export const orderingIncidents = {
  */
 export const reportedIncidentEvidence = [
   {
+    id: 'reported-20261102-large-quantity-rejected',
+    source: 'User report Nov2; private read-only field transcript and rejected tool receipt retained',
+    utterances: ['那我要200份招牌便當、200份排骨便當'],
+    observed: 'Main called order_add_item with quantity200 for the signature bento. Tool validation rejected it before execution because maximum20; subsequent clarification was rejected as unverified-reply. No bulk meal was added; ordering one pork-chop bento afterward succeeded.',
+    gaps: ['User also described a 200/100-portion variant; the captured actual utterance was 200/200. User selected retaining the20 limit. New synthetic Q01 scripts separately cover explicit current-state preconditions.'],
+    syntheticScripts: ['Q01-M-F1', 'Q01-J-F1', 'Q01-M-A1', 'Q01-J-A1'],
+  },
+  {
     id: 'reported-20261102-checkout-navigation-confirmation',
     source: 'User-confirmed Nov2 14:51–14:58 attempt; private read-only production transcript and tool receipts retained',
     utterances: ['幫我打開購物車', '我要自取', '確認', '返回上一頁', '回到訂單頁面'],
@@ -248,4 +256,38 @@ for (const channel of ['main-direct', 'jev-main'] as const) {
       { text, sameCart: true, fulfillment: 'dine-in', phase: 'ordering', screen: 'cart_review', forbidden: '請選擇手機載具' },
     ] })
   }
+}
+
+// Nov2 quantity-limit incident: keep20, no truncation/splits; legal siblings may be added.
+for (const channel of ['main-direct', 'jev-main'] as const) {
+  const key = channel === 'main-direct' ? 'M' : 'J'
+  const base = {
+    channel,
+    source: 'reported-20261102-large-quantity-rejected',
+    group: 'quantity-limit',
+    provenance: 'Synthetic existing dumplings cart; explicit counts and actual runtime cart/reply are verified.',
+    catalog: 'current' as const,
+    initial: { entry: 'ready' as const, cart: [{ itemId: 'dumplings', quantity: 1 }], fulfillment: 'takeout' as const },
+  }
+  for (const [index, text] of ['那我要200份招牌便當、200份排骨便當', '排骨便當200份，招牌便當100份', '兩百份招牌便當、一百份排骨便當'].entries()) {
+    incidentConversationScripts.push({ ...base, id: `Q01-${key}-F${index + 1}`, kind: 'functional', title: `超量保留原訂單：${text}`, steps: [
+      { text, sameCart: true, phase: 'ordering', reply: '20', forbidden: '已加入|已將.+加入|尚未完成|無法回覆' },
+      { text: '那改成排骨便當一份', cart: [{ itemId: 'dumplings', quantity: 1 }, { itemId: 'fried-pork-chop-bento', quantity: 1 }], phase: 'ordering' },
+    ] })
+  }
+  for (const [index, text] of ['排骨便當一份，再加200份招牌便當', '招牌便當200份，再加一份排骨便當'].entries()) {
+    incidentConversationScripts.push({ ...base, id: `Q01-${key}-A${index + 1}`, kind: 'adversarial', title: `合法與超量混合：${text}`, steps: [
+      { text, cart: [{ itemId: 'dumplings', quantity: 1 }, { itemId: 'fried-pork-chop-bento', quantity: 1 }], phase: 'ordering', reply: '20', forbidden: '尚未完成|無法回覆' },
+    ] })
+  }
+  incidentConversationScripts.push({ ...base, id: `Q01-${key}-B1`, kind: 'functional', title: '20份合法，改成21份保留20份', steps: [
+    { text: '排骨便當20份', cart: [{ itemId: 'dumplings', quantity: 1 }, { itemId: 'fried-pork-chop-bento', quantity: 20 }] },
+    { text: '排骨便當改成21份', sameCart: true, reply: '20', forbidden: '已將.+21|尚未完成' },
+  ] })
+  incidentConversationScripts.push({ ...base, id: `Q01-${key}-B3`, kind: 'adversarial', title: '否定超量並改成一份仍可正常點餐', steps: [
+    { text: '不要200份排骨便當，改成一份排骨便當就好', cart: [{ itemId: 'dumplings', quantity: 1 }, { itemId: 'fried-pork-chop-bento', quantity: 1 }], forbidden: '每種餐點單次最多|這次超量' },
+  ] })
+  incidentConversationScripts.push({ ...base, id: `Q01-${key}-B2`, kind: 'adversarial', title: '200元是預算，不是200份', steps: [
+    { text: '我有200元，可以吃什麼', sameCart: true, nonempty: true, maxPrice: 200, forbidden: '每種餐點單次最多|這次超量' },
+  ] })
 }

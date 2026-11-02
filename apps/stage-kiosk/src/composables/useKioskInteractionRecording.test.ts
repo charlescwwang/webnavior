@@ -24,6 +24,31 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat, Nov2; legal siblings may execute; oversized counts must not be reduced or retried.
+  it.each([false, true])('adds the legal sibling and explains oversized quantity (oversizedFirst=%s)', async (oversizedFirst) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'quantity-limit', state: 'active' } })
+    const execute = vi.fn(async (input: { quantity: number }) => input.quantity > 20 ? { ok: false, executed: false, rejection: 'quantity-limit', error: 'QUANTITY_LIMIT', toolName: 'order_add_item', requestedQuantity: input.quantity, maximum: 20, customerMessage: '每種餐點最多20份；超量未加入，原餐點保留。' } : { customerMessage: '已將排骨便當一份加入。' })
+    const add = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: { quantity: { type: 'integer', minimum: 1 } }, required: ['quantity'] }, execute })
+    const quantities = oversizedFirst ? [200, 1] : [1, 200]
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: quantities.map((quantity, index) => ({ id: `quantity-${index}`, type: 'function', function: { name: 'order_add_item', arguments: JSON.stringify({ quantity }) } })) })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const menuWindow = createMenuReplyWindow()
+      const result = await recording.send('ordering', '招牌便當200份，排骨便當一份', [add], { onToolResult: (name, content) => menuWindow.record(name, content) })
+      expect(result).toMatchObject({ status: 'completed', rejection: { error: 'QUANTITY_LIMIT', maximum: 20 } })
+      expect(execute).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+      const reply = replyFromConversation(result!, { menu: menuWindow, failureMessage: '這次回覆尚未完成' })
+      expect(reply.role).toBe('assistant')
+      expect(reply.content).toContain('已將排骨便當一份加入')
+      expect(reply.content).toContain('20')
+      expect(reply.content).toContain('保留')
+      expect(reply.content).not.toContain('尚未完成')
+    }
+    finally { scope.stop() }
+  })
+
   // Report: this chat, 2026-11-02; queued browser metrics delayed phone-close presentation.
   it('saves customer turns without waiting for a stalled diagnostic write', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'diagnostic-latency', state: 'active' } })

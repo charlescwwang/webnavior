@@ -172,6 +172,22 @@ describe('kiosk routes', () => {
     expect(complete.mock.calls[0]![0].body.tool_choice).toBe('required')
   })
 
+  // Report: this chat, Nov2; a known bulk-order refusal must not be reviewed into a write.
+  it('ends a quantity-limit selector without a completion review or browser mutation', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'limit', type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"quantity-limit"}' } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'current', capturedAt: Date.now(), taskId: 'quantity-limit', sourceUtterance: '排骨便當200份', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['order_add_item'], quantityPolicy: { maximum: 20, message: '每種餐點最多20份。' } }
+    const tools = [{ type: 'function', function: { name: 'order_add_item', parameters: { type: 'object', properties: { quantity: { type: 'integer', maximum: 20 } } } } }]
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase: 'ordering', context } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ reply: { kind: 'quantity-limit' }, toolCalls: [] })
+    expect(complete).toHaveBeenCalledTimes(1)
+  })
+
   // Report: live112 C11-A2, attempt706; an empty-cart evidence read plus
   // a proven-unexecuted proposal must not replace the needed clarification.
   it('keeps an unexecuted ambiguous order in typed clarification after cart evidence', async () => {

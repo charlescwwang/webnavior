@@ -40,3 +40,11 @@ it('answers identity and unavailable store facts without inventing a transaction
   expect(replyFromContext('{"kind":"service-information","topic":"hours"}', context)?.content).toContain('未提供')
   expect(replyFromContext('{"kind":"service-information","topic":"made-up"}', context)).toBeUndefined()
 })
+
+// Report: this chat, Nov2; rejected bulk orders must use the current Menu policy.
+it('renders quantity refusal only from an available policy after entry is complete', () => {
+  const context = parse(conversationContextSchema, { contextId: 'quantity', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], quantityPolicy: { maximum: 20, message: '每種餐點最多20份，購物車仍保留。' } })
+  expect(replyFromContext('{"kind":"quantity-limit"}', context)?.content).toBe(context.quantityPolicy?.message)
+  expect(replyFromContext('{"kind":"quantity-limit"}', { ...context, quantityPolicy: undefined })).toBeUndefined()
+  expect(replyFromContext('{"kind":"quantity-limit"}', { ...context, entryComplete: false })).toBeUndefined()
+})

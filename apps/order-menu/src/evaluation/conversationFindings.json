@@ -2389,6 +2389,342 @@
       "fixedByAcceptedRuns": [
         33
       ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 1,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "4977005c088a04a6727d9dc897fd151b451dd066b96887e52ee4b9b8aff82038",
+      "artifact": "webnavior-quantity-limit-20261102-001-Q01-M-F1.jsonl",
+      "artifactSha256": "223ed34baeacf2feaa011223b975086b583c88a22cd840288bf3f76cdb4956a2",
+      "calls": 1,
+      "errors": [
+        "Main network ETIMEDOUT before response; no effect."
+      ],
+      "diagnosis": "Main network ETIMEDOUT before response; no effect.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 2,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "9c4f11b4d7109ec7dee49bcf29fc21c1d852f70fa17df498ec1585aadeb74226",
+      "artifact": "webnavior-quantity-limit-20261102-002-Q01-M-F1.jsonl",
+      "artifactSha256": "bffa2a4f5a4248a89ee7bfed62c01f43608e6aa27fdf7a92d2283b0f7ae75cf4",
+      "calls": 1,
+      "errors": [
+        "Main network ETIMEDOUT before response; no effect."
+      ],
+      "diagnosis": "Main network ETIMEDOUT before response; no effect.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 3,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "9c4f11b4d7109ec7dee49bcf29fc21c1d852f70fa17df498ec1585aadeb74226",
+      "artifact": "webnavior-quantity-limit-20261102-003-Q01-M-F1.jsonl",
+      "artifactSha256": "6b58c177455bb937318f67332ffb4555e6ebe18765cf8b43cfa969793b18cdb4",
+      "calls": 1,
+      "errors": [
+        "Main network ETIMEDOUT before response; no effect."
+      ],
+      "diagnosis": "Main network ETIMEDOUT before response; no effect.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A1",
+      "attempt": 5,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "b57719ca0db625eb20bff4ad5471b7f41e02c6c3fa5b430aaad787870fd4f9b3",
+      "artifact": "webnavior-quantity-limit-20261102-005-Q01-M-A1.jsonl",
+      "artifactSha256": "0cfe806695e0ef4da109fba93c144b57b364b573d37d8c3a4c3b7ae29b50bda1",
+      "calls": 3,
+      "errors": [
+        "Reply does not satisfy 20"
+      ],
+      "diagnosis": "Provider refusal prose became generic clarification.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "排骨便當一份，再加200份招牌便當",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      },
+      "fixedByAcceptedRuns": [
+        43
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 7,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "583f4ae2fc4488943b83a5ebe32904b07d024e17b124220598df911b0d190113",
+      "artifact": "webnavior-quantity-limit-20261102-007-Q01-M-A2.jsonl",
+      "artifactSha256": "64ab02f579ebfe103a4a2747286cfb09751bafd3d510c3166cbf52225a1b6004",
+      "calls": 3,
+      "errors": [
+        "Reply does not satisfy 20"
+      ],
+      "diagnosis": "Provider refusal prose became generic clarification.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 8,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "a3d71e926b61ae43565da9b05dddecf0ccbb06e21afbf4a1fd20859a19212ac0",
+      "artifact": "webnavior-quantity-limit-20261102-008-Q01-M-A2.jsonl",
+      "artifactSha256": "7744370cb80b53c1ea5ee1b88ac3d45ff7e02a61de4aa3c041ffb794c58afaa0",
+      "calls": 4,
+      "errors": [
+        "Read-only turn changed cart lines",
+        "Reply does not satisfy 20",
+        "Reply contains forbidden claim 已加入|已將.+加入|尚未完成|無法回覆"
+      ],
+      "diagnosis": "Old whole-batch expectation; user subsequently allowed legal sibling additions.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "已將炸排骨便當加入購物車，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 13,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "20e0f7e6b3aba651fd29bde5eeb237e0702c07053a390ac2c5fbe7a1dbb33b2c",
+      "artifact": "webnavior-quantity-limit-20261102-013-Q01-M-A2.jsonl",
+      "artifactSha256": "6b42cd0caf54f212db290fb996f6aea718dc7e70335288922e13536b9b599308",
+      "calls": 2,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}},{\"itemId\":\"signature-shrimp-roll-bento\",\"quantity\":20,\"options\":{}}]"
+      ],
+      "diagnosis": "Provider silently reduced200 to20 and added it.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 20 份。 已將炸排骨便當加入購物車，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 14,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "8b843a6dce797e8a4a17115aa373f4a4b34431529319fd852cbba71d278afb0f",
+      "artifact": "webnavior-quantity-limit-20261102-014-Q01-M-A2.jsonl",
+      "artifactSha256": "9e6b3e517b69aa9df3e5192f53dc71360813e5561e0d32c6533f45fd9b45e36e",
+      "calls": 2,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}},{\"itemId\":\"signature-shrimp-roll-bento\",\"quantity\":20,\"options\":{}}]"
+      ],
+      "diagnosis": "Provider silently reduced200 to20 and added it.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 20 份。 已將炸排骨便當加入購物車，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 18,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "4b71f83db4c0cc1d7ed4fb4198c5dc351b34a367b9bc7b6fc000da8709085173",
+      "artifact": "webnavior-quantity-limit-20261102-018-Q01-J-B3.jsonl",
+      "artifactSha256": "2cad92e232a00381b8e1835cb042bb4b8fd5b9dd0d55ba14d25e4c1f23adb97e",
+      "calls": 6,
+      "errors": [
+        "Correction misrouted to existing-line quantity modification."
+      ],
+      "diagnosis": "Correction misrouted to existing-line quantity modification.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 19,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "8d56d94b6da24cb7af9a168a8e1d86812d7d26406f492558d3495408fe51dcd9",
+      "artifact": "webnavior-quantity-limit-20261102-019-Q01-J-B3.jsonl",
+      "artifactSha256": "79e8840a4a7c4a2a46646d763839d99eab5ba56fe796936c1f49d0401bface0c",
+      "calls": 6,
+      "errors": [
+        "Correction misrouted to existing-line quantity modification."
+      ],
+      "diagnosis": "Correction misrouted to existing-line quantity modification.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 20,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "e6817b752d23b468b5237154c782d04153f1b396195d087c7529caadb346a86d",
+      "artifact": "webnavior-quantity-limit-20261102-020-Q01-J-B3.jsonl",
+      "artifactSha256": "83b3b3364fecef1c4d34f6c1c97f31928e986c4b48a6ae1fec0a577d85f08ee0",
+      "calls": 7,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "diagnosis": "Correction became cart read/acknowledgement instead of requested addition.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要200份排骨便當，改成一份排骨便當就好",
+        "answer": "要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 21,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "d8adf53cf0970f6a7c5d4a6bd3aaaeada11788171637a1796af35058c54e8a4b",
+      "artifact": "webnavior-quantity-limit-20261102-021-Q01-J-B3.jsonl",
+      "artifactSha256": "e048e4413f79536795d4a046c27761abd6966cda8e8e05ccf876445601bee018",
+      "calls": 3,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}]",
+        "Reply contains forbidden claim 每種餐點單次最多|這次超量"
+      ],
+      "diagnosis": "Finite parser used the negated first200 count.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要200份排骨便當，改成一份排骨便當就好",
+        "answer": "每種餐點單次最多 20 份。超過上限的品項未加入，已加入的餐點仍保留。請調整份數後再告訴我。"
+      },
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 23,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "19c54c2719e32b11df5094cafd1ab5183755a51e8f67c52b5a7081a1617c250b",
+      "artifact": "webnavior-quantity-limit-20261102-023-Q01-M-F1.jsonl",
+      "artifactSha256": "ddb73fa2a4be7a94f319579d9cfd261a58cd36d7773bfbc899f533e0906fdb5c",
+      "calls": 5,
+      "errors": [
+        "Read-only turn changed cart lines",
+        "Reply contains forbidden claim 已加入|已將.+加入|尚未完成|無法回覆"
+      ],
+      "diagnosis": "Provider silently reduced200 to20 on separate continuations.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "那我要200份招牌便當、200份排骨便當",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 20 份。 已將炸排骨便當加入購物車，共 20 份。 每種餐點單次最多 20 份。超過上限的品項未加入，已加入的餐點仍保留。請調整份數後再告訴我。"
+      },
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 24,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "d553b6f00a49cd2cd296c0b481af1606ab3a708f43973546e17145720dce3fdf",
+      "artifact": "webnavior-quantity-limit-20261102-024-Q01-M-F1.jsonl",
+      "artifactSha256": "d320d2c11967b44e85b82c8012f3448374ae4696c8aff0c7eeb2a0b381d607ce",
+      "calls": 1,
+      "errors": [
+        "Reply contains forbidden claim 已加入|已將.+加入|尚未完成|無法回覆"
+      ],
+      "diagnosis": "Cart correctly preserved; retained-items wording matched the no-new-success assertion.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "那我要200份招牌便當、200份排骨便當",
+        "answer": "每種餐點單次最多 20 份。超過上限的品項未加入，已加入的餐點仍保留。請調整份數後再告訴我。"
+      },
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-B3",
+      "attempt": 38,
+      "acceptancePhase": "final",
+      "sourceHash": "8ed88d8bd23a1abe97480d6ccc6a1912cfcef298ba3d96bd9b12474789e55c4e",
+      "artifact": "webnavior-quantity-limit-20261102-038-Q01-M-B3.jsonl",
+      "artifactSha256": "7278960977215d143ccc95f625d24a58a2a9dcbd3033af0671ed391360c787de",
+      "calls": 3,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "diagnosis": "Quantity correction proposed replacement of unrelated existing dumplings.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要200份排骨便當，改成一份排骨便當就好",
+        "answer": "已將水餃更換為炸排骨便當，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        47
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 39,
+      "acceptancePhase": "final-v2",
+      "sourceHash": "b42eb9be4b6817f1f03509ea02be875d2dd0134c187287a0867fabbf4efed010",
+      "artifact": "webnavior-quantity-limit-20261102-039-Q01-M-F1.jsonl",
+      "artifactSha256": "a8025638bc36e9d8e0e7bd42a478c813b6dbc1069ae54a4de61bbd2f4e601f22",
+      "calls": 1,
+      "errors": [
+        "Reply does not satisfy 20"
+      ],
+      "diagnosis": "Explicit bulk order was incorrectly changed into menu recommendation clarify.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "那我要200份招牌便當、200份排骨便當",
+        "answer": "你想調整價位，還是換餐點種類？"
+      },
+      "fixedByAcceptedRuns": [
+        40
+      ]
     }
   ],
   "capturedThroughAttempt": 299,
@@ -3524,5 +3860,168 @@
       16
     ],
     "status": "accepted-not-deployed"
+  },
+  "largeQuantityIncident": {
+    "status": "fixed-synthetic-accepted-not-deployed",
+    "artifact": "webnavior-large-quantity-20261102.json",
+    "artifactSha256": "a33ed5097c13983e8af8426add9d1a018a8a43a7edc557e890f651540213d5bd",
+    "actualUtterance": "那我要200份招牌便當、200份排骨便當",
+    "requestedQuantity": 200,
+    "currentToolMaximum": 20,
+    "executed": false,
+    "failureStages": [
+      "INVALID_TOOL_INPUT at quantity maximum validation",
+      "unverified-reply rejected clarification presentation"
+    ],
+    "syntheticAcceptance": true,
+    "policy": "Retain20 per identical line. Add legal siblings; refuse oversized items; no automatic reduction/splits; preserve existing cart."
+  },
+  "quantityLimitAcceptance": {
+    "scope": "16 synthetic direct Main/Jev-Main scripts with isolated existing cart; Arabic/Chinese bulk counts, legal siblings in either order,20/21 boundary, budgets, negated old count corrected to1. Original112 positions unchanged. Not a replay of full field sessions.",
+    "status": "accepted-not-deployed",
+    "policy": "Retain20 per identical line. Add legal siblings; refuse oversized items; no automatic reduction/splits; preserve existing cart.",
+    "calls": 241,
+    "finalCalls": 94,
+    "finalRuns": [
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55
+    ],
+    "finalSourceHash": "0e12dceabb15a88eeb15c3a314a8c3ed719b0446a992a9b2b061bd1fad20b5d5",
+    "runtimeHash": "0d6a8f8c4188884cc07348f4be97da52959d3a90f70b0af06bc68180773689fd",
+    "finalArtifacts": [
+      {
+        "scriptId": "Q01-M-F1",
+        "artifact": "webnavior-quantity-limit-20261102-040-Q01-M-F1.jsonl",
+        "sha256": "d65b1ae6fa197b243f910d72454e96c2ae3f62d9881e10674f5b4ea46220ba93"
+      },
+      {
+        "scriptId": "Q01-M-F2",
+        "artifact": "webnavior-quantity-limit-20261102-041-Q01-M-F2.jsonl",
+        "sha256": "1773e004348f54d0a8cd43875cd41996739dae35133f38a4cafda3cbb0183f6b"
+      },
+      {
+        "scriptId": "Q01-M-F3",
+        "artifact": "webnavior-quantity-limit-20261102-042-Q01-M-F3.jsonl",
+        "sha256": "b42b94a1b669b6ac65791fe2f096518f4566120865edae9052b35e898573f4b1"
+      },
+      {
+        "scriptId": "Q01-M-A1",
+        "artifact": "webnavior-quantity-limit-20261102-043-Q01-M-A1.jsonl",
+        "sha256": "b2d67cbfa1061755587d45eb3476c276d177bb9a9e5d74c4fe006e74ed7d60bc"
+      },
+      {
+        "scriptId": "Q01-M-A2",
+        "artifact": "webnavior-quantity-limit-20261102-044-Q01-M-A2.jsonl",
+        "sha256": "b7e5cd3a90669302fa07bef3dcf88a0d30448e273d1b24d86681982040d6ab2a"
+      },
+      {
+        "scriptId": "Q01-M-B1",
+        "artifact": "webnavior-quantity-limit-20261102-045-Q01-M-B1.jsonl",
+        "sha256": "120086bb2e2bd7f302c05062aca2d0fba0f54ef5c00bf04398d24f3f663cfe06"
+      },
+      {
+        "scriptId": "Q01-M-B2",
+        "artifact": "webnavior-quantity-limit-20261102-046-Q01-M-B2.jsonl",
+        "sha256": "a30d701090ef37b7e5a95bae60899ea9722fda0e42612847c8b7946b6f3de021"
+      },
+      {
+        "scriptId": "Q01-M-B3",
+        "artifact": "webnavior-quantity-limit-20261102-047-Q01-M-B3.jsonl",
+        "sha256": "e0024c4e3430393c6cb245701ca3a309fc80d7581fd6b9e9b4a9545e300ccde0"
+      },
+      {
+        "scriptId": "Q01-J-F1",
+        "artifact": "webnavior-quantity-limit-20261102-048-Q01-J-F1.jsonl",
+        "sha256": "cfff19f45d11197d3b21a86bc2bc2ff73021ed527efcd9834aa9da1b3cf07fd2"
+      },
+      {
+        "scriptId": "Q01-J-F2",
+        "artifact": "webnavior-quantity-limit-20261102-049-Q01-J-F2.jsonl",
+        "sha256": "827eb987b54e9a4f664a70e0261b8479f16e19d0ad68d0604500f2dd56369c73"
+      },
+      {
+        "scriptId": "Q01-J-F3",
+        "artifact": "webnavior-quantity-limit-20261102-050-Q01-J-F3.jsonl",
+        "sha256": "225eab2934136fdba5472ef1462e3da2ffaf005d4a28e197170515d6f5ebb2e6"
+      },
+      {
+        "scriptId": "Q01-J-A1",
+        "artifact": "webnavior-quantity-limit-20261102-051-Q01-J-A1.jsonl",
+        "sha256": "58f59ae55e6da39ca7381010e33a2915ecd18dbd8274ee01c8f8a409ec3e1ac2"
+      },
+      {
+        "scriptId": "Q01-J-A2",
+        "artifact": "webnavior-quantity-limit-20261102-052-Q01-J-A2.jsonl",
+        "sha256": "684a87ca4accf3bb11f0dff78b62c1a87eebd10bd5bf1f99206d785563b15c87"
+      },
+      {
+        "scriptId": "Q01-J-B1",
+        "artifact": "webnavior-quantity-limit-20261102-053-Q01-J-B1.jsonl",
+        "sha256": "1b1e37ff88df017258529daabd4f695451d12d1916c4071e111980e161d0f7e2"
+      },
+      {
+        "scriptId": "Q01-J-B2",
+        "artifact": "webnavior-quantity-limit-20261102-054-Q01-J-B2.jsonl",
+        "sha256": "04e8d7f578e5bdd23f76c9ea9b6203298d1527930f7f16a0951ca13531e169f5"
+      },
+      {
+        "scriptId": "Q01-J-B3",
+        "artifact": "webnavior-quantity-limit-20261102-055-Q01-J-B3.jsonl",
+        "sha256": "9bafcf287abfb9f5b2d20b3fa8faf788718844a31f54fca9816d060edcb4faa9"
+      }
+    ],
+    "failedAttemptsRetained": [
+      1,
+      2,
+      3,
+      5,
+      7,
+      8,
+      13,
+      14,
+      18,
+      19,
+      20,
+      21,
+      23,
+      24,
+      38,
+      39
+    ],
+    "policyRevisions": [
+      {
+        "previous": "d67644724e6c1fb2124ef45e181973a9db72561e03c46ef161ec729a80a38455",
+        "current": "704011af635977c599dd39c15448c0c38809a143ba4cf4af4c08845b436fda5e",
+        "reason": "ESLint formatting of incident declarations; Q01 utterances, preconditions and expected outcomes unchanged."
+      },
+      {
+        "previous": "704011af635977c599dd39c15448c0c38809a143ba4cf4af4c08845b436fda5e",
+        "current": "cb73df2b18e96eb3569f2829f349fa76c346eff82f49ddda7861f6eed816634a",
+        "reason": "Add Q01-M/J-B3 negated200 corrected to1 adversarial cases; original14 cases unchanged. Scope remains this authorized quantity batch."
+      },
+      {
+        "previous": "cb73df2b18e96eb3569f2829f349fa76c346eff82f49ddda7861f6eed816634a",
+        "current": "b744c8dda0c03920fddb704699c554a0dbc05dfe94d363870dfdfae2569e6a78",
+        "reason": "User clarified: 加入合法選項我覺得ok欸. Q01-M/J-A1/A2 now require legal pork1 added while signature200 refused; previous expectations/failures retained in run manifests. Remove whole-utterance semantic guard; per-item policy."
+      }
+    ],
+    "privateFieldEvidence": {
+      "artifact": "webnavior-large-quantity-20261102.json",
+      "sha256": "a33ed5097c13983e8af8426add9d1a018a8a43a7edc557e890f651540213d5bd"
+    }
   }
 }
