@@ -26,6 +26,7 @@ describe('bounded menu viewport navigation', () => {
         chooseInvoice: () => { throw new Error('Unexpected checkout write') },
         requestTaxId: () => { throw new Error('Unexpected checkout write') },
         setTaxId: () => { throw new Error('Unexpected checkout write') },
+        confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
         confirmTaxId: () => { throw new Error('Unexpected checkout write') },
         selectPayment: async () => { throw new Error('Unexpected payment write') },
       },

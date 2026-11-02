@@ -126,6 +126,14 @@ function amountFrom(text: string) {
   return total + section + digit * trailingPlace
 }
 
+// Clause punctuation may precede a new amount. Only punctuation joining numeric
+// fragments is a malformed amount; a leading minus remains non-executable.
+function brokenAmountBoundary(before: string, after: string): boolean {
+  return /-\s*$/.test(before)
+    || /[0-9零〇一二兩两三四五六七八九十百千萬万億亿][.,]\s*$/.test(before)
+    || /^[.,]\d/.test(after)
+}
+
 /**
  * Finds currency literals, price/comparison amounts and numeric ranges without
  * requiring a currency unit, then offers interpretations for Jev to qualify. Explicit quantity or
@@ -154,7 +162,7 @@ export function priceEvidence(transcript: string): PriceEvidence | undefined {
     // money. Semantic price polarity still belongs to Jev, including NONE.
     if (before.endsWith(':') || after.startsWith(':') || (!/[元塊块]/.test(match[0]) && /^\s*(?:[份位人碗杯顆個个]|分鐘|分钟|小時|小时)/.test(after)))
       continue
-    if (/[.,-]\s*$/.test(before) || /^[.,]\d/.test(after))
+    if (brokenAmountBoundary(before, after))
       malformed = true
     consumed.push([match.index!, match.index! + match[0].length])
     for (const text of [match[1]!, match[2]!]) {
@@ -182,7 +190,7 @@ export function priceEvidence(transcript: string): PriceEvidence | undefined {
       const after = transcript.slice(start + text.length)
       if (before.endsWith(':') || after.startsWith(':') || /^\s*(?:[份位人碗杯顆個个]|分鐘|分钟|小時|小时)/.test(after))
         continue
-      if (/[.,-]\s*$/.test(before) || /^[.,]\d/.test(after))
+      if (brokenAmountBoundary(before, after))
         malformed = true
       const amount = amountFrom(text)
       if (amount !== undefined && Number.isSafeInteger(amount))

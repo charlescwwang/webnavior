@@ -100,6 +100,7 @@ async function prepare(setup: Setup, transcript: string) {
       chooseInvoice: method => update(chooseInvoiceMethod(checkout!, method)),
       requestTaxId: () => update(requestTaxId(checkout!)),
       setTaxId: taxId => update(setTaxIdDraft(checkout!, taxId)),
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => update(confirmTaxId(checkout!)),
       cancel: () => {
         checkout = undefined

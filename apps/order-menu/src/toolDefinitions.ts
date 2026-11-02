@@ -33,6 +33,7 @@ export type MenuToolName
     | 'checkout_choose_invoice'
     | 'checkout_request_tax_id'
     | 'checkout_set_tax_id'
+    | 'checkout_confirm_invoice'
     | 'checkout_confirm_tax_id'
     | 'checkout_select_payment'
     | 'checkout_cancel'
@@ -95,6 +96,7 @@ export const toolDefinitions: MenuToolDefinition[] = [
   { name: 'checkout_choose_invoice', description: '依顧客意思選擇手機載具或自然人憑證，顯示資料輸入；顧客說略過或捐贈發票時選 donation，不輸入捐贈碼，直接進入付款方式。這不代表已付款或已開立發票。顧客要統編時改用 checkout_request_tax_id。', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['carrier', 'citizen', 'donation'] } }, required: ['method'], additionalProperties: false } },
   { name: 'checkout_request_tax_id', description: '顧客表示要填統編時，開啟統編輸入畫面。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'checkout_set_tax_id', description: '把顧客口說的完整 8 碼統編帶入畫面供顧客查看。只負責顯示，不會直接確認或前進付款。', inputSchema: { type: 'object', properties: { taxId: { type: 'string', pattern: '^\\d{8}$' } }, required: ['taxId'], additionalProperties: false } },
+  { name: 'checkout_confirm_invoice', description: '顧客確認或送出畫面上已填妥且格式有效的發票載具資料，進入付款方式；不從模型填入或覆寫載具，不選擇付款或付款。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
   { name: 'checkout_confirm_tax_id', description: '顧客看過畫面上的 8 碼統編並以自然語意表示正確後確認；不要求逐字說出固定句子。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
   { name: 'checkout_select_payment', description: '依顧客意思選擇目前提供的付款方式，直接進入測試 QR Code 畫面，倒數5秒後自動請求模擬付款，不另問確認、不需實際掃碼或按鈕。status=selected 當下尚未付款，可更換方式；付款及訂單成功必須以後續模擬器與訂單回傳為準。', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['card', 'mobile', 'linepay', 'jkopay'] } }, required: ['method'], additionalProperties: false } },
   { name: 'checkout_cancel', description: '顧客明確表示取消本次結帳時返回訂單內容並保留購物車。付款等待中或付款結果不明時不可取消，以免重複扣款。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },

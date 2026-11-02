@@ -1,12 +1,23 @@
 import type { InferOutput } from 'valibot'
 
-import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string } from 'valibot'
+import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string, variant } from 'valibot'
 
 const id = pipe(string(), minLength(1), maxLength(200))
 const label = pipe(string(), maxLength(500))
 const revision = pipe(number(), integer(), minValue(0))
 const quantity = pipe(number(), integer(), minValue(0), maxValue(20))
-const option = object({ groupId: id, valueId: id })
+/** Menu-owned validation failures issued before any effect; one correction may be requested. */
+export const toolInputRejectionSchema = strictObject({
+  ok: literal(false),
+  executed: literal(false),
+  toolName: id,
+  error: picklist(['MENU_QUERY_ACTION_REQUIRED', 'INVALID_OPTION_COMBINATION', 'INVALID_TOOL_INPUT', 'UNCONFIRMED_ITEM']),
+  message: pipe(string(), minLength(1), maxLength(2000)),
+  customerMessage: optional(pipe(string(), minLength(1), maxLength(2000))),
+})
+
+/** One catalog-owned option selection shared by drafts and cart snapshots. */
+export const conversationOptionSchema = object({ groupId: id, valueId: id })
 
 /** Application resolution is preserved independently from the model's intent confidence. */
 export const handoffSchema = object({
@@ -19,11 +30,37 @@ export const handoffSchema = object({
 /** One current question, never a historical instruction or payment authorization. */
 export const conversationQuestionSchema = object({
   questionId: id,
+  requestId: optional(id),
   purpose: pipe(string(), maxLength(80)),
   question: pipe(string(), maxLength(2000)),
   expiresAt: number(),
   choices: pipe(array(object({ id, description: label })), maxLength(253)),
 })
+
+export type ConversationQuestion = InferOutput<typeof conversationQuestionSchema>
+
+const recoveryCandidates = pipe(array(id), minLength(1), maxLength(253), check(ids => new Set(ids).size === ids.length, 'Recovery candidates must be unique'))
+/** Menu-issued interpretation scope, never an execution ticket or customer consent. */
+export const intentRecoverySchema = variant('kind', [
+  object({ kind: literal('request'), candidateIds: recoveryCandidates }),
+  object({ kind: literal('answer'), questionId: id, requestId: optional(id), candidateIds: recoveryCandidates }),
+])
+export type IntentRecovery = InferOutput<typeof intentRecoverySchema>
+
+/** Uncommitted meal progress; absent quantity means unknown, never one serving. */
+export const conversationRequestSchema = pipe(object({
+  id,
+  itemId: id,
+  status: picklist(['active', 'suspended', 'confirming']),
+  sourceUtterance: optional(pipe(string(), maxLength(8000))),
+  quantity: optional(pipe(number(), integer(), minValue(1), maxValue(20))),
+  options: pipe(array(conversationOptionSchema), maxLength(40)),
+  missing: object({ quantity: boolean(), optionGroupIds: pipe(array(id), maxLength(40)) }),
+  expectedRevisions: object({ menu: optional(revision), cart: optional(revision), selectedItem: optional(revision), checkout: optional(revision), recommendation: optional(revision), seating: optional(revision) }),
+}), check(value => value.missing.quantity === (value.quantity === undefined)
+  && new Set(value.options.map(option => option.groupId)).size === value.options.length
+  && !value.missing.optionGroupIds.some(groupId => value.options.some(option => option.groupId === groupId)), 'Draft slots and missing fields must describe the same progress'))
+export type ConversationRequest = InferOutput<typeof conversationRequestSchema>
 
 /** Complete product coverage with explicit fields; images and vendor metadata are excluded. */
 export const conversationContextSchema = pipe(object({
@@ -35,10 +72,13 @@ export const conversationContextSchema = pipe(object({
   entryComplete: boolean(),
   readOnly: boolean(),
   constraints: object({ excludeIngredients: pipe(array(id), maxLength(100)), includeIngredients: pipe(array(id), maxLength(100)), dietary: optional(literal('vegetarian')), minPrice: optional(number()), maxPrice: optional(number()), minPriceExclusive: optional(boolean()), maxPriceExclusive: optional(boolean()), priceOrder: optional(literal('ASC')) }),
+  unavailableConditions: optional(pipe(array(object({ id, label })), maxLength(100))),
   phase: pipe(string(), maxLength(80)),
   screen: optional(pipe(string(), maxLength(80))),
   /** Current rendered menu scope, separate from the complete catalog and cart. */
   presentation: optional(object({ itemIds: pipe(array(id), maxLength(200)), category: pipe(string(), maxLength(200)), queries: pipe(array(label), maxLength(20)) })),
+  /** Saved browse conditions are not the current utterance's operation constraints. */
+  queryState: optional(object({ category: label, queries: pipe(array(label), maxLength(20)), exhausted: boolean(), prices: object({ minPrice: optional(number()), maxPrice: optional(number()), minPriceExclusive: optional(boolean()), maxPriceExclusive: optional(boolean()), priceOrder: optional(literal('ASC')) }), filters: object({ excludeIngredients: pipe(array(id), maxLength(100)), includeIngredients: pipe(array(id), maxLength(100)), dietary: optional(literal('vegetarian')) }) })),
   revisions: object({ menu: revision, cart: revision, selectedItem: revision, checkout: revision, recommendation: optional(revision), seating: optional(revision) }),
   catalog: optional(object({
     complete: literal(true),
@@ -59,18 +99,19 @@ export const conversationContextSchema = pipe(object({
     itemCount: pipe(number(), integer(), minValue(0)),
     total: pipe(number(), minValue(0)),
     fulfillmentMode: optional(picklist(['dine-in', 'takeout'])),
-    lines: pipe(array(object({ id, itemId: id, name: label, quantity, unitPrice: number(), options: pipe(array(option), maxLength(40)) })), maxLength(200)),
+    lines: pipe(array(object({ id, itemId: id, name: label, quantity, unitPrice: number(), options: pipe(array(conversationOptionSchema), maxLength(40)) })), maxLength(200)),
   }),
-  selection: optional(object({ itemId: id, quantity, options: pipe(array(option), maxLength(40)) })),
+  selection: optional(object({ itemId: id, quantity, options: pipe(array(conversationOptionSchema), maxLength(40)) })),
   paymentState: pipe(string(), maxLength(80)),
-  checkout: optional(object({ stage: pipe(string(), maxLength(80)), invoiceMethod: optional(pipe(string(), maxLength(80))), taxId: optional(pipe(string(), maxLength(8))), carrierRegistered: boolean(), citizenRegistered: boolean() })),
+  checkout: optional(object({ stage: pipe(string(), maxLength(80)), invoiceMethod: optional(pipe(string(), maxLength(80))), taxId: optional(pipe(string(), maxLength(8))), invoiceDraftReady: optional(boolean()), carrierRegistered: boolean(), citizenRegistered: boolean() })),
   seating: optional(object({ partySize: optional(quantity), ready: boolean(), revision })),
   allowedPaymentMethods: pipe(array(id), maxLength(20)),
   /** Offered methods; unlike allowedPaymentMethods, this does not grant phase-specific execution. */
   paymentMethods: optional(pipe(array(object({ id, label })), maxLength(20))),
   fulfillmentModes: pipe(array(object({ id, label })), maxLength(20)),
   waitingFor: optional(conversationQuestionSchema),
-  retainedRequests: pipe(array(object({ id, itemId: id, status: picklist(['active', 'suspended']) })), maxLength(20)),
+  retainedRequests: pipe(array(conversationRequestSchema), maxLength(20)),
+  intentRecovery: optional(intentRecoverySchema),
   allowedToolNames: pipe(array(id), maxLength(100)),
 }), check(value => (value.entryComplete || !value.catalog) && (!value.catalog || value.catalog.itemCount === value.catalog.items.length) && new TextEncoder().encode(JSON.stringify(value)).byteLength <= 256 * 1024, 'CONTEXT_UNAVAILABLE: incomplete or oversized conversation context'))
 
@@ -79,7 +120,8 @@ export type ConversationHandoff = InferOutput<typeof handoffSchema>
 
 /** A model may select a factual reply, but cannot supply operation-success prose. */
 export const contextReplySchema = strictObject({
-  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification', 'greeting', 'acknowledgement', 'hearing-check']),
+  kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information']),
+  topic: optional(picklist(['identity', 'capabilities', 'location', 'hours', 'other', 'menu-kind'])),
   subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
 })
 
@@ -115,7 +157,9 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     return { kind, content: '有收到您的這句話，請問需要什麼協助？' }
   if (selection.output.kind === 'clarification') {
     // Generic meaning uncertainty must not revive a pending purchase question.
-    const content = '剛才沒有理解清楚，請再說一次您想詢問或調整的內容。'
+    const content = selection.output.topic === 'menu-kind'
+      ? '目前菜單未提供可確認符合這個種類的餐點，您想改看哪一類？'
+      : '剛才沒有理解清楚，請再說一次您想詢問或調整的內容。'
     return { kind, content }
   }
   if (selection.output.kind === 'payment-methods') {
@@ -124,6 +168,18 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   }
   if (selection.output.kind === 'fulfillment-modes')
     return { kind, content: context.fulfillmentModes.length ? `目前提供${context.fulfillmentModes.map(mode => mode.label).join('、')}。` : '目前沒有可確認的取餐方式，請詢問服務人員。' }
+  if (selection.output.kind === 'service-information') {
+    // Menu owns commerce facts, not store location/hours. Without a published
+    // source those facts are explicitly unavailable, never inferred from persona.
+    const topic = selection.output.topic
+    if (topic === 'identity')
+      return { kind, content: '我是這台機台的服務助手，可以協助您查詢餐點與操作點餐流程。' }
+    if (topic === 'capabilities')
+      return { kind, content: context.entryComplete ? '我可以協助查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；操作後會依實際結果回覆。' : '我可以先說明服務；選擇填寫手機或略過後，可以查詢菜單、點餐與核對訂單。' }
+    if (topic === 'location' || topic === 'hours')
+      return { kind, content: `目前服務資料未提供可確認的${topic === 'location' ? '店內位置或路線' : '營業時間'}，請詢問現場店員。` }
+    return { kind, content: '目前沒有足夠資料確認這個問題，請提供更多說明，或詢問現場店員。' }
+  }
   if (!context.entryComplete || !context.catalog?.complete || !selection.output.subjects?.length)
     return undefined
   const normalize = (text: string) => text.normalize('NFKC').trim().toLocaleLowerCase()
@@ -176,6 +232,8 @@ export interface ServiceRecovery {
 
 /** Host-owned, read-only understanding cue, separate from Menu operation questions. */
 export const serviceClarificationSchema = object({
+  /** Unverified requirements retained only while answering this clarification. */
+  unavailableConditions: optional(pipe(array(object({ id, label })), maxLength(20))),
   questionId: id,
   question: pipe(string(), minLength(1), maxLength(200)),
   sourceUtterance: pipe(string(), maxLength(8000)),

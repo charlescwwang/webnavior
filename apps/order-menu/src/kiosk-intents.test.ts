@@ -2,7 +2,7 @@ import type { MenuItem } from './domain/order-machine'
 
 import { describe, expect, it } from 'vitest'
 
-import { authorize, compileOperationPlan, createConfirmation, createQuestion, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, validateConfirmation } from './kiosk-intents'
+import { authorize, compileOperationPlan, createConfirmation, createQuestion, deriveDecisionContext, intentRecovery, questionIsCurrent, resolveClarificationReference, resolveIntent, validateConfirmation } from './kiosk-intents'
 
 const shrimpRoll: MenuItem = { available: true, category: '小吃', description: '現炸蝦捲', id: 'shrimp-roll', imageUrl: '', name: '蝦捲', optionGroups: [{ id: 'ginger', label: '嫩薑', required: false, values: [{ id: 'with', label: '要薑', priceDelta: 0 }] }], price: 75, recommendationTags: ['fried'] }
 const base = { cart: { fulfillmentMode: undefined, itemCount: 0, lines: [], total: 0 }, menu: [shrimpRoll], revisions: { cart: 0, checkout: 0, selectedItem: 0 } }
@@ -30,6 +30,29 @@ it('does not collapse two spice values into one option for three servings', () =
 })
 
 describe('kiosk intent routing', () => {
+  // Report: this chat, Nov2; typed carrier /PTGRJP2 + 確認／送出 had no operation.
+  it('offers confirmation only for the current valid invoice draft', () => {
+    const checkout = { stage: 'invoice' as const, invoiceMethod: 'carrier' as const, invoiceDraft: { method: 'carrier' as const, code: '/PTGRJP2' } }
+    const context = deriveDecisionContext({ ...base, checkout, transcript: '確認' })
+    const confirm = context.candidates.find(candidate => candidate.intent === 'CONFIRM_INVOICE')
+    expect(confirm).toMatchObject({ id: 'intent:confirm-invoice' })
+    expect(intentRecovery(context)).toEqual({ kind: 'request', candidateIds: ['intent:confirm-invoice'] })
+    expect(createQuestion(context, 'invoice-draft', Date.now())?.question).toContain('請確認畫面上的發票資料')
+    const invalid = deriveDecisionContext({ ...base, checkout: { ...checkout, invoiceDraft: { method: 'carrier', code: '/PT' } }, transcript: '送出' })
+    expect(invalid.candidates.some(candidate => candidate.id === 'intent:confirm-invoice')).toBe(false)
+    expect(intentRecovery(invalid)).toBeUndefined()
+  })
+
+  it('issues one tax-ID confirmation effect without a second confirmation question', () => {
+    const context = deriveDecisionContext({ ...base, checkout: { stage: 'tax-id', invoiceMethod: 'tax-id', taxId: '12345678' }, transcript: '資料沒問題' })
+    expect(intentRecovery(context)).toEqual({ kind: 'request', candidateIds: ['intent:confirm-tax-id'] })
+    const choice = context.candidates.find(candidate => candidate.id === 'intent:confirm-tax-id')!
+    const result = resolveIntent(choice, context)
+    if (result.kind !== 'PLAN')
+      throw new Error('A valid invoice confirmation must compile one plan')
+    expect(authorize(compileOperationPlan(result.plan), context)).toEqual({ kind: 'EXECUTE' })
+  })
+
   it('offers only LINE Pay and 街口支付 when those are the deployed payment choices', () => {
     const cart = { ...base.cart, fulfillmentMode: 'dine-in' as const, lines: [{ id: 'L1', itemId: shrimpRoll.id, name: shrimpRoll.name, quantity: 1, options: {}, unitPrice: 75 }], total: 75, itemCount: 1 }
     const context = deriveDecisionContext({ ...base, cart, checkout: { stage: 'payment' }, paymentMethods: ['linepay', 'jkopay'], transcript: '街口' })
@@ -470,4 +493,21 @@ describe('kiosk intent routing', () => {
     expect(authorize(compileOperationPlan(paymentResult.plan), payment)).toEqual({ kind: 'EXECUTE' })
     expect(deriveDecisionContext({ ...base, checkout: { stage: 'payment' }, paymentStatus: 'pending' }).candidates.some(candidate => candidate.intent === 'SELECT_PAYMENT')).toBe(false)
   })
+})
+
+// Plan: Nov1 common intent handoff. Eligibility moved out of Server into Menu.
+it('never issues new-meal recovery for entry, payment, category-only or multiple targets', () => {
+  expect(intentRecovery(deriveDecisionContext({ ...base, transcript: '我要蝦捲', customerEntryPending: true }))).toBeUndefined()
+  expect(intentRecovery(deriveDecisionContext({ ...base, transcript: '我要蝦捲', checkout: { stage: 'payment' }, paymentMethods: ['linepay'] }))).toBeUndefined()
+  expect(intentRecovery(deriveDecisionContext({ ...base, transcript: '我要小吃' }))).toBeUndefined()
+  expect(intentRecovery(deriveDecisionContext({ ...base, menu: [shrimpRoll, { ...shrimpRoll, id: 'other', name: '水餃' }], transcript: '蝦捲和水餃' }))).toBeUndefined()
+})
+
+it('keeps new meal recovery independent of an unanswered fulfillment question', () => {
+  const waitingFor = { questionId: 'fulfillment', phase: 'ordering' as const, purpose: 'fulfillment' as const, question: '內用還是自取？', choices: [], expectedRevisions: { cart: 0 }, expiresAt: Date.now() + 30000 }
+  const context = deriveDecisionContext({ ...base, transcript: '我要蝦捲一份', waitingFor })
+  const scope = intentRecovery(context)
+  expect(scope?.kind).toBe('request')
+  expect(scope?.candidateIds).toContain('intent:add-item')
+  expect(scope).not.toHaveProperty('questionId')
 })

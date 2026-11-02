@@ -71,7 +71,7 @@ export function connectInteractiveService(runtime: ReturnType<typeof createMenuT
             const serialized = JSON.stringify(result)
             return serialized === undefined ? null : JSON.parse(serialized)
           })
-        : Promise.resolve({ ok: false, error: 'INVALID_TOOL_INPUT', recovery: 'Check the tool schema and retry only with valid arguments.' })
+        : Promise.resolve({ ok: false, executed: false, toolName: definition.name, error: 'INVALID_TOOL_INPUT', message: `尚未執行。請依工具參數契約修正：${JSON.stringify(validate?.errors ?? []).slice(0, 1600)}。不要重做已成功的操作。` })
       // Cache before awaiting, including in-flight operations. No eviction within a
       // binding: an old repeated ID must never become a second commerce operation.
       const accepted = { fingerprint: operationFingerprint, result: operation, status: 'pending' as 'pending' | 'settled' | 'failed' }

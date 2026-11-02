@@ -112,6 +112,7 @@ describe('historical field regressions', () => {
         chooseInvoice: () => ({ stage: 'payment' }),
         requestTaxId: () => ({ stage: 'tax-id' }),
         setTaxId: () => ({ stage: 'tax-id' }),
+        confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
         confirmTaxId: () => ({ stage: 'payment' }),
         cancel: () => {
           checkout = undefined

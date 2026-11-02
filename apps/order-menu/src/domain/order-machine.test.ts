@@ -1,9 +1,11 @@
 import type { CheckoutToolController } from '../webmcp'
+import type { CheckoutSnapshot } from './checkout-flow'
 import type { CartSnapshot } from './order-machine'
 
 import { describe, expect, it, vi } from 'vitest'
 
 import { createMenuToolRuntime } from '../webmcp'
+import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from './checkout-flow'
 import { catalogInfo, createOrderMachine, defaultOptionsFor, menu } from './order-machine'
 
 describe('createOrderMachine', () => {
@@ -217,6 +219,7 @@ describe('createMenuToolRuntime', () => {
       assertCanRestart: () => {},
       cancel: () => {},
       chooseInvoice: method => ({ invoiceMethod: method, stage: 'payment' }),
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => ({ invoiceMethod: 'tax-id', stage: 'payment', taxId: '12345678' }),
       paymentStatus: () => undefined,
       revision: () => 0,
@@ -295,6 +298,7 @@ describe('createMenuToolRuntime', () => {
       'checkout_choose_invoice',
       'checkout_request_tax_id',
       'checkout_set_tax_id',
+      'checkout_confirm_invoice',
       'checkout_confirm_tax_id',
       'checkout_select_payment',
       'checkout_cancel',
@@ -601,19 +605,22 @@ describe('createMenuToolRuntime', () => {
 
   it('routes Agent checkout actions through one controller without exposing physical scan or authorization tools', async () => {
     const calls: string[] = []
+    let checkout: CheckoutSnapshot | undefined
     const controller = checkoutController({
+      snapshot: () => checkout,
       cancel: () => calls.push('cancel'),
       chooseInvoice: (method) => {
         calls.push(`invoice:${method}`)
-        return { invoiceMethod: method, stage: 'payment' }
+        return checkout = chooseInvoiceMethod(checkout!, method)
       },
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => {
         calls.push('confirm-tax-id')
-        return { invoiceMethod: 'tax-id', stage: 'payment', taxId: '12345678' }
+        return checkout = confirmTaxId(checkout!)
       },
       requestTaxId: () => {
         calls.push('request-tax-id')
-        return { invoiceMethod: 'tax-id', stage: 'tax-id', taxId: '' }
+        return checkout = requestTaxId(checkout!)
       },
       selectPayment: async (method) => {
         calls.push(`payment:${method}`)
@@ -621,15 +628,15 @@ describe('createMenuToolRuntime', () => {
       },
       setTaxId: (taxId) => {
         calls.push(`tax-id:${taxId}`)
-        return { invoiceMethod: 'tax-id', stage: 'tax-id', taxId }
+        return checkout = setTaxIdDraft(checkout!, taxId)
       },
       skipMembership: () => {
         calls.push('skip-membership')
-        return { stage: 'invoice' }
+        return checkout = skipMembership(checkout!)
       },
       start: () => {
         calls.push('start')
-        return { stage: 'membership' }
+        return checkout = beginCheckout()
       },
     })
     const runtime = createMenuToolRuntime({ checkout: controller, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })

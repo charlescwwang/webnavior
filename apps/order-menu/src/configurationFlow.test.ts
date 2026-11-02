@@ -47,8 +47,8 @@ describe('required order configuration', () => {
     })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
-    const interrupted = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要一份水餃' }) as { waitingFor: { questionId: string } }
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要一份水餃', newRequestQuestionId: interrupted.waitingFor.questionId })
+    const interrupted = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要一份水餃' })
+    expect(interrupted).toMatchObject({ phase: 'ordering' })
     const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
     expect(result).toMatchObject({ cart: { itemCount: 1 }, pendingCustomerChoice: { question: '請問紅燒牛肉麵要幾份？' } })
     expect(visibleItemId).toBeUndefined()
@@ -156,14 +156,14 @@ describe('required order configuration', () => {
       const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
       await runtime.invoke('kiosk_fast_path_context', { transcript: '我要兩份牛肉麵' })
       await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
-      const old = await runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？' }) as { waitingFor: { questionId: string } }
+      const old = await runtime.invoke('kiosk_fast_path_context', { transcript: '有便當嗎？' }) as { waitingFor: { questionId: string } }
       await expect(runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃', newRequestQuestionId: old.waitingFor.questionId })).rejects.toThrow('STALE_PLAN')
       vi.setSystemTime(Date.now() + 31_000)
-      await expect(runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？', newRequestQuestionId: old.waitingFor.questionId })).rejects.toThrow('STALE_PLAN')
-      const fresh = await runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？' }) as typeof old
-      await runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？', newRequestQuestionId: fresh.waitingFor.questionId })
+      await expect(runtime.invoke('kiosk_fast_path_context', { transcript: '有便當嗎？', newRequestQuestionId: old.waitingFor.questionId })).rejects.toThrow('STALE_PLAN')
+      const fresh = await runtime.invoke('kiosk_fast_path_context', { transcript: '有便當嗎？' }) as typeof old
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '有便當嗎？', newRequestQuestionId: fresh.waitingFor.questionId })
       await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })
-      await expect(runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？', newRequestQuestionId: fresh.waitingFor.questionId })).rejects.toThrow('STALE_PLAN')
+      await expect(runtime.invoke('kiosk_fast_path_context', { transcript: '有便當嗎？', newRequestQuestionId: fresh.waitingFor.questionId })).rejects.toThrow('STALE_PLAN')
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'configuration', references: [{ label: '紅燒牛肉麵' }] })
       expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
     }
@@ -202,13 +202,13 @@ describe('required order configuration', () => {
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我要兩份牛肉麵' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
     const pending = await runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？' }) as { waitingFor: { questionId: string }, candidates: Array<{ id: string }> }
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '有水餃嗎？', newRequestQuestionId: pending.waitingFor.questionId })
+    expect(pending).toMatchObject({ phase: 'ordering' })
     expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })).toMatchObject({ items: [{ id: 'dumplings' }] })
     const resumed = await runtime.invoke('kiosk_fast_path_context', { transcript: '微辣' }) as { candidates: Array<{ id: string, description: string }> }
     expect(resumed.candidates.some(choice => choice.description.includes('微辣'))).toBe(true)
-    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: pending.candidates[0].id })).rejects.toThrow('STALE_PLAN')
-    const changed = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃' }) as { waitingFor: { questionId: string } }
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃', newRequestQuestionId: changed.waitingFor.questionId })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: pending.candidates[0].id })).rejects.toThrow(/STALE_PLAN|expired/)
+    const changed = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃' })
+    expect(changed).toMatchObject({ phase: 'ordering' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
     const dumplings = await runtime.invoke('kiosk_fast_path_context', { transcript: '十五顆' }) as { waitingFor: { question: string }, candidates: Array<{ id: string, description: string }> }
     expect(dumplings.waitingFor.question).toContain('水餃')

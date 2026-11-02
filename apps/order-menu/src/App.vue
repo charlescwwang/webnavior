@@ -20,14 +20,13 @@ import MenuItemDialog from './components/MenuItemDialog.vue'
 import MenuPresentationSkeleton from './components/MenuPresentationSkeleton.vue'
 import MenuPresentationSubjects from './components/MenuPresentationSubjects.vue'
 import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
-import OrderHandoff from './components/orderHandoff.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { continuationUrl } from './continuation'
-import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmTaxId, requestTaxId, returnToPreviousStep, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
 import { connectInteractiveService } from './interactiveService'
@@ -334,6 +333,12 @@ const runtime = createMenuToolRuntime({
     assertCanRestart,
     cancel: cancelCheckout,
     chooseInvoice,
+    confirmInvoice: () => {
+      if (!checkout.value)
+        throw new Error('尚未進入發票確認。')
+      checkout.value = confirmInvoiceDraft(checkout.value)
+      return checkout.value
+    },
     confirmTaxId: confirmTaxIdNumber,
     paymentMethods: testPaymentMethods,
     paymentStatus: () => paymentStatus.value === 'pending' || paymentStatus.value === 'uncertain' ? paymentStatus.value : undefined,
@@ -871,6 +876,7 @@ onUnmounted(() => {
       :total="currency(cart.total)"
       @back="backCheckout"
       @choose="chooseInvoice"
+      @draft="(method, code) => { if (checkout) checkout = setInvoiceDraft(checkout, method, code) }"
       @details="(method, code) => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) }"
       @tax-id="openTaxId"
       @register-control="setControlElement"
@@ -917,14 +923,8 @@ onUnmounted(() => {
       @set-fulfillment="setFulfillmentMode"
       @update-quantity="updateCartLineQuantity"
     >
-      <template #seating>
-        <p v-if="fulfillmentMode === 'dine-in' && !completedOrderId" :class="['table-binding-note']">
-          完成點餐後，請先用手機掃訂單接續碼；入座後再掃桌碼綁定送餐位置。
-        </p>
-      </template>
       <template #continuation>
-        <OrderHandoff v-if="handoffUrl" :url="handoffUrl" @done="completeCustomerSession" />
-        <button v-else type="button" @click="completeCustomerSession">
+        <button type="button" @click="completeCustomerSession">
           完成，開始下一筆
         </button>
       </template>
