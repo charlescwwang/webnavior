@@ -394,30 +394,57 @@ pnpm -F @proj-airi/server-schema build
 
 ## Main conversation skill
 
-`src/services/domain/kiosk-conversation-skills` owns the built-in `ordering@1`
+`src/services/domain/kiosk-conversation-skills` owns the built-in `ordering@2`
 procedure: applicability, inquiry versus purchase, missing-slot handling, browsing,
 cart edits and receipt-based completion. Main JSON/SSE instruction assembly loads
 this same version instead of keeping separate copies of the workflow text in
 route wiring. `main_round_metrics` includes `skillId` and `skillVersion`. These are
 application runtime skills, separate from repository `.agents/skills` used by
-contributors. This first version is code-managed, not an editable skill platform.
+contributors. This procedure is code-managed, not an editable skill platform.
 
-After reliable service admission, an `UNCERTAIN_OPERATION` in the ordinary
-ordering phase can use this skill for one Main intent selection when this turn
-has exactly one exact product reference. It also handles an admitted uncertain
-answer to a still-live Menu-owned item-configuration question: only the
-intersection of that question's choices and the current candidates is offered,
-and the selected effect retains its `answeredQuestionId`. Expired or unrelated
-questions cannot be resumed. Only browser-issued meal effects are offered; Main
-cannot supply a target, quantity, tool arguments, checkout effect
-or JEV confidence. A valid selection returns an issued `FAST_ACTION` with
-`resolvedBy:main-skill`; its trace separately records skill/version, Main call
-count and duration while retaining the real JEV counts. Browser candidate
-compilation still owns target/slot resolution, revision checks, domain questions
-and execution. A missing quantity therefore opens the existing Menu question
-instead of binding the customer request to a permanently read-only Agent task.
+Menu's intent domain issues `intentRecovery` for a current request or an answer
+to its current question. Server no longer independently infers eligibility from
+phase/purpose/product-name whitelists. After reliable service admission, an
+`UNCERTAIN_OPERATION` may select only the intersection of this scope and the
+current candidates. Answer scopes must also match `waitingFor.questionId`, its
+optional stable `requestId`, the live expiry and its issued choices. A request
+scope does not consume an unrelated pending question. Domain-side tests retain
+entry/payment, ambiguous/multiple-target and category-only exclusions.
 
-Explicit read-only tasks, recovered read-only service answers, phone/checkout,
+A valid selection returns `FAST_ACTION` with `resolvedBy:main-skill` and, for an
+answer, `answeredQuestionId`. Its trace separately records skill/version, Main
+call count and duration without fabricating JEV confidence. Menu compilation
+still owns target/slot resolution, domain revisions, answer leases and execution.
+Missing quantity/options opens the existing Menu question. Provider failure,
+Main abstention, mismatched IDs or absence of a Menu scope leave the original
+handoff and its restrictions intact.
+
+Decision prompts keep facts/history separate from the final user message, which
+contains the exact current utterance. A diagnostic Main trace does not establish
+understanding; only an accepted `resolvedBy:main-skill` decision does. Before Main
+consumes an owned answer, an independent `verify_ordering_answer` decision checks
+that the selected answer covers the whole current request. An additional request
+returns to whole-request qualification without executing the proposed answer.
+Provider/protocol failure remains unavailable rather than authorizing a guess.
+
+Whole-request qualification retains `requestScope` separately from admission and
+product resolution: menu information, order information, order operation or service
+information. A browsing receipt remains authoritative through later evidence reads
+in the same task. A named lookup alone cannot complete a purchase request.
+
+Both Jev routing and bounded Main intent selection receive the Menu-owned
+`retainedRequests` contract: original request when known, foreground/retained
+status, known quantity/options, missing slots and expected revisions. The HTTP
+boundary validates it with the shared schema. General Main context retains these
+draft facts in read-only handoffs too, even if the catalog is omitted; this does
+not release task restrictions or count as a successful cart write. This progress does not itself issue an intent-recovery scope.
+
+For a live owned ordering question only, Main can also independently verify a
+weak recipient/service admission before selecting its finite answer. This does
+not promote a new catalog request from uncertain admission. Opening checkout
+requires its current checkout-entry question and never authorizes payment.
+
+Explicit read-only tasks, recovered read-only service answers, phone/later checkout,
 ambiguous or multiple products, unresolved prices, invalid/partial proposals and
 provider failure retain the prior handoff. Skill instructions do not grant writes.
 General Main still uses its existing scoped tools for demands outside this bounded
@@ -546,3 +573,9 @@ private table-hold requests require an enrolled device. Configure the Menu with
 this same-origin endpoint so the HttpOnly device cookie keeps its existing
 `/api/kiosk` scope. Catalog queries and continuation capabilities retain their
 own public access policy. The proxy never retries a write after a lost response.
+
+
+The ordering skill also treats confirmation of a valid Menu-owned invoice draft
+as the finite `checkout_confirm_invoice` operation. It advances to payment-method
+selection only; draft identifiers are not supplied in conversational context,
+and confirmation does not grant payment selection or authorization.

@@ -53,6 +53,21 @@ fields, complete product coverage and the 256 KiB abnormal-payload cap. It exclu
 browser/Node runtime dependencies, images and vendor payloads. Menu produces the
 snapshot; Kiosk binds it to a current task; Server projects it once per model
 request. This is not the Jev candidate contract or an authorization token.
+`conversationRequestSchema` describes an uncommitted meal draft: original request
+when known, active/suspended/confirming status, known quantity and option values,
+explicit missing slots, and domain revisions. An absent quantity is unknown,
+never one serving. Menu projects these facts into `retainedRequests`; Host passes
+them to Jev and Main without turning them into candidate or write authority.
+Read-only Main handoffs retain draft progress even when the catalog is omitted.
+Drafts do not represent successful cart effects or renew question tickets.
+`conversationQuestionSchema.requestId` correlates meal questions with stable
+draft identity; the answer's `questionId` identifies its separate short lease.
+`intentRecoverySchema` carries Menu-issued request effects or question-bound
+answer effects for bounded Main interpretation. The HTTP/Host boundaries validate
+this shape; the actual Menu operation still validates the current issued choice,
+customer text, domain revisions and execution rules. Passive reads issue no new
+interpretation scope from historical focus.
+
 `contextReplySchema` and `replyFromContext` let Main select information or
 clarification while the application renders facts from a fresh snapshot. They
 never render model-supplied success prose or turn snapshot data into a write receipt.

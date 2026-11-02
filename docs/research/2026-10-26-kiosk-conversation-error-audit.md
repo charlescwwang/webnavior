@@ -752,3 +752,105 @@ plugin-sdk-tamagotchi與electron-vueuse缺少模組宣告。保留失敗日誌�
 SLM／Jev實驗分支及原工作區未變動。實驗工作樹尚有未提交內容，須先保存再整合
 正式分支；比較時固定相同Main skill、Menu／Host與資料fixture，使用獨立測試
 服務／資料庫／provider設定。只切git分支不能防止共用正式DB模型設定互相影響。
+
+
+### 2026-10-31 部署後：回答內用卻推薦、後續回答票券過期
+
+只讀最近180筆正式紀錄，確認18:52加排骨便當後詢問內用／自取；18:54顧客
+回答「內用」，Main只執行menu_recommend，沒有order_set_fulfillment。內部草稿
+宣稱已設為內用，但Host只公開推薦回執。18:55顧客再次明講內用，Jev選到正確
+候選，Menu卻因前次問題票券剛過期而拒絕。這不是顧客語意不明，也不是純文字
+呈現延遲。既有六輪驗收只驗到餐點入車，未涵蓋這段後續流程。
+
+回歸先紅後綠：Main技能原先只接精確餐點與item-configuration，現也可在
+服務已確認、有效fulfillment問題存在時選其當輪候選，保留answeredQuestionId；
+不增加checkout、已過期、未提供候選、readonly權限。新精確餐點需求仍獨立處理，
+不被舊fulfillment問題攔截。技能明示內用／自取須以實際設定回執完成，不代表
+推薦、加點或開始結帳。另修復新決策沿用只剩瞬間有效舊票券的競態：每次新決策
+給仍有效且已呈現問題完整30秒回答窗口；被動讀取不續期，舊票券過期、phase與
+revision檢查仍保留。
+
+Server技能33、Host真實路由／Menu整合5、Menu問題／座位32測試通過，模型使用
+替身；變更檔案lint通過，Kiosk型別檢查通過。未呼叫正式provider或寫正式訂單，
+未部署或commit；不能宣稱正式站已修復或此次真實模型驗收完成。
+
+
+本修正已部署：使用者執行sudo腳本後，再讀systemd確認21:49:49 Taipei啟動於
+fulfillment-answer-20261031-202907/runtime/apps/server，active。3189發布檔案hash、
+47原站資產、livez／readyz200及DB／Redis健康通過。IAB公開Menu顯示7項餐點，
+入口index-CTaMXh9r.js；Kiosk註冊頁入口index-D1UL0_nW.js，均符合發布HTML。
+Manifest publicBrowserVerified記true，範圍僅頁面／DOM入口，未建立正式測試設備、
+Session或訂單，也未重跑真實provider對話。原ordering-skill發布保留供回復。
+
+
+### 2026-10-31 回答結帳邀請「好」卻沒有進入結帳
+
+正式只讀紀錄22:17：內用設定成功，系統問「要進入結帳流程嗎？」；顧客答「好」，
+Main即使做一次completion review，仍沒有工具呼叫，只回acknowledgement「好的，
+請繼續告訴我您的需求」。之後顧客明說「結帳」才開始發票流程。前一版只補到
+fulfillment，尚未承接checkout-entry。
+
+此次限定30次／2分鐘模型驗收先重現另一層失敗：同一句「好」在有效結帳問題下，
+Jev弱服務判斷導致recovery review invalid，還沒到Main操作接手就停住。因此不只
+增加checkout-entry候選，也讓Main技能獨立判讀有效已呈現ordering問題的弱服務／
+對象回答。只從該問題與當輪候選交集選擇；checkout-entry僅開啟流程或暫緩，不
+包含發票、支付方式或付款。一般新需求仍要求服務確認，readonly、失敗復核、
+過期／未提供問題、電話與後續結帳付款限制不鬆綁。
+
+先紅後綠：Server技能與Host／真實Menu整合測試覆蓋「好」進入一次發票流程，
+「先不要」維持訂單且不進入，無支付呼叫。真實provider合成單回合使用隔離DB／
+購物車、種入排骨便當與內用問答作前提，不能稱完整從零點餐驗收。自然修正前
+失敗1次（3calls）；修正後自然路由通過2次（各2calls），另以已觀察的Jev服務
+棄權作故障注入、真實Main處理通過1次（1call，trace source=main-skill）。
+共8calls／7.839秒；三次成功都進入invoice且只開始結帳一次，無payment selection。
+Private JSONL /tmp/webnavior-budget-order-checkout-entry-{before-fix,after-fix,repeat-2,main-recovery}-20261031.jsonl。
+修正未部署，不可宣稱正式站此問題已解決。
+
+
+### 2026-10-31 已查詢單一道餐，省略品名訂購又被改成推薦
+
+正式API已是checkout-entry-answer-20261031-225320，22:58:31 Taipei啟動；不是未更新。
+只讀現場紀錄：「我想吃排骨便當」由Main技能選menu_get，展示唯一炸排骨便當並
+說目前可以點；「那我要一份」卻只有cart_get、menu_recommend，未新增。字面
+productResolution=none不代表沒有可用的當輪商品參照。原Main技能只收本句精確
+品名，漏接唯一展示參照的訂購，Host因此轉readonly，重做推薦代替購買。
+
+Server與Host/Menu回歸先紅後綠。修正限定：服務已獨立確認、ordering、無待答
+問題、無新分類、唯一當輪reference且Menu已提供ADD_ITEM候選，才可讓Main
+重新判讀。模型收到current references，只選既有效果；份數、目標及revision
+仍由Menu解析／驗證。未確認服務、多人／多餐參照、無參照／候選、分類與readonly
+不取得新購買權限，單純附和仍可棄權，沒有硬編碼某個商品或「那我要一份」。
+
+本次使用者明確允許40calls／2分鐘的合成四句（想吃排骨便當、那我要一份、內用、好），
+全部隔離DB/購物車、未操作正式POS或付款。自然四輪在修正前就可通過一次
+（15calls/5316ms），因第一句走補份數而非現場的查詢。這不能證明查詢路徑已好。
+種入現場已查詢單一品項的前提，再以真實模型執行省略品名訂購，修前確實失敗
+（4calls/2872ms）：推薦同一道餐、cart0。修後同前提的三輪連續真實模型通過
+（11calls/3923ms）：bento1/130→dine-in→checkout_invoice，結帳只啟動一次，無支付。
+總30calls/12111ms；修後是查詢前提種入的三輪，不稱無種入完整四輪驗收。
+Private /tmp/webnavior-budget-order-context-order-{before-fix,read-prefix-before-fix,read-prefix-after-fix}-20261031.jsonl。
+此修正尚未部署。
+
+
+### 2026-11-01 餐點確認回答「對，一份」轉為價位／種類問題
+
+只讀最新正式紀錄，API仍是checkout-entry-answer-20261031-225320。此次現場
+原句依序為「一份排骨飯」→關聯商品查詢、「排骨便當」→「您是要點炸排骨便當嗎？」、
+「對，一份」→Main只執行menu_recommend(action:clarify)，回「你想調整價位，
+還是換餐點種類？」。這個確認分支未被先前的省略品名案例覆蓋；原本僅Menu的
+mealClarification測試，也沒有列入新集中回歸專案，不能稱之前已完整保護。
+
+此次Server與Menu測試先重現失敗再修：Main技能補承接有效meal_confirmation／
+confirm-meal問題，僅選當前yes／no，不取得付款權限。Menu原本只用提議原句
+解析份數，現在在Host建立回答情境時保存questionId對應的瀏覽器原句，消耗yes
+時用該回答解析新份數／選項，以原提議為上一片段；被動快照不覆寫回答。
+消耗、拒絕、過期、replay與revision檢查保留。
+
+已將四組無個資的現場原句及觀察錯誤保存為
+apps/order-menu/src/evaluation/orderingIncidents.ts，現有整合測試直接引用：
+內用變推薦、同意結帳變附和、唯一餐點省略品名訂購、此次確認兼份數。
+新增整合測試使用本次完整三句的已觀察lookup／confirmation前提，透過實際
+Server/Host/Menu確認排骨便當1份／130實際入車。模型仍為替身，不稱真實模型驗收。
+新增拒絕兼份數不得購買／污染原草稿反例，並將Menu確認套件接入根CI專案。
+固定test:ordering-regressions實跑198通過、2個opt-in跳過，共12files；型別與lint通過。
+真實模型confirmation-order模式已準備但未執行，與部署／commit均仍未完成。
