@@ -18,7 +18,11 @@ accumulating history.
   URLs and overlays only this1shared source into the active runtime. Closed16-model
   quantity acceptance is not rerun or represented as fresh validation for this wording edit.
   Release path after packaging: /tmp/webnavior-ordering-copy-release-path.
-  Final switch needs sudo; independently verify deployment before claiming live.
+  User completed sudo switch. Active release is ordering-copy-20261102-171742;
+  independent3189file hashes/47origin assets, livez/readyz DB/Redis and exact API
+  WorkingDirectory passed. Evidence /tmp/webnavior-ordering-copy-postdeploy-verification.json.
+  Public browser/live ordering not exercised. Existing Kiosks must reload for new wording.
+  Quantity-limit release is now the rollback baseline; its model acceptance stays closed.
 
 - Nov2 QUANTITY LIMIT REPAIR COMMITTED, DEPLOYED AND INDEPENDENTLY VERIFIED.
   Production repair checkout remains `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`,
