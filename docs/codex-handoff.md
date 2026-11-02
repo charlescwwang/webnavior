@@ -7,6 +7,53 @@ accumulating history.
 
 ## Current State
 
+- Nov2 CHECKOUT NAVIGATION / CONFIRMATION ACCEPTED; COMMIT/DEPLOY REQUEST ACTIVE.
+  User returned from array-microphone assessment to latest ordering attempt.
+  Latest field session evidence is private /tmp/webnavior-latest-ordering-20261102.json;
+  additional meal DID succeed; dine-in was explicitly selected earlier, not defaulted.
+  Actual failures: open-cart acknowledgement, takeout confirmation choosing carrier,
+  and return-to-order reading facts without leaving invoice. Retain these distinctions.
+  Menu publishes one operation-confirmation question to both Host and Main, bound
+  to the existing single-use15s/revision ticket; Main answers only on a subsequent
+  task after presentation, via order_answer_confirmation. Host stops at this question.
+  Expired/stale answers cannot become invoice choices. Cancellation retains checkout;
+  reaffirming current mode is a no-op. Read-only cart_get(display:true) may reveal
+  review, but preserves checkout; checkout_cancel owns return from invoice entry.
+  Main service qualification distinguishes screen return from order information.
+  Checkout names the retained POS mode. No keyword consent routing/new dependency.
+  Permanent15 navigation unit cases + compiled validator, Host stop regression,
+  4 real-component browser cases;14 separate N01 scripts (direct Main and Jev/Main)
+  retain original112 positions. User explicitly authorized THIS synthetic batch
+  with existing Jev/Main credentials and no preset quota. Ledger CLOSED-ACCEPTED:
+  /tmp/webnavior-order-navigation-20261102.ledger.json,212 total calls; final14
+  runs21..34 allpass on identical source,86calls. Failures1/14/16 retained and linked
+  to repaired cases in conversationFindings.json; never count them as final passes.
+  Acceptance /tmp/webnavior-order-navigation-acceptance.json records runtime hashes.
+  Current Persona matches latest field profile; production DB reads forced read-only,
+  isolated PGlite Session/cart; no production POS/payment or configuration writes.
+  Menu853pass/202skip; fixed gate315pass/3skip; Server routes/skill/context143pass;
+  browser13pass. Counts overlap. Menu/Kiosk/Server scoped types and changed ESLint
+  pass. User then explicitly requested plain-Chinese batch commits and deployment,
+  superseding earlier no-commit guidance. Commit groups: Menu/ticket; Main/Host;
+  permanent incident/browser regressions; README/handoff. Normal hooks and root lint
+  pass (11warnings,0errors); no new provider calls. Root types are not repeated:
+  the prior commit gate found untouched electron-vueuse/electron-eventa errors;
+  all3 affected package types passed. Menu/Kiosk production builds completed with
+  public API/Menu URLs. Deployment packaging must include Menu + Kiosk + API together,
+  preserve accepted runtime hashes, and start from active invoice-main release.
+  Builder /tmp/prepare-webnavior-navigation-release.py enforces clean committed
+  source, closed212-call proof,14 final cases,3 expected API overlays and build logs.
+  Prepared path is written to /tmp/webnavior-navigation-release-path; inspect its
+  release.json and run switch-release.py --check before publication. Uses the
+  full Menu/Kiosk/API switch from invoice-kinds, not the API-only invoice-main switch.
+  sudo -n true requires a local password, so admin switch cannot be run unattended;
+  finish all packaging/preflight before providing the exact command to the user.
+  No deployment has occurred yet. After user switch output, independently verify
+  active WorkingDirectory, livez/readyz and origin files; then update actual state.
+  Earlier API-only invoice-main release IS active: read-only systemctl confirms
+  invoice-main-20261102-141409/runtime/apps/server. Origin47/health not rechecked here.
+  Array audio remains assessment-only; Python supplied by user is not integrated.
+
 - Nov2 USER REQUESTED PLAIN-CHINESE BATCH COMMITS THEN DEPLOYMENT.
   Current explicit commit request supersedes earlier no-commit implementation
   instruction. Formal recovery worktree only, branch codex/kiosk-production-recovery.
@@ -27,15 +74,14 @@ accumulating history.
   and clean committed source before packaging; no new provider calls required.
   Package prepared and --check passed3189files:
   /home/aimax/.local/share/webnavior/releases/invoice-main-20261102-141409.
-  scopeapi only, one route overlay; frontend publishing disabled. sudo -n stopped
-  before execution because a local password is required. No publication yet.
-  User terminal command: sudo python3 <release>/switch-release.py.
-  After user output, independently verify health, WorkingDirectory and47origin
-  files, then record actual deployment. Current API remains invoice-kinds.
+  Scopeapi only, one route overlay; frontend publishing disabled. Initial local
+  sudo needed a password; subsequent user deployment is now confirmed by active
+  API WorkingDirectory during the navigation investigation above. Do not repeat
+  the old switch or claim47origin/health were verified in this investigation.
   Original carrier loop still not reproduced; diagnostics are for confirming
   deployed readiness/tool offer, not proof of live fix. No POS/payment test.
 
-- Nov2 DIRECT MAIN INVOICE OMISSION FIXED AND ACCEPTED; NOT DEPLOYED.
+- Nov2 DIRECT MAIN INVOICE OMISSION FIXED AND ACCEPTED; API DEPLOYED ABOVE.
   Existing completion review only covered ordering; direct Main could return
   please-click-confirm prose then reply-only acknowledgement without an effect.
   Extended one-per-task review to valid invoice/tax confirmation with offered
@@ -60,9 +106,9 @@ accumulating history.
   IMPORTANT: original live carrier repeat-selection loop not reproduced; user had
   refreshed and enabled button. Related omission fix accepted, original root not
   proven. New diagnostics distinguish readiness/tool-offer/model mismatch after
-  deployment. No formal Session/POS/payment tests. Current production remains
-  invoice-kinds-20261102-132158. Next on deployment request needs API route overlay
-  only; preserve that release/frontends and rollback backup. Do not claim live fix
+  deployment. No formal Session/POS/payment tests. The subsequent API-only invoice-main deployment is recorded above; retain
+  invoice-kinds frontends and rollback backup. New navigation changes now require
+  API/Menu/Kiosk together. Do not claim live fix
   verified until the deployed original symptom is checked.
 
 - Nov2 INVOICE KINDS DEPLOYED AND INDEPENDENTLY VERIFIED.

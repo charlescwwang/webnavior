@@ -161,6 +161,34 @@ Set `VITE_ORDER_MENU_PUBLIC_URL` to the customer-reachable menu URL when scannin
 from a separate phone; a localhost QR is intended for desktop testing only.
 That device must also reach the configured `VITE_ORDER_MENU_SERVER_URL`.
 
+Checkout announces the retained dine-in/pickup setting rather than choosing it
+again. A requested mode that already matches the order is a reaffirmation and
+keeps checkout open. Changing it during checkout offers an
+`operation-confirmation` question bound to a single-use confirmation ID, cart,
+checkout and selection revisions, and a 15-second expiry. Both Jev and Main
+receive this question instead of the underlying invoice question. Host stops
+the tool loop until the next customer turn; Main answers through
+`order_answer_confirmation` only after the question was presented, using its
+exact ID. Confirmation returns to review and changes the mode; cancellation
+retains the original mode and checkout. Stale/expired confirmations cannot
+become invoice choices or authorize another operation.
+
+An explicit `cart_get({ display: true })` can open review during a read-only
+order inquiry, without changing cart contents or presenting a new checkout
+question. `display: false` remains an internal read. Cart display preserves an
+active checkout screen; returning from invoice entry to the order uses
+`checkout_cancel`, which retains meals and the fulfillment mode. A request to
+return to the order is navigation, not merely an inquiry about order contents.
+
+The Menu question contract, Kiosk stop-and-wait handling and Main skill changes
+must be released together. `checkoutNavigation.test.ts` and
+`CheckoutNavigation.browser.test.ts` cover ticket ownership and real component
+surfaces. The root `kiosk-field-regressions` project includes the deterministic
+navigation cases. Fourteen separate `N01-*` incident scripts retain both direct
+Main and Jev/Main paths; the accepted original112 positions remain unchanged.
+Provider replays are opt-in and require authorization to use the configured
+resources; deterministic tests never spend provider calls.
+
 ## Run locally
 
 Historical evidence and deterministic boundary replays live in `src/evaluation`.
