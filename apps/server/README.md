@@ -147,6 +147,13 @@ It exercises the production chunker, ASR gateway and whole-utterance queue,
 checking bounded uploads, correction order and one final delivery. It does not
 verify microphone capture, the HTTP device route, model interpretation or POS.
 
+The Kiosk ASR gateway supplies the short OpenAI-compatible transcription `prompt`
+“餐廳點餐與結帳，付款方式包含 LINE Pay、街口支付。” to help recognize payment
+brand names. This is recognition context, not a transcript replacement rule; the
+provider's returned text is preserved. Providers must support the transcription
+`prompt` field for the hint to take effect; actual recognition still requires
+recorded speech acceptance. See [transcription prompting](https://developers.openai.com/api/docs/guides/speech-to-text).
+
 Kiosk ASR uploads have a dedicated 1MiB body limit shared with the client audio
 contract. Oversized uploads return413 with `KIOSK_AUDIO_TOO_LARGE`; generic Hono
 HTTPException statuses are retained instead of being converted to500. Other
