@@ -1,11 +1,11 @@
 # Firefox 陣列麥克風最小整合計畫
 
-日期：2026-11-05。狀態：已分批提交並完成發布包，等待管理員切換；實體 UMA-8／真人方向效果尚待驗收。
+日期：2026-11-05。狀態：已分批提交、完成切換與來源站驗證；實體 UMA-8／真人方向效果尚待驗收。
 
 
 ## 2026-11-05 發布
 
-發布包：`/home/aimax/.local/share/webnavior/releases/spatial-mask-20261105-002420`。更新Kiosk、自動Mask選路、後端設備WARN與獨立比較頁；Menu／Admin／DB維持原版。舊Admin比較錄音與migration0047不在本次範圍。切換前已核對3198檔案與原版本，仍需管理員執行switch-release.py，不能當成已上線。
+發布包：`/home/aimax/.local/share/webnavior/releases/spatial-mask-20261105-002420`。更新Kiosk、自動Mask選路、後端設備WARN與獨立比較頁；Menu／Admin／DB維持原版。舊Admin比較錄音與migration0047不在本次範圍。使用者已執行管理員切換；已獨立核對3198個發布檔案、50個來源站入口／資源、API執行目錄與livez／readyz（DB／Redis正常）。公開瀏覽器互動與實體麥克風／真人效果仍未驗收；現有頁面需重新整理。
 
 乾淨版本35個Kiosk單元、2個VAD、7個共享WAV與1個Server診斷案例通過。瀏覽器92通過／1失敗／6略過；結帳焦點案例在未修改元件與原版翻譯下同樣失敗，證據保留。全庫lint零錯誤；全庫型別檢查遇既有Electron／SDK問題；受影響檔lint及Server／Kiosk型別與建置通過。未驗證真人音訊與實體UMA-8，未呼叫模型。
 

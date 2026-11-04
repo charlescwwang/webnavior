@@ -7,7 +7,7 @@ accumulating history.
 
 ## Current State
 
-- Nov5 SPATIAL MASK release PREPARED, waiting for administrator switch.
+- Nov5 SPATIAL MASK DEPLOYED and independently origin-verified.
   Path: /home/aimax/.local/share/webnavior/releases/spatial-mask-20261105-002420
   Code1d65731(audio/local comparison),1cf7b9f(automatic routing/VAD),ce7e977(Server
   diagnostics). Normal commit hooks altered no files. Runtime overlays only kiosk
@@ -27,14 +27,16 @@ accumulating history.
   Affected ESLint + Server/Kiosk types and public Kiosk/comparison builds pass.
   Earlier synthetic oracle1e-7,1800s accelerated duration and Firefox130s transport
   evidence retained; no human speech/real UMA-8 acceptance or provider calls.
-  Preflight verified3198 files + exact active baseline. sudo -n needs a password:
-  sudo python3 <release>/switch-release.py; then verify health/origin assets/runtime.
-  Active version remains payment-support-20261104-175133 until switch succeeds.
+  User completed sudo switch. Independently verified exact API WorkingDirectory,
+  livez/readyz(DB/Redis),3198 release hashes and50 origin Menu/Kiosk/mic-check assets.
+  Evidence: release acceptance/postdeploy-verification.json. Public-browser/hardware
+  speech acceptance remain unverified; reload existing Kiosk/comparison pages.
+  Active: spatial-mask-20261105-002420; rollback payment-support-20261104-175133.
   Release is independent of the temporary build checkout. Recovery branch synced
   without dropping deferred Admin/media/schema changes. No experimental edits.
 
 - Nov4 PAYMENT SUPPORT DEPLOYED and independently origin-verified.
-  Active: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
+  Previous: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
   User completed sudo switch; independently checked exact API WorkingDirectory,
   livez/readyz(DB/Redis),3189 release hashes and47 origin Menu/Kiosk HTML/assets.
   Evidence: release acceptance/postdeploy-verification.json and /tmp/
