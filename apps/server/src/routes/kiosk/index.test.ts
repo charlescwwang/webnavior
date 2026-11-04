@@ -46,6 +46,23 @@ describe('kiosk routes', () => {
     db = await mockDB(schema)
   })
 
+  it('records device audio warnings without requiring a customer session or accepting conversation content', async () => {
+    const kioskService = createKioskService(db)
+    const registration = await kioskService.registerDevelopmentDevice({ registrationCode: '483920' })
+    const audioWarningLogger = vi.fn()
+    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'failed' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway, runtimeModelPolicy, audioWarningLogger }))
+    const warning = { generation: 1, stage: 'mask_runtime', outcome: 'standard', channels: 8 }
+    const send = (body: unknown, authenticated = true) => app.request('/api/kiosk/audio/warnings', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(authenticated ? { Cookie: `${kioskDeviceCookieName}=${registration.credential}` } : {}) }, body: JSON.stringify(body) })
+    expect((await send(warning, false)).status).toBe(401)
+    expect(audioWarningLogger).not.toHaveBeenCalled()
+    expect((await send({ ...warning, transcript: 'customer words' })).status).toBe(400)
+    expect(audioWarningLogger).not.toHaveBeenCalled()
+    expect((await send(warning)).status).toBe(200)
+    expect(audioWarningLogger).toHaveBeenCalledExactlyOnceWith({ ...warning, deviceId: registration.device.id, siteId: registration.device.siteId })
+    expect(await db.query.kioskVisitorSessions.findMany()).toHaveLength(0)
+    expect(await db.query.kioskInteractionEntries.findMany()).toHaveLength(0)
+  })
+
   // Report: docs/research/2026-10-27-security-audit.md
   it('proxies POS requests only for an enrolled device and rejects foreign origins and arbitrary paths', async () => {
     const forward = vi.fn<NonNullable<KioskRoutesOptions['posGateway']>['forward']>(async () => Response.json({ payment: { id: 'scratch-payment' } }))
