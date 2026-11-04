@@ -7,6 +7,46 @@ accumulating history.
 
 ## Current State
 
+- Nov4 PAYMENT SUPPORT release prepared; waiting for administrator switch.
+  Path: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
+  Code commits08969e9(cloud)/5931a77(ASR)/bcb7844(payment deadline). Normal hooks
+  changed no files. Clean-source Menu34+ASR3+cloud7+Host241 passed;51Host skipped.
+  Server/Menu/Kiosk types and both public-URL builds passed. Full-repo lint has
+  2362 pre-existing errors outside changed files; one root typecheck failed in
+  electron-vueuse/electron-eventa. Logs retained in release acceptance/.
+  switch-release.py --check verified3189 files and exact previous runtime/indexes;
+  runtime independent of temporary build checkout. No DB/provider/Admin/mic change.
+  sudo -n requires a password. User must run sudo python3 <release>/switch-release.py;
+  then independently verify health, API WorkingDirectory and origin HTML/assets.
+  Active version remains ordering-admission-20261104-155952 until switch succeeds.
+  Actual speech accuracy and public browser ordering have not been verified.
+
+- Nov4 ASR payment vocabulary + payment-choice countdown implemented,
+  committed in payment-support release; NOT deployed. Kiosk audio gateway sends a short transcription prompt
+  naming LINE Pay/街口支付; no transcript rewriting or new model call. Provider
+  support/actual speech accuracy are not verified by mock tests. Menu previously
+  silently returned unpaid/unselected payment stage to review after30s. Replaced
+  that timer with usePaymentSelectionCountdown: visible60s, actual deadline,
+  sync cancellation on method/status/agent/page changes, scope cleanup and fresh
+  minute on reentry. Timeout retains cart and fulfillment; never authorizes or
+  cancels pending payment. Existing test QR five-second simulation unchanged.
+  Regression tests reproduced missing prompt/UI before fix. Final Menu34/ASR3
+  tests, modified-file lint and Menu/Server typecheck passed. Logs in /tmp/
+  webnavior-payment-*.log. No provider calls, full-project checks or public browser
+  acceptance. Preserve pending cloud opt-out and microphone changes separately.
+
+- Nov4 Kiosk AIRI cloud opt-out implemented, committed in payment-support release; NOT deployed.
+  Kiosk vite.config fixes VITE_AIRI_CLOUD_ENABLED=false. Shared auth gates credits
+  only; chat store gates WS/reconcile/outbox/tombstone/cloud deletes while keeping
+  local persistence and user isolation. Existing cloud queues remain untouched;
+  other apps default to cloud enabled. Webnavior visitor recording, OIDC and
+  ASR/TTS paths unchanged. Regression tests reproduced unwanted credits/WS before
+  fix; auth/session tests cover enabled/disabled behavior. Pending mic changes
+  remain separate. Auth/session7 tests, modified-file lint, Kiosk typecheck and
+  Vite build passed; /tmp/webnavior-kiosk-cloud-check contains no credits request
+  or generic chat WS/reconcile startup markers. Logs /tmp/webnavior-cloud-*.log.
+  No full-project typecheck, Jev/Main calls or public-browser verification run.
+
 - Nov4 ORDERING ADMISSION DEPLOYED and independently origin-verified.
   Active: /home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952
   User completed sudo switch. Independently checked exact systemd API directory,
