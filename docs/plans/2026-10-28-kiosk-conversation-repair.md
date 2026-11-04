@@ -1049,3 +1049,11 @@ separately. Menu requires explicit `--base=/menu/` for production; the first pac
 was rejected by preflight, corrected and superseded before any switch. The new
 3189-file package passed switch preflight. Local sudo requires a password, so
 production is still the prior release until the user executes switch-release.py.
+
+
+User completed the ordering-admission-20261104-155952 switch. Independent checks
+confirmed its exact API WorkingDirectory,livez/readyz withDB/Redis,3189release
+hashes and47origin frontend HTML/assets. No production customer order or public
+browser interaction was performed. Rollback remains ordering-copy-20261102-171742.
+The deployed runtime/static files are independent of the temporary clean worktree;
+all pending array-microphone changes remain outside this release.
