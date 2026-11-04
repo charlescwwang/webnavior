@@ -1,18 +1,37 @@
 import type { ConversationContext } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { MenuItem } from '../domain/order-machine'
-import type { MatrixStep } from './conversationMatrix'
+import type { AcceptanceStep } from './conversationAcceptance'
+
+/** Semantic observation from the actual route; absence means unobserved, never inferred success. */
+export interface ServiceObservation {
+  admission?: 'service' | 'background' | 'uncertain'
+  meaning?: 'pause'
+}
 
 /** Assesses frozen turn gold against authoritative Menu snapshots; no model judges gold. */
-export function assessScriptTurn(step: MatrixStep, observed: { before: ConversationContext, after: ConversationContext, menu: MenuItem[], answer: string, shownHistory: Set<string>, checkoutStarts: number }) {
+export function assessScriptTurn(step: AcceptanceStep, observed: { before: ConversationContext, after: ConversationContext, menu: MenuItem[], answer: string, shownHistory: Set<string>, checkoutStarts: number, technicalFailure?: string, service?: ServiceObservation }) {
   const { before, after, menu, answer, shownHistory, checkoutStarts } = observed
   const errors: string[] = []
+  if (step.admission && !step.admissionAdvisory && (!observed.service?.admission || !step.admission.includes(observed.service.admission)))
+    errors.push(`Expected service admission ${step.admission.join('/')}, received ${observed.service?.admission ?? 'unobserved'}`)
+  if (step.meaning && observed.service?.meaning !== step.meaning)
+    errors.push(`Expected service meaning ${step.meaning}, received ${observed.service?.meaning ?? 'unobserved'}`)
   // Snapshots expose options as IDs, independent from private cart-line IDs.
   const rows = (context: ConversationContext) => context.cart.lines.map(line => ({ itemId: line.itemId, quantity: line.quantity, options: Object.fromEntries(line.options.map(option => [option.groupId, option.valueId])) })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   const actual = rows(after)
   const expected = step.cart?.map(line => ({ ...line, options: line.options ?? {} })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
   if (expected && JSON.stringify(actual) !== JSON.stringify(expected))
     errors.push(`Cart mismatch: expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`)
+  if (step.cartAlternatives && !step.cartAlternatives.some(alternative => JSON.stringify(alternative.map(line => ({ ...line, options: line.options ?? {} })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))) === JSON.stringify(actual)))
+    errors.push('Cart matches none of the approved complete outcomes')
+  // Acknowledgement wording is optional; state changes and technical faults are not.
+  const returnQuestion = step.allowCancelQuestion && after.phase === 'pending_confirmation' && after.waitingFor?.purpose === 'operation-confirmation'
+  const stateFacts = (snapshot: ConversationContext) => ({ phase: returnQuestion ? before.phase : snapshot.phase, screen: snapshot.screen, entryComplete: snapshot.entryComplete, presentation: snapshot.presentation, selection: snapshot.selection, checkout: snapshot.checkout, retainedRequests: snapshot.retainedRequests })
+  if (step.preserveState && JSON.stringify(stateFacts(before)) !== JSON.stringify(stateFacts(after)))
+    errors.push('Read-only remark changed navigation, selection or checkout state')
+  if (observed.technicalFailure && !step.allowFailure && !step.fault)
+    errors.push(`Technical failure: ${observed.technicalFailure}`)
   if (step.sameCart && JSON.stringify(rows(before)) !== JSON.stringify(actual))
     errors.push('Read-only turn changed cart lines')
   if (step.sameCart && !step.fulfillment && before.cart.fulfillmentMode !== after.cart.fulfillmentMode)
@@ -23,7 +42,7 @@ export function assessScriptTurn(step: MatrixStep, observed: { before: Conversat
     errors.push(`Expected entryComplete ${step.ready}`)
   if (step.screen && after.screen !== step.screen)
     errors.push(`Expected screen ${step.screen}, received ${after.screen}`)
-  if (step.phase && after.phase !== step.phase)
+  if (step.phase && after.phase !== step.phase && !returnQuestion)
     errors.push(`Expected phase ${step.phase}, received ${after.phase}`)
   if (step.purpose && after.waitingFor?.purpose !== step.purpose)
     errors.push(`Expected question purpose ${step.purpose}, received ${after.waitingFor?.purpose}`)

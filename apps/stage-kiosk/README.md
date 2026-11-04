@@ -75,6 +75,20 @@ purchase question again. This read has an additional recipient check; ordinary
 Yes/No answers still take one Jev call. Companion speech and uncertain recipients
 remain silent. Named alternatives, categories and filters use normal routing.
 
+Service clarification is a bounded context cue, not automatic admission for the
+next microphone segment. Silent background/uncertain segments neither renew nor
+consume its original expiry; an accepted handoff settles it, and Menu revisions
+or expiry invalidate it. Only admitted clarification turns add chat messages and
+paired transcript metadata. Existing short answers still require their current
+question and its issued operation authority. Background long-chain regressions
+are retained in Order Menu's incident scripts alongside the frozen112 suite.
+Silence describes presentation, not intent: background, uncertain recipient and a
+valid read-only pause are assessed separately. Recovery timeout/invalid/provider
+failures remain technical failures even if the outer decision still has an
+uncertainty reason. Model replay records `serviceObservation` from actual scope,
+recovery or finite decision evidence, and checks accepted dialogue/cue/tool effects
+before accepting an unadopted turn. A completed sentence is not service evidence.
+
 ## Fresh Main rounds
 
 After phone entry, Main receives the complete compact catalog and current Menu
@@ -1024,6 +1038,12 @@ provide the existing environment and explicit limits described above, plus
 ```sh
 pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/budgetOrderReplay.test.ts
 ```
+
+The harness applies the explicitly versioned outcome policy from
+`conversationAcceptance.ts` without modifying the frozen matrix. Artifacts include
+both `historicalScript` and the current script plus `acceptancePolicy`; optional
+replies never waive state preservation or hide failed model recovery. Keep
+superseded/deferred positions separate from current functional results.
 
 Use a new0600 output path each time. The JSONL includes frozen script metadata,
 turn snapshots, raw provider wire without credentials, receipts, assessments and

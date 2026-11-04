@@ -44,6 +44,14 @@ export const orderingIncidents = {
  */
 export const reportedIncidentEvidence = [
   {
+    id: 'reported-20261103-background-service-clarification-loop',
+    source: 'User report Nov3; read-only production ASR, reply and recovery telemetry retained privately; utterance13/15/52 correlate by utteranceId, not timestamp adjacency',
+    utterances: ['判斷的話就是回答出來的東西', '它卻出現了第四個字', '我... 而且它是一個...', '資源放上去', '然後也設計掉了一個燈', '這邊雙區統統使用電子蓋', '讓他查出來的東西非常的多'],
+    observed: 'Unrelated speech repeatedly received 請說明您想查詢的餐點或要做的操作，我才能接著協助。 or another service clarification. Recovery for utterance13/15/52 returned admission=uncertain, disposition=abstain, yet the program renewed SERVICE_CLARIFICATION. A valid cue bypasses ordinary Jev admission and uses Main review directly. Other recovery rounds did correctly return background/ignore. Follow-up read of the same whole session found68 assistant replies (47 service clarifications,20 verified replies,1 other) over about13minutes. Background technical speech about 電子蓋 received a menu-specific clarification. The real context projector retained21 user turns and68 assistant turns; its last12 messages contained9 assistant messages and3 user messages, including orphan clarification prompts.',
+    gaps: ['IN PROGRESS: admission/history fixes and synthetic provider probes exist; final complete acceptance is still pending. Required boundary: unconfirmed service scope must remain silent; confirmed vague service requests may clarify, and valid contextual short answers must keep working.', 'The excerpt contains only the latest250 entries, not the whole session. 資源放上去 has an observed reply but no matching recovery event in this excerpt; do not assign an adjacent utterance recovery to it.', 'Ignored speech is not fully archived as conversational text, so archived response counts cannot establish the percentage of all captured speech accepted. The context is bounded to12messages/4000characters; the confirmed issue is polluted content, not proven unbounded model-token growth.', 'Existing unit expectation explicitly accepts SERVICE_CLARIFICATION for uncertain/abstain with an active cue. It proves no operation, but omits the required silence boundary. Synthetic provider scripts are linked; exploratory passes do not establish final complete acceptance.'],
+    syntheticScripts: ['B01-J-L1', 'B01-J-L2', 'B02-J-L1'],
+  },
+  {
     id: 'reported-20261102-large-quantity-rejected',
     source: 'User report Nov2; private read-only field transcript and rejected tool receipt retained',
     utterances: ['那我要200份招牌便當、200份排骨便當'],
@@ -291,3 +299,110 @@ for (const channel of ['main-direct', 'jev-main'] as const) {
     { text: '我有200元，可以吃什麼', sameCart: true, nonempty: true, maxPrice: 200, forbidden: '每種餐點單次最多|這次超量' },
   ] })
 }
+
+// Report: reported-20261103-background-service-clarification-loop. These are
+// synthetic conversation sequences, not a replay of the private full session.
+for (const [index, background] of [
+  ['小王，你昨天看什麼電影？', '它卻出現了第四個字', '判斷的話就是回答出來的東西', '我是在跟旁邊的人說程式的問題', '這段電子蓋的技術資料你回去再看'],
+  ['小李，我們待會開會要看這筆訂單的程式紀錄', '他的資訊給得非常非常的細', '然後也設計掉了一個燈', '我不是在點餐，我在跟同事討論測試', '你先跟小王討論昨天的電影'],
+].entries()) {
+  incidentConversationScripts.push({
+    id: `B01-J-L${index + 1}`,
+    title: '連續背景插話後仍能完成點餐',
+    source: 'reported-20261103-background-service-clarification-loop',
+    kind: 'adversarial',
+    group: 'background-admission',
+    catalog: 'current',
+    provenance: 'Synthetic background sequences mixed with real service requests; expected silence is human-authored, not model-judged.',
+    initial: { entry: 'ready', cart: [] },
+    steps: [
+      { text: '我想請你幫忙，但我還沒有說清楚要做什麼', sameCart: true, reply: '什麼|哪|查詢|說明|說一次' },
+      ...background.map(text => ({ text, sameCart: true, silentOnly: true })),
+      { text: '我要水餃', sameCart: true, purpose: 'item-configuration' },
+      { text: '小王，我剛剛說的是電影裡的水餃，不是在跟機器點餐', sameCart: true, silentOnly: true },
+      { text: '兩份', cart: [{ itemId: 'dumplings', quantity: 2 }] },
+      { text: '我是在跟同事說電子蓋，不是問餐點', sameCart: true, silentOnly: true },
+      { text: '我要內用', sameCart: true, fulfillment: 'dine-in' },
+    ],
+  })
+}
+
+incidentConversationScripts.push({
+  id: 'B02-J-L1',
+  title: '沒有服務追問時的背景談話與恢復點餐',
+  source: 'reported-20261103-background-service-clarification-loop',
+  kind: 'adversarial',
+  group: 'background-admission',
+  catalog: 'current',
+  provenance: 'Synthetic sequence with no initial service cue; original reported snippets are diagnostic evidence, not a complete historical replay.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    ...['判斷的話就是回答出來的東西', '它卻出現了第四個字', '我... 而且它是一個...', '資源放上去', '然後也設計掉了一個燈', '這邊雙區統統使用電子蓋', '讓他查出來的東西非常的多'].map(text => ({ text, sameCart: true, silentOnly: true })),
+    { text: '我要排骨便當一份', cart: [{ itemId: 'fried-pork-chop-bento', quantity: 1 }] },
+    { text: '小王，我們的程式裡面內用跟自取那一頁你再看一下', sameCart: true, silentOnly: true },
+    { text: '內用', sameCart: true, fulfillment: 'dine-in' },
+  ],
+})
+
+/** Deferred by the user on Nov3; retain frozen gold and failures without counting a pass. */
+export const deferredConversationScripts = [{
+  id: 'D04',
+  reason: '使用者暫緩「幫我那個，那個，先不要變更」上下文挑戰；保留原金標與失敗紀錄，整條鏈不列本次阻擋項目，也不算通過。',
+}] as const
+
+/** User-confirmed current behavior; the original C15-A1 gold remains historical evidence. */
+export const supersededConversationScripts = [{
+  id: 'C15-A1',
+  replacementId: 'B03-J-A1',
+  confirmedAt: '2026-11-04',
+  reason: '使用者確認：仍無法辨認目標的重複回答，保留訂單並安靜等待講明品名，不反覆追問。',
+}] as const
+
+incidentConversationScripts.push({
+  id: 'B03-J-A1',
+  title: '重複未明指涉保持安靜，講明品名後接續訂購',
+  source: 'user-20261104-unbound-reference-wait',
+  kind: 'adversarial',
+  group: 'background-admission',
+  catalog: 'current',
+  provenance: 'User-confirmed replacement for C15-A1; the original frozen gold and failed attempts are retained separately.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    { text: '我要那個', sameCart: true },
+    { text: '剛才說的那個', sameCart: true, silentOnly: true },
+    { text: '我明確要水餃一份', cart: [{ itemId: 'dumplings', quantity: 1 }] },
+  ],
+})
+
+// Report: Nov4 distinction between service reference, uncertain speech and companion talk.
+incidentConversationScripts.push({
+  id: 'B04-J-F1',
+  title: '相同其他問句在有效菜單對話與同伴聊天中有不同對象',
+  source: 'user-20261104-silence-is-not-admission',
+  kind: 'adversarial',
+  group: 'background-admission',
+  catalog: 'current',
+  provenance: 'Synthetic counterpart sequence; verifies service continuation without assuming any purchase authorization.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    { text: '請推薦一百元以下的餐點', sameCart: true, nonempty: true, maxPrice: 100 },
+    { text: '有其他的嗎', sameCart: true, maxPrice: 100, forbidden: '已加入|已付款' },
+    { text: '小王，有其他的嗎', sameCart: true, silentOnly: true },
+    { text: '資源放上去', sameCart: true, silentOnly: true },
+    { text: '我要水餃一份', cart: [{ itemId: 'dumplings', quantity: 1 }] },
+  ],
+}, {
+  id: 'B04-J-A1',
+  title: '沒有可用前文的其他問句不猜商品，明確點餐後可恢復',
+  source: 'user-20261104-silence-is-not-admission',
+  kind: 'adversarial',
+  group: 'background-admission',
+  catalog: 'current',
+  provenance: 'Synthetic unbound-reference control; bounded clarification or uncertainty may wait without inventing a menu target.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    { text: '有其他的嗎', sameCart: true, shown: 'empty', silentAllowed: true, forbidden: '已加入|已付款' },
+    { text: '小王，有其他的嗎', sameCart: true, silentOnly: true },
+    { text: '我要水餃一份', cart: [{ itemId: 'dumplings', quantity: 1 }] },
+  ],
+})

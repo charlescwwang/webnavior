@@ -326,6 +326,10 @@ cart/menu lookups available throughout a replacement without replaying older
 tasks or increasing the tool-round limit. For an unambiguous complete swap, the
 Agent uses `order_add_item.replaceLineId`; the owned Menu commits the replacement
 once after validating the real original line, new item and required options.
+Before execution, the existing count review also checks replacement consent against
+the current cart and complete utterance, even when every count is within the limit.
+Main-proposed removals use this same review and require consent for their exact
+line. Correcting a count does not authorize replacing or deleting an existing meal.
 
 Device interaction metadata accepts `fast_path`, `execution_failed`, and
 `unavailable`, plus the correlated `questionId`. Failed ASR decisions remain
@@ -402,11 +406,37 @@ route wiring. `main_round_metrics` includes `skillId` and `skillVersion`. These 
 application runtime skills, separate from repository `.agents/skills` used by
 contributors. This procedure is code-managed, not an editable skill platform.
 
+Every staged utterance rechecks service admission, including while a service
+clarification is pending. Uncertain service relevance and unknown service meaning
+remain distinct: a valid Menu question keeps its existing bounded answer route;
+unknown meaning with admitted recent dialogue uses contextual Main review; without
+that context, independent admission still precedes review. Neither Jev admission
+nor the screen itself grants operation authority. Main review, finite intent and whole-service qualification share the required
+`recipient:kiosk|other|uncertain` output contract; another/unconfirmed recipient cannot be
+promoted by a matching menu topic or recent assistant question.
+Review may mark cue-adjacent speech as `unrelated`; it is not forced to invent a
+new request or an answer. Recipient describes who is addressed, not whether the
+utterance changes the service topic; a new question to this kiosk stays `kiosk`.
+Showing the cart uses the read-only order-information scope, so display does not
+authorize removal or checkout. Review clarification/held-answer proposals also pass
+whole-service purpose qualification before they can restart or suppress dialogue.
+An unresolved-target question cannot reopen or renew itself on another vague
+fragment. A directed follow-up to unavailable menu data can refine its conditions
+within the original expiry, without repeating the same question. A later explicit
+meal request continues through the ordinary Menu-owned ordering flow.
+Uncertain admission, an uninterpreted clarification answer and uncertain recipient
+scope stay silent. Accepted service questions enter model history only together
+with their correlated admitted ASR source (`source:service_clarification` and
+`questionId`); orphan prompts remain in the stored evidence but are not projected.
+
 Menu's intent domain issues `intentRecovery` for a current request or an answer
 to its current question. Server no longer independently infers eligibility from
 phase/purpose/product-name whitelists. After reliable service admission, an
 `UNCERTAIN_OPERATION` may select only the intersection of this scope and the
-current candidates. Answer scopes must also match `waitingFor.questionId`, its
+current candidates. An unqualified `MENU_QUERY` proposal for a uniquely resolved
+meal also uses this same Main choice before a read-only task is bound; Jev
+information classification alone cannot erase a subsequent purchase request.
+An already qualified read-only scope remains read-only. Answer scopes must also match `waitingFor.questionId`, its
 optional stable `requestId`, the live expiry and its issued choices. A request
 scope does not consume an unrelated pending question. Domain-side tests retain
 entry/payment, ambiguous/multiple-target and category-only exclusions.
@@ -487,7 +517,7 @@ mock tests do not establish those values.
 
 `kiosk-interaction-decision/serviceRecovery.ts` owns recovery eligibility,
 adjudication/review payloads, strict fixed-tool response validation and time caps.
-It runs only for a marked valid semantic service abstention; invalid answers,
+It runs only for a marked service-admission or meaning abstention; invalid answers,
 provider failures and confirmed background do not become eligibility. Existing
 phone skip validation runs first and is not repeated by generic recovery.
 

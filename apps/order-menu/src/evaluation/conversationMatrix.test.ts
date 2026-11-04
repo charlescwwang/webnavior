@@ -6,7 +6,7 @@ import { createMenuToolRuntime } from '../webmcp'
 import { conversationScripts, highRiskScriptIds, smokeScriptIds } from './conversationMatrix'
 import { assessScriptTurn } from './conversationOracle'
 import { historyData } from './historyData'
-import { incidentConversationScripts, reportedIncidentEvidence } from './orderingIncidents'
+import { incidentConversationScripts, reportedIncidentEvidence, supersededConversationScripts } from './orderingIncidents'
 
 describe('frozen112 dialogue manifest and authoritative oracle', () => {
   it('retains112 distinct positions, all20 original chains and two evidence gaps', () => {
@@ -38,6 +38,22 @@ describe('frozen112 dialogue manifest and authoritative oracle', () => {
     expect(assessScriptTurn({ text: '小王，關閉你電腦上的視窗', silentOnly: true }, observed)).toEqual([])
     expect(assessScriptTurn({ text: '小王，關閉你電腦上的視窗', silentOnly: true }, { ...observed, answer: '好的' })).toEqual(['Background/idle turn produced a customer reply'])
     expect(assessScriptTurn({ text: '關閉電話登記' }, observed)).toEqual(['Missing customer reply'])
+  })
+
+  // Report: user-confirmed Nov4 choice; preserve C15-A1 without pretending its old expectation passed.
+  it('scores the approved unbound-reference revision without relaxing the historical gold', async () => {
+    const revision = supersededConversationScripts.find(value => value.id === 'C15-A1')!
+    const historical = conversationScripts.find(value => value.id === revision.id)!.steps[1]!
+    const current = incidentConversationScripts.find(value => value.id === revision.replacementId)!.steps[1]!
+    const runtime = createMenuToolRuntime({ menu: historyData.catalog, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const before = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    const observed = { before, after: before, menu: historyData.catalog, answer: '', shownHistory: new Set<string>(), checkoutStarts: 0 }
+    expect(assessScriptTurn(historical, observed)).toEqual(['Missing customer reply'])
+    expect(assessScriptTurn(current, observed)).toEqual([])
+    expect(assessScriptTurn(current, { ...observed, answer: '請再說一次餐點。' })).toEqual(['Background/idle turn produced a customer reply'])
+    await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+    const after = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    expect(assessScriptTurn(current, { ...observed, after })).toContain('Read-only turn changed cart lines')
   })
 
   it('rejects real wrong-item, wrong-quantity, recommendation-only and over-budget outcomes', async () => {

@@ -192,6 +192,23 @@ resources; deterministic tests never spend provider calls.
 ## Run locally
 
 Historical evidence and deterministic boundary replays live in `src/evaluation`.
+Current conversation acceptance is versioned in `conversationAcceptance.ts` separately
+from the immutable historical matrix. The approved outcome policy permits silence
+or harmless acknowledgements for selected closing/unclear remarks, and either
+whole-request refusal or legal-item-only addition for mixed oversized orders.
+It still verifies cart/state effects, rejects technical failures and preserves
+strict silence for explicit background speech. Current admission gold additionally
+records semantic class independently from reply text. A service constraint
+cannot pass as background simply because nothing changed. For explicit background
+speech the class is advisory, while silence, unchanged accepted history/cue and
+absence of operations remain required. Invoice editing may ask whether to return
+without canceling or losing data. Canceling checkout protects unsubmitted carrier
+and citizen drafts as well as tax IDs and committed identifiers; a proposed
+confirmedByUser flag does not replace the separately bound customer answer. The user-deferred synthetic “先不要送出” cases
+continue to run as advisory results, preserving their failures separately from
+required acceptance; they are never relabeled as passes.
+Historical scripts and policy
+revisions remain in each replay artifact; deferred/superseded cases are not passes.
 Run `pnpm -F @proj-airi/order-menu test:history` for these and the related target,
 clarification and recommendation regressions. Captured excerpts include source
 file/row hashes, UTC times, original dialogue/ASR, question text and authoritative
@@ -471,6 +488,9 @@ meal query or explicit `scope:catalog`. Uncertain intent/scope uses `clarify`, w
 request may use `reset`. No additional choice card is created. On exhaustion,
 continuation asks whether to change the price range or food type and retains
 the last presentation. It does not relax conditions or recycle the same batch.
+An explicit `action:continue` with neither a confirmed batch nor a usable
+presentation returns the existing clarification reply without inventing a first
+batch or changing the cart. Catalog/plan staleness checks still reject old scope.
 
 An explicit whole-menu request uses `menu_get({ scope: 'catalog', display: true })`.
 It presents all matching dishes, including previously viewed items, releases the

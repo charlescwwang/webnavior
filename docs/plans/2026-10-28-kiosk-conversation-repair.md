@@ -654,3 +654,388 @@ SLM快速16例與歷史26例使用不同分類契約／上下文／候選，不�
 - D09尚未通過：顧客明說「我想問，那個，我還沒說清楚」，原句retry正常重新送判斷，但得到INCOMPLETE，沒有回覆；gold要求clarify。沒有查回舊水果、錯誤訊息或訂單副作用。這是「明顯還沒說完時等待」與「使用者主動重試時應有澄清回饋」的行為／預期差異，不能把所有INCOMPLETE硬交Main，也不能臨時改gold算通過。需在現有等待／重試呈現流程解決並補對照測試後，再推進20×3驗收。
 
 以上兩輪皆保留當時source hash manifest；後一輪不覆蓋前一輪失敗。新的提示修改已有admission regression、decision套件測試、Server typecheck及改檔lint驗證紀錄（`/tmp/kiosk-repair-restored-*`）。CUDA恢復代表能推論，不代表全部對話驗收通過；20×3及其他尚未跑的矩陣仍保留未完成。
+
+
+### 2026-11-03 無關話語反覆服務澄清：已定位，未修正
+
+使用者回報測試時大量無關話被當作點餐。唯讀取得最新三個接待的最近250筆入口，但由於單一最新接待事件密集，這份摘錄實際集中在同一接待；不可當完整歷史統計。完整摘錄0600保留`/tmp/webnavior-admission-recent-20261103.json`。正式API仍為`ordering-copy-20261102-171742`，其`routing.ts`與`serviceRecovery.ts`和工作區完全相同，路由有效cue分支亦已直接核對正式runtime。
+
+- 正常入口有SERVICE／GREET／BACKGROUND／UNCERTAIN，BACKGROUND→IGNORE。這批23筆補判紀錄中12筆background/ignore，故不能說忽略規則完全不存在；也不能把23筆補判當全部語句數。
+- 實際原句「判斷的話就是回答出來的東西」（utterance13）、「它卻出現了第四個字」（15）與「我... 而且它是一個...」（52），依同一utteranceId核對，Main recovery為uncertain/abstain，卻出現服務澄清回覆。「資源放上去」也有澄清回覆，但摘錄缺少同回合補判記錄，不能借相鄰utterance40的background結果冒充41的判斷。
+- 路由`validCue`會直接建立eligible UNAVAILABLE，跳過一般Jev staged admission；recovery有cue時只跑review。`serviceRecovery.ts`在uncertain＋既有cue時，仍回SERVICE_CLARIFICATION、換questionId並延長30秒。Frontend呈現後又保留cue，因此無關／未確認對象的語句容易繼續收到點餐反問。背景被明確判定時仍可IGNORE並清掉cue，不宣稱每輪都是同一路由。
+- 既有`admissionRecovery.test.ts`明確期待uncertain/abstain＋cue回SERVICE_CLARIFICATION，驗了沒有actionId，卻沒驗『未確認服務範圍應靜默』；這是行為契約／驗收缺口，不能只補提示或調信心門檻算修好。
+- 最小修正方向待實作：每句重新確認服務對象／範圍，cue僅用來理解有效省略回答；未入場不得新問或續期；已確認服務但意思不清楚，才做既有澄清。保留『好／兩份』有效短答與明確模糊求助的正例，不能直接把所有不確定一律忽略。
+
+去識別原句及觀察保留在`reported-20261103-background-service-clarification-loop`，目前無syntheticScripts連結，明確標示未修、未做真實provider重驗。本次僅調查及證據保存，未修改正式決策程式、呼叫provider、commit或部署。
+
+
+同日後續：使用者指出整段持續增長、幾乎每句都被採納，不能只處理幾個原句。擴為同一接待完整文字與recovery事件（私有`/tmp/webnavior-admission-session-20261103-full.json`，0600）：07:39:39–07:53:14 UTC約13分35秒，68則助手回覆，其中47則service_clarification、20則verified_reply、1則其他；20則user_text、68則asr_transcript含重複保存，不能加總為獨立語句數。99則補判事件中59background/ignore，但忽略語句不會完整保存為正式文字，因此不能用此檔推算全部擷取語音的採納百分比，也不能拿部分IGNORE否定持續誤收症狀。
+
+除了重新反問，還確認上下文隔離缺口：Frontend把SERVICE_CLARIFICATION原句與回覆加入可見對話；持久化asr_transcript只帶source/utteranceId，沒有fast_path標記，因此Server`conversationEntries`排除這些原句，卻無條件保留其assistant_text。Main升級則另外寫成user_text並進agentInteraction。直接執行正式使用的純`buildConversationContext`投影該現場摘錄，得到21個user與68個assistant；最後12則中9則為assistant、3則user，多個追問缺少對應原句。『電子蓋』技術談話被問是哪道菜，也已落進此歷史。這是持續誤入＋自我追問污染上下文；不能只修反問措辭或單一UNCERTAIN分支。
+
+後續修正／驗收範圍應擴到服務入場、可見／持久化正式對話、Main上下文投影與釐清生命週期：未確認服務範圍的話只留診斷，不當已承接對話，也不透過自動反問產生新的有效上下文；真實短答與明確求助保留。上下文原有12則／4000字上限，未證實模型token無限成長。保留整段背景談話序列做長鏈回歸，明確區分觀測與預期；目前仍未修或provider重驗。
+
+
+### 2026-11-03 背景語音採納邊界：本次調整計畫與最後完整驗收
+
+使用者要求先規劃調整，並記住最後執行全部測試。本節為本次後續實作與交付依據；目前只有規劃及證據保存，未修正決策、未跑新版驗收、未部署。這裡的完整測試指點餐流程及此次採納邊界的完整回歸；麥克風方向／LCMV實機驗收另依陣列麥克風計畫，不混算已完成。
+
+#### 最小調整範圍
+
+1. **每輪服務採納重新成立。** 調整Server入口與recovery的既有判斷責任：有效serviceClarification只提供解讀回答的上下文，不能直接證明本句在對機器請求服務。未確認對象／服務範圍、背景談話保持靜默；已確認服務但需求不清楚才澄清。保留有效省略回答，不另堆關鍵字白名單、信心門檻或龐大提示規則。是否沿用既有review或一般admission入口，由重現測試與實作檢查決定，避免無必要地每句增加模型呼叫。
+2. **澄清不因未採納話語續命。** 移除uncertain/abstain＋cue自動新問、換ID及延長期限的行為；未採納句不得變更原問題的內容／有效期限，超時及狀態變更沿既有失效規則。清除或保留未到期問題須明確一致，並用「背景插話後真正回答」對照測試決定，不靠無限續期維持對話。拒絕、取消、切換主題與新需求也需正常結束或取代舊問題。
+3. **正式對話與診斷分開。** 沿用現有entry metadata／對話投影邊界，檢查Kiosk可見對話與conversationMessages、Server持久化／conversationEntries、Main的agentInteraction。未採納話語僅留必要診斷，不送Main作已承接需求；已採納的釐清問題與來源顧客句需能正確配對，不能留下孤立助手追問。新的狀態／欄位只有在現有契約不足時才增加。核對當前session重載歷史的處理，不直接刪除現場訂單或整批歷史，也不憑關鍵字清洗舊資料。
+4. **先重現，再改。** 從已保留incident建立會在現版失敗的測試，改掉既有「uncertain仍應反問」錯誤預期；接到永久回歸與合成provider劇本。保留原始失敗證據及修正後結果，二者分開。沿用現有runner，不另建平行測試系統。
+
+#### 必補情境與斷言
+
+- 無cue／有cue／cue過期下的背景、未確認對象、未說完片段；包含餐點字眼或「你／訂單」的旁人談話，不能只按字面認定服務。
+- 同一session長鏈：開始正常點餐→連續背景談話→有效短答→再插話→明確新需求。覆蓋此次保留的整段談話形態與近似合成變體，不把現場私有完整紀錄傳給provider。
+- 正例：「好／對／兩份／內用」依當前有效問題接續；明確模糊求助可澄清；正常加點、修改、換推薦與結帳繼續運作。
+- 每輪同時驗回覆／工具／購物車／頁面、cue ID與期限、可見對話、持久化角色配對及實際模型上下文。靜默必須沒有助手訊息／播音／寫入；診斷事件不算正式對話。背景句不得擠走有效上下文或藉自動追問成為下一輪服務證據。
+- 對象無法僅靠文字辨識時，明列限制及實際誤判；不能宣稱同方向背景語音保證可排除，亦不能把LCMV當成本次語意採納修正。
+
+#### 最後完整測試：交付前必做，不得以局部通過替代
+
+先凍結最後待交付的程式、提示／policy、菜單與模型設定身份；下列結果均對應該版本。修正期間的單檔測試不是最終完整驗收，過去版本通過不沿用成新版結果。
+
+| 層級 | 必跑範圍 | 通過依據 |
+| --- | --- | --- |
+| 離線回歸 | 此次admission/recovery/context/cue生命週期；相關Server路由與Main上下文、Host對話呈現／排隊、Menu工具／訂單流程；既有incident與矩陣的完整相關套件 | 新案先在舊版重現；新版正反例皆通過，無未授權或重複操作；未執行／條件略過分開列出 |
+| 真實Jev/Main | 凍結既有112劇本全部；orderingIncidents現存所有後續回歸劇本；新增背景長鏈及有效短答對照。既有Jev→Main與直接Main入口都覆蓋，沿現有runner核對實際路徑 | 逐案保存期望與實際路由／工具／畫面／上下文結果；修正前失敗仍保留。不得以Main備援代替Jev成功、以全部IGNORE代替正常點餐成功，或自動重跑挑最好一次 |
+| 瀏覽器整合 | 實際Host與Menu連接，背景靜默無新泡泡／播音，正常短答能完成餐點→內外帶→結帳→發票確認；背景插話後可恢復，頁面重載歷史不重引入未採納片段 | 同時看畫面與底層工具回執／上下文，不能只驗mock文字；記錄使用瀏覽器及真實／合成音訊範圍 |
+| 套件整合 | 受影響套件typecheck、改檔lint、必要Kiosk/Menu/Server建置與diff檢查；不自動跑root全專案typecheck | 對應最後程式版本完成；無關既有失敗單列，不擴大修復範圍 |
+
+新增長鏈在實作時先固定gold及重複次數，再進最後模型驗收；對隨機性敏感的背景／短答鏈至少三次獨立session，全部結果保留。112與後續incident分開列數，不更改凍結112來湊通過率。清單要追蹤每個實際案例，避免只有manifest完整性測試通過便宣稱112全部對話驗收完成。
+
+真實模型測試使用當次明確授權的既有provider／合成資料／隔離Session與購物車；本次規劃不沿用已關閉舊批次授權，也不操作正式POS或付款。最終報告分列通過、失敗、略過、未跑與限制；若測試未完或已知必要鏈仍失敗，不宣稱完成、不部署。部署須另依使用者指示，部署後另核對health與公開版本身份，不能取代以上回歸。
+
+
+#### Nov3 實作進度（尚未完成最後驗收）
+
+使用者已指示實作，並明確允許本次完整Jev／Main合成驗收使用既有設定與憑證、不預設額度；隔離Session／購物車、不操作正式POS／付款、不傳現場完整對話。授權在此批有效，不沿用到未來獨立工作。
+
+已在正式修復工作樹實作每輪入場、未採納不續問／不升級Main、孤立追問排除與有效澄清來源配對、背景不消耗原cue，以及重新報品名走Menu補份數。測試先在原版重現三個缺口；另保留Main範圍不確定仍追問的重現。真實模型再抓到未理解的澄清回答被升級成Main、與不明需求目的仍承接Jev入場提案的缺口，因此補上獨立服務補判。入場提示改為精簡獨立契約，Main交接改為明確優先順序，不能把其他領域指令或技術敘述改成餐廳求助。
+
+永久合成長鏈B01-J-L1/L2與B02-J-L1已連回incident；既有112金標未改。Runner新增正式上下文、cue生命週期與靜默副作用斷言，能抓到購物車未變但背景被保存的失敗。原始失敗與修正後結果分開保留，不能以後一次通過抹除先前失敗。
+
+第一個全量候選曾開始112＋96案例，但正常資訊追問、模糊求助及型別契約仍有問題，已停止該候選再修正；沒有完成完整驗收。真實模型與source manifests在`/tmp/webnavior-admission-model-20261103/`，用量ledger包含探索與各候選，不能混用不同sourceHash宣稱全過。最終仍須新版全量模型、三條背景鏈各三次、相關離線／瀏覽器／型別／建置驗收。未commit、未部署；正式API仍為ordering-copy。
+
+### Nov3 deferred contextual challenge
+
+The user deferred D04 (「幫我那個，那個，先不要變更」). Its frozen gold
+and failed attempts remain intact. The dependent chain is excluded from this
+batch's blocking acceptance, never counted as passed. Removed the unsuccessful
+extra reply-coverage model call. The 214 planned positions now comprise 211
+required functional runs, two diagnostic positions, and one explicit deferral.
+The fresh complete provider run remains pending.
+
+### Nov4 resumed validation
+
+The completed final3 candidate attempted all 214 positions: 191 functional passes,
+20 failures, two diagnostic completions, and one explicit D04 deferral. This is
+not a passed release gate. All failures remain in their original artifacts.
+Follow-up fixes prevent any vague fragment renewing an open service question,
+compare independent request scopes against read-only state without mistaking an
+unrelated displayed question for a revision change, and remove repeated Main
+admission after an explicit independent REQUEST. Purpose qualification still runs
+before operation authority. The replay now mirrors KioskScene's existing
+CUSTOMER_ENTRY_REQUIRED response, which it previously omitted. No frozen gold
+was changed. The final4 run completed; previous passes are not combined
+with it. C15-A1's repeated unbound reference is awaiting a user behavior choice.
+
+Final4 attempted all 214 planned positions: **189 functional passes, 22 failures,
+2 diagnostic attempts (one completed, one failed), and one user-deferred D04**.
+All nine background-chain runs passed. Source and model/role/policy fingerprints
+were constant. Actual Jev requests: 1240, failures: 0; total provider requests:
+2144. Full gate failed. Restoring explicit hearing wording afterwards passed
+D10/H04/H08/D12 and three background chains in focused probes; C06-A1 remained
+failed. No claim that the latest source passed all scripts. Full originals and
+followups are retained privately under
+`/home/aimax/.local/share/webnavior/acceptance/background-admission-20261104/`
+(owner-only access), including `model-runs/acceptanceReport.md` and
+`model-runs/final4-audit.json`. C15's unbound-reference response rule awaits user
+choice; no gold was silently relaxed. No commit or deployment.
+
+### Nov4 confirmed unbound-reference policy
+
+The user confirmed retaining the order and silently waiting after an answer still
+fails to identify a meal. Historical C15-A1 and its failed attempts remain intact;
+`supersededConversationScripts` links the current-policy replacement B03-J-A1.
+Its strict silent turn must not alter formal conversation/cart or renew the cue;
+the next explicit “我明確要水餃一份” must still add exactly one portion. Three
+independent actual Jev/Main runs passed (30 provider calls). The final scope
+qualifier now also refuses to reopen a live service question, closing a second
+path reproduced by a failing regression test. Relevant Server tests498, oracle
+tests4 and lint passed. This is a targeted acceptance, not a new full release gate.
+Future full selection must include the replacement, mark original C15-A1 as
+superseded (never passed), retain D04 as deferred, and preserve prior full scores.
+
+### Nov4 failure-cause audit
+
+All original22 failed scripts are individually mapped in the private
+`failure-analysis-20261104/analysis.md` and `analysis.json` under the retained
+acceptance directory. Counts:3hearing-definition failures,3historical reply
+expectation conflicts,5real refusals/closings rejected as background,6wrong
+operations(5invoice cancellation choices and1unrequested same-item replacement),
+1partial quantity task incorrectly completed,4Main recovery timeouts. These are
+case counts, not22independent root defects. No original scores were changed.
+
+The execution boundary validates legal tools/parameters but does not reliably
+bind cancellation/replacement to the whole current request. A quantity-limit
+receipt completes the Host round even when Main never proposed a legal sibling.
+Recovery timeouts preserve an uncertain-service outer reason; the current retry
+predicate does not read recovery.failure. These shared boundaries, rather than
+more per-utterance prompt patches, are the next repair targets. DirectMain invoice
+cases must be covered too. Code unchanged in these older execution modules is
+not proof that all failures predated this task; no formal-version A/B was run.
+
+Sequential replay of the4original timeout chains used61provider calls. All four
+original timed-out turns completed;3chains passed and C11-A2 failed later when
+“先不要加任何餐” was classified background. This supports separating timeout and
+semantic failures, but does not prove provider queueing or concurrency causality.
+This audit changed no ordering runtime code and made no deployment.
+
+### Nov4 user clarification: outcome-based acceptance
+
+The user clarified that hearing checks (“有收到我的話嗎”) and closing remarks
+(“那我先問店員”) may reasonably be treated as background. Silence is an
+acceptable outcome; a particular acknowledgement/hearing response is not a
+product requirement. Synthetic “還沒填完，不要送出／不要送出／先修改” phrases
+are low-priority adversarial inputs, not representative core customer flows.
+Do not add phrase-specific behavior merely to satisfy their old reply regexes.
+
+For a mixed legal/oversized order, rejecting the whole request is acceptable
+as well as adding only legal items. The20-per-item limit and existing cart
+must remain intact; no invented quantity reduction and no false claim that an
+unexecuted item was added. This supersedes the previously mandatory partial-add
+expectation, without rewriting historical scores.
+
+Current acceptance should judge allowed outcomes and side effects rather than
+require specific prose: background can remain silent, legitimate responses can
+vary, and business refusals are not technical failures. Unrequested cancellation
+or replacement still needs separate scrutiny: an uncommon utterance does not
+authorize changing the order. Preserve old gold/results as historical evidence;
+version the new outcome expectations explicitly before another full gate. The
+old22 failures are not22 confirmed product defects and must not be presented
+as such under this clarified policy.
+
+The implemented policy is `2026-11-04-outcomes-v3` in the test-only
+`conversationAcceptance.ts`. The harness retains historical/current scripts and
+explicit revisions. Harmless read-only pauses/closing replies are optional;
+companion/technical background remains strictly silent. Failed recovery or state
+changes are never waived. Production clauses added solely to force hearing or
+closing acknowledgements were removed; no phrase-specific classifier was added.
+
+The full outcome2 provider run completed215positions (213functional/2diagnostic)
+with one source/configuration fingerprint,2090provider requests,1197actualJev
+requests and0Jev failures. Raw v2 score was200pass/13fail; both diagnostic attempts
+failed and do not count as functional passes. V3 only relaxes C03-A1/C09-A1
+read-only pauses: both chains had reached their final turn, and their complete
+recorded outcomes pass reassessment without runtime changes. This is not a new
+v3 provider run. Current result is202accepted/11failed across7script IDs.
+
+Remaining failures: B02-J-L1 falsely admits background3/3; B03-J-A1 leaves the
+first vague ordering request silent3/3; C06-F1 misses a menu follow-up; four
+invoice edit/refusal scripts (I03-N-A3/I04-C-A1/I04-N-A1/I04-T-A1) cancel or ask
+cancellation without authorization. B01-J-L1/L2 each passed3/3. D04 stays deferred,
+C15-A1 stays superseded, original gold/scores remain immutable. Earlier outcome1
+was stopped and its passes are separate. Private evidence/report:
+`acceptance/background-admission-20261104/outcome-policy-20261104/acceptanceReport.md`.
+This is not a passed deployment gate; no commit/deployment was performed.
+
+### Nov4 correction: silence is presentation, not admission semantics (planned)
+
+The user clarified that a complete utterance can be unrelated companion speech
+or accidental background capture. Silence alone does not establish correct
+admission. Conversely, a contextual pause/refusal remains a service instruction
+even when no acknowledgement is spoken. The202/213 outcome reassessment above is
+an outcome score, not proof that every admission classification is correct;
+C03-A1/C09-A1 specifically need classification/continuation checks before being
+claimed as semantically repaired. Preserve those original results and revisions.
+
+Implementation sequence (not yet implemented):
+
+1. Extend the existing evaluation contract and real Host/Menu replay to assess
+   admission/meaning separately from response text and business effects. Reuse
+   existing admission, recovery disposition and scope decisions where available;
+   if their paths omit a necessary distinction, add only the owning diagnostic
+   reason needed to make it observable. Do not introduce another model stage or
+   equate every IGNORE/UNAVAILABLE with confirmed background. Background must not
+   become accepted dialogue, create/renew a cue or execute tools. A service pause
+   may remain unspoken, but must prevent the pending action from proceeding.
+   Preserve cart/form facts while distinguishing them from execution authority:
+   stopping an action may legitimately invalidate a pending authorization.
+2. Review the shared Jev/Main service boundary and the handoff paths against
+   the evidence, then make the smallest necessary correction. Explicit background
+   stays outside service regardless of sentence completeness. A real question
+   may use a recent qualified menu response as its referent; screen state or an
+   assistant-generated question alone cannot establish that relation. Missing
+   item/quantity is different from missing recipient/service evidence. A real
+   service request with an unknown target can receive one bounded clarification;
+   repeated unresolved input must not renew it indefinitely. Recipient/domain
+   uncertainty may wait silently, recorded as uncertainty rather than success at
+   filtering confirmed background. Never invent a target or act on a guess.
+3. Validate counterpart scenarios before full acceptance: the same short phrase
+   after a qualified menu answer, without a usable referent, and inside companion
+   speech; explicit and implicit pauses during pending actions; background then
+   recovery to a clear order; technical timeout distinct from semantic silence.
+   Preserve B01/B02/B03 and every prior failure, including invoice cancellation.
+   Use offline regressions and focused real Jev/Main probes first, then freeze
+   source/configuration/current expectations and repeat the complete executable
+   historical/incident set plus all four sensitive chains three times. Report
+   admission errors, wrong effects, technical failures, uncertainty and optional
+   response differences separately. Deferred/superseded gold remains historical.
+
+Difficulty boundary: text alone cannot always determine who is being addressed.
+Do not promise perfect recognition of “我要那個／有其他的嗎”. Require supported
+context to interpret them, allow bounded non-executing uncertainty, and measure
+both background false-admission and real-request rejection. No phrase blacklist,
+forced customer wording or unbounded prompt growth. This plan does not add ASR,
+beamforming, new dependencies, broad refactoring or deployment. Existing invoice
+errors stay visible and must not be waived as merely uncommon speech.
+
+#### Nov4 semantic correction implementation and acceptance in progress
+
+Implemented in the existing production repair worktree, not deployed. Two
+new oracle regressions reproduced silent wrong-admission false passes before the
+fix; additional tests reproduced invalid Main qualification escaping its guard,
+recovery failures appearing semantic, and unsupported-condition follow-ups being
+suppressed. Current evaluation version is `2026-11-04-admission-v4`: semantic
+admission, optional speech and business effects are separate assertions. C03-A1
+contains a price-only constraint as well as refusal, so a qualified read-only
+information interpretation is valid; C09-A1 is a pure pause. Neither may be
+misclassified as background. Raw old policy/results remain unchanged.
+
+Runtime changes stay in existing boundaries: unknown Jev purpose no longer uses
+the same reason as uncertain service recipient; valid Menu questions retain
+bounded intent recovery; contextual meaning uses the existing Main review, while
+no-context input retains independent admission. Main review includes an explicit
+recipient in the same call, and other/uncertain recipients cannot be admitted
+because of a matching topic. Invalid qualification is unavailable rather than an
+unqualified Agent handoff. A directed unavailable-data refinement retains the
+original deadline. No new classifier, package, phrase blacklist or model stage.
+The ordering skill distinguishes retaining an invoice draft from leaving checkout.
+
+B04-J-F1/A1 add same-phrase counterexamples with menu context, companion address,
+no usable referent, background imperatives after service and subsequent explicit
+ordering. The99 incident scripts supplement immutable112 positions; D04 deferred
+and C15-A1 superseded remain separate. Focused probes pass the latest counterparts,
+background chain and unbound order; their results do not substitute for the full
+gate. Full fixed-source `semantic1` is running221positions:219functional and
+2diagnostic, six sensitive chains each3 independent sessions, two workers.
+Private manifests/results: `/tmp/webnavior-admission-model-20261103/semantic1-*`.
+No source changes during that gate. Related offline validation:884Menu,
+321Host,642Server passed;11Chrome passed, Server/Kiosk package types and lint
+passed. Sets overlap and must not be summed. No full-project typecheck.
+
+The first full semantic candidate completed208/219functional passes,11failures;
+its two seeded diagnostic attempts completed but are not historical replay passes.
+Three B01-J-L1 repeats stayed silent and left history/order intact, yet their
+service-label false positive is still explicitly failed. Other failures included
+normal follow-up clarification/leakage, four direct-Main invoice edits/refusals
+changing checkout, and a cart-read followed by unrequested checkout.
+
+A subsequent fix routes review clarification proposals through the existing
+whole-service purpose boundary. Same-call recipient evidence is now shared by
+Main review, finite intent and scope qualification; review also has an unrelated
+relation choice, rather than forcing every cue-adjacent segment into new-request
+or clarification-answer. No additional model stage or transcript blacklist.
+Focused normal continuations/companion address pass; B01's remaining label error
+is retained, not rewritten into success. A fresh semantic2 fixed-source gate of
+221attempts is running; its results must stay separate from semantic1. Existing
+broader invoice/navigation faults remain in the full gate and are not waived.
+
+Semantic2 was stopped at case boundaries after C04-F1 exposed a task-caused price
+handoff regression: a review proposal became a menu read only after scope
+qualification, so the preceding price stage had skipped it. A new real API/Host/
+Menu test reproduced unresolvedPrice=true before the fix. The existing price
+resolver now runs after purpose qualification too; issued choices still skip it,
+so the test verifies the same3calls and accepted <=200Menu results. The real
+C04-F1 synthetic probe passes. Semantic2's partial result/source snapshot remain
+private and are not completed acceptance. Final semantic3 is running all221
+positions under the same immutable admission-v4 expectations. No keyword rule was
+added for the remaining B01 service-label error, and no deployment is implied.
+
+Semantic3 finished204/219functional passes,15failures;2seeded diagnostics completed.
+The raw result remains a failed gate. Its additional fixes are limited to actual
+observed boundaries: recipient is the addressee, not whether a request changes
+topic; cart display uses existing read-only order information; and an explicit
+continuation with no batch/presentation returns Menu's existing clarification
+instead of throwing. Stale catalog/plan rejection remains unchanged. A new Menu
+unit first reproduced the exception, and focused real C15-F2/N01-J-V1/B04-J-A1/
+B04-J-F1/C04-F1 pass. Final semantic4 now runs the same221positions and unchanged
+admission-v4 gold. All earlier failure counts, including class-only B01 errors and
+broader invoice/navigation effects, remain separate rather than being waived.
+
+#### Final Nov4 implementation/acceptance result
+
+The fixed semantic4 candidate attempted all221positions:219functional attempts
+(including repeated sessions),210passed/9failed;2seeded diagnostic attempts
+completed and do not prove the incomplete historical replays. Source/config hashes
+and immutable admission-v4 gold stayed constant. All six sensitive chains ran
+three independent sessions:16passed/2failed, with both failures on B01-J-L1's
+service-label error. Those two stayed silent without accepted-history/cue/tool
+effects; they remain classification failures, not retroactive passes.
+
+Other remaining failures: C15-F3 explicit dumplings1 became a recommendation;
+Q01-M-B3 replaced the existing dumplings while correcting pork200→1;
+I03-T-A3/I04-T-A2/I04-C-A1/I04-N-A1/I04-T-A1 canceled checkout or opened unwanted
+cancellation confirmation. Two invoice drafts were lost; three tax cases retained
+data but entered confirmation. No claim is made that all product issues are fixed
+or that the release gate passed. Next concern is Main's requested-effect/target
+authority and fulfillment, separate from background admission and optional speech.
+
+Final candidate used2222provider requests,1274actualJev requests with0Jev transport
+failures. This phase's full/exploratory total is854attempts/8969provider requests;
+earlier outcome-policy archives remain separate. All earlier failures, candidate
+hashes, whole dialogue outcomes, actual tools, source snapshots and frozen gold
+are retained privately under `acceptance/background-admission-20261104/
+semantic-admission-20261104/acceptanceReport.md`. Source2's partial run was stopped
+for a reproduced task-caused price-stage gap; the new API/Host/Menu regression
+and actual C04-F1 pass after the fix. No old scores or failed inputs were rewritten.
+
+Offline885Menu/322Host,569Server domain and83API route command tests,11Chrome,
+Server/Kiosk package types and changed-file lint passed; sets overlap, not summed.
+No root/full-project typecheck, commits or deployment. The production release and
+independent array-microphone work remain unchanged by this implementation phase.
+
+
+#### Purchase intent and cart-target authority
+
+An INFORMATION proposal from Jev is not a qualified read-only scope. An exact
+meal with a live Menu-issued request scope passes the existing Main finite
+choice before its task loses purchase tools. A genuinely qualified read remains
+read-only; price evidence and Menu-owned target/slot constraints still apply.
+
+The existing risky-count review also verifies consent for replacing or removing
+the precise current cart line, independently of the20-serving cap. Correcting a
+never-executed demand cannot replace another meal; clarifying an already-correct
+total cannot delete that meal. Invalid or unconfirmed reviews execute no proposal.
+Invoice cancellation similarly protects both unsubmitted identifier drafts and
+committed identifiers; a model's proposed confirmation flag is not the separately
+bound user answer. Actual manual controls keep their existing ownership.
+
+User-approved purchase-v5 gold remains separate from historical inputs/results:
+uncommon synthetic “先不要送出” cases are advisory, invoice edits may ask about
+returning while retaining data, and held-silent background class discrepancies
+are diagnostic while actual silence/history/cue/no-operation checks remain strict.
+The replay now records Host failure, resulting cart and history before asserting,
+so incomplete turns no longer omit the disputed after-state.
+
+
+Purchase3 fixed-source validation finished227positions:219required functional
+attempts passed,6advisory results(3passed/3failed),2seeded diagnostics completed.
+C15-F3/Q01-M-B3/C12-A1 each passed3 independent sessions; the6sensitive chains
+passed18sessions. Advisory invoice refusals still opened cancellation confirmation
+but retained drafts;2raw classification mismatches stayed unadopted. No blanket
+all-position pass is claimed. Historical112 gold is byte-for-byte unchanged.
+
+The final candidate used2367provider requests(1367actualJev,0transport failures).
+This repair's4840total also includes81initial focused requests,2343requests for
+failed purchase2 and49followup probes; those are separate evidence, not passes
+borrowed by purchase3. The private purchase-target-final-20261104 archive holds
+source/config hashes, full dialogue and effect receipts, compact caseEvidence,
+original failures and final results. Relevant offline681Server/891Menu/241Host
+services,three package typechecks,modified-file lint and diff checks passed.
+No root/full-project typecheck, commits or deployment.

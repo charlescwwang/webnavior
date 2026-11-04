@@ -7,6 +7,179 @@ accumulating history.
 
 ## Current State
 
+- Nov4 PURCHASE/TARGET repair COMPLETE; purchase3 required acceptance PASSED.
+  C15-F3: exact-meal unqualified MENU_QUERY uses existing Main finite choice
+  before read-only binding. Q01-M-B3: existing count review verifies replacement
+  consent at normal counts too. C12-A1 followup: same review verifies exact-line
+  removal consent, so total-count correction cannot delete the meal. Invoice
+  cancellation protects invoiceDraft/citizenCode, not only carrier/tax. Host replay
+  records final cart/history before rejecting an incomplete result. No blacklist,
+  new provider/dependency, microphone change, commits or deployment.
+  User-approved purchase-v5 keeps uncommon “先不要送出” advisory; edit may ask
+  return confirmation with retained data; background raw class advisory while
+  actual silence/history/cue/no-operation remain required. Historical gold intact.
+  FINAL purchase3:227positions =219required passed +6advisory(3pass/3fail) +2seeded
+  diagnostic completed (not original field replays). C15-F3/Q01-M-B3/C12-A1 each
+  3/3pass; six sensitive chains18/18pass. Two raw class deviations were held
+  silent;3advisory invoice negatives still opened cancel confirmation but kept
+  drafts. These are retained as observations, NEVER report every position passed.
+  Final source a80429514498b236be1b2a86544b0cf67ed69db8033331da1f4233bfb0af7729;
+  config hash unchanged;2367provider/1367actualJev requests,0Jev transport failures.
+  This repair total4840requests includes earlier81focus +2343failed candidate
+  +49followup; don't mix those passes into current gate. Old purchase2 required
+  213/217 +4fail and all original semantic4 failures remain separately retained.
+  Persistent owner-only archive: acceptance/background-admission-20261104/
+  purchase-target-final-20261104/acceptanceReport.md +audit,caseEvidence,ledgers,
+  rawdialogues,source snapshots,old gold,validation logs; prior candidate in
+  purchase-target-20261104. No runner active. Same batch authorization retained.
+  Final scoped offline681Server/891Menu/241Host services pass; Server/Menu/Host
+  package types,modified-file lint,diff pass; no root/full-project typecheck.
+
+- Nov3 ORDERING BACKGROUND ADMISSION implemented; acceptance NOT PASSED, uncommitted/undeployed.
+  User explicitly authorized this entire Nov3 Jev/Main synthetic acceptance with
+  existing credentials and no preset quota; isolated sessions/cart only, no real
+  POS/payment or full customer dialogue. Do NOT ask again within this active batch.
+  Plan: docs/plans/2026-10-28-kiosk-conversation-repair.md Nov3 sections.
+  Production remains ordering-copy; implementation only in production repair worktree.
+  Fixed cue shortcut (each turn now Jev admission), uncertain cue renewal, unknown
+  clarification-answer promotion into Main, orphan prompt context projection;
+  paired source/questionId recording and Host cue settle preserve silent expiry.
+  Recovered named new meal uses existing finite slot flow, not default quantity1.
+  Main scope prompt is now ordered/shorter; independent recovery also handles
+  unknown/weak purpose instead of treating proposed service admission as proved.
+  Real incident reported-20261103-background-service-clarification-loop retained,
+  synthetic B01-J-L1/L2 and B02-J-L1 added WITHOUT modifying frozen112 gold.
+  Final complete acceptance is REQUIRED; not yet passed. First full candidate
+  stopped after normal-service failures; do not reuse its passes for latest source.
+  Sources/config/gold hashes and every failed/successful run are in private
+  /tmp/webnavior-admission-model-20261103/ledger.json + per-run artifacts (0600).
+  Runner /tmp/webnavior-admission-model-run-20261103.py reads deployment env,
+  enforces live DB read-only, composes real route+Host+Menu in scratch DB, no POS.
+  Nov4 resumed: final3 finished191pass/20fail +2diagnostic; final4 finished all
+  214 positions:189 functional passes/22failures,2 diagnostic attempts(1failed),
+  1user-deferred D04. Its source/config hashes were constant; nine background
+  chain runs passed,1240 actual Jev requests with0failures. NOT a passed gate.
+  Main REQUEST now enters existing purpose/price/ordering qualification directly;
+  richer review remains for uncertain admission/live cue. No operation is granted
+  by admission. Open vague service questions never renew on another vague request.
+  Fixed independent-mode freshness mismatch: Menu omits unrelated old questions
+  from request scopes; read-only snapshot still includes them. Host compares the
+  issued scope with revision/expiry checks intact. Replay now mirrors the actual
+  CUSTOMER_ENTRY_REQUIRED UI reminder. Frozen112 gold remains untouched.
+  After final4, restored explicit hearing wording: D10/H04/H08/D12 and3 background
+  chains passed focused probes; C06-A1 still failed. These are NOT full acceptance
+  of latest source. Final4 failures include ambiguous-answer mandatory replies,
+  directMain invoice negatives, mixed quantity handling, tool budgets and timeouts.
+  User confirmed Nov4: repeated unidentifiable targets keep the order and wait
+  silently. Original C15-A1 remains historical gold; supersededConversationScripts
+  links its current-policy replacement B03-J-A1. Do NOT count historical C15 as
+  passed. New three-turn chain passed3 independent actualJev/Main runs(30calls),
+  including explicit dumplings1 after silence. Both recovery and final scope
+  qualification now keep a live question from reopening after an unclear reply.
+  New scope regression reproduced before the fix;498server/4oracle tests +lint
+  passed. Current incidence manifest has97scripts; future full acceptance must
+  exclude superseded C15-A1 from the blocking set and require B03-J-A1 instead.
+  Root replay runner's `all` honors deferred/superseded metadata; old final4 plans
+  remain historical and must not be reused unchanged as a current acceptance plan.
+  Persistent PRIVATE archive(0700/0600):
+  /home/aimax/.local/share/webnavior/acceptance/background-admission-20261104/
+  model-runs/acceptanceReport.md +final4-audit.json, all623attempts/7597provider
+  requests, original failures, source/config/gold manifests and local field extract.
+  This archive is historical; current active runner is listed below. Do not combine passes across source hashes.
+  Latest relevant offline:666Server,321Kiosk,868Menu,11Chrome passed; Server/Kiosk
+  package types and Kiosk build passed. Hearing-only followup decision tests493pass.
+  Nov4 cause audit completed, no runtime code changed during audit. Private report:
+  acceptance/background-admission-20261104/failure-analysis-20261104/analysis.md
+  Original22 map to:3hearing(focused fix),3historical reply-expectation conflicts,
+  5valid refusals/closings misclassified BACKGROUND,6wrong operations(5invoice
+  cancellations +1two-spice-order replacement),1premature quantity-refusal finish,
+  4Main recovery timeouts(3x8s,1x12s). Timeout replay sequential61calls: original
+  failed turns all completed;3chains passed, C11-A2 later refused-addition turn
+  still misclassified background. Four-way-load causality is NOT proven.
+  Critical boundaries: directMain cancellation trusts proposed effect/true flag;
+  cancel confirmation checks committed carrierCode/taxId, not invoiceDraft/citizen.
+  Normal-count replaceLineId is not covered by oversize-only quantity verifier.
+  Host returns completed after quantity rejection even if Main omitted a legal
+  sibling demand. Recovery timeout retains uncertain-service reason, and Host
+  retry predicate ignores recovery.failure, so technical faults look silent.
+  Latest USER clarification overrides strict old response gold: hearing checks
+  and “那我先問店員” may be background/silent; synthetic negative/edit phrases
+  are low-priority adversarial inputs, not core customer utterances. Do not force
+  an acknowledgement or specific wording to turn old regex failures green.
+  Mixed legal/oversized orders may be rejected as a whole OR add only legal items;
+  partial addition is no longer mandatory. Preserve existing cart/20 cap, never
+  silently reduce quantity or claim an unexecuted addition. Old22 are not22
+  confirmed product defects under this clarified policy. Historical gold/results
+  stay intact; explicitly version outcome-based expectations before re-scoring.
+  Implemented test-only acceptance version2026-11-04-outcomes-v3; immutable
+  historical gold stays alongside current script/policy. State/technical faults
+  still fail; companion/technical background stays strictly silent. Removed
+  runtime prompt clauses forcing hearing/closing acknowledgements; no phrase
+  classifier added. Outcome2 full provider gate FINISHED:215runs(213functional,
+  2diagnostic), one source/config hash,2090requests/1197actualJev/0Jev failures.
+  Raw v2 result200pass/13fail, both diagnostics failed. V3 only relaxes read-only
+  pauses C03-A1/C09-A1; both already finished all turns, re-evaluated evidence
+  passes, runtime unchanged. NOT a fresh v3 model run. Current result202accepted/
+  11failed across7IDs: B02-J-L1 background false-positive3/3; B03-J-A1 initial
+  vague-order silence3/3; C06-F1 valid menu follow-up silence; invoice edit/refusal
+  I03-N-A3/I04-C-A1/I04-N-A1/I04-T-A1 cancel or ask cancel without permission.
+  B01-J-L1/L2 each3/3passed. No active runner; NOT a passed deployment gate.
+  All failed/successful evidence, source manifests, old scores and v3 integrity
+  proof retained privately under acceptance/background-admission-20261104/
+  outcome-policy-20261104/acceptanceReport.md. Prior outcome1 stopped, separate.
+  Relevant offline880Menu/321Host/11Chrome/558Server pass, final v3policy13tests
+  and lint pass; Kiosk package types passed. Old22 failed-turn retrospective was
+  11acceptable/1superseded/10faults; never present that as a complete chain score.
+  Latest USER clarification: silence is presentation, not background semantics.
+  Complete companion speech stays ignored; a contextual pause/refusal is still a
+  valid service instruction.202/213 is outcome-only, not proof of correct admission;
+  re-audit C03-A1/C09-A1 classification and subsequent action suppression.
+  Nov4 semantic correction IMPLEMENTED; full semantic4 gate FINISHED, NOT PASSED.
+  Current policy admission-v4 separates semantic class, optional speech and effects.
+  Shared same-call recipient contract covers Main review, finite intent and scope;
+  other means another person, not a new request. Unrelated cue speech is explicit.
+  Review purpose proposals pass existing scope qualification; price is qualified
+  after a newly understood menu read (one-pass issued choices). Missing Menu
+  continuation context returns existing clarify reply, no invented first batch;
+  stale-catalog checks remain. Cart display uses read-only order-information scope.
+  API/Host/Menu red regressions and raw failures are retained; no phrase blacklist.
+  FINAL semantic4:221positions(219functional attempts incl repeats/2seeded diagnostic),
+  210functional passed/9failed; both diagnostics completed, not original field replay
+  passes. Six sensitive chains each3sessions:16pass/2fail (B01-J-L1=1/3pass; all
+  others3/3). B01 failures are class-only; held silent with no history/cue/tool
+  side effects, NEVER re-score them as passed.83semantic-class checks,none missing.
+  Remaining: C15-F3 explicit dumplings1 becomes recommendation, not addition;
+  Q01-M-B3 corrects pork200→1 but wrongly replaces existing dumplings;
+  I03-T-A3/I04-T-A2/I04-C-A1/I04-N-A1/I04-T-A1 cancel checkout or open unwanted
+  cancel confirmation (carrier/citizen draft loss2, tax confirmation3); B01-J-L1
+  class-only2repeats. These are real remaining failures/quality limits, not a passed
+  release gate. Main effect selection/target authority needs further work; don't
+  keep growing phrase prompts or claim admission alone proves the requested effect.
+  Source/config hashes each constant;2222provider requests/1274actualJev/0Jev HTTP
+  failures. Immutable112 and99incident gold unchanged; D04deferred/C15-A1superseded
+  not counted as passes. Older candidates remain separate: semantic1=208/219,
+  semantic2partial stopped to repair task-caused price regression, semantic3=204/219.
+  Current-phase total854attempts/8969provider requests includes59root exploratory
+  attempts151..209; don't report final2222 as all work's total. Existing user
+  resource authorization covers this same current repair/acceptance work, no preset
+  quota; no additional providers/data or production Session/POS/payment permitted.
+  No runner active. Private report/artifacts:
+  /home/aimax/.local/share/webnavior/acceptance/background-admission-20261104/
+  semantic-admission-20261104/acceptanceReport.md (all candidate successes/failures,
+  manifests, request ledgers, source snapshots2/3/final, frozen gold and regression
+  logs; owner-only). Source worktree remains uncommitted/undeployed.
+  Offline latest885Menu/322Host,569Server domain/83API route commands,11Chrome,
+  Server/Kiosk package types and modified-file lint pass; sets overlap, don't sum.
+  Package full-project root typecheck was not run. No runtime bug fixes after the
+  final semantic4 run; all implementation changes and remaining errors documented.
+  No root/full typecheck, no commits, no deployment. Source fingerprints must stay
+  frozen during final batch; stop prior runner and confirm completion BEFORE edits.
+  Actual field extract /tmp/webnavior-admission-session-20261103-full.json(0600):
+  ~13m35,68assistant(47clarification),20user_text,68ASR(includesduplicates).
+  Prior projector last12 had9assistant/3user. Do not infer acceptance-rate from
+  partial archives or claim unbounded tokens (12msg/4k cap). Prior erroneous
+  user_text cannot be retroactively identified from wording alone; no bulk deletion.
+
 - Nov2 ORDERING-SCOPED COPY ONLY: user explicitly rejected expanding decisions,
   prompts, states or reply-rotation mechanisms. Exactly7existing literals in
   packages/stage-shared/src/kioskConversation.ts now focus on menu/order assistance.

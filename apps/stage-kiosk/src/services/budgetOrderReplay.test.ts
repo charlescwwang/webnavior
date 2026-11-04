@@ -2,6 +2,7 @@
 
 import type { CatalogSnapshot } from '../../../order-menu-server/src/domain/contracts'
 import type { CheckoutSnapshot } from '../../../order-menu/src/domain/checkout-flow'
+import type { ServiceObservation } from '../../../order-menu/src/evaluation/conversationOracle'
 import type { MenuToolName } from '../../../order-menu/src/toolDefinitions'
 import type { KioskRoutesOptions } from '../../../server/src/routes/kiosk'
 import type { KioskConversationDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -15,21 +16,23 @@ import validators from 'virtual:menu-tool-validators'
 import { errorMessageFrom } from '@moeru/std'
 import { conversationContextSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { rawTool } from '@xsai/tool'
-import { object, parse, safeParse, string, unknown } from 'valibot'
+import { array, object, optional, parse, safeParse, string, unknown } from 'valibot'
 import { expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
 import { createPosSimulator } from '../../../order-menu-server/src/simulator'
 import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, requestTaxId, setInvoiceDraft, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
+import { applyAcceptancePolicy } from '../../../order-menu/src/evaluation/conversationAcceptance'
 import { conversationScripts } from '../../../order-menu/src/evaluation/conversationMatrix'
 import { assessScriptTurn } from '../../../order-menu/src/evaluation/conversationOracle'
-import { incidentConversationScripts, orderingIncidents } from '../../../order-menu/src/evaluation/orderingIncidents'
+import { incidentConversationScripts, orderingIncidents, supersededConversationScripts } from '../../../order-menu/src/evaluation/orderingIncidents'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { createDrizzle } from '../../../server/src/libs/db'
 import { mockDB } from '../../../server/src/libs/mock-db'
 import { createKioskRoutes } from '../../../server/src/routes/kiosk'
 import { createKioskService } from '../../../server/src/services/domain/kiosk'
 import { resolveOrderingIntent } from '../../../server/src/services/domain/kiosk-conversation-skills'
+import { buildConversationContext, conversationEntries } from '../../../server/src/services/domain/kiosk-interaction-decision/context'
 import { createKioskSystemOneService } from '../../../server/src/services/domain/kiosk-system-one'
 import { createEnvelopeCrypto } from '../../../server/src/utils/envelope-crypto'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
@@ -47,7 +50,9 @@ vi.mock('./kiosk-device', () => api)
 // cart and profile copies are scratch; providers receive synthetic utterances.
 const matrixId = process.env.KIOSK_CONVERSATION_SCRIPT
 const incidentScript = matrixId ? incidentConversationScripts.find(value => value.id === matrixId) : undefined
-const script = incidentScript ?? (matrixId ? conversationScripts.find(value => value.id === matrixId) : undefined)
+const historicalScript = incidentScript ?? (matrixId ? conversationScripts.find(value => value.id === matrixId) : undefined)
+const acceptance = historicalScript ? applyAcceptancePolicy(historicalScript) : undefined
+const script = acceptance?.script
 if (matrixId && !script)
   throw new Error(`Unknown frozen conversation script: ${matrixId}`)
 
@@ -78,9 +83,16 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
       throw new Error(`Diagnostic evidence gap, never a passing historical replay: ${script.evidenceGap}`)
     record('diagnosticScope', { scriptId: script.id, evidenceGap: script.evidenceGap, seededEntry: script.initial.entry, historicalReplay: false })
   }
+  const expectationRevision = supersededConversationScripts.find(revision => revision.replacementId === script?.id)
+  if (expectationRevision) {
+    record('expectationRevision', expectationRevision)
+    record('previousScript', conversationScripts.find(previous => previous.id === expectationRevision.id))
+  }
+  record('historicalScript', historicalScript)
+  record('acceptancePolicy', acceptance?.revision)
   record('script', script ?? { id: 'legacy-budget-probe' })
   record('inputChannel', { channel: incidentScript?.channel ?? 'jev-main', finiteDecisionBypassed: incidentScript?.channel === 'main-direct' })
-  record('configuration', { jev: { implementation: active.implementation, model: active.modelId, origin: new URL(active.baseURL).origin }, main: { model: main.modelId, origin: new URL(main.baseURL).origin, thinking: main.enableThinking }, personaRelease: profile.id, synthetic: true })
+  record('configuration', { jev: { implementation: active.implementation, model: active.modelId, origin: new URL(active.baseURL).origin }, main: { model: main.modelId, origin: new URL(main.baseURL).origin, thinking: main.enableThinking }, personaRelease: profile.id, policy, persona: { instructions: profile.snapshot.agentInstructions, card: profile.snapshot.characterCard }, synthetic: true })
   const secret = main.apiKeyCiphertext ? envelopeCrypto.decryptKey(main.apiKeyCiphertext, { keyEntryId: 'default', modelName: `webnavior-ai:provider-profile:${main.id}` }) : undefined
   const startedAt = Date.now()
   let requests = 0
@@ -94,20 +106,38 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
       throw new Error('Frozen replay limit reached (80 requests/5 minutes).')
     requests++
   }
+  let jevRequests = 0
+  let jevFailures = 0
   const db = await mockDB(schema)
   await db.insert(schema.kioskSystemOneProfiles).values(active)
   const systemOne = createKioskSystemOneService({ db, envelopeCrypto, fetchImpl: async (...args) => {
     budget()
     return await fetch(...args)
-  }, traceObserver: { record: trace => record('jev', { turn, trace }) } })
+  }, traceObserver: { record: (trace) => {
+    if (trace.phase === 'request')
+      jevRequests++
+    if (trace.phase === 'failed' || (trace.phase === 'response' && trace.status >= 400))
+      jevFailures++
+    record('jev', { turn, trace })
+  } } })
   await systemOne.savePolicy(policy)
   const gateway: KioskRoutesOptions['llmGateway'] = { complete: async ({ body, abortSignal }) => {
     budget()
     const request = { ...body, model: main.modelId, ...(main.kind === 'openai-compatible' ? { chat_template_kwargs: { enable_thinking: main.enableThinking } } : {}) }
     record('mainRequest', { turn, request })
-    const response = await fetch(new URL('chat/completions', `${main.baseURL.replace(/\/+$/, '')}/`), { method: 'POST', headers: { 'Content-Type': 'application/json', ...(secret ? { Authorization: `Bearer ${secret.toString()}` } : {}) }, body: JSON.stringify(request), signal: AbortSignal.any([AbortSignal.timeout(main.timeoutMs), ...(abortSignal ? [abortSignal] : [])]) })
-    record('mainResponse', { turn, status: response.status, body: await response.clone().text() })
-    return response
+    try {
+      const response = await fetch(new URL('chat/completions', `${main.baseURL.replace(/\/+$/, '')}/`), { method: 'POST', headers: { 'Content-Type': 'application/json', ...(secret ? { Authorization: `Bearer ${secret.toString()}` } : {}) }, body: JSON.stringify(request), signal: AbortSignal.any([AbortSignal.timeout(main.timeoutMs), ...(abortSignal ? [abortSignal] : [])]) })
+      record('mainResponse', { turn, status: response.status, body: await response.clone().text() })
+      return response
+    }
+    catch (error) {
+      // Preserve transport causes without logging authorization headers or keys.
+      let cause: unknown
+      if (error instanceof Error && error.cause instanceof AggregateError)
+        cause = error.cause.errors.map(value => value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)) : errorMessageFrom(value))
+      record('mainFailure', { turn, message: errorMessageFrom(error), cause })
+      throw error
+    }
   } }
   const kioskService = createKioskService(db)
   const app = createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, systemOne, llmGateway: gateway, runtimeModelPolicy: { modelFor: async () => main.modelId! } })
@@ -313,6 +343,8 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
       const turnDeadlineAt = Date.now() + 60_000
       let recordedInput = false
       const before = await snapshot()
+      const cueBefore = clarification.current(before)
+      const historyBefore = await kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: session.id })
       const tools: string[] = []
       if (matrixStep?.retry) {
         expect(retry).toBeDefined()
@@ -398,7 +430,43 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         return await execute(tool.name as MenuToolName, input)
       } } })
       record('decision', { turn, text, fast })
+      // Observe the final qualifier before falling back to earlier Jev evidence.
+      // IGNORE alone is insufficient: a declined invitation is accepted service.
+      const scoped = safeParse(object({ trace: object({ serviceResolution: object({ choice: string(), recipient: optional(string()) }) }) }), fast)
+      const traced = safeParse(object({ trace: object({ exchanges: array(object({ answers: optional(object({ admission: optional(object({ choice: string() })) })) })) }) }), fast)
+      const scope = scoped.success ? scoped.output.trace.serviceResolution.choice : undefined
+      const proposed = traced.success ? traced.output.trace.exchanges.flatMap(exchange => exchange.answers?.admission?.choice ?? []).at(-1) : undefined
+      const service: ServiceObservation = {}
+      const finiteRecipient = safeParse(object({ trace: object({ mainSkill: object({ recipient: string() }) }) }), fast)
+      const recipient = scoped.success ? scoped.output.trace.serviceResolution.recipient : finiteRecipient.success ? finiteRecipient.output.trace.mainSkill.recipient : undefined
+      if (recipient === 'other' || recipient === 'uncertain') {
+        service.admission = recipient === 'other' ? 'background' : 'uncertain'
+      }
+      else if (scope) {
+        service.admission = scope === 'BACKGROUND' ? 'background' : scope === 'UNCERTAIN' ? 'uncertain' : 'service'
+        if (['KEEP_ORDER', 'IDLE'].includes(scope))
+          service.meaning = 'pause'
+      }
+      else if (fast.kind === 'FAST_ACTION' && fast.action.id === 'intent:defer-question') {
+        service.admission = 'service'
+        service.meaning = 'pause'
+      }
+      else if (fast.recovery?.status === 'completed') {
+        service.admission = fast.recovery.admission
+      }
+      else if (fast.kind === 'IGNORE') {
+        const answered = safeParse(object({ answeredQuestionId: string() }), fast).success
+        service.admission = answered ? 'service' : 'background'
+        if (answered)
+          service.meaning = 'pause'
+      }
+      else if (proposed) {
+        service.admission = proposed === 'BACKGROUND' ? 'background' : proposed === 'UNCERTAIN' ? 'uncertain' : 'service'
+      }
+      record('serviceObservation', { turn, ...service })
+      clarification.settle(fast)
       let answer = ''
+      let hostFailure: string | undefined
       let question: ReturnType<typeof questionReceiptFrom>
       if (fast.kind === 'NEEDS_ASSISTANT') {
         const state = conversationDecisionStateFrom(fast.decisionState, fast) ?? { phase: 'ordering' }
@@ -425,11 +493,13 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
           } })
           const context = await snapshot()
           record('hostResult', { turn, result })
-          if (!matrixStep?.fault)
-            expect(['completed', 'waiting']).toContain(result?.status)
+          // Record the resulting cart/history even when the Host could not finish.
+          // An early assertion previously hid the wrong-cart snapshot in C12-A1.
+          if (!matrixStep?.fault && !['completed', 'waiting'].includes(result?.status ?? ''))
+            hostFailure = result?.reason ?? 'missing-host-result'
           const displayed = replyFromConversation(result!, { menu: receipts, context, question, outcome, handoff: state.handoff, requireMenuRead: state.requireMenuRead, serviceReply: state.serviceReply, failureMessage: '需求尚未完成。' })
-          if (!matrixStep?.fault)
-            expect(displayed.role).toBe('assistant')
+          if (!matrixStep?.fault && displayed.role !== 'assistant')
+            hostFailure ??= 'host-error-presentation'
           answer = displayed.content
           if (displayed.clarification || result?.reply?.kind === 'clarification')
             clarification.present({ questionId: crypto.randomUUID(), question: answer, sourceUtterance: text, contextKey: serviceContextKey(context), expiresAt: Date.now() + 30000 })
@@ -437,11 +507,18 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         finally { await runtime.invoke('kiosk_agent_task', { action: 'END', taskId }) }
       }
       else {
-        if (!recordedInput)
-          await append('asr_transcript', text, { utteranceId: turn })
+        if (!recordedInput || fast.kind === 'SERVICE_CLARIFICATION') {
+          await append('asr_transcript', text, fast.kind === 'SERVICE_CLARIFICATION'
+            ? { utteranceId: turn, decisionRoute: 'fast_path', source: 'service_clarification', questionId: fast.question.questionId }
+            : { utteranceId: turn })
+        }
         if (fast.kind === 'FAST_ACTION') {
           answer = operationReplyFrom(fast.result) ?? ''
           question = questionReceiptFrom(fast.result)
+        }
+        else if (fast.kind === 'CUSTOMER_ENTRY_REQUIRED') {
+          // KioskScene presents this existing localized entry reminder too.
+          answer = '請先填寫手機號碼，或說「略過」，就可以開始看菜單與點餐。'
         }
         else if (fast.kind === 'EXECUTION_FAILED') {
           answer = operationRejectionMessage(fast.result, fast.uncertain) ?? ''
@@ -456,14 +533,24 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         }
       }
       if (answer) {
-        await append('assistant_text', answer)
+        await append('assistant_text', answer, fast.kind === 'SERVICE_CLARIFICATION' ? { source: 'service_clarification', questionId: fast.question.questionId, utteranceId: turn } : {})
         await runtime.invoke('kiosk_dialogue_presented', { content: answer, ...(question ? { questionId: question.questionId } : {}) })
       }
       const after = await snapshot()
+      const historyAfter = await kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: session.id })
+      record('admittedContext', { turn, messages: buildConversationContext(historyAfter.entries).messages, cue: clarification.current(after) })
       record('turn', { turn, text, answer, tools, before, after })
       console.info(JSON.stringify({ turn, text, answer, decision: fast.kind, tools, shown: after.presentation?.itemIds, itemCount: after.cart.itemCount, requests }))
       if (matrixStep && script) {
-        const errors = assessScriptTurn(matrixStep, { before, after, menu: catalog.items, answer, shownHistory: seen, checkoutStarts })
+        const errors = assessScriptTurn(matrixStep, { before, after, menu: catalog.items, answer, shownHistory: seen, checkoutStarts, service, ...(fast.kind === 'UNAVAILABLE' && ['PROVIDER_FAILURE', 'INVALID_CHOICE', 'CANDIDATE_BUDGET', 'SYSTEM_ONE_DISABLED'].includes(fast.reason ?? '') ? { technicalFailure: fast.reason } : {}), ...(fast.recovery?.status === 'failed' ? { technicalFailure: fast.recovery.failure ?? 'service-recovery' } : {}), ...(hostFailure ? { technicalFailure: hostFailure } : {}) })
+        if (matrixStep.silentOnly) {
+          if (JSON.stringify(conversationEntries(historyAfter.entries)) !== JSON.stringify(conversationEntries(historyBefore.entries)))
+            errors.push('Unadopted speech changed accepted dialogue history')
+          if (JSON.stringify(clarification.current(after)) !== JSON.stringify(cueBefore && cueBefore.expiresAt > Date.now() ? cueBefore : undefined))
+            errors.push('Unadopted speech changed or renewed the service cue')
+          if (!tools.every(name => ['kiosk_fast_path_context', 'kiosk_fast_path_validate', 'kiosk_conversation_context', 'kiosk_interaction_state'].includes(name)))
+            errors.push('Unadopted speech invoked a non-observation tool')
+        }
         const draft = incidentScript?.initial.invoiceDraft
         if (draft) {
           const actualCode = draft.method === 'tax-id' ? checkoutState?.taxId : checkoutState?.stage === 'invoice' ? checkoutState.invoiceDraft?.code : draft.method === 'carrier' ? checkoutState?.carrierCode : checkoutState?.citizenCode
@@ -582,10 +669,14 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         expect(answer).not.toMatch(/推薦一項/)
       }
     }
+    if (incidentScript?.channel !== 'main-direct') {
+      expect(jevRequests, 'Jev/Main acceptance requires actual Jev requests').toBeGreaterThan(0)
+      expect(jevFailures, 'Main fallback does not prove Jev acceptance').toBe(0)
+    }
   }
   finally {
     scope.stop()
     secret?.fill(0)
-    record('summary', { requests, durationMs: Date.now() - startedAt })
+    record('summary', { requests, jevRequests, jevFailures, durationMs: Date.now() - startedAt })
   }
 }, 360_000)
