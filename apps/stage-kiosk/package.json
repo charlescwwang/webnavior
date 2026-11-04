@@ -5,6 +5,7 @@
   "description": "Full-screen touch-first AIRI experience for restaurant kiosks",
   "scripts": {
     "build": "vite build",
+    "build:audio-check": "vite build --config vite.audioCheck.config.ts",
     "dev": "vite --host",
     "lint": "eslint .",
     "preview": "vite preview",
@@ -34,6 +35,7 @@
     "@xsai-ext/providers": "catalog:",
     "@xsai/shared-chat": "catalog:",
     "@xsai/tool": "catalog:",
+    "fft.js": "catalog:",
     "pinia": "catalog:",
     "valibot": "catalog:",
     "vue": "catalog:",
@@ -46,6 +48,7 @@
     "@iconify-json/solar": "catalog:",
     "@intlify/unplugin-vue-i18n": "catalog:",
     "@proj-airi/unplugin-live2d-sdk": "catalog:",
+    "@types/audioworklet": "catalog:",
     "@unocss/reset": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
     "@vitest/browser-playwright": "catalog:vitest",

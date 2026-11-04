@@ -1086,3 +1086,87 @@ failures, and report the actual final customer text as well as cart effects.
 互動內容／工具回執維持順序儲存；`service_event` 的 `*_metrics` 使用獨立背景佇列，
 其網路往返不阻塞回覆。兩條佇列各自維持順序並捕捉原visitor ID；跨佇列的sequence
 代表伺服器儲存順序，不代表嚴格的事件發生順序。
+
+## Spatial Mask input (Firefox, pending deployment)
+
+Capture automatically selects its preprocessing on each start or device change;
+there is no operator mode switch or persisted mode preference. The existing device
+store requests ideal8CH/48k with browser echo/noise/gain processing disabled so
+Firefox can expose the raw array. A silent capture Worklet observes actual channels
+without upmixing. Only an UMA-8-labelled input with eight actual channels starts
+Spatial Mask without Gate. Ordinary inputs restore the original device-store
+processing defaults and use stream VAD; other eight-channel devices are not assumed
+to share UMA-8 geometry. UMA-8 channel shortage or Mask failure shows a fallback
+warning only in the operator settings panel. Customers receive no popup, dialogue
+or TTS about Mask fallback. Restarting retries detection rather than persisting a disabled mode.
+Stop capture before changing mapping/radius. The same hardware stream is borrowed
+once; Mask runs in a Worker after an eight-channel capture Worklet. Seven mapped channels enter the48→16k FIR and spatial competition
+mask; no Gate decisions, Gate history or per-utterance capture restart remain.
+
+Mask feeds the existing VAD through serialized blocks of at most512samples. A final
+partial frame is padded only for inference, keeping real samples/durations intact.
+Normal microphones retain their stream input. Existing VAD settings, WAV/HTTP ASR,
+utterance ordering/cancellation and Jev/Main remain in place. Processor failure or
+more than one second of Worker/VAD backlog retires the generation and restores
+standard capture with a visible suppression-off warning. Disabling voice mode
+also releases the Mask graph. Track ownership stays with the audio device store.
+
+Failures also produce a bounded device warning at `/api/kiosk/audio/warnings`,
+authenticated with the existing device cookie and independent of visitor sessions.
+The Server writes structured WARN fields (device/site, generation, failure stage,
+observed channels and standard/unavailable outcome). Normal microphone selection
+is not a warning. Reporting has a five-second deadline, never blocks VAD, and does
+not append conversation entries. Delivery failure stays in the developer console;
+there is no customer notification or indefinite retry queue.
+
+The standalone microphone page now selects LCMV or Mask. Mask comparisons contain
+raw48k eight-channel float32 and16k mono reference/processed PCM16 from the same
+15-second source interval. JSON identifies both clocks, mapping, radius and Mask
+algorithm; no loudness normalization, network upload, Session or Admin migration
+is involved. The current Admin comparison schema remains48k/lcmv-only, so Mask
+recordings are deliberately not sent through it. Reference geometry defaults to
+45mm in the core; the device's configured radius/mapping is used when integrated
+and is still subject to physical verification.
+
+Synthetic acceptance and the frozen source oracle live in `src/audio/spatialMask*`.
+The original oracle/provenance stays byte-for-byte fixed and is excluded from
+formatting; the runtime port is linted normally. Long-duration offline test:
+`MASK_STRESS_SECONDS=1800 pnpm -F @proj-airi/stage-kiosk exec vitest run src/audio/spatialMaskStress.test.ts`.
+An opt-in130-second browser test uses `VITE_MASK_BROWSER_STRESS=true` with the
+existing browser config. These tests establish transport/numerical continuity,
+not real speech recognition or physical device directionality. See the Nov4
+section of the existing array microphone plan for remaining hardware acceptance.
+
+## LCMV comparison reference
+
+LCMV is retained on the standalone local verification page for comparison; it is
+not selected for live Kiosk input. Its existing fixed geometric weights and
+48kHz eight-channel Worklet remain available for controlled recordings. The
+pending Admin LCMV comparison schema is separate from local Mask recordings;
+it does not add an automatic upload or require migration0047 for Mask capture.
+
+## Standalone local microphone verification
+
+Open <https://webnavior.aikcitri.qzz.io/ui/mic-check/> in Firefox on the computer
+that has the UMA-8 attached. Allow microphone access, select its raw eight-channel
+input, open capture, choose front/left/right/background, then record15seconds.
+The page keeps only the latest group: two mono players, three WAV downloads and
+one metadata JSON download. Download each group before recording the next.
+Leaving/reloading clears browser-memory recordings. There is no live speaker
+monitoring, Session, enrollment, model, upload, database or POS connection.
+
+Build only this entry with `pnpm -F @proj-airi/stage-kiosk build:audio-check`;
+output is `dist-audio-check/`, with relative URLs for independent HTTPS hosting.
+The standalone page does not require Server migration0047. Its CSP blocks
+network connections and it registers no service worker. The published `/ui/`
+prefix is excluded by the existing Admin service-worker navigation fallback.
+Publish only this directory's static files; do not deploy the pending Kiosk/API
+array integration as part of this standalone page.
+
+Array radius/mapping can be changed while capture is stopped. Mapping starts
+with the prototype's zero-based0..6 assumption; physical mapping and direction
+suppression must be checked separately on the actual machine. The page does
+not claim automatic calibration or that LCMV is superior to GSC.
+
+A future full Admin static-root replacement must preserve or republish `/ui/mic-check/`
+from its dedicated build output. It is separate from the normal Kiosk build.
