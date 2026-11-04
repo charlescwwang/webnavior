@@ -7,22 +7,24 @@ accumulating history.
 
 ## Current State
 
-- Nov4 PAYMENT SUPPORT release prepared; waiting for administrator switch.
-  Path: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
-  Code commits08969e9(cloud)/5931a77(ASR)/bcb7844(payment deadline). Normal hooks
-  changed no files. Clean-source Menu34+ASR3+cloud7+Host241 passed;51Host skipped.
-  Server/Menu/Kiosk types and both public-URL builds passed. Full-repo lint has
-  2362 pre-existing errors outside changed files; one root typecheck failed in
-  electron-vueuse/electron-eventa. Logs retained in release acceptance/.
-  switch-release.py --check verified3189 files and exact previous runtime/indexes;
-  runtime independent of temporary build checkout. No DB/provider/Admin/mic change.
-  sudo -n requires a password. User must run sudo python3 <release>/switch-release.py;
-  then independently verify health, API WorkingDirectory and origin HTML/assets.
-  Active version remains ordering-admission-20261104-155952 until switch succeeds.
-  Actual speech accuracy and public browser ordering have not been verified.
+- Nov4 PAYMENT SUPPORT DEPLOYED and independently origin-verified.
+  Active: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
+  User completed sudo switch; independently checked exact API WorkingDirectory,
+  livez/readyz(DB/Redis),3189 release hashes and47 origin Menu/Kiosk HTML/assets.
+  Evidence: release acceptance/postdeploy-verification.json and /tmp/
+  webnavior-payment-postdeploy-verification.json. No public-browser interaction,
+  real ASR recording accuracy or production customer order was tested. Reload
+  existing Kiosks for new bundles. Rollback: ordering-admission-20261104-155952.
+  Three code commits08969e9(cloud)/5931a77(ASR)/bcb7844(payment deadline), normal
+  hooks unchanged. Clean Menu34+ASR3+cloud7+Host241 passed,51Host skipped;
+  Server/Menu/Kiosk types and both public-URL builds passed. Full-repo lint2362
+  pre-existing errors and electron-vueuse/electron-eventa type failures are retained
+  in acceptance logs; never report whole-project checks passed. Runtime independent
+  of temporary payment-release worktree; noDB/provider/Admin/mic changes.
+  Pending microphone files preserved in production-recovery checkout.
 
 - Nov4 ASR payment vocabulary + payment-choice countdown implemented,
-  committed in payment-support release; NOT deployed. Kiosk audio gateway sends a short transcription prompt
+  deployed in payment-support release. Kiosk audio gateway sends a short transcription prompt
   naming LINE Pay/街口支付; no transcript rewriting or new model call. Provider
   support/actual speech accuracy are not verified by mock tests. Menu previously
   silently returned unpaid/unselected payment stage to review after30s. Replaced
@@ -35,7 +37,7 @@ accumulating history.
   webnavior-payment-*.log. No provider calls, full-project checks or public browser
   acceptance. Preserve pending cloud opt-out and microphone changes separately.
 
-- Nov4 Kiosk AIRI cloud opt-out implemented, committed in payment-support release; NOT deployed.
+- Nov4 Kiosk AIRI cloud opt-out implemented, deployed in payment-support release.
   Kiosk vite.config fixes VITE_AIRI_CLOUD_ENABLED=false. Shared auth gates credits
   only; chat store gates WS/reconcile/outbox/tombstone/cloud deletes while keeping
   local persistence and user isolation. Existing cloud queues remain untouched;
@@ -48,7 +50,7 @@ accumulating history.
   No full-project typecheck, Jev/Main calls or public-browser verification run.
 
 - Nov4 ORDERING ADMISSION DEPLOYED and independently origin-verified.
-  Active: /home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952
+  Previous: /home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952
   User completed sudo switch. Independently checked exact systemd API directory,
   livez/readyz(DB/Redis),3189release hashes and47origin Menu/Kiosk HTML/assets.
   Proof: release acceptance/postdeploy-verification.json and /tmp/
