@@ -1039,3 +1039,13 @@ source/config hashes, full dialogue and effect receipts, compact caseEvidence,
 original failures and final results. Relevant offline681Server/891Menu/241Host
 services,three package typechecks,modified-file lint and diff checks passed.
 No root/full-project typecheck, commits or deployment.
+
+
+Deployment preparation: ordering-only commits9f685d6/60b958c/939664a are packaged
+at `/home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952`. Exact accepted ordering hunks were preserved while pending
+microphone/media hunks were excluded. Clean-source package tests/types and7Chrome
+checks passed. Whole-repository lint/type scans have unrelated failures, recorded
+separately. Menu requires explicit `--base=/menu/` for production; the first package
+was rejected by preflight, corrected and superseded before any switch. The new
+3189-file package passed switch preflight. Local sudo requires a password, so
+production is still the prior release until the user executes switch-release.py.

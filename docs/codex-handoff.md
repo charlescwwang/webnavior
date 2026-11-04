@@ -7,6 +7,28 @@ accumulating history.
 
 ## Current State
 
+- Nov4 ORDERING ADMISSION deployment PREPARED, awaiting local sudo switch.
+  User requested batch commits/deployment. Code commits9f685d6(background/intent),
+  60b958c(cart/invoice protection),939664a(regression policy/evidence). Original
+  production-recovery branch fast-forwarded; all pending microphone bytes retained.
+  Clean release worktree: /home/aimax/.codex/worktrees/ordering-release/webnavior.
+  Release: /home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952
+  Its switch-release.py --check passed3189files;8API overlays only, Menu/Kiosk
+  rebuilt with public URLs. Menu MUST use build --base=/menu/; Kiosk base/kiosk/.
+  Initial155806 package failed this preflight and is marked superseded-invalid-build.
+  NoDB/provider/Admin/mic changes. Existing /ui/mic-check stays untouched.
+  Source projection keeps exact accepted ordering hunks and excludes microphone
+  hunks; normal commit hooks changed nothing. Clean source681Server/891Menu/
+  241Host/7Chrome pass; Server/Menu/Kiosk package types passed after restoring
+  existing generated outputs. Whole-repo lint/type were each run once at commit
+  gate: unrelated files/desktop/generated-declaration failures retained in release
+  acceptance logs; NEVER claim full-project checks passed.
+  sudo -n requires password. No switch executed; production remains ordering-copy.
+  User command: sudo python3 /home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952/switch-release.py
+  After user posts result, independently verify exact systemd WorkingDirectory,
+  livez/readyz(DB/Redis),release hashes and origin Menu/Kiosk assets; do not
+  report public browser/order-flow validation unless actually exercised.
+
 - Nov4 PURCHASE/TARGET repair COMPLETE; purchase3 required acceptance PASSED.
   C15-F3: exact-meal unqualified MENU_QUERY uses existing Main finite choice
   before read-only binding. Q01-M-B3: existing count review verifies replacement
