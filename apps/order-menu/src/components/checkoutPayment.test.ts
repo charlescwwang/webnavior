@@ -13,10 +13,18 @@ describe('checkout payment screen', () => {
     expect(html).not.toContain('模擬掃碼付款完成')
   })
 
+  // Report: this chat, 2026-11-04 — payment choice silently returned to review.
+  it('shows the remaining selection time and explains that the order is retained', async () => {
+    const html = await renderToString(createSSRApp(CheckoutPayment, { total: '$130', selectionSeconds: 60 }))
+    expect(html).toContain('60 秒')
+    expect(html).toContain('餐點會保留')
+  })
+
   // Report: this chat, 2026-10-18 — choosing a method should enter the scan step directly.
   it.each([{ method: 'linepay', label: 'LINE Pay' }, { method: 'jkopay', label: '街口支付' }] as const)('opens the scan step immediately after choosing $label', async ({ method, label }) => {
-    const html = await renderToString(createSSRApp(CheckoutPayment, { method, total: '$130' }))
+    const html = await renderToString(createSSRApp(CheckoutPayment, { method, total: '$130', selectionSeconds: 60 }))
     expect(html).toContain(`${label} 掃碼付款`)
+    expect(html).not.toContain('餐點會保留')
     expect(html).toContain('等待掃碼，尚未付款')
     expect(html).toContain('測試專用・非真實付款')
     expect(html).toContain('正在產生測試 QR Code')
@@ -30,8 +38,9 @@ describe('checkout payment screen', () => {
   })
 
   it.each(['pending', 'authorized', 'uncertain'] as const)('prevents another simulated scan or method change while %s', async (status) => {
-    const html = await renderToString(createSSRApp(CheckoutPayment, { method: 'linepay', status, total: '$130' }))
+    const html = await renderToString(createSSRApp(CheckoutPayment, { method: 'linepay', status, total: '$130', selectionSeconds: 60 }))
     expect(html).not.toContain('模擬掃碼付款完成')
+    expect(html).not.toContain('餐點會保留')
     expect(html).not.toContain('更換付款方式')
     expect(html).not.toContain('payment-options')
     expect(html).not.toContain('測試專用・非真實付款')

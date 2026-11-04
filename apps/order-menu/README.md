@@ -60,6 +60,13 @@ remain available. Reset restores the entry gate.
 
 Payment choices are LINE Pay and 街口支付. Voice or touch selects a method directly,
 without a second confirmation question, and retires the answered method question.
+Before a payment method is chosen, the screen displays a 60-second countdown.
+Expiration returns to order review with cart contents and fulfillment mode retained.
+Choosing a method, a payment status, agent control, leaving the payment page or
+unmounting cancels this navigation deadline. Returning to method selection starts
+a new minute. The countdown uses a fixed deadline so throttled background tabs
+cannot extend it silently; it never determines payment authorization.
+
 Selection immediately opens the waiting-for-scan screen, with **更換付款方式**
 available before payment starts. `CheckoutToolController.selectPayment` returns
 `selected` only; it does not authorize payment or submit an order. The current

@@ -38,6 +38,7 @@ export const orderingMessages = {
     payment: {
       chooseTitle: '選擇付款方式',
       methodHint: '可觸控或告訴助手要使用哪種付款方式，選好後直接進入掃碼付款畫面。',
+      selectionCountdown: '請於 {seconds} 秒內選擇付款方式；逾時返回訂單確認，餐點會保留。',
       scanTitle: '{method} 掃碼付款',
       waiting: '等待掃碼，尚未付款',
       scanHint: '這是測試付款畫面，不需要實際掃描或操作支付 App。',
@@ -117,6 +118,7 @@ export const orderingMessages = {
     payment: {
       chooseTitle: 'Choose a payment method',
       methodHint: 'Tap or tell the assistant your payment method to open the scan payment screen.',
+      selectionCountdown: 'Choose a payment method within {seconds} seconds. When time runs out, return to order review with your items retained.',
       scanTitle: '{method} scan payment',
       waiting: 'Waiting for scanning; not paid yet',
       scanHint: 'This is a payment test screen. No scan or payment app is needed.',

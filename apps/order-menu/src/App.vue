@@ -24,6 +24,7 @@ import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
+import { usePaymentSelectionCountdown } from './composables/usePaymentSelectionCountdown'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { continuationUrl } from './continuation'
 import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
@@ -81,7 +82,6 @@ watch([checkout, paymentMethod, paymentStatus, customerEntryStatus], () => {
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
 let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
-let checkoutTimeoutTimer: ReturnType<typeof setTimeout> | undefined
 let paymentPollTimer: ReturnType<typeof setTimeout> | undefined
 let paymentAttempt = 0
 let disconnectService: (() => void) | undefined
@@ -753,19 +753,10 @@ async function simulatePayment() {
   }
 }
 
-watch([checkout, agentControlsOrder], ([nextCheckout, locked]) => {
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
-  if (locked || !nextCheckout)
-    return
-
-  checkoutTimeoutTimer = setTimeout(() => {
-    if (checkout.value?.stage !== nextCheckout.stage)
-      return
-    if (!paymentMethod.value && nextCheckout.stage === 'payment')
-      void returnToOrderReview()
-  }, 30_000)
-})
+const paymentSelectionSeconds = usePaymentSelectionCountdown(
+  () => checkout.value?.stage === 'payment' && !paymentMethod.value && !paymentStatus.value && !agentControlsOrder.value,
+  () => { void returnToOrderReview() },
+)
 
 async function setFulfillmentMode(mode: FulfillmentMode) {
   await invoke('order_set_fulfillment', { mode }, { animate: false })
@@ -851,8 +842,6 @@ onUnmounted(() => {
   disconnectService = undefined
   if (cartUpdateTimer)
     clearTimeout(cartUpdateTimer)
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
   if (paymentPollTimer)
     clearTimeout(paymentPollTimer)
 })
@@ -897,6 +886,7 @@ onUnmounted(() => {
       :error="paymentError"
       :method="paymentMethod"
       :status="paymentStatus"
+      :selection-seconds="paymentSelectionSeconds"
       :total="currency(cart.total)"
       @back="backCheckout"
       @change-method="() => { assertCanRestart(); resetPaymentAttempt() }"
