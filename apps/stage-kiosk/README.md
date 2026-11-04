@@ -23,6 +23,21 @@ pnpm --filter @proj-airi/stage-kiosk dev
 
 The layout follows the display orientation by default. Set `VITE_KIOSK_ORIENTATION=landscape` or `portrait` to lock a deployment to one orientation.
 
+## Local conversation storage and cloud services
+
+The Kiosk Vite configuration fixes `VITE_AIRI_CLOUD_ENABLED` to `false`.
+Restoring a shared AIRI login therefore does not query AIRI cloud credits,
+open the generic chat WebSocket, reconcile remote chats, or queue cloud sends
+and deletes. Existing local sessions remain readable and writable; queued cloud
+records are left intact. Other stage applications retain their existing cloud
+behavior unless their build explicitly disables it.
+
+Webnavior device enrollment and visitor interaction recording still use
+`VITE_API_SERVER_URL`. Microphone, VAD, ASR, TTS and ordering tool connections
+are independent of this switch. This setting does not disable shared OIDC login.
+`VITE_SERVER_URL` configures the separate shared AIRI API, not the Kiosk recording
+API; pointing it at Webnavior is not required to suppress cloud credits/chat sync.
+
 ## Development kiosk enrollment
 
 Before a Profile is available, the kiosk opens an enrollment screen. In a local
@@ -35,8 +50,8 @@ KIOSK_DEVELOPMENT_REGISTRATION_ENABLED=true pnpm --filter @proj-airi/server dev
 VITE_API_SERVER_URL=http://localhost:5168 pnpm --filter @proj-airi/stage-kiosk dev
 ```
 
-For a public deployment, build with `VITE_API_SERVER_URL` and
-`VITE_SERVER_URL` set to the public API origin, and
+For a public deployment, build with `VITE_API_SERVER_URL` set to the public
+Webnavior API origin, and
 `VITE_ORDERING_SCENARIO_URL` set to the public Menu URL. These values are
 compiled into the browser bundle; changing Server environment variables after
 building does not update them. An isolated worktree does not inherit ignored
