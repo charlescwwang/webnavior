@@ -1,5 +1,6 @@
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
+import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { expect, it, vi } from 'vitest'
 
 import { resolveServiceHandoff } from './serviceResolution'
@@ -7,7 +8,7 @@ import { resolveServiceHandoff } from './serviceResolution'
 const decision: KioskInteractionDecision = { kind: 'NEEDS_ASSISTANT', confidence: 0.95, trace: { model: 'recorded' }, modelCalls: 2, modelQuestions: 2 }
 const state: KioskDecisionState = { phase: 'ordering', catalogEvidence: { products: [], categories: [] } }
 function response(choice: string) {
-  return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ choice }) } }] } }] })
+  return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ recipient: 'kiosk', choice }) } }] } }] })
 }
 
 // Report: this chat, 2026-10-21; generic Main routing incorrectly required menu reads for store FAQs.
@@ -23,10 +24,12 @@ it.each(['MENU_INFORMATION_ONLY', 'UNCERTAIN', 'invented'])('retains the origina
   const result = await resolveServiceHandoff(decision, '我不想吃飯，還有什麼？', state, async () => response(choice))
   if (choice === 'MENU_INFORMATION_ONLY')
     expect(result).toMatchObject({ reason: 'MENU_QUERY', requestScope: 'menu-information' })
+  else if (choice === 'UNCERTAIN')
+    expect(result).toHaveProperty('reason', 'UNCERTAIN_SERVICE_REQUEST')
   else
-    expect(result).not.toHaveProperty('reason')
+    expect(result.reason).toBe('INVALID_CHOICE')
   expect(result).not.toHaveProperty('actionId')
-  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', modelCalls: 2 })
+  expect(result).toMatchObject({ kind: choice === 'MENU_INFORMATION_ONLY' ? 'NEEDS_ASSISTANT' : 'UNAVAILABLE', modelCalls: 2 })
 })
 
 it.each([
@@ -45,7 +48,8 @@ it('retains the original guard if Main is unavailable', async () => {
   const result = await resolveServiceHandoff(decision, '幾點營業？', state, async () => {
     throw new Error('offline')
   })
-  expect(result).not.toHaveProperty('reason')
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result.reason).toBe('PROVIDER_FAILURE')
   expect(result).toHaveProperty('trace.serviceResolution.choice', 'UNCERTAIN')
 })
 
@@ -55,7 +59,8 @@ it.each([
   { name: 'resolve_service_scope', arguments: '{"choice":"SERVICE_INFORMATION_ONLY","action":"skip"}' },
 ])('rejects malformed scope proposals without releasing the food guard: $name/$arguments', async (call) => {
   const result = await resolveServiceHandoff(decision, '能開發票嗎？', state, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: call }] } }] }))
-  expect(result).not.toHaveProperty('reason')
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result.reason).toBe('INVALID_CHOICE')
   expect(result).toHaveProperty('trace.serviceResolution.choice', 'UNCERTAIN')
 })
 
@@ -167,7 +172,7 @@ it('provides the current Menu reference evidence to whole-request qualification'
 it('qualifies a recovered named refusal before granting general Main tools', async () => {
   const complete = vi.fn(async () => response('KEEP_ORDER'))
   const result = await resolveServiceHandoff({ ...decision, reason: 'NEW_REQUEST', recovery: { status: 'completed', admission: 'service', disposition: 'assistant' } }, '不要牛肉麵，先這樣', { ...state, catalogEvidence: { products: [{ label: '牛肉麵', matchedText: '牛肉麵', source: 'name' }], categories: [] }, interactionState: { matchingCartLines: 0 } }, complete)
-  expect(complete).toHaveBeenCalledOnce()
+  expect(complete).toHaveBeenCalledTimes(1)
   expect(result.reason).toBe('GENERAL_QUESTION')
   expect(result).not.toHaveProperty('actionId')
 })
@@ -177,4 +182,50 @@ it('lets Main acknowledge a complete keep-order request after Jev calls it unfin
   const result = await resolveServiceHandoff({ kind: 'INCOMPLETE' }, '還沒輸入完，不要送出', { ...state, phase: 'checkout_invoice' }, async () => response('KEEP_ORDER'))
   expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION' })
   expect(result).not.toHaveProperty('actionId')
+})
+
+// Report: reported-20261103-background-service-clarification-loop in orderingIncidents.ts.
+it('does not turn unconfirmed recipient scope into a service question after Jev admission', async () => {
+  const result = await resolveServiceHandoff({ ...decision, reason: 'UNCERTAIN_OPERATION' }, '他的資訊給得非常非常的細', state, async () => response('UNCERTAIN'))
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
+})
+
+// Report: user-confirmed Nov4 unbound-reference choice, replacement B03-J-A1.
+it('does not reopen a live service question after scope qualification still cannot identify the target', async () => {
+  const result = await resolveServiceHandoff({ ...decision, reason: 'UNCERTAIN_OPERATION' }, '剛才說的那個', { ...state, serviceClarification: { questionId: 'original', question: '請說明餐點名稱', sourceUtterance: '我要那個', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 } }, async () => response('CLARIFY_SERVICE'))
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
+})
+
+// Report: Nov4 silence/admission correction; invalid Main scope is a technical failure.
+it('does not release an unqualified handoff when Main scope output is invalid', async () => {
+  const result = await resolveServiceHandoff(decision, '有其他的嗎', state, async () => response('invented'))
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result.reason).toBe('INVALID_CHOICE')
+})
+
+// Report: semantic1 C05-F1/B01-J-L1; a review clarification is still a purpose proposal.
+it.each([false, true])('checks a review clarification before presenting or holding it (live cue=%s)', async (liveCue) => {
+  const question = { questionId: 'proposed', question: '請問需要什麼？', sourceUtterance: '背景評論', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 }
+  const proposed: KioskInteractionDecision = { ...decision, kind: liveCue ? 'UNAVAILABLE' : 'SERVICE_CLARIFICATION', question, reason: 'UNCERTAIN_OPERATION', recovery: { status: 'completed', admission: 'service', disposition: 'clarify' } }
+  const result = await resolveServiceHandoff(proposed, '判斷的話就是回答出來的東西', { ...state, ...(liveCue ? { serviceClarification: question } : {}) }, async () => response('BACKGROUND'))
+  expect(result.kind).toBe('IGNORE')
+  expect(result).not.toHaveProperty('question')
+})
+
+it('continues an understood menu follow-up instead of publishing a premature review question', async () => {
+  const proposed: KioskInteractionDecision = { ...decision, kind: 'SERVICE_CLARIFICATION', question: { questionId: 'proposed', question: '要哪一類？', sourceUtterance: '有其他的嗎', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 }, recovery: { status: 'completed', admission: 'service', disposition: 'clarify' } }
+  const result = await resolveServiceHandoff(proposed, '有其他的嗎', state, async () => response('MENU_INFORMATION_ONLY'))
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result.requestScope).toBe('menu-information')
+  expect(result).not.toHaveProperty('question')
+})
+
+it('rejects a menu topic proposed for an explicit other recipient', async () => {
+  const result = await resolveServiceHandoff(decision, '小王，有其他的嗎', state, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ recipient: 'other', choice: 'MENU_INFORMATION_ONLY' }) } }] } }] }))
+  expect(result.kind).toBe('IGNORE')
+  expect(result).not.toHaveProperty('question')
 })

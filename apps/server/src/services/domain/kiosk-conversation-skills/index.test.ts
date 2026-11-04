@@ -16,7 +16,7 @@ const input: Pick<DecisionInput, 'transcript' | 'decisionState' | 'candidates' |
 // Fixtures explicitly describe Menu-issued scopes; eligibility itself is tested
 // through Menu's public runtime, not reimplemented by the Server.
 const answerScope = (question: ConversationQuestion): IntentRecovery => ({ kind: 'answer', questionId: question.questionId, ...(question.requestId ? { requestId: question.requestId } : {}), candidateIds: question.choices.map(choice => choice.id) })
-const answer = (choice: string) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ choice }) } }] } }] })
+const answer = (choice: string) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'kiosk', choice }) } }] } }] })
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 core-cart.
 function modelAnswer(body: Record<string, unknown>, choice: string) {
@@ -252,4 +252,35 @@ it.each(['OTHER_REQUEST', 'invalid'] as const)('does not consume a partial or un
   expect(result).not.toHaveProperty('actionId')
   expect(result).not.toHaveProperty('resolvedBy')
   expect(complete).toHaveBeenCalledTimes(2)
+})
+
+// Report: B01-J-L1 configured background chain, turn7: named recovery skipped Menu quantity.
+it('qualifies a new named meal after service recovery using the existing slot flow', async () => {
+  const complete = vi.fn(async (body: Record<string, unknown>) => modelAnswer(body, 'intent:add-item'))
+  const result = await resolveOrderingIntent({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', recovery: { status: 'completed', admission: 'service', readOnly: false } }, { ...input, decisionState: { ...input.decisionState, phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } } }, complete)
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item', resolvedBy: 'main-skill' })
+  expect(complete).toHaveBeenCalledOnce()
+  expect(result).not.toHaveProperty('quantity')
+})
+
+// Report: B04 same-phrase counterpart; an owned Menu scope does not establish recipient.
+it('rejects a finite operation proposed for another speaker recipient', async () => {
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'other', choice: 'intent:add-item' }) } }] } }] }))
+  const result = await resolveOrderingIntent(admitted, { ...input, transcript: '小王，給我水餃一份' }, complete)
+  expect(result.kind).toBe('IGNORE')
+  expect(result).not.toHaveProperty('actionId')
+  expect(complete).toHaveBeenCalledOnce()
+})
+
+// Report: frozen112 C15-F3, semantic4: price lookup followed by purchase became recommendation.
+it.each(['intent:add-item', 'intent:search-menu'])('independently qualifies an exact-meal information proposal before making it read-only: %s', async (choice) => {
+  const complete = vi.fn(async (body: Record<string, unknown>) => modelAnswer(body, choice))
+  const result = await resolveOrderingIntent({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY' }, {
+    ...input,
+    transcript: '我要一份水餃',
+    decisionState: { ...input.decisionState, phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } },
+    conversation: { messages: [{ role: 'user', content: '水餃一份多少錢' }, { role: 'assistant', content: '水餃，單份基本售價 NT$80。' }] },
+  }, complete)
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: choice, resolvedBy: 'main-skill' })
+  expect(complete).toHaveBeenCalledOnce()
 })

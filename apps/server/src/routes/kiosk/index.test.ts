@@ -379,7 +379,7 @@ describe('kiosk routes', () => {
 
   // Report: this chat, 2026-10-21; store FAQ sent to unclassified Main.
   it('recovers a store FAQ sent to generic Main without turning it into a menu lookup', async () => {
-    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"SERVICE_INFORMATION_ONLY"}' } }] } }] }))
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"recipient":"kiosk","choice":"SERVICE_INFORMATION_ONLY"}' } }] } }] }))
     const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: stagedProvider({ admission: 'SERVICE', purpose: 'HANDOFF' }) }
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
@@ -496,12 +496,14 @@ describe('kiosk routes', () => {
 
   it('preserves browser clarification offers through HTTP validation', async () => {
     const kioskService = createKioskService(db)
-    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway, runtimeModelPolicy, systemOne: { isEnabled: async () => true, decide: stagedProvider({ admission: 'SERVICE', purpose: 'UNCERTAIN' }), getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
+    const decide = stagedProvider({ admission: 'SERVICE', purpose: 'UNCERTAIN' })
+    const app = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService, llmGateway, runtimeModelPolicy, systemOne: { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', body: JSON.stringify({ registrationCode: '483920' }), headers: { 'Content-Type': 'application/json' } })
     const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
     const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '酸辣魚便當', candidates: [], decisionState: { phase: 'ordering', clarificationOffer: { id: 'browser-offer1', label: '泰式酸辣魚便當' }, interactionState: { screen: 'request_confirmation', matchingCartLines: 0 } } }) })
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({ kind: 'NEEDS_CLARIFICATION' })
+    expect(await response.json()).toMatchObject({ kind: 'UNAVAILABLE' })
+    expect(JSON.parse(decide.mock.calls[1]![0])).toHaveProperty('clarificationOffer', { id: 'browser-offer1', label: '泰式酸辣魚便當' })
   })
 
   // Report: this chat, Oct 8 — the admin switch promised an assistant handoff.
@@ -548,7 +550,7 @@ describe('kiosk routes', () => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
       const tools = body.tools as Array<{ function: { name: string } }>
       const name = tools[0]!.function.name
-      const args = name === 'resolve_phone_choice' ? { choice: 'SKIP_PHONE' } : JSON.stringify(body).includes('前一輪有限選項仍不確定') ? { admission: 'service', disposition: 'assistant' } : { choice: 'UNCERTAIN' }
+      const args = name === 'resolve_phone_choice' ? { choice: 'SKIP_PHONE' } : JSON.stringify(body.tools).includes('"admission"') ? { recipient: 'kiosk', admission: 'service', disposition: 'assistant' } : { choice: 'UNCERTAIN' }
       return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(args) } }] } }] })
     })
     const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: stagedProvider({ admission: 'UNCERTAIN' }) }
@@ -577,8 +579,8 @@ describe('kiosk routes', () => {
       const tools = body.tools as Array<{ function: { name: string } }>
       if (tools[0]?.function.name === 'resolve_phone_choice')
         return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_phone_choice', arguments: JSON.stringify({ choice }) } }] } }] })
-      const reviewing = JSON.stringify(body).includes('前一輪有限選項仍不確定')
-      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(reviewing ? { admission: 'uncertain', disposition: 'abstain' } : { choice: 'UNCERTAIN' }) } }] } }] })
+      const reviewing = JSON.stringify(body.tools).includes('"admission"')
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(reviewing ? { recipient: 'uncertain', admission: 'uncertain', disposition: 'abstain' } : { choice: 'UNCERTAIN' }) } }] } }] })
     })
     const systemOne = { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide: async (_state: string, questions: Record<string, unknown>) => ({ answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: ({ admission: 'SERVICE', phone: 'SKIP' } as Record<string, string>)[key], confidence: key === 'phone' ? (uncertainService ? 0.3255 : 0.4977) : 0.95 }])) }) }
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy, systemOne }))
@@ -683,7 +685,8 @@ describe('kiosk routes', () => {
   it('exposes one-use decision stages through authenticated API requests without accepting client answers', async () => {
     const kioskService = createKioskService(db)
     const decide = stagedProvider({ admission: 'SERVICE', purpose: 'SINGLE', family: 'MENU', operation: 'intent:search-menu' })
-    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false, systemOne: { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
+    const scopedGateway = { complete: vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"recipient":"kiosk","choice":"MENU_INFORMATION_ONLY"}' } }] } }] })) }
+    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway: scopedGateway, runtimeModelPolicy, secureCookies: false, systemOne: { isEnabled: async () => true, decide, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), maxActionCandidates: async () => 22 as const } }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', body: JSON.stringify({ registrationCode: '483920' }), headers: { 'Content-Type': 'application/json' } })
     const cookie = enrolled.headers.get('Set-Cookie')!.split(';')[0]!
     const headers = { 'Cookie': cookie, 'Content-Type': 'application/json' }

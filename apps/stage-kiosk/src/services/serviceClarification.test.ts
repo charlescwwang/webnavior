@@ -5,7 +5,7 @@ import { expect, it, vi } from 'vitest'
 
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom, runFastPath } from './kiosk-fast-path'
-import { createServiceClarificationWindow } from './questionPresentation'
+import { createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom } from './questionPresentation'
 
 it('treats a service answer as a read-only cue rather than answering an older Menu question', async () => {
   const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
@@ -49,4 +49,59 @@ it('revalidates recovered configuration context without issuing another answer l
   expect(result.decisionState?.waitingFor?.questionId).toBe(questionId)
   expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ waitingFor: { questionId } })
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+// Report: reported-20261103-background-service-clarification-loop in orderingIncidents.ts.
+it('preserves an unexpired question across a long silent chain without renewing it', () => {
+  vi.useFakeTimers()
+  try {
+    const state = { phase: 'ordering' }
+    const window = createServiceClarificationWindow()
+    const cue = { questionId: 'original', question: '查詢還是調整？', sourceUtterance: '幫我', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 }
+    window.present(cue)
+    for (let index = 0; index < 20; index++) {
+      window.settle({ kind: index % 2 ? 'UNAVAILABLE' : 'IGNORE' })
+      vi.advanceTimersByTime(1000)
+      expect(window.current(state)).toEqual(cue)
+    }
+    window.settle({ kind: 'NEEDS_ASSISTANT' })
+    expect(window.current(state)).toBeUndefined()
+    window.present(cue)
+    vi.advanceTimersByTime(10000)
+    expect(window.current(state)).toBeUndefined()
+  }
+  finally { vi.useRealTimers() }
+})
+
+// Report: Nov3 frozen C14-F2; an independent fulfillment request omits the old checkout question.
+it('revalidates an independent fulfillment request against unchanged Menu state', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, checkout: {
+    snapshot: () => undefined,
+    revision: () => 0,
+    paymentStatus: () => undefined,
+    paymentMethods: ['linepay'],
+    assertCanRestart: () => {},
+    restart: () => {},
+    cancel: () => {},
+    start: () => ({ stage: 'membership' }),
+    skipMembership: () => ({ stage: 'invoice' }),
+    chooseInvoice: method => ({ stage: 'invoice', invoiceMethod: method }),
+    requestTaxId: () => ({ stage: 'tax-id', taxId: '' }),
+    setTaxId: taxId => ({ stage: 'tax-id', taxId }),
+    confirmInvoice: () => ({ stage: 'payment' }),
+    confirmTaxId: () => ({ stage: 'payment' }),
+    selectPayment: async () => ({ status: 'selected', customerMessage: '等待付款' }),
+  } })
+  await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', quantity: 1 })
+  const receipt = await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+  const question = questionReceiptFrom(receipt)
+  expect(question?.purpose).toBe('checkout-entry')
+  await runtime.invoke('kiosk_dialogue_presented', { questionId: question!.questionId, content: operationReplyFrom(receipt)! })
+  const result = await runFastPath({ transcript: '更正，我要內用', isEnabled: async () => true, decide: async (request) => {
+    expect(request.decisionState?.intentRecovery?.kind).toBe('request')
+    expect(request.decisionState?.waitingFor).toBeUndefined()
+    return { kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', requestScope: 'order-operation', resolvedBy: 'main-service', recovery: { status: 'completed', admission: 'service', disposition: 'assistant', contextKey: serviceContextKey(request.decisionState!) } }
+  }, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { fulfillmentMode: 'takeout', itemCount: 1 } })
 })

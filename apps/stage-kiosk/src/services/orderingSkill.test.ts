@@ -58,14 +58,23 @@ async function createHarness(choice: 'intent:add-item' | 'intent:search-menu' | 
     selectPayment: payment,
   }, menu: [{ ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [], price: 80 }, { ...menu[0]!, id: 'fried-pork-chop-bento', name: '炸排骨便當', aliases: ['排骨便當'], optionGroups: [], price: 130 }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
-    const tools = body.tools as Array<{ function: { name: string, parameters: { properties: { choice: { enum: string[] } } } } }>
-    const choices = tools[0]!.function.parameters.properties.choice.enum
+    const tools = body.tools as Array<{ function: { name: string, parameters: { properties: { choice?: { enum: string[] } } } } }>
+    const functionName = tools[0]!.function.name
+    const choices = tools[0]!.function.parameters.properties.choice?.enum
+    if (functionName === 'resolve_service_request' && !choices) {
+      const args = route === 'uncertain'
+        ? { recipient: 'uncertain', admission: 'uncertain', disposition: 'abstain' }
+        : { recipient: 'kiosk', admission: 'service', disposition: 'assistant' }
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: functionName, arguments: JSON.stringify(args) } }] } }] })
+    }
+    if (!choices)
+      throw new Error(`Unexpected fixture schema: ${functionName}`)
     if (tools[0]!.function.name === 'verify_ordering_answer')
       return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: '{"choice":"COMPLETE"}' } }] } }] })
     if (tools[0]!.function.name === 'resolve_service_scope')
-      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ choice: route === 'uncertain' ? 'UNCERTAIN' : 'ORDER_MUTATION' }) } }] } }] })
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ recipient: 'kiosk', choice: route === 'uncertain' ? 'UNCERTAIN' : 'ORDER_MUTATION' }) } }] } }] })
     const selected = route === 'uncertain' ? 'UNCERTAIN' : choice === 'confirm-meal' ? choices.find(id => id.endsWith(':yes')) : choices.find(id => id.includes(':quantity:2')) ?? choice
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ choice: selected }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'kiosk', choice: selected }) } }] } }] })
   })
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
     isEnabled: async () => true,
@@ -225,7 +234,7 @@ it.each(['jev', 'main', 'uncertain'] as const)('keeps the same quantity draft th
   const result = await execute('兩份')
   const after = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
   if (route === 'uncertain') {
-    expect(result.kind).toBe('NEEDS_ASSISTANT')
+    expect(result.kind).toBe('UNAVAILABLE')
     expect(after.cart.itemCount).toBe(0)
     expect(after.retainedRequests).toEqual(before.retainedRequests)
     expect(after.waitingFor?.requestId).toBe(before.retainedRequests[0]!.id)

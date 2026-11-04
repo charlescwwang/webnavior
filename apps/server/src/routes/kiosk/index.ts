@@ -387,12 +387,17 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         try {
           choice = JSON.parse(calls[0]!.function.arguments).choice
         }
-        catch { /* An invalid proposal keeps the question pending. */ }
+        catch {
+          /* An invalid proposal keeps the question pending. */
+        }
       }
       return c.json({ kind: 'SCOPE_CHOICE', choice: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST', 'IGNORE'].includes(String(choice)) ? choice : 'ASK' })
     }
     if (!options.systemOne || !await options.systemOne.isEnabled())
       return c.json({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
+    const cue = result.output.decisionState?.serviceClarification
+    if (cue && (cue.expiresAt <= Date.now() || cue.contextKey !== serviceContextKey(result.output.decisionState!)))
+      delete result.output.decisionState!.serviceClarification
     const decisionInput = {
       conversation: session ? buildConversationContext(session.entries, result.output.review ? result.output.transcript : undefined) : undefined,
       review: result.output.review,
@@ -436,9 +441,11 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         }
         return decision
       }
-      const cue = result.output.decisionState?.serviceClarification
-      const validCue = cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(result.output.decisionState!)
-      const bounded = validCue ? { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_SERVICE_REQUEST' as const, recovery: { status: 'eligible' as const } } : await decideInteraction({ ...decisionInput, invoke, routing: 'staged' })
+      let bounded = await decideInteraction({ ...decisionInput, invoke, routing: 'staged' })
+      // Jev failure establishes no service intent. The same independent Main
+      // admission used for semantic uncertainty must run before Agent fallback.
+      if (bounded.kind === 'UNAVAILABLE' && bounded.reason === 'PROVIDER_FAILURE')
+        bounded = { ...bounded, reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } }
       const priced = await resolvePriceHandoff(bounded, result.output.transcript, result.output.review ? undefined : result.output.decisionState?.priceEvidence, completeResolution)
       let decision = priced
       if (!result.output.review) {
@@ -447,6 +454,10 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         // alone never means its purpose was understood.
         decision = await resolveOrderingIntent(decision, decisionInput, completeResolution)
         decision = await resolveServiceHandoff(decision, result.output.transcript, result.output.decisionState, completeResolution, decisionInput.conversation)
+        // Purpose resolution can newly establish a menu read after an earlier
+        // question/abstention skipped price qualification. Issued price choices
+        // are one-pass, so this cannot duplicate an already completed check.
+        decision = await resolvePriceHandoff(decision, result.output.transcript, result.output.decisionState?.priceEvidence, completeResolution)
       }
       signal.throwIfAborted()
       decision = await resolvePhone(decision)
@@ -477,6 +488,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       const interpreted = qualified.resolvedBy === 'main-skill'
       if (!interpreted) {
         qualified = await resolveServiceHandoff(qualified, result.output.transcript, result.output.decisionState, completeResolution, decisionInput.conversation)
+        qualified = await resolvePriceHandoff(qualified, result.output.transcript, result.output.decisionState?.priceEvidence, completeResolution)
         qualified = await resolveOrderingIntent(qualified, decisionInput, completeResolution)
       }
       signal.throwIfAborted()

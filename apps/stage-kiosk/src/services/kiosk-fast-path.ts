@@ -61,7 +61,7 @@ export type FastPathResult = {
 
 /** Only failed service decisions warrant a retry prompt; social uncertainty stays silent. */
 export function shouldShowDecisionRetry(result: FastPathResult): boolean {
-  return result.kind === 'UNAVAILABLE' && (result.reason === 'PROVIDER_FAILURE' || result.reason === 'INVALID_CHOICE' || result.reason === 'CANDIDATE_BUDGET' || result.reason === 'SYSTEM_ONE_DISABLED')
+  return result.kind === 'UNAVAILABLE' && ((result.recovery?.status === 'failed' && result.recovery.failure !== 'cancelled') || result.reason === 'PROVIDER_FAILURE' || result.reason === 'INVALID_CHOICE' || result.reason === 'CANDIDATE_BUDGET' || result.reason === 'SYSTEM_ONE_DISABLED')
 }
 
 /** Owns checkpoint admission for one decision, never execution or transcript admission. */
@@ -268,7 +268,13 @@ export async function runFastPath(input: {
       // leases, which would invalidate this same utterance's recovered result.
       const stateTool = input.webMcp.tools.find(tool => tool.name === 'kiosk_interaction_state')
       const current = stateTool ? decisionStateFrom(await input.webMcp.execute(stateTool, {})) : undefined
-      if ((decisionState?.waitingFor && decisionState.waitingFor.expiresAt <= Date.now()) || (decisionState?.serviceClarification && decisionState.serviceClarification.expiresAt <= Date.now()) || !current || serviceContextKey(current) !== serviceContextKey(decisionState ?? { phase: 'unknown' }) || input.isCurrent?.() === false)
+      // Menu omits an older question from an issued independent-request scope.
+      // A read-only snapshot still includes that displayed question; compare
+      // the same request scope while retaining every revision/freshness check.
+      const currentScope = current && !decisionState?.waitingFor && decisionState?.intentRecovery?.kind === 'request'
+        ? { ...current, waitingFor: undefined }
+        : current
+      if ((decisionState?.waitingFor && decisionState.waitingFor.expiresAt <= Date.now()) || (decisionState?.serviceClarification && decisionState.serviceClarification.expiresAt <= Date.now()) || !current || !currentScope || serviceContextKey(currentScope) !== serviceContextKey(decisionState ?? { phase: 'unknown' }) || input.isCurrent?.() === false)
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', decisionState }
       if (decision.kind === 'SERVICE_CLARIFICATION')
         decision = { ...decision, question: { ...decision.question, contextKey: serviceContextKey(current) } }

@@ -1,5 +1,6 @@
 import type { SystemOneQuestion } from '../kiosk-system-one'
 
+import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { describe, expect, it, vi } from 'vitest'
 
 import { decideInteraction } from '.'
@@ -160,9 +161,9 @@ describe('staged Fast Path routing', () => {
     expect(result).not.toHaveProperty('actionId')
   })
 
-  it('retains a live target question for an admitted but unresolved answer', async () => {
+  it('rechecks an unresolved answer without assuming its recipient from the live question', async () => {
     const result = await decideInteraction({ routing: 'staged', policy, candidates, decisionState: { phase: 'clarification', waitingFor: { questionId: 'target-1', question: '哪一份水餃？', purpose: 'item-clarification', expiresAt: Date.now() + 30_000, choices: [{ id: 'target:1', description: '第一份' }, { id: 'target:2', description: '第二份' }] } }, transcript: '就是那份', invoke: provider(['SERVICE', 'UNCERTAIN']) })
-    expect(result.kind).toBe('CLARIFICATION')
+    expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
     expect(result).not.toHaveProperty('answeredQuestionId')
     expect(result).not.toHaveProperty('actionId')
   })
@@ -181,13 +182,13 @@ describe('staged Fast Path routing', () => {
 })
 
 // Reports: live112 C08-F1/C12-F1, total correction became a new-meal confirmation.
-it.each([0.5, 0.95])('hands uncertain purpose to Main when Menu issued a request recovery scope (%s)', async (confidence) => {
+it.each([0.5, 0.95])('rechecks uncertain purpose before admitting a Menu request recovery scope (%s)', async (confidence) => {
   const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => {
     const key = Object.keys(questions)[0]!
     return { answers: { [key]: { choice: key === 'admission' ? 'SERVICE' : 'UNCERTAIN', confidence: key === 'admission' ? 0.95 : confidence } } }
   })
   const result = await decideInteraction({ routing: 'staged', policy, candidates, transcript: '水餃總共改三份', invoke, decisionState: { phase: 'ordering', clarificationOffer: { id: 'offer', label: '水餃' }, intentRecovery: { kind: 'request', candidateIds: ['intent:set-quantity'] } } })
-  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
+  expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', recovery: { status: 'eligible' } })
   expect(result).not.toHaveProperty('actionId')
 })
 
@@ -198,4 +199,16 @@ it('verifies whole-effect coverage even after Jev hypothesizes an answer to chec
   const result = await decideInteraction({ routing: 'staged', policy, candidates: [choice], transcript: '更正，我要內用', invoke, decisionState: { phase: 'ordering', waitingFor: { questionId: 'checkout', purpose: 'checkout-entry', question: '要進入結帳嗎？', expiresAt: Date.now() + 30000, choices: [choice] } } })
   expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
   expect(result).not.toHaveProperty('answeredQuestionId')
+})
+
+// Report: reported-20261103-background-service-clarification-loop in orderingIncidents.ts.
+it.each(['BACKGROUND', 'UNCERTAIN', 'SERVICE'])('rechecks admission before interpreting an active service answer: %s', async (scope) => {
+  const invoke = provider([scope])
+  const state = { phase: 'ordering', serviceClarification: { questionId: 'service', question: '要查詢還是修改？', sourceUtterance: '幫我處理', contextKey: serviceContextKey({ phase: 'ordering' }), expiresAt: Date.now() + 30000 } }
+  const result = await decideInteraction({ routing: 'staged', policy, candidates, transcript: '它卻出現了第四個字', decisionState: state, invoke })
+  expect(result.kind).toBe(scope === 'BACKGROUND' ? 'IGNORE' : 'UNAVAILABLE')
+  if (scope !== 'BACKGROUND')
+    expect(result.recovery?.status).toBe('eligible')
+  expect(invoke).toHaveBeenCalledOnce()
+  expect(result).not.toHaveProperty('actionId')
 })

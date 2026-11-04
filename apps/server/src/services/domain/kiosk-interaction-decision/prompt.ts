@@ -1,5 +1,8 @@
 import type { SystemOnePolicyInput } from '../kiosk-system-one'
 
+/** Service domain shared by Jev admission and both independent Main qualifiers. */
+export const serviceDomainInstruction = '本機服務範圍：餐點與菜單查詢／比較／推薦、訂購與修改訂單、用餐與結帳流程、店家資訊（含店內位置與路線）、本機身分／名稱／能力／操作。先判斷本句對象與請求：明確叫同伴名字對他說話，即使含餐點或內用／自取等詞仍是背景；技術評論、同伴聊天與領域不明的指令，不因句子完整或使用命令語氣就成為本機求助。沒有本機請求的陳述或未完敘述不採納。確實向本機請求後，對上一答覆的追問／質疑、缺商品目標的訂購、明確泛求助都仍是服務，不能把商品不明當成說話對象不明；表達選購指代品項時，缺商品reference只是目標未定，先釐清品名，不猜商品或搜尋代名詞。限制本機接下來的動作、暫停或拒絕本機操作也是完整服務指示，該動作尚未執行也成立；保留訂單與輸入資料，不能當背景或擅自取消結帳。短答須有實際回答關係；單純附和或結束語可視為背景。當前畫面、歷史與Jev提案不構成服務資格或操作授權。'
+
 /** Application-owned speech scope, shared by ordinary and active-question routes. */
 export const serviceRequestInstruction = [
   '分類省略問句：在向本機查詢餐點的語境中，只說分類名稱、分類加「呢」「的有嗎」「之類的」，也是完整的分類瀏覽，選現有 SEARCH_MENU 查詢候選；不必重述「有沒有」。分類即使只有一道菜也不是指定訂購。缺動詞、份數或具體品名不等於 INCOMPLETE；明顯還沒說完才等待。分類匹配本身不能把同伴聊天變成服務需求。',

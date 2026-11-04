@@ -2,18 +2,20 @@ import type { SystemOneQuestion } from '../kiosk-system-one'
 import type { KioskInteractionDecision } from './contracts'
 import type { DecisionInput, KioskActionCandidate, KioskDecisionTrace } from './index'
 
+import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import { normalizeTranscript } from './context'
 import { decisionQuestionBudget } from './contracts'
-import { defaultDecisionInstruction } from './prompt'
+import { defaultDecisionInstruction, serviceDomainInstruction } from './prompt'
 
 /** First gate concerns service admission only, never a tool or item selection. */
 export const admissionQuestion: SystemOneQuestion = {
   type: 'choice',
-  instructions: '只判斷最後一句是否向本機／店員提出服務互動。有效問題與近期對話只幫助理解省略回答，不是操作授權。對同伴說話、無關閒聊與沒有新需求的附和屬背景。沒有匹配品名不等於背景。',
+  instructions: `${serviceDomainInstruction}只判斷最後一句是否向本機／店員提出服務互動。先前在點餐或剛問過問題，不表示之後每句都在回答本機；必須是本句的服務請求，或能承接有效問題的回答。背景敘述不因緊接問句就變成含糊求助。無法確認對象選UNCERTAIN。有效問題與近期對話只幫助理解省略回答，不授權操作；沒有匹配品名不等於背景。`,
   criteria: {
-    SERVICE: '向本機提出點餐、菜單、訂單、店家資訊、本機身分能力、求助，或回答有效服務問題；含招呼仍選此項。',
+    SERVICE: '向本機提出點餐、菜單、訂單、店家資訊、本機身分能力、求助，或回答有效服務問題；對本機操作的暫停／拒絕也是服務指示，含招呼仍選此項。',
     GREET: '只向本機問好，沒有其他需求；好、嗯、謝謝等附和不是問好。',
-    BACKGROUND: '對同伴說話、無關聊天或沒有新服務需求的附和。',
+    BACKGROUND: '對同伴說話、無關聊天或無服務指示的附和；暫停／拒絕本機操作不是背景。',
     UNCERTAIN: '不能確認是否向本機提出服務需求；不猜操作。',
   },
 }
@@ -89,8 +91,10 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     constraints: input.decisionState?.constraints,
     priceAmounts: input.decisionState?.priceEvidence?.amounts,
     waitingFor: question ? { questionId: question.questionId, requestId: question.requestId, purpose: question.purpose, question: question.question } : null,
+    serviceClarification: input.decisionState?.serviceClarification,
     recentDialogue: input.conversation?.messages.slice(-4) ?? [],
     references: input.decisionState?.references ?? [],
+    clarificationOffer: input.decisionState?.clarificationOffer,
     retainedRequests: input.decisionState?.retainedRequests,
     intentRecovery: input.decisionState?.intentRecovery,
     productResolution: input.decisionState?.productResolution,
@@ -98,6 +102,17 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     activeRequest: input.decisionState?.activeRequest,
     incompleteSpeech: input.decisionState?.incompleteSpeech,
     ...(input.review ? { review: input.review } : {}),
+  })
+  // Admission needs dialogue, not the available order operations. Keeping the
+  // catalog/tool state out avoids making unrelated speech look like a task.
+  const admissionState = JSON.stringify({
+    customerUtterance: transcript.normalized,
+    phase: input.decisionState?.phase,
+    waitingFor: question ? { purpose: question.purpose, question: question.question } : null,
+    serviceClarification: input.decisionState?.serviceClarification
+      ? { question: input.decisionState.serviceClarification.question, sourceUtterance: input.decisionState.serviceClarification.sourceUtterance }
+      : null,
+    recentDialogue: input.conversation?.messages.slice(-4) ?? [],
   })
   const finish = (result: KioskInteractionDecision): KioskInteractionDecision => ({
     ...result,
@@ -114,11 +129,12 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     weakChoice = false
     if (calls >= Math.min(input.maxQuestions ?? decisionQuestionBudget, decisionQuestionBudget))
       throw new Error('Decision question budget exhausted')
+    const questionState = key === 'admission' ? admissionState : state
     const startedAt = performance.now()
     calls++
     try {
-      const response = await input.invoke(state, { [key]: choice })
-      exchanges.push({ index: calls, state, questions: { [key]: choice }, answers: response.answers, durationMs: performance.now() - startedAt, status: 'answered' })
+      const response = await input.invoke(questionState, { [key]: choice })
+      exchanges.push({ index: calls, state: questionState, questions: { [key]: choice }, answers: response.answers, durationMs: performance.now() - startedAt, status: 'answered' })
       const answer = response.answers?.[key] as { choice?: unknown, confidence?: unknown } | undefined
       if (!answer || typeof answer.choice !== 'string' || !Object.hasOwn(choice.criteria ?? {}, answer.choice)) {
         invalidChoice = true
@@ -150,7 +166,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       if (exchange?.index === calls)
         exchange.status = 'failed'
       else
-        exchanges.push({ index: calls, state, questions: { [key]: choice }, durationMs: performance.now() - startedAt, status: 'failed' })
+        exchanges.push({ index: calls, state: questionState, questions: { [key]: choice }, durationMs: performance.now() - startedAt, status: 'failed' })
       throw error
     }
   }
@@ -210,6 +226,11 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     if (scope !== 'SERVICE')
       return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', ...(scope === 'UNCERTAIN' || weakChoice ? { recovery: { status: 'eligible' } as const } : {}) })
     admitted = true
+    // Recheck the current speaker/request before interpreting a service answer.
+    // The review owns its relation to this cue, not an older Menu operation.
+    const cue = input.decisionState?.serviceClarification
+    if (cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(input.decisionState!))
+      return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } })
     if (input.decisionState?.activeRequest) {
       const relation = await choose('requestRelation', { type: 'choice', instructions: '只判斷本句與進行中需求的關係，不規劃如何中斷或執行。', criteria: { FOLLOW_UP: '補充、更正或詢問同一個仍在處理的需求。', NEW_REQUEST: '獨立的新服務需求。', UNCERTAIN: '不能確認是否同一需求。' } })
       if (relation === 'FOLLOW_UP')
@@ -260,6 +281,14 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       if (defer && !eligible.some(candidate => candidate.id === defer.id))
         eligible.push(defer)
       return await leaf(eligible, question.questionId)
+    }
+    if (!purpose || purpose === 'UNCERTAIN') {
+      if (question)
+        return handoff()
+      // Jev proposed service admission but did not understand its purpose.
+      // Main must independently review both, without confusing this with an
+      // unconfirmed recipient or granting an executable request scope.
+      return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', recovery: { status: 'eligible' } })
     }
     if (purpose !== 'SINGLE') {
       // A proposed meal is not evidence of a purchase. When Menu has issued

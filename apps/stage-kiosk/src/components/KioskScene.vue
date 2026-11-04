@@ -915,8 +915,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     if (result.kind !== 'DEFERRED') {
       decisionProgress.finish(utterance.id, result)
-      if (result.kind !== 'SERVICE_CLARIFICATION')
-        serviceClarificationWindow.reset()
+      serviceClarificationWindow.settle(result)
     }
     // Do not escalate a late decision after the visitor has left. Accepted or
     // uncertain execution receipts still settle normally, without retrying.
@@ -1174,9 +1173,10 @@ async function presentFastPathResult(
     const content = entryPhase === 'customer_entry' ? t('stage.kiosk.customer-entry.complete-first') : result.question.question
     if (entryPhase !== 'customer_entry')
       serviceClarificationWindow.present(result.question)
-    if (!recordedInput)
-      await interactionRecording.append('asr_transcript', input.text, { source: input.source, utteranceId: input.id })
-    await interactionRecording.append('assistant_text', content, { source: 'service_clarification', questionId: result.question.questionId })
+    // A prior read may already have saved this utterance. Record the question
+    // correlation too; server projection deduplicates the same utterance ID.
+    await interactionRecording.append('asr_transcript', input.text, { decisionRoute: 'fast_path', source: 'service_clarification', utteranceId: input.id, questionId: result.question.questionId })
+    await interactionRecording.append('assistant_text', content, { source: 'service_clarification', questionId: result.question.questionId, utteranceId: input.id })
     if (!interactionTurn.isCurrent(turn))
       return
     conversationMessages.value = [...conversationMessages.value, ...(!shownInput ? [{ role: 'user' as const, content: input.text }] : []), { role: 'assistant', content, slices: [], tool_results: [] }]

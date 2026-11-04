@@ -1,6 +1,7 @@
 import type { KioskRoutesOptions } from '.'
 import type { DecisionStageResult } from '../../services/domain/kiosk-interaction-decision/contracts'
 
+import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { expect, it, vi } from 'vitest'
 
@@ -14,7 +15,7 @@ it('delivers Main recovery start over HTTP before the provider runs and finishes
   let finish!: (response: Response) => void
   const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(({ body }) => {
     if (JSON.stringify(body.tools).includes('resolve_service_scope'))
-      return Promise.resolve(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"UNCERTAIN"}' } }] } }] }))
+      return Promise.resolve(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"recipient":"kiosk","choice":"CLARIFY_SERVICE"}' } }] } }] }))
     return new Promise<Response>(resolve => finish = resolve)
   })
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
@@ -48,17 +49,33 @@ it('delivers Main recovery start over HTTP before the provider runs and finishes
   if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')
     throw new Error('Expected recovery completion')
   result = await (await app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })).json() as DecisionStageResult
-  expect(result).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', stage: 'review', status: 'started' })
-  if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')
-    throw new Error('Expected independent service review')
-  const reviewing = app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })
-  await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2))
-  finish(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: '{"admission":"service","disposition":"assistant"}' } }] } }] }))
-  result = await (await reviewing).json() as DecisionStageResult
-  expect(result).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', stage: 'review', status: 'completed' })
-  if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')
-    throw new Error('Expected completed independent review')
-  const final = await (await app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })).json()
-  expect(final).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelCalls: jevQuestions, modelQuestions: jevQuestions, recovery: { status: 'completed' } })
+  const final = result
+  expect(complete).toHaveBeenCalledTimes(2)
+  expect(JSON.stringify(complete.mock.calls[0]![0].body.tools)).toContain('resolve_service_request')
+  expect(JSON.stringify(complete.mock.calls[1]![0].body.tools)).toContain('resolve_service_scope')
+  expect(final).toMatchObject({ kind: 'SERVICE_CLARIFICATION', modelCalls: jevQuestions, modelQuestions: jevQuestions, recovery: { status: 'completed' } })
   expect(final).not.toHaveProperty('actionId')
+})
+
+// Report: reported-20261103-background-service-clarification-loop in orderingIncidents.ts.
+it.each(['BACKGROUND', 'UNCERTAIN', 'FAILURE'])('runs HTTP admission even with an active cue and leaves %s silent', async (scope) => {
+  const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify({ recipient: 'uncertain', admission: 'uncertain', disposition: 'abstain', requestKind: 'clarification-answer' }) } }] } }] }))
+  const decide = vi.fn(async (_state: string, questions: Record<string, unknown>) => {
+    if (scope === 'FAILURE')
+      throw new Error('Injected Jev failure; not proof of service intent')
+    return { answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: scope, confidence: 0.99 }])) }
+  })
+  const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = { isEnabled: async () => true, maxActionCandidates: async () => 22, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }), decide }
+  const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(await mockDB(schema)), llmGateway: { complete }, runtimeModelPolicy: { modelFor: async () => 'mock-main' }, systemOne }))
+  const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+  const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+  const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, body: JSON.stringify({ transcript: '它卻出現了第四個字', candidates: [], decisionState: { phase: 'ordering', serviceClarification: { questionId: 'q', question: '想查什麼？', sourceUtterance: '幫我', contextKey: serviceContextKey({ phase: 'ordering' }), expiresAt: Date.now() + 30000 } } }) })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result).toHaveProperty('kind', scope === 'BACKGROUND' ? 'IGNORE' : 'UNAVAILABLE')
+  expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
+  expect(decide).toHaveBeenCalledOnce()
+  expect(Object.keys(decide.mock.calls[0]![1])).toEqual(['admission'])
+  expect(complete).toHaveBeenCalledTimes(scope === 'BACKGROUND' ? 0 : 1)
 })

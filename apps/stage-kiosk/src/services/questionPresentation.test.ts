@@ -36,7 +36,7 @@ it('turns an unverified no-operation completion into an owned clarification inst
   expect(result.role).toBe('assistant')
   expect(result.content).not.toContain('已移除')
   expect(result.content).not.toContain('再試一次')
-  expect(result.content).toContain('詢問或調整')
+  expect(result.content).toContain('查詢的餐點或訂單調整')
   expect(result).toHaveProperty('clarification', true)
   expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(context.cart)
 })
@@ -400,7 +400,7 @@ it('presents a reviewed clarification after reads instead of replacing it with m
   menu.record('menu_get', { items: [], customerMessage: '沒有查到。' })
   const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], reply: { kind: 'clarification' } }, { menu, context, failureMessage: '失敗。' })
   expect(reply.role).toBe('assistant')
-  expect(reply.content).toContain('詢問或調整')
+  expect(reply.content).toContain('查詢的餐點或訂單調整')
   expect(reply.content).not.toContain('沒有查到')
 })
 

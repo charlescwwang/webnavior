@@ -343,6 +343,11 @@ export function createServiceClarificationWindow() {
         active = undefined
       return active
     },
+    /** Silent input cannot renew or consume a still-valid service question. */
+    settle(result: { kind: string }) {
+      if (!['IGNORE', 'INCOMPLETE', 'UNAVAILABLE', 'DEFERRED', 'SERVICE_CLARIFICATION'].includes(result.kind))
+        active = undefined
+    },
     reset() { active = undefined },
   }
 }

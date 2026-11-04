@@ -105,3 +105,15 @@ it('keeps an explicit full-catalog request separate from continuing retained bud
   expect(result.items.map(item => item.id)).toEqual(['cheap', 'dear'])
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
 })
+
+// Report: semantic3 B04-J-A1; no preceding recommendation is a missing reference, not a transport failure.
+it('clarifies a continuation without usable presentation instead of inventing a recommendation or throwing', async () => {
+  const presented = vi.fn()
+  const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: presented })
+  const before = await runtime.invoke('kiosk_fast_path_context') as { revisions: unknown }
+  const result = await runtime.invokeForAgent('menu_recommend', { action: 'continue' })
+  expect(result).toMatchObject({ queryAction: 'clarify', items: [] })
+  expect(presented).not.toHaveBeenCalled()
+  expect(await runtime.invoke('kiosk_fast_path_context')).toMatchObject({ revisions: before.revisions })
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})

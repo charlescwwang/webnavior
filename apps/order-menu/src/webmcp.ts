@@ -2619,7 +2619,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         throw new Error('STALE_PLAN: Query conditions belong to an older menu.')
       if (action === 'continue' && recommendationBatch?.queries.length)
         recommendationBatch = { ...recommendationBatch, queries: [], exhausted: false }
-      if (action === 'clarify' || (action === 'continue' && recommendationBatch?.exhausted))
+      // No preceding batch/presentation is an unresolved reference, not a
+      // transport error. Ask through the existing scope-clarification reply;
+      // never invent a first batch or relax stale-catalog checks above.
+      const missingContinuation = action === 'continue' && !recommendationBatch && !presentationItemIds?.length
+      if (action === 'clarify' || missingContinuation || (action === 'continue' && recommendationBatch?.exhausted))
         return { queryAction: 'clarify', items: [], customerMessage: recommendationBatch?.exhausted ? mealMessages.queryActions.exhausted : mealMessages.queryActions.clarify }
       if (action === 'continue') {
         input = { ...patch, action, more: true }
