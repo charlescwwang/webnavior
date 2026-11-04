@@ -1123,8 +1123,8 @@ The standalone microphone page now selects LCMV or Mask. Mask comparisons contai
 raw48k eight-channel float32 and16k mono reference/processed PCM16 from the same
 15-second source interval. JSON identifies both clocks, mapping, radius and Mask
 algorithm; no loudness normalization, network upload, Session or Admin migration
-is involved. The current Admin comparison schema remains48k/lcmv-only, so Mask
-recordings are deliberately not sent through it. Reference geometry defaults to
+is involved. Admin comparison uploads and migration0047 are excluded from this release;
+Mask comparison recordings stay local. Reference geometry defaults to
 45mm in the core; the device's configured radius/mapping is used when integrated
 and is still subject to physical verification.
 
