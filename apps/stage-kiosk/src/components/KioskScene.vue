@@ -30,6 +30,7 @@ import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } f
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
+import ArrayMicrophoneSettings from './arrayMicrophoneSettings.vue'
 import KioskAdminAccess from './KioskAdminAccess.vue'
 import KioskAdminPanel from './KioskAdminPanel.vue'
 import KioskAgentControl from './KioskAgentControl.vue'
@@ -44,6 +45,7 @@ import KioskSessionNotice from './KioskSessionNotice.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
 import ScenarioSurface from './ScenarioSurface.vue'
 
+import { useArrayMicrophone } from '../composables/useArrayMicrophone'
 import { useFeedbackInvitationSettings } from '../composables/useFeedbackInvitationSettings'
 import { useKioskAudioStatusPosition } from '../composables/useKioskAudioStatusPosition'
 import { useKioskCameraPreview } from '../composables/useKioskCameraPreview'
@@ -62,7 +64,7 @@ import { setKioskLocale } from '../modules/i18n'
 import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
-import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, reportKioskAudioWarning, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
@@ -127,7 +129,7 @@ const paused = shallowRef(false)
 const settingsAudioDeviceStore = useSettingsAudioDevice()
 const { language } = storeToRefs(useSettings())
 const fixedGreetings = createFixedGreetings(synthesizeKioskSpeech)
-const { enabled, stream } = storeToRefs(settingsAudioDeviceStore)
+const { enabled, stream: rawMicrophoneStream, captureConstraints } = storeToRefs(settingsAudioDeviceStore)
 const { askPermission: requestMicrophonePermission } = settingsAudioDeviceStore
 const chatSessionStore = useChatSessionStore()
 const { audioContext } = useAudioContext()
@@ -408,6 +410,16 @@ const effectiveMediaCaptureMode = computed<KioskMediaCaptureMode>(() => (
     ? 'triggered'
     : props.mediaCaptureMode
 ))
+// Pause the array graph with VAD; resuming creates a fresh input generation.
+const arrayActive = computed(() => enabled.value && props.voiceConversationOnly)
+const arrayMicrophone = useArrayMicrophone(rawMicrophoneStream, arrayActive, captureConstraints)
+const { stream } = arrayMicrophone
+// Device operations only: never present this warning in customer dialogue or TTS.
+// One warning per failed generation; reporting has a deadline and never blocks VAD.
+watch(arrayMicrophone.warning, (warning) => {
+  if (warning)
+    void reportKioskAudioWarning(warning).catch(() => console.warn('Kiosk audio diagnostic delivery failed.'))
+})
 const mediaCapture = useKioskMediaCapture(
   () => interactionRecording.visitorSessionId.value,
   () => performanceSettings.value,
@@ -519,7 +531,7 @@ const cursorPosition = computed(() => ({ x: x.value, y: y.value }))
 let stopAssistantAudio: (() => void) | undefined
 let activeVoiceCandidate: ReturnType<typeof interactionTurn.beginCustomerVoiceCandidate> | undefined
 
-const { dispose, inferenceError, init, loaded, start } = useVAD(workletUrl, {
+const { dispose, inferenceError, init, loaded, start, processPcm } = useVAD(workletUrl, {
   threshold: computed(() => props.voiceVadSettings.threshold),
   minSpeechDurationMs: computed(() => props.voiceVadSettings.minSpeechDurationMs),
   maxSpeechDurationS: computed(() => props.voiceVadSettings.maxSpeechDurationS),
@@ -629,38 +641,6 @@ const audioInputIndicator = computed(() => {
     title: '麥克風正在傾聽，直接說話即可開始。',
   }
 })
-
-async function startAudioInteraction() {
-  console.info('[KIOSK AUDIO] startAudioInteraction', {
-    enabled: enabled.value,
-    hasStream: !!stream.value,
-    loaded: loaded.value,
-    inferenceError: inferenceError.value,
-  })
-
-  audioInputStarted.value = false
-
-  await init()
-
-  console.info('[KIOSK AUDIO] after VAD init', {
-    hasStream: !!stream.value,
-    loaded: loaded.value,
-    inferenceError: inferenceError.value,
-  })
-
-  if (stream.value) {
-    console.info('[KIOSK AUDIO] starting VAD with stream')
-
-    await start(stream.value)
-
-    audioInputStarted.value = true
-
-    console.info('[KIOSK AUDIO] VAD connected')
-  }
-  else {
-    console.warn('[KIOSK AUDIO] no microphone stream after VAD init')
-  }
-}
 
 async function processVoiceCandidate(
   buffer: Float32Array,
@@ -1346,13 +1326,6 @@ function stopAudioInteraction() {
   audioInputStarted.value = false
 }
 
-watch([enabled, () => props.voiceConversationOnly], async ([isEnabled, voiceConversationOnly]) => {
-  if (isEnabled && voiceConversationOnly)
-    await startAudioInteraction().catch(error => console.error('Failed to start kiosk audio interaction:', error))
-  else
-    stopAudioInteraction()
-}, { immediate: true })
-
 // Voice-only mode is the explicit microphone consent mode. It asks before
 // optional camera work begins, while text kiosks never request microphone use.
 async function prepareMicrophone() {
@@ -1388,15 +1361,37 @@ watch(() => props.voiceConversationOnly, () => void prepareMicrophone(), { immed
 
 watch(language, locale => setKioskLocale(locale), { immediate: true })
 
-watch([stream, loaded], async ([audioStream, vadLoaded]) => {
-  if (enabled.value && vadLoaded && audioStream) {
-    await start(audioStream)
-      .then(() => audioInputStarted.value = true)
-      .catch((error) => {
-        audioInputStarted.value = false
-        console.error('Failed to connect kiosk VAD to audio input:', error)
-      })
-  }
+let audioGeneration = 0
+let audioLifecycle = Promise.resolve()
+watch([stream, enabled, () => props.voiceConversationOnly, arrayMicrophone.pcmSource], ([audioStream, isEnabled, voiceOnly, pcm]) => {
+  const ticket = ++audioGeneration
+  dispose()
+  if (activeVoiceCandidate)
+    interactionTurn.completeVoiceCandidate(activeVoiceCandidate)
+  activeVoiceCandidate = undefined
+  audioInputStarted.value = false
+  // Serialize VAD teardown/setup. Stale initialization cannot attach an old stream.
+  audioLifecycle = audioLifecycle.then(async () => {
+    dispose()
+    activeVoiceCandidate = undefined
+    audioInputStarted.value = false
+    if (ticket !== audioGeneration || !audioStream || !isEnabled || !voiceOnly)
+      return
+    await init(pcm ? 'pcm' : 'stream')
+    if (ticket !== audioGeneration) {
+      dispose()
+      return
+    }
+    if (pcm)
+      pcm.start(processPcm)
+    else
+      await start(audioStream)
+    if (ticket === audioGeneration)
+      audioInputStarted.value = loaded.value
+  }).catch(error => console.error('Failed to connect kiosk VAD:', error))
+}, { immediate: true })
+onUnmounted(() => {
+  ++audioGeneration
 })
 
 watch(proactiveSettings, () => {
@@ -2331,6 +2326,7 @@ onUnmounted(() => {
         @reload="reloadKiosk"
       >
         <template #device-settings>
+          <ArrayMicrophoneSettings v-model:mapping="arrayMicrophone.mapping.value" v-model:radius="arrayMicrophone.radius.value" :enabled="enabled" :mode="arrayMicrophone.mode.value" :channel-count="arrayMicrophone.channelCount.value" :status="arrayMicrophone.status.value" :error="arrayMicrophone.error.value" />
           <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated')" />
         </template>
       </KioskAdminPanel>
