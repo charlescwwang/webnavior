@@ -997,7 +997,9 @@ export function requiresConfirmation(plan: OperationPlan, context: DecisionConte
   // customer's confirmation is already the intent, so do not ask it twice.
   if (plan.intent === 'CLEAR_CART')
     return true
-  return plan.intent === 'CANCEL_CHECKOUT' && (context.checkout?.stage === 'payment' || Boolean(context.checkout?.carrierCode || context.checkout?.taxId))
+  // Returning discards both committed identifiers and unsubmitted form drafts.
+  // Main's confirmedByUser flag is a proposal, not the separate user answer.
+  return plan.intent === 'CANCEL_CHECKOUT' && (context.checkout?.stage === 'payment' || Boolean(context.checkout?.invoiceDraft?.code || context.checkout?.carrierCode || context.checkout?.citizenCode || context.checkout?.taxId))
 }
 
 function revisionsFor(candidate: IntentCandidate, context: DecisionContext): Partial<KioskRevisions> {

@@ -92,3 +92,34 @@ it('adds no provider review to ordinary counts or budget numbers', async () => {
   expect(await preserveRequestedQuantities(context, [], complete)).toEqual([])
   expect(complete).not.toHaveBeenCalled()
 })
+
+// Report: Q01-M-B3, semantic4: correcting a never-added count replaced existing dumplings.
+it.each([false, true])('verifies replacement consent even when all current counts are legal (consent=%s)', async (consent) => {
+  const context = parse(conversationContextSchema, { ...facts, readOnly: false, sourceUtterance: consent ? '把原來的水餃換成一份排骨便當' : '不要200份排骨便當，改成一份排骨便當就好', cart: { itemCount: 1, total: 80, lines: [{ id: 'dumplings-line', itemId: 'dumplings', name: '水餃', quantity: 1, unitPrice: 80, options: [] }] }, quantityPolicy: { maximum: 20, mentionedCounts: [1], message: '最多20份。' } })
+  const calls = [{ id: 'pork', type: 'function' as const, function: { name: 'order_add_item', arguments: '{"itemId":"pork","quantity":1,"replaceLineId":"dumplings-line"}' } }]
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'preserve_requested_quantities', arguments: JSON.stringify({ quantities: [{ callId: 'pork', quantity: 1, replaceExisting: consent }] }) } }] } }] }))
+  const checked = await preserveRequestedQuantities(context, calls, complete)
+  expect(complete).toHaveBeenCalledOnce()
+  expect(JSON.parse(checked![0]!.function.arguments)).toEqual({ itemId: 'pork', quantity: 1, ...(consent ? { replaceLineId: 'dumplings-line' } : {}) })
+})
+
+it('withholds a replacement when its consent review is invalid', async () => {
+  const context = parse(conversationContextSchema, { ...facts, readOnly: false, quantityPolicy: { maximum: 20, mentionedCounts: [1], message: '最多20份。' } })
+  const calls = [{ id: 'replace', type: 'function' as const, function: { name: 'order_add_item', arguments: '{"itemId":"pork","replaceLineId":"old"}' } }]
+  const complete = vi.fn(async () => Response.json({ choices: [] }))
+  expect(await preserveRequestedQuantities(context, calls, complete)).toBeUndefined()
+  expect(complete).toHaveBeenCalledOnce()
+})
+
+// Report: purchase2 C12-A1; “總共兩份” removed the already-correct dumplings line.
+it.each([false, true])('checks actual removal consent independently of an explicit serving count (consent=%s)', async (consent) => {
+  const context = parse(conversationContextSchema, { ...facts, readOnly: false, sourceUtterance: consent ? '移除水餃兩份' : '是總共兩份，不是再加兩份', quantityPolicy: { maximum: 20, mentionedCounts: [2], message: '最多20份。' }, cart: { itemCount: 2, total: 160, lines: [{ id: 'dumplings-line', itemId: 'dumplings', name: '水餃', quantity: 2, unitPrice: 80, options: [] }] } })
+  const calls = [{ id: 'remove', type: 'function' as const, function: { name: 'cart_remove_item', arguments: '{"lineId":"dumplings-line"}' } }]
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'preserve_requested_quantities', arguments: JSON.stringify({ quantities: [{ callId: 'remove', quantity: 0, replaceExisting: false, removeExisting: consent }] }) } }] } }] }))
+  const checked = await preserveRequestedQuantities(context, calls, complete)
+  expect(complete).toHaveBeenCalledOnce()
+  if (consent)
+    expect(checked).toEqual(calls)
+  else
+    expect(checked).toBeUndefined()
+})

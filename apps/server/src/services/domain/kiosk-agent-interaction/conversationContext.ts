@@ -1,7 +1,7 @@
 import type { ContextReply, ConversationContext, ConversationToolCall } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import { contextReplySchema } from '@proj-airi/stage-shared/kiosk-conversation'
-import { array, boolean, number, object, safeParse, string } from 'valibot'
+import { array, boolean, number, object, optional, safeParse, string } from 'valibot'
 
 /** The model sees one current projection, never a pile of previous snapshots. */
 export function currentContextInstructions(context: ConversationContext, requireMenuRead = false) {
@@ -101,48 +101,53 @@ export async function selectReply(input: {
   return { reply: repaired ?? { kind: 'clarification' }, repaired: true }
 }
 
-/** Verifies original counts for a risky proposal; it cannot execute or reduce an order. */
+/** Verifies original counts and replacement/removal consent before a risky cart proposal executes. */
 export async function preserveRequestedQuantities(context: ConversationContext, calls: ConversationToolCall[], complete: (body: Record<string, unknown>) => Promise<Response>): Promise<ConversationToolCall[] | undefined> {
   const counts = [...new Set(context.quantityPolicy?.mentionedCounts ?? [])].filter(count => count > 0)
-  if (!context.quantityPolicy || !counts.some(count => count > context.quantityPolicy!.maximum))
-    return calls
+  const oversized = counts.some(count => context.quantityPolicy && count > context.quantityPolicy.maximum)
   const proposals: Array<{ call: ConversationToolCall, input: Record<string, unknown> }> = []
   for (const call of calls) {
-    if (!['order_add_item', 'cart_add_item', 'menu_set_quantity', 'cart_set_line_quantity'].includes(call.function.name))
+    if (!['order_add_item', 'cart_add_item', 'menu_set_quantity', 'cart_set_line_quantity', 'cart_remove_item'].includes(call.function.name))
       continue
     try {
       const input = JSON.parse(call.function.arguments)
-      if (input && typeof input === 'object' && typeof input.quantity === 'number')
+      if (input && typeof input === 'object' && (typeof input.quantity === 'number' || typeof input.replaceLineId === 'string' || call.function.name === 'cart_remove_item'))
         proposals.push({ call, input })
     }
     catch { /* Malformed calls retain their normal input-validation path. */ }
   }
-  if (!proposals.length)
+  const replacement = proposals.some(({ input }) => typeof input.replaceLineId === 'string')
+  const removal = proposals.some(({ call }) => call.function.name === 'cart_remove_item')
+  if (!proposals.length || (!oversized && !replacement && !removal))
     return calls
   let originalCounts: number[]
   let replacements: boolean[] = []
-  if (counts.length === 1) {
+  if (counts.length === 1 && !replacement && !removal) {
     // With one explicit count, no semantic model can authorize a different one.
     originalCounts = proposals.map(() => counts[0]!)
   }
   else {
     const response = await complete({ temperature: 0, messages: [
-      { role: 'system', content: '核對工具提案中各餐點在顧客完整原句最後仍成立的原始份數。不要替顧客減量、不要依系統上限修正數字。200份就是200，不能變20；同句合法品項照原數量。否定舊數量後明確改成新數量則使用新數量。每個callId回覆一次，不能新增工具或餐點；無法確定用0表示未確認。replaceExisting只在顧客確實要求替換該replaceLineId所指的現有餐點時為true；只是把未執行的200份排骨改成1份，不代表要替換購物車原有水餃，必須false。只呼叫preserve_requested_quantities，不執行操作。' },
+      { role: 'system', content: '核對工具提案中各餐點在顧客完整原句最後仍成立的原始份數。不要替顧客減量、不要依系統上限修正數字。200份就是200，不能變20；同句合法品項照原數量。否定舊數量後明確改成新數量則使用新數量。每個callId回覆一次，不能新增工具或餐點；無法確定用0表示未確認。replaceExisting只在顧客確實要求替換該replaceLineId所指的現有餐點時為true；只是把未執行的200份排骨改成1份，不代表要替換購物車原有水餃，必須false。removeExisting只在完整原句明確要求刪除該lineId現有餐點時為true；更正總份數不代表移除。移除提案的quantity填0，不將工具提案本身當成顧客同意。只呼叫preserve_requested_quantities，不執行操作。' },
       { role: 'user', content: JSON.stringify({ utterance: context.sourceUtterance, proposals: proposals.map(({ call, input }) => ({ callId: call.id, tool: call.function.name, input })), catalog: context.catalog?.items.map(item => ({ id: item.id, name: item.name, aliases: item.aliases })), cart: context.cart.lines }) },
-    ], tools: [{ type: 'function', function: { name: 'preserve_requested_quantities', parameters: { type: 'object', properties: { quantities: { type: 'array', items: { type: 'object', properties: { callId: { type: 'string', enum: proposals.map(({ call }) => call.id) }, quantity: { type: 'integer', enum: [0, ...counts] }, replaceExisting: { type: 'boolean' } }, required: ['callId', 'quantity', 'replaceExisting'], additionalProperties: false }, minItems: proposals.length, maxItems: proposals.length } }, required: ['quantities'], additionalProperties: false } } }], tool_choice: { type: 'function', function: { name: 'preserve_requested_quantities' } } })
+    ], tools: [{ type: 'function', function: { name: 'preserve_requested_quantities', parameters: { type: 'object', properties: { quantities: { type: 'array', items: { type: 'object', properties: { callId: { type: 'string', enum: proposals.map(({ call }) => call.id) }, quantity: { type: 'integer', ...(counts.length ? { enum: [0, ...counts] } : { minimum: 0 }) }, replaceExisting: { type: 'boolean' }, ...(removal ? { removeExisting: { type: 'boolean' } } : {}) }, required: ['callId', 'quantity', 'replaceExisting', ...(removal ? ['removeExisting'] : [])], additionalProperties: false }, minItems: proposals.length, maxItems: proposals.length } }, required: ['quantities'], additionalProperties: false } } }], tool_choice: { type: 'function', function: { name: 'preserve_requested_quantities' } } })
     if (!response.ok)
       throw new Error('Quantity proposal review provider failed')
     const payload = safeParse(object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: string(), arguments: string() }) })) }) })) }), await response.json().catch(() => null))
     const returned = payload.success && payload.output.choices.length === 1 ? payload.output.choices[0]?.message.tool_calls : undefined
     try {
       const call = returned?.length === 1 ? returned[0]?.function : undefined
-      const parsed = call?.name === 'preserve_requested_quantities' ? safeParse(object({ quantities: array(object({ callId: string(), quantity: number(), replaceExisting: boolean() })) }), JSON.parse(call.arguments)) : undefined
+      const parsed = call?.name === 'preserve_requested_quantities' ? safeParse(object({ quantities: array(object({ callId: string(), quantity: number(), replaceExisting: boolean(), removeExisting: optional(boolean()) })) }), JSON.parse(call.arguments)) : undefined
       if (!parsed?.success || parsed.output.quantities.length !== proposals.length || new Set(parsed.output.quantities.map(item => item.callId)).size !== proposals.length)
         return undefined
       const byId = new Map(parsed.output.quantities.map(item => [item.callId, item]))
       originalCounts = proposals.map(({ call }) => byId.get(call.id)?.quantity ?? 0)
       replacements = proposals.map(({ call }) => byId.get(call.id)?.replaceExisting === true)
-      if (originalCounts.some(count => !counts.includes(count)))
+      // A delete has no requested quantity. It requires separate target-bound
+      // consent, while add/set proposals still require their original counts.
+      if (proposals.some(({ call }) => call.function.name === 'cart_remove_item' && byId.get(call.id)?.removeExisting !== true))
+        return undefined
+      if (originalCounts.some((count, index) => proposals[index]!.call.function.name !== 'cart_remove_item' && (!Number.isInteger(count) || count <= 0 || (counts.length > 0 && !counts.includes(count)))))
         return undefined
     }
     catch { return undefined }
@@ -150,10 +155,12 @@ export async function preserveRequestedQuantities(context: ConversationContext, 
   // Keep provider call IDs and all non-quantity arguments. The original count
   // is sent through the normal Menu business validator, which owns the20 cap.
   const verified = new Map(proposals.map(({ call, input }, index) => {
+    if (call.function.name === 'cart_remove_item')
+      return [call.id, call] as const
     const checked: Record<string, unknown> = { ...input, quantity: originalCounts[index] }
-    // Correcting a never-added quantity cannot silently replace another meal.
-    // A single oversized count is refused by Menu regardless of replacement.
-    if (counts.length > 1 && !replacements[index])
+    // A normal count still cannot authorize replacing another meal. Consent
+    // binds to this call and its current cart line, independently of the20 cap.
+    if (replacement && !replacements[index])
       delete checked.replaceLineId
     return [call.id, { ...call, function: { ...call.function, arguments: JSON.stringify(checked) } }]
   }))

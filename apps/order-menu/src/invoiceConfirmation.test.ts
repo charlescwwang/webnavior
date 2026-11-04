@@ -103,3 +103,15 @@ it('keeps read-only recovery inside checkout fact tools without reopening recomm
   expect(state.allowedToolNames).not.toContain('checkout_confirm_invoice')
   expect(fixture.snapshot()?.stage).toBe('invoice')
 })
+
+// Report: purchase2 I03-C-A3/I04-C-A2/I04-N-A2; edit requests lost uncommitted invoice drafts.
+it.each(invoiceCases)('requires a separate return confirmation before discarding a $method draft', async ({ method, code }) => {
+  const f = await setup(code, method)
+  const before = f.snapshot()
+  await f.runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'invoice-edit', transcript: '我要先修改資料', expectedMenuRevision: 0, readOnly: false, constraints: {} })
+  const result = await f.runtime.invokeForAgent('checkout_cancel', { confirmedByUser: true })
+  expect(result).toMatchObject({ pendingCustomerChoice: { purpose: 'operation-confirmation' } })
+  expect(f.snapshot()).toEqual(before)
+  expect(await f.runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+  expect(f.payment).not.toHaveBeenCalled()
+})
