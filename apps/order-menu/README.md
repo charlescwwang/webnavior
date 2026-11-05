@@ -138,13 +138,16 @@ auto-skip or choose donation. This differs from Kiosk's customer-session idle
 policy (three minutes, then a 15-second reset confirmation) and the 30-second
 question execution-ticket expiry, neither of which grants a checkout choice.
 
-The phone-order handoff UI is temporarily hidden: the menu does not show the
-continuation QR, desktop link or pre-checkout table-scan hint, and Kiosk does not
-pass the continuation URL to its completion screen. Standalone completion keeps
-**完成，開始下一筆**; embedded acceptance still immediately shows the host's configured
-reward/survey. Continuation capability creation, lifecycle metadata and the
-continuation implementation remain available for later restoration.
-The continuation page displays order lines,
+After accepted checkout, embedded Menu sends a separate **read-only order receipt**
+URL to Kiosk. Completion shows its QR and link independently of the survey switch,
+with a reminder to take the pickup number and order information along. Both
+fulfillment modes show the same application-issued pickup number, meals, quantities
+and total on the phone. Receipt links contain no phone label, grant no table or
+fulfillment writes, and expire after 30 minutes or Bridge restart. Standalone
+completion keeps **完成，開始下一筆**.
+
+The separate, previously hidden test table-binding continuation is not used by
+this receipt QR. That test page displays order lines,
 total and masked phone, then asks for confirmation after scanning a table code.
 Neither kiosk nor phone offers a table picker or manual table input. Desktop
 users can press **電腦測試：模擬掃描桌碼** to simulate the fixed A08 fixture.

@@ -1,6 +1,10 @@
+import type { PcmLevel } from '@proj-airi/stage-ui/libs/audio/inputGain'
+
 import type { CaptureResponse, MaskRequest, MaskResponse } from './spatialMaskMessages'
 
 import { errorMessageFrom } from '@moeru/std'
+import { resumeAudioContext } from '@proj-airi/stage-ui/libs/audio/activation'
+import { measurePcmLevel } from '@proj-airi/stage-ui/libs/audio/inputGain'
 
 import captureUrl from './spatialCapture.worklet?worker&url'
 /** Same source-clock interval, with explicit sample rates rather than equal frame counts. */
@@ -23,6 +27,8 @@ export interface SpatialInput {
     consumedFrames: number
     lagSeconds: number
     maxWorkMs: number
+    referenceLevel?: PcmLevel
+    maskLevel?: PcmLevel
   }
 }
 /**
@@ -35,7 +41,11 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
   channelMap: number[]
   radiusMm: number
   onError: (reason: string) => void
+  signal?: AbortSignal
+  onWaiting?: () => void
 }): Promise<SpatialInput> {
+  options.signal?.throwIfAborted()
+  const activation = new AbortController()
   const generation = options.generation
   // A supplied AudioNode supports synthetic validation without pretending a
   // browser's stereo virtual MediaStream is a real eight-channel microphone.
@@ -47,6 +57,10 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
   const worker = new Worker(new URL('./spatialMask.worker.ts', import.meta.url), { type: 'module' })
   const ready = Promise.withResolvers<void>()
   const channels = Promise.withResolvers<void>()
+  // Activation can wait for operator input before these startup promises are
+  // awaited. Keep early cancellation/Worker errors handled during that wait.
+  void ready.promise.catch(() => {})
+  void channels.promise.catch(() => {})
   let source: AudioNode | undefined
   let node: AudioWorkletNode | undefined
   let silent: GainNode | undefined
@@ -62,6 +76,8 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
   let outputFrames = 0
   let consumedFrames = 0
   let maxWorkMs = 0
+  let referenceLevel: PcmLevel | undefined
+  let maskLevel: PcmLevel | undefined
   let comparison: {
     start: number
     rawCount: number
@@ -89,6 +105,11 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
     if (closed)
       return
     closed = true
+    const retired = new Error('Mask input retired.')
+    activation.abort(retired)
+    ready.reject(retired)
+    channels.reject(retired)
+    options.signal?.removeEventListener('abort', dispose)
     cancelComparison()
     running = false
     if (source && node)
@@ -128,6 +149,7 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
       clearTimeout(timer)
     }
   }
+  options.signal?.addEventListener('abort', dispose, { once: true })
   worker.onmessage = ({ data }: MessageEvent<MaskResponse>) => {
     if (closed || data.generation !== generation)
       return
@@ -155,6 +177,8 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
           completeComparison()
         }
       }
+      referenceLevel = measurePcmLevel(data.raw)
+      maskLevel = measurePcmLevel(data.mask)
       outputFrames += data.mask.length
       // One second is a failure limit, not permission to drop and stitch audio.
       if (outputFrames - consumedFrames > 16000) {
@@ -181,6 +205,9 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
   try {
     if (context.sampleRate !== 48000 || (input instanceof MediaStream && !track))
       throw new Error('A live microphone and 48kHz processing are required.')
+    if (context.state === 'suspended')
+      options.onWaiting?.()
+    await resumeAudioContext(context, activation.signal)
     await context.audioWorklet.addModule(captureUrl)
     source = input instanceof MediaStream ? context.createMediaStreamSource(input) : input
     node = new AudioWorkletNode(context, 'kiosk-spatial-capture', { channelCount: 8, channelCountMode: 'max', channelInterpretation: 'discrete', outputChannelCount: [1], processorOptions: { generation } })
@@ -230,7 +257,7 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
     source.connect(node).connect(silent).connect(context.destination)
     track?.addEventListener('ended', ended)
     send({ type: 'start', generation, channelMap: options.channelMap, radiusMm: options.radiusMm })
-    await wait(Promise.all([ready.promise, channels.promise, context.resume()]).then(() => {
+    await wait(Promise.all([ready.promise, channels.promise]).then(() => {
     }), 'Array initialization')
     if (closed)
       throw new Error('Array initialization was cancelled.')
@@ -281,7 +308,7 @@ export async function createSpatialInput(input: MediaStream | AudioNode, options
       return pending.promise
     },
     get statistics() {
-      return { inputFrames, outputFrames, consumedFrames, lagSeconds: Math.max(0, inputFrames / 48000 - consumedFrames / 16000), maxWorkMs }
+      return { inputFrames, outputFrames, consumedFrames, lagSeconds: Math.max(0, inputFrames / 48000 - consumedFrames / 16000), maxWorkMs, referenceLevel, maskLevel }
     },
   }
 }

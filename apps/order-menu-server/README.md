@@ -5,6 +5,15 @@ customer-facing Order Menu and a POS provider. It owns normalized catalog and
 order-submission HTTP contracts; the customer UI and WebMCP never receive POS
 credentials or vendor response shapes.
 
+## Pickup numbers
+
+After acceptance, the Bridge assigns a random three-digit pickup number (100–999)
+to the order receipt. It is separate from the POS order identifier. The existing
+idempotency cache returns the same number on concurrent requests and receipt
+replays; rejected or uncertain orders receive none. This follows the current
+simulator's process-local receipt lifetime, not durable POS storage. A live vendor
+integration must persist receipts and pickup numbers with its order records.
+
 ## Development
 
 ```bash
@@ -103,6 +112,17 @@ The cart includes the catalog `revision` that priced it. Before forwarding an
 order, the Bridge compares that revision and each order-line price against the
 latest catalog. A stale or changed item returns a reviewable rejection instead
 of silently changing the customer's order.
+
+## Portable order receipt
+
+Accepted orders, for both dine-in and takeout, also receive `receiptAccess`.
+This separate bearer capability opens the same read endpoint with `readOnly: true`,
+the pickup number, meals, quantities, fulfillment choice and total. It omits the
+phone label. Table binding and takeout mutation return 409 for these tokens.
+Kiosk uses this capability for its completion QR even when the survey is disabled.
+It expires after 30 minutes or Bridge restart; replay does not renew expired links.
+Customers may screenshot the phone view. These tokens never enter chat/history
+or the durable order-result archive; only the non-personal receipt does.
 
 ## Test order continuation
 

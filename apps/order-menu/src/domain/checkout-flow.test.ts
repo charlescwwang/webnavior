@@ -3,6 +3,18 @@ import { describe, expect, it } from 'vitest'
 import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, identifyMembership, invoiceDraftReady, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './checkout-flow'
 
 describe('checkout flow', () => {
+  // Report: this chat,2026-11-05 — scanned/preloaded carrier must wait for confirmation.
+  it.each(['carrier', 'citizen'] as const)('does not treat choosing a prefilled %s as confirmation', (method) => {
+    const code = method === 'carrier' ? '/PTGRJP2' : 'AB12345678901234'
+    const checkout = { ...beginCheckout('collected'), ...(method === 'carrier' ? { carrierCode: code } : { citizenCode: code }) }
+    const selected = chooseInvoiceMethod(checkout, method)
+    expect(selected.stage).toBe('invoice')
+    expect(invoiceDraftReady(selected)).toBe(true)
+    expect(confirmInvoiceDraft(selected).stage).toBe('payment')
+    const returned = returnToPreviousStep(confirmInvoiceDraft(selected))!
+    expect(chooseInvoiceMethod(returned, method).stage).toBe('invoice')
+  })
+
   // Report: this chat, Nov2; entered carrier + 確認／送出 did not advance.
   it('keeps input as a draft until explicit confirmation and rejects partial input', () => {
     const draft = setInvoiceDraft(beginCheckout('collected'), 'carrier', '/PTGRJP2')

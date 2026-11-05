@@ -79,9 +79,9 @@ export function intersectPrices(verified: PriceConditions, supplied: PriceCondit
 export function priceDescription(conditions: PriceConditions): string {
   const labels: string[] = []
   if (conditions.minPrice !== undefined)
-    labels.push(`${conditions.minPriceExclusive ? '高於' : '至少'} NT$${conditions.minPrice}`)
+    labels.push(`${conditions.minPriceExclusive ? '高於' : '至少'} ${conditions.minPrice}元`)
   if (conditions.maxPrice !== undefined)
-    labels.push(`${conditions.maxPriceExclusive ? '低於' : '不超過'} NT$${conditions.maxPrice}`)
+    labels.push(`${conditions.maxPriceExclusive ? '低於' : '不超過'} ${conditions.maxPrice}元`)
   if (conditions.priceOrder)
     labels.push('價格由低到高')
   return labels.join('、')

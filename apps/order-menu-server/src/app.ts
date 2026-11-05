@@ -137,7 +137,8 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
     }
     const order = await ownedBridge.submit(result.output)
     const continuation = continuations.issue(order, result.output.customerPhone)
-    return c.json({ order, ...(continuation ? { continuation } : {}) }, 201)
+    const receiptAccess = continuations.issueReceipt(order)
+    return c.json({ order, ...(continuation ? { continuation } : {}), ...(receiptAccess ? { receiptAccess } : {}) }, 201)
   })
 
   app.get('/v1/continuations/:token', (c) => {
@@ -153,6 +154,8 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
     const snapshot = continuations.read(c.req.param('token'))
     if (!snapshot)
       return c.json({ error: '接續連結已失效。' }, 404)
+    if (snapshot.readOnly)
+      return c.json({ error: '此連結僅供查看訂單。' }, 409)
     if (snapshot.fulfillmentMode !== 'dine-in')
       return c.json({ error: '此測試訂單已改為自取，無法綁定桌號。' }, 409)
     try {
@@ -164,6 +167,8 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
     const body = await c.req.json().catch(() => null)
     if (body?.confirmed !== true)
       return c.json({ error: '請先確認是否改為自取。' }, 400)
+    if (continuations.read(c.req.param('token'))?.readOnly)
+      return c.json({ error: '此連結僅供查看訂單。' }, 409)
     const snapshot = continuations.changeToTakeout(c.req.param('token'))
     return snapshot ? c.json(snapshot) : c.json({ error: '接續連結已失效。' }, 404)
   })

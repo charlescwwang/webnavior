@@ -3,6 +3,7 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { MenuItem } from '../domain/order-machine'
 
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed } from 'vue'
 
 import { addItemControlId, optionControlId, quantityControlId } from '../webmcp'
@@ -38,7 +39,7 @@ function addItemControlRef(itemId: string) {
 }
 
 function currency(amount: number) {
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
+  return formatOrderingPrice(amount)
 }
 </script>
 

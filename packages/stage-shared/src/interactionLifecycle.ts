@@ -7,6 +7,7 @@ const orderResultSchema = object({
   fulfillmentMode: picklist(['dine-in', 'takeout']),
   id: string(),
   itemCount: number(),
+  pickupNumber: optional(pipe(string(), regex(/^[1-9]\d{2}$/))),
   posOrderId: optional(string()),
   status: literal('accepted'),
   total: number(),

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { MenuItem } from '../domain/order-machine'
 
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed } from 'vue'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
@@ -12,7 +13,7 @@ const state = computed(() => menuPageState(props.item))
 const disabled = computed(() => state.value === 'sold-out' || state.value === 'unknown')
 const statusLabel = computed(() => state.value === 'unknown' ? orderingMessages['zh-Hant'].unknownLabel : orderingMessages['zh-Hant'].soldOutLabel)
 function currency(amount: number) {
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
+  return formatOrderingPrice(amount)
 }
 </script>
 

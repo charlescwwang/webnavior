@@ -1,4 +1,5 @@
 import type { CatalogSnapshot } from '../../order-menu-server/src/domain/contracts'
+import type { CartSnapshot } from './domain/order-machine'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -18,6 +19,31 @@ async function configuredCatalog(): Promise<CatalogSnapshot> {
 }
 
 describe('required order configuration', () => {
+  // Report: this chat,2026-11-05 — saying 不要了 while asked 幾份 leaves the dialog open.
+  it('closes the quantity dialog when cancelling the unadded meal and preserves the cart', async () => {
+    const catalog = await configuredCatalog()
+    let visibleItemId: string | undefined
+    const runtime = createMenuToolRuntime({
+      menu: catalog.items.map(item => ({ ...item, optionGroups: [] })),
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: (id) => { visibleItemId = id },
+    })
+    await runtime.invokeForAgent('order_add_item', { itemId: 'dumplings', quantity: 2 })
+    const before = await runtime.invoke('cart_get', { display: false }) as { cart: CartSnapshot }
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    expect(visibleItemId).toBe('beef-noodle-soup')
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '不要了' }) as { candidates: Array<{ id: string }> }
+    const cancel = context.candidates.find(choice => choice.id.endsWith(':cancel'))!
+    expect(cancel).toBeDefined()
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: cancel.id })
+    expect(visibleItemId).toBeUndefined()
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: before.cart })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: cancel.id })).rejects.toThrow('STALE_PLAN')
+  })
+
   it.each(['agent', 'touch'] as const)('retires the completed draft when %s finishes a voice-started meal', async (source) => {
     const catalog = await configuredCatalog()
     const runtime = createMenuToolRuntime({ menu: catalog.items.map(item => ({ ...item, optionGroups: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })

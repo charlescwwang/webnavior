@@ -4,7 +4,7 @@ import type { SubmittedOrder } from './contracts'
 import { randomUUID } from 'node:crypto'
 
 /**
- * In-memory test continuation registry. Restarting the bridge invalidates links.
+ * In-memory order capability registry. Restarting the bridge invalidates links.
  * Tokens identify one accepted order, never a membership login or a payment grant.
  * Fulfillment/table changes affect this test record only, preserving the original
  * receipt, payment and expiry. Pickup is terminal for table-binding operations.
@@ -22,10 +22,13 @@ export function createOrderContinuations(now: () => number = Date.now) {
     return structuredClone(snapshot)
   }
 
-  function issue(order: SubmittedOrder, phone?: string): ContinuationAccess | undefined {
-    if (order.receipt.status !== 'accepted' || order.receipt.environment !== 'test' || order.cart.fulfillmentMode !== 'dine-in')
+  function issue(order: SubmittedOrder, phone?: string, readOnly = false): ContinuationAccess | undefined {
+    if (order.receipt.status !== 'accepted' || (!readOnly && (order.receipt.environment !== 'test' || order.cart.fulfillmentMode !== 'dine-in')))
       return undefined
-    const existing = accessByOrder.get(order.id)
+    // One order may have an existing table-binding capability and a separate
+    // read-only receipt. Their lifetime/idempotency must not grant each other's rights.
+    const accessKey = JSON.stringify([order.id, readOnly])
+    const existing = accessByOrder.get(accessKey)
     if (existing && read(existing.token))
       return existing
     // A receipt replay must not resurrect an expired bearer capability.
@@ -33,15 +36,17 @@ export function createOrderContinuations(now: () => number = Date.now) {
       return undefined
     const access = { token: randomUUID(), expiresAt: now() + 30 * 60_000 }
     records.set(access.token, {
-      environment: 'test',
+      environment: order.receipt.environment,
+      ...(readOnly ? { readOnly: true } : {}),
+      ...(order.receipt.pickupNumber ? { pickupNumber: order.receipt.pickupNumber } : {}),
       expiresAt: access.expiresAt,
       orderId: order.id,
-      fulfillmentMode: 'dine-in',
+      fulfillmentMode: order.cart.fulfillmentMode,
       phoneLabel: phone ? `${phone.slice(0, 4)}***${phone.slice(-3)}` : undefined,
       total: order.cart.total,
       lines: order.cart.lines.map(line => ({ name: line.name, quantity: line.quantity })),
     })
-    accessByOrder.set(order.id, access)
+    accessByOrder.set(accessKey, access)
     return access
   }
 
@@ -49,6 +54,8 @@ export function createOrderContinuations(now: () => number = Date.now) {
     const snapshot = read(token)
     if (!snapshot)
       throw new Error('接續連結已失效，請返回機台或洽門市人員。')
+    if (snapshot.readOnly)
+      throw new Error('此連結僅供查看訂單。')
     if (snapshot.fulfillmentMode !== 'dine-in')
       throw new Error('此測試訂單已改為自取，無法綁定桌號。')
     // This fixture represents a scanned table QR, not a customer-editable label
@@ -64,11 +71,20 @@ export function createOrderContinuations(now: () => number = Date.now) {
     const snapshot = read(token)
     if (!snapshot)
       return undefined
+    if (snapshot.readOnly)
+      return undefined
     snapshot.fulfillmentMode = 'takeout'
     delete snapshot.table
     records.set(token, snapshot)
     return structuredClone(snapshot)
   }
 
-  return { bind, changeToTakeout, issue, read }
+  return {
+    bind,
+    changeToTakeout,
+    issue,
+    // Receipt projection deliberately omits even the masked phone label.
+    issueReceipt: (order: SubmittedOrder) => issue(order, undefined, true),
+    read,
+  }
 }

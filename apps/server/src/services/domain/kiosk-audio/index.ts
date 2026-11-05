@@ -83,8 +83,17 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })
-    if (!response.ok)
+    if (!response.ok) {
+      const requestUrl = new URL(endpoint(config.baseURL, 'audio/speech'))
+      logger.withFields({
+        modelName: input.modelName,
+        status: response.status,
+        upstreamHost: requestUrl.host,
+        upstreamPath: requestUrl.pathname,
+        responseContentType: response.headers.get('Content-Type'),
+      }).warn('Kiosk TTS upstream returned an unsuccessful response')
       throw createServiceUnavailableError('Kiosk TTS provider did not return a successful response', 'KIOSK_TTS_UPSTREAM_ERROR')
+    }
     return new Response(response.body, {
       headers: { 'Content-Type': response.headers.get('Content-Type') ?? 'audio/mpeg' },
     })

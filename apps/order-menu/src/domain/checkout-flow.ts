@@ -61,9 +61,9 @@ export function chooseInvoiceMethod(checkout: CheckoutSnapshot, method: Exclude<
     // and no invoice is issued by this test checkout transition.
     return { ...checkout, invoiceDraft: undefined, invoiceMethod: method, carrierCode: undefined, citizenCode: undefined, donationCode: undefined, taxId: undefined, stage: 'payment' }
   }
-  if (checkout.invoiceDraft?.method === method || (method === 'carrier' && !checkout.carrierCode) || (method === 'citizen' && !checkout.citizenCode))
-    return { ...checkout, invoiceDraft: checkout.invoiceDraft?.method === method ? checkout.invoiceDraft : undefined, invoiceMethod: method, stage: 'invoice' }
-  return { ...checkout, invoiceMethod: method, stage: 'payment' }
+  // Choosing an identifier type never confirms its prefilled/scanned value.
+  // Only confirmInvoiceDraft/confirmInvoiceDetails may advance personal data.
+  return { ...checkout, invoiceDraft: checkout.invoiceDraft?.method === method ? checkout.invoiceDraft : undefined, invoiceMethod: method, stage: 'invoice' }
 }
 
 export function requestTaxId(checkout: CheckoutSnapshot): CheckoutSnapshot {

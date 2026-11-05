@@ -1,7 +1,7 @@
 import type { CatalogSnapshot, PaymentMethod, PosGateway, PosSubmission, SubmittedOrder } from './contracts'
 import type { TableAssignment } from './seatingContracts'
 
-import { randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 
 /**
  * Owns idempotency at the integration boundary, independent of a POS vendor's
@@ -70,7 +70,11 @@ export function createBridge(gateway: PosGateway, tableAssignment: TableAssignme
     const order: SubmittedOrder = {
       cart: submission.cart,
       id: `order-${randomUUID()}`,
-      receipt,
+      // Assign after the POS outcome is known, inside the existing idempotency
+      // boundary. Concurrent requests and later receipt replays reuse this number.
+      receipt: receipt.status === 'accepted'
+        ? { ...receipt, pickupNumber: String(randomInt(100, 1000)) }
+        : receipt,
     }
     submittedByKey.set(submission.idempotencyKey, order)
     return order

@@ -46,7 +46,7 @@ describe('current POS menu without customization options', () => {
     const result = await runtime.invokeForAgent('menu_get', { queries: ['香菜肉絲乾麵', '韭菜盒', '甜不辣'], verifyClaim: true })
     expect(result).toMatchObject({ items: [], customerMessage: '您說得對，剛才的介紹有誤。目前菜單查不到「香菜肉絲乾麵、韭菜盒、甜不辣」。' })
     const actual = await runtime.invokeForAgent('menu_get', { query: '水餃', verifyClaim: true })
-    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。單份基本售價 NT$80。' })
+    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。單份基本售價 80元。' })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
     await expect(runtime.invokeForAgent('menu_get', { verifyClaim: true })).rejects.toThrow('Specify the meal names')
   })

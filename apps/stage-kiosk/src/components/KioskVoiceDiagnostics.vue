@@ -1,17 +1,25 @@
 <script setup lang="ts">
+import type { VoicePresenceDecision } from '../services/voicePresence'
+
 import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { useI18n } from 'vue-i18n'
 
 export interface KioskVoiceDiagnosticEntry {
   id: number
-  status: 'recognizing' | 'unrecognized' | 'recognized' | 'decided' | 'failed' | 'ignored'
+  status: 'capturing' | 'blocked' | 'recognizing' | 'unrecognized' | 'recognized' | 'decided' | 'failed' | 'ignored'
   text?: string
+  reason?: VoicePresenceDecision['reason'] | 'no_candidate' | 'queue_full' | 'empty_audio' | 'capture_stopped' | 'incomplete_segment'
+  stage?: 'speech_start' | 'speech_end' | 'before_asr' | 'after_asr' | 'capture'
 }
 
 const props = defineProps<{ entries: readonly KioskVoiceDiagnosticEntry[] }>()
 const { t } = useI18n()
 
 function statusLabel(entry: KioskVoiceDiagnosticEntry) {
+  if (entry.status === 'capturing')
+    return t('stage.kiosk.voice-capturing')
+  if (entry.status === 'blocked')
+    return t('stage.kiosk.voice-blocked')
   if (entry.status === 'ignored')
     return t('stage.kiosk.voice-presence-ignored')
   if (entry.status === 'recognizing')
@@ -36,6 +44,8 @@ function statusLabel(entry: KioskVoiceDiagnosticEntry) {
     <ol class="voice-diagnostics-list">
       <li v-for="entry in props.entries" :key="entry.id" class="voice-diagnostics-entry">
         <strong>{{ statusLabel(entry) }}</strong>
+        <span v-if="entry.reason">{{ t(`stage.kiosk.voice-block-reasons.${entry.reason}`) }}</span>
+        <span v-if="entry.stage">{{ t(`stage.kiosk.voice-stages.${entry.stage}`) }}</span>
         <span v-if="entry.text" class="voice-diagnostics-text">「{{ toTaiwanTraditionalChinese(entry.text) }}」</span>
       </li>
     </ol>

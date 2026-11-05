@@ -9,6 +9,7 @@ import type { PaymentMethod, PaymentStatus } from './pos-bridge'
 import type { AgentAction, MenuPresentationToolName, MenuToolName, RecommendationPresentation } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch } from 'vue'
 
 import CheckoutInvoice from './components/CheckoutInvoice.vue'
@@ -71,8 +72,8 @@ const paymentError = shallowRef<string>()
 const customerPhone = shallowRef<string>()
 // Phone entry is optional; an explicit skip is distinct from an untouched page.
 const customerEntryStatus = shallowRef<'unstarted' | 'pending' | 'provided' | 'skipped'>('unstarted')
-const continuationAccess = shallowRef<ContinuationAccess>()
-const handoffUrl = computed(() => continuationAccess.value ? continuationUrl(continuationAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
+const receiptAccess = shallowRef<ContinuationAccess>()
+const receiptUrl = computed(() => receiptAccess.value ? continuationUrl(receiptAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
 let checkoutRevision = 0
 // Synchronous observation preserves every checkout/payment write, including
 // a change that is undone before the next System One request arrives.
@@ -164,7 +165,7 @@ const cartSummaryLines = computed(() => cart.value.lines.map((line) => {
 const completedOrderLabel = '訂單已確認'
 
 function currency(amount: number) {
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
+  return formatOrderingPrice(amount)
 }
 
 function setCardElement(id: string, element: Element | ComponentPublicInstance | null) {
@@ -322,7 +323,7 @@ const runtime = createMenuToolRuntime({
   onSessionReset: () => {
     customerPhone.value = undefined
     customerEntryStatus.value = 'unstarted'
-    continuationAccess.value = undefined
+    receiptAccess.value = undefined
     completedOrderId.value = undefined
     completedOrder.value = undefined
     checkout.value = undefined
@@ -351,7 +352,7 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onContinuation: access => continuationAccess.value = access }),
+  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onReceipt: access => receiptAccess.value = access }),
   menu: [],
   onAction: animateAction,
   onReviewRequested: async () => {
@@ -436,7 +437,9 @@ function handleOrderConfirmed(order: SubmittedOrder) {
 
   completedOrderId.value = order.id
   completedOrder.value = order
-  orderStatus.value = order.receipt.customerMessage
+  orderStatus.value = order.receipt.pickupNumber
+    ? `${order.receipt.customerMessage} 取餐號碼：${order.receipt.pickupNumber}`
+    : order.receipt.customerMessage
   checkout.value = undefined
   orderReviewOpen.value = true
   // Completion must reach the host immediately so its configured reward appears.
@@ -446,10 +449,11 @@ function handleOrderConfirmed(order: SubmittedOrder) {
     fulfillmentMode: order.cart.fulfillmentMode!,
     id: order.id,
     itemCount: order.cart.itemCount,
+    ...(order.receipt.pickupNumber ? { pickupNumber: order.receipt.pickupNumber } : {}),
     ...(order.receipt.posOrderId ? { posOrderId: order.receipt.posOrderId } : {}),
     status: 'accepted',
     total: order.cart.total,
-  }, handoffUrl.value)
+  }, receiptUrl.value)
 }
 
 function completeCustomerSession() {
@@ -616,6 +620,8 @@ function returnToMenuForAdditionalItems() {
   checkout.value = undefined
   orderReviewOpen.value = false
   selectedItemId.value = undefined
+  activeCategory.value = undefined
+  selectedPresentationSubjectId.value = undefined
 }
 
 function resetPaymentAttempt() {

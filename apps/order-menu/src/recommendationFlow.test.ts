@@ -64,6 +64,14 @@ describe('recommendation batches', () => {
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
+  // Report: this chat,Nov5 14:04 Taiwan — whole-menu request remained stuck on fish recommendations.
+  it('releases positive ingredient preferences when browsing the whole catalog', async () => {
+    const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('menu_recommend', { includeIngredients: ['pork'] })
+    const result = await runtime.invoke('menu_get', { scope: 'catalog', display: true })
+    expect(result).toMatchObject({ appliedFilters: { includeIngredients: [] }, items: dishes.map(item => ({ id: item.id })) })
+  })
+
   it('retains dietary exclusions when a customer requests the whole menu', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'], maxPrice: 400 })

@@ -58,6 +58,9 @@ it('transports real eight-channel Worklet audio through the Worker, serially dra
     expect(maximum).toBe(1)
     expect(count).toBe(Math.ceil(input.statistics.inputFrames / 3))
     expect(input.statistics.consumedFrames).toBe(count)
+    expect(input.statistics.referenceLevel?.rmsDbfs).not.toBeNull()
+    expect(input.statistics.referenceLevel?.peakDbfs).toBeLessThan(0)
+    expect(input.statistics.maskLevel?.rmsDbfs).not.toBeNull()
     expect(f.context.state).toBe('running')
     const stopped = count
     await new Promise(resolve => setTimeout(resolve, 100))

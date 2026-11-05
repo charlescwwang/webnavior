@@ -266,7 +266,7 @@ describe('question presentation receipts', () => {
     window.record('menu_get', { customerMessage: '我找到：牛肉麵。', items: [{ id: 'n', name: '牛肉麵', price: 150 }] })
     window.record('menu_get', { customerMessage: '我找到：水餃。', items: [{ id: 'd', name: '水餃', price: 80 }] })
     window.record('cart_get', { customerMessage: '購物車是空的。' })
-    expect(window.reply()).toBe('我找到：牛肉麵。 我找到：水餃。 單份基本售價：牛肉麵 NT$150、水餃 NT$80。')
+    expect(window.reply()).toBe('我找到：牛肉麵。 我找到：水餃。 單份基本售價：牛肉麵 150元、水餃 80元。')
     expect(replyFromOperation('沒有經過查詢的推薦。', createMenuReplyWindow().reply(), undefined)).toBe('目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。')
   })
   it('keeps a cart-only summary grounded without requiring a new menu query', async () => {
@@ -274,7 +274,7 @@ describe('question presentation receipts', () => {
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', quantity: 2 })
     const window = createMenuReplyWindow()
     window.record('cart_get', await runtime.invokeForAgent('cart_get', { display: false }))
-    expect(window.reply()).toBe('目前訂單：周氏蝦捲 2 份。合計 NT$150。')
+    expect(window.reply()).toBe('目前訂單：周氏蝦捲 2 份。合計 150元。')
   })
   const question = { questionId: 'Q1', purpose: 'checkout-entry', question: '要進入結帳流程嗎？', expiresAt: 100, choices: [{ id: 'intent:start-checkout', description: '開始結帳，進入會員與發票步驟。' }] }
   it('retains superseded invitation records without letting stale decisions consume the current one', () => {
@@ -442,4 +442,16 @@ it.each(['MENU_QUERY', 'NEW_REQUEST'] as const)('keeps a qualified factual price
   const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } }, { reason, priceChoiceId: 'INFORMATION' })
   expect(state).toHaveProperty('readOnly', true)
   expect(state).not.toHaveProperty('requireMenuRead')
+})
+
+// Report: N05-UX-RANKING,Nov5 — Main selected missing information correctly but Host erased it.
+it('preserves missing-data information through the display-required Host boundary', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const result = { status: 'completed' as const, agentMode: 'active' as const, requestedTools: [], reply: { kind: 'service-information' as const, topic: 'other' as const } }
+  const shown = replyFromConversation(result, { menu: createMenuReplyWindow(), context, requireMenuRead: true, failureMessage: '未展示。' })
+  expect(shown.role).toBe('assistant')
+  expect(shown.content).toContain('沒有可確認的這項資料')
+  expect(shown.content).not.toContain('理解')
+  expect(shown).not.toHaveProperty('clarification')
 })

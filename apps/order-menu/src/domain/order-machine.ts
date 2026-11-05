@@ -109,6 +109,8 @@ export type SubmissionStatus = 'accepted' | 'rejected' | 'uncertain'
 export interface SubmissionReceipt {
   customerMessage: string
   environment: SubmissionEnvironment
+  /** Application-issued three-digit collection number, assigned only to accepted orders. */
+  pickupNumber?: string
   posOrderId?: string
   retryable: boolean
   status: SubmissionStatus

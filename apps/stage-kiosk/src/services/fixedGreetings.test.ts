@@ -6,15 +6,16 @@ describe('fixed welcome playback', () => {
   it('prepares speech once, rotates openings, and reuses audio across visitors', async () => {
     const synthesize = vi.fn(async ({ text }: { text: string }) => new Blob([text]))
     const greetings = createFixedGreetings(synthesize)
-    await greetings.prepare({ locale: 'zh-TW', openings: ['歡迎光臨周氏蝦捲！', '您好，歡迎來到周氏蝦捲！'], entryHint: '手機可選填或略過。' })
+    await greetings.prepare({ locale: 'zh-TW', openings: ['歡迎光臨周氏蝦捲！', '您好，歡迎來到周氏蝦捲！'], languageHint: '也可以用台語點餐。', entryHint: '手機可選填或略過。' })
 
     const first = await greetings.next('customer_entry')
     const second = await greetings.next('customer_entry')
     const third = await greetings.next('customer_entry')
-    expect(first.text).toBe('歡迎光臨周氏蝦捲！手機可選填或略過。')
-    expect(second.text).toBe('您好，歡迎來到周氏蝦捲！手機可選填或略過。')
+    expect(first.text).toBe('歡迎光臨周氏蝦捲！也可以用台語點餐。手機可選填或略過。')
+    expect(second.text).toBe('您好，歡迎來到周氏蝦捲！也可以用台語點餐。手機可選填或略過。')
     expect(third.audio).toBe(first.audio)
     expect(synthesize).toHaveBeenCalledTimes(4)
+    expect((await greetings.next('ordering')).text).toContain('也可以用台語點餐。')
     greetings.dispose()
   })
 
@@ -24,7 +25,7 @@ describe('fixed welcome playback', () => {
       release = resolve
     })).mockResolvedValue(new Blob(['audio']))
     const greetings = createFixedGreetings(synthesize)
-    const warming = greetings.prepare({ locale: 'zh-TW', openings: ['歡迎！'], entryHint: '可略過。' })
+    const warming = greetings.prepare({ locale: 'zh-TW', openings: ['歡迎！'], languageHint: '也可以用台語點餐。', entryHint: '可略過。' })
     const speaking = greetings.next('customer_entry')
     expect(synthesize).toHaveBeenCalledTimes(1)
     release(new Blob(['welcome']))
@@ -35,9 +36,9 @@ describe('fixed welcome playback', () => {
 
     const flaky = vi.fn().mockRejectedValueOnce(new Error('TTS unavailable')).mockResolvedValue(new Blob(['retry']))
     const retried = createFixedGreetings(flaky)
-    await retried.prepare({ locale: 'zh-TW', openings: ['歡迎！'], entryHint: '可略過。' })
+    await retried.prepare({ locale: 'zh-TW', openings: ['歡迎！'], languageHint: '也可以用台語點餐。', entryHint: '可略過。' })
     const result = await retried.next('customer_entry')
-    expect(result.text).toBe('歡迎！可略過。')
+    expect(result.text).toBe('歡迎！也可以用台語點餐。可略過。')
     expect(flaky).toHaveBeenCalledTimes(3)
     retried.dispose()
   })
@@ -49,7 +50,7 @@ describe('fixed welcome playback', () => {
       return new Blob([input.text])
     })
     const greetings = createFixedGreetings(synthesize)
-    const config = { locale: 'zh-TW', openings: ['歡迎！'], entryHint: '可略過。' }
+    const config = { locale: 'zh-TW', openings: ['歡迎！'], languageHint: '也可以用台語點餐。', entryHint: '可略過。' }
     await greetings.prepare(config)
     await greetings.prepare(config)
     expect(synthesize).toHaveBeenCalledTimes(2)

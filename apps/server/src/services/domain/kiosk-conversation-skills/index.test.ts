@@ -29,12 +29,12 @@ function modelAnswer(body: Record<string, unknown>, choice: string) {
 it.each(['intent:add-item', 'intent:search-menu'])('uses a real issued effect without turning Main selection into a JEV score: %s', async (choice) => {
   const complete = vi.fn<(body: Record<string, unknown>) => Promise<Response>>(async (body: Record<string, unknown>) => modelAnswer(body, choice))
   const result = await resolveOrderingIntent(admitted, input, complete)
-  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: choice, resolvedBy: 'main-skill', modelCalls: 3, modelQuestions: 3, trace: { mainSkill: { id: 'ordering', version: 2, selected: choice, calls: 1 } } })
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: choice, resolvedBy: 'main-skill', modelCalls: 3, modelQuestions: 3, trace: { mainSkill: { id: 'ordering', version: 3, selected: choice, calls: 1 } } })
   expect(result).not.toHaveProperty('confidence')
   expect(result).not.toHaveProperty('reason')
   expect(complete).toHaveBeenCalledOnce()
   const body = complete.mock.calls[0]![0] as Record<string, unknown>
-  expect(JSON.stringify(body)).toContain('ordering@2')
+  expect(JSON.stringify(body)).toContain('ordering@3')
   expect(body).toMatchObject({ tools: [{ function: { parameters: { properties: { choice: { enum: ['intent:search-menu', 'intent:add-item', 'UNCERTAIN'] } } } } }] })
 })
 
@@ -243,12 +243,12 @@ it.each([false, true])('qualifies the currently named request without releasing 
 })
 
 // Report: live112 H08; the refusal prefix cannot replace the hearing question.
-it.each(['OTHER_REQUEST', 'invalid'] as const)('does not consume a partial or unverified answer: %s', async (coverage) => {
+it.each(['OTHER_REQUEST', 'BACKGROUND', 'invalid'] as const)('does not consume a partial or unverified answer: %s', async (coverage) => {
   const candidate = { id: 'intent:defer-question', description: '只延後目前問題，沒有其他需求。' }
   const waitingFor = { questionId: 'fulfillment', purpose: 'fulfillment', question: '內用還是自取？', expiresAt: Date.now() + 30000, choices: [candidate] }
   const complete = vi.fn().mockResolvedValueOnce(answer(candidate.id)).mockResolvedValueOnce(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: JSON.stringify({ choice: coverage }) } }] } }] }))
-  const result = await resolveOrderingIntent(admitted, { ...input, transcript: '不要動訂單，我只想確認這句話有收到嗎？', decisionState: { phase: 'ordering', waitingFor, intentRecovery: { kind: 'answer', questionId: 'fulfillment', candidateIds: [candidate.id] } }, candidates: [candidate] }, complete)
-  expect(result.kind).toBe(coverage === 'OTHER_REQUEST' ? 'NEEDS_ASSISTANT' : 'UNAVAILABLE')
+  const result = await resolveOrderingIntent(admitted, { ...input, transcript: coverage === 'BACKGROUND' ? '他只要問過他就過去了啊' : '不要動訂單，我只想確認這句話有收到嗎？', decisionState: { phase: 'ordering', waitingFor, intentRecovery: { kind: 'answer', questionId: 'fulfillment', candidateIds: [candidate.id] } }, candidates: [candidate] }, complete)
+  expect(result.kind).toBe(coverage === 'BACKGROUND' ? 'IGNORE' : coverage === 'OTHER_REQUEST' ? 'NEEDS_ASSISTANT' : 'UNAVAILABLE')
   expect(result).not.toHaveProperty('actionId')
   expect(result).not.toHaveProperty('resolvedBy')
   expect(complete).toHaveBeenCalledTimes(2)

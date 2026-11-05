@@ -58,12 +58,14 @@ const valid = computed(() => invoiceDraftReady(props.checkout))
         公司統一編號
       </button>
     </div>
-    <form v-if="method !== 'donation'" @submit.prevent="valid && emit('details', method, code)">
+    <form v-if="method !== 'donation'" @submit.prevent>
       <label for="invoice-code">{{ title }}</label>
-      <input id="invoice-code" ref="invoiceInput" v-model="code" :disabled="props.locked" autocomplete="off" inputmode="text" :maxlength="method === 'citizen' ? 16 : 8" :placeholder="method === 'carrier' ? '/ABC1234' : 'AB12345678901234'">
+      <!-- Scanner terminators and native form submits cannot authorize checkout.
+           Only the explicit button action or existing voice confirmation advances. -->
+      <input id="invoice-code" ref="invoiceInput" v-model="code" :disabled="props.locked" autocomplete="off" inputmode="text" :maxlength="method === 'citizen' ? 16 : 8" :placeholder="method === 'carrier' ? '/ABC1234' : 'AB12345678901234'" @keydown.enter.prevent>
       <small>測試僅驗證資料格式，尚未串接正式發票開立或受贈單位查詢。</small>
       <strong>本次訂單 {{ total }}</strong>
-      <button :ref="element => emit('registerControl', 'checkout:invoice:confirm', element)" type="submit" :disabled="!valid">
+      <button :ref="element => emit('registerControl', 'checkout:invoice:confirm', element)" type="button" :class="['invoice-confirm']" :disabled="!valid" @click="valid && emit('details', method, code)">
         確認發票資料，選擇付款方式
       </button>
     </form>
@@ -160,7 +162,7 @@ const valid = computed(() => invoiceDraftReady(props.checkout))
   color: #786655;
 }
 
-.checkout-step button[type=submit] {
+.checkout-step .invoice-confirm {
   background: #d95327;
   color: #fff;
 }

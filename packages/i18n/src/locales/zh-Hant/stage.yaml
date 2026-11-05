@@ -23,6 +23,19 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  admin-access:
+    trigger: 連點五下以開啟管理員模式
+    mode: 管理員模式
+    title: 輸入 PIN
+    description: 請使用下方數字鍵盤輸入管理員 PIN。
+    pin-label: 管理員 PIN
+    keypad: PIN 數字鍵盤
+    clear: 清除
+    backspace: 刪除一碼
+    cancel: 取消
+    continue: 繼續
+    missing-pin: 尚未設定管理員 PIN。請設定 VITE_KIOSK_ADMIN_PIN 後重新啟動 Kiosk。
+    incorrect-pin: PIN 不正確，請再試一次。
   service-recovery:
     queued: 已收到，正在等待前一項處理完成…
     confirming: 正在確認您的意思…
@@ -31,7 +44,28 @@ kiosk:
     ignored: 這句沒有進行點餐操作。
     uncertain: 剛才沒有理解清楚，請再說一次您的需求。
     failed: 目前暫時無法確認，請再試一次或使用畫面操作。
-  voice-presence-ignored: 未確認現場有人，已忽略語音
+  voice-presence-ignored: 語音放行檢查未通過，已忽略
+  voice-capturing: 已偵測到語音，等待句尾
+  voice-blocked: 已收到語音，尚未送出 ASR
+  voice-block-reasons:
+    observation_disabled: 未啟用視覺觀測
+    fresh_person: 已取得有效人物觀測
+    not_observing: 相機尚未進行人物推論
+    no_person: 尚無符合放行條件的人物觀測
+    low_quality: 人物偵測品質未達放行門檻
+    outside_zone: 人物偵測位置未在設定範圍內
+    stale: 有效人物觀測已過期
+    no_candidate: 起話時未建立可送出的語音候選
+    queue_full: 語音處理佇列已滿
+    empty_audio: 完整語句未包含音訊樣本
+    capture_stopped: 收音已停止或重新啟動
+    incomplete_segment: 前一段語音未形成完整語句
+  voice-stages:
+    speech_start: 檢查位置：VAD 起話
+    speech_end: 檢查位置：VAD 完整語句
+    before_asr: 檢查位置：ASR 送出前
+    after_asr: 檢查位置：ASR 回傳後
+    capture: 檢查位置：收音生命週期
   text-console:
     title: 文字輸入與 Trace
     reset: 重設位置
@@ -75,6 +109,7 @@ kiosk:
     failed: 無法確認是否已完成，請再選擇一次或使用語音略過。
     invalid: 請輸入 09 開頭的 10 碼手機號碼。
   welcome:
+    language-hint: 也可以用台語點餐。
     preparing: 正在準備歡迎…
     first: 歡迎光臨！需要的話，我可以幫您介紹餐點。
     second: 您好，歡迎光臨！我可以協助您挑選餐點。
@@ -97,6 +132,12 @@ kiosk:
     vlm-prompt-hint: 依現場影像及此指引生成開場台詞。修改後需儲存並發布。
 customer-session:
   completion:
+    pickup-number: 取餐號碼
+    survey-switch-title: 完成後問卷
+    survey-switch-label: 顯示完成後問卷
+    survey-switch-description: 套用於此瀏覽器，重新整理後保留。關閉只隱藏問卷，訂單完成資訊仍會顯示。
+    order-number: POS 訂單編號
+    pickup-unavailable: 目前未提供取餐號碼，請向門市人員確認取餐資訊。
     title: 訂單已送出
     description: 感謝您的點餐，我們已完成本次訂單流程。
     simulated-notice: 此為模擬訂單，尚未傳送至 POS 系統。
@@ -105,12 +146,12 @@ customer-session:
     qr-alt: 問卷 QR Code
     qr-loading: 正在準備問卷 QR Code…
     qr-error: 問卷 QR Code 暫時無法產生。
-    order-title: 把訂單帶到手機
-    order-description: 先掃訂單接續碼，入座後再掃桌碼並確認送餐桌號。
-    order-qr-alt: 訂單接續 QR Code
-    order-qr-loading: 正在準備訂單接續碼…
-    order-qr-error: 訂單接續碼暫時無法產生，請使用下方連結。
-    order-link: 在電腦開啟訂單接續頁
+    order-title: 把訂單資訊帶著走
+    order-description: 怕忘記取餐號碼？掃描 QR Code，在手機查看取餐號碼與訂單資訊。
+    order-qr-alt: 訂單資訊 QR Code
+    order-qr-loading: 正在準備訂單資訊 QR Code…
+    order-qr-error: 訂單資訊 QR Code 暫時無法產生，請使用下方連結。
+    order-link: 開啟訂單資訊
   idle-confirmation:
     title: 要繼續目前操作嗎？
     description: 目前的對話與選擇都會保留。您可以繼續操作，或清除內容後重新開始。

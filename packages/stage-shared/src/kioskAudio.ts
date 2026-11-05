@@ -25,10 +25,11 @@ export interface KioskAudioChunk {
 
 /** Device-level operational warning. Never includes audio, dialogue or raw error text. */
 export const audioWarningSchema = strictObject({
-  // Browser-local capture counter; device identity and receipt time belong to Server logging.
+  // Browser-local owner generation; device identity and receipt time belong to Server logging.
   generation: pipe(number(), integer(), minValue(1), maxValue(Number.MAX_SAFE_INTEGER)),
-  stage: picklist(['capture', 'channels', 'mask_init', 'mask_runtime']),
+  stage: picklist(['capture', 'channels', 'mask_init', 'mask_runtime', 'playback', 'vad']),
   outcome: picklist(['standard', 'unavailable']),
+  code: optional(picklist(['play_rejected', 'media_error', 'vad_error'])),
   // Actual probe input before fallback, not the restored stream channel count.
   channels: optional(pipe(number(), integer(), minValue(1), maxValue(32))),
 })

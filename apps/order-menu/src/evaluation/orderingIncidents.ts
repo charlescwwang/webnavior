@@ -406,3 +406,78 @@ incidentConversationScripts.push({
     { text: '我要水餃一份', cart: [{ itemId: 'dumplings', quantity: 1 }] },
   ],
 })
+
+// Report: Nov5 14:04–14:19 Taiwan. Sanitized text only; actual private logs stay local.
+// These are retained for future Jev/Main evaluation, NOT a claim of live-model passes.
+incidentConversationScripts.push({
+  id: 'N05-UX-CATALOG',
+  title: '魚類推薦後明確要整份菜單',
+  source: 'user-20261105-recent-dialogues',
+  kind: 'functional',
+  group: 'recommendation-exit',
+  catalog: 'current',
+  provenance: 'Reconstructed sequence from repeated whole-menu requests that retained includeIngredients=fish.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    { text: '想吃魚，有什麼推薦？', sameCart: true, nonempty: true },
+    { text: '你今天有什麼菜色都念給我聽？', sameCart: true, shown: 'all', nonempty: true, forbidden: 'NT\\$|\\$' },
+  ],
+}, {
+  id: 'N05-UX-RANKING',
+  title: '人氣排名資料未知不是意思不明',
+  source: 'user-20261105-recent-dialogues',
+  kind: 'functional',
+  group: 'service-information',
+  catalog: 'current',
+  provenance: 'Reported clear ranking question repeatedly received generic clarification; no verified sales ranking is supplied.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [{ text: '哪一個餐點點的人數最多？', sameCart: true, reply: '資料|確認|店員|人氣|排名', forbidden: '沒有理解清楚|請再說一次|最受歡迎的是' }],
+}, {
+  id: 'N05-UX-BACKGROUND-PHONE',
+  title: '評論相機不能略過電話',
+  source: 'user-20261105-recent-dialogues',
+  kind: 'adversarial',
+  group: 'background-admission',
+  catalog: 'current',
+  provenance: 'Actual ASR sentence triggered customer_skip_phone; retained as unverified live-model regression.',
+  initial: { entry: 'pending', cart: [] },
+  steps: [{ text: '這好像是新推出的樣品相機', sameCart: true, silentOnly: true, ready: false }],
+}, {
+  id: 'N05-UX-BACKGROUND-FULFILLMENT',
+  title: '同伴評論不能代選內用',
+  source: 'user-20261105-recent-dialogues',
+  kind: 'adversarial',
+  group: 'background-admission',
+  catalog: 'current',
+  provenance: 'Actual ASR sentence triggered dine-in while fulfillment question was waiting; replay reconstructs its pending state.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    { text: '我要水餃一份', cart: [{ itemId: 'dumplings', quantity: 1 }] },
+    { text: '他只要問過他就過去了啊', sameCart: true, silentOnly: true },
+  ],
+})
+
+incidentConversationScripts.push({
+  id: 'N05-UX-MORE',
+  title: '換其他推薦保持購物車且不重複上一批',
+  source: 'user-20261105-recommendation-exit',
+  kind: 'functional',
+  group: 'recommendation-exit',
+  catalog: 'current',
+  provenance: 'Synthetic companion to the reported recommendation lock; preserves actual novelty rather than exact response wording.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [
+    { text: '幫我推薦幾樣餐點', sameCart: true, nonempty: true },
+    { text: '有其他推薦餐點嗎？', sameCart: true, nonempty: true, novel: true },
+  ],
+}, {
+  id: 'N05-UX-PROMOTION',
+  title: '優惠未提供要明說未知而非聽不懂',
+  source: 'user-20261105-recent-dialogues',
+  kind: 'functional',
+  group: 'service-information',
+  catalog: 'current',
+  provenance: 'Synthetic question based on the reported buy-one-get-one request; catalog does not certify a promotion.',
+  initial: { entry: 'ready', cart: [] },
+  steps: [{ text: '現在有買一送一優惠嗎？', sameCart: true, reply: '資料|確認|店員|優惠', forbidden: '沒有理解清楚|請再說一次' }],
+})

@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import { selectProcessing } from './microphoneInput'
 
-describe('automatic microphone routing', () => {
-  it.each(['UMA-8', 'miniDSP UMA-8 v2', 'UMA8 USB Audio', 'Default - UMA_8'])('uses Mask only with eight channels from %s', (label) => {
-    expect(selectProcessing(label, 8)).toBe('mask')
-    expect(selectProcessing(label, 1)).toBe('standard')
-    expect(selectProcessing(label, 2)).toBe('standard')
-    expect(selectProcessing(label, 7)).toBe('standard')
+// Report: this chat,2026-11-05 — user explicitly replaced device-name gating
+// with actual eight-channel routing. Prior name-specific expectations are retired.
+describe('automatic capture routing by actual channels', () => {
+  it('selects Mask when the Worklet receives eight actual channels', () => {
+    expect(selectProcessing(8)).toBe('mask')
   })
-  it.each(['USB Conference Microphone', 'Other eight-channel interface', '', 'UMA-80'])('keeps unknown geometry on the standard path: %s', (label) => {
-    expect(selectProcessing(label, 8)).toBe('standard')
-    expect(selectProcessing(label, 2)).toBe('standard')
+  it.each([1, 2, 3, 6, 7, 9, 16])('keeps%i-channel input on the standard path', (channels) => {
+    expect(selectProcessing(channels)).toBe('standard')
   })
 })

@@ -20,6 +20,24 @@ async function acceptedOrder(gateway: ReturnType<typeof createInMemorySimulatorG
 }
 
 describe('pOS Bridge contract', () => {
+  it('assigns a three-digit pickup number once after acceptance and retains it across concurrent replays', async () => {
+    const gateway = createInMemorySimulatorGateway()
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const submission = await acceptedOrder(gateway, app)
+    const send = async () => (await app.request('/v1/orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).json()
+    const [first, second] = await Promise.all([send(), send()])
+    expect(first.order.receipt.pickupNumber).toMatch(/^[1-9]\d{2}$/)
+    expect(second.order.receipt.pickupNumber).toBe(first.order.receipt.pickupNumber)
+    expect((await send()).order.receipt.pickupNumber).toBe(first.order.receipt.pickupNumber)
+  })
+  it.each(['rejected', 'uncertain'] as const)('does not allocate a pickup number to a %s order', async (mode) => {
+    const gateway = createInMemorySimulatorGateway(mode)
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const submission = await acceptedOrder(gateway, app)
+    const result = await (await app.request('/v1/orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).json()
+    expect(result.order.receipt.status).toBe(mode)
+    expect(result.order.receipt.pickupNumber).toBeUndefined()
+  })
   it('shares one POS submission and receipt when the same order arrives concurrently', async () => {
     const gateway = createInMemorySimulatorGateway()
     let submitted = 0

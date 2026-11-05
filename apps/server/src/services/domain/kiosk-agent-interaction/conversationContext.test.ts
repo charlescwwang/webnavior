@@ -38,7 +38,7 @@ it('cannot use an information selector to finish a required menu presentation wi
   const selected = await selectReply({ context: parse(conversationContextSchema, facts), requireMenuRead: true, calls: [{ id: 'draft', type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"menu-information","subjects":["水果"]}' } }], complete })
   expect(selected).toEqual({ reply: { kind: 'clarification' }, repaired: true })
   expect(complete).toHaveBeenCalledTimes(1)
-  expect(complete.mock.calls[0]![0].tools).toMatchObject([{ function: { parameters: { properties: { kind: { enum: ['clarification'] } } } } }])
+  expect(complete.mock.calls[0]![0].tools).toMatchObject([{ function: { parameters: { properties: { kind: { enum: ['clarification', 'service-information'] } } } } }])
 })
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
@@ -122,4 +122,22 @@ it.each([false, true])('checks actual removal consent independently of an explic
     expect(checked).toEqual(calls)
   else
     expect(checked).toBeUndefined()
+})
+
+// Report: Nov5 live — 哪一個餐點點的人數最多 was repeatedly treated as incomprehensible.
+it('keeps missing ranking/promotion data separate from unclear meaning and unsupported services', () => {
+  const context = parse(conversationContextSchema, facts)
+  const instruction = currentContextInstructions(context)
+  expect(instruction).toContain('意思清楚但缺少資料不是聽不懂')
+  expect(instruction).toContain('不編造排名或優惠')
+  expect(instruction).toContain('真正品名／數量或意圖未明才釐清')
+})
+
+// Report: Nov5 isolated N05-UX-RANKING/PROMOTION — read-required schema forced clarification.
+it('permits a missing-data reply without treating it as a menu receipt', async () => {
+  const complete = vi.fn()
+  const reply = { kind: 'service-information', topic: 'other' }
+  const selected = await selectReply({ context: parse(conversationContextSchema, facts), requireMenuRead: true, calls: [{ id: 'missing-data', type: 'function', function: { name: replyTool.function.name, arguments: JSON.stringify(reply) } }], complete })
+  expect(selected).toEqual({ reply, repaired: false })
+  expect(complete).not.toHaveBeenCalled()
 })

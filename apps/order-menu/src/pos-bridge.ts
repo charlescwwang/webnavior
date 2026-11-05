@@ -69,6 +69,7 @@ function isReceipt(value: unknown): value is SubmissionReceipt {
     && (receipt.environment === 'test' || receipt.environment === 'live')
     && typeof receipt.retryable === 'boolean'
     && (receipt.status === 'accepted' || receipt.status === 'rejected' || receipt.status === 'uncertain')
+    && (receipt.pickupNumber === undefined || (typeof receipt.pickupNumber === 'string' && /^[1-9]\d{2}$/.test(receipt.pickupNumber)))
     && (receipt.posOrderId === undefined || typeof receipt.posOrderId === 'string')
 }
 
@@ -80,7 +81,7 @@ function isSubmittedOrder(value: unknown): value is SubmittedOrder {
 }
 
 /** Calls the configured POS Bridge and never substitutes a browser-local demo order. */
-export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined, customer?: { phone: () => string | undefined, onContinuation: (access: ContinuationAccess) => void }): PosOrderGateway {
+export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined, customer?: { phone: () => string | undefined, onContinuation?: (access: ContinuationAccess) => void, onReceipt?: (access: ContinuationAccess) => void }): PosOrderGateway {
   // One page serves many customers. Deduplicate replays of the same payment,
   // not every order submitted during the gateway's lifetime. Keep earlier keys
   // for late retries so they cannot create another order after a newer checkout.
@@ -100,11 +101,13 @@ export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => strin
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         })
-        const payload = await response.json().catch(() => undefined) as { order?: unknown, continuation?: ContinuationAccess } | undefined
+        const payload = await response.json().catch(() => undefined) as { order?: unknown, continuation?: ContinuationAccess, receiptAccess?: ContinuationAccess } | undefined
         if (!response.ok || !isSubmittedOrder(payload?.order))
           return uncertainOrder(cart)
         if (payload.order.receipt.status === 'accepted' && payload.continuation)
-          customer?.onContinuation(payload.continuation)
+          customer?.onContinuation?.(payload.continuation)
+        if (payload.order.receipt.status === 'accepted' && payload.receiptAccess)
+          customer?.onReceipt?.(payload.receiptAccess)
         return payload.order
       }
       catch {

@@ -4,6 +4,7 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
+import { normalizeOrderingPrices } from '@proj-airi/stage-shared/kiosk-conversation'
 import { ChatHistory } from '@proj-airi/stage-ui/components'
 import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
@@ -59,17 +60,17 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
     return {
       ...message,
       content: typeof message.content === 'string'
-        ? toTaiwanTraditionalChinese(message.content)
-        : message.content?.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(part.text) } : part),
-      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toTaiwanTraditionalChinese(slice.text) } : slice),
+        ? toTaiwanTraditionalChinese(normalizeOrderingPrices(message.content))
+        : message.content?.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
+      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(slice.text)) } : slice),
     }
   }
   if (message.role === 'user') {
     return {
       ...message,
       content: typeof message.content === 'string'
-        ? toTaiwanTraditionalChinese(message.content)
-        : message.content.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(part.text) } : part),
+        ? toTaiwanTraditionalChinese(normalizeOrderingPrices(message.content))
+        : message.content.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
     }
   }
   if (message.role === 'error')
@@ -128,6 +129,9 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
         :mode="props.assistantPresence.mode"
         :title="toTaiwanTraditionalChinese(props.assistantPresence.title)"
       />
+      <p v-if="historyMessages.length === 0" :class="['text-sm opacity-80']">
+        {{ t('stage.kiosk.welcome.language-hint') }}
+      </p>
       <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
            placeholder would otherwise render only the assistant name. -->
       <ChatHistory

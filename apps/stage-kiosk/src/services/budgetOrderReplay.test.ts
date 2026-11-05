@@ -68,7 +68,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
     try {
       const active = await live.db.query.kioskSystemOneProfiles.findFirst({ where: (fields, { eq }) => eq(fields.isActive, true) })
       const selected = await live.db.query.webnaviorAiCapabilitySelections.findFirst({ where: (fields, { eq }) => eq(fields.capability, 'chat'), with: { providerProfile: true } })
-      const sourceSession = await live.db.query.kioskVisitorSessions.findFirst({ where: (fields, { eq }) => eq(fields.id, 'eCda22nNnyhWzB5rMVvsM') })
+      const sourceSession = await live.db.query.kioskVisitorSessions.findFirst({ orderBy: (fields, { desc }) => [desc(fields.createdAt)] })
       const profile = sourceSession && await live.db.query.kioskProfileReleases.findFirst({ where: (fields, { eq }) => eq(fields.id, sourceSession.profileReleaseId) })
       const policy = await createKioskSystemOneService({ db: live.db, envelopeCrypto }).getPolicy()
       if (!active || active.implementation === 'slm' || !selected?.providerProfile.modelId || !profile)

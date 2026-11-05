@@ -8,16 +8,18 @@ import { useLocalStorage } from '@vueuse/core'
 import { onScopeDispose, readonly, shallowRef, watch } from 'vue'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
-import { arrayCaptureConstraints, inspectChannels, isUma8, selectProcessing, standardCaptureConstraints } from '../audio/microphoneInput'
+import { arrayCaptureConstraints, inspectChannels, selectProcessing, standardCaptureConstraints } from '../audio/microphoneInput'
 import { createSpatialInput } from '../audio/spatialInput'
 
 /**
  * Automatically routes each capture generation. The device store owns tracks;
  * this owner only changes their capture constraints and owns the optional Mask graph.
- * No persisted manual mode participates in selection. LCMV remains on the test page.
+ * Only device preference and geometry persist; actual channels select DSP anew.
+ * LCMV remains on the test page.
  */
 export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled: Ref<boolean>, constraints: Ref<MediaTrackConstraints | undefined>) {
   const mode = shallowRef<'standard' | 'mask'>('standard')
+  const automaticDeviceSelection = useLocalStorage('kiosk/audio/automatic-device', true)
   const mapping = useLocalStorage('kiosk/audio/array-mapping', '0,1,2,3,4,5,6')
   const radius = useLocalStorage('kiosk/audio/array-radius-mm', 44)
   const stream = shallowRef<MediaStream>()
@@ -31,8 +33,14 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
   let lifecycle = Promise.resolve()
 
   // Set this before the device store opens getUserMedia, otherwise its normal
-  // echo/noise processing may collapse an UMA-8 into mono before detection.
-  constraints.value = { ...arrayCaptureConstraints }
+  // echo/noise processing may collapse an array into mono before detection.
+  watch(automaticDeviceSelection, (automatic) => {
+    // The shared store normally pins its saved/default deviceId. In automatic
+    // mode, omit that pin so getUserMedia can rank all available microphones
+    // against ideal8CH. This is a preference, never an exact8CH requirement;
+    // ordinary microphones remain valid and actual Worklet channels decide DSP.
+    constraints.value = { ...arrayCaptureConstraints, ...(automatic ? { deviceId: undefined } : {}) }
+  }, { immediate: true, flush: 'sync' })
   function disconnect() {
     probe?.abort()
     pcmSource.value?.dispose()
@@ -88,12 +96,15 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
         if (ticket !== generation)
           return
         stage = 'channels'
-        const channels = await inspectChannels(raw, current.signal)
+        const channels = await inspectChannels(raw, current.signal, () => {
+          if (ticket === generation)
+            status.value = 'awaiting-interaction'
+        })
         if (ticket !== generation)
           return
         channelCount.value = channels
-        if (selectProcessing(track.label, channels) === 'standard') {
-          await standard(isUma8(track.label) ? `UMA-8 received ${channels} actual channels; eight are required.` : undefined, 'channels')
+        if (selectProcessing(channels) === 'standard') {
+          await standard()
           return
         }
         stage = 'mask_init'
@@ -102,7 +113,10 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
           throw new Error('Seven distinct hardware channels (0..7) are required.')
         let attached = false
         let failureScheduled = false
-        const processed = await createSpatialInput(raw, { generation: ticket, channelMap, radiusMm: radius.value, onError: (reason) => {
+        const processed = await createSpatialInput(raw, { generation: ticket, channelMap, radiusMm: radius.value, signal: current.signal, onWaiting: () => {
+          if (ticket === generation)
+            status.value = 'awaiting-interaction'
+        }, onError: (reason) => {
           if (ticket !== generation || !attached || failureScheduled)
             return
           failureScheduled = true
@@ -137,5 +151,5 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
     disconnect()
     constraints.value = undefined
   })
-  return { mode: readonly(mode), mapping, radius, stream, pcmSource, channelCount: readonly(channelCount), status, error, warning: readonly(warning) }
+  return { automaticDeviceSelection, mode: readonly(mode), mapping, radius, stream, pcmSource, channelCount: readonly(channelCount), status, error, warning: readonly(warning) }
 }

@@ -2,6 +2,16 @@ import type { InferOutput } from 'valibot'
 
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string, variant } from 'valibot'
 
+/** Price copy shared by menu displays and spoken ordering receipts; no currency symbols. */
+export function formatOrderingPrice(amount: number): string {
+  return `${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(amount)}元`
+}
+
+/** Normalizes price tokens only in assistant presentation/TTS, preserving source evidence. */
+export function normalizeOrderingPrices(text: string): string {
+  return text.replace(/(?:NTD|TWD|NT(?:\s{0,4}[$＄])?|[$＄])\s{0,4}(\d+(?:,\d{3})*(?:\.\d+)?)(?:\s{0,4}元)?/giu, '$1元')
+}
+
 const id = pipe(string(), minLength(1), maxLength(200))
 const label = pipe(string(), maxLength(500))
 const revision = pipe(number(), integer(), minValue(0))
@@ -134,14 +144,19 @@ export type ConversationContext = InferOutput<typeof conversationContextSchema>
 export type ConversationHandoff = InferOutput<typeof handoffSchema>
 
 /** A model may select a factual reply, but cannot supply operation-success prose. */
-export const contextReplySchema = strictObject({
+export const contextReplySchema = pipe(strictObject({
   kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'quantity-limit', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information']),
   topic: optional(picklist(['identity', 'capabilities', 'location', 'hours', 'other', 'menu-kind'])),
   subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
-})
+}), check(value => value.kind !== 'clarification' || value.topic === undefined || value.topic === 'menu-kind', 'Clarification asks for unclear meaning; missing service data uses service-information/topic:other.'))
 
 /** Validated non-operation outcome; customer facts are rendered from fresh context. */
 export type ContextReply = InferOutput<typeof contextReplySchema>
+
+/** A missing-data reply reports unavailable evidence, never a menu result or completed action. */
+export function isMissingInformationReply(reply: ContextReply | undefined): boolean {
+  return reply?.kind === 'service-information' && reply.topic === 'other'
+}
 
 /** Shared gateway tool-call shape, without provider credentials or runtime dependencies. */
 export interface ConversationToolCall {
@@ -165,7 +180,7 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     return undefined
   const kind = selection.output.kind
   if (selection.output.kind === 'greeting')
-    return { kind, content: '您好，需要點餐或查詢菜單嗎？' }
+    return { kind, content: '您好，需要點餐或查詢菜單嗎？也可以用台語點餐。' }
   if (selection.output.kind === 'acknowledgement')
     return { kind, content: '好的，您可以繼續告訴我想點的餐點或訂單調整。' }
   if (selection.output.kind === 'hearing-check')
@@ -192,10 +207,10 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     if (topic === 'identity')
       return { kind, content: '我是這台機台的點餐助手，可以協助您查詢餐點與操作點餐流程。' }
     if (topic === 'capabilities')
-      return { kind, content: context.entryComplete ? '我可以協助查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；操作後會依實際結果回覆。' : '我可以先說明點餐方式；選擇填寫手機或略過後，可以查詢菜單、點餐與核對訂單。' }
+      return { kind, content: context.entryComplete ? '我主要負責查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；其他事項請洽現場店員。' : '我可以先說明點餐方式；選擇填寫手機或略過後，可以查詢菜單、點餐與核對訂單。' }
     if (topic === 'location' || topic === 'hours')
       return { kind, content: `目前服務資料未提供可確認的${topic === 'location' ? '店內位置或路線' : '營業時間'}，請詢問現場店員。` }
-    return { kind, content: '這部分目前無法確認，請詢問現場店員；我可以協助查詢菜單、點餐與調整訂單。' }
+    return { kind, topic: 'other' as const, content: '目前沒有可確認的這項資料，請詢問現場店員；我可以協助查詢菜單、點餐與調整訂單。' }
   }
   if (!context.entryComplete || !context.catalog?.complete || !selection.output.subjects?.length)
     return undefined
@@ -206,7 +221,7 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     // Literal coverage does not establish semantic absence or authorize a
     // substitute. Keep the wording limited to what this complete catalog lists.
     return items.length
-      ? `${items.map(item => `${item.name}，單份基本售價 NT$${item.price}${item.availability === 'sold-out' ? '，目前售完' : item.availability === 'available' ? '' : '，可供狀態需確認'}`).join('；')}。`
+      ? `${items.map(item => `${item.name}，單份基本售價 ${formatOrderingPrice(item.price)}${item.availability === 'sold-out' ? '，目前售完' : item.availability === 'available' ? '' : '，可供狀態需確認'}`).join('；')}。`
       : `目前菜單沒有標示「${subject}」，請問你指的是哪一道餐點？`
   }).join(' ')
   return { kind, content }

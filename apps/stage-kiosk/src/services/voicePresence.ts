@@ -1,34 +1,63 @@
-import type { DetectionZone, PresenceCandidate } from '@proj-airi/kiosk-proactive'
+import type { PresenceCandidate } from '@proj-airi/kiosk-proactive'
 
-import { defaultPresenceSettings, isInsideDetectionZone } from '@proj-airi/kiosk-proactive'
+import { defaultPresenceSettings } from '@proj-airi/kiosk-proactive'
+
+/** Snapshot of the current admission decision; no face/image/identity is stored. */
+export interface VoicePresenceDecision {
+  allowed: boolean
+  reason: 'observation_disabled' | 'fresh_person' | 'not_observing' | 'no_person' | 'low_quality' | 'outside_zone' | 'stale'
+  ageMs: number | null
+  quality: number | null
+  insideZone: boolean | null
+}
 
 /**
- * Admits microphone input and unsolicited speech using recent local evidence.
- * The camera owner must reset this window on restart or policy changes. Times
- * use performance.now(), independently of the customer-session wall clock.
+ * Admits voice only with recent valid local evidence. ENGAGED presentation is
+ * independent: manual activity or retained low-quality detections can keep that
+ * label while this gate lacks fresh valid evidence. Voice accepts the canonical
+ * greeting OR interaction ROI; it never treats the ENGAGED label itself as proof.
  */
 export function createVoicePresenceGate() {
   let lastSeenAtMs: number | undefined
+  let quality: number | null = null
+  let insideZone: boolean | null = null
+
+  function inspect(input: { enabled: boolean, observing: boolean, nowMs: number }): VoicePresenceDecision {
+    const ageMs = lastSeenAtMs === undefined ? null : input.nowMs - lastSeenAtMs
+    const snapshot = { ageMs, quality, insideZone }
+    if (!input.enabled)
+      return { ...snapshot, allowed: true, reason: 'observation_disabled' }
+    if (!input.observing)
+      return { ...snapshot, allowed: false, reason: 'not_observing' }
+    // Preserve the existing1500ms grace exactly. A rejected recent candidate
+    // cannot erase a still-fresh valid person, nor renew an expired one.
+    if (ageMs !== null && ageMs >= 0 && ageMs <= defaultPresenceSettings.lostGraceMs)
+      return { ...snapshot, allowed: true, reason: 'fresh_person' }
+    if (quality !== null && quality < 0.5)
+      return { ...snapshot, allowed: false, reason: 'low_quality' }
+    if (insideZone === false)
+      return { ...snapshot, allowed: false, reason: 'outside_zone' }
+    return { ...snapshot, allowed: false, reason: ageMs === null ? 'no_person' : 'stale' }
+  }
 
   return {
-    observe(nowMs: number, candidate: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'> | undefined, zone: DetectionZone) {
-      if (candidate && candidate.poseQuality >= 0.5 && isInsideDetectionZone(candidate.centre, zone))
+    observe(nowMs: number, candidate: PresenceCandidate | undefined) {
+      quality = candidate?.poseQuality ?? null
+      // Consume the same frame's canonical ROI results used by presence display.
+      // The greeting zone may end above the customer's torso centre; retain that
+      // existing area and also accept the interaction ROI that establishes ENGAGED.
+      insideZone = candidate ? candidate.greetingRoiHit || candidate.interactionRoiHit : null
+      if (candidate && candidate.poseQuality >= 0.5 && insideZone)
         lastSeenAtMs = nowMs
     },
+    inspect,
     allows(input: { enabled: boolean, observing: boolean, nowMs: number }) {
-      // Devices without observation retain their existing microphone service.
-      // Once enabled, unavailable inference is unknown rather than presence.
-      if (!input.enabled)
-        return true
-      if (!input.observing || lastSeenAtMs === undefined)
-        return false
-      const ageMs = input.nowMs - lastSeenAtMs
-      // Reuse the presence policy's brief occlusion grace, while also expiring
-      // evidence if no new frames arrive. ENGAGED alone can otherwise be stale.
-      return ageMs >= 0 && ageMs <= defaultPresenceSettings.lostGraceMs
+      return inspect(input).allowed
     },
     reset() {
       lastSeenAtMs = undefined
+      quality = null
+      insideZone = null
     },
   }
 }

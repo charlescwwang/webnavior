@@ -928,7 +928,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         ...input,
         display: true,
         excludeIngredients: [...new Set([...(previousFilters?.excludeIngredients ?? []), ...filters.excludeIngredients])],
-        includeIngredients: [...new Set([...(previousFilters?.includeIngredients ?? []), ...filters.includeIngredients])],
+        // Full-catalog browsing releases positive tastes (e.g. fish), while
+        // exclusions/dietary restrictions above remain safety constraints.
+        includeIngredients: filters.includeIngredients,
         ...(previousFilters?.dietary || filters.dietary ? { dietary: previousFilters?.dietary ?? filters.dietary } : {}),
         excludeItemIds: [...new Set([...(recommendationBatch?.excludedItemIds ?? []), ...menuExclusions(input, machine.getMenu())])],
       }
@@ -1183,7 +1185,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           // its single-item price in the owned spoken receipt; Host discards
           // arbitrary Main prose and must not reduce an inquiry to availability.
           if (scope.length === 1)
-            queryMessage += `單份基本售價 NT$${scope[0]!.price}。`
+            queryMessage += `單份基本售價 ${scope[0]!.price}元。`
           if (queries.length && !scope.length) {
             queryMessage = possibleItems.length
               ? mealMessages.possibleMenu.replace('{items}', possibleItems.map(item => item.name).join('、'))
@@ -2237,7 +2239,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               pendingConfiguration = undefined
               mealClarification.clear()
               options.onClarificationChange?.(undefined)
-              const resumed = await resumeMeal(onAction)
+              // Retire the visible cancelled meal as well as its question.
+              // Earlier suspended meals stay answerable without opening another dialog.
+              options.onMenuSelection(undefined)
+              const resumed = await resumeMeal(onAction, false)
               return { customerMessage: `已取消這筆尚未加入的餐點需求，購物車仍保留。${resumed?.question ?? ''}`, ...(resumed ? { pendingCustomerChoice: resumed } : {}) }
             }
             const choice = issued.choices.get(candidateId)

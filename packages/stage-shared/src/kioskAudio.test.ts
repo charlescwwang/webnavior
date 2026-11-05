@@ -51,3 +51,8 @@ it('accepts bounded device warnings and rejects dialogue, invalid stages and cha
   expect(safeParse(audioWarningSchema, { ...warning, channels: 33 }).success).toBe(false)
   expect(safeParse(audioWarningSchema, { ...warning, generation: 0 }).success).toBe(false)
 })
+
+it('accepts playback and VAD failure facts without requiring audio or customer dialogue', () => {
+  expect(safeParse(audioWarningSchema, { generation: 1, stage: 'playback', outcome: 'unavailable', code: 'media_error' }).success).toBe(true)
+  expect(safeParse(audioWarningSchema, { generation: 2, stage: 'vad', outcome: 'unavailable', code: 'vad_error' }).success).toBe(true)
+})

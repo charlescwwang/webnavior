@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
+import { userEvent } from 'vitest/browser'
 
 import App from '../../../order-menu/src/App.vue'
 
@@ -44,4 +45,47 @@ describe('actual Menu App invoice input wiring', () => {
       view.unmount()
     }
   })
+})
+
+// Report: this chat,2026-11-05 — scanning a carrier appeared to skip explicit confirmation.
+it.each([
+  { label: '手機載具', field: '手機條碼', code: '/PTGRJP2', keyboardConfirm: false },
+  { label: '自然人憑證', field: '自然人憑證條碼', code: 'AB12345678901234', keyboardConfirm: true },
+])('keeps $label on the invoice page after scanner Enter until explicit confirmation', async ({ label, field, code, keyboardConfirm }) => {
+  const view = render(App)
+  try {
+    await view.getByRole('button', { name: '查看水餃' }).click()
+    await view.getByRole('button', { name: '加入購物車', exact: true }).click()
+    await view.getByRole('button', { name: '查看訂單', exact: true }).click()
+    await view.getByRole('button', { name: '自取', exact: true }).click()
+    await view.getByRole('button', { name: '確認訂單，進入結帳' }).click()
+    await view.getByRole('button', { name: label, exact: true }).click()
+    const input = view.getByRole('textbox', { name: field, exact: true })
+    await input.click()
+    await userEvent.keyboard(`${code}{Enter}`)
+    expect(view.container.querySelector('#invoice-code')).not.toBeNull()
+    await expect.element(input).toHaveValue(code)
+    await expect.element(view.getByRole('heading', { name: '選擇發票方式', exact: true })).toBeVisible()
+    expect(view.container.querySelector('#payment-heading')).toBeNull()
+    // Some scanner/browser integrations submit the form independently of keydown.
+    // A native submit is never customer authorization to leave the invoice page.
+    const form = input.element().closest('form')!
+    form.requestSubmit()
+    await expect.element(input).toBeVisible()
+    expect(view.container.querySelector('#payment-heading')).toBeNull()
+    const confirm = view.getByRole('button', { name: '確認發票資料，選擇付款方式', exact: true })
+    await expect.element(confirm).toBeEnabled()
+    if (keyboardConfirm) {
+      confirm.element().focus()
+      await userEvent.keyboard('{Enter}')
+    }
+    else {
+      await confirm.click()
+    }
+    await expect.element(view.getByRole('heading', { name: '選擇付款方式', exact: true })).toBeVisible()
+    await expect.element(view.getByRole('button', { name: 'LINE Pay', exact: true })).toBeVisible()
+  }
+  finally {
+    view.unmount()
+  }
 })

@@ -24,22 +24,30 @@ export function createKioskStartupPermissionGate() {
 }
 
 /**
- * Re-checks browser microphone consent whenever a voice-only kiosk starts.
+ * Acquires the real microphone stream when a voice-only kiosk starts.
  * The persisted audio toggle only records the operator's preference; it must
- * not be used as evidence of browser consent.
+ * not be used as evidence of browser consent or a live stream after reload.
  */
 export async function prepareKioskMicrophonePermission(input: {
   audioInputEnabled: boolean
-  requestPermission: () => Promise<void>
+  startStream: () => Promise<void>
+  signal: AbortSignal
   setAudioInputEnabled: (enabled: boolean) => void
   voiceConversationOnly: boolean
 }) {
   if (!input.voiceConversationOnly)
     return
 
-  // Browsers do not display another prompt for an existing grant, but asking
-  // again detects a permission reset or revocation between kiosk sessions.
-  await input.requestPermission()
+  input.signal.throwIfAborted()
+
+  // getUserMedia for the actual stream owns browser consent. Do not first open
+  // a temporary permission-only stream: Firefox can prompt again when that
+  // temporary stream is stopped and the real selected microphone starts.
+  // The persisted toggle can already be true on reload, so setting it again
+  // would not fire the device store watcher. Explicitly acquire capture through
+  // the existing deduplicated store request before declaring startup complete.
+  await input.startStream()
+  input.signal.throwIfAborted()
 
   // Keep the audio pipeline running after a previously granted permission,
   // including when its local preference was reset between kiosk sessions.

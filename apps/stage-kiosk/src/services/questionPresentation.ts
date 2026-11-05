@@ -3,7 +3,7 @@ import type { ConversationContext, ConversationQuestion as PresentedQuestion, Se
 import type { KioskDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-import { quantityLimitRejectionSchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { isMissingInformationReply, quantityLimitRejectionSchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { safeParse } from 'valibot'
 
 /**
@@ -60,7 +60,7 @@ export function createMenuReplyWindow() {
               if (value && typeof value === 'object' && 'name' in value && typeof value.name === 'string' && 'quantity' in value && typeof value.quantity === 'number')
                 lines.push(`${value.name} ${value.quantity} 份`)
             }
-            cartReply = lines.length ? `目前訂單：${lines.join('、')}。合計 NT$${cart.total}。` : '購物車目前沒有餐點。'
+            cartReply = lines.length ? `目前訂單：${lines.join('、')}。合計 ${cart.total}元。` : '購物車目前沒有餐點。'
           }
         }
         return
@@ -110,7 +110,7 @@ export function createMenuReplyWindow() {
       if (!reads)
         return cartReply ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。'
       const prices = reads > 1 && items.size > 1
-        ? ` 單份基本售價：${[...items.values()].slice(0, 6).map(item => `${item.name} NT$${item.price}`).join('、')}。`
+        ? ` 單份基本售價：${[...items.values()].slice(0, 6).map(item => `${item.name} ${item.price}元`).join('、')}。`
         : ''
       return `${[...messages].join(' ')}${prices}`
     },
@@ -192,8 +192,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   if (!receiptReply && !commerceAttempted && options.context) {
     const information = replyFromContext(result.reply ? JSON.stringify(result.reply) : result.answer, options.context)
     // A display-required request still needs a presentation receipt. Only an
-    // application-owned clarification may pause it without claiming completion.
-    if (information && (!options.requireMenuRead || information.kind === 'clarification'))
+    // application-owned clarification or missing-data answer may stop without claiming a menu result.
+    if (information && (!options.requireMenuRead || information.kind === 'clarification' || isMissingInformationReply(information)))
       return { role: 'assistant' as const, content: information.content }
   }
   if (options.requireMenuRead && !receiptReply)

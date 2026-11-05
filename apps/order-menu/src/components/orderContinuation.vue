@@ -17,6 +17,8 @@ const scanned = shallowRef(props.scannedTable)
 const confirmingTakeout = shallowRef(false)
 const copy = orderingMessages['zh-Hant'].continuation
 const heading = computed(() => {
+  if (snapshot.value?.readOnly)
+    return copy.receiptTitle
   if (snapshot.value?.fulfillmentMode === 'takeout')
     return copy.takeoutTitle
   if (snapshot.value?.table)
@@ -36,7 +38,7 @@ function acceptSnapshot(next: ContinuationSnapshot) {
   }
   // Only an unbound dine-in order should follow a later table scan. Pickup
   // removes this order's token without disturbing another pending order.
-  if (next.fulfillmentMode === 'dine-in' && !next.table)
+  if (!next.readOnly && next.fulfillmentMode === 'dine-in' && !next.table)
     localStorage.setItem(pendingOrderKey, JSON.stringify({ token: props.token, expiresAt: next.expiresAt }))
   else if (JSON.parse(localStorage.getItem(pendingOrderKey) ?? 'null')?.token === props.token)
     localStorage.removeItem(pendingOrderKey)
@@ -81,7 +83,7 @@ onMounted(() => load())
 
 <template>
   <main :class="['continuation-page']">
-    <span :class="['test-label']">Webnavior 測試訂單</span>
+    <span :class="['test-label']">{{ snapshot?.environment === 'test' ? copy.testOrder : copy.receiptTitle }}</span>
     <h1>{{ heading }}</h1>
     <p v-if="error" role="alert">
       {{ error }}
@@ -90,6 +92,13 @@ onMounted(() => load())
       重新讀取
     </button>
     <template v-if="snapshot">
+      <section v-if="snapshot.pickupNumber" :class="['pickup-number']">
+        <h2>{{ copy.pickupNumber }}</h2>
+        <strong :class="['text-6xl font-bold tabular-nums']">{{ snapshot.pickupNumber }}</strong>
+      </section>
+      <p v-if="snapshot.readOnly">
+        {{ copy.receiptHint }}
+      </p>
       <p :class="['order-number']">
         訂單 {{ snapshot.orderId }}
       </p>
@@ -102,15 +111,15 @@ onMounted(() => load())
         </li>
       </ul>
       <p :class="['total']">
-        總計 NT$ {{ snapshot.total }}
+        總計 {{ snapshot.total }}元
       </p>
       <p>{{ copy.mode }} {{ snapshot.fulfillmentMode === 'takeout' ? copy.takeout : copy.dineIn }}</p>
-      <section v-if="snapshot.fulfillmentMode === 'takeout'" role="status">
+      <section v-if="!snapshot.readOnly && snapshot.fulfillmentMode === 'takeout'" role="status">
         <h2>{{ copy.takeoutTitle }}</h2>
         <p>{{ copy.changed }}</p>
         <small>{{ copy.testNotice }}</small>
       </section>
-      <template v-else-if="!confirmingTakeout">
+      <template v-else-if="!snapshot.readOnly && !confirmingTakeout">
         <section v-if="snapshot.table" role="status">
           <h2>送餐桌號 {{ snapshot.table.label }}</h2>
           <p>訂單與桌號已綁定，等待餐點備妥。</p>
@@ -139,7 +148,7 @@ onMounted(() => load())
         </section>
       </template>
       <TakeoutChange
-        v-if="snapshot.fulfillmentMode === 'dine-in'"
+        v-if="!snapshot.readOnly && snapshot.fulfillmentMode === 'dine-in'"
         :busy="busy"
         :confirming="confirmingTakeout"
         :table="snapshot.table?.label"

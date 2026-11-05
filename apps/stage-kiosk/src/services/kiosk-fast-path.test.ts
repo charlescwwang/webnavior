@@ -1,5 +1,6 @@
 import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 
+import { createPresenceWindow, defaultPresenceSettings, defaultProactiveInteractionSettings } from '@proj-airi/kiosk-proactive'
 import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { parse } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
@@ -106,7 +107,8 @@ describe('kiosk System One fast path', () => {
   // Report: this chat, 2026-10-20; a visitor can leave while Jev is deciding.
   it('rejects a late voice action after local presence expires before execution', async () => {
     const gate = createVoicePresenceGate()
-    gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
+    const presence = createPresenceWindow(defaultPresenceSettings, defaultProactiveInteractionSettings)
+    gate.observe(0, presence.decide(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }).candidate)
     let now = 100
     const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
     const result = await runFastPath({ transcript: '一份水餃', isEnabled: async () => true, isCurrent: () => gate.allows({ enabled: true, observing: true, nowMs: now }), decide: async () => {
@@ -119,7 +121,8 @@ describe('kiosk System One fast path', () => {
 
   it('retains an accepted receipt when presence expires during an issued mutation', async () => {
     const gate = createVoicePresenceGate()
-    gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
+    const presence = createPresenceWindow(defaultPresenceSettings, defaultProactiveInteractionSettings)
+    gate.observe(0, presence.decide(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }).candidate)
     let now = 100
     const onExecuted = vi.fn()
     const execute = vi.fn(async (tool: ServiceTool) => {

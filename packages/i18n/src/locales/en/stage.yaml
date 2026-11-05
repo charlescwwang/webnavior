@@ -23,6 +23,19 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
+  admin-access:
+    trigger: Tap five times to open administrator mode
+    mode: Administrator mode
+    title: Enter PIN
+    description: Enter the administrator PIN using the number pad below.
+    pin-label: Administrator PIN
+    keypad: PIN number pad
+    clear: Clear
+    backspace: Delete last digit
+    cancel: Cancel
+    continue: Continue
+    missing-pin: Administrator PIN is not configured. Set VITE_KIOSK_ADMIN_PIN and restart the Kiosk.
+    incorrect-pin: Incorrect PIN. Please try again.
   service-recovery:
     queued: Received. Waiting for the previous request to finish…
     confirming: Checking what you mean…
@@ -31,7 +44,28 @@ kiosk:
     ignored: No ordering action was taken for this message.
     uncertain: Please rephrase your request or use the screen.
     failed: Unable to confirm right now. Please try again or use the screen.
-  voice-presence-ignored: Ignored because local presence is unavailable
+  voice-presence-ignored: Voice admission check failed; result ignored
+  voice-capturing: Speech detected; waiting for the end
+  voice-blocked: Audio received; not sent to ASR
+  voice-block-reasons:
+    observation_disabled: Visual observation is disabled
+    fresh_person: Fresh valid person observation
+    not_observing: Camera inference has not started
+    no_person: No observation meets voice admission conditions yet
+    low_quality: Person detection quality is below the admission threshold
+    outside_zone: Detected person is outside the configured zone
+    stale: Valid person observation has expired
+    no_candidate: No voice candidate was created at speech start
+    queue_full: Voice processing queue is full
+    empty_audio: Final utterance contains no audio samples
+    capture_stopped: Microphone capture stopped or restarted
+    incomplete_segment: Previous speech did not form a complete segment
+  voice-stages:
+    speech_start: 'Check: VAD speech start'
+    speech_end: 'Check: VAD complete segment'
+    before_asr: 'Check: before ASR upload'
+    after_asr: 'Check: after ASR response'
+    capture: 'Check: capture lifecycle'
   text-console:
     title: Text input and trace
     reset: Reset position
@@ -75,6 +109,7 @@ kiosk:
     failed: We could not confirm completion. Please choose again or ask the assistant to skip.
     invalid: Enter a 10-digit phone number starting with 09.
   welcome:
+    language-hint: You can also order in Taiwanese.
     preparing: Preparing your welcome…
     first: Welcome! I can introduce our menu whenever you need.
     second: Hello and welcome! I can help you choose your meal.
@@ -97,6 +132,12 @@ kiosk:
     vlm-prompt-hint: Generates an opening from the current image and this guidance. Save and publish changes.
 customer-session:
   completion:
+    pickup-number: Pickup number
+    survey-switch-title: Post-order survey
+    survey-switch-label: Show post-order survey
+    survey-switch-description: Saved for this browser across reloads. Turning this off hides only the survey; order completion details remain visible.
+    order-number: POS order number
+    pickup-unavailable: No pickup number was provided. Please confirm collection details with staff.
     title: Order submitted
     description: Thank you for your order. This order flow is complete.
     simulated-notice: This is a simulated order and has not been sent to the POS system.
@@ -105,12 +146,12 @@ customer-session:
     qr-alt: Survey QR code
     qr-loading: Preparing the survey QR code…
     qr-error: The survey QR code could not be generated right now.
-    order-title: Take your order to your phone
-    order-description: Scan this order code first, then scan your table code and confirm the delivery table.
-    order-qr-alt: Order continuation QR code
-    order-qr-loading: Preparing the order code…
-    order-qr-error: The order code could not be generated. Please use the link below.
-    order-link: Open the order continuation page on this computer
+    order-title: Take your order details with you
+    order-description: Worried about forgetting your pickup number? Scan to view your pickup number and order details on your phone.
+    order-qr-alt: Order details QR code
+    order-qr-loading: Preparing your order details QR code…
+    order-qr-error: The order details QR code could not be generated. Please use the link below.
+    order-link: Open order details
   idle-confirmation:
     title: Would you like to continue?
     description: Your current conversation and selections are still here. Choose continue to keep going, or clear the current content and start over.

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useAudioDevice } from './audio-device'
+
 const audioDeviceMock = vi.hoisted(() => ({
   audioInputsRef: undefined as unknown as { value: MediaDeviceInfo[] },
   ensurePermissions: vi.fn(),
@@ -99,4 +101,14 @@ describe('useAudioDevice analytics lifecycle', () => {
     })
     expect(audioDeviceMock.trackMicrophonePermissionDenied).not.toHaveBeenCalled()
   })
+})
+
+// Report: Nov5 automatic8CH selection must override only the automatic device pin.
+it('lets capture policy prefer8CH across devices while preserving explicit device selection', () => {
+  const device = useAudioDevice()
+  device.selectedAudioInput.value = 'saved-conference-microphone'
+  device.captureConstraints.value = { channelCount: { ideal: 8 }, deviceId: undefined }
+  expect(device.deviceConstraints.value.audio).toMatchObject({ channelCount: { ideal: 8 }, deviceId: undefined })
+  device.captureConstraints.value = { channelCount: { ideal: 8 } }
+  expect(device.deviceConstraints.value.audio).toMatchObject({ deviceId: { exact: 'saved-conference-microphone' }, channelCount: { ideal: 8 } })
 })

@@ -1,6 +1,14 @@
 import type { CaptureResponse } from './spatialMaskMessages'
 
+import { resumeAudioContext } from '@proj-airi/stage-ui/libs/audio/activation'
+
 import captureUrl from './spatialCapture.worklet?worker&url'
+
+/** Admin-only automatic device option; never sent as a real deviceId to getUserMedia. */
+export const automaticDeviceChoice = '__automatic__'
+
+/** User-selected eight-channel recognition gain; independent of playback/comparison audio. */
+export const arrayInputGainDb = 65
 
 /** Prefer raw eight-channel capture without making ordinary devices fail getUserMedia. */
 export const arrayCaptureConstraints: MediaTrackConstraints = {
@@ -18,14 +26,9 @@ export const standardCaptureConstraints: MediaTrackConstraints = {
   autoGainControl: true,
 }
 
-/** Only the known UMA-8 geometry may use this Mask; eight channels alone do not identify an array. */
-export function selectProcessing(label: string, channels: number): 'mask' | 'standard' {
-  return isUma8(label) && channels === 8 ? 'mask' : 'standard'
-}
-
-/** Browser labels become available after microphone permission has been granted. */
-export function isUma8(label: string): boolean {
-  return /\bUMA[\s_-]*8\b/i.test(label)
+/** Select by observed Worklet channels; device names never participate in routing. */
+export function selectProcessing(channels: number): 'mask' | 'standard' {
+  return channels === 8 ? 'mask' : 'standard'
 }
 
 /**
@@ -33,7 +36,7 @@ export function isUma8(label: string): boolean {
  * The probe records nothing and stops only its own graph. Abort retires stale probes
  * when the selected device or capture lifecycle changes.
  */
-export async function inspectChannels(input: MediaStream | AudioNode, signal: AbortSignal): Promise<number> {
+export async function inspectChannels(input: MediaStream | AudioNode, signal: AbortSignal, onWaiting?: () => void): Promise<number> {
   signal.throwIfAborted()
   const ownsContext = input instanceof MediaStream
   const candidate = input instanceof MediaStream ? new AudioContext({ sampleRate: 48000, latencyHint: 'interactive' }) : input.context
@@ -52,6 +55,9 @@ export async function inspectChannels(input: MediaStream | AudioNode, signal: Ab
   const observed = result.promise
   void observed.catch(() => {})
   try {
+    if (context.state === 'suspended')
+      onWaiting?.()
+    await resumeAudioContext(context, signal)
     timer = setTimeout(() => result.reject(new Error('Microphone channel detection timed out.')), 5000)
     await context.audioWorklet.addModule(captureUrl)
     signal.throwIfAborted()
@@ -65,7 +71,6 @@ export async function inspectChannels(input: MediaStream | AudioNode, signal: Ab
     silent = context.createGain()
     silent.gain.value = 0
     source.connect(node).connect(silent).connect(context.destination)
-    void context.resume().catch(result.reject)
     return await observed
   }
   finally {

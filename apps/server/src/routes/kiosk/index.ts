@@ -15,14 +15,14 @@ import { randomInt, randomUUID } from 'node:crypto'
 
 import { useLogger } from '@guiiai/logg'
 import { audioWarningSchema } from '@proj-airi/stage-shared/kiosk-audio'
-import { contextReplySchema, conversationContextSchema, conversationRequestSchema, handoffSchema, intentRecoverySchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { contextReplySchema, conversationContextSchema, conversationRequestSchema, handoffSchema, intentRecoverySchema, isMissingInformationReply, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
-import { clarificationTool, currentContextInstructions, preserveRequestedQuantities, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
+import { currentContextInstructions, preserveRequestedQuantities, readOnlyReplyTool, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { orderingInstructions, orderingSkill, resolveOrderingIntent } from '../../services/domain/kiosk-conversation-skills'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
@@ -146,6 +146,7 @@ const orderResultSchema = object({
   fulfillmentMode: picklist(['dine-in', 'takeout']),
   id: pipe(string(), regex(/^[\w-]+$/), maxLength(120)),
   itemCount: pipe(number(), integer(), minValue(0)),
+  pickupNumber: optional(pipe(string(), regex(/^[1-9]\d{2}$/))),
   posOrderId: optional(pipe(string(), regex(/^[\w-]+$/), maxLength(120))),
   status: literal('accepted'),
   total: pipe(number(), minValue(0)),
@@ -444,7 +445,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         // Phone resolution is an effect decision, so it requires completed
         // service admission. An uncertain recipient cannot authorize a skip.
         const unresolvedPhone = decision.kind === 'NEEDS_ASSISTANT' && (decision.reason === 'UNCERTAIN_OPERATION' || (decision.reason === 'NEW_REQUEST' && decision.recovery?.admission === 'service')) && !decision.recovery?.readOnly
-        if (!result.output.review && result.output.decisionState?.phase === 'customer_entry' && unresolvedPhone && skip) {
+        const proposedSkip = decision.kind === 'FAST_ACTION' && decision.actionId === skip?.id
+        if (!result.output.review && result.output.decisionState?.phase === 'customer_entry' && (unresolvedPhone || proposedSkip) && skip) {
           const modelName = await options.runtimeModelPolicy.modelFor('chat')
           if (modelName) {
             const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal }))
@@ -455,7 +457,11 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
               const waitingFor = result.output.decisionState.waitingFor
               return { kind: 'FAST_ACTION' as const, actionId: skip.id, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...(decision.recovery ? { recovery: decision.recovery } : {}), ...(waitingFor?.purpose === 'customer-entry' ? { answeredQuestionId: waitingFor.questionId } : {}), ...trace }
             }
-            decision = { ...decision, ...trace }
+            // A finite phone proposal is not consent. A failed/uncertain Main
+            // verification must not preserve the original executable skip.
+            decision = proposedSkip
+              ? { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' }, modelCalls: decision.modelCalls, modelQuestions: decision.modelQuestions, ...trace }
+              : { ...decision, ...trace }
           }
         }
         return decision
@@ -465,9 +471,16 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       // admission used for semantic uncertainty must run before Agent fallback.
       if (bounded.kind === 'UNAVAILABLE' && bounded.reason === 'PROVIDER_FAILURE')
         bounded = { ...bounded, reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } }
+      // A waiting question is not proof this utterance answers it. If Jev
+      // abstained from the answer, qualify service intent before Main sees
+      // executable answer choices; otherwise its old question anchors a guess.
+      if (!result.output.review && bounded.kind === 'NEEDS_ASSISTANT' && bounded.reason === 'UNCERTAIN_OPERATION'
+        && result.output.decisionState?.waitingFor && bounded.recovery?.admission !== 'service') {
+        bounded = { ...bounded, kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } }
+      }
       const priced = await resolvePriceHandoff(bounded, result.output.transcript, result.output.review ? undefined : result.output.decisionState?.priceEvidence, completeResolution)
       let decision = priced
-      if (!result.output.review) {
+      if (!result.output.review && bounded.recovery?.status !== 'eligible') {
         // A live Menu-issued answer is the smallest semantic decision. If Main
         // abstains, independently qualify the whole request; a diagnostic trace
         // alone never means its purpose was understood.
@@ -884,6 +897,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         fulfillmentMode: result.output.fulfillmentMode,
         id: result.output.id,
         itemCount: result.output.itemCount,
+        ...(result.output.pickupNumber ? { pickupNumber: result.output.pickupNumber } : {}),
         ...(result.output.posOrderId ? { posOrderId: result.output.posOrderId } : {}),
         status: result.output.status,
         total: result.output.total,
@@ -1329,7 +1343,7 @@ async function finishConversationReply(
   if (answer.toolCalls.length === 1 && answer.toolCalls[0]!.function.name === replyTool.function.name) {
     try {
       const selected = safeParse(contextReplySchema, JSON.parse(answer.toolCalls[0]!.function.arguments))
-      clarificationRequested = selected.success && ['clarification', 'quantity-limit'].includes(selected.output.kind)
+      clarificationRequested = selected.success && (['clarification', 'quantity-limit'].includes(selected.output.kind) || isMissingInformationReply(selected.output))
     }
     catch {
       // Malformed selectors still use the bounded reply repair below.
@@ -1443,7 +1457,7 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   const readCompleted = input.decisionState?.readOnly ? hasMenuReply(input.toolResults ?? []) : Boolean(input.toolResults?.length)
   if (!input.decisionState?.requireMenuRead || readCompleted || (input.decisionState.context?.catalog?.complete && !input.decisionState.readOnly))
     return available?.length ? { ...generation, tools: available } : generation
-  const tools = available?.filter(tool => ['menu_get', 'menu_recommend', replyTool.function.name].includes(tool.function.name)).map(tool => tool.function.name === replyTool.function.name ? clarificationTool : tool) ?? []
+  const tools = available?.filter(tool => ['menu_get', 'menu_recommend', replyTool.function.name].includes(tool.function.name)).map(tool => tool.function.name === replyTool.function.name ? readOnlyReplyTool : tool) ?? []
   if (!tools.length)
     throw createBadRequestError('目前無法查詢菜單。', 'KIOSK_MENU_LOOKUP_UNAVAILABLE')
   return { ...generation, tools, tool_choice: 'required' as const }

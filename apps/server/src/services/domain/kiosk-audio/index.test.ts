@@ -123,4 +123,18 @@ describe('createKioskAudioGateway', () => {
     expect(JSON.stringify(withFields.mock.calls)).not.toContain('secret-asr-key')
     expect(warn).toHaveBeenCalledWith('Kiosk ASR upstream returned an unsuccessful response')
   })
+  it('records TTS upstream status and endpoint without logging speech text or credentials', async () => {
+    const warn = vi.fn()
+    const withFields = vi.fn(() => ({ warn }))
+    const store = new Map<string, string>()
+    const configKV = createConfigKVService({ get: vi.fn(async key => store.get(key) ?? null), set: vi.fn(async (key, value) => {
+      store.set(key, value)
+    }) } as any)
+    await configKV.set('WEBNAVIOR_AUDIO_CONFIG', { tts: { baseURL: 'https://tts.example.com/v1', modelName: 'webnavior:tts', upstreamModel: 'gpt-sovits', voice: 'default' } })
+    const gateway = createKioskAudioGateway({ configKV, envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32) }), fetchImpl: vi.fn(async () => new Response('error code: 1010', { status: 403, headers: { 'Content-Type': 'text/plain' } })), logger: { withFields } })
+    await expect(gateway.speak({ locale: 'zh-TW', modelName: 'webnavior:tts', text: '顧客私人點餐內容' })).rejects.toMatchObject({ statusCode: 503, errorCode: 'KIOSK_TTS_UPSTREAM_ERROR' })
+    expect(withFields).toHaveBeenCalledWith({ modelName: 'webnavior:tts', status: 403, upstreamHost: 'tts.example.com', upstreamPath: '/v1/audio/speech', responseContentType: 'text/plain' })
+    expect(warn).toHaveBeenCalledWith('Kiosk TTS upstream returned an unsuccessful response')
+    expect(JSON.stringify(withFields.mock.calls)).not.toContain('顧客私人點餐內容')
+  })
 })

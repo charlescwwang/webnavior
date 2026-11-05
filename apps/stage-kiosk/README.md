@@ -482,8 +482,9 @@ existing profiles receive Off when settings are next applied.
 Each customer starts an anonymous Kiosk session when they touch the screen, type a message, speak, or operate the menu. The session owns only that customer's conversation and cart:
 
 - After three minutes without activity, it asks whether to continue and starts a 15-second countdown. Showing the dialog does not clear anything. **繼續點餐** cancels that countdown and keeps the same session, conversation, cart and unfinished ordering requirement (including the selected meal, known quantity/options and pending question); it does not reload the menu or repeat the question. Only unanswered countdown expiry, confirmed order completion or explicitly starting a new order/reception clears that context and ends its durable visitor session. Pending AI/tool work and high-confidence engaged presence retain their existing idle-timer protection. Lookups and deferral do not reset context. Internal answer tickets remain short-lived and are renewed on the next decision turn; financial/destructive confirmation authority is not extended by continuing.
+- The on-device administrator panel has a **顯示完成後問卷** switch. This browser-local preference survives reload and profile refresh; it only suppresses the survey, never the accepted-order screen. The completion screen prominently displays the application-issued random three-digit pickup number from the accepted receipt. The Bridge assigns it once within its existing idempotency boundary, so concurrent submissions and receipt replays share it. Rejected/uncertain orders receive none. The POS identifier remains separate; local UUIDs are never presented as pickup numbers.
 - After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and menu/order state are reset to clean standby. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
-- The owned menu reports completion immediately after payment and accepted submission. Its transient order-continuation URL is displayed as a separate QR and desktop link alongside the configured reward/survey; the customer need not acknowledge the order QR before the reward appears. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
+- The owned menu reports completion immediately after payment and accepted submission. Its transient read-only receipt URL is displayed as a separate QR and link, even when the survey is disabled. Both dine-in and takeout customers can scan to keep their pickup number, meals, quantities and total; the link lasts 30 minutes and offers no table, fulfillment or payment actions. The earlier test-only table-binding continuation stays separate. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 
 This is intentionally separate from AIRI's general chat history. Reception reset
@@ -832,11 +833,95 @@ as an upload-size refusal, separately from incomplete recognition/provider failu
 
 ### Local access
 
-The visitor experience does not display settings. Long-press the `AIRI 餐飲服務員` label for 1.2 seconds, then enter the PIN configured before starting the kiosk:
+The visitor experience does not display settings. Tap the `AIRI 餐飲服務員` label five times within two seconds, then enter the configured PIN with the onscreen number pad. It provides digits0–9, clear and backspace; the password remains masked. Four taps or an expired sequence does not open maintenance. PIN entry appears above camera/diagnostic overlays and supports touch-only use. Physical keyboard input remains available. Configure the PIN before starting the kiosk:
 
 ```bash
 VITE_KIOSK_ADMIN_PIN='choose-a-private-pin' pnpm --filter @proj-airi/stage-kiosk run dev
 ```
+
+Public builds with a non-loopback `VITE_API_SERVER_URL` require a nonempty
+`VITE_KIOSK_ADMIN_PIN`. Isolated release builds must explicitly inherit the existing
+private PIN configuration; never substitute a new PIN or print its value in logs.
+A missing PIN fails the build before publishing. Local development can omit it.
+
+The operator panel also provides microphone selection and explicit start/stop
+through the existing device store. Stop capture before choosing a different input;
+processing selection remains automatic. Capture state, actual captured device and
+capture errors are separate from array/VAD state. `stopped` means processing has
+not started, not that speech is too quiet; a device appearing in the selector does
+not establish an active stream. A loaded VAD model is shown as starting until its
+input graph is attached. Start failures also use the existing device WARN route.
+These controls do not alter gain, VAD thresholds or Spatial Mask arithmetic.
+
+Voice-only Kiosks explicitly restart the selected microphone stream after browser
+consent for the actual capture succeeds on each page load, even when the saved
+enabled toggle is already true. Startup and operator restart no longer open a
+separate temporary permission-only stream; Firefox uses its saved site grant,
+or prompts for the real stream when permission is genuinely needed. Startup reuses the device store's pending request. Operator stop,
+scene disposal and profile changes retire pending startup, so late completion
+cannot re-enable it. Browser audio activation waits still resume on trusted page
+interaction; permission denial is not bypassed.
+
+Input confirmed as eight actual channels uses the operator-requested fixed **+65 dB** gain
+(about1778.28×), after Spatial Mask and before both VAD inference and utterance
+buffering for ASR. A generation confirmed as eight-channel retains this gain on
+Mask failure fallback; other observed channel counts retain0dB. Names are display
+metadata and never participate in routing or gain selection. A streaming sample-peak limiter uses a0.98 ceiling, immediate attack and50ms
+exponential release; its history spans PCM blocks and resets with capture.
+The operator panel counts samples exceeding the ceiling before attenuation. There is no automatic level
+normalization or Gate. Raw capture and raw/Mask comparison recordings remain
+unamplified, so reference/oracle comparisons retain their original meaning.
+The selected gain is not a hardware speech-quality acceptance result.
+
+The operator audio panel measures reference/Mask RMS and peak before gain,
+recognition RMS/peak after gain/limiting, processed VAD sample counts, current and
+maximum speech probability, speech starts/completed segments, presence rejection,
+queue saturation and actual ASR upload attempts. Values are digital dBFS relative
+to full scale, not acoustic dB SPL; exact digital silence is shown as−∞. Counters
+reset with input generation. DSP/VAD metadata does not retain waveforms, and the
+panel polls snapshots at4Hz while open. Raw comparison recordings remain
+unamplified; speaker audition volume is not an input-level measurement. A ready
+model alone does not establish live samples or a completed ASR utterance.
+The same panel also shows the current voice-admission reason and the immutable
+snapshot of the last blocked speech start: camera inference state, quality,
+in-zone result and age of valid evidence. `ENGAGED` presentation can be retained
+through partial tracking or manual activity; it is not proof of fresh admission.
+A rejection is a program decision, not evidence that nobody is physically present.
+Voice admission consumes the same frame's canonical `greetingRoiHit` OR
+`interactionRoiHit` used by presence. Greeting-only admission is preserved and a
+customer in the interaction-only area is accepted; the old greeting-only recheck
+could reject an ENGAGED customer whose torso centre was below the greeting box.
+Camera inference, quality>=0.5 and1500ms valid-evidence freshness remain required;
+ENGAGED by itself is never a bypass. The preview cyan box is the configured
+greeting/detection zone; its interaction ROI can extend beyond that box.
+
+The voice diagnostic overlay starts a row at VAD speech start, before admission.
+The same ID follows capture, final segment, ASR and decision processing. Rejected
+starts/ends, queue saturation and pre-upload rejection remain visible with the
+stage and reason; they no longer disappear before the overlay starts. ASR results
+rejected after response are shown separately. Retiring capture closes a pending
+row; an already blocked row keeps its original reason. The overlay still requires
+voice diagnostics to be enabled and retains only its existing eight-row window.
+
+
+
+
+Firefox autoplay blocking is an activation wait, not a channel-probe/DSP
+failure. Probe and Mask startup wait for trusted pointer/keyboard interaction
+before starting their five-second processing deadlines; VAD resumes through the
+same abortable activation helper. Retiring capture removes pending interaction
+listeners. Array status reports `awaiting-interaction`; VAD remains starting
+until graph startup completes. The shared playback context is created only after
+trusted page interaction. This does not bypass browser autoplay permission:
+an operator must interact with the Kiosk page or allow autoplay for this site.
+Activation handling does not change VAD thresholds; the separately selected array gain is described above.
+
+The operator audio panel shows VAD readiness/errors and the current presence state
+separately from microphone preprocessing status. Standard input alone does not
+establish that VAD or presence admission is ready. Playback uses native media
+output when the shared AudioContext is suspended; a running shared context keeps
+its existing graph. Playback and VAD failures emit bounded device warnings without
+a customer notification. Presence admission rules remain unchanged.
 
 Administrator mode can choose the microphone, adjust the locally stored customer conversation text size, enable or disable voice input, and pause the avatar for calibration. Published Site policy resolves the chat and audio models on the Server; provider credentials and API keys never enter the kiosk bundle or settings surface.
 
@@ -1087,16 +1172,17 @@ failures, and report the actual final customer text as well as cart effects.
 其網路往返不阻塞回覆。兩條佇列各自維持順序並捕捉原visitor ID；跨佇列的sequence
 代表伺服器儲存順序，不代表嚴格的事件發生順序。
 
-## Spatial Mask input (Firefox, pending deployment)
+## Spatial Mask input (Firefox)
 
 Capture automatically selects its preprocessing on each start or device change;
 there is no operator mode switch or persisted mode preference. The existing device
 store requests ideal8CH/48k with browser echo/noise/gain processing disabled so
 Firefox can expose the raw array. A silent capture Worklet observes actual channels
-without upmixing. Only an UMA-8-labelled input with eight actual channels starts
-Spatial Mask without Gate. Ordinary inputs restore the original device-store
-processing defaults and use stream VAD; other eight-channel devices are not assumed
-to share UMA-8 geometry. UMA-8 channel shortage or Mask failure shows a fallback
+without upmixing. Any input with eight actual channels starts Spatial Mask
+without Gate and selects65dB recognition gain, regardless of device name.
+Other channel counts restore the original device-store processing defaults and
+use stream VAD at0dB. Mask retains the configured seven-mic channel mapping and
+radius; channel count does not infer microphone geometry. Mask failure shows a fallback
 warning only in the operator settings panel. Customers receive no popup, dialogue
 or TTS about Mask fallback. Restarting retries detection rather than persisting a disabled mode.
 Stop capture before changing mapping/radius. The same hardware stream is borrowed
@@ -1170,3 +1256,28 @@ not claim automatic calibration or that LCMV is superior to GSC.
 
 A future full Admin static-root replacement must preserve or republish `/ui/mic-check/`
 from its dedicated build output. It is separate from the normal Kiosk build.
+
+### Ordering presentation and service replies
+
+The initial conversation panel and every welcome path (fixed/custom phrases,
+VLM welcome and a direct greeting) mention Taiwanese ordering. The fixed bank
+warms and caches the complete sentence including this hint; it does not add
+another synthesis call per visitor. Currency tokens are normalized only in the
+presentation/TTS copy; original ASR, model history and numeric prices are intact.
+
+A clear question with unavailable sales-ranking/promotion facts is a
+`service-information` reply with `topic:other`, not meaning clarification.
+Server and Host both permit that bounded missing-data answer without claiming a
+menu presentation or commerce success. Unclear names/quantities still use the
+existing clarification flow. Finite phone skips are independently checked by
+Main; the existing answer-coverage check can also classify background speech.
+
+Microphone selection defaults to **automatic, prefer eight channels**. The Kiosk
+requests ideal8CH without pinning the shared store's saved/default device ID, so
+the browser can choose the best matching available input. An explicit Admin
+selection restores exact device selection and is retained across restarts.
+This is a preference, not an exact8CH requirement or a device-name allowlist:
+actual Worklet8CH enables Mask, while other counts keep standard capture. It
+opens no extra probe streams and adds no permission preflight. Browser/device
+support still determines the chosen input; physical Firefox selection remains
+to be verified.

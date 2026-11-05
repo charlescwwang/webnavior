@@ -128,3 +128,19 @@ it('describes missing assistant control without presenting the service as broken
   await expect.element(screen.getByText(message)).toBeVisible()
   expect(screen.container.querySelector('.service-status')?.textContent).not.toContain('WebMCP')
 })
+
+// Report: this chat,Nov5 — source text stays intact while assistant display omits NT/$.
+it('normalizes prices in final and streaming assistant content without changing original evidence', async () => {
+  const messages: ChatHistoryItem[] = [
+    { role: 'user', content: '預算NT$100' },
+    { role: 'assistant', content: '便當 NT$80。', slices: [{ type: 'text', text: '便當 NT$80。' }], tool_results: [] },
+  ]
+  const screen = render(KioskConversation, {
+    props: { ...props, messages, voiceConversationOnly: true },
+    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
+  })
+  await expect.element(screen.getByText('便當 80元。', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('預算100元', { exact: true })).toBeVisible()
+  expect(messages[0].content).toBe('預算NT$100')
+  expect(messages[1].content).toBe('便當 NT$80。')
+})
