@@ -30,11 +30,10 @@ customization dialog and keep the current category, query results and browsing
 position. Selecting a dish does not replace the grid with that dish. A retained
 unfinished meal can supply the next spoken question without immediately opening
 another dialog; its next configuration action opens it when needed.
-Kiosk owns the optional ten-digit phone dialog above the catalog, then
-collects invoice details without another membership scan. It offers mobile
-carrier, citizen-certificate carrier, tax ID and donation; no paper invoice or
-automatic timeout donation is offered. Phone entry records this test transaction;
-it does not authenticate a member of the external ordering site.
+Ordering opens directly on the catalog without initial phone registration or a
+phone-or-skip prompt. Checkout still collects invoice details with mobile carrier,
+citizen-certificate carrier, tax ID and donation; no paper invoice or automatic
+timeout donation is offered.
 **略過，捐贈發票** explicitly records donation and advances directly to payment
 selection without a donation code. Touch, Jev and Main Agent use the same
 transition; it clears earlier personal invoice details and never initiates payment.
@@ -47,16 +46,31 @@ invoice handling, not payment or invoice issuance.
 
 The future POS/invoice integration owns the actual donation recipient; this test
 page neither invents a recipient code nor issues an invoice.
-Customers may press **略過電話，直接點餐** or ask the assistant to skip.
-The `customer_entry` phase exposes only the phone-skip candidate to Jev; it
-does not advertise meal operations behind the entry screen. Touch and Agent
-`customer_skip_phone` use the same transition. Skipping keeps phone absent and
-still permits checkout; a new host session restores the untouched entry screen.
-While phone entry is pending, all menu reads, recommendations, selection, cart
-changes and checkout remain blocked for both Agent and manual calls. The visitor
-must enter a valid phone or explicitly skip first; skip remains voluntary and
-does not create an order. Host entry controls and the phone-or-skip question
-remain available. Reset restores the entry gate.
+The owned App does not expose phone-entry tools or lock menu/cart access behind
+registration, including after session reset. The generic runtime retains optional
+entry hooks for independently configured service integrations.
+
+For a requested meal without customization options, unsupported preparation
+requests use `menu_confirm_item(originalRecipe:true)` and the existing yes/no
+meal confirmation. The original quantity is retained and the cart stays unchanged
+until consent. Declining closes only this proposal; allergy/nutrition/dietary safety
+is never waived as a preparation preference. Existing POS options remain supported.
+The Main-only route answers a presented proposal through `order_answer_confirmation`;
+it cannot answer a proposal created in its own task.
+Preparation requests that arrive while answering the quantity question retain that
+same draft and count. Rejecting the original recipe retires that unadded draft;
+normal cart lines remain. Main cannot fabricate a serving count from a dish name.
+During this confirmation, inappropriate recommendation-scope tools and generic
+acknowledgement/clarification completions are withheld; factual queries remain
+available and only a later confirmed answer may change the cart.
+
+Open-ended meal preferences recommend dishes; a category preference recommends
+that POS category without purchasing. An exact unlisted product is reported as
+unavailable rather than forcing a substitute confirmation. Customer copy uses
+「菜單」 after Traditional Chinese conversion, with bounded greeting and
+acknowledgement variants from the existing i18n copy module.
+
+
 
 Payment choices are LINE Pay and 街口支付. Voice or touch selects a method directly,
 without a second confirmation question, and retires the answered method question.

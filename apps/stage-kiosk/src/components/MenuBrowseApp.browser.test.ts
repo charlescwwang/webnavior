@@ -20,6 +20,9 @@ it('changes recommendation batches, queries another dish, then returns to all me
   try {
     await expect.element(view.getByRole('button', { name: '查看餐點6', exact: true })).toBeVisible()
     const runtime = vi.mocked(connectInteractiveService).mock.calls.at(-1)![0]
+    expect(runtime.toolDefinitions.map(tool => tool.name)).not.toContain('kiosk_customer_entry_start')
+    expect(runtime.toolDefinitions.map(tool => tool.name)).not.toContain('kiosk_customer_phone')
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'ordering' })
     await runtime.invoke('menu_recommend')
     await expect.element(view.getByRole('button', { name: '查看餐點0', exact: true })).toBeVisible()
     expect(view.container.querySelectorAll('.menu-card')).toHaveLength(3)

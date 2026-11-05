@@ -144,7 +144,7 @@ before accepting an unadopted turn. A completed sentence is not service evidence
 
 ## Fresh Main rounds
 
-After phone entry, Main receives the complete compact catalog and current Menu
+When ordering opens, Main receives the complete compact catalog and current Menu
 state through the host-only `kiosk_conversation_context` tool. The host refreshes
 it before each model request, verifies task ownership, replaces old questions and
 intersects tools with current phase capabilities. It preserves the immutable
@@ -237,31 +237,14 @@ inventory counts; they do not implement control of a third-party ordering page.
 
 ## Owned-menu checkout test
 
-When the owned menu exposes its phone-entry capability, the Kiosk renders the
-optional phone form as a local overlay in the host ordering region, above the
-iframe. A 25% dark mask leaves the menu visible; its scrollable dialog stays
-inside that region. Upper avatar and conversation controls remain interactive. It does not use document-wide modal
-blocking.
-The entry screen leads with saying “略過” to start voice ordering; the phone
-form and touch skip are secondary. Its listening label follows the host VAD
-readiness, and an inactive microphone points to the touch fallback.
-Touch submit uses host-only `kiosk_customer_phone`; voice and touch skip share
-`customer_skip_phone`. The modal closes only after reading the ordering phase;
-errors retain its controls. Discovery replacement/unmount drops the local draft
-and ignores old reads. Phone input is not an Agent tool or model context. The
-old full-page Menu entry is removed. Standalone Menu opens the catalog directly;
-`kiosk_customer_entry_start` offers phone entry once for a fresh Kiosk order,
-without reopening after a choice or cart activity. The menu remains inert while
-entry is pending. Deploy Menu and Kiosk together.
+The owned ordering App opens directly on the catalog without phone registration
+and does not advertise phone-entry tools, including after order reset. Invoice,
+fulfillment and payment keep their existing flows. The generic Host phone overlay
+and entry hooks remain available only for another interactive service that
+explicitly advertises the complete capability. Such integrations still bind entry
+reads/writes to their current discovery generation and keep phone data out of
+Agent context; they are not the default ordering startup.
 
-The customer must enter a valid phone or explicitly skip before any menu query,
-recommendation, selection, cart edit or checkout. Menu questions return the fixed
-localized `CUSTOMER_ENTRY_REQUIRED` prompt without Main generation or menu reads.
-Phone entry remains voluntary: choosing skip is sufficient. Store facts and
-identity/phone-use explanations remain available without commerce tools.
-The host rechecks entry before presenting a tool result: if a new session has
-restored the phone screen, an older receipt cannot bypass it. The menu runtime
-also rejects both Agent and manual menu reads/writes until entry is complete.
 
 Food requests admitted as `MENU_QUERY`, and other ordering handoffs with current
 product/category matches, carry a host-owned `requireMenuRead` guard. An ordinary
@@ -1319,3 +1302,12 @@ actual Worklet8CH enables Mask, while other counts keep standard capture. It
 opens no extra probe streams and adds no permission preflight. Browser/device
 support still determines the chosen input; physical Firefox selection remains
 to be verified.
+
+The same opt-in isolated replay also loads
+`apps/order-menu/src/evaluation/customizationCases.ts` (original-recipe consent,
+cancellation, missing quantity and delayed preparation, both Jev/Main and direct
+Main) and `discoveryCases.ts` (open recommendation, category preference and an
+unlisted exact product). Use their case IDs with `KIOSK_CONVERSATION_SCRIPT`.
+Actual reported failures stay in the private acceptance archive as well as the
+synthetic regressions; do not count an earlier failed attempt as passed or demand
+one exact wording when the verified effect and meaning are equivalent.

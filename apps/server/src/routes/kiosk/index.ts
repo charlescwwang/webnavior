@@ -1460,12 +1460,25 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   // An admitted order containing oversized counts needs count validation or a
   // policy refusal. A recommendation/price question cannot resolve that order.
   // After a receipt, normal completion presentation remains available.
+  const preparationConfirmation = !input.decisionState?.readOnly && currentTools?.includes('menu_confirm_item') && !currentTools.includes('menu_recommend') && input.decisionState?.context?.unavailableConditions?.some(condition => ['spice', 'preparation'].includes(condition.id))
   const policyReply = bulkOrder && !input.toolResults?.length
     ? { ...replyTool, function: { ...replyTool.function, parameters: { ...replyTool.function.parameters, properties: { ...replyTool.function.parameters.properties, kind: { type: 'string', enum: ['quantity-limit', 'clarification'] } } } } }
-    : replyTool
+    : preparationConfirmation
+      ? { ...replyTool, function: { ...replyTool.function, parameters: { ...replyTool.function.parameters, properties: { ...replyTool.function.parameters.properties, kind: { type: 'string', enum: ['payment-methods', 'fulfillment-modes', 'menu-information', 'hearing-check', 'service-information'] } } } } }
+      : replyTool
   const available = [...(scopedTools?.filter(tool => !bulkOrder || !['menu_recommend', 'menu_show_recommendations'].includes(tool.function.name)) ?? []), ...(input.decisionState?.context ? [policyReply] : [])]
-  if (bulkOrder && !input.toolResults?.length)
+  if ((bulkOrder && !input.toolResults?.length) || preparationConfirmation)
     return { ...generation, tools: available, tool_choice: 'required' as const }
+  if (!input.decisionState?.readOnly && input.decisionState?.context?.phase === 'meal_confirmation' && currentTools?.includes('order_answer_confirmation')) {
+    // A presented original-recipe proposal has a real lifecycle. Merely saying
+    // "cancelled" or acknowledging consent cannot close it or add the meal.
+    // Keep factual queries/clarification available without allowing an empty ack.
+    const confirmationTools = available.map(tool => tool.function.name === replyTool.function.name
+      ? { ...replyTool, function: { ...replyTool.function, parameters: { ...replyTool.function.parameters, properties: { ...replyTool.function.parameters.properties, kind: { type: 'string', enum: ['payment-methods', 'fulfillment-modes', 'menu-information', 'clarification', 'hearing-check', 'service-information'] } } } } }
+      : tool)
+    return { ...generation, tools: confirmationTools, tool_choice: 'required' as const }
+  }
+
   // Read-only inquiries need a presented result, while operation tasks retain
   // their existing read-before-write contract and may continue to cart tools.
   const readCompleted = input.decisionState?.readOnly ? hasMenuReply(input.toolResults ?? []) : Boolean(input.toolResults?.length)

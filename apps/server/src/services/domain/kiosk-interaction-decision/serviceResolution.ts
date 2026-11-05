@@ -38,7 +38,7 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
     try {
       const response = await complete({ temperature: 0, messages: [
         { role: 'system', content: '只核對未提供資料的條件是否是顧客本句仍成立的要求。REQUIREMENT：明確要求符合該條件，例如不要辣／過敏安全保證，即使另有預算也不能略過。MENTION：只是品名、被否定的要求或背景提及，不是條件。UNCERTAIN：無法確認。只呼叫resolve_condition_support，不推薦或操作。' },
-        { role: 'user', content: JSON.stringify({ customerUtterance: transcript, unavailableConditions: state?.unavailableConditionReferences }) },
+        { role: 'user', content: JSON.stringify({ customerUtterance: transcript, unavailableConditions: state?.unavailableConditionReferences, products: state?.catalogEvidence?.products }) },
       ], tools: [{ type: 'function', function: { name: 'resolve_condition_support', parameters: { type: 'object', properties: { choice: { type: 'string', enum: ['REQUIREMENT', 'MENTION', 'UNCERTAIN'] } }, required: ['choice'], additionalProperties: false } } }], tool_choice: 'required' })
       const data = await response.json()
       const envelope = safeParse(object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: literal('resolve_condition_support'), arguments: string() }) })) }) })) }), data)
@@ -46,6 +46,13 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
       const selection = calls?.length === 1 ? safeParse(strictObject({ choice: picklist(['REQUIREMENT', 'MENTION', 'UNCERTAIN']) }), JSON.parse(calls[0]!.function.arguments)) : undefined
       if (!response.ok || !selection?.success)
         return { ...decision, kind: 'UNAVAILABLE', reason: response.ok ? 'INVALID_CHOICE' : 'PROVIDER_FAILURE' }
+      if (selection.output.choice === 'REQUIREMENT' && (mentions?.products.length || state?.interactionState?.selectedItemName || state?.retainedRequests?.some(request => request.status === 'active' && request.itemId)) && state!.unavailableConditionReferences!.every(reference => ['spice', 'preparation'].includes(reference.id))) {
+        // Preserve a named dish's preparation request for Main. This is not
+        // purchase authority: Menu still requires consent to the original recipe.
+        // A preparation addition to an active draft is not a new topic.
+        // Re-routing it would discard the draft target and spend another JEV turn.
+        return { ...decision, kind: 'NEEDS_ASSISTANT', reason: state?.phase === 'ordering' ? 'NEW_REQUEST' : undefined, resolvedBy: 'main-service' }
+      }
       if (selection.output.choice !== 'MENTION') {
         const unavailableConditions = [...state!.unavailableConditionReferences!]
         const question = selection.output.choice === 'REQUIREMENT'
@@ -69,7 +76,7 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
 ${serviceDomainInstruction}
 只選本句完整目的，不操作或產生回覆。先結合近期對話理解省略、追問與改口，再按以下順序判斷：
 1. 上述共用範圍以外的要求，以及無服務請求的敘述、技術評論、同伴聊天，選BACKGROUND。不能將其他領域指令改寫成餐廳的含糊求助；對象或完整求助尚不能確認選UNCERTAIN。Jev與目前畫面都不是服務資格。明確求助但意思不明不是背景。
-2. 本句有清楚的資訊問題，即使帶「先不要操作」或資料未知，也按問題選資訊種類，不選CLARIFY_SERVICE或只回KEEP_ORDER。SERVICE_INFORMATION_ONLY：本機能力、身分、店家資訊、付款方式、位置路線、營業時間；包含對本機剛才答覆的追問／質疑。MENU_INFORMATION_ONLY：餐點、價格、成分、比較、推薦、換批；可承接前文省略品名，不等於購買。ORDER_INFORMATION_ONLY：核對、查看或顯示購物車／訂單內容與狀態，顯示只改畫面不改餐點；不順帶結帳、刪餐或取消結帳。
+2. 本句有清楚的資訊問題，即使帶「先不要操作」或資料未知，也按問題選資訊種類，不選CLARIFY_SERVICE或只回KEEP_ORDER。SERVICE_INFORMATION_ONLY：本機能力、身分、店家資訊、付款方式、位置路線、營業時間；包含對本機剛才答覆的追問／質疑。MENU_INFORMATION_ONLY：餐點、價格、成分、比較、推薦、換批；還沒決定吃什麼、請系統挑選，或只表達想吃某個分類，也屬於完整的餐點探索需求，沒有品名／份數不代表意思未明；可承接前文省略品名，不等於購買。ORDER_INFORMATION_ONLY：核對、查看或顯示購物車／訂單內容與狀態，顯示只改畫面不改餐點；不順帶結帳、刪餐或取消結帳。
 3. ORDER_MUTATION：完整原句有明確新增、修改、更換、取消、用餐方式、有效操作問題回答，或實際畫面導覽需求（唯讀顯示購物車除外）；若同句還要資訊，仍保留全部需求。返回訂單／上一頁／離開結帳是畫面操作，不能改成唯讀查訂單。缺份數或必要規格仍交Menu補問，不是服務目的未明。沒有購買或修改授權就不能選此項。
 4. CLARIFY_SERVICE：本句明確向本機求助，已能確認是在請本機提供服務，但缺品名或具體目的；命令語氣不證明服務領域，領域／對象未知選UNCERTAIN，不把任意指令改寫成點餐求助。不能以此取代已清楚的資訊問題。
 5. 沒有其他問題或操作才考慮：KEEP_ORDER＝明確保持現況／撤回未執行訂購，不能刪除已存在餐點；ACKNOWLEDGEMENT＝對本機單純了解、附和；IDLE＝自行先看看或稍後再說。沒有有效操作問題時，好／對不能當成結帳或任選操作。

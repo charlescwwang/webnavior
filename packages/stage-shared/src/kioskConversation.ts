@@ -2,6 +2,8 @@ import type { InferOutput } from 'valibot'
 
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string, variant } from 'valibot'
 
+import { orderingMessages } from '../../i18n/src/orderingMessages'
+
 /** Price copy shared by menu displays and spoken ordering receipts; no currency symbols. */
 export function formatOrderingPrice(amount: number): string {
   return `${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(amount)}元`
@@ -181,10 +183,12 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   if (!selection.success)
     return undefined
   const kind = selection.output.kind
-  if (selection.output.kind === 'greeting')
-    return { kind, content: '您好，需要點餐或查詢菜單嗎？也可以用台語點餐。' }
-  if (selection.output.kind === 'acknowledgement')
-    return { kind, content: '好的，您可以繼續告訴我想點的餐點或訂單調整。' }
+  if (selection.output.kind === 'greeting' || selection.output.kind === 'acknowledgement') {
+    const phrases = selection.output.kind === 'greeting' ? orderingMessages['zh-Hant'].greetings : orderingMessages['zh-Hant'].acknowledgements
+    // Re-rendering the same turn must not change its displayed/spoken receipt.
+    const index = Array.from(context.contextId).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0) % phrases.length
+    return { kind, content: phrases[index] }
+  }
   if (selection.output.kind === 'hearing-check')
     return { kind, content: '有收到您的這句話，您可以繼續說明想點的餐點或訂單調整。' }
   if (kind === 'quantity-limit')
@@ -209,7 +213,7 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     if (topic === 'identity')
       return { kind, content: '我是這台機台的點餐助手，可以協助您查詢餐點與操作點餐流程。' }
     if (topic === 'capabilities')
-      return { kind, content: context.entryComplete ? '我主要負責查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；其他事項請洽現場店員。' : '我可以先說明點餐方式；選擇填寫手機或略過後，可以查詢菜單、點餐與核對訂單。' }
+      return { kind, content: '我主要負責查詢菜單、價格、餐點選項，以及點餐、修改與核對訂單；其他事項請洽現場店員。' }
     if (topic === 'location' || topic === 'hours')
       return { kind, content: `目前服務資料未提供可確認的${topic === 'location' ? '店內位置或路線' : '營業時間'}，請詢問現場店員。` }
     return { kind, topic: 'other' as const, content: '目前沒有可確認的這項資料，請詢問現場店員；我可以協助查詢菜單、點餐與調整訂單。' }
@@ -220,11 +224,11 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   const content = selection.output.subjects.map((subject) => {
     const name = normalize(subject)
     const items = context.catalog!.items.filter(item => [item.name, item.category, ...item.aliases].some(label => normalize(label) === name))
-    // Literal coverage does not establish semantic absence or authorize a
-    // substitute. Keep the wording limited to what this complete catalog lists.
+    // Absence applies only to this exact product or merchant alias in the
+    // complete catalog; it does not authorize a substitute or exclude a category.
     return items.length
       ? `${items.map(item => `${item.name}，單份基本售價 ${formatOrderingPrice(item.price)}${item.availability === 'sold-out' ? '，目前售完' : item.availability === 'available' ? '' : '，可供狀態需確認'}`).join('；')}。`
-      : `目前菜單沒有標示「${subject}」，請問你指的是哪一道餐點？`
+      : `目前沒有提供「${subject}」。`
   }).join(' ')
   return { kind, content }
 }

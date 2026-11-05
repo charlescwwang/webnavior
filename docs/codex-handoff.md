@@ -7,6 +7,27 @@ accumulating history.
 
 ## Current State
 
+- Nov5 ordering copy/entry/customization follow-up committed on `codex/ordering-copy-customization`; not pushed, merged or deployed.
+  Isolated worktree: `/home/aimax/.codex/worktrees/ordering-copy-customization/webnavior`.
+  Based on origin/master97bb2e0 (same tree as recovery377c628); feature commits d10fa29,1b7e8f5,34e3bcf.
+  User handles push via Minimal eGit; next create PR to master, inspect checks, then merge and safely sync formal worktree.
+  Original dirty formal/experimental worktrees remain untouched. Private preservation backup:
+  `/home/aimax/.local/share/webnavior/git-backups/webnavior-git-preservation-20261105-210329`.
+  Built-in App no longer advertises phone registration or gates ordering; generic optional entry hooks remain for other integrations.
+  Ordering presentation/TTS keeps 菜單 after OpenCC; localized greeting/ack variants are stable per turn.
+  Unsupported preparation uses existing menu_confirm_item(originalRecipe:true), meal confirmation and order_answer_confirmation.
+  Cart stays unchanged until later consent; rejecting retires only that unadded draft. Late quantity+preparation keeps its draft;
+  Main cannot invent a serving count, confirm its own proposal or reuse a previous task's preparation request.
+  Available tools/reply kinds prevent irrelevant recommendation-scope/ack completions during recipe confirmation; factual queries remain.
+  Category/open preferences now recommend; an exact unlisted product reports absence without forcing a substitute.
+  New frozen customizationCases.ts (6) and discoveryCases.ts (5) load through existing budgetOrderReplay; latest 11 cases pass.
+  All earlier failures, equivalent-wording gold audit, manifests and provider usage are retained privately at
+  `/home/aimax/.local/share/webnavior/acceptance/ordering-copy-customization-20261105`; both batches CLOSED_PASS.
+  Menu915pass/202skip,domain125,host67,browser10,shared13,OpenCC3 and targeted API policy/current-catalog checks pass;
+  three affected package types and scoped lint pass. No root/full-project typecheck this task.
+  Preserve deferred comparison-media edits in mixed routes/kiosk/index.ts and kiosk-device.ts; they predate this follow-up.
+  The older prepared service-settings release below DOES NOT include this follow-up; build a fresh release before publishing it.
+
 - Nov5 service modes + per-device/local text mode RELEASE PREPARED, not switched:
   `/home/aimax/.local/share/webnavior/releases/service-settings-20261105-192331`. User requested batch commits and deployment.
   Commits:2fd9e8d(existing audio/ordering),811c728(table/background/early ASR),

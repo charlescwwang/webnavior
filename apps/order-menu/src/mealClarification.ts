@@ -19,6 +19,9 @@ interface Proposal {
   replaceLineId?: string
   replacementName?: string
   explicitAddition?: boolean
+  originalRecipe?: boolean
+  ownerTaskId?: string
+  presented?: boolean
 }
 
 // Reading progress and accepting a confirmation must derive the same slots.
@@ -72,15 +75,26 @@ export function createMealClarification() {
     if (!pending)
       return undefined
     const questionId = issuedAnswer?.requestId === pending.id ? issuedAnswer.questionId : pending.id
+    let prompt: string
+    if (pending.originalRecipe) {
+      const quantity = resolveMealPlan(pending, context).slots.quantity
+      prompt = mealMessages.confirmOriginalRecipe.replace('{item}', pending.label).replace('{quantity}', typeof quantity === 'number' ? ` ${quantity} 份` : '')
+    }
+    else if (pending.replacementName) {
+      prompt = mealMessages.confirmReplacement.replace('{original}', pending.replacementName).replace('{item}', pending.label)
+    }
+    else {
+      prompt = (pending.explicitAddition ? mealMessages.confirmAddition : mealMessages.confirmMeal).replace('{item}', pending.label)
+    }
     return {
       questionId,
       requestId: pending.id,
       purpose: 'confirm-meal',
-      question: pending.replacementName ? mealMessages.confirmReplacement.replace('{original}', pending.replacementName).replace('{item}', pending.label) : (pending.explicitAddition ? mealMessages.confirmAddition : mealMessages.confirmMeal).replace('{item}', pending.label),
+      question: prompt,
       expiresAt: issuedAnswer?.requestId === pending.id ? issuedAnswer.expiresAt : pending.expiresAt,
       choices: [
-        { id: `confirm-meal:${questionId}:yes`, description: `${mealMessages.yes}，確認${pending.replacementName ? `將${pending.replacementName}更換為` : '要點'}${pending.label}；繼續補必要資料，尚不授權付款。` },
-        { id: `confirm-meal:${questionId}:no`, description: `${mealMessages.no}，結束這次品名確認，保留原本點餐進度。` },
+        { id: `confirm-meal:${questionId}:yes`, description: `${pending.originalRecipe ? '接受原版餐點、不進行客製，繼續原訂購' : mealMessages.yes}，確認${pending.replacementName ? `將${pending.replacementName}更換為` : '要點'}${pending.label}；繼續補必要資料，尚不授權付款。` },
+        { id: `confirm-meal:${questionId}:no`, description: `${mealMessages.no}，結束這次餐點確認，保留原本點餐進度。` },
       ],
     }
   }
@@ -103,18 +117,33 @@ export function createMealClarification() {
   return {
     question,
     /** Main may propose a real target; only a later customer answer establishes it. */
-    propose(context: DecisionContext, itemId: string, replaceLineId?: string) {
+    propose(context: DecisionContext, itemId: string, replaceLineId?: string, originalRecipe = false, ownerTaskId?: string) {
       const item = context.menu.find(item => item.id === itemId && item.available !== false)
       const original = replaceLineId ? context.cart.lines.find(line => line.id === replaceLineId) : undefined
       if (context.phase !== 'ordering' || !item || (replaceLineId && (!original || context.cart.lines.filter(line => line.itemId === original.itemId).length > 1)))
         throw new Error('The proposed meal or replacement target is not current and unique.')
+      if (originalRecipe) {
+        // This is a proposal to waive an unsupported preparation request, never
+        // a claim about allergy safety, nutrition or dietary certification.
+        if (item.optionGroups.length || context.dietaryReferences.length || context.constraints.dietary || context.unavailableConditionReferences.some(reference => !['spice', 'preparation'].includes(reference.id)))
+          throw new Error('Only unsupported preparation requests can propose the original recipe.')
+        context = { ...context, ingredientReferences: [], unavailableConditionReferences: [], constraints: { ...context.constraints, exclude: [], include: [] } }
+      }
       const eligible = filterIngredients(filterPrices([item], context.constraints.price ?? {}), { excludeIngredients: context.constraints.exclude, includeIngredients: context.constraints.include, dietary: context.constraints.dietary }).matches
       if (!eligible.length || context.constraints.unresolvedPrice || context.unavailableConditionReferences.length)
         throw new Error('The proposed meal does not satisfy the current verified request conditions.')
       issuedAnswer = undefined
-      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
+      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, originalRecipe, ownerTaskId, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
       offer = undefined
       return question(context)!
+    },
+    /** Only the Host can mark a rendered question; Main cannot confirm its own proposal. */
+    markPresented(questionId: string, context: DecisionContext) {
+      if (pending && question(context)?.questionId === questionId)
+        pending.presented = true
+    },
+    canAnswer(context: DecisionContext, taskId?: string) {
+      return Boolean(pending?.originalRecipe && pending.presented && taskId && pending.ownerTaskId !== taskId && question(context))
     },
     /** Read target only when the current utterance can inherit this proposal. */
     inquiry,
