@@ -144,13 +144,13 @@ describe('composition-grounded menu filtering', () => {
     await runtime.invoke('kiosk_fast_path_context', { transcript: '找不要豬肉的水餃' })
     expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } })).toMatchObject({ items: [{ id: 'chicken-dumplings' }] })
   })
-  it('retains the exact ingredient constraints in the one-use recommendation continuation', async () => {
+  it('retains the exact ingredient constraints when displaying the complete catalog', async () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我不要豬肉的' })
-    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } }) as { continuation: { candidates: Array<{ id: string }> } }
-    const continued = await runtime.invoke('kiosk_fast_path_continue', { candidateId: result.continuation.candidates[0]!.id })
-    expect(continued).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] }, items: [{ id: 'spicy-chicken-bento' }, { id: 'thai-sour-spicy-fish-bento' }, { id: 'beef-noodle-soup' }] })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } })
+    expect(result).not.toHaveProperty('continuation')
+    expect(result).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] }, items: [{ id: 'spicy-chicken-bento' }, { id: 'thai-sour-spicy-fish-bento' }, { id: 'beef-noodle-soup' }] })
   })
   it('runs the seven-dish POS scenario through bounded slots and rejects stale or invented conditions', async () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot

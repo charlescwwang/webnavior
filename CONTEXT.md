@@ -52,7 +52,7 @@ System Manager.
 
 `PriceEvidence` is browser-issued literal currency, price/comparison amounts or
 unitless numeric ranges with finite semantic interpretations, not a verified
-budget. Jev selects `priceChoiceId`; the browser
+budget. The decision path or bounded Main resolver selects `priceChoiceId`; the browser
 checks it against its one-use context. `PriceConditions` constrain a single
 dish's POS base price (bounds/exclusivity/ascending order), never quantity or a
 whole-order allocation. Read tools apply them before ranking and limiting.
@@ -65,7 +65,11 @@ or `IGNORE`, `INCOMPLETE`, `FOLLOW_UP_ACTIVE`, `MULTI_ACTION` (routed to Main Ag
 provides the current phase, finite real domain references and bounded,
 role-labelled current-session dialogue; System One never
 owns menu, cart, checkout, payment, POS, or WebMCP tool selection.
-Route selection precedes concrete question-answer validation. A pending question is an
+Runtime first chooses service / greeting / background / uncertain, then demand
+shape, legal operation group and issued leaf (at most six choices per question).
+Jev uses genuine confidence; a strict label-only SLM has no confidence. Both
+retain the same browser authorization. Rich queries and compound demands reach
+Main intact; a leaf is not an execution receipt. A pending question is an
 understanding cue, not a prerequisite for new requests. Only a selected effect
 that depends on that question resolves its specific legal answer; being an
 answer alone does not mean consent. An uncertain answer neither consumes the
@@ -78,6 +82,24 @@ after service admission. It is separate from Main Agent escalation and grants
 no cart or payment authority. Uncertain service recipients remain silent. The
 browser owns the proposed real item, Yes/No answers, revisions and expiry;
 confirmation resumes missing-slot collection while retaining suspended meals.
+
+## Kiosk Conversation Skill
+
+An application-owned, versioned Main procedure, currently the built-in
+`ordering@1` in `apps/server/src/services/domain/kiosk-conversation-skills`.
+It describes inquiry/purchase boundaries, menu browsing, missing-slot collection,
+cart edits and completion from real receipts. JSON/SSE Main chat and admitted
+operation recovery load the same procedure; repository `.agents/skills` are
+contributor instructions and are not loaded into customer conversations.
+
+For one exact product in ordinary ordering, an admitted uncertain JEV operation
+can be independently selected by Main from the current browser-issued meal
+effects. `resolvedBy:main-skill` identifies its source without JEV confidence.
+A live item-configuration answer may likewise be selected only from the current
+question/candidate intersection and retains its browser `answeredQuestionId`.
+The browser still resolves targets/slots, validates revisions and owns questions
+and execution; loading a skill alone grants no write authority. Explicit read-only
+or recovered restrictions, phone/checkout and unresolved prices are retained.
 
 ## Fast Path Action
 
@@ -114,6 +136,21 @@ reclassified against the latest state.
 The Main Agent receives the latest bounded conversation plus a read-only,
 session-scoped history tool for older text; System One receives neither the
 unbounded transcript nor that tool.
+
+## Kiosk Service Recovery
+
+A bounded Main admission decision after a valid Jev service abstention. One
+fixed adjudication can lead to one richer contextual review; this is separate
+from Main Agent task execution. A service verdict does not choose a product,
+answer a Menu consent question or authorize payment. Current terminal service
+abstentions typically hand off the original request after admission because
+there is no remaining Jev operation route to resume.
+
+The host receives distinct recovery progress before provider work, maintains
+explicit text receipt/terminal states, and keeps unadmitted voice silent. A
+read-only service clarification is an understanding cue with its own lifetime,
+not a replacement for browser-issued Menu operation tickets. Shared contracts,
+correlation and time ceilings live in stage-shared/kiosk-conversation.
 
 ## Kiosk Capability Provider Profile
 
@@ -407,6 +444,17 @@ the observation range, looks at the kiosk, or looks at the kiosk for a minimum
 dwell time. Each can be enabled independently; the dwell-time scenario is the
 default enabled scenario.
 
+## Kiosk Main Conversation Context
+
+A host-only Menu snapshot for one active Main task, separate from Jev's finite
+candidate context. It carries all compact catalog products after phone entry,
+current cart/checkout/questions/revisions and phase capabilities. Kiosk refreshes
+it before each model round; Server includes one current projection. Complete
+facts support understanding but never grant purchase/payment authorization.
+The neutral contract lives in `packages/stage-shared/src/kioskConversation.ts`.
+Unconfirmed names use an explicit addition/replacement proposal; customer consent
+and current runtime validation remain necessary before any cart change.
+
 ## Kiosk Greeting POC
 
 A controlled validation of the dwell-time attention scenario. It measures both
@@ -586,18 +634,25 @@ Interaction Provider.
 ### AIRI Interaction Host (AIH)
 
 The AIRI architecture that composes AIRI Core, a Kiosk Host, and one trusted
-WebMCP-enabled Interactive Service. AIH owns the shared interaction experience
+tool-enabled Interactive Service. AIH owns the shared interaction experience
 without owning an Interactive Service's domain model.
 _Avoid_: Ordering platform, scenario-specific AIRI
 
 ### Interactive Service
 
 An independently owned web application embedded by AIH for one customer task.
-It owns its UI, domain rules, external integrations, and WebMCP tools.
+It owns its UI, domain rules, external integrations, and tools. The owned Kiosk
+Menu exposes them through Eventa window-message.
 _Avoid_: AIRI module, built-in workflow
 
 ### WebMCP Adapter
 
-The AIH-wide integration that discovers a trusted Interactive Service's native
-WebMCP tools and exposes them to the active LLM runtime. It is shared host
-infrastructure, not an Interactive Service-specific tool protocol.
+The native integration still used by Stage Web. It discovers a trusted service's
+native WebMCP tools and exposes them to the active LLM runtime. Stage Web has not
+migrated to the Kiosk connection and cannot control the updated owned Menu.
+
+### Interactive Service Client
+
+The Kiosk connection to its approved Menu iframe through Eventa window-message.
+It owns discovery, document binding, execution receipts and connection lifetime;
+the Menu runtime retains ordering rules and state. Stage Web migration is separate.

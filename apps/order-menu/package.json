@@ -8,17 +8,21 @@
     "dev": "vite --host --port 5166",
     "preview": "vite preview",
     "test:run": "vitest run",
+    "test:history": "vitest run src/evaluation src/clarificationDiagnosis.test.ts src/targetIdentity.test.ts src/recommendationFlow.test.ts",
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@moeru/eventa": "catalog:",
     "@moeru/std": "catalog:",
     "@proj-airi/stage-shared": "workspace:^",
     "qrcode": "catalog:",
+    "valibot": "catalog:",
     "vue": "catalog:"
   },
   "devDependencies": {
     "@types/qrcode": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
+    "ajv": "8.18.0",
     "vite": "catalog:",
     "vitest": "catalog:vitest",
     "vue-tsc": "catalog:"

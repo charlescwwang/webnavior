@@ -1,14 +1,17 @@
 /** Short-lived bearer capability issued only with an accepted kiosk order. */
-import type { FulfillmentMode } from './contracts'
+import type { FulfillmentMode, SubmissionEnvironment } from './contracts'
 
 export interface ContinuationAccess {
   token: string
   expiresAt: number
 }
 
-/** Customer-visible test order; it never exposes the original phone or payment capability. */
+/** Customer-visible order snapshot; it never exposes the original phone or payment capability. */
 export interface ContinuationSnapshot {
-  environment: 'test'
+  environment: SubmissionEnvironment
+  /** Receipt links disclose order information without granting table/fulfillment writes. */
+  readOnly?: boolean
+  pickupNumber?: string
   expiresAt: number
   orderId: string
   /** Current test fulfillment choice; the original paid POS receipt is unchanged. */

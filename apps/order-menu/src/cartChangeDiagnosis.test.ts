@@ -29,7 +29,7 @@ describe('cart meal-change diagnosis', () => {
     await expect(runtime.invokeForAgent('order_defer_question')).rejects.toThrow('only authorizes menu reads')
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: before.cart })
     await runtime.invoke('kiosk_agent_task', { taskId: 'menu-inquiry', action: 'END' })
-    await runtime.invoke('kiosk_agent_task', { taskId: 'new-purchase', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: state.menuRevision, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { taskId: 'new-purchase', action: 'BEGIN', transcript: '水餃一份', expectedMenuRevision: state.menuRevision, constraints: {} })
     await runtime.invokeForAgent('order_add_item', { itemId: 'dumplings', quantity: 1 })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
   })

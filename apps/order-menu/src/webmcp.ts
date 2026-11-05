@@ -1,6 +1,9 @@
+import type { ConversationContext, ConversationHandoff, ConversationQuestion as PresentedQuestion } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
+
 import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { RecommendationStrategy } from '../../order-menu-server/src/domain/recommendation'
-import type { KioskScreen, PresentedQuestion } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
+import type { KioskScreen } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { PriceConditions } from '../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
 import type { ScopeChoice } from '../../server/src/services/domain/kiosk-interaction-decision/queryScopeContracts'
 import type { CheckoutSnapshot, InvoiceMethod } from './domain/checkout-flow'
@@ -11,60 +14,30 @@ import type { SeatingContext } from './domain/seating'
 import type { HostToolName } from './hostTools'
 import type { DecisionContext, DomainPlan, DomainReference, IntentCandidate, KioskRevisions, OperationPlan, PendingConfirmation, PendingQuestion } from './kiosk-intents'
 import type { ScrollDirection, ScrollResult } from './menuScroll'
+import type { MenuToolDefinition, MenuToolName } from './toolDefinitions'
 
 import { errorMessageFrom } from '@moeru/std'
-import { webMcpHealthTool } from '@proj-airi/stage-shared/webmcp'
+import { conversationContextSchema, handoffSchema, isTargetAcknowledgement, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { servicePolicy } from '@proj-airi/stage-shared/kiosk-service-mode'
+import { parse } from 'valibot'
 
+import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { ingredientDefinitions, vegetarianIngredients } from '../../order-menu-server/src/domain/composition'
 import { currentRecommendationSignal } from '../../order-menu-server/src/domain/recommendation'
-import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters } from './domain/composition'
+import { invoiceDraftReady } from './domain/checkout-flow'
+import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters, mentionedUnavailableConditions } from './domain/composition'
+import { itemMatchesQuery, possibleMenuItems } from './domain/menuIdentity'
 import { catalogInfo, createOrderMachine, itemAvailability, ItemSelectionError, menuPageState, menuPageStates } from './domain/order-machine'
-import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription, priceProperties } from './domain/pricing'
+import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription } from './domain/pricing'
+import { mentionedServingCounts, QuantityLimitError, rejectQuantity } from './domain/quantityPolicy'
 import { createQueryScope } from './domain/queryScope'
 import { hostToolNames } from './hostTools'
-import { authorize, buildClarificationPrompt, compileOperationPlan, configurationQuestion, createConfirmation, createQuestion, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, targetReferenceLimit, validateConfirmation } from './kiosk-intents'
+import { authorize, buildClarificationPrompt, compileOperationPlan, configurationQuestion, createConfirmation, createQuestion, deriveDecisionContext, describeQuestion, describeRequest, intentRecovery, questionIsCurrent, resolveClarificationReference, resolveIntent, targetReferenceLimit, validateConfirmation } from './kiosk-intents'
 import { createMealClarification, mealMessages } from './mealClarification'
 import { paymentLabels } from './pos-bridge'
+import { toolDefinitions } from './toolDefinitions'
 
-export type MenuToolName
-  = | 'kiosk_test_menu' | 'kiosk_customer_entry_start' | 'kiosk_customer_phone' | 'kiosk_fast_path_clarify' | 'customer_skip_phone'
-    | 'menu_get'
-    | 'menu_open'
-    | 'menu_scroll'
-    | 'menu_recommend'
-    | 'menu_show_recommendations'
-    | 'menu_select_item'
-    | 'menu_set_item_option'
-    | 'menu_set_quantity'
-    | 'order_add_item'
-    | 'cart_add_item'
-    | 'cart_remove_item'
-    | 'cart_set_line_quantity'
-    | 'cart_set_line_option'
-    | 'cart_clear'
-    | 'cart_get'
-    | 'order_set_fulfillment'
-    | 'order_set_party_size'
-    | 'order_defer_question'
-    | 'order_ask_question'
-    | 'seating_get'
-    | 'seating_reserve'
-    | 'checkout_start'
-    | 'checkout_skip_membership'
-    | 'checkout_choose_invoice'
-    | 'checkout_request_tax_id'
-    | 'checkout_set_tax_id'
-    | 'checkout_confirm_tax_id'
-    | 'checkout_select_payment'
-    | 'checkout_cancel'
-    | 'kiosk_interaction_state'
-    | 'kiosk_fast_path_context'
-    | 'kiosk_fast_path_execute'
-    | 'kiosk_fast_path_continue'
-    | 'kiosk_dialogue_presented'
-    | 'kiosk_question_validate'
-    | 'kiosk_agent_task'
-    | 'kiosk_query_scope'
+export type { MenuToolName } from './toolDefinitions'
 
 export type MenuPresentationToolName = 'menu_get' | 'menu_recommend' | 'menu_show_recommendations'
 
@@ -74,8 +47,21 @@ export interface MenuTestSnapshot {
 }
 
 const kioskHostOnlyToolNames = new Set<MenuToolName>(hostToolNames)
-// Optional phone entry gates order changes, not browsing the restaurant menu.
+// Menu reads and order changes share the explicit phone-or-skip entry gate.
+const intentTools: Record<string, readonly MenuToolName[]> = {
+  REMOVE_ITEM: ['cart_remove_item'],
+  ADD_ITEM: ['menu_select_item', 'menu_set_quantity', 'menu_set_item_option', 'order_add_item', 'cart_add_item', 'menu_confirm_item'],
+  SET_QUANTITY: ['menu_set_quantity', 'cart_set_line_quantity'],
+  SET_OPTION: ['menu_set_item_option', 'cart_set_line_option'],
+  CLEAR_CART: ['cart_clear'],
+}
+
 const menuBrowsingToolNames = new Set<MenuToolName>(['menu_get', 'menu_recommend', 'menu_show_recommendations'])
+// These effects require a target bound before this Agent task; later reads
+// cannot create customer consent to a different item.
+const selectionToolNames = new Set<MenuToolName>(['cart_add_item', 'menu_set_item_option', 'menu_set_quantity'])
+const cartLineToolNames = new Set<MenuToolName>(['cart_remove_item', 'cart_set_line_quantity', 'cart_set_line_option'])
+const itemTargetToolNames = new Set<MenuToolName>(['menu_select_item', 'order_add_item', ...selectionToolNames])
 
 function isKioskHostOnlyToolName(name: MenuToolName): name is HostToolName {
   return kioskHostOnlyToolNames.has(name)
@@ -114,6 +100,9 @@ interface PendingFastPathClarification {
 }
 
 interface PendingFastPathConfirmation {
+  /** The proposing task cannot answer its own question before a new customer turn. */
+  taskId?: string
+  presented?: boolean
   cart: string
   operation: OperationPlan
   record: PendingConfirmation
@@ -181,22 +170,21 @@ export function fulfillmentControlId(mode: FulfillmentMode) {
   return `order:fulfillment:${mode}`
 }
 
+/** Encodes one opaque cart line ID into the exact registered removal control. */
+export function cartRemovalControlId(lineId: string) {
+  return `cart:remove:${encodeURIComponent(lineId)}`
+}
+
 /** Returns the DOM control identifier for the selected item's add action. */
 export function addItemControlId(itemId: string) {
   return `${itemId}:add`
-}
-
-interface MenuToolDefinition {
-  description: string
-  inputSchema: Record<string, unknown>
-  name: MenuToolName
-  readOnly?: boolean
 }
 
 export interface CheckoutToolController {
   assertCanRestart: () => void
   cancel: () => unknown
   chooseInvoice: (method: Exclude<InvoiceMethod, 'tax-id'>) => CheckoutSnapshot
+  confirmInvoice: () => CheckoutSnapshot
   confirmTaxId: () => CheckoutSnapshot
   requestTaxId: () => CheckoutSnapshot
   paymentStatus: () => 'pending' | 'uncertain' | undefined
@@ -212,6 +200,7 @@ export interface CheckoutToolController {
 }
 
 interface MenuToolRuntimeOptions {
+  serviceContext?: () => OrderingContext | undefined
   /** Development-only page scenarios; never enabled for the production service. */
   testing?: boolean
   onMenuChanged?: (items: MenuItem[]) => void
@@ -219,6 +208,8 @@ interface MenuToolRuntimeOptions {
   screen?: () => KioskScreen
   /** Actual item dialog identity; machine selection alone does not prove visibility. */
   visibleItemId?: () => string | undefined
+  /** IDs in the current Vue menu grid after its presentation update. */
+  visibleItemIds?: () => string[]
   fulfillmentModes?: readonly { id: FulfillmentMode, label: string }[]
   /** Optional venue capability, backed by POS rather than browser-local seats. */
   seating?: {
@@ -244,7 +235,7 @@ interface MenuToolRuntimeOptions {
   /** Offers optional phone entry once for a fresh order hosted by the Kiosk. */
   onCustomerEntryRequested?: () => void
   /** Clears browser identity only when the host starts a different customer session. */
-  onSessionReset?: () => void
+  onSessionReset?: () => Promise<void> | void
   /** Locks customer writes until the matching host task has settled. */
   onAgentControlChange?: (locked: boolean) => void
   onAction: (action: AgentAction) => Promise<void> | void
@@ -267,87 +258,11 @@ interface MenuToolRuntimeOptions {
   onOrderConfirmed?: (order: SubmittedOrder) => void
   /** Mirrors every final POS receipt into the visible customer flow. */
   onOrderSubmission?: (order: SubmittedOrder) => void
-  /** Requests a non-blocking recommendation rail in the human menu UI. */
-  onRecommendationsChange?: (presentation: RecommendationPresentation) => void
+  /** A returned promise settles after Vue has applied the new dish grid; other return values are ignored. */
+  onRecommendationsChange?: (presentation: RecommendationPresentation) => unknown
   /** Keeps visible loading feedback aligned with actual menu-rendering tools. */
   onMenuPresentationActivity?: (activity: MenuPresentationActivity) => Promise<void> | void
 }
-
-interface ModelContextLike {
-  registerTool: (tool: {
-    name: string
-    description: string
-    inputSchema: Record<string, unknown>
-    annotations?: { readOnlyHint?: boolean }
-    exposedTo?: string[]
-    execute: (input: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
-  }, options?: { exposedTo?: string[], signal?: AbortSignal }) => Promise<unknown>
-}
-
-/**
- * WebMCP names are scoped to the iframe document, not to one Vue runtime.
- * Keeping the active controller on that document lets a Vite replacement
- * release the preceding runtime's tools before it registers the same names.
- */
-type WebMcpDocument = Document & {
-  __webnaviorOrderMenuNativeWebMcpRegistration__?: AbortController
-  modelContext?: ModelContextLike
-}
-
-const ingredientFilterProperties = {
-  dietary: { type: 'string', enum: ['vegetarian'], description: '素食需求。需 POS 明確素食標示才列為符合；不能僅以缺少肉類成分推論。更嚴格或未支援的飲食條件不可省略或弱化。' },
-  excludeIngredients: { type: 'array', items: { type: 'string', enum: ingredientDefinitions.map(definition => definition.id) }, maxItems: ingredientDefinitions.length, uniqueItems: true, description: '排除成分 ID。依成分表篩選；不代表過敏安全，也不自動移除食材。' },
-  includeIngredients: { type: 'array', items: { type: 'string', enum: ingredientDefinitions.map(definition => definition.id) }, maxItems: ingredientDefinitions.length, uniqueItems: true, description: '必須含有的成分 ID；與排除條件取交集。' },
-}
-
-const menuExclusionProperties = {
-  excludeItemIds: { type: 'array', items: { type: 'string' }, uniqueItems: true, description: '依完整需求排除的真實菜單品項 ID。先查 menu_get(display:false) 的分類、品名與成分依據，再傳入需要排除的全部品項；不可用虛構 ID、字詞比對或猜成分代替語意理解。與食材、素食和價格條件取交集。more:true 時累加並保留排除；放寬或改口須省略 more 並傳完整新條件。' },
-}
-
-const toolDefinitions: MenuToolDefinition[] = [
-  { name: 'kiosk_test_menu', description: '開發用頁面狀態模擬，只供測試者；省略參數讀取目前狀態。', inputSchema: { type: 'object', properties: { itemId: { type: 'string' }, state: { type: 'string', enum: [...menuPageStates] } }, additionalProperties: false } },
-  { name: 'kiosk_customer_entry_start', description: 'Host 在新訂單開始前請求自願電話登記；已填寫、略過或開始訂購時不重新詢問。不供 Agent 使用。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'kiosk_customer_phone', description: '只供 Kiosk host 提交顧客手動輸入的電話；不供 Agent、ASR 或模型填寫。', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^09[0-9]{8}$' } }, required: ['phone'], additionalProperties: false } },
-  { name: 'kiosk_fast_path_clarify', description: '將已確認是服務需求的本輪提案轉成單一品名確認問題；只供 host 使用，不寫購物車。', inputSchema: { type: 'object', properties: { questionId: { type: 'string', maxLength: 120 } }, required: ['questionId'], additionalProperties: false } },
-  { name: 'customer_skip_phone', description: '只有顧客明確選擇略過電話、不留電話，或明確要求跳過登記直接點餐，才略過自願電話登記並進入菜單。在電話頁單說「略過」也是這項選擇。否定或撤回餐點不是電話選擇；同句先點餐再說不要了，只表示先不點該餐點，必須保留電話頁，不呼叫本工具。不要為了開始對話或回應撤回而略過電話。不代表登入會員，也不新增餐點。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
-  { name: 'menu_open', description: '回到菜單繼續點餐，保留購物車。只能在尚未結帳時使用；不取消結帳、不開始付款。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'menu_scroll', description: '查看一個畫面高度的較前段（UP，接近菜單開頭）或較後段（DOWN，接近菜單結尾）內容。方向表示要顯示的內容位置，不是手指移動方向。保留分類、推薦與購物車；到邊界時不再移動。', inputSchema: { type: 'object', properties: { direction: { type: 'string', enum: ['UP', 'DOWN'] } }, required: ['direction'], additionalProperties: false } },
-  { name: 'kiosk_query_scope', description: 'Host-only scope question transition; validates question authority before querying.', inputSchema: { type: 'object', properties: { questionId: { type: 'string' }, choice: { type: 'string', enum: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST', 'IGNORE'] }, transcript: { type: 'string' } }, required: ['questionId', 'choice'], additionalProperties: false } },
-  { name: 'kiosk_agent_task', description: 'Kiosk host 綁定或結束目前 Agent 任務的已解析限制；不是 Agent 可選工具。', inputSchema: { type: 'object', properties: { taskId: { type: 'string', minLength: 1 }, action: { type: 'string', enum: ['BEGIN', 'END'] }, transcript: { type: 'string', description: 'BEGIN 必須提供本次顧客原句，供程式驗證查詢對象來源；END 不使用。' }, expectedMenuRevision: { type: 'integer', minimum: 0 }, readOnly: { type: 'boolean' }, constraints: { type: 'object', properties: { ...ingredientFilterProperties, ...priceProperties, unresolvedPrice: { type: 'boolean' } }, additionalProperties: false } }, required: ['taskId', 'action'], additionalProperties: false } },
-  { name: 'menu_get', description: '精確查詢顧客指定的具體品名，或用 display:false 取得內部菜單資料。分類條件只供內部查詢；要展示某分類，用 menu_recommend action:update 並傳 category，讓程式保留其他查詢條件。query／queries 僅限具體餐點名稱，category 只能使用 POS 精確分類。顧客沒有指定具體品名／分類，而是在找餐點、換選擇、重新挑選或需要釐清時，使用 menu_recommend 的 action，不使用本工具把整句或其他品項當名稱。display:false 是資料讀取，不可把整份結果逐項介紹。一次提到多道餐點以 queries 一次查齊。質疑先前介紹是否存在時加 verifyClaim:true，查無就明確更正，不改查相近餐點。指定分類透過明確查詢動作後要直接列出並展示回傳品項，不只說有幾種或叫顧客自己看畫面，不能憑分類名猜庫存或價格。單份價格與飲食限制依工具結果驗證，不分配整筆預算。不確定查詢範圍時用 menu_recommend action:clarify，尚未釐清不得猜範圍或推薦。', inputSchema: { type: 'object', properties: { ...menuExclusionProperties, ...ingredientFilterProperties, ...priceProperties, display: { type: 'boolean', description: '預設只展示 query／queries 指定的具體品名查證結果。沒有具體品名（包含只傳 category）必須設 false，僅讀內部資料。展示分類或瀏覽餐點必須改用 menu_recommend 並明確提供 action。' }, category: { type: 'string', description: '僅 display:false 內部讀取可用的 POS 精確分類。展示分類用 menu_recommend({action:"update",category:分類名稱})；不可用本工具展示分類。' }, verifyClaim: { type: 'boolean', description: '顧客質疑先前介紹是否真的在菜單時設為 true，並以 query 或 queries 核對先前提到的具體品名；不改查其他餐點。查無品項時明確更正先前介紹。' }, query: { type: 'string', description: '僅限顧客明確指定的具體餐點名稱或名稱片段；即使查無此品名仍保留原名。沒有具體品名時省略。其他、別的、那些等相對指涉與泛指品項不是商品名稱，不可放入 query。' }, queries: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1, maxItems: 4, uniqueItems: true, description: '顧客明確指定多道餐點時，每個元素是一道具體餐點名稱。沒有具體品名時省略；不填泛指詞、相對指涉、分類或整句需求。' } }, additionalProperties: false } },
-  { name: 'menu_recommend', description: '由程式保存查詢條件的餐點探索與語音釐清工具。每次必須明確提供 action。continue：保留目前條件找下一批；update：只提供本句要變更的條件，取消條件用 clear，其餘程式保留；reset：使用者明確重新挑選才重置價格、分類等瀏覽條件，飲食限制和已展示歷史保留；clarify：需求或範圍不明，只傳 {action:clarify}，問題由程式產生，不提供 customerMessage、question 或其他參數；工具回傳一個語音問題，不查新餐點、不展示、不改購物車。泛指其他項目、別的選擇或更正前句不是品名。前次已無其他符合結果且未明示新範圍時選 clarify；不能直接重置或重試相同條件。第一輪找餐點用 update。僅明確具體品名的精確查證使用 menu_get。每次最多三項，完全依真實售價、成分和 POS 標示篩選，不猜素食或過敏安全，不分配整筆預算；價格顯示於畫面，不必逐項朗讀。語音釐清的 customerMessage 直接問顧客即可，不再查詢。', inputSchema: { type: 'object', properties: { ...menuExclusionProperties, ...ingredientFilterProperties, ...priceProperties, category: { type: 'string' }, query: { type: 'string', description: '僅限顧客指定的具體餐點名稱；未指定時省略，不填其他品項或相對指涉。' }, queries: { type: 'array', items: { type: 'string' }, maxItems: 4, description: '每個元素必須是顧客指定的具體餐點名稱；沒有具體品名時省略。' }, action: { type: 'string', enum: ['continue', 'update', 'reset', 'clarify'], description: '必要。continue 沿用條件換批，不修改條件；update 只修改本句明示的條件，其餘由程式保留；reset 重新挑選，清除價格與分類等瀏覽限制，保留飲食限制與已展示歷史；clarify 需求有歧義，只傳 action，不提供 customerMessage 或 question；問題由程式產生，不查詢或展示。原條件已無其他結果又只說其他品項，選 clarify，不能把泛指詞當 query。' }, excludeShown: { type: 'boolean', description: '僅 update 使用；只有本句同時修改條件並明確要求其他未介紹餐點時為 true；不得沿用前句要求其他餐點的意圖。單純改價位或分類、詢問新條件有哪些符合餐點時省略，即使前句曾要求換批或沒有更多結果，符合的已展示餐點也可列入。continue／reset 已內建排除歷史，不需此欄位。' }, clear: { type: 'array', items: { type: 'string', enum: ['price', 'category', 'query', 'needs', 'strategy', 'dietary', 'ingredients', 'excludedItems'] }, uniqueItems: true, description: '僅 update 使用；明確取消哪組條件才列出。提供新的價格欄位會整組替換原價格上下限，省略欄位保留原組。飲食限制不可因重新挑選而自行清除。' }, needs: { type: 'array', items: { type: 'string', enum: ['rice', 'fried'] }, minItems: 1, uniqueItems: true }, limit: { type: 'integer', minimum: 1, maximum: 3, description: '預設最多三項；顧客明確只要一或兩項時可縮小。' } }, required: ['action'], additionalProperties: false } },
-  { name: 'menu_show_recommendations', description: '在菜單中非阻斷地展示 1 至 4 項推薦。只可在顧客明確表示想看推薦後使用。itemIds 必須全部來自先前 menu_get 或 menu_recommend 的回傳結果；不得自行猜測品項。可附簡短標題與理由，但不得加入未提供的健康、過敏或供應資訊。回覆時直接說出實際推薦品名，不要只叫顧客看畫面。', inputSchema: { type: 'object', properties: { itemIds: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 4, uniqueItems: true, description: '必要。先前菜單工具回傳的 item.id。' }, reason: { type: 'string', maxLength: 90, description: '可選。給顧客看的簡短搭配理由。' }, title: { type: 'string', maxLength: 36, description: '可選。推薦列標題。' } }, required: ['itemIds'], additionalProperties: false } },
-  { name: 'menu_select_item', description: '選擇一個餐點並建立可設定的選擇。呼叫前必須先使用 menu_get，並傳入其結果中完全相同的 item.id。', inputSchema: { type: 'object', properties: { itemId: { type: 'string', description: '必要。先前 menu_get 回傳的其中一個 item.id；不得猜測、翻譯或自行建立。' } }, required: ['itemId'], additionalProperties: false } },
-  { name: 'menu_set_item_option', description: '設定目前餐點的口味、辣度、甜度或冰量。groupId 與 valueId 必須來自 menu_select_item 回傳的 item.optionGroups。', inputSchema: { type: 'object', properties: { groupId: { type: 'string', description: '必要。已選餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['groupId', 'valueId'], additionalProperties: false } },
-  { name: 'menu_set_quantity', description: '設定目前餐點的數量。只可在 menu_select_item 後、cart_add_item 前使用。', inputSchema: { type: 'object', properties: { quantity: { type: 'integer', minimum: 1, maximum: 20, description: '必要。顧客指定的整數數量；未指定時使用 1。' } }, required: ['quantity'], additionalProperties: false } },
-  { name: 'order_add_item', description: '一次完成一個已確認餐點的選擇、已知客製化、數量與加入購物車。顧客指定品項與所有必要客製化後，優先使用此工具，避免逐步呼叫 menu_select_item、menu_set_item_option、menu_set_quantity、cart_add_item。換餐時也使用本工具，帶 replaceLineId 一次更換原 cart line，不另外呼叫 cart_remove_item；失敗保留原餐點。itemId、options 的 groupId 與 valueId 必須來自 menu_get 的結果。', inputSchema: { type: 'object', properties: { replaceLineId: { type: 'string', description: '只有更換既有餐點時填寫。cart_get 回傳且顧客指定的原 cart line.id；一次替換整筆，未指定 quantity 時保留原份數，不能猜多筆同名餐點是哪一筆。' }, itemId: { type: 'string', description: '必要。menu_get 回傳的其中一個 item.id。' }, options: { type: 'array', description: '顧客明確指定的客製化；未指定的選項保留該品項預設值。', items: { type: 'object', properties: { groupId: { type: 'string' }, valueId: { type: 'string' } }, required: ['groupId', 'valueId'], additionalProperties: false } }, quantity: { type: 'integer', minimum: 1, maximum: 20, description: '顧客指定的數量；省略時為 1。' } }, required: ['itemId'], additionalProperties: false } },
-  { name: 'cart_add_item', description: '將目前已設定的餐點加入購物車。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'cart_remove_item', description: '從購物車移除一個 cart line。先用 cart_get 取得正確的 lineId。單獨要求移除時，執行成功後才能告知已移除。更換餐點請改用 order_add_item 的 replaceLineId，一次替換並在失敗時保留原餐點，不以本工具拆開換餐。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' } }, required: ['lineId'], additionalProperties: false } },
-  { name: 'cart_set_line_quantity', description: '直接調整購物車中一個餐點的數量，不要先移除再重新加入。先用 cart_get 取得正確的 lineId；成功後依回傳 cart 確認數量與總額。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' }, quantity: { type: 'integer', minimum: 1, description: '必要。調整後的正整數數量。' } }, required: ['lineId', 'quantity'], additionalProperties: false } },
-  { name: 'cart_set_line_option', description: '直接修改購物車中一個餐點的單一客製選項，不要先移除再重新加入。先用 cart_get 取得 lineId；groupId 和 valueId 必須來自該餐點先前由 menu_get 回傳的 optionGroups。若修改後與另一筆選項完全相同，系統會合併數量並回傳保留的 line。', inputSchema: { type: 'object', properties: { lineId: { type: 'string', description: '必要。cart_get 回傳的其中一個 cart.lines[].id。' }, groupId: { type: 'string', description: '必要。該餐點 optionGroups 中的 group.id。' }, valueId: { type: 'string', description: '必要。該 group.values 中的 value.id。' } }, required: ['lineId', 'groupId', 'valueId'], additionalProperties: false } },
-  { name: 'cart_clear', description: '清空尚未送出的購物車。僅在顧客明確表示取消全部餐點、重新開始或等同語意時使用；先以 cart_get 確認目前內容。清空後原本的內用／自取選擇也會移除。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true, description: '必要。只有顧客已明確要求清空時才可設為 true。' } }, required: ['confirmedByUser'], additionalProperties: false } },
-  { name: 'cart_get', description: '取得購物車、品項數與總額，預設展示訂單及 POS 用餐方式選項。不取代正在進行的結帳畫面；只讀資料而不切換畫面時指定 display:false。', inputSchema: { type: 'object', properties: { display: { type: 'boolean', description: '預設展示訂單；false 僅讀取資料，不切換画面。' } }, additionalProperties: false }, readOnly: true },
-  { name: 'order_set_fulfillment', description: '設定整筆訂單的用餐方式。只使用 menu_get 回傳的 fulfillmentModes 與 POS 選項名稱；尚未告知時以 order_ask_question 取得系統問題，不另行編寫。必須在 checkout_start 前完成。', inputSchema: { type: 'object', properties: { mode: { type: 'string', enum: ['dine-in', 'takeout'], description: '必要。必須為 POS fulfillmentModes 提供的 id，對顧客使用該選項的 label。' } }, required: ['mode'], additionalProperties: false } },
-  { name: 'order_set_party_size', description: '設定內用人數（1 至 20 位），與餐點數量不同。修改人數會釋放原暫留桌位，再顯示目前可選桌位。', inputSchema: { type: 'object', properties: { partySize: { type: 'integer', minimum: 1, maximum: 20 } }, required: ['partySize'], additionalProperties: false } },
-  { name: 'seating_get', description: '查詢本次內用人數與目前真實可用桌位組合；不保留桌位。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, readOnly: true },
-  { name: 'seating_reserve', description: '選擇 seating_get 回傳的真實 choiceId，並帶入同次回傳的 revision 作為 expectedRevision，暫留 10 分鐘。多桌需顧客明確同意分桌，才能傳 splitApproved: true。', inputSchema: { type: 'object', properties: { choiceId: { type: 'string' }, splitApproved: { type: 'boolean' }, expectedRevision: { type: 'integer', minimum: 0 } }, required: ['choiceId', 'splitApproved', 'expectedRevision'], additionalProperties: false } },
-  { name: 'checkout_start', description: '顧客已明確同意目前購物車內容並表示要結帳時，依目前部署流程進入結帳。會員可能已在開始頁完成輸入；請依回傳 stage 引導。確認可以是自然語意，不要求固定字句。此工具只進入結帳，不會直接送 POS。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
-  { name: 'checkout_skip_membership', description: '顧客明確表示略過、不使用會員或等同語意時，略過會員掃碼。不得代替顧客宣稱已掃描條碼。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
-  { name: 'checkout_choose_invoice', description: '依顧客意思選擇手機載具或自然人憑證，顯示資料輸入；顧客說略過或捐贈發票時選 donation，不輸入捐贈碼，直接進入付款方式。這不代表已付款或已開立發票。顧客要統編時改用 checkout_request_tax_id。', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['carrier', 'citizen', 'donation'] } }, required: ['method'], additionalProperties: false } },
-  { name: 'checkout_request_tax_id', description: '顧客表示要填統編時，開啟統編輸入畫面。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
-  { name: 'checkout_set_tax_id', description: '把顧客口說的完整 8 碼統編帶入畫面供顧客查看。只負責顯示，不會直接確認或前進付款。', inputSchema: { type: 'object', properties: { taxId: { type: 'string', pattern: '^\\d{8}$' } }, required: ['taxId'], additionalProperties: false } },
-  { name: 'checkout_confirm_tax_id', description: '顧客看過畫面上的 8 碼統編並以自然語意表示正確後確認；不要求逐字說出固定句子。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
-  { name: 'checkout_select_payment', description: '依顧客意思選擇目前提供的付款方式，直接進入測試 QR Code 畫面，倒數5秒後自動請求模擬付款，不另問確認、不需實際掃碼或按鈕。status=selected 當下尚未付款，可更換方式；付款及訂單成功必須以後續模擬器與訂單回傳為準。', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['card', 'mobile', 'linepay', 'jkopay'] } }, required: ['method'], additionalProperties: false } },
-  { name: 'checkout_cancel', description: '顧客明確表示取消本次結帳時返回訂單內容並保留購物車。付款等待中或付款結果不明時不可取消，以免重複扣款。', inputSchema: { type: 'object', properties: { confirmedByUser: { type: 'boolean', const: true } }, required: ['confirmedByUser'], additionalProperties: false } },
-  { name: 'kiosk_interaction_state', description: '取得目前畫面的非敏感情境摘要，供 Kiosk host 傳給對話助手；不建立或消耗 System One 候選。', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, readOnly: true },
-  { name: 'kiosk_fast_path_context', description: '取得目前可由 Kiosk System One 選擇的語意點餐意圖。這是 Kiosk host 的內部決策資料，不提供給對話 Agent。', inputSchema: { type: 'object', properties: { transcript: { type: 'string' }, previousTranscript: { type: 'string', maxLength: 8000 }, newRequestQuestionId: { type: 'string', maxLength: 120 } }, additionalProperties: false }, readOnly: true },
-  { name: 'kiosk_fast_path_execute', description: '執行目前語意候選對應的已驗證點餐操作。這是 Kiosk host 的內部決策資料，不提供給對話 Agent。', inputSchema: { type: 'object', properties: { priceChoiceId: { type: 'string' }, searchInterpretation: { type: 'string', enum: ['product', 'filter'] }, ingredientFilters: { type: 'object', properties: ingredientFilterProperties, additionalProperties: false }, candidateId: { type: 'string' } }, required: ['candidateId'], additionalProperties: false } },
-  { name: 'kiosk_fast_path_continue', description: '執行一次已發出的唯讀後續步驟。僅供 Kiosk host 使用。', inputSchema: { type: 'object', properties: { candidateId: { type: 'string' } }, required: ['candidateId'], additionalProperties: false } },
-  { name: 'order_ask_question', description: '取得目前流程的系統操作問題。只選 purpose，不編寫問題或選項；POS 與目前 state 決定內容，host 負責呈現一次。回傳的 questionId 由 host 在實際呈現後綁定，不可用此工具授權或執行操作。', inputSchema: { type: 'object', properties: { purpose: { type: 'string', enum: ['customer-entry', 'fulfillment', 'party-size', 'tables', 'checkout-entry', 'membership', 'invoice', 'tax-id', 'payment-method'] } }, required: ['purpose'], additionalProperties: false } },
-  { name: 'order_defer_question', description: '暫時擱置目前問題，保留訂單與設定。', inputSchema: { type: 'object', properties: { questionId: { type: 'string' } }, required: ['questionId'], additionalProperties: false } },
-  { name: 'kiosk_dialogue_presented', description: '記錄實際呈現的回覆與問題 ID。僅供 Kiosk host 使用。', inputSchema: { type: 'object', properties: { content: { type: 'string' }, questionId: { type: 'string' }, interruptsQuestion: { type: 'boolean' } }, required: ['content'], additionalProperties: false } },
-  { name: 'kiosk_question_validate', description: '呈現前驗證問題收據仍符合目前狀態。僅供 Kiosk host 使用。', inputSchema: { type: 'object', properties: { questionId: { type: 'string' } }, required: ['questionId'], additionalProperties: false } },
-]
 
 function requiredString(input: Record<string, unknown>, key: string) {
   const value = input[key]
@@ -414,7 +329,9 @@ function itemOptionInputs(input: Record<string, unknown>): ItemOptionInput[] {
   })
 }
 
-function cartNextStep(cart: CartSnapshot) {
+function cartNextStep(cart: CartSnapshot, context?: OrderingContext) {
+  if (context && !servicePolicy(context.serviceMode).requiresPayment)
+    return 'Confirm this table cart with the customer; call checkout_start only after explicit consent to submit. No payment or fulfillment selection.'
   return cart.fulfillmentMode
     ? 'Confirm the cart with the customer. Call checkout_start only after explicit customer consent.'
     : 'The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.'
@@ -479,11 +396,6 @@ function getMenuQuery(input: Record<string, unknown>) {
     throw new Error('queries must include at most four values.')
 
   return { category, queries }
-}
-
-function itemMatchesQuery(item: MenuItem, query: string) {
-  return [item.id, item.name, item.description, item.category]
-    .some(value => value.toLocaleLowerCase().includes(query))
 }
 
 /**
@@ -556,7 +468,9 @@ function recommendationPresentation(input: Record<string, unknown>): Recommendat
 }
 
 /** Builds an LLM-readable retry result instead of allowing browser mediation to hide the validation error. */
-function nativeInvocationFailure(name: MenuToolName, error: unknown) {
+function invocationFailure(name: MenuToolName, error: unknown) {
+  if (error instanceof QuantityLimitError)
+    return rejectQuantity(name, error.quantity)!
   if (error instanceof ItemSelectionError)
     return { ok: false, rejection: error.rejection, customerMessage: error.message, recovery: 'Keep the cart and let the customer choose another item; do not retry automatically.' }
   const message = errorMessageFrom(error) ?? 'The requested menu operation could not be completed.'
@@ -570,12 +484,14 @@ function nativeInvocationFailure(name: MenuToolName, error: unknown) {
 }
 
 /**
- * Presents one domain interface to native WebMCP and human UI controls. Each
+ * Presents one domain interface to the approved iframe host and human UI controls. Each
  * mutation announces itself before updating state.
  */
 export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
+  const policy = () => servicePolicy(options.serviceContext?.()?.serviceMode ?? 'kiosk')
+  let tableSubmissionPending = false
+  let tableSubmissionUncertain = false
   const machine = createOrderMachine({ gateway: options.gateway, menu: options.menu })
-  let nativeRegistration: AbortController | undefined
   let completedOrderId: string | undefined
   let presentationItemIds: string[] | undefined
   let presentationFocus: { menuRevision: number } | undefined
@@ -594,20 +510,28 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   let manualOperations = 0
   // Host-owned, per Agent turn. A new task replaces this record; END from an
   // interrupted older turn cannot clear its successor's verified conditions.
-  let agentTask: { taskId: string, broadMenuQuery: boolean, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number } | undefined
+  // Target IDs come from the host-bound utterance, never from Agent lookup
+  // arguments. An empty list requires a new customer confirmation; a contextual
+  // short reply may retain a unique domain-resolved pre-task presentation reference with a quantity.
+  let agentTask: { taskId: string, transcript: string, handoff?: ConversationHandoff, expectedRevisions?: KioskRevisions, allowedToolNames?: string[], returnToMenu?: boolean, targetItemIds?: string[], broadMenuQuery: boolean, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number, querySubjects?: QueryPresentationSubject[] } | undefined
   let waitingFor: PendingQuestion | undefined
   let offeredQuestion: typeof waitingFor
   // Records belong to this order, not a model turn. Completed/superseded
   // questions stay recorded until reset; only the pending pointer grants context.
   const questionHistory = new Map<string, { question: PendingQuestion, status: 'offered' | 'pending' | 'deferred' | 'answered' | 'superseded' }>()
-  let fulfillmentModes = options.fulfillmentModes ?? [{ id: 'dine-in' as const, label: '內用' }, { id: 'takeout' as const, label: '自取' }]
+  let configuredFulfillmentModes = options.fulfillmentModes ?? [{ id: 'dine-in' as const, label: '內用' }, { id: 'takeout' as const, label: '自取' }]
+  let fulfillmentModes = policy().requiresPayment ? configuredFulfillmentModes : [{ id: 'dine-in' as const, label: '隨桌供餐' }]
+  // The runtime owns this invariant even when no host updates POS capabilities.
+  // Table service uses the same cart format without asking for fulfillment.
+  if (!policy().requiresPayment)
+    machine.setFulfillmentMode('dine-in')
   let pendingReadContinuation: { candidateId: string, expiresAt: number, operation: OperationPlan, result: Record<string, unknown> } | undefined
   // Conditions and delivered items belong to this order, not an idle timer.
   // An explicit fresh recommendation replaces the batch; reset clears it.
   let recommendationRevision = 0
   let recommendationBatch: { seenIds: Set<string>, filters: IngredientFilters, excludedItemIds: string[], needs: RecommendationTag[], prices: PriceConditions, category: string, queries: string[], strategy?: RecommendationStrategy, scope?: SelectedQueryScope, exhausted: boolean, menuRevision: number | undefined } | undefined
 
-  // Native WebMCP and embedded-host discovery must expose the same POS
+  // Tool execution and embedded-host discovery must expose the same POS
   // capabilities, not a static enum containing unavailable service modes.
   function availableToolDefinitions(): MenuToolDefinition[] {
     const categories = [...new Set(machine.getMenu().map(item => item.category))]
@@ -637,12 +561,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         return [{ ...definition, inputSchema: { ...definition.inputSchema, properties: { ...(definition.inputSchema.properties as Record<string, unknown>), category } } }]
       if (definition.name === 'menu_recommend') {
         const strategies = (['POPULAR', 'NEW_ARRIVAL', 'CHEF_SPECIAL'] as const).filter(strategy => machine.getMenu().some(item => item.available !== false && currentRecommendationSignal(item.recommendationSignals, strategy, Date.now())))
-        return [{ ...definition, inputSchema: { ...definition.inputSchema, required: [], properties: {
+        return [{ ...definition, inputSchema: { ...definition.inputSchema, required: ['action'], properties: {
           ...(definition.inputSchema.properties as Record<string, unknown>),
           category,
           ...(strategies.length ? { strategy: { type: 'string', enum: strategies, description: '只可使用 POS 有當前排序資料的策略；不得把菜單順序當熱銷。' } } : {}),
         } } }]
       }
+      if (!policy().requiresPayment && ((definition.name.startsWith('checkout_') && definition.name !== 'checkout_start') || ['order_set_fulfillment', 'order_set_party_size', 'seating_reserve'].includes(definition.name)))
+        return []
+      if (!policy().requiresPayment && definition.name === 'checkout_start')
+        return [{ ...definition, description: '顧客確認本桌購物車後直接送出訂單，不選擇內用自取、不付款。必須 confirmedByUser=true。' }]
       if (definition.name !== 'order_set_fulfillment')
         return [definition]
       if (!fulfillmentModes.length)
@@ -673,7 +601,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   function currentFastPathContext(transcript = '', previousTranscript?: string, renewQuestion = false) {
     const revisions = currentFastPathRevisions()
     let context = deriveDecisionContext({
-      customerEntryPending: options.orderingReady?.() === false,
+      serviceMode: options.serviceContext?.()?.serviceMode,
+      customerEntryPending: policy().requiresPayment && options.orderingReady?.() === false,
       customerEntrySkipSupported: Boolean(options.onCustomerEntrySkipped),
       waitingFor: waitingFor && questionIsCurrent(waitingFor, revisions, Date.now()) ? waitingFor : undefined,
       fulfillmentModes,
@@ -708,6 +637,15 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         context = deriveDecisionContext({ ...context, waitingFor })
       }
     }
+    else if (waitingFor && renewQuestion) {
+      // The retained need is still current, but each new answer needs a full
+      // inference window. Reusing the previous turn's nearly expired ticket
+      // rejected valid answers a few seconds after they started. Passive reads
+      // never renew it, and live phase/revision checks still guard execution.
+      const status = questionHistory.get(waitingFor.questionId)?.status === 'deferred' ? 'deferred' : 'pending'
+      waitingFor = rememberQuestion({ ...waitingFor, expiresAt: Date.now() + 30_000 }, status)
+      context = deriveDecisionContext({ ...context, waitingFor })
+    }
     return { ...context, interactionState: { ...context.interactionState, ...(options.screen ? { screen: options.screen() } : {}) } }
   }
 
@@ -729,6 +667,32 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       && (expected.selectedItem === undefined || expected.selectedItem === actual.selectedItem)
       && (expected.seating === undefined || expected.seating === actual.seating)
       && (expected.recommendation === undefined || expected.recommendation === actual.recommendation)
+  }
+
+  // Both decision and passive Host readers project the same issued target
+  // question. Only the decision entrypoint creates/renews its answer lease.
+  function clarificationSnapshot(context: DecisionContext, transcript?: string) {
+    const pending = pendingFastPathClarification
+    if (!pending || pending.context.phase !== context.phase || !revisionsMatch(pending.expectedRevisions, context.revisions))
+      return undefined
+    const issued = pending.issued
+    const questionId = issued?.id ?? pending.id
+    const pendingReferences = pending.context.references.filter(reference => pending.candidateRefs.includes(reference.refId))
+    const resolvedRef = transcript === undefined ? undefined : resolveClarificationReference(transcript, pendingReferences)
+    const choices = [...pending.candidateRefs.map((ref, index) => ({ description: `顧客指的是${pending.context.references.find(reference => reference.refId === ref)?.label ?? '指定餐點'}。`, id: `clarify:${questionId}:${index}`, requiresHighConfidence: true })), { id: `clarify:${questionId}:cancel`, description: '顧客取消這次待釐清的需求；保留購物車。' }]
+    return {
+      candidates: choices,
+      waitingFor: { questionId, purpose: 'item-clarification', question: buildClarificationPrompt(pendingReferences), choices, expiresAt: issued?.expiresAt ?? 0 },
+      catalogEvidence: context.catalogEvidence,
+      interactionState: { ...context.interactionState, pendingIntent: pending.candidate.intent },
+      retainedRequests: retainedRequests(context),
+      phase: 'clarification',
+      paymentState: options.checkout?.paymentStatus() ?? 'idle',
+      references: publicReferences(pendingReferences),
+      menuRevision: context.revisions.menu,
+      revisions: context.revisions,
+      ...(resolvedRef ? { resolvedCandidateId: `clarify:${questionId}:${pending.candidateRefs.indexOf(resolvedRef)}` } : {}),
+    }
   }
 
   function configurationSnapshot(context: DecisionContext, transcript = '', issueAnswer = false) {
@@ -759,15 +723,31 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     // An unissued host snapshot describes the question but grants no answer
     // authority. The expiry belongs to the ticket, never to the retained meal.
     const expiresAt = pending.issued?.expiresAt ?? 0
-    return { phase: 'configuration', paymentState: 'idle', candidates: choices, catalogEvidence: context.catalogEvidence, interactionState: { ...context.interactionState, pendingIntent: 'ADD_ITEM' }, references: [{ refId: 'CONFIGURING_ITEM', label: item.name }], waitingFor: { questionId, purpose: 'item-configuration', question: question.prompt, expiresAt, choices } }
+    const waitingFor = { questionId, requestId: pending.id, purpose: 'item-configuration', question: question.prompt, expiresAt, choices }
+    return { menuRevision: context.revisions.menu, revisions: context.revisions, ...(context.priceEvidence ? { priceEvidence: context.priceEvidence } : {}), constraints: context.constraints, ingredientReferences: context.ingredientReferences, dietaryReferences: context.dietaryReferences, unavailableConditionReferences: context.unavailableConditionReferences, phase: 'configuration', retainedRequests: retainedRequests(context), intentRecovery: intentRecovery(context, waitingFor), paymentState: 'idle', candidates: choices, catalogEvidence: context.catalogEvidence, interactionState: { ...context.interactionState, pendingIntent: 'ADD_ITEM' }, references: [{ refId: 'CONFIGURING_ITEM', label: item.name }], waitingFor }
   }
 
-  function mealConfirmationSnapshot(context: DecisionContext) {
-    const question = mealClarification.question(context)
+  function mealConfirmationSnapshot(context: DecisionContext, issueAnswer = false) {
+    const question = issueAnswer ? mealClarification.issueAnswer(context) : mealClarification.question(context)
     options.onClarificationChange?.(question)
     if (!question)
       return undefined
-    return { phase: 'meal_confirmation', waitingFor: question, candidates: [...question.choices.map(choice => ({ ...choice, requiresHighConfidence: true })), ...(mealClarification.inquiry(context) ? [{ id: `inquire-meal:${question.questionId}`, description: '查詢目前確認的這款餐點現在是否可點，例如「我想問還有沒有」「還能點嗎」「沒有了嗎」；不是購買或否認購買，不新增餐點。', requiresHighConfidence: true }] : [])], catalogEvidence: context.catalogEvidence, paymentState: 'idle', interactionState: context.interactionState }
+    return { menuRevision: context.revisions.menu, revisions: context.revisions, ...(context.priceEvidence ? { priceEvidence: context.priceEvidence } : {}), constraints: context.constraints, ingredientReferences: context.ingredientReferences, dietaryReferences: context.dietaryReferences, unavailableConditionReferences: context.unavailableConditionReferences, intentRecovery: intentRecovery(context, question), phase: 'meal_confirmation', retainedRequests: retainedRequests(context), waitingFor: question, candidates: [...question.choices.map(choice => ({ ...choice, requiresHighConfidence: true })), ...(mealClarification.inquiry(context) ? [{ id: `inquire-meal:${question.questionId}`, description: '查詢目前確認的這款餐點現在是否可點，例如「我想問還有沒有」「還能點嗎」「沒有了嗎」；不是購買或否認購買，不新增餐點。', requiresHighConfidence: true }] : [])], catalogEvidence: context.catalogEvidence, paymentState: 'idle', interactionState: context.interactionState }
+  }
+
+  // All readers receive the same detached draft facts. A suspended draft from
+  // a replaced catalog cannot resume and must not be presented as current.
+  function retainedRequests(context: DecisionContext): ConversationContext['retainedRequests'] {
+    const confirmation = mealClarification.progress(context)
+    const drafts = [
+      ...(pendingConfiguration ? [{ ...pendingConfiguration, status: confirmation ? 'suspended' as const : 'active' as const }] : []),
+      ...suspendedConfigurations.map(draft => ({ ...draft, status: 'suspended' as const })),
+    ]
+    return [
+      ...(confirmation ? [confirmation] : []),
+      ...drafts.filter(draft => draft.plan.expectedRevisions.menu === context.revisions.menu && context.menu.some(item => item.id === draft.plan.slots.itemId))
+        .map(draft => describeRequest(draft.id, draft.status, draft.plan, context.menu)),
+    ]
   }
 
   function suspendMeal() {
@@ -792,7 +772,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       const next: Array<{ groupId: string, valueId: string }> = JSON.parse(String(plan.slots.options))
       slots.options = JSON.stringify([...new Map([...previous, ...next].map(option => [option.groupId, option])).values()])
     }
-    pendingConfiguration = { id: crypto.randomUUID(), plan: { ...plan, slots } }
+    const requestId = retained?.id ?? plan.requestId ?? crypto.randomUUID()
+    pendingConfiguration = { id: requestId, plan: { ...plan, requestId, sourceUtterance: retained?.plan.sourceUtterance ?? plan.sourceUtterance, slots } }
     return pendingConfiguration
   }
 
@@ -803,7 +784,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     options.onClarificationChange?.(undefined)
   }
 
-  async function resumeMeal(onAction: MenuToolRuntimeOptions['onAction']) {
+  async function resumeMeal(onAction: MenuToolRuntimeOptions['onAction'], reveal = true) {
     if (pendingConfiguration)
       return undefined
     const revisions = currentFastPathRevisions()
@@ -814,7 +795,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (draft.plan.expectedRevisions.menu !== revisions.menu)
         continue
       pendingConfiguration = { ...draft, issued: undefined, plan: { ...draft.plan, expectedRevisions: { ...draft.plan.expectedRevisions, cart: revisions.cart, selectedItem: revisions.selectedItem } } }
-      await revealItem(String(draft.plan.slots.itemId), onAction)
+      // Completing another dish returns to browsing. Keep the saved question
+      // answerable without immediately opening a second configuration dialog.
+      if (reveal)
+        await revealItem(String(draft.plan.slots.itemId), onAction)
       return configurationSnapshot(currentFastPathContext(), '', true)?.waitingFor
     }
     return undefined
@@ -877,6 +861,38 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       && authorize(pending.operation, context).kind !== 'BLOCKED'
   }
 
+  function confirmationSnapshot(context: DecisionContext) {
+    const pending = pendingFastPathConfirmation
+    if (!pending)
+      return
+    const valid = confirmationIsValid(pending, context)
+    const confirmationId = pending.record.confirmationId
+    const choices = [
+      { id: `intent:confirm:${confirmationId}`, description: confirmationMessage(pending.operation, fulfillmentModes) },
+      { id: `intent:cancel-confirmation:${confirmationId}`, description: '取消剛才待確認的操作，保留目前訂單及結帳進度。' },
+    ]
+    const question: PresentedQuestion = {
+      questionId: confirmationId,
+      purpose: 'operation-confirmation',
+      question: confirmationMessage(pending.operation, fulfillmentModes),
+      expiresAt: pending.record.expiresAt,
+      choices,
+    }
+    // Keep expired/stale intent visible to Main: bare assent must not become
+    // a choice for the underlying invoice page. Only a fresh request may replace it.
+    return {
+      phase: 'pending_confirmation' as const,
+      waitingFor: question,
+      candidates: valid ? choices : [],
+      ...(valid && pending.presented ? { intentRecovery: { kind: 'answer' as const, questionId: confirmationId, candidateIds: choices.map(choice => choice.id) } } : {}),
+      menuRevision: context.revisions.menu,
+      revisions: context.revisions,
+      retainedRequests: retainedRequests(context),
+      interactionState: { ...context.interactionState, pendingAction: pending.record.action },
+      paymentState: options.checkout?.paymentStatus() ?? 'idle',
+    }
+  }
+
   async function announce(
     label: string,
     targetId?: string,
@@ -896,15 +912,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     if (options.screen?.() === 'item_configuration' && options.visibleItemId?.() === itemId)
       return
     const item = machine.getMenu().find(candidate => candidate.id === itemId)
-    // The previous lookup may exclude this newly ordered item. Reveal its
-    // real catalog card before cursor movement, then retain it behind the
-    // dialog after adding. This is display focus, not a new recommendation
-    // batch: keep its filters and seen-item history for later alternatives.
+    // Selection owns the dialog, not the browsing query. Replacing the grid
+    // here loses the customer's category/filter when the dialog closes.
     machine.assertItemSelectable(itemId)
-    const presentation: RecommendationPresentation = { kind: 'query-results', itemIds: [itemId], title: item?.name }
-    presentationItemIds = presentation.itemIds
-    presentationFocus = { menuRevision: machine.getRevisions().menu }
-    options.onRecommendationsChange?.(presentation)
     await announce(`正在選擇${item?.name ?? '餐點'}`, itemId, {}, onAction)
     // Availability may change while awaiting the cursor animation.
     machine.assertItemSelectable(itemId)
@@ -921,7 +931,35 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     await options.onReviewRequested?.()
   }
 
-  async function invoke(name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction): Promise<unknown> {
+  async function invoke(name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction, queryTask?: typeof agentTask): Promise<unknown> {
+    if ((tableSubmissionPending || tableSubmissionUncertain) && !isKioskHostOnlyToolName(name) && toolDefinitions.find(tool => tool.name === name)?.readOnly !== true)
+      throw new Error('隨桌訂單尚待確認，請勿修改或重送。')
+    if (name === 'menu_recommend' && input.more === true && recommendationBatch?.queries.length)
+      recommendationBatch = { ...recommendationBatch, queries: [], exhausted: false }
+    if (name === 'menu_get' && input.scope === 'catalog') {
+      if (currentFastPathContext().phase !== 'ordering')
+        throw new Error('Menu exploration is unavailable in the current phase.')
+      clearQueryScope()
+      if (input.query !== undefined || input.queries !== undefined || input.category !== undefined)
+        throw new Error('Catalog scope cannot carry a precise meal or category query.')
+      const filters = ingredientFilters(input)
+      const previousFilters = recommendationBatch?.filters
+      input = {
+        ...input,
+        display: true,
+        excludeIngredients: [...new Set([...(previousFilters?.excludeIngredients ?? []), ...filters.excludeIngredients])],
+        // Full-catalog browsing releases positive tastes (e.g. fish), while
+        // exclusions/dietary restrictions above remain safety constraints.
+        includeIngredients: filters.includeIngredients,
+        ...(previousFilters?.dietary || filters.dietary ? { dietary: previousFilters?.dietary ?? filters.dietary } : {}),
+        excludeItemIds: [...new Set([...(recommendationBatch?.excludedItemIds ?? []), ...menuExclusions(input, machine.getMenu())])],
+      }
+      if (recommendationBatch) {
+        // Showing the catalog releases browsing scope, not dietary restrictions
+        // or the record of dishes already recommended. All items remain visible.
+        recommendationBatch = { ...recommendationBatch, category: '', queries: [], needs: [], prices: {}, scope: undefined, exhausted: false }
+      }
+    }
     if (name === 'menu_get' || name === 'menu_recommend') {
       menuExclusions(input, machine.getMenu())
       const { category } = getMenuQuery(input)
@@ -931,7 +969,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (category && !categories.includes(category))
         throw new Error(`UNKNOWN_CATEGORY: Use an exact POS category from ${JSON.stringify(categories)}; do not infer availability from this rejected query.`)
     }
-    if ((name === 'menu_get' || name === 'menu_recommend') && input.more !== true) {
+    if ((name === 'menu_get' || name === 'menu_recommend') && input.scope !== 'catalog' && input.more !== true) {
       const { category, queries } = getMenuQuery(input)
       const prices = priceConditions(input)
       const filters = ingredientFilters(input)
@@ -950,7 +988,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         return { customerMessage: queryScope.question.question, pendingCustomerChoice: queryScope.question }
       }
     }
-    if (name === 'menu_get' && input.display === true && input.verifyClaim !== true) {
+    if (name === 'menu_get' && input.scope !== 'catalog' && input.display === true && input.verifyClaim !== true) {
       const { category, queries } = getMenuQuery(input)
       const filters = ingredientFilters(input)
       if (!category && !queries.length && !filters.dietary && !filters.excludeIngredients.length && !filters.includeIngredients.length && !menuExclusions(input, machine.getMenu()).length && !Object.keys(priceConditions(input)).length) {
@@ -964,9 +1002,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     }
     let result: unknown
     try {
-      result = await invokeOperation(name, input, onAction)
+      result = await invokeOperation(name, input, onAction, undefined, queryTask)
     }
     catch (error) {
+      if (error instanceof QuantityLimitError)
+        return invocationFailure(name, error)
       if (error instanceof ItemSelectionError)
         options.onMenuChanged?.(machine.getMenu())
       throw error
@@ -988,10 +1028,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         presentationFocus = { menuRevision: currentFastPathRevisions().menu }
       if (name === 'order_ask_question')
         return result
-      const asksNext = ['order_add_item', 'cart_add_item', 'cart_get', 'cart_remove_item', 'cart_set_line_quantity', 'cart_set_line_option', 'order_set_fulfillment', 'order_set_party_size', 'seating_reserve', 'checkout_start', 'checkout_skip_membership', 'checkout_choose_invoice', 'checkout_request_tax_id', 'checkout_set_tax_id', 'checkout_confirm_tax_id', 'checkout_cancel'].includes(name)
+      const asksNext = ['order_add_item', 'cart_add_item', 'cart_get', 'cart_remove_item', 'cart_set_line_quantity', 'cart_set_line_option', 'order_set_fulfillment', 'order_set_party_size', 'seating_reserve', 'checkout_start', 'checkout_skip_membership', 'checkout_choose_invoice', 'checkout_request_tax_id', 'checkout_set_tax_id', 'checkout_confirm_tax_id', 'checkout_confirm_invoice', 'checkout_cancel'].includes(name)
       if (asksNext) {
         if (name === 'order_add_item' || name === 'cart_add_item') {
-          const resumed = await resumeMeal(onAction)
+          const resumed = await resumeMeal(onAction, false)
           if (resumed) {
             const payload = result as Record<string, unknown>
             payload.customerMessage = `${payload.customerMessage ?? ''}${mealMessages.resumed}${resumed.question}`
@@ -1013,9 +1053,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     return result
   }
 
-  async function invokeOperation(name: MenuToolName, input: Record<string, unknown>, onAction: MenuToolRuntimeOptions['onAction'], scopeSelection?: SelectedQueryScope): Promise<unknown> {
+  async function invokeOperation(name: MenuToolName, input: Record<string, unknown>, onAction: MenuToolRuntimeOptions['onAction'], scopeSelection?: SelectedQueryScope, queryTask?: typeof agentTask): Promise<unknown> {
     const scopeLabel = scopeSelection ? scopeSelection.scope === 'SHOWN' ? mealMessages.queryScope.shown : mealMessages.queryScope.catalog : undefined
-    if (options.orderingReady?.() === false && !menuBrowsingToolNames.has(name) && !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone' && name !== 'order_ask_question')
+    if (policy().requiresPayment && options.orderingReady?.() === false && !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone' && (name !== 'order_ask_question' || input.purpose !== 'customer-entry'))
       throw new Error('請在開始畫面輸入手機號碼或選擇略過，再開始點餐。')
     const presentationToolName = menuPresentationToolFor(name, input)
     if (presentationToolName)
@@ -1038,7 +1078,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (!options.onCustomerEntryRequested)
             throw new Error('此服務未提供 Host 電話登記。')
           options.onCustomerEntryRequested()
-          return { phase: options.orderingReady?.() === false ? 'customer_entry' : 'ordering' }
+          return { phase: policy().requiresPayment && options.orderingReady?.() === false ? 'customer_entry' : 'ordering' }
         }
         case 'kiosk_customer_phone': {
           if (!options.onCustomerPhoneProvided || options.orderingReady?.() !== false || typeof input.phone !== 'string' || !/^09\d{8}$/.test(input.phone))
@@ -1080,6 +1120,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             pendingFastPathConfirmation = undefined
             issuedFastPathContext = undefined
           }
+          if (pendingFastPathConfirmation && input.questionId === pendingFastPathConfirmation.record.confirmationId && confirmationIsValid(pendingFastPathConfirmation, currentFastPathContext()))
+            pendingFastPathConfirmation.presented = true
           if (offeredQuestion && offeredQuestion.phase === currentFastPathContext().phase && questionIsCurrent(offeredQuestion, currentFastPathRevisions(), Date.now()) && input.questionId === offeredQuestion.questionId) {
             finishQuestion('superseded')
             waitingFor = rememberQuestion({ ...offeredQuestion }, 'pending')
@@ -1096,9 +1138,27 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
 
           const current = currentFastPathContext()
+          const confirmation = confirmationSnapshot(current)
+          if (confirmation && confirmation.waitingFor.questionId === input.questionId && confirmation.waitingFor.expiresAt > Date.now() && pendingFastPathConfirmation && confirmationIsValid(pendingFastPathConfirmation, current))
+            return { pendingCustomerChoice: confirmation.waitingFor }
+          const mealQuestion = mealClarification.question(current)
+          if (mealQuestion?.questionId === input.questionId)
+            return { pendingCustomerChoice: mealQuestion }
+          const configuration = configurationSnapshot(current)
+          if (configuration?.waitingFor?.questionId === input.questionId)
+            return { pendingCustomerChoice: configuration?.waitingFor }
           return offeredQuestion && offeredQuestion.questionId === input.questionId && offeredQuestion.phase === current.phase && questionIsCurrent(offeredQuestion, current.revisions, Date.now())
-            ? { pendingCustomerChoice: publicQuestion(offeredQuestion) }
+            ? { pendingCustomerChoice: describeQuestion(offeredQuestion) }
             : {}
+        }
+        case 'menu_confirm_item': {
+          if (!agentTask || agentTask.readOnly || agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu)
+            throw new Error('A current ordering task is required to propose a meal.')
+          const source = deriveDecisionContext({ ...currentFastPathContext(), transcript: agentTask.transcript })
+          source.constraints = { ...source.constraints, exclude: agentTask.filters.excludeIngredients, include: agentTask.filters.includeIngredients, dietary: agentTask.filters.dietary, price: agentTask.prices, unresolvedPrice: agentTask.unresolvedPrice }
+          const question = mealClarification.propose(source, requiredString(input, 'itemId'), typeof input.replaceLineId === 'string' ? input.replaceLineId : undefined)
+          options.onClarificationChange?.(question)
+          return { pendingCustomerChoice: question, outcome: { status: 'needs-confirmation', intent: input.replaceLineId ? 'REPLACE_ITEM' : 'ADD_ITEM', itemIds: [input.itemId], taskId: agentTask.taskId } }
         }
         case 'order_ask_question': {
           const offered = createQuestion(currentFastPathContext(), crypto.randomUUID(), Date.now())
@@ -1122,7 +1182,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const prices = priceConditions(input)
           // Price-qualified customer reads share the recommendation batch owner:
           // ranking precedes the three-item cap and later alternatives keep scope.
-          if (Object.keys(prices).length && input.display !== false) {
+          if (input.scope !== 'catalog' && Object.keys(prices).length && input.display !== false) {
             if (scopeSelection)
               return await invokeOperation('menu_recommend', { ...input, ...prices }, onAction, scopeSelection)
             return await invoke('menu_recommend', { ...input, ...prices })
@@ -1131,12 +1191,26 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const appliedFilters = ingredientFilters(input)
           const excludedItemIds = menuExclusions(input, machine.getMenu())
           const scope = machine.getMenu(category || undefined).filter(item => (!scopeSelection?.itemIds || scopeSelection.itemIds.includes(item.id)) && !excludedItemIds.includes(item.id) && (queries.length === 0 || queries.some(query => itemMatchesQuery(item, query))))
+          // Literal absence is not semantic absence. Return discovery evidence
+          // separately; it cannot become items or authorize a purchase.
+          const candidates = queries.length && !scope.length
+            ? [...new Map(queries.flatMap(query => possibleMenuItems(machine.getMenu(category || undefined), query)).map(item => [item.id, item])).values()]
+            : []
+          const possibleItems = filterIngredients(filterPrices(candidates.filter(item => !excludedItemIds.includes(item.id)), prices), appliedFilters).matches
           const itemStatuses = queries.length ? scope.map(itemAvailability) : []
           if (input.verifyClaim === true && !queries.length)
             throw new Error('Specify the meal names being verified with query or queries.')
-          const queryMessage = queries.length && !scope.length
-            ? mealMessages.queryNotFound.replace('{items}', queries.join('、'))
-            : itemStatuses.map(item => item.customerMessage).join('')
+          let queryMessage = itemStatuses.map(item => item.customerMessage).join('')
+          // The same named read answers availability and price questions. Keep
+          // its single-item price in the owned spoken receipt; Host discards
+          // arbitrary Main prose and must not reduce an inquiry to availability.
+          if (scope.length === 1)
+            queryMessage += `單份基本售價 ${scope[0]!.price}元。`
+          if (queries.length && !scope.length) {
+            queryMessage = possibleItems.length
+              ? mealMessages.possibleMenu.replace('{items}', possibleItems.map(item => item.name).join('、'))
+              : mealMessages.queryNotFound.replace('{items}', queries.join('、'))
+          }
           const verificationMessage = input.verifyClaim === true
             ? `${scope.length ? mealMessages.verifiedMenuClaim : mealMessages.correctedMenuClaim}${queryMessage}`
             : undefined
@@ -1165,16 +1239,36 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const presentation = (category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false))
             ? {
                 kind: 'query-results' as const,
-                itemIds: coverageItemIds(visibleSubjects),
+                itemIds: input.scope === 'catalog' ? items.map(item => item.id) : coverageItemIds(visibleSubjects),
                 subjects: visibleSubjects,
                 title: hasIngredientFilters ? `成分篩選：${filterDescription}` : queries.length === 1 ? `與「${queries[0]}」相關的餐點` : queries.length > 1 ? '顧客提到的餐點' : category ? `${category}餐點` : '目前販售餐點',
               }
             : undefined
-          if (presentation) {
+          if (presentation && input.display !== false) {
             if (scopeLabel)
               presentation.title = `${scopeLabel} · ${presentation.title}`
-            presentationItemIds = presentation.itemIds
-            options.onRecommendationsChange?.(presentation)
+            // Main may split one inquiry into sequential or parallel lookups.
+            // Retain their subjects within this read-only task; a repeated
+            // subject replaces its old matches, while a new task starts fresh.
+            if (queryTask?.readOnly && queryTask === agentTask && input.display !== false && queries.length) {
+              const retained = new Map(queryTask.querySubjects?.map(subject => [subject.id, subject]))
+              for (const query of queries)
+                retained.delete(`query:${query}`)
+              for (const subject of subjects)
+                retained.set(subject.id, subject)
+              queryTask.querySubjects = [...retained.values()]
+              presentation.subjects = queryTask.querySubjects
+              presentation.itemIds = coverageItemIds(presentation.subjects)
+              if (presentation.subjects.length > 1 || (subjects.length === 0 && presentation.subjects.length > 0))
+                presentation.title = '顧客提到的餐點'
+            }
+            // Cursor/paint work can yield to a successor task. An old response
+            // still returns its data, but cannot replace the successor's grid.
+            if (!queryTask || (queryTask === agentTask && queryTask.expiresAt > Date.now())) {
+              presentationItemIds = presentation.itemIds
+              recommendationRevision++
+              await options.onRecommendationsChange?.(presentation)
+            }
           }
           return {
             // Host replies must not narrate this internal catalog as a second
@@ -1186,6 +1280,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             ingredientDefinitions,
             fulfillmentModes,
             items,
+            matchKind: scope.length ? 'literal' : possibleItems.length ? 'possible' : 'none',
+            ...(possibleItems.length ? { possibleItems: possibleItems.map(menuItemForAgent) } : {}),
             itemStatuses,
             requestedQueries: queries,
             excludedItemIds,
@@ -1197,7 +1293,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             ...(category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false)
               ? { customerMessage: verificationMessage ?? (queries.length && !hasIngredientFilters && !appliedFilters.dietary && !Object.keys(prices).length ? queryMessage : `${hasIngredientFilters ? `${filterDescription}：` : ''}${items.length ? `我找到：${items.map(item => item.name).join('、')}。` : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`) }
               : {}),
-            ...(presentation ? { presentation } : {}),
+            ...(presentation && input.display !== false ? { presentation } : {}),
           }
         }
         case 'menu_recommend': {
@@ -1215,7 +1311,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           // confirmed universe, while explicit reset starts from the catalog.
           const selectedScope = scopeSelection ?? previous?.scope ?? actionScope
           const selectedScopeLabel = selectedScope ? selectedScope.scope === 'SHOWN' ? mealMessages.queryScope.shown : mealMessages.queryScope.catalog : undefined
-          if (input.more === true && (!previous || previous.menuRevision !== machine.getRevisions().menu))
+          if (input.more === true && (previous ? previous.menuRevision !== machine.getRevisions().menu : !presentationItemIds?.length || presentationFocus?.menuRevision !== machine.getRevisions().menu))
             throw new Error('Recommendation context is absent or the catalog changed; start a new recommendation.')
           const excludedItemIds = [...new Set([...(previous?.excludedItemIds ?? []), ...menuExclusions(input, machine.getMenu())])]
           const needs = input.needs === undefined && previous ? previous.needs : recommendationNeeds(input)
@@ -1255,8 +1351,20 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const ranked = strategy && !prices.priceOrder
             ? filtered.matches.filter(item => currentRecommendationSignal(item.recommendationSignals, strategy, now)).sort((a, b) => currentRecommendationSignal(a.recommendationSignals, strategy, now)!.rank - currentRecommendationSignal(b.recommendationSignals, strategy, now)!.rank)
             : filtered.matches
-          const historyIds = previous?.seenIds ?? (input.action === 'update' || input.action === 'reset' ? recommendationBatch?.seenIds : undefined)
-          const seenIds = previous || input.action === 'reset' || input.excludeShown === true ? historyIds : undefined
+          let historyIds = previous?.seenIds
+          if (!historyIds) {
+            if (input.more === true && !recommendationBatch) {
+              // A precise lookup can precede the first recommendation batch.
+              // Exclude its displayed meal when the customer asks for others.
+              historyIds = new Set(presentationItemIds)
+            }
+            else if (input.action === 'update' || input.action === 'reset') {
+              // A changed scope retains history for future continuations;
+              // excludeShown below decides whether to hide it in this batch.
+              historyIds = recommendationBatch?.seenIds
+            }
+          }
+          const seenIds = input.more === true || input.action === 'reset' || input.excludeShown === true ? historyIds : undefined
           const eligible = ranked
             .filter(item => item.available !== false)
             .filter(item => needs.every(need => item.recommendationTags.includes(need)))
@@ -1284,7 +1392,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             if (selectedScopeLabel)
               presentation.title = `${selectedScopeLabel} · ${presentation.title}`
             presentationItemIds = presentation.itemIds
-            options.onRecommendationsChange?.(presentation)
+            await options.onRecommendationsChange?.(presentation)
           }
           return {
             customerMessage: `${hasIngredientFilters ? `${ingredientFilterDescription(appliedFilters)}：` : ''}${items.length > 0
@@ -1302,7 +1410,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             availability: filterAvailability(filtered, items.length),
             customizable: filtered.customizable.map(({ item, requiredOptions }) => ({ item: menuItemForAgent(item), requiredOptions })),
             unknownCompositionItems: filtered.unknown.map(menuItemForAgent),
-            ...(presentation ? { presentation } : {}),
+            ...(presentation && input.display !== false ? { presentation } : {}),
           }
         }
         case 'menu_show_recommendations': {
@@ -1315,7 +1423,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           })
 
           presentationItemIds = presentation.itemIds
-          options.onRecommendationsChange?.(presentation)
+          await options.onRecommendationsChange?.(presentation)
           return {
             customerMessage: `我推薦：${items.map(item => item.name).join('、')}。`,
             items: items.map(menuItemForAgent),
@@ -1434,7 +1542,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             cart,
             ...(replacedLine ? { replacedLine } : {}),
             customerMessage: replacedLine ? mealMessages.replaced.replace('{original}', replacedLine.name).replace('{item}', line.name).replace('{quantity}', String(quantity)) : `已將${line.name}加入購物車，共 ${line.quantity} 份。`,
-            nextStep: cartNextStep(cart),
+            nextStep: cartNextStep(cart, options.serviceContext?.()),
           }
         }
         case 'cart_add_item': {
@@ -1446,19 +1554,45 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           return {
             ...result,
             customerMessage: `已將${result.line.name}加入購物車，共 ${result.line.quantity} 份。`,
-            nextStep: cartNextStep(result.cart),
+            nextStep: cartNextStep(result.cart, options.serviceContext?.()),
           }
         }
         case 'cart_remove_item': {
           const lineId = requiredString(input, 'lineId')
           const line = machine.getCart().lines.find(candidate => candidate.id === lineId)
-          await announce('從購物車移除餐點', 'cart', {}, onAction)
+          if (!line)
+            throw new Error('TARGET_MISSING: The cart line no longer exists.')
+          const cartRevision = machine.getRevisions().cart
+          // Touch removal stays in review. Agent/voice operations first reveal
+          // the real line; cursor animation never performs another DOM click.
+          const present = manualOperations === 0
+          if (present)
+            await revealReview(onAction)
+          await announce('從購物車移除餐點', 'cart', { controlId: cartRemovalControlId(lineId) }, onAction)
+          if (machine.getRevisions().cart !== cartRevision)
+            throw new Error('STALE_PLAN: The cart changed while presenting removal.')
           const cart = machine.removeFromCart(lineId)
           options.onCartChange(cart)
+          let presentationFailed = false
+          if (present && currentFastPathContext().phase === 'ordering') {
+            if (agentTask) {
+              agentTask.returnToMenu = true
+            }
+            else {
+              try {
+                await options.onMenuRequested?.()
+              }
+              catch {
+                presentationFailed = true
+              }
+            }
+          }
           return {
             cart,
-            customerMessage: line ? `已從購物車移除${line.name}。` : '已從購物車移除餐點。',
-            nextStep: cartNextStep(cart),
+            customerMessage: `已從購物車移除${line.name}。${presentationFailed ? mealMessages.returnFailed : ''}`,
+            outcome: { status: 'completed', intent: 'REMOVE_ITEM', itemIds: [line.itemId], lineIds: [lineId], ...(agentTask ? { taskId: agentTask.taskId } : {}) },
+            ...(presentationFailed ? { presentationFailed: true } : {}),
+            nextStep: cartNextStep(cart, options.serviceContext?.()),
           }
         }
         case 'cart_set_line_quantity': {
@@ -1471,7 +1605,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           return {
             cart,
             customerMessage: line ? `已將${line.name}調整為 ${quantity} 份。` : '已更新餐點數量。',
-            nextStep: cartNextStep(cart),
+            nextStep: cartNextStep(cart, options.serviceContext?.()),
           }
         }
         case 'cart_set_line_option': {
@@ -1488,7 +1622,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             cart: result.cart,
             line: result.line,
             customerMessage: `已將${result.line.name}設定為${value?.label ?? '指定選項'}。`,
-            nextStep: cartNextStep(result.cart),
+            nextStep: cartNextStep(result.cart, options.serviceContext?.()),
           }
         }
         case 'cart_clear': {
@@ -1516,7 +1650,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const cart = machine.getCart()
           return {
             cart,
-            nextStep: cartNextStep(cart),
+            nextStep: cartNextStep(cart, options.serviceContext?.()),
           }
         }
         case 'order_set_fulfillment': {
@@ -1528,15 +1662,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             // cart revisions or discard the unanswered party/table question.
             return { cart: machine.getCart(), fulfillmentMode: mode, customerMessage: `目前已是${fulfillmentModes.find(choice => choice.id === mode)!.label}，保留原訂單設定。` }
           }
-          if (mode === 'takeout')
-            await options.seating?.reset()
-          else
-            await options.seating?.refresh()
+          const revisions = currentFastPathRevisions()
           const label = fulfillmentModes.find(choice => choice.id === mode)!.label
           await revealReview(onAction)
           await announce(`設定為${label}`, 'cart', {
             controlId: fulfillmentControlId(mode),
           }, onAction)
+          if (!revisionsMatch(revisions, currentFastPathRevisions()))
+            throw new Error('STALE_PLAN: The order changed during fulfillment presentation.')
+          // Do not release seats before the requested control is actually shown.
+          if (mode === 'takeout')
+            await options.seating?.reset()
+          else
+            await options.seating?.refresh()
           const cart = machine.setFulfillmentMode(mode)
           options.onFulfillmentChange?.(mode)
           options.onCartChange(cart)
@@ -1544,7 +1682,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             cart,
             customerMessage: `已設為${label}。`,
             fulfillmentMode: mode,
-            nextStep: mode === 'dine-in' && options.seating ? 'Ask party size, then present real available table choices; do not start checkout without a table hold.' : cartNextStep(cart),
+            nextStep: mode === 'dine-in' && options.seating ? 'Ask party size, then present real available table choices; do not start checkout without a table hold.' : cartNextStep(cart, options.serviceContext?.()),
           }
         }
         case 'seating_get': {
@@ -1577,13 +1715,17 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_start': {
           if (input.confirmedByUser !== true)
             throw new Error('Starting checkout requires confirmedByUser: true.')
+          if (!policy().requiresPayment)
+            return await confirmTableOrder()
           await revealReview(onAction)
           await announce('進入結帳', undefined, { controlId: 'checkout:start' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).start()
+          const mode = fulfillmentModes.find(mode => mode.id === machine.getCart().fulfillmentMode)?.label
+          const modeMessage = mode ? orderingMessages['zh-Hant'].checkout.retainedFulfillment.replace('{mode}', mode) : ''
           clearMealProgress()
           return {
             checkout,
-            customerMessage: checkout.stage === 'invoice' ? '已進入結帳，請選擇發票方式。' : '已進入結帳，請顧客掃描會員條碼或選擇略過。',
+            customerMessage: `${modeMessage}${checkout.stage === 'invoice' ? '已進入結帳，請選擇發票方式。' : '已進入結帳，請顧客掃描會員條碼或選擇略過。'}`,
             nextStep: checkout.stage === 'invoice' ? 'Ask for invoice handling. Membership entry was already completed before ordering.' : 'Wait for the customer to scan their membership barcode, or call checkout_skip_membership only when the customer asks to skip it.',
           }
         }
@@ -1628,9 +1770,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             nextStep: 'Do not confirm automatically. Call checkout_confirm_tax_id only after the customer says the displayed number is correct.',
           }
         }
+        case 'checkout_confirm_invoice': {
+          if (input.confirmedByUser !== true || options.checkout?.snapshot()?.stage !== 'invoice' || !invoiceDraftReady(options.checkout?.snapshot()))
+            throw new Error(orderingMessages['zh-Hant'].checkout.invoiceDraftRequired)
+          await announce('確認發票資料', undefined, { controlId: 'checkout:invoice:confirm' }, onAction)
+          const checkout = checkoutControllerOrThrow(options.checkout).confirmInvoice()
+          return { checkout, customerMessage: orderingMessages['zh-Hant'].checkout.invoiceConfirmed }
+        }
         case 'checkout_confirm_tax_id': {
           if (input.confirmedByUser !== true)
             throw new Error('Confirming a tax ID requires confirmedByUser: true.')
+          if (options.checkout?.snapshot()?.stage !== 'tax-id' || !invoiceDraftReady(options.checkout.snapshot()))
+            throw new Error(orderingMessages['zh-Hant'].checkout.invoiceDraftRequired)
           await announce('確認統編', undefined, { controlId: 'checkout:tax-id:confirm' }, onAction)
           const checkout = checkoutControllerOrThrow(options.checkout).confirmTaxId()
           return { checkout, customerMessage: '已確認統編，請選擇付款方式。' }
@@ -1694,8 +1845,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const taskId = requiredString(input, 'taskId')
           if (input.action === 'END') {
             if (agentTask?.taskId === taskId) {
+              const returnToMenu = agentTask.returnToMenu && currentFastPathContext().phase === 'ordering'
               agentTask = undefined
               options.onAgentControlChange?.(false)
+              if (returnToMenu) {
+                try {
+                  await options.onMenuRequested?.()
+                }
+                catch {
+                  // Release succeeded and the cart receipt remains authoritative.
+                  // A failed screen transition must never invite another deletion.
+                  return { ok: true, presentationFailed: true, customerMessage: mealMessages.returnFailed }
+                }
+              }
             }
             return { ok: true }
           }
@@ -1710,8 +1872,31 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (!constraints || typeof constraints !== 'object' || Array.isArray(constraints))
             throw new Error('Agent task requires explicit bounded constraints.')
           const bounded = constraints as Record<string, unknown>
+          if (issuedFastPathContext?.interruptedQuestion) {
+            // A foreground topic change is not cancellation. Keep its draft
+            // suspended, but do not publish its old question as Main's task.
+            suspendMeal()
+            pendingFastPathClarification = undefined
+            issuedFastPathContext = undefined
+          }
           const source = deriveDecisionContext({ ...currentFastPathContext(), transcript: requiredString(input, 'transcript') })
-          agentTask = { taskId, broadMenuQuery: source.catalogEvidence.products.length === 0 && source.catalogEvidence.categories.length === 0, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000 }
+          let targetItemIds: string[] = []
+          if (source.productResolution.status === 'exact') {
+            targetItemIds = source.productResolution.references.map(reference => reference.refId.slice('item:'.length))
+          }
+          else if (source.catalogEvidence.products.length || source.catalogEvidence.categories.length || source.productResolution.status === 'overflow') {
+            targetItemIds = []
+          }
+          else {
+            // Freeze only a target the domain can already resolve from the
+            // pre-task presentation and an explicit quantity. A later Agent lookup cannot
+            // manufacture a referent for an otherwise unbound request.
+            const addition = source.candidates.find(candidate => candidate.intent === 'ADD_ITEM')
+            const resolved = addition && resolveIntent(addition, source)
+            if (resolved?.kind === 'PLAN' && resolved.plan.targetRef && source.referenceOrigins[resolved.plan.targetRef] === 'presentation' && typeof resolved.plan.slots.quantity === 'number' && typeof resolved.plan.slots.itemId === 'string')
+              targetItemIds = [resolved.plan.slots.itemId]
+          }
+          agentTask = { taskId, transcript: requiredString(input, 'transcript'), ...(input.handoff ? { handoff: parse(handoffSchema, input.handoff) } : {}), targetItemIds, broadMenuQuery: source.catalogEvidence.products.length === 0 && source.catalogEvidence.categories.length === 0, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000 }
           options.onAgentControlChange?.(true)
           return { ok: true }
         }
@@ -1729,6 +1914,144 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           options.onClarificationChange?.(question)
           return { customerMessage: speak ? question.question : '', pendingCustomerChoice: question, silent: !speak }
         }
+        case 'kiosk_conversation_context': {
+          if (machine.getCart().fulfillmentMode === 'dine-in')
+            await options.seating?.refresh()
+          const context = currentFastPathContext()
+          const checkout = options.checkout?.snapshot()
+          const confirmation = confirmationSnapshot(context)
+          const active = confirmation ?? mealConfirmationSnapshot(context) ?? configurationSnapshot(context)
+          const phase = active?.phase ?? context.phase
+          const question = active?.waitingFor ?? (context.waitingFor ? describeQuestion(context.waitingFor) : undefined)
+          // A known target needs its original operation, not a second alias
+          // confirmation that discards quantities or option combinations.
+          const names = availableToolDefinitions().map(tool => tool.name).filter(name => !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone' && (name !== 'menu_confirm_item' || !agentTask?.targetItemIds?.length))
+          const reads = ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'menu_open', 'menu_scroll', 'order_ask_question']
+          let allowedToolNames = names
+          if (phase === 'customer_entry') {
+            allowedToolNames = []
+          }
+          else if (confirmation && !agentTask?.readOnly) {
+            const pending = pendingFastPathConfirmation
+            const valid = pending && confirmationIsValid(pending, context)
+            const confirmationTools = ['cart_get', 'seating_get']
+            if (valid && pending.presented && pending.taskId !== agentTask?.taskId)
+              confirmationTools.push('order_answer_confirmation')
+            // Expiry does not grant invoice choices. A new explicit request may
+            // instead propose a fresh return or mode change, with its own ticket.
+            if (!valid)
+              confirmationTools.push('order_set_fulfillment', 'checkout_cancel')
+            allowedToolNames = names.filter(name => confirmationTools.includes(name))
+          }
+          else if (agentTask?.readOnly || ['configuration', 'clarification', 'meal_confirmation', 'pending_confirmation'].includes(phase)) {
+            // Read-only recovery does not reopen menu browsing during checkout.
+            // Its phase still owns which facts can be read.
+            allowedToolNames = names.filter(name => reads.includes(name) && (!checkout || ['cart_get', 'seating_get'].includes(name)))
+          }
+          else if (phase !== 'ordering') {
+            const checkoutTools: Record<string, string[]> = {
+              checkout_membership: ['checkout_skip_membership', 'checkout_cancel', 'order_set_fulfillment'],
+              checkout_invoice: [...(invoiceDraftReady(checkout) ? ['checkout_confirm_invoice'] : []), 'checkout_choose_invoice', 'checkout_request_tax_id', 'checkout_cancel', 'order_set_fulfillment'],
+              checkout_tax_id: ['checkout_set_tax_id', ...(invoiceDraftReady(checkout) ? ['checkout_confirm_tax_id'] : []), 'checkout_cancel', 'order_set_fulfillment'],
+              checkout_payment_select: ['checkout_select_payment', 'checkout_cancel', 'order_set_fulfillment'],
+            }
+            allowedToolNames = names.filter(name => ['cart_get', 'seating_get'].includes(name) || checkoutTools[phase]?.includes(name))
+          }
+          else {
+            allowedToolNames = names.filter(name => !name.startsWith('checkout_') || name === 'checkout_start')
+          }
+          // The phase alone is insufficient: cart/fulfillment/seating must
+          // satisfy the same Menu-owned checkout effect offered to the Host.
+          if (phase === 'ordering' && !context.candidates.some(candidate => candidate.intent === 'START_CHECKOUT'))
+            allowedToolNames = allowedToolNames.filter(name => name !== 'checkout_start')
+          // A meal operation does not choose fulfillment. Only the POS-owned
+          // mode named this turn, or a resolved fulfillment handoff, offers that
+          // write. A lingering fulfillment question is not an answered choice.
+          const fulfillmentRequested = agentTask?.handoff?.intent === 'SET_FULFILLMENT'
+            || fulfillmentModes.some(mode => agentTask?.transcript.includes(mode.label))
+          if (agentTask && !fulfillmentRequested)
+            allowedToolNames = allowedToolNames.filter(name => name !== 'order_set_fulfillment')
+          // Offered questions are not customer answers. A question created by
+          // this tool loop becomes deferrable only after Host presentation.
+          if (!context.waitingFor)
+            allowedToolNames = allowedToolNames.filter(name => name !== 'order_defer_question')
+          // Cart-line effects have no legal target while the cart is empty.
+          if (!context.cart.lines.length)
+            allowedToolNames = allowedToolNames.filter(name => name !== 'cart_clear' && !cartLineToolNames.has(name))
+          const selection = machine.getSelection()
+          // Atomic additions clear selection. Keep staged edit/add tools out
+          // until a real selection belonging to this task exists again.
+          if (!selection?.itemId || (agentTask?.targetItemIds && !agentTask.targetItemIds.includes(selection.itemId)))
+            allowedToolNames = allowedToolNames.filter(name => !selectionToolNames.has(name))
+          if (agentTask?.targetItemIds?.length === 0)
+            allowedToolNames = allowedToolNames.filter(name => !itemTargetToolNames.has(name))
+          // Advertise exactly the write scope enforced by invokeForAgent.
+          // Offering unrelated cart edits caused Main to propose a forbidden
+          // change after completing its additions, turning success into error.
+          const expected = agentTask?.handoff && intentTools[agentTask.handoff.intent]
+          if (expected) {
+            allowedToolNames = allowedToolNames.filter(name => (reads.includes(name) && (agentTask?.handoff?.intent !== 'REMOVE_ITEM' || !menuBrowsingToolNames.has(name))) || expected.includes(name))
+            // A finite operation handoff may read evidence, but does not ask
+            // for a new recommendation. General mixed-purpose tasks keep their
+            // independently qualified browsing scope.
+            allowedToolNames = allowedToolNames.filter(name => !['menu_recommend', 'menu_show_recommendations'].includes(name))
+          }
+          if (!confirmation)
+            allowedToolNames = allowedToolNames.filter(name => name !== 'order_answer_confirmation')
+          const optionsFor = (values: Record<string, string>) => Object.entries(values).map(([groupId, valueId]) => ({ groupId, valueId }))
+          const cart = context.cart
+          const snapshot: ConversationContext = {
+            serviceMode: options.serviceContext?.()?.serviceMode,
+            ...(options.serviceContext?.()?.table ? { serviceTable: options.serviceContext!()!.table } : {}),
+            quantityPolicy: { maximum: 20, mentionedCounts: mentionedServingCounts(agentTask?.transcript ?? ''), message: orderingMessages['zh-Hant'].quantityLimit },
+            contextId: crypto.randomUUID(),
+            capturedAt: Date.now(),
+            phase,
+            entryComplete: context.phase !== 'customer_entry',
+            readOnly: agentTask?.readOnly === true,
+            constraints: { excludeIngredients: agentTask?.filters.excludeIngredients ?? [], includeIngredients: agentTask?.filters.includeIngredients ?? [], ...(agentTask?.filters.dietary ? { dietary: agentTask.filters.dietary } : {}), ...agentTask?.prices },
+            ...(agentTask ? { unavailableConditions: mentionedUnavailableConditions(agentTask.transcript) } : {}),
+            ...(options.screen ? { screen: options.screen() } : {}),
+            ...(recommendationBatch && recommendationBatch.menuRevision === context.revisions.menu ? { queryState: { category: recommendationBatch.category, queries: recommendationBatch.queries, exhausted: recommendationBatch.exhausted, prices: recommendationBatch.prices, filters: recommendationBatch.filters } } : {}),
+            presentation: { itemIds: options.visibleItemIds?.() ?? presentationItemIds ?? [], category: recommendationBatch?.category ?? '', queries: recommendationBatch?.queries ?? [] },
+            revisions: { ...context.revisions, menu: context.revisions.menu ?? 0, recommendation: recommendationRevision },
+            ...(agentTask ? { taskId: agentTask.taskId, sourceUtterance: agentTask.transcript, ...(agentTask.handoff ? { handoff: agentTask.handoff } : {}) } : {}),
+            ...(context.phase !== 'customer_entry' && input.includeCatalog !== false
+              ? { catalog: { complete: true, itemCount: context.menu.length, items: context.menu.map(item => ({
+                  id: item.id,
+                  name: item.name,
+                  aliases: item.aliases ?? [],
+                  category: item.category,
+                  price: item.price,
+                  ...(item.description.length <= 120 ? { description: item.description } : {}),
+                  availability: menuPageState(item),
+                  optionGroups: item.optionGroups,
+                  ...(item.composition ? { composition: { ingredients: item.composition.ingredients, complete: item.composition.complete, dietary: item.composition.dietaryLabels } } : {}),
+                })) } }
+              : {}),
+            cart: { itemCount: cart.itemCount, total: cart.total, fulfillmentMode: cart.fulfillmentMode, lines: cart.lines.map(line => ({ id: line.id, itemId: line.itemId, name: line.name, quantity: line.quantity, unitPrice: line.unitPrice, options: optionsFor(line.options) })) },
+            ...(selection?.itemId ? { selection: { itemId: selection.itemId, quantity: selection.quantity, options: optionsFor(selection.options) } } : {}),
+            paymentState: options.checkout?.paymentStatus() ?? 'idle',
+            allowedPaymentMethods: context.allowedPaymentMethods,
+            paymentMethods: (options.checkout?.paymentMethods ?? []).map(id => ({ id, label: paymentLabels[id] })),
+            fulfillmentModes: [...fulfillmentModes],
+            ...(checkout ? { checkout: { stage: checkout.stage, invoiceMethod: checkout.invoiceMethod, ...(context.phase === 'checkout_tax_id' ? { taxId: checkout.taxId } : {}), invoiceDraftReady: invoiceDraftReady(checkout), carrierRegistered: Boolean(checkout.carrierCode), citizenRegistered: Boolean(checkout.citizenCode) } } : {}),
+            ...(context.seating ? { seating: { partySize: context.seating.partySize, ready: context.seating.ready, revision: context.seating.revision } } : {}),
+            ...(question && (confirmation || question.expiresAt > Date.now()) ? { waitingFor: question } : {}),
+            retainedRequests: retainedRequests(context),
+            ...(intentRecovery(context) ? { intentRecovery: intentRecovery(context) } : {}),
+            ...(active?.intentRecovery ? { intentRecovery: active.intentRecovery } : {}),
+            allowedToolNames,
+          }
+          // Parse creates a detached explicit projection: no live cart objects,
+          // hidden phone fields or vendor metadata can leak into model history.
+          const detached = parse(conversationContextSchema, snapshot)
+          if (agentTask) {
+            agentTask.expectedRevisions = { ...context.revisions }
+            agentTask.allowedToolNames = [...allowedToolNames]
+          }
+          return detached
+        }
         case 'kiosk_interaction_state': {
           if (queryScope && currentFastPathContext().phase !== 'ordering') {
             clearQueryScope()
@@ -1736,17 +2059,23 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (queryScope) {
             const probe = queryScope.resolve({ questionId: queryScope.question.questionId, choice: 'ASK' }, { menu: machine.getRevisions().menu, recommendation: recommendationRevision })
             if (probe.status === 'WAITING')
-              return { phase: 'query_scope', candidates: [], menuRevision: machine.getRevisions().menu, constraints: { exclude: queryScope.conditions.excludeIngredients, include: queryScope.conditions.includeIngredients, dietary: queryScope.conditions.dietary, price: priceConditions({ ...queryScope.conditions }) }, waitingFor: probe.question }
+              return { retainedRequests: retainedRequests(currentFastPathContext()), phase: 'query_scope', candidates: [], menuRevision: machine.getRevisions().menu, constraints: { exclude: queryScope.conditions.excludeIngredients, include: queryScope.conditions.includeIngredients, dietary: queryScope.conditions.dietary, price: priceConditions({ ...queryScope.conditions }) }, waitingFor: probe.question }
             clearQueryScope()
           }
 
           const context = currentFastPathContext()
+          const operationConfirmation = confirmationSnapshot(context)
+          if (operationConfirmation)
+            return operationConfirmation
           const confirmation = mealConfirmationSnapshot(context)
           if (confirmation)
-            return { menuRevision: context.revisions.menu, ...confirmation }
+            return confirmation
           const configuration = configurationSnapshot(context)
           if (configuration)
-            return { menuRevision: context.revisions.menu, questionHistory: [...questionHistory.values()], ...configuration }
+            return { questionHistory: [...questionHistory.values()], ...configuration }
+          const clarification = clarificationSnapshot(context)
+          if (clarification)
+            return clarification
           const pendingConfirmationValid = pendingFastPathConfirmation && confirmationIsValid(pendingFastPathConfirmation, context)
           const pendingClarificationValid = pendingFastPathClarification
             && pendingFastPathClarification.context.phase === context.phase
@@ -1756,10 +2085,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const presentedQuestion = waitingFor?.phase === context.phase ? waitingFor : undefined
           return {
             menuRevision: context.revisions.menu,
+            revisions: context.revisions,
             questionHistory: [...questionHistory.values()],
+            retainedRequests: retainedRequests(context),
+            ...(intentRecovery(context) ? { intentRecovery: intentRecovery(context) } : {}),
             productResolution: { ...context.productResolution, references: publicReferences(context.productResolution.references) },
             fulfillmentModes,
-            ...(presentedQuestion ? { waitingFor: publicQuestion(presentedQuestion) } : {}),
+            ...(presentedQuestion ? { waitingFor: describeQuestion(presentedQuestion) } : {}),
             phase: pendingConfirmationValid ? 'pending_confirmation' : pendingClarificationValid ? 'clarification' : context.phase,
             paymentState: options.checkout?.paymentStatus() ?? 'idle',
             allowedPaymentMethods: context.allowedPaymentMethods,
@@ -1777,7 +2109,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (queryScope) {
             const probe = queryScope.resolve({ questionId: queryScope.question.questionId, choice: 'ASK' }, { menu: machine.getRevisions().menu, recommendation: recommendationRevision })
             if (probe.status === 'WAITING')
-              return { phase: 'query_scope', candidates: [], menuRevision: machine.getRevisions().menu, constraints: { exclude: queryScope.conditions.excludeIngredients, include: queryScope.conditions.includeIngredients, dietary: queryScope.conditions.dietary, price: priceConditions({ ...queryScope.conditions }) }, waitingFor: probe.question }
+              return { retainedRequests: retainedRequests(currentFastPathContext()), phase: 'query_scope', candidates: [], menuRevision: machine.getRevisions().menu, constraints: { exclude: queryScope.conditions.excludeIngredients, include: queryScope.conditions.includeIngredients, dietary: queryScope.conditions.dietary, price: priceConditions({ ...queryScope.conditions }) }, waitingFor: probe.question }
             clearQueryScope()
           }
 
@@ -1790,10 +2122,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           let context = currentFastPathContext(transcript, typeof input.previousTranscript === 'string' ? input.previousTranscript : undefined, true)
           issuedFastPathContext = undefined
           let interruptedQuestion: IssuedFastPathContext['interruptedQuestion']
-          const confirmation = mealConfirmationSnapshot(context)
-          const mealRerouted = confirmation && input.newRequestQuestionId === confirmation.waitingFor.questionId
+          const confirmation = mealConfirmationSnapshot(context, input.newRequestQuestionId === undefined)
+          const confirmedMeal = confirmation?.retainedRequests.find(request => request.status === 'confirming')
+          const foreignMeal = context.productResolution.status === 'exact' && context.productResolution.count === 1
+            && confirmedMeal && !context.targetConstraints.itemIds.includes(confirmedMeal.itemId)
+          const mealRerouted = confirmation && (input.newRequestQuestionId === confirmation.waitingFor.questionId || foreignMeal)
           if (mealRerouted) {
-            if (clarificationTranscript !== transcript)
+            if (!foreignMeal && clarificationTranscript !== transcript)
               throw new Error('STALE_PLAN: This topic change belongs to a different utterance.')
             mealClarification.clear()
             options.onClarificationChange?.(undefined)
@@ -1825,25 +2160,21 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const fresh = deriveDecisionContext({ ...context, waitingFor: undefined, previousTranscript: undefined, selectedItem: undefined, recentAddedLineId: undefined, presentationItemIds: undefined })
             context = { ...fresh, interactionState: { ...fresh.interactionState, ...(options.screen ? { screen: options.screen() } : {}) } }
           }
+          // A new explicitly named product cannot answer a different draft's
+          // quantity/options question. Route its own intent, while the old
+          // draft remains retained until the new request actually progresses.
+          if (!interruptedQuestion && pendingConfiguration && context.productResolution.status === 'exact'
+            && context.productResolution.count === 1 && !context.targetConstraints.itemIds.includes(String(pendingConfiguration.plan.slots.itemId))) {
+            interruptedQuestion = { kind: 'configuration', id: pendingConfiguration.id }
+            pendingConfiguration.issued = undefined
+            context = deriveDecisionContext({ ...context, waitingFor: undefined, previousTranscript: undefined, selectedItem: undefined, recentAddedLineId: undefined, presentationItemIds: undefined })
+          }
           const configuration = interruptedQuestion || mealRerouted ? undefined : configurationSnapshot(context, transcript, true)
           if (configuration)
             return configuration
-          if (pendingFastPathConfirmation) {
-            if (!confirmationIsValid(pendingFastPathConfirmation, context)) {
-              pendingFastPathConfirmation = undefined
-            }
-            else {
-              return {
-                candidates: [
-                  { description: `確認剛才顯示的${pendingFastPathConfirmation.record.action}操作。`, id: `intent:confirm:${pendingFastPathConfirmation.record.confirmationId}` },
-                  { description: '取消剛才待確認的操作，保留目前訂單。', id: `intent:cancel-confirmation:${pendingFastPathConfirmation.record.confirmationId}` },
-                ],
-                interactionState: { ...context.interactionState, pendingAction: pendingFastPathConfirmation.record.action },
-                phase: 'pending_confirmation',
-                paymentState: options.checkout?.paymentStatus() ?? 'idle',
-              }
-            }
-          }
+          const operationConfirmation = confirmationSnapshot(context)
+          if (operationConfirmation)
+            return operationConfirmation
           if (!interruptedQuestion && pendingFastPathClarification) {
             const pending = pendingFastPathClarification
             if (pending.context.phase !== context.phase || !revisionsMatch(pending.expectedRevisions, context.revisions)) {
@@ -1852,33 +2183,26 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             else {
               const issued = { id: crypto.randomUUID(), expiresAt: Date.now() + 15_000, transcript }
               pending.issued = issued
-              const pendingReferences = pending.context.references.filter(reference => pending.candidateRefs.includes(reference.refId))
-              const resolvedRef = resolveClarificationReference(transcript, pendingReferences)
-              const choices = [...pending.candidateRefs.map((ref, index) => ({ description: `顧客指的是${pending.context.references.find(reference => reference.refId === ref)?.label ?? '指定餐點'}。`, id: `clarify:${issued.id}:${index}`, requiresHighConfidence: true })), { id: `clarify:${issued.id}:cancel`, description: '顧客取消這次待釐清的需求；保留購物車。' }]
-              return {
-                candidates: choices,
-                waitingFor: { questionId: issued.id, purpose: 'item-clarification', question: buildClarificationPrompt(pendingReferences), choices, expiresAt: issued.expiresAt },
-                catalogEvidence: context.catalogEvidence,
-                interactionState: { ...context.interactionState, pendingIntent: pending.candidate.intent },
-                phase: 'clarification',
-                paymentState: options.checkout?.paymentStatus() ?? 'idle',
-                references: publicReferences(pendingReferences),
-                revisions: context.revisions,
-                ...(resolvedRef ? { resolvedCandidateId: `clarify:${issued.id}:${pending.candidateRefs.indexOf(resolvedRef)}` } : {}),
-              }
+              return clarificationSnapshot(context, transcript)
             }
           }
           issuedFastPathContext = {
             candidates: new Map(context.candidates.map(candidate => [candidate.id, candidate])),
             context,
-            expiresAt: Date.now() + 15_000,
+            // This is an ordinary intent lease, not customer confirmation.
+            // Staged SLM inference may exceed one checkpoint's 15s window.
+            // The full-turn limit still bounds it; authorization below checks
+            // live phase/revisions, while confirmation/answer expiry is separate.
+            expiresAt: Date.now() + serviceRecoveryLimits.turnMs,
             interruptedQuestion,
           }
           return {
+            retainedRequests: retainedRequests(context),
+            ...(intentRecovery(context) ? { intentRecovery: intentRecovery(context) } : {}),
             candidates: context.candidates.map(candidate => ({ description: candidate.description, id: candidate.id, requiresHighConfidence: !['RECOMMEND', 'SEARCH_MENU', 'SELECT_ITEM', 'SHOW_RECOMMENDATIONS', 'VIEW_CART'].includes(candidate.intent) })),
             revisions: context.revisions,
             fulfillmentModes,
-            ...(context.waitingFor ? { waitingFor: publicQuestion(context.waitingFor, context.candidates) } : {}),
+            ...(context.waitingFor ? { waitingFor: describeQuestion(context.waitingFor, context.candidates) } : {}),
             checkoutSnapshot: context.checkout,
             menuRevision: context.revisions.menu,
             productResolution: { ...context.productResolution, references: publicReferences(context.productResolution.references) },
@@ -1939,13 +2263,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               pendingConfiguration = undefined
               mealClarification.clear()
               options.onClarificationChange?.(undefined)
-              const resumed = await resumeMeal(onAction)
+              // Retire the visible cancelled meal as well as its question.
+              // Earlier suspended meals stay answerable without opening another dialog.
+              options.onMenuSelection(undefined)
+              const resumed = await resumeMeal(onAction, false)
               return { customerMessage: `已取消這筆尚未加入的餐點需求，購物車仍保留。${resumed?.question ?? ''}`, ...(resumed ? { pendingCustomerChoice: resumed } : {}) }
             }
             const choice = issued.choices.get(candidateId)
             if (!choice?.slots)
               throw new Error('The configuration answer was not offered by this session.')
             pending.issued = undefined
+            const answerRejection = rejectQuantity('order_add_item', choice.slots.quantity)
+            if (answerRejection)
+              return answerRejection
             pending.plan = { ...pending.plan, slots: { ...choice.slots } }
             const question = configurationQuestion(pending.plan, currentContext.menu, pending.id)
             if (question) {
@@ -1953,6 +2283,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               return { customerMessage: question.prompt, pendingConfiguration: { id: pending.id }, decisionTrace: { resolveIntent: { kind: 'CONFIGURATION', plan: pending.plan }, operationPlan: null, authorize: null } }
             }
             const operation = compileOperationPlan(pending.plan)
+            const quantityRejection = rejectQuantity(operation.toolName, operation.input.quantity ?? operation.slots.quantity)
+            if (quantityRejection)
+              return quantityRejection
             const authorization = authorize(operation, currentContext)
             pendingConfiguration = undefined
             if (authorization.kind !== 'EXECUTE')
@@ -1980,6 +2313,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             }
             confirmation.record.consumedAt = Date.now()
             pendingFastPathConfirmation = undefined
+            // The one-use ticket binds both the return from checkout and the
+            // requested mode. Cancel first so the visible review owns controls.
+            if (confirmation.operation.intent === 'SET_FULFILLMENT' && currentContext.checkout)
+              await invoke('checkout_cancel', { confirmedByUser: true }, onAction)
             const result = await invoke(confirmation.operation.toolName, confirmation.operation.input, onAction)
             return {
               ...(result && typeof result === 'object' ? result : { result }),
@@ -2000,6 +2337,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               throw new Error('The clarification answer is stale. Resolve the retained demand again.')
             if (!candidateId.startsWith(`clarify:${issued.id}:`))
               throw new Error('The clarification belongs to an earlier turn.')
+            // A provider-selected index cannot add target evidence to bare assent.
+            // Keep the pending demand so a later explicit choice can still answer it.
+            if (pending.candidateRefs.length > 1 && isTargetAcknowledgement(issued.transcript))
+              throw new Error('The acknowledgement does not identify one clarification target.')
             if (candidateId === `clarify:${issued.id}:cancel`) {
               pendingFastPathClarification = undefined
               return { customerMessage: '已取消這次待釐清的需求，購物車仍保留。' }
@@ -2017,7 +2358,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             decision = issuedFastPathContext?.candidates.get(candidateId)
             resolutionContext = issuedFastPathContext?.context
           }
-          if (!decision || !resolutionContext || (!chosenRef && (!issuedFastPathContext || Date.now() > issuedFastPathContext.expiresAt)))
+          if (!decision || !resolutionContext || (!chosenRef && (!issuedFastPathContext || Date.now() >= issuedFastPathContext.expiresAt)))
             throw new Error('The selected Kiosk intent has expired. Resolve the latest customer state again.')
           const interrupted = issuedFastPathContext?.interruptedQuestion
           if (interrupted && (interrupted.kind === 'configuration' ? pendingConfiguration?.id : pendingFastPathClarification?.id) !== interrupted.id)
@@ -2054,7 +2395,21 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             resolutionContext = { ...resolutionContext, constraints: { ...resolutionContext.constraints, exclude: filters.excludeIngredients, include: filters.includeIngredients, ...(filters.dietary ? { dietary: filters.dietary } : {}) } }
           }
           const resolution = resolveIntent(decision, resolutionContext, chosenRef)
+          // Only an effect that answers the old question inherits its expiry.
+          // An independent new order may still be valid after that question's
+          // answer window closes, within this intent lease and live revisions.
+          const answersQuestion = resolution.kind === 'PLAN' && (resolution.plan.questionId || decision.intent === 'DEFER_QUESTION')
+          if (answersQuestion && resolutionContext.waitingFor && resolutionContext.waitingFor.expiresAt <= Date.now())
+            throw new Error('The issued question answer has expired. Resolve the retained question again.')
+          if (decision.intent === 'REMOVE_ITEM' && resolution.kind === 'NEEDS_ASSISTANT' && resolutionContext.productResolution.status === 'exact' && resolutionContext.targetConstraints.itemIds.length && !currentContext.cart.lines.some(line => resolutionContext.targetConstraints.itemIds.includes(line.itemId))) {
+            const itemIds = resolutionContext.targetConstraints.itemIds
+            const labels = currentContext.menu.filter(item => itemIds.includes(item.id)).map(item => item.name)
+            return { customerMessage: mealMessages.alreadyAbsent.replace('{items}', labels.join('、')), outcome: { status: 'already-absent', intent: 'REMOVE_ITEM', itemIds }, cart: machine.getCart(), decisionTrace: { resolveIntent: resolution, operationPlan: null, authorize: null } }
+          }
           if (resolution.kind === 'CONFIGURATION') {
+            const quantityRejection = rejectQuantity('order_add_item', resolution.plan.slots.quantity)
+            if (quantityRejection)
+              return quantityRejection
             if (!revisionsMatch(resolution.plan.expectedRevisions, currentContext.revisions) || currentContext.phase !== 'ordering')
               throw new Error('STALE_PLAN: The meal changed before requesting its options.')
             // Explicit new orders also preserve unfinished meals. Jev only sees
@@ -2082,13 +2437,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               // not the previous search or an arbitrarily selected first meal.
               const presentation: RecommendationPresentation = { kind: 'query-results', itemIds, title: '請選擇餐點' }
               presentationItemIds = itemIds
-              options.onRecommendationsChange?.(presentation)
+              await options.onRecommendationsChange?.(presentation)
             }
             return { customerMessage: resolution.prompt, decisionTrace: { authorize: null, operationPlan: null, resolveIntent: resolution }, pendingClarification: { candidateRefs: resolution.candidateRefs, intent: resolution.intent } }
           }
-          if (resolution.kind !== 'PLAN')
-            return { decisionTrace: { authorize: null, operationPlan: null, resolveIntent: resolution }, needsAssistant: true }
+          if (resolution.kind !== 'PLAN') {
+            const handoff: ConversationHandoff = { intent: decision.intent, status: resolution.kind === 'NEEDS_ASSISTANT' && resolution.targetResolution?.eligible.length ? 'unrepresentable' : 'unmatched', itemIds: resolutionContext.targetConstraints.itemIds, lineIds: resolutionContext.cart.lines.filter(line => resolutionContext.targetConstraints.itemIds.includes(line.itemId)).map(line => line.id) }
+            return { decisionTrace: { authorize: null, operationPlan: null, resolveIntent: resolution }, handoff, needsAssistant: true }
+          }
           const operation = compileOperationPlan(resolution.plan)
+          const quantityRejection = rejectQuantity(operation.toolName, operation.input.quantity ?? operation.slots.quantity)
+          if (quantityRejection)
+            return quantityRejection
           const authorization = authorize(operation, currentContext)
           if (authorization.kind === 'BLOCKED')
             throw new Error(`The selected Kiosk intent is blocked: ${authorization.reason}.`)
@@ -2096,6 +2456,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const confirmationId = crypto.randomUUID()
             const createdAt = Date.now()
             pendingFastPathConfirmation = {
+              taskId: agentTask?.taskId,
               cart: cartFingerprint(machine.getCart()),
               operation: { ...operation, questionId: undefined },
               record: createConfirmation({
@@ -2113,7 +2474,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             // confirmation record now owns authority for the exact operation.
             finishQuestion('answered')
             offeredQuestion = undefined
-            return { customerMessage: confirmationMessage(operation), decisionTrace: { authorize: authorization, operationPlan: operation, resolveIntent: resolution }, pendingConfirmation: { action: operation.intent, confirmationId } }
+            return { customerMessage: confirmationMessage(operation, fulfillmentModes), decisionTrace: { authorize: authorization, operationPlan: operation, resolveIntent: resolution }, pendingConfirmation: { action: operation.intent, confirmationId }, pendingCustomerChoice: confirmationSnapshot(currentContext)!.waitingFor }
           }
           if (interrupted && (operation.intent === 'ADD_ITEM' || operation.intent === 'SELECT_ITEM')) {
             if (operation.intent === 'ADD_ITEM')
@@ -2122,7 +2483,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
           const result = await invoke(operation.toolName, operation.input, onAction)
           const payload = result && typeof result === 'object' ? result as Record<string, unknown> : { result }
-          if (operation.toolName === 'menu_get' && operation.intent === 'SEARCH_MENU' && resolution.plan.slots.scope === 'all' && Array.isArray(payload.items) && payload.items.length > 0) {
+          if (operation.toolName === 'menu_get' && operation.intent === 'SEARCH_MENU' && operation.input.scope !== 'catalog' && resolution.plan.slots.scope === 'all' && Array.isArray(payload.items) && payload.items.length > 0) {
             const recommend = compileOperationPlan({ intent: 'RECOMMEND', slots: { ...resolution.plan.slots }, expectedRevisions: { ...operation.expectedRevisions, checkout: currentContext.revisions.checkout } })
             const candidateId = `continuation:recommend:${crypto.randomUUID()}`
             pendingReadContinuation = { candidateId, expiresAt: Date.now() + 15_000, operation: recommend, result: payload }
@@ -2154,23 +2515,68 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     }
   }
 
-  /** Applies the browser-owned state policy before a conversational Agent's WebMCP call. */
+  /** Applies the browser-owned state policy before a conversational Agent's tool call. */
   async function invokeForAgent(name: MenuToolName, input: Record<string, unknown> = {}) {
+    const task = agentTask
+    const mutation = !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'menu_open', 'menu_scroll', 'order_ask_question'].includes(name)
+    const expected = task?.handoff && intentTools[task.handoff.intent]
+    if (expected && ((mutation && !expected.includes(name)) || (task?.handoff?.intent === 'REMOVE_ITEM' && menuBrowsingToolNames.has(name))))
+      throw new Error('The proposed tool does not address this task\'s requested effect.')
+    if (expected && name.startsWith('cart_') && typeof input.lineId === 'string' && !task?.handoff?.lineIds.includes(input.lineId))
+      throw new Error('The cart line does not belong to this task\'s resolved targets.')
+    if (task?.allowedToolNames && !isKioskHostOnlyToolName(name) && !task.allowedToolNames.includes(name))
+      throw new Error('This tool is not available in the current task context.')
+    if (task?.expectedRevisions && mutation && !revisionsMatch(task.expectedRevisions, currentFastPathRevisions()))
+      throw new Error('STALE_PLAN: The order changed after Main received its context.')
+    // These failures are proven before executeAgentOperation can reveal a
+    // control, change selection/cart, or publish a recommendation. The Host
+    // may request one corrected proposal, never replay an attempted effect.
+    if (name === 'menu_get' && currentFastPathContext().phase === 'ordering' && input.scope !== 'catalog' && input.display !== false && input.verifyClaim !== true) {
+      const { queries } = getMenuQuery(input)
+      if (!queries.length)
+        return { ok: false, executed: false, toolName: name, error: 'MENU_QUERY_ACTION_REQUIRED', message: '這次查詢未執行。沒有具體品名的分類／價格／飲食條件查詢，使用menu_recommend並明確傳action:update及本句條件；已有查詢只換其他用action:continue。menu_get僅查具體品名或明確scope:catalog。不要重做本輪已成功的操作。' }
+    }
+    if (name === 'order_add_item' && Array.isArray(input.options)) {
+      const groups = input.options.map(option => option && typeof option === 'object' && !Array.isArray(option) ? option.groupId : undefined)
+      if (groups.some(group => typeof group === 'string') && new Set(groups).size !== groups.length)
+        return { ok: false, executed: false, toolName: name, error: 'INVALID_OPTION_COMBINATION', message: '這次加購未執行。每筆order_add_item的每個groupId只能選一個valueId。同一道餐不同規格須分別呼叫，每筆使用顧客指定的各自份數；例如一份大辣和一份小辣是兩個呼叫各quantity:1，不能quantity:2加兩個spice。不要重做本輪已成功的操作。' }
+    }
+    const quantityRejection = rejectQuantity(name, input.quantity)
+    if (quantityRejection)
+      return quantityRejection
+    const result = await executeAgentOperation(name, input)
+    // Only this task's accepted write may advance a same-batch plan. Reads
+    // never rebase an external cart change or revive a confirmation ticket.
+    if (task && task === agentTask && mutation && (!result || typeof result !== 'object' || !('ok' in result) || result.ok !== false))
+      task.expectedRevisions = { ...currentFastPathRevisions() }
+    return result
+  }
+
+  async function executeAgentOperation(name: MenuToolName, input: Record<string, unknown> = {}) {
     if (isKioskHostOnlyToolName(name))
       throw new Error('Kiosk host decision tools are unavailable to the Agent.')
     // A host-qualified inquiry has read authority only for this task. Guard
     // even a successful lookup: finding a real dish is not permission to buy,
     // answer fulfillment, or replace a pending question. New tasks reset this.
-    if (agentTask?.readOnly && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get'].includes(name))
+    if (agentTask?.readOnly && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question'].includes(name))
       throw new Error('This task only authorizes menu reads; order changes require a new customer request.')
+    if (name === 'order_answer_confirmation') {
+      const pending = pendingFastPathConfirmation
+      if (!pending || !pending.presented || (agentTask && pending.taskId === agentTask.taskId) || input.confirmationId !== pending.record.confirmationId || typeof input.confirmedByUser !== 'boolean' || !confirmationIsValid(pending, currentFastPathContext()))
+        throw new Error('STALE_PLAN: This confirmation is not a current presented action for this customer turn.')
+      return await invoke('kiosk_fast_path_execute', { candidateId: `intent:${input.confirmedByUser ? 'confirm' : 'cancel-confirmation'}:${pending.record.confirmationId}` })
+    }
     // cart_get normally offers a fresh fulfillment question even for data-only
     // reads. Return a current snapshot without an offer or screen transition.
-    if (agentTask?.readOnly && name === 'cart_get')
+    if (agentTask?.readOnly && name === 'cart_get') {
+      if (input.display === true)
+        await revealReview(options.onAction)
       return { cart: machine.getCart() }
+    }
     // A failed named lookup leaves this customer's request unresolved. Do not
     // execute a partial removal or silently substitute another meal. This latch
     // belongs to the host-bound task; only a new task/customer turn resets it.
-    if (agentTask?.unresolvedMenu && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question', 'order_defer_question'].includes(name)) {
+    if (agentTask?.unresolvedMenu && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question', 'order_defer_question', 'menu_confirm_item'].includes(name)) {
       if (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu)
         throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')
       return { ok: false, customerMessage: mealMessages.unresolvedMenu }
@@ -2186,6 +2592,17 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       // empty search result that the Agent may retry with guessed amounts.
       return { ok: false, items: [], customerMessage: priceClarification }
     }
+    if (name === 'menu_confirm_item')
+      return await invoke(name, input)
+    if (agentTask?.targetItemIds && itemTargetToolNames.has(name)) {
+      if (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu)
+        throw new Error('STALE_PLAN: Agent product evidence expired or catalog changed.')
+      const itemId = selectionToolNames.has(name) ? machine.getSelection()?.itemId : input.itemId
+      // Reading an alternative (or the whole catalog) cannot turn it into the
+      // requested dish. A new customer choice must begin a new host-bound task.
+      if (typeof itemId !== 'string' || !agentTask.targetItemIds.includes(itemId))
+        return { ok: false, executed: false, toolName: name, error: 'UNCONFIRMED_ITEM', message: '這次新增未執行。顧客尚未指定唯一餐點，不能從幾道展示品項猜選一項。請回覆clarification詢問要哪一道，沒有真實選擇前不要新增、替代或重送。', customerMessage: mealMessages.unconfirmedItem }
+    }
     if (menuBrowsingToolNames.has(name) && agentTask && (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu))
       throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')
     if (name === 'menu_recommend' && !['ordering', 'customer_entry'].includes(currentFastPathContext().phase))
@@ -2197,11 +2614,45 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       const { action: _action, clear, ...patch } = input
       if ('more' in patch)
         throw new Error('Use an explicit action instead of more.')
+      if (action === 'continue') {
+        // Repeated price fields are expectations, never a condition update.
+        // Main can restate the active bound when requesting another batch;
+        // verify every supplied value before removing it from the update patch.
+        // A changed/new bound still fails without consuming the next batch.
+        const expectedPrices = priceConditions(patch)
+        for (const key of Object.keys(expectedPrices) as Array<keyof PriceConditions>) {
+          if (!recommendationBatch || expectedPrices[key] !== recommendationBatch.prices[key])
+            throw new Error('continue cannot change query conditions.')
+          delete patch[key]
+        }
+        // Restating a saved condition is an expectation, not an update. Compare
+        // sets without order and reject any widened or newly introduced value.
+        for (const key of ['category', 'dietary', 'excludeIngredients', 'includeIngredients'] as const) {
+          if (!(key in patch))
+            continue
+          const expected = key === 'category' ? recommendationBatch?.category : recommendationBatch?.filters[key]
+          const supplied = key === 'excludeIngredients' || key === 'includeIngredients'
+            ? ingredientFilters({ ...patch, dietary: patch.dietary ?? recommendationBatch?.filters.dietary })[key]
+            : patch[key]
+          const same = Array.isArray(supplied) && Array.isArray(expected)
+            ? JSON.stringify([...supplied].sort()) === JSON.stringify([...expected].sort())
+            : supplied === expected
+          if (!recommendationBatch || !same)
+            throw new Error(`continue cannot change query conditions: ${key}.`)
+          delete patch[key]
+        }
+      }
       if ((action === 'continue' || action === 'clarify') && (clear !== undefined || Object.keys(patch).some(key => key !== 'limit')))
         throw new Error(`${action} cannot change query conditions.`)
       if (action === 'continue' && recommendationBatch && recommendationBatch.menuRevision !== machine.getRevisions().menu)
         throw new Error('STALE_PLAN: Query conditions belong to an older menu.')
-      if (action === 'clarify' || (action === 'continue' && recommendationBatch?.exhausted))
+      if (action === 'continue' && recommendationBatch?.queries.length)
+        recommendationBatch = { ...recommendationBatch, queries: [], exhausted: false }
+      // No preceding batch/presentation is an unresolved reference, not a
+      // transport error. Ask through the existing scope-clarification reply;
+      // never invent a first batch or relax stale-catalog checks above.
+      const missingContinuation = action === 'continue' && !recommendationBatch && !presentationItemIds?.length
+      if (action === 'clarify' || missingContinuation || (action === 'continue' && recommendationBatch?.exhausted))
         return { queryAction: 'clarify', items: [], customerMessage: recommendationBatch?.exhausted ? mealMessages.queryActions.exhausted : mealMessages.queryActions.clarify }
       if (action === 'continue') {
         input = { ...patch, action, more: true }
@@ -2248,7 +2699,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         }
       }
     }
-    if (name === 'menu_get' && input.display !== false) {
+    if (name === 'menu_get' && currentFastPathContext().phase === 'ordering' && input.scope !== 'catalog' && input.display !== false) {
       const { category, queries } = getMenuQuery(input)
       if (!category && !queries.length && !['ordering', 'customer_entry'].includes(currentFastPathContext().phase))
         throw new Error('Menu exploration is unavailable in the current phase.')
@@ -2290,7 +2741,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     // requests a data-only read for its own lookup work.
     if (name === 'menu_get') {
       const lookupTask = agentTask
-      const result = await invoke(name, { ...input, display: input.display ?? true })
+      const result = await invoke(name, { ...input, display: input.display ?? true }, options.onAction, lookupTask)
       // Presentation can await cursor work. An older task's lookup must never
       // latch a successor after the host has ended/replaced that task.
       if (lookupTask && agentTask === lookupTask && result && typeof result === 'object' && 'items' in result && Array.isArray(result.items)) {
@@ -2313,9 +2764,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (!item || !filterPrices([item], agentTask.prices).length)
         throw new Error('Selected item violates the current task price conditions.')
     }
+    // Reaffirming an already selected mode has no checkout side effect. Use
+    // the same no-op receipt as touch/Fast Path before asking change consent.
+    if (name === 'order_set_fulfillment' && input.mode === context.cart.fulfillmentMode)
+      return await invoke(name, input)
     if (name === 'checkout_start' && context.cart.lines.length > 0 && !context.cart.fulfillmentMode)
       throw new Error('Choose dine-in or self-pickup before starting checkout.')
-    if ((name === 'cart_remove_item' || name === 'cart_set_line_quantity' || name === 'cart_set_line_option') && context.phase === 'ordering') {
+    if (cartLineToolNames.has(name) && context.phase === 'ordering') {
       const lineId = requiredString(input, 'lineId')
       const line = context.cart.lines.find(candidate => candidate.id === lineId)
       const sameItemLines = context.cart.lines.filter(candidate => candidate.itemId === line?.itemId)
@@ -2448,6 +2903,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         intent = 'SET_TAX_ID'
         slots.taxId = String(input.taxId ?? '')
         break
+      case 'checkout_confirm_invoice':
+        intent = 'CONFIRM_INVOICE'
+        break
       case 'checkout_confirm_tax_id':
         intent = 'CONFIRM_TAX_ID'
         slots.taxId = context.checkout?.taxId ?? ''
@@ -2462,7 +2920,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     }
     const operation: OperationPlan = {
       expectedRevisions: { ...context.revisions, ...(intent === 'RESERVE_TABLES' ? { seating: requiredNumber(input, 'expectedRevision') } : {}) },
-      input: { ...input, ...(['customer_skip_phone', 'cart_clear', 'checkout_start', 'checkout_skip_membership', 'checkout_confirm_tax_id', 'checkout_cancel'].includes(name) ? { confirmedByUser: true } : {}) },
+      input: { ...input, ...(['customer_skip_phone', 'cart_clear', 'checkout_start', 'checkout_skip_membership', 'checkout_confirm_tax_id', 'checkout_confirm_invoice', 'checkout_cancel'].includes(name) ? { confirmedByUser: true } : {}) },
       intent,
       slots,
       ...(targetRef ? { targetRef } : {}),
@@ -2477,6 +2935,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       const createdAt = Date.now()
       const confirmationId = crypto.randomUUID()
       pendingFastPathConfirmation = {
+        taskId: agentTask?.taskId,
         cart: cartFingerprint(context.cart),
         operation,
         record: createConfirmation({
@@ -2490,7 +2949,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           selectedItemRevision: context.revisions.selectedItem,
         }),
       }
-      return { customerMessage: confirmationMessage(operation), pendingConfirmation: { action: operation.intent, confirmationId } }
+      return { customerMessage: confirmationMessage(operation, fulfillmentModes), pendingConfirmation: { action: operation.intent, confirmationId }, pendingCustomerChoice: confirmationSnapshot(context)!.waitingFor }
     }
     if (authorize(operation, currentFastPathContext()).kind !== 'EXECUTE')
       throw new Error('The Agent WebMCP operation became stale before execution.')
@@ -2499,6 +2958,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
 
   async function reset() {
     options.checkout?.assertCanRestart()
+    if (tableSubmissionPending || tableSubmissionUncertain)
+      throw new Error('隨桌訂單尚待確認，請勿重新開始。')
+    // Resolve the next round before clearing local state; a failed context
+    // refresh or uncertain order must leave the current cart/question intact.
+    await options.onSessionReset?.()
     await options.seating?.reset()
     recommendationBatch = undefined
     agentTask = undefined
@@ -2513,19 +2977,45 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     pendingReadContinuation = undefined
     issuedFastPathContext = undefined
     clearQueryScope()
-    options.onSessionReset?.()
-    const cart = machine.reset()
+    let cart = machine.reset()
+    fulfillmentModes = policy().requiresPayment ? configuredFulfillmentModes : [{ id: 'dine-in', label: '隨桌供餐' }]
+    options.onFulfillmentChange?.(undefined)
+    if (!policy().requiresPayment) {
+      cart = machine.setFulfillmentMode('dine-in')
+      options.onFulfillmentChange?.('dine-in')
+    }
     completedOrderId = undefined
     presentationItemIds = undefined
     presentationFocus = undefined
     options.onCartChange(cart)
     options.onMenuSelection(undefined)
-    options.onFulfillmentChange?.(undefined)
+    options.onFulfillmentChange?.(cart.fulfillmentMode)
     return { cart }
+  }
+
+  /** Direct table submission is separate from the payment-authorized Kiosk entry. */
+  async function confirmTableOrder() {
+    const context = options.serviceContext?.()
+    if (policy().requiresPayment || !context?.table || !context.directSubmissionSupported)
+      throw new Error('目前無法直接送出隨桌訂單。')
+    tableSubmissionPending = true
+    try {
+      const order = await machine.confirmOrder()
+      tableSubmissionUncertain = order.receipt.status === 'uncertain'
+      options.onOrderSubmission?.(order)
+      if (order.receipt.status === 'accepted' && completedOrderId !== order.id) {
+        completedOrderId = order.id
+        options.onOrderConfirmed?.(order)
+      }
+      return { order, customerMessage: order.receipt.customerMessage }
+    }
+    finally { tableSubmissionPending = false }
   }
 
   /** Submits only after the customer-facing payment terminal returns its verified transaction ID. */
   async function confirmPaidOrder(paymentId: string) {
+    if (!policy().requiresPayment)
+      throw new Error('隨桌模式不使用付款送單。')
     machine.setPaymentId(paymentId)
     const order = await machine.confirmOrder()
     const { receipt } = order
@@ -2537,84 +3027,23 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     return order
   }
 
-  /**
-   * Registers the runtime's current tools and returns the matching cleanup.
-   *
-   * A menu page can be remounted by Vite HMR or by an embedding host. Each
-   * registration owns an AbortController so stale tool names are removed before
-   * a replacement runtime registers the same names.
-   */
-  async function registerNativeWebMcp(options: { exposedTo?: string[] } = {}) {
-    const registrationDocument = document as WebMcpDocument
-    const modelContext = registrationDocument.modelContext
-    if (!modelContext?.registerTool)
-      return undefined
-
-    nativeRegistration?.abort()
-    registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__?.abort()
-    const controller = new AbortController()
-    nativeRegistration = controller
-    registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__ = controller
-
-    try {
-      // The host probes this transport-only tool before exposing domain tools.
-      // It shares registration cleanup and never enters the ordering runtime.
-      await modelContext.registerTool(webMcpHealthTool, { exposedTo: options.exposedTo, signal: controller.signal })
-      await Promise.all(availableToolDefinitions().map(async (definition) => {
-        const { readOnly, ...tool } = definition
-        await modelContext.registerTool({
-          ...tool,
-          annotations: readOnly ? { readOnlyHint: true } : undefined,
-          execute: async (input, { signal } = {}) => {
-            if (signal?.aborted)
-              throw signal.reason ?? new DOMException('Tool execution aborted.', 'AbortError')
-            try {
-              // Native WebMCP carries both host-only decision tools and Agent
-              // tools. The host-only tools must use the browser-owned runtime;
-              // invokeForAgent intentionally refuses them.
-              return isKioskHostOnlyToolName(definition.name)
-                ? await invoke(definition.name, input)
-                : await invokeForAgent(definition.name, input)
-            }
-            catch (error) {
-              return nativeInvocationFailure(definition.name, error)
-            }
-          },
-        }, { exposedTo: options.exposedTo, signal: controller.signal })
-      }))
-    }
-    catch (error) {
-      if (nativeRegistration === controller)
-        nativeRegistration = undefined
-      if (registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__ === controller)
-        registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__ = undefined
-      controller.abort()
-      throw error
-    }
-
-    return () => {
-      disposeNativeWebMcp(controller)
-    }
-  }
-
-  /** Releases the active native registration when its document is unmounted. */
-  function disposeNativeWebMcp(expectedRegistration = nativeRegistration) {
-    if (!expectedRegistration)
-      return
-
-    if (nativeRegistration === expectedRegistration)
-      nativeRegistration = undefined
-    const registrationDocument = document as WebMcpDocument
-    if (registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__ === expectedRegistration)
-      registrationDocument.__webnaviorOrderMenuNativeWebMcpRegistration__ = undefined
-    expectedRegistration.abort()
-  }
-
   return {
     confirmPaidOrder,
-    disposeNativeWebMcp,
+    confirmTableOrder,
     invoke,
     invokeForAgent,
+    /** Approved iframe transport entry; domain refusals remain structured tool receipts. */
+    executeTool: async (name: MenuToolName, input: Record<string, unknown>) => {
+      const quantityRejection = rejectQuantity(name, input.quantity)
+      if (quantityRejection)
+        return quantityRejection
+      try {
+        return isKioskHostOnlyToolName(name) ? await invoke(name, input) : await invokeForAgent(name, input)
+      }
+      catch (error) {
+        return invocationFailure(name, error)
+      }
+    },
     /** Customer admission is separate from host/Agent execution, including animated writes. */
     invokeManual: async (name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction) => {
       // Expiry invalidates model conditions; it cannot prove an in-flight write settled.
@@ -2629,10 +3058,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         manualOperations--
       }
     },
-    registerNativeWebMcp,
     reset,
     setMenu: machine.setMenu,
     setFulfillmentModes: (modes: typeof fulfillmentModes) => {
+      configuredFulfillmentModes = modes
+      if (!policy().requiresPayment) {
+        modes = [{ id: 'dine-in', label: '隨桌供餐' }]
+        if (!machine.getCart().fulfillmentMode) {
+          const cart = machine.setFulfillmentMode('dine-in')
+          options.onFulfillmentChange?.('dine-in')
+          options.onCartChange(cart)
+        }
+      }
       fulfillmentModes = [...modes]
       // Updated capabilities invalidate issued plans, not retained needs.
       // The next decision derives fresh choices from the current POS modes.
@@ -2646,22 +3083,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   }
 }
 
-function publicQuestion(question: PendingQuestion, candidates = question.choices) {
-  const intents = new Set(question.choices.map(choice => choice.intent))
-  if (question.purpose === 'party-size')
-    intents.add('SET_PARTY_SIZE')
-  if (question.purpose === 'tax-id') {
-    intents.add('SET_TAX_ID')
-    intents.add('CONFIRM_TAX_ID')
-  }
-  return { questionId: question.questionId, purpose: question.purpose, question: question.question, expiresAt: question.expiresAt, choices: candidates.filter(choice => intents.has(choice.intent) || choice.intent === 'DEFER_QUESTION').map(choice => ({ id: choice.id, description: choice.description })) }
-}
-
-function confirmationMessage(operation: OperationPlan) {
+function confirmationMessage(operation: OperationPlan, modes: readonly { id: FulfillmentMode, label: string }[]) {
   switch (operation.intent) {
     case 'CLEAR_CART': return '要清空目前購物車嗎？請回答確認或取消。'
-    case 'CONFIRM_TAX_ID': return `要確認畫面上的統編 ${operation.slots.taxId} 並繼續嗎？請回答確認或取消。`
     case 'CANCEL_CHECKOUT': return '要取消目前結帳並回到訂單嗎？請回答確認或取消。'
+    case 'SET_FULFILLMENT': return `需要先返回訂單才能改為${modes.find(mode => mode.id === operation.slots.mode)!.label}，要返回並更改嗎？請回答確認或取消。`
     default: return '請確認這項操作。'
   }
 }

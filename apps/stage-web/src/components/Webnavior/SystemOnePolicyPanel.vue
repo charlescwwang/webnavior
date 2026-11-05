@@ -3,9 +3,13 @@ import type { SystemOnePolicy, SystemOnePolicyInput } from '../../composables/us
 
 import { Button, Textarea } from '@proj-airi/ui'
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ busy: boolean, policy: SystemOnePolicy }>()
+
 const emit = defineEmits<{ save: [input: SystemOnePolicyInput] }>()
+
+const { t } = useI18n()
 
 const decisionInstruction = ref(effectiveDecisionInstruction(props.policy))
 const storeInstruction = ref(props.policy.storeInstruction)
@@ -39,10 +43,10 @@ function save() {
         System One 點餐規則
       </h2>
       <p :class="['mb-0 mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300']">
-        編輯 System One 如何把語音對應到有限的點餐意圖。候選白名單、確認、付款與 WebMCP 執行資格仍由程式控制；複雜需求會自動轉交 Main Agent。
+        {{ t('stage.system-one.policy-description') }}
       </p>
       <p :class="['mb-0 mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300']">
-        你可直接試驗完整語意提示詞，也可另填店家補充規則。還原為系統預設後儲存，之後的系統版本可繼續改善預設語意邊界。
+        {{ t('stage.system-one.policy-hint') }}
       </p>
     </div>
 

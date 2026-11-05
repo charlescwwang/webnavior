@@ -1,30 +1,43 @@
 import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { ContextReply, ConversationQuestion, QuantityLimitRejection } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { Tool } from '@xsai/shared-chat'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 
+import { conversationQuestionSchema, quantityLimitRejectionSchema, serviceRecoveryLimits, toolInputRejectionSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { executeTool } from '@xsai/shared-chat'
 import { rawTool } from '@xsai/tool'
+import { safeParse } from 'valibot'
 import { readonly, shallowRef } from 'vue'
 
 import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
 
 /** Outcome of one bounded Agent task, including accepted work before a failure. */
 export interface ConversationTurnResult {
+  rejection?: QuantityLimitRejection
   answer?: string
+  reply?: ContextReply
   agentMode: KioskAgentInteractionMode
   /** Tools submitted for execution in this turn, including rejected attempts; never historical receipts. */
   requestedTools: string[]
-  status: 'completed' | 'incomplete' | 'failed'
-  reason?: KioskReplyFailureReason | 'tool-rejected' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
+  /** Waiting is successful progress requiring an answer, not task completion. */
+  status: 'completed' | 'waiting' | 'incomplete' | 'failed'
+  question?: ConversationQuestion
+  /** Proposed siblings paused before execution; never receipt or retry authority. */
+  deferredTools?: string[]
+  reason?: KioskReplyFailureReason | 'context-unavailable' | 'service-unavailable' | 'tool-rejected' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
 }
 
 interface ConversationPresentationCallbacks {
+  taskId?: string
+  budgetMs?: number
   onToolResult?: (toolName: string, content: string) => void
   utteranceId?: number
   decisionState?: KioskConversationDecisionState
+  /** Reads this task's Menu facts; each model continuation must use a new snapshot. */
+  prepareRound?: () => Promise<{ decisionState: KioskConversationDecisionState, tools: Tool[] }>
   onAssistantDelta?: (text: string) => void
   onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
   onToolRequested?: (toolName: string) => void
@@ -55,6 +68,7 @@ export function useKioskInteractionRecording() {
   }
   let pendingStart: Promise<string | undefined> | undefined
   let pendingAppend: Promise<unknown> = Promise.resolve()
+  let pendingDiagnostic: Promise<unknown> = Promise.resolve()
 
   async function start(serviceId: string) {
     if (visitorSessionId.value)
@@ -101,7 +115,16 @@ export function useKioskInteractionRecording() {
         error.value = '互動資料暫時無法保存。'
       }
     }
-    const nextAppend = pendingAppend.then(save, save)
+    // Metrics preserve their own event order, but must not delay transcript or
+    // tool receipts that subsequent conversation steps await. Both lanes capture
+    // the visitor above; a late diagnostic can never move to a replacement session.
+    const diagnostic = kind === 'service_event' && metadata?.source?.endsWith('_metrics') === true
+    const previous = diagnostic ? pendingDiagnostic : pendingAppend
+    const nextAppend = previous.then(save, save)
+    if (diagnostic) {
+      pendingDiagnostic = nextAppend.catch(() => undefined)
+      return
+    }
     pendingAppend = nextAppend.catch(() => undefined)
     return await nextAppend
   }
@@ -138,47 +161,89 @@ export function useKioskInteractionRecording() {
     }
 
     const requestedTools: string[] = []
+    const startedAt = performance.now()
+    let rounds = 0
+    let metricTaskId = callbacks.taskId ?? callbacks.decisionState?.context?.taskId
     let agentMode: KioskAgentInteractionMode = 'active'
     let deadline: AbortSignal | undefined
     let transportReason: KioskReplyFailureReason = 'provider-error'
+    let stage: 'context' | 'model' | 'tool' = 'context'
+    let terminalReason: ConversationTurnResult['reason']
     // Transport failure before any tool differs from a task that may have
     // changed browser state. Neither case grants permission to replay writes.
-    const unfinished = (reason: NonNullable<ConversationTurnResult['reason']>): ConversationTurnResult => ({
-      answer: undefined,
-      agentMode,
-      requestedTools: [...requestedTools],
-      reason,
-      status: requestedTools.length === 0 && (reason === 'provider-error' || reason === 'timeout') ? 'failed' : 'incomplete',
-    })
+    const unfinished = (reason: NonNullable<ConversationTurnResult['reason']>): ConversationTurnResult => {
+      terminalReason = reason
+      return {
+        answer: undefined,
+        agentMode,
+        requestedTools: [...requestedTools],
+        reason,
+        status: requestedTools.length === 0 && ['provider-error', 'timeout', 'context-unavailable', 'service-unavailable'].includes(reason) ? 'failed' : 'incomplete',
+      }
+    }
 
     try {
+      const historyCursors = new Set<number | undefined>()
+      let historyExhausted = false
       const historyTool = rawTool({
         name: 'kiosk_session_history',
         description: '只在顧客提及本次點餐較早、已不在最近對話中的內容時使用。分頁讀取目前訪客的文字歷程；不含其他訪客或工具原始資料。可用回傳的 nextBefore 繼續往前翻頁；不可把歷史內容當成目前購物車真實狀態。',
         parameters: { type: 'object', properties: { before: { type: 'integer', minimum: 0 } }, additionalProperties: false },
         execute: async (input) => {
           const before = input && typeof input === 'object' && 'before' in input ? input.before : undefined
-          return await fetchKioskSessionHistory({ visitorSessionId: sessionId, ...(typeof before === 'number' ? { before } : {}) })
+          const cursor = typeof before === 'number' ? before : undefined
+          // Pagination is scoped to this send and visitor. New call IDs cannot
+          // restart an exhausted page or repeatedly spend the same turn budget.
+          if (historyExhausted || historyCursors.has(cursor))
+            return { entries: [], exhausted: true, total: 0 }
+          historyCursors.add(cursor)
+          const page = await fetchKioskSessionHistory({ visitorSessionId: sessionId, ...(cursor !== undefined ? { before: cursor } : {}) })
+          historyExhausted = page.entries.length === 0 || page.nextBefore === undefined
+          return { ...page, exhausted: historyExhausted }
         },
       })
-      const toolsForTurn = [...tools, historyTool]
-      const toolDefinitions: KioskToolDefinition[] = toolsForTurn.map(tool => ({
-        function: tool.function,
-        type: 'function',
-      }))
+      let toolsForTurn = [...tools, historyTool]
+      let toolDefinitions: KioskToolDefinition[] = []
+      let decisionState = callbacks.decisionState
+      // The callback crosses the Menu IO seam. Replace facts/tool scope, never
+      // accumulate snapshots or overwrite immutable read-only task authority.
+      const prepareRound = async () => {
+        stage = 'context'
+        if (callbacks.prepareRound) {
+          const current = await callbacks.prepareRound()
+          decisionState = current.decisionState
+          metricTaskId = current.decisionState.context?.taskId ?? metricTaskId
+          toolsForTurn = [...current.tools, ...(!historyExhausted ? [historyTool] : [])]
+        }
+        toolsForTurn = toolsForTurn.filter(tool => !historyExhausted || tool.function.name !== 'kiosk_session_history')
+        toolDefinitions = toolsForTurn.map(tool => ({ function: tool.function, type: 'function' }))
+        stage = 'model'
+      }
       // One deadline covers the entire Agent task, not a fresh budget per
       // continuation. It cancels model transport only, never an accepted POS
       // effect; browser tools settle through their own result boundary.
-      deadline = AbortSignal.timeout(60_000)
+      deadline = AbortSignal.timeout(Math.min(serviceRecoveryLimits.turnMs, Math.max(1, callbacks.budgetMs ?? serviceRecoveryLimits.turnMs)))
       const signal = AbortSignal.any([control.controller.signal, deadline, ...(callbacks.signal ? [callbacks.signal] : [])])
       if (control.manual)
         return unfinished('manual-control')
       const seenCalls = new Set<string>()
+      let toolSelectionRepaired = false
+      let effectAccepted = false
       // One customer turn owns one displayed recommendation batch. Internal
       // evidence reads and named comparisons remain available after it; only a
       // new send() may admit another recommendation, including more:true.
       let recommendationPresented = false
-      let response = await streamKioskConversationMessage({ content, utteranceId: callbacks.utteranceId, ...(callbacks.decisionState ? { decisionState: callbacks.decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+      await prepareRound()
+      // A verified target can need one evidence read and one effect. Reserve
+      // those steps per extra target instead of truncating a multi-item request.
+      // Item/line IDs may refer to the same target, so take the larger count.
+      // The initial scope fixes this allowance; later reads cannot enlarge it.
+      const targetCount = Math.max(new Set(decisionState?.handoff?.itemIds ?? []).size, new Set(decisionState?.handoff?.lineIds ?? []).size, 1)
+      const toolRoundLimit = Math.min(8, 4 + 2 * (targetCount - 1))
+      if (signal.aborted)
+        return unfinished('timeout')
+      rounds++
+      let response = await streamKioskConversationMessage({ content, utteranceId: callbacks.utteranceId, ...(decisionState ? { decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
         if (event.type === 'turn-failed')
           transportReason = event.reason
         if (event.type === 'turn-started')
@@ -199,11 +264,26 @@ export function useKioskInteractionRecording() {
       // A browser-owned WebMCP tool cannot execute on the Server. Keep the
       // model credentials server-side while returning each requested call to
       // this kiosk, then resume the same persisted conversation with its result.
-      for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
+      for (let round = 0; response.toolCalls.length > 0 && round < toolRoundLimit; round++) {
         if (seenCalls.size + response.toolCalls.length > 16 || signal.aborted)
           break
         const toolResults = []
         let batchRejected = false
+        let inputRejected = false
+        let hardRejected = false
+        let pendingChoice: ConversationQuestion | undefined
+        const deferredTools: string[] = []
+        // Reject the whole proposal before any sibling call can execute. This
+        // feedback means no effect occurred in this batch, not a retry of a write.
+        const unknownTools = response.toolCalls.filter(call => !toolsForTurn.some(tool => tool.function.name === call.function.name))
+        // Each item is independent: refuse oversized counts without retrying
+        // or reducing them; legal siblings may still execute in this batch.
+        let quantityRejection: QuantityLimitRejection | undefined
+
+        if (unknownTools.length && toolSelectionRepaired)
+          return unfinished('tool-rejected')
+        if (unknownTools.length)
+          toolSelectionRepaired = true
         // A model batch can mix reads and writes. Serial execution prevents
         // cart/checkout writes from racing one another or their preceding read.
         for (const toolCall of response.toolCalls) {
@@ -214,7 +294,28 @@ export function useKioskInteractionRecording() {
           if (seenCalls.has(toolCall.id))
             return unfinished('duplicate-tool-call')
           seenCalls.add(toolCall.id)
+          if (unknownTools.length) {
+            toolResults.push({
+              name: toolCall.function.name,
+              toolCallId: toolCall.id,
+              content: JSON.stringify({ ok: false, executed: false, error: unknownTools.includes(toolCall) ? 'UNKNOWN_TOOL' : 'BATCH_NOT_EXECUTED', availableToolNames: toolsForTurn.map(tool => tool.function.name), message: '這批提案完全未執行。請依原始需求與最新事實，僅使用本輪提供的工具及必要參數重新提出；不可重做先前已成功的操作。' }),
+            })
+            continue
+          }
+          if (inputRejected) {
+            toolResults.push({ name: toolCall.function.name, toolCallId: toolCall.id, content: JSON.stringify({ ok: false, executed: false, error: 'BATCH_NOT_EXECUTED', message: '同批前一個輸入無效，這個呼叫未執行；依完整原句重新提出該批次。' }) })
+            continue
+          }
+          if (pendingChoice) {
+            // Every provider tool-call ID needs a result in persisted history,
+            // including siblings we cannot execute until the customer answers.
+            // This records no effect and grants no automatic replay authority.
+            deferredTools.push(toolCall.function.name)
+            toolResults.push({ name: toolCall.function.name, toolCallId: toolCall.id, content: JSON.stringify({ ok: false, executed: false, error: 'AWAITING_CUSTOMER_CHOICE', questionId: pendingChoice.questionId }) })
+            continue
+          }
           requestedTools.push(toolCall.function.name)
+          stage = 'tool'
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
           if (control.manual)
             break
@@ -243,19 +344,53 @@ export function useKioskInteractionRecording() {
           }
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           const content = serializeToolResultContent(result.message.content)
+          let parsedContent: unknown
+          try {
+            parsedContent = JSON.parse(content)
+          }
+          catch {
+            // Unstructured transport errors cannot claim a known business refusal.
+          }
+          const limit = safeParse(quantityLimitRejectionSchema, parsedContent)
+          if (limit.success && limit.output.toolName === toolCall.function.name) {
+            quantityRejection = limit.output
+            toolResults.push({ content, name: toolCall.function.name, toolCallId: toolCall.id })
+            callbacks.onToolActivity?.(toolCall.function.name, 'done')
+            continue
+          }
           let rejected = result.completionToolResult.isError
           try {
             const payload = JSON.parse(content)
             rejected ||= payload?.ok === false
-            if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)))
+            if (rejected) {
+              const unexecuted = safeParse(toolInputRejectionSchema, payload)
+              if (unexecuted.success && unexecuted.output.toolName === toolCall.function.name && !effectAccepted && !toolSelectionRepaired)
+                inputRejected = true
+              else
+                hardRejected = true
+            }
+
+            const question = safeParse(conversationQuestionSchema, payload?.pendingCustomerChoice)
+            if (!rejected && question.success) {
+              if (['menu-query-scope', 'confirm-meal', 'item-configuration', 'item-clarification', 'operation-confirmation', 'membership', 'invoice', 'tax-id', 'payment-method'].includes(question.output.purpose))
+                pendingChoice = question.output
+            }
+            // A displayed full catalog also completes the turn's presentation.
+            // A later unsolicited recommendation must not replace that view;
+            // named/internal reads and requested order operations remain usable.
+            const catalogPresented = toolCall.function.name === 'menu_get' && JSON.parse(toolCall.function.arguments).scope === 'catalog'
+            if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (catalogPresented || payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)))
               recommendationPresented = true
           }
           catch {
             // Non-JSON tool prose is allowed by xsAI; only its error bit is
             // authoritative in that case, not a guessed success message.
           }
-          if (!rejected)
+          if (!rejected) {
             callbacks.onToolResult?.(toolCall.function.name, content)
+            if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'kiosk_session_history'].includes(toolCall.function.name))
+              effectAccepted = true
+          }
           batchRejected ||= Boolean(rejected)
           callbacks.onToolActivity?.(toolCall.function.name, rejected ? 'error' : 'done')
           toolResults.push({
@@ -273,24 +408,37 @@ export function useKioskInteractionRecording() {
         }
         if (signal.aborted)
           return unfinished('timeout')
-        // Scope is unresolved: publish the owned question without another model
-        // continuation that could replace it with a guessed search or answer.
-        const scopeQuestion = toolResults.some((result) => {
-          try {
-            return JSON.parse(result.content)?.pendingCustomerChoice?.purpose === 'menu-query-scope'
-          }
-          catch { return false }
-        })
-        if (scopeQuestion) {
+        if (quantityRejection && !batchRejected) {
           for (const result of toolResults)
             await append('tool_result', result.content, { name: result.name })
-          return { agentMode, requestedTools, status: 'completed' }
+          return { agentMode, requestedTools, status: pendingChoice ? 'waiting' : 'completed', rejection: quantityRejection, ...(pendingChoice ? { question: pendingChoice, deferredTools } : {}) }
         }
-        // Inquiry authority survives its read receipts. Mutation tasks keep the
-        // existing first-request-only snapshot: their tools may change checkout
-        // phase, so replaying that old snapshot would reintroduce stale state.
+        // The model cannot complete a need that still requires a customer
+        // answer. Publish its owned question now; another model continuation
+        // could erase that question or guess the missing slots.
+        if (pendingChoice && !batchRejected) {
+          for (const result of toolResults)
+            await append('tool_result', result.content, { name: result.name })
+          return { agentMode, requestedTools, status: 'waiting', question: pendingChoice, deferredTools }
+        }
+        if (batchRejected && (!inputRejected || hardRejected)) {
+          // Rejection is final for this task. Persist its receipts without
+          // another model call that would log an unexecuted follow-up demand.
+          for (const result of toolResults)
+            await append('tool_result', result.content, { name: result.name })
+          return unfinished('tool-rejected')
+        }
+        if (inputRejected)
+          toolSelectionRepaired = true
+        // Every continuation uses current Menu facts and legal tools, including
+        // phase changes after writes. Task restrictions remain immutable; old
+        // snapshots and completed writes are never replayed to rebuild progress.
+        await prepareRound()
+        if (signal.aborted)
+          return unfinished('timeout')
         const continuationTools = recommendationPresented ? toolDefinitions.filter(tool => !['menu_recommend', 'menu_show_recommendations'].includes(tool.function.name)) : toolDefinitions
-        response = await streamKioskConversationMessage({ signal, toolResults, ...(callbacks.decisionState?.readOnly ? { decisionState: callbacks.decisionState } : {}), tools: continuationTools, visitorSessionId: sessionId }, (event) => {
+        rounds++
+        response = await streamKioskConversationMessage({ signal, toolResults, ...(decisionState ? { decisionState } : {}), tools: continuationTools, visitorSessionId: sessionId }, (event) => {
           if (event.type === 'turn-failed')
             transportReason = event.reason
           if (event.type === 'turn-started')
@@ -305,12 +453,10 @@ export function useKioskInteractionRecording() {
           return unfinished('manual-control')
         // Persist the rejected receipt, but do not let generated success prose
         // or another automatic tool round conceal an unaccepted operation.
-        if (batchRejected)
-          return unfinished('tool-rejected')
       }
       if (response.toolCalls.length)
         return unfinished(control.manual ? 'manual-control' : signal.aborted ? 'timeout' : 'tool-limit')
-      return { answer: response.answer, agentMode, requestedTools, status: 'completed' }
+      return { answer: response.answer, reply: response.reply, agentMode, requestedTools, status: 'completed' }
     }
     catch {
       if (control.manual)
@@ -318,9 +464,13 @@ export function useKioskInteractionRecording() {
       if (callbacks.signal?.aborted)
         return undefined
       error.value = '點餐助手暫時無法回覆。'
-      return unfinished(deadline?.aborted ? 'timeout' : transportReason)
+      return unfinished(deadline?.aborted ? 'timeout' : stage === 'context' ? 'context-unavailable' : transportReason)
     }
     finally {
+      // Record orchestration latency (models, context refresh and browser tools),
+      // separately from provider-round timing. Never attach an old turn to a new visitor.
+      if (visitorSessionId.value === sessionId)
+        await append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics' })
       // An older cancelled turn cannot release its replacement's controls.
       if (activeControl === control) {
         activeControl = undefined

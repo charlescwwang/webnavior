@@ -1,5 +1,6 @@
 import type { CheckoutSnapshot } from './domain/checkout-flow'
 
+import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { describe, expect, it, vi } from 'vitest'
 
 import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
@@ -8,6 +9,89 @@ import { authorize, compileOperationPlan, createQuestion, deriveDecisionContext,
 import { createMenuToolRuntime } from './webmcp'
 
 describe('action-bound customer questions', () => {
+  // Report: live112 C07-A2; a passive Host read must carry the same
+  // correlation tuple as the decision projection without issuing new authority.
+  it.each(['ordering', 'confirmation', 'clarification'])('keeps passive revalidation aligned with question state: %s', async (phase) => {
+    const runtime = createMenuToolRuntime({ menu: [...menu, { ...menu[0]!, id: 'test-one', name: '測試餐甲', aliases: ['測試餐'], optionGroups: [] }, { ...menu[0]!, id: 'test-two', name: '測試餐乙', aliases: ['測試餐'], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    if (phase === 'confirmation') {
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '清空訂單' })
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:clear-cart' })
+    }
+    if (phase === 'clarification') {
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '測試餐一份' })
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    }
+    const decision = await runtime.invoke('kiosk_fast_path_context', { transcript: '好' }) as Parameters<typeof serviceContextKey>[0]
+    expect(decision.phase).toBe(phase === 'confirmation' ? 'pending_confirmation' : phase)
+    const current = await runtime.invoke('kiosk_interaction_state') as Parameters<typeof serviceContextKey>[0]
+    expect(serviceContextKey(current)).toBe(serviceContextKey(decision))
+    expect(current.revisions).toBeDefined()
+    expect(decision.revisions).toBeDefined()
+  })
+
+  // Report: this conversation — local SLM completed correct add routes at 16s,
+  // after the former ordinary intent ticket had already expired at 15s.
+  it('executes an unchanged ordinary intent after a 20-second staged decision', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲一份' })
+      vi.advanceTimersByTime(20_000)
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still rejects an ordinary intent when the cart changes during model work', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲一份' })
+      await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+      vi.advanceTimersByTime(20_000)
+      await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).rejects.toThrow()
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('expires an ordinary intent beyond the full decision-turn budget', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲一份' })
+      vi.advanceTimersByTime(60_001)
+      await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).rejects.toThrow('expired')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not shorten an independent order to an unrelated question deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+      const offer = await runtime.invoke('order_set_fulfillment', { mode: 'takeout' }) as { pendingCustomerChoice: { questionId: string, question: string } }
+      await runtime.invoke('kiosk_dialogue_presented', { content: offer.pendingCustomerChoice.question, questionId: offer.pendingCustomerChoice.questionId })
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲再加一份' })
+      vi.advanceTimersByTime(40_000)
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('revokes an operation confirmation when the assistant answers a side question', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
@@ -109,6 +193,7 @@ describe('action-bound customer questions', () => {
         chooseInvoice: method => update(chooseInvoiceMethod(snapshot!, method)),
         requestTaxId: () => update(requestTaxId(snapshot!)),
         setTaxId: value => update(setTaxIdDraft(snapshot!, value)),
+        confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
         confirmTaxId: () => update(confirmTaxId(snapshot!)),
         selectPayment: async () => {
           methodSelections++
@@ -295,4 +380,45 @@ describe('bounded question plans', () => {
     expect(pending.candidates).toEqual([])
     expect(createQuestion(pending, 'Q3', Date.now())).toBeUndefined()
   })
+})
+
+// Report: Oct31 production fulfillment answer rejected after inference crossed the old ticket expiry.
+it('gives a fresh answer lease when a new turn starts just before the old question ticket expires', async () => {
+  vi.useFakeTimers()
+  try {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const added = await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' }) as { pendingCustomerChoice: { questionId: string, question: string } }
+    await runtime.invoke('kiosk_dialogue_presented', { content: added.pendingCustomerChoice.question, questionId: added.pendingCustomerChoice.questionId })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '內用' })
+    vi.advanceTimersByTime(29_900)
+    const fresh = await runtime.invoke('kiosk_fast_path_context', { transcript: '你不是問我內用還自取，我要內用啊' }) as { waitingFor: { expiresAt: number } }
+    expect(fresh.waitingFor.expiresAt).toBeGreaterThan(Date.now() + 29_000)
+    vi.advanceTimersByTime(3_000)
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:set-fulfillment:dine-in' })).toMatchObject({ cart: { fulfillmentMode: 'dine-in', itemCount: 1 } })
+  }
+  finally { vi.useRealTimers() }
+})
+
+// Report: live112 D03; after adding a meal Main tried to defer a question
+// that had only been offered, before the customer ever received it.
+it('offers deferral only for a question already presented to the customer', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'meal', name: '測試餐', aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const added = await runtime.invoke('order_add_item', { itemId: 'meal', quantity: 1 }) as { pendingCustomerChoice: { questionId: string, question: string } }
+  const before = await runtime.invoke('kiosk_conversation_context') as { allowedToolNames: string[] }
+  expect(before.allowedToolNames).not.toContain('order_defer_question')
+  await runtime.invoke('kiosk_dialogue_presented', { questionId: added.pendingCustomerChoice.questionId, content: added.pendingCustomerChoice.question })
+  expect(await runtime.invoke('kiosk_conversation_context')).toHaveProperty('allowedToolNames', expect.arrayContaining(['order_defer_question']))
+  expect(await runtime.invokeForAgent('order_defer_question', { questionId: added.pendingCustomerChoice.questionId })).toHaveProperty('customerMessage', expect.stringContaining('保留'))
+})
+
+// Report: live112 C07-A1, Main proposed checkout while no order was ready.
+it('offers checkout only after the Menu domain has a ready checkout effect', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'meal', name: '測試餐', aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const empty = await runtime.invoke('kiosk_conversation_context') as { allowedToolNames: string[] }
+  expect(empty.allowedToolNames).not.toContain('checkout_start')
+  await runtime.invoke('order_add_item', { itemId: 'meal', quantity: 1 })
+  const pending = await runtime.invoke('kiosk_conversation_context') as { allowedToolNames: string[] }
+  expect(pending.allowedToolNames).not.toContain('checkout_start')
+  await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
+  expect(await runtime.invoke('kiosk_conversation_context')).toHaveProperty('allowedToolNames', expect.arrayContaining(['checkout_start']))
 })

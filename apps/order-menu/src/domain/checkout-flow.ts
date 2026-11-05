@@ -4,6 +4,9 @@ export type CheckoutStage = 'invoice' | 'membership' | 'payment' | 'tax-id'
 export type InvoiceMethod = 'carrier' | 'citizen' | 'donation' | 'tax-id'
 
 export interface CheckoutSnapshot {
+  /** Visible, unconfirmed input owned by Menu; edits advance checkout revision. */
+  invoiceDraft?: { method: 'carrier' | 'citizen', code: string }
+
   carrierCode?: string
   citizenCode?: string
   donationCode?: string
@@ -56,17 +59,17 @@ export function chooseInvoiceMethod(checkout: CheckoutSnapshot, method: Exclude<
     // This is the customer's explicit choice to skip personal invoice data.
     // The eventual invoice integration owns the recipient; no code is invented
     // and no invoice is issued by this test checkout transition.
-    return { ...checkout, invoiceMethod: method, carrierCode: undefined, citizenCode: undefined, donationCode: undefined, taxId: undefined, stage: 'payment' }
+    return { ...checkout, invoiceDraft: undefined, invoiceMethod: method, carrierCode: undefined, citizenCode: undefined, donationCode: undefined, taxId: undefined, stage: 'payment' }
   }
-  if ((method === 'carrier' && !checkout.carrierCode) || (method === 'citizen' && !checkout.citizenCode))
-    return { ...checkout, invoiceMethod: method, stage: 'invoice' }
-  return { ...checkout, invoiceMethod: method, stage: 'payment' }
+  // Choosing an identifier type never confirms its prefilled/scanned value.
+  // Only confirmInvoiceDraft/confirmInvoiceDetails may advance personal data.
+  return { ...checkout, invoiceDraft: checkout.invoiceDraft?.method === method ? checkout.invoiceDraft : undefined, invoiceMethod: method, stage: 'invoice' }
 }
 
 export function requestTaxId(checkout: CheckoutSnapshot): CheckoutSnapshot {
   if (checkout.stage !== 'invoice')
     throw new Error('A tax ID can only be entered during invoice confirmation.')
-  return { ...checkout, invoiceMethod: 'tax-id', stage: 'tax-id', taxId: checkout.taxId ?? '' }
+  return { ...checkout, invoiceDraft: undefined, invoiceMethod: 'tax-id', stage: 'tax-id', taxId: checkout.taxId ?? '' }
 }
 
 /** Updates the visible tax-ID draft without advancing checkout. */
@@ -107,5 +110,32 @@ export function confirmInvoiceDetails(checkout: CheckoutSnapshot, method: 'carri
     throw new Error('自然人憑證條碼需為 2 碼英文字母及 14 碼數字。')
   if (method === 'donation' && !/^\d{3,7}$/.test(code))
     throw new Error('請輸入 3 至 7 碼捐贈碼。')
-  return { ...checkout, invoiceMethod: method, carrierCode: method === 'carrier' ? code : undefined, citizenCode: method === 'citizen' ? code : undefined, donationCode: method === 'donation' ? code : undefined, stage: 'payment' }
+  return { ...checkout, invoiceDraft: undefined, invoiceMethod: method, carrierCode: method === 'carrier' ? code : undefined, citizenCode: method === 'citizen' ? code : undefined, donationCode: method === 'donation' ? code : undefined, stage: 'payment' }
+}
+
+/** Saves the customer-visible carrier draft without confirming it or choosing payment. */
+export function setInvoiceDraft(checkout: CheckoutSnapshot, method: 'carrier' | 'citizen', code: string): CheckoutSnapshot {
+  if (checkout.stage !== 'invoice')
+    throw new Error('請返回發票資料再輸入。')
+  return { ...checkout, invoiceMethod: method, invoiceDraft: { method, code } }
+}
+
+/** Confirms only the currently visible draft using the same validation as form submission. */
+export function confirmInvoiceDraft(checkout: CheckoutSnapshot): CheckoutSnapshot {
+  const method = checkout.invoiceMethod === 'citizen' ? 'citizen' : 'carrier'
+  const value = checkout.invoiceDraft?.method === method ? checkout.invoiceDraft.code : (method === 'carrier' ? checkout.carrierCode : checkout.citizenCode)
+  return confirmInvoiceDetails(checkout, method, value ?? '')
+}
+
+/** Exposes readiness, never identifier contents, to semantic candidate/tool discovery. */
+export function invoiceDraftReady(checkout: CheckoutSnapshot | undefined): boolean {
+  if (checkout?.stage === 'tax-id')
+    return /^\d{8}$/.test(checkout.taxId ?? '')
+  if (!checkout || checkout.stage !== 'invoice' || (checkout.invoiceMethod && !['carrier', 'citizen'].includes(checkout.invoiceMethod)))
+    return false
+  try {
+    confirmInvoiceDraft(checkout)
+    return true
+  }
+  catch { return false }
 }

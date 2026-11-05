@@ -6,7 +6,7 @@ function endpoint(baseUrl: string, path: string) {
 }
 
 /** Calls an OpenAPI-like POS endpoint while keeping its payload behind the bridge port. */
-export function createHttpPosGateway(options: { baseUrl: string, timeoutMs: number }): PosGateway {
+export function createHttpPosGateway(options: { baseUrl: string, timeoutMs: number, tableOrdersSupported?: boolean }): PosGateway {
   async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const response = await fetch(endpoint(options.baseUrl, path), {
       ...init,
@@ -18,6 +18,12 @@ export function createHttpPosGateway(options: { baseUrl: string, timeoutMs: numb
   }
 
   return {
+    ...(options.tableOrdersSupported
+      ? { submitTableOrder: async (submission: Parameters<NonNullable<PosGateway['submitTableOrder']>>[0]) => {
+          const response = await request<{ receipt: SubmissionReceipt }>('v1/table-orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })
+          return response.receipt
+        } }
+      : {}),
     getSeating: async () => (await request<{ seating: SeatingSnapshot }>('v1/seating')).seating,
     reserveTables: async body => (await request<{ hold: TableHold }>('v1/seating/holds', { body: JSON.stringify(body), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).hold,
     getTableHold: async (id) => {

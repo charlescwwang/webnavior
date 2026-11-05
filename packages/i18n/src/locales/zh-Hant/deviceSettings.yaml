@@ -13,6 +13,9 @@ conflict: 其他操作人已更新設定；已保留您的草稿，請重新載�
 login: 登入店別管理者帳號
 loginRequired: 請先透過管理頁登入，再回到此處儲存。僅能修改這台設備已被授權的欄位。
 fields:
+  textOnlyMode: 純文字模式
+  serviceMode: 服務模式
+  backgroundSpeechMode: 背景音判斷
   observationEnabled: 本機相機觀測
   greetingEnabled: 主動招呼
   reminderEnabled: 閒置協助提醒
@@ -35,6 +38,9 @@ fields:
   voiceDiagnosticsEnabled: 語音診斷模式（測試用）
   conversationDiagnosticsEnabled: 對話耗時顯示（測試用）
 fieldDescriptions:
+  textOnlyMode: 僅對這台 Kiosk 顯示文字輸入並停用語音收音；關閉後沿用角色原本的對話設定。語音播報仍依既有設定。
+  serviceMode: 新設定在下一輪訂單生效；目前測試環境的桌號隨機為 a01–a09。
+  backgroundSpeechMode: 預設關閉。observe 只保存判斷；enforce 才會攔截背景談話。不影響 VAD 與操作授權。
   performanceProfile: 依硬體能力調整相機畫質、人員偵測速度與錄影上限。一般設備選「一般（建議）」；畫面卡頓時選「省資源」；高規設備才選「高規設備」。
   faceDetectionConfidence: 調低可偵測較遠或較小的人臉，但較容易誤判。預設為 0.60。
   voiceDiagnosticsEnabled: 僅測試時開啟。Kiosk 會顯示語音辨識、Speech Guard 與 turn decision 的即時結果；此資訊不會顯示給一般顧客。
@@ -53,6 +59,10 @@ vad:
     minSilenceDurationMs: 靜音結束時間（毫秒）
     speechPadMs: 前後保留音訊（毫秒）
 options:
+  kiosk: 智慧點餐員（Kiosk）
+  table-service: AI 隨桌服務員
+  observe: 只記錄，不攔截
+  enforce: 啟用背景音攔截
   attention: 看向 Kiosk
   presence: 進入偵測區
   mixed: 任一訊號
@@ -76,3 +86,7 @@ localDiagnostics:
   presenceDescription: 顯示 engaged 等偵測狀態、姿態品質、停留時間與偵測頻率；需啟用本機相機觀測。
   decision: 顯示決策流程
   decisionDescription: 顯示每句語音的階段、候選意圖、模型決策、操作與授權流程。
+
+localTextMode:
+  label: 本機純文字模式
+  description: 立即顯示文字輸入並停用語音收音，重新整理後仍保留；只儲存在此瀏覽器。關閉後依後台與角色設定，語音播報沿用既有設定。

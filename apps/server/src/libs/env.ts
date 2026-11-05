@@ -132,6 +132,9 @@ const EnvSchema = object({
   TEST_AUTH_USER_NAME: optional(pipe(string(), nonEmpty('TEST_AUTH_USER_NAME must not be empty when set')), 'Test User'),
   TEST_AUTH_USER_ROLE: optional(string(), ''),
 
+  // Fixed server-owned destination for the authenticated kiosk POS proxy.
+  KIOSK_POS_BRIDGE_URL: optional(string(), 'http://127.0.0.1:5170/'),
+
   // Deliberately string-valued: only the exact literal `true` opens the
   // unauthenticated numeric enrollment route, and app.ts additionally rejects
   // it whenever NODE_ENV is production.

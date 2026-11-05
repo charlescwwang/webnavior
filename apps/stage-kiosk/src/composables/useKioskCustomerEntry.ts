@@ -1,8 +1,8 @@
-import type { createWebMcpAdapter } from '../services/webmcp-adapter'
+import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
 
 import { onScopeDispose, readonly, shallowRef, watch } from 'vue'
 
-type EntryBridge = Pick<ReturnType<typeof createWebMcpAdapter>, 'availability' | 'execute' | 'onExecution' | 'tools'>
+type EntryBridge = Pick<ReturnType<typeof createInteractiveServiceClient>, 'availability' | 'execute' | 'onExecution' | 'tools'>
 
 /** Projects the active service's optional entry into host UI, without retaining phone data. */
 export function useKioskCustomerEntry(bridge: EntryBridge) {

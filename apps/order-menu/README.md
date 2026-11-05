@@ -4,13 +4,19 @@
 building an order. It reuses shared UI primitives and localized ordering copy,
 without importing avatar, Electron, Pinia, speech, or model packages.
 
-Native WebMCP registration includes the side-effect-free `webmcp_health_check`
-contract from `@proj-airi/stage-shared/webmcp`. It only echoes a host challenge;
-it never enters the ordering runtime, reads a cart, changes UI, or calls a server.
-It shares the service origin allowlist and registration abort signal. The host
-must validate this probe before enabling assistant tools. Deploy the updated
-host and service together; older services without the probe remain manually usable
-but do not pass assistant admission.
+The Kiosk connects through Eventa `window-message` and the versioned contract in
+`@proj-airi/stage-shared/interactive-service`. No native `document.modelContext`,
+Origin-Trial or iframe `allow="tools"` permission is required. The parent origin,
+source Window, document ID and connection challenge bind discovery and execution
+to the current approved iframe. Domain tool names, inputs and receipts retain
+their previous semantics, including combined add and recommendation actions.
+
+`toolValidationPlugin.ts` compiles the owned schemas with Ajv during Vite/Vitest
+loading and bundles its helpers into one ESM module. Browsers do not compile
+schemas or require `unsafe-eval`. Current POS capability enums are supplied by
+the runtime; input validation never coerces values, strips fields or adds defaults.
+Deploy matching Kiosk/Menu assets together. Stage Web has not migrated and is
+not supported for Agent control of this updated Menu. Standalone touch use remains.
 
 On a portrait kiosk, menu browsing stays focused on the available dishes. A
 compact order summary remains fixed at the bottom, aligned with the dish-card
@@ -19,7 +25,12 @@ action. On narrow screens with horizontal categories, the summary sits above a
 reserved bottom row for that action. Selecting the summary opens a dedicated
 order-review screen where customers can inspect customizations, edit
 quantities, remove items, choose dine-in or take-out, and explicitly advance to
-checkout. Kiosk owns the optional ten-digit phone dialog above the catalog, then
+checkout. Successful touch, Fast Path and Agent additions close the quantity/
+customization dialog and keep the current category, query results and browsing
+position. Selecting a dish does not replace the grid with that dish. A retained
+unfinished meal can supply the next spoken question without immediately opening
+another dialog; its next configuration action opens it when needed.
+Kiosk owns the optional ten-digit phone dialog above the catalog, then
 collects invoice details without another membership scan. It offers mobile
 carrier, citizen-certificate carrier, tax ID and donation; no paper invoice or
 automatic timeout donation is offered. Phone entry records this test transaction;
@@ -41,13 +52,21 @@ The `customer_entry` phase exposes only the phone-skip candidate to Jev; it
 does not advertise meal operations behind the entry screen. Touch and Agent
 `customer_skip_phone` use the same transition. Skipping keeps phone absent and
 still permits checkout; a new host session restores the untouched entry screen.
-While phone entry is pending, menu reads remain available as data capabilities
-for factual questions. Kiosk owns the customer policy: recommendations and
-ordering first prompt the customer to fill or skip phone entry. Reads never
-silently skip entry or add an order; selection/cart writes remain phase-locked.
+While phone entry is pending, all menu reads, recommendations, selection, cart
+changes and checkout remain blocked for both Agent and manual calls. The visitor
+must enter a valid phone or explicitly skip first; skip remains voluntary and
+does not create an order. Host entry controls and the phone-or-skip question
+remain available. Reset restores the entry gate.
 
 Payment choices are LINE Pay and 街口支付. Voice or touch selects a method directly,
 without a second confirmation question, and retires the answered method question.
+Before a payment method is chosen, the screen displays a 60-second countdown.
+Expiration returns to order review with cart contents and fulfillment mode retained.
+Choosing a method, a payment status, agent control, leaving the payment page or
+unmounting cancels this navigation deadline. Returning to method selection starts
+a new minute. The countdown uses a fixed deadline so throttled background tabs
+cannot extend it silently; it never determines payment authorization.
+
 Selection immediately opens the waiting-for-scan screen, with **更換付款方式**
 available before payment starts. `CheckoutToolController.selectPayment` returns
 `selected` only; it does not authorize payment or submit an order. The current
@@ -95,6 +114,22 @@ scanner SDK. Invoice's existing valid-form Enter submission remains unchanged;
 tax-ID scan suffix Enter does not confirm the number. Physical scanner testing
 remains necessary for the deployed device configuration.
 
+Mobile carrier, citizen-certificate and tax-ID input are Menu-owned checkout
+drafts shared by touch and voice. Typing changes the checkout revision without
+confirming the identifier. A valid visible draft exposes its corresponding
+`CONFIRM_INVOICE` / `checkout_confirm_invoice` or `CONFIRM_TAX_ID` /
+`checkout_confirm_tax_id` effect. One explicit semantic confirmation advances to
+payment-method selection; tax IDs no longer ask for a second confirmation.
+Main's bounded recovery receives only the current issued confirmation candidate;
+it still interprets the complete utterance, including negation, unfinished form
+input, requests to edit and questions about submission. This is not a fixed list
+of spoken keywords. Invalid input and stale revisions cannot confirm; editing
+and undoing still invalidates an earlier proposal. Carrier/citizen draft codes
+stay local to Menu context; existing tax-ID readback remains supported. Visible
+buttons use the same execution validation. No confirmation selects a payment
+method or initiates payment. Keyboard/scanner Enter behavior is unchanged.
+
+
 Checkout's existing 30-second page timer returns to the order review only when
 the payment page still has no selected method. It is armed on checkout state
 changes and after Agent control ends, not on every pointer/voice interaction,
@@ -103,11 +138,16 @@ auto-skip or choose donation. This differs from Kiosk's customer-session idle
 policy (three minutes, then a 15-second reset confirmation) and the 30-second
 question execution-ticket expiry, neither of which grants a checkout choice.
 
-Accepted dine-in orders show an order-continuation QR and a clickable desktop
-link with the same destination. When embedded, acceptance immediately notifies
-the AIRI host so its configured reward/survey appears, with a separate order
-continuation QR and desktop link on that completion screen. Standalone menu
-testing retains the receipt until customer acknowledgement. The continuation page displays order lines,
+After accepted checkout, embedded Menu sends a separate **read-only order receipt**
+URL to Kiosk. Completion shows its QR and link independently of the survey switch,
+with a reminder to take the pickup number and order information along. Both
+fulfillment modes show the same application-issued pickup number, meals, quantities
+and total on the phone. Receipt links contain no phone label, grant no table or
+fulfillment writes, and expire after 30 minutes or Bridge restart. Standalone
+completion keeps **完成，開始下一筆**.
+
+The separate, previously hidden test table-binding continuation is not used by
+this receipt QR. That test page displays order lines,
 total and masked phone, then asks for confirmation after scanning a table code.
 Neither kiosk nor phone offers a table picker or manual table input. Desktop
 users can press **電腦測試：模擬掃描桌碼** to simulate the fixed A08 fixture.
@@ -131,13 +171,111 @@ Set `VITE_ORDER_MENU_PUBLIC_URL` to the customer-reachable menu URL when scannin
 from a separate phone; a localhost QR is intended for desktop testing only.
 That device must also reach the configured `VITE_ORDER_MENU_SERVER_URL`.
 
+Checkout announces the retained dine-in/pickup setting rather than choosing it
+again. A requested mode that already matches the order is a reaffirmation and
+keeps checkout open. Changing it during checkout offers an
+`operation-confirmation` question bound to a single-use confirmation ID, cart,
+checkout and selection revisions, and a 15-second expiry. Both Jev and Main
+receive this question instead of the underlying invoice question. Host stops
+the tool loop until the next customer turn; Main answers through
+`order_answer_confirmation` only after the question was presented, using its
+exact ID. Confirmation returns to review and changes the mode; cancellation
+retains the original mode and checkout. Stale/expired confirmations cannot
+become invoice choices or authorize another operation.
+
+An explicit `cart_get({ display: true })` can open review during a read-only
+order inquiry, without changing cart contents or presenting a new checkout
+question. `display: false` remains an internal read. Cart display preserves an
+active checkout screen; returning from invoice entry to the order uses
+`checkout_cancel`, which retains meals and the fulfillment mode. A request to
+return to the order is navigation, not merely an inquiry about order contents.
+
+The Menu question contract, Kiosk stop-and-wait handling and Main skill changes
+must be released together. `checkoutNavigation.test.ts` and
+`CheckoutNavigation.browser.test.ts` cover ticket ownership and real component
+surfaces. The root `kiosk-field-regressions` project includes the deterministic
+navigation cases. Fourteen separate `N01-*` incident scripts retain both direct
+Main and Jev/Main paths; the accepted original112 positions remain unchanged.
+Provider replays are opt-in and require authorization to use the configured
+resources; deterministic tests never spend provider calls.
+
+## Service modes
+
+The authenticated Bridge ordering context selects `kiosk` (default) or
+`table-service` from central device settings. The current round keeps its mode
+and table until an explicit new-session reset; changing settings does not replace
+a live cart. Kiosk keeps fulfillment, invoice and payment behavior. Table service
+uses the same cart and tools, skips phone/fulfillment/payment screens, and submits
+only after explicit touch or voice confirmation. Its completion shows table,
+meal quantities and total, without a pickup number.
+
+For the current test environment, the Bridge assigns a random `a01`–`a09` once
+per round. This is not physical table verification or reservation. Unpaid order
+submission requires an explicitly supported adapter; an unknown POS is refused,
+not treated as a successful payment. See the Bridge README for its separate
+`/v1/table-orders` contract.
+
 ## Run locally
+
+Historical evidence and deterministic boundary replays live in `src/evaluation`.
+Current conversation acceptance is versioned in `conversationAcceptance.ts` separately
+from the immutable historical matrix. The approved outcome policy permits silence
+or harmless acknowledgements for selected closing/unclear remarks, and either
+whole-request refusal or legal-item-only addition for mixed oversized orders.
+It still verifies cart/state effects, rejects technical failures and preserves
+strict silence for explicit background speech. Current admission gold additionally
+records semantic class independently from reply text. A service constraint
+cannot pass as background simply because nothing changed. For explicit background
+speech the class is advisory, while silence, unchanged accepted history/cue and
+absence of operations remain required. Invoice editing may ask whether to return
+without canceling or losing data. Canceling checkout protects unsubmitted carrier
+and citizen drafts as well as tax IDs and committed identifiers; a proposed
+confirmedByUser flag does not replace the separately bound customer answer. The user-deferred synthetic “先不要送出” cases
+continue to run as advisory results, preserving their failures separately from
+required acceptance; they are never relabeled as passes.
+Historical scripts and policy
+revisions remain in each replay artifact; deferred/superseded cases are not passes.
+Run `pnpm -F @proj-airi/order-menu test:history` for these and the related target,
+clarification and recommendation regressions. Captured excerpts include source
+file/row hashes, UTC times, original dialogue/ASR, question text and authoritative
+cart/presentation facts; private session/transport identifiers are omitted.
+Tests use checked-in projections and never read private `/tmp` captures or call a
+model. Three cases currently have partial evidence (R03–R05); R01/R02/R06 remain
+missing-evidence records and cannot count as passing incident replays.
+Recorded contradictions and repaired-action controls are scored separately.
+The test-only per-demand evaluator detects omissions, duplicate quantities,
+wrong option combinations, unsupported completion claims and unrelated changes
+when a before-cart snapshot is supplied. It measures facts, not customer consent
+or model accuracy. See `docs/plans/2026-10-22-kiosk-multi-demand-evaluation.md`
+for coverage and the still-pending live-model stages.
 
 Semantic target resolution tracks reference provenance (current utterance,
 qualified continuation, category, presentation, selection and cart). Named items
 and categories qualify mutation targets before historical focus can be used.
-A category purchase resolves only to real available dishes in that category;
-multiple dishes produce a revision-bound clarification, not an arbitrary choice.
+A category purchase with several real available dishes produces a revision-bound
+clarification. A sole category member is never substituted for an unmatched dish
+name: category-only purchase requests go to Main for resolution, preserving the
+original utterance. Intent confidence and category size do not identify a product.
+Separately named dishes in one ADD request go to Main as a whole request, even
+if the finite route mistakenly selects a single ADD. They are not alternatives
+in a one-item clarification. A shared merchant alias or category can still ask
+the customer to choose one real item. Bare assent such as 「對」 or 「是的」
+cannot choose the first item: the server retains the question after recipient
+admission, and the Menu independently rejects execution without a target choice.
+Names, ordinals (including 「第二項」), and qualified answers retain the existing
+resolution, expiry and revision checks.
+The same boundary applies to host-bound Main tasks: exact names/merchant aliases
+bound the product IDs that Main may select, configure or add. Category-only or
+discovery-fragment evidence permits lookup and clarification, not choosing a
+replacement, even after a successful alternative/full-catalog read. Only a new
+customer task with an explicit product choice replaces that restriction. Tasks
+without lexical product/category evidence may retain a unique, domain-resolved
+pre-task presentation reference when the utterance supplies a serving quantity.
+This target is frozen at BEGIN; later Agent lookups cannot create or replace it.
+Multiple displayed dishes and bare assent remain unbound and require clarification.
+This is a target bound, not a new language classifier or purchase consent.
+An add request with multiple values for one POS option group also goes to Main;
+one value must not silently replace split-per-serving options for the whole order.
 Category-only preferences such as 「我想吃麵」 or 「我突然想吃便當」 browse
 the category, even when it has one available dish. A stated serving quantity
 such as 「我要吃麵，一碗」 or 「我想吃麵，一碗」 retains an ADD_ITEM candidate;
@@ -322,8 +460,8 @@ revision, which travels with the cart and is validated again before submission.
 
 ## AIRI integration
 
-When embedded by AIRI, the service exposes its domain operations through native
-WebMCP. Host-only `kiosk_agent_task` BEGIN/END also owns temporary customer
+When embedded by Kiosk, the service exposes its domain operations through the
+approved Eventa connection. Host-only `kiosk_agent_task` BEGIN/END also owns temporary customer
 control: manual tool admission and visible controls (including the teleported
 item dialog) stay locked until the matching task ends. A task cannot begin while
 an admitted customer tool is still settling. Checkout auto-advance is paused
@@ -336,6 +474,12 @@ AIRI discovers the tools dynamically, so this service is one interactive
 service among many rather than an AIRI built-in feature.
 
 `menu_get` and `menu_recommend` publish current POS categories as schema enums.
+When browsing conditions exist, the finite intent contract distinguishes
+continuing those conditions from explicitly showing the full catalog. The
+`SEARCH_MENU` continuation keeps its issued `more` slot through compilation;
+`intent:search-all-menu` is a separate read choice that uses catalog scope,
+releases browsing price/category constraints and retains dietary exclusions.
+No keyword parser chooses between these customer meanings.
 The runtime rejects unknown category labels before changing the visible results;
 a rejected query does not mean that the store has no matching dishes. Use the
 exact category or search with `query`; category synonyms are not invented by the
@@ -345,7 +489,7 @@ Conversational `menu_recommend` calls require an explicit `action`:
 
 | Action | Browser-owned behavior |
 | --- | --- |
-| `continue` | Keep confirmed conditions and return the next unseen batch. No condition changes are allowed. |
+| `continue` | Return the next unseen batch, keeping dietary/category conditions. A previous precise meal query is released so other dishes can be found. No caller-supplied condition changes are allowed. Repeated price fields are checked as expectations against the retained values; a new or different bound is rejected without consuming a batch. |
 | `update` | Apply only supplied changes; retain other groups. New numeric price bounds replace the old price group. Sort-only changes retain bounds. Use `clear` to remove explicit groups. |
 | `reset` | Release browsing bounds/category/subject/needs/strategy; retain dietary restrictions, food exclusions, cart and shown history. |
 | `clarify` | Return one application-owned spoken question; do not query, present, consume a batch or change the cart. |
@@ -365,13 +509,25 @@ query actions, not literal product names. `menu_get(display:false)` remains an
 internal evidence read; customer-facing category browsing also uses explicit
 query actions, for example `menu_recommend({ action: 'update', category: '便當' })`.
 `menu_get({ category: '便當', display: true })` is rejected: its category field
-is for internal reads, while displayed `menu_get` results require a concrete
-meal query. Uncertain intent/scope uses `clarify`, while a clear new browsing
+is for internal reads. Displayed `menu_get` results require a concrete
+meal query or explicit `scope:catalog`. Uncertain intent/scope uses `clarify`, while a clear new browsing
 request may use `reset`. No additional choice card is created. On exhaustion,
 continuation asks whether to change the price range or food type and retains
 the last presentation. It does not relax conditions or recycle the same batch.
+An explicit `action:continue` with neither a confirmed batch nor a usable
+presentation returns the existing clarification reply without inventing a first
+batch or changing the cart. Catalog/plan staleness checks still reject old scope.
 
-The default is up to three distinct available dishes in POS catalog order;
+An explicit whole-menu request uses `menu_get({ scope: 'catalog', display: true })`.
+It presents all matching dishes, including previously viewed items, releases the
+old precise browsing subject, and retains dietary/ingredient exclusions. This is
+separate from three-item recommendations: neither `continue` nor `reset` is a
+whole-menu display. Data-only lookups, including named queries, never replace the
+dish grid. Presentation callbacks may return a promise; the runtime awaits Vue's
+update before reporting the result. Main context includes current grid item IDs
+and browsing subject separately from its complete catalog and actual cart.
+
+The recommendation default is up to three distinct available dishes in POS catalog order;
 this is not a popularity claim. Fewer matches are never padded. `limit:1` or `2`
 can narrow an explicit request. Prices are per-dish base prices, not order or
 customization budgets. `strategy` is offered only with current POS evidence for
@@ -407,7 +563,15 @@ without a viewport controller do not advertise it. No scrolling dependency is
 required. `cart_get` shows the order review by default (`display:false` is a data-only
 read). Both semantic and Agent fulfillment changes reveal the review and await
 control registration before animating the POS choice, then update the selected
-state. Reading the cart never replaces an active checkout/payment screen.
+state. Missing fulfillment controls fail visibly before the cart is changed.
+The review exposes fulfillment controls even for an empty cart, so choosing
+inner-store dining or pickup before adding a meal uses the same visible controls
+as later changes. Completed orders retain their existing restrictions.
+Changing mode during an unpaid checkout first creates a revision-bound confirmation;
+after confirmation the runtime returns to the order and applies the requested POS
+mode once. Pending/uncertain payment stays locked. Repeating the existing mode does
+not replay the animation, release seats or advance cart revisions.
+Reading the cart never replaces an active checkout/payment screen.
 The bottom cart summary is one full-width native button: summary text, item
 previews, padding and the orange action all open the same review once. Enter
 and Space work without separate handlers. Empty carts remain disabled; the
@@ -418,8 +582,9 @@ separately. The embedded menu otherwise uses its referrer origin, including a
 port when that port is genuinely part of the page URL. The Ubuntu deployment
 script supplies `VITE_AIRI_ORIGIN` from its `--origin` value, so a public domain
 such as `https://airi.example.com` remains port-free even when Nginx proxies
-internally to another port. The embedding page must set `allow="tools"` on its
-iframe for native WebMCP support.
+internally to another port. The Kiosk supplies its exact active iframe Window;
+both ends validate origin and source. The updated Menu does not register native
+WebMCP tools or fall back to that transport.
 
 For an AIRI Kiosk customer session, the service may additionally send the small
 host lifecycle events in
@@ -440,17 +605,33 @@ The Vite development server allows the configured `VITE_AIRI_ORIGIN` to read the
 The order state lives in `src/domain/order-machine.ts`; it owns menu selection,
 options, cart updates, the order-level dine-in/take-out choice, and order
 submission. When a customer has already specified an item, its options, and its
-quantity, the WebMCP `order_add_item` tool performs that whole operation in one
+quantity, the `order_add_item` tool performs that whole operation in one
 Agent call while the menu still visibly steps through each change. The
 `order_set_fulfillment` tool and the visible menu buttons use the same state, so
 an order cannot be confirmed before the customer chooses how it will be served.
+Meal quantities remain limited to20 per identical cart line. Tool syntax accepts
+an original positive integer count (including200); the domain validates20 before
+any cart commit and returns a typed `quantity-limit` refusal. This keeps a business
+limit distinct from malformed input and prevents a provider from treating20 as
+permission to reduce the customer's200. Before dispatch, Server preserves a single
+explicit oversized count directly; with multiple explicit counts it asks Main
+to bind only those original numbers to the proposed call IDs. A number absent
+from the utterance cannot pass that review. This review adds no provider call
+to ordinary counts or monetary budgets. No automatic reduction or split orders.
+In a mixed request, legal items may be added while oversized items are refused;
+Host presents their actual success receipts together with the Menu-owned limit
+message. Existing cart lines and rejected variants remain intact, including a
+quantity/option edit that would merge an identical line past20. Q01 incident
+scripts retain direct-Main and Jev/Main examples, budget-number and correction
+counterexamples; failures and final accepted reruns are tracked separately.
+
 The current venue offers **內用 / 自取**. Immediate self-pickup uses the existing
-`takeout` order code in WebMCP and POS submissions; it has no reservation or
+`takeout` order code in tool calls and POS submissions; it has no reservation or
 pickup-time requirement. Menu buttons, returned choices and semantic candidates
 use the same customer-facing terminology. POS-driven capability discovery is
 not implemented by this venue wording change.
-For a whole-line meal replacement, the Agent reads `cart_get` and `menu_get`,
-then calls the existing `order_add_item` with `replaceLineId`. Omitted quantity
+For a whole-line meal replacement, the Agent uses current context or fresh
+`cart_get` / `menu_get` receipts to identify both targets, then calls the existing `order_add_item` with `replaceLineId`. Omitted quantity
 retains the original line's quantity; replacement options belong to the new
 item, never the old meal. The runtime validates the original cart identity,
 new item/availability and required options before committing one cart update;
@@ -474,12 +655,21 @@ fulfillment, checkout and question changes are blocked even after a successful
 lookup. Its cart snapshot does not offer another fulfillment question. The
 matching task END or a new customer task releases that task-specific restriction.
 
-For cart edits, the Agent first calls `cart_get` for the opaque line ID, then
+For cart edits, the Agent uses the opaque line ID from the current context or
+a fresh `cart_get` receipt, then
 uses `cart_set_line_quantity`, `cart_set_line_option`, or `cart_remove_item`
 directly instead of removing and re-adding a meal. `cart_clear` also requires
 an explicit customer confirmation and is unavailable after POS acceptance.
+Ordinary Fast Path candidate leases allow the shared 60-second decision-turn
+budget, so staged SLM decisions taking over 15 seconds can still execute when
+state is unchanged. This lease does not extend customer consent: an effect bound
+to a question retains that question's expiry, and high-risk confirmation keeps
+its own 15-second one-use record. Independent new orders do not inherit an
+unrelated question deadline. Execution still checks live phase and revisions;
+a cart/menu/checkout change invalidates the old operation.
+
 In Kiosk voice mode, Fast Path chooses bounded semantic intents; this menu
-resolves real targets and authorizes the resulting WebMCP operation. Native
+resolves real targets and authorizes the resulting tool operation.
 Main Agent mutations also pass through its current phase, target, revision,
 payment, and one-use confirmation checks. If two cart lines share a product,
 removal or editing asks which real line the customer means before changing it.
@@ -563,6 +753,22 @@ fresh internal answer ID valid for 30 seconds; expired or earlier-turn answers
 are rejected without discarding a still-valid plan. This does not change the
 customer-visible choices or repeat the question. Explicit cancellation, relevant invalidating state edits or a new-order/session
 reset revoke the unadded plan.
+A meal identity confirmation retains a stable request ID across confirmation
+and subsequent configuration. Each Host-observed answer has a distinct question
+ID and 30-second lease; expiry rejects the old answer without deleting the
+unresolved meal. A new answer gets a fresh lease. Passive reads never issue or
+renew it, and the original proposal alone cannot be consumed as an answer. An affirmative answer such as 對，一份 retains the
+newly supplied quantity/options while preserving prior proposal slots; passive
+context reads do not replace that answer. Declines, stale questions, revision
+changes and replayed candidates cannot write a cart.
+
+`intentRecovery` is projected by the Menu intent domain from the current
+utterance, actual question and issued choices. Server Main recovery consumes
+this scope instead of maintaining a second phase/purpose/catalog whitelist.
+Ordinary ordering questions, including seating, use the same domain projection;
+phone entry and later checkout/payment are outside bounded ordering recovery.
+A new named meal can remain independent of an unanswered fulfillment question.
+
 Configuration/clarification turns first establish whether speech answers the
 actual question or introduces another request. A new request gets one host-only
 reroute even when a different catalog dish/category is spoken without an ordering
@@ -671,6 +877,12 @@ the trace, but compiles to `menu_recommend` rather than an entire-catalog displa
 and optional recommendation continuation. A valid batch binds its recommendation
 revision and supplies `more:true`; otherwise it starts a fresh batch. A recent
 presented dish can resolve an acceptance/repeat, but does not narrow broad browsing.
+Within one host-bound read-only Agent task, separate named `menu_get` lookups
+retain their query subjects together in the related-dishes grid. Sequential
+and parallel calls therefore keep both dishes visible for an inquiry such as
+「有水餃或牛肉麵嗎？」. Each receipt's `items` still describes its own lookup;
+repeating a subject replaces its matches, and a new task starts a fresh grid.
+
 Agent `menu_get` defaults to presentation and applies the same bounded policy
 for unscoped, unfiltered requests. For those requests, explicit `display:false`
 remains an internal catalog read, not authority to present or narrate the entire
@@ -693,6 +905,12 @@ purpose; the application owns wording and POS choice labels. Main Agent does not
 write a second operational question. The host validates its receipt
 before rendering, then activates it through `kiosk_dialogue_presented` using the
 exact ID, never prose matching. Merely offering a question creates no authority.
+Agent task context advertises question deferral only for an already presented
+question. A newly offered question after adding a meal cannot be deferred before
+the customer sees it. Fulfillment changes require a current POS choice reference
+or a resolved fulfillment handoff; checkout is offered only when Menu currently
+issues `START_CHECKOUT`. These capabilities follow domain readiness, not merely
+the ordering phase. Item selection/add/configuration tools also require a target bound before the task. Until then, Main receives lookup/confirmation capabilities; later reads cannot manufacture customer consent to an item. Staged quantity/option edits and cart_add_item additionally require a real current selection bound to the task; an atomic addition clears that selection. A finite operation handoff retains evidence lookup but does not advertise new recommendation tools; independently qualified mixed-purpose tasks retain their browsing scope.
 Actually presented unanswered questions survive lookups, plain acknowledgements,
 deferral and idle within the same order. Question records remain until new-order
 reset; completed/superseded records are not active answer authority. Host-only
@@ -702,7 +920,7 @@ question when the same unmet need still exists. Unresolved meal configuration an
 target clarification likewise survive idle; explicit cancellation/replacement
 retires that need. A new decision turn renews an expired ordinary question's
 internal answer ID (30 seconds) or issues a new clarification answer ID (15
-seconds); old tickets never execute. Read-only host snapshots do not issue tickets.
+seconds); old tickets never execute. Read-only host snapshots do not issue tickets. Decision and passive Host projections carry the same menu/cart/checkout/selection revision tuple. Target clarification shares its question projection across both readers; only the decision entrypoint renews its answer lease.
 Unpresented question offers still expire after 30 seconds.
 Presented item focus and recommendation conditions/seen dishes have no idle TTL;
 new-order reset clears them, a new presentation/recommendation replaces their
@@ -715,11 +933,54 @@ Spoken person-count updates first reveal/register the actual person-count select
 then await the existing cursor animation before one authoritative seating update.
 The cursor is visual feedback, not an additional DOM click or mutation. Manual
 selection continues to use the normal non-animated input path.
-`kiosk_fast_path_continue` permits at most one revision-bound, one-use
-recommendation read after an explicit food-condition lookup. Broad exploration
-already returns recommendations and does not offer that extra read.
-A new utterance invalidates the old offer. These host tools are not Main Agent tools; cart/payment mutations
-never participate in this read-only continuation.
+Whole-menu exploration now returns its complete filtered presentation directly,
+without scheduling a second recommendation read that could replace that grid.
+Internal host continuation tickets remain one-use and revision-bound; they are
+not Main Agent tools or authorization for cart/payment mutations.
+
+## Current Main context and confirmed names
+
+The host-only `kiosk_conversation_context` returns one detached, schema-validated
+snapshot bound to the active `kiosk_agent_task`. It includes all products after
+phone entry, compact options/composition/availability, cart line IDs, checkout,
+current valid question, retained drafts, revisions and phase-legal tool names.
+The same domain projection supplies `retainedRequests` to this snapshot,
+`kiosk_interaction_state` and `kiosk_fast_path_context`. Each draft retains its
+original request when known, quantity (absent when unknown), selected options,
+missing required slots and expected revisions. A proposed meal is `confirming`;
+an unfinished previous meal is `suspended`. A confirmation answer can supply
+quantity/options without replacing the original request. Reads return detached
+facts, grant no answer ticket and never add a cart line.
+It omits images, vendor metadata and long marketing descriptions. The 200-item /
+256 KiB limits reject abnormal catalogs; products are never silently truncated.
+This snapshot is separate from Jev's finite context and does not grant writes.
+
+Main receives a fresh snapshot before every model round. Writes are checked
+against that snapshot; only the task's own accepted writes advance its version
+within a tool batch. Known handoff effects and cart targets remain bounded.
+An exact named removal whose target is already absent completes as a no-op,
+without looking up a historical dish or removing another line.
+
+Menu lookup shares catalog-name/alias matching with the finite resolver.
+Unconfirmed fragments remain `possibleItems`, separate from literal `items`.
+`menu_confirm_item` can propose an explicit addition or replacement of a real
+product; it never writes the cart. Its owned yes/no question retains source
+constraints, original replacement line and revisions. Customer confirmation
+uses the existing configuration flow and atomic `replaceLineId` operation.
+Fragments no longer enter the old name-only Fast Path purchase confirmation.
+
+Agent/voice removal reveals review, registers/animates the exact line's remove
+control, rechecks the cart, removes once, then returns to the menu. Compound
+Main tasks defer the return until matching task END. Touch removal stays in
+review. Missing animation controls preserve the cart; a failed return preserves
+the accepted removal receipt and reports the presentation failure separately.
+
+Service-admission recovery is hosted by Kiosk/Server, not an additional Menu
+tool. Its read-only questions cannot act as answers to Menu operation questions.
+Current Menu versions are checked again after recovery; normal target, phase,
+phone and confirmation guards still apply. The compound-order diagnosis now
+separates full-request handoff from an intentionally reconstructed faulty
+single-target question, with explicit serviceRequest mocks.
 
 ## Extracting from AIRI
 

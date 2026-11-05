@@ -41,9 +41,11 @@ import { initLogger, LoggerFormat, LoggerLevel, setGlobalHookPostLog, useLogger 
 import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { httpInstrumentationMiddleware } from '@hono/otel'
+import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
+import { HTTPException } from 'hono/http-exception'
 import { logger as honoLogger } from 'hono/logger'
 import { createLoggLogger, injeca, lifecycle } from 'injeca'
 
@@ -86,6 +88,7 @@ import { createStripeRoutes } from './routes/stripe'
 import { createVoicePackRoutes } from './routes/voice-packs'
 import { createConfigKVService } from './services/adapters/config-kv'
 import { createEmailService } from './services/adapters/email'
+import { createKioskPosGateway } from './services/adapters/kioskPos'
 import { createPosthogSink } from './services/adapters/posthog'
 import { createAdminFluxGrantsService } from './services/domain/admin/flux-grants'
 import { createAdminRouterConfigService } from './services/domain/admin/router-config'
@@ -296,6 +299,10 @@ export async function buildApp(deps: AppDeps) {
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 })
   const characterAssetBodyLimit = bodyLimit({ maxSize: 64 * 1024 * 1024 })
   const kioskMediaBodyLimit = bodyLimit({ maxSize: 32 * 1024 * 1024 })
+  const kioskAudioBodyLimit = bodyLimit({
+    maxSize: kioskAudioLimits.requestBytes,
+    onError: c => c.json({ error: 'KIOSK_AUDIO_TOO_LARGE', message: '這段錄音超過上傳大小限制，請分次說明。' }, 413),
+  })
 
   const builtApp = app
     .use('*', sessionMiddleware(deps.auth, deps.env))
@@ -306,9 +313,15 @@ export async function buildApp(deps: AppDeps) {
         return characterAssetBodyLimit(c, next)
       if (/^\/api\/kiosk\/visitor-sessions\/[^/]+\/media$/.test(c.req.path))
         return kioskMediaBodyLimit(c, next)
+      if (c.req.path === '/api/kiosk/audio/transcriptions')
+        return kioskAudioBodyLimit(c, next)
       return defaultBodyLimit(c, next)
     })
     .onError((err, c) => {
+      // Hono middleware carries protocol statuses (notably body-limit413)
+      // as HTTPException. Keep them instead of presenting a provider outage.
+      if (err instanceof HTTPException)
+        return err.getResponse()
       if (err instanceof ApiError) {
         // Surface details + cause to the server-side log only. SEC-5 keeps
         // upstream body content (carried by `cause`) out of the client
@@ -421,6 +434,8 @@ export async function buildApp(deps: AppDeps) {
       },
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
+      apiOrigin: new URL(deps.env.API_SERVER_URL).origin,
+      posGateway: createKioskPosGateway(deps.env.KIOSK_POS_BRIDGE_URL ?? 'http://127.0.0.1:5170/'),
       toolTraceObserver: process.env.NODE_ENV !== 'production'
         ? { record: input => console.info('[kiosk-tools]', input) }
         : undefined,
@@ -896,7 +911,7 @@ export async function createApp() {
       envelopeCrypto: dependsOn.envelopeCrypto,
       // Dialogue-bearing payloads are local diagnostics, not production logs.
       traceObserver: process.env.NODE_ENV !== 'production'
-        ? { record: trace => console.info(`[kiosk-interaction-decisions ${trace.phase === 'request' ? '->' : '<-'} Jev]`, JSON.stringify(trace, null, 2)) }
+        ? { record: trace => console.info(`[kiosk-interaction-decisions ${trace.phase === 'request' ? '->' : '<-'} System One]`, JSON.stringify(trace, null, 2)) }
         : undefined,
     }),
   })

@@ -129,5 +129,20 @@ describe('admin Webnavior AI routes', () => {
     expect(savePolicy).toHaveBeenCalledWith({ decisionInstruction: '只選現有候選。', storeInstruction: '顧客說套餐時先開啟套餐分類。' })
     expect(modelsResponse.status).toBe(200)
     expect(inspectRuntimeModel).toHaveBeenCalledWith({ baseURL: 'https://system-one.example', implementation: 'dasein', timeoutMs: 5000 })
+
+    const slmUpdate = await app.request('/system-one/profiles/system-one-1', {
+      body: JSON.stringify({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', modelId: 'local-qwen', name: '店內 SLM', timeoutMs: 30_000 }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH',
+    })
+    expect(slmUpdate.status).toBe(200)
+    expect(update).toHaveBeenCalledWith('system-one-1', expect.objectContaining({ implementation: 'slm', modelId: 'local-qwen' }))
+    const slmModels = await app.request('/system-one/runtime-model:inspect', {
+      body: JSON.stringify({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', timeoutMs: 5000, plaintextKey: 'private-inspection-key' }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    })
+    expect(slmModels.status).toBe(200)
+    expect(inspectRuntimeModel).toHaveBeenCalledWith({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', timeoutMs: 5000, plaintextKey: 'private-inspection-key' })
   })
 })

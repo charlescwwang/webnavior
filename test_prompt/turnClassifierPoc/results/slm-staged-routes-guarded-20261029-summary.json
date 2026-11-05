@@ -1,0 +1,414 @@
+{
+  "source": "partition",
+  "cases": 44,
+  "actualRequests": 129,
+  "elapsedMs": 304657,
+  "modelId": "huggingface.co/unsloth/qwen3.5-4b-gguf:latest",
+  "policyHash": "f89cfc3db18b1512ca0820c2b7fc0e718e1cd54cd4eac4060bcb9439b8e54939",
+  "sourceHash": "f4f6449c84a0b651634b34e6a26521768cd0ca069f6654dac3fdf46841e5d8e4",
+  "scope": "Staged routing labels only; no Main, browser action, ASR or field acceptance.",
+  "fieldAcceptance": false,
+  "rows": [
+    {
+      "id": "p01",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "p02",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MATCH",
+      "questions": 4
+    },
+    {
+      "id": "p03",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "p04",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "p05",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "p06",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 3
+    },
+    {
+      "id": "p07",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MATCH",
+      "questions": 4
+    },
+    {
+      "id": "p08",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "intent:search-menu",
+      "status": "MATCH",
+      "questions": 4
+    },
+    {
+      "id": "p09",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "intent:add-item",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "p10",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 6
+    },
+    {
+      "id": "p11",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "p12",
+      "accepted": [
+        "intent:add-item"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 5
+    },
+    {
+      "id": "p13",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p14",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p15",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p16",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p17",
+      "accepted": [
+        "intent:set-fulfillment:dine-in"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 6
+    },
+    {
+      "id": "p18",
+      "accepted": [
+        "intent:set-fulfillment:takeout"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 6
+    },
+    {
+      "id": "p19",
+      "accepted": [
+        "intent:set-fulfillment:dine-in"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p20",
+      "accepted": [
+        "intent:set-fulfillment:takeout"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 6
+    },
+    {
+      "id": "p21",
+      "accepted": [
+        "intent:set-party-size"
+      ],
+      "observed": "intent:set-party-size",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "p22",
+      "accepted": [
+        "intent:set-party-size"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p23",
+      "accepted": [
+        "intent:set-party-size"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p24",
+      "accepted": [
+        "intent:set-party-size"
+      ],
+      "observed": "IGNORE",
+      "status": "APPLICATION_GAP",
+      "questions": 1
+    },
+    {
+      "id": "p25",
+      "accepted": [
+        "intent:start-checkout"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p26",
+      "accepted": [
+        "intent:start-checkout"
+      ],
+      "observed": "intent:start-checkout",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "p27",
+      "accepted": [
+        "intent:defer-question"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "p28",
+      "accepted": [
+        "intent:defer-question"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p29",
+      "accepted": [
+        "MULTI_ACTION",
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p30",
+      "accepted": [
+        "MULTI_ACTION",
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p31",
+      "accepted": [
+        "MULTI_ACTION",
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p32",
+      "accepted": [
+        "MULTI_ACTION",
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 6
+    },
+    {
+      "id": "p33",
+      "accepted": [
+        "intent:search-menu"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 4
+    },
+    {
+      "id": "p34",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p35",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 5
+    },
+    {
+      "id": "p36",
+      "accepted": [
+        "NEEDS_ASSISTANT"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p37",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "IGNORE",
+      "status": "MATCH",
+      "questions": 1
+    },
+    {
+      "id": "p38",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "IGNORE",
+      "status": "MATCH",
+      "questions": 1
+    },
+    {
+      "id": "p39",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "IGNORE",
+      "status": "MATCH",
+      "questions": 1
+    },
+    {
+      "id": "p40",
+      "accepted": [
+        "IGNORE"
+      ],
+      "observed": "NEEDS_ASSISTANT",
+      "status": "MISMATCH",
+      "questions": 2
+    },
+    {
+      "id": "p41",
+      "accepted": [
+        "INCOMPLETE"
+      ],
+      "observed": "INCOMPLETE",
+      "status": "MATCH",
+      "questions": 2
+    },
+    {
+      "id": "p42",
+      "accepted": [
+        "INCOMPLETE"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p43",
+      "accepted": [
+        "INCOMPLETE"
+      ],
+      "observed": "IGNORE",
+      "status": "MISMATCH",
+      "questions": 1
+    },
+    {
+      "id": "p44",
+      "accepted": [
+        "INCOMPLETE"
+      ],
+      "observed": "INCOMPLETE",
+      "status": "MATCH",
+      "questions": 2
+    }
+  ],
+  "policyVersion": "staged-with-independent-write-purpose-and-whole-effect-checks"
+}

@@ -1,3 +1,5 @@
+import { resumeAudioContext } from './activation'
+
 export interface BaseVADConfig {
   // Sample rate of the audio
   sampleRate: number
@@ -56,7 +58,7 @@ export interface VADAudioOptions {
   vadConfig?: Partial<BaseVADConfig>
 }
 
-export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, options?: VADAudioOptions) {
+export function createVADStates(vad: Pick<BaseVAD, 'processAudio'>, vadAudioWorkletUrl: string, options?: VADAudioOptions) {
   let audioWorkletNode: AudioWorkletNode | null
   let mediaStream: MediaStream | null
   let sourceNode: MediaStreamAudioSourceNode | null
@@ -70,6 +72,7 @@ export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, option
     },
   } = options || {}
 
+  let activation = new AbortController()
   let audioContext = new AudioContext(audioContextOptions)
 
   async function initialize() {
@@ -117,9 +120,9 @@ export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, option
     }
 
     try {
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume()
-      }
+      if (activation.signal.aborted)
+        activation = new AbortController()
+      await resumeAudioContext(audioContext, activation.signal)
 
       // Request microphone access
       disconnectInputGraph()
@@ -143,12 +146,14 @@ export function createVADStates(vad: BaseVAD, vadAudioWorkletUrl: string, option
   }
 
   function stop() {
+    activation.abort(new Error('VAD input stopped.'))
     if (audioContext) {
       audioContext.suspend()
     }
   }
 
   function dispose() {
+    activation.abort(new Error('VAD input disposed.'))
     disconnectInputGraph()
     if (audioWorkletNode) {
       audioWorkletNode.disconnect()

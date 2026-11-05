@@ -16,6 +16,9 @@ Do not put that URL in chat, recording metadata, or the configured survey URL.
 
 ## WebMCP compatibility contract
 
+This native contract remains for Stage Web. Kiosk/Menu use the separate
+interactive-service protocol below; the updated Menu does not register the native probe.
+
 `@proj-airi/stage-shared/webmcp` exports `webMcpHealthTool` and
 `webMcpHealthResultSchema`. An interactive service registers the tool with its
 native WebMCP domain tools, using the same `exposedTo` allowlist and abort signal.
@@ -26,3 +29,67 @@ dependencies or side effects. It is an infrastructure probe, not an Agent tool.
 Use it to gate native input/result transport before business execution. Do not
 use it to authorize actions or assert that payment, login, business tools, or
 physical pointer routing work. Do not probe with a domain tool as a substitute.
+
+## Kiosk interactive-service contract
+
+`@proj-airi/stage-shared/interactive-service` owns the Eventa definitions, Valibot
+envelope schemas and tool descriptor/execution types for the approved Kiosk
+iframe. Discovery echoes a versioned challenge and returns the document ID,
+tool revision and current descriptors. Execution binds the connection/document,
+operation ID, tool revision and object input; results retain the opaque domain
+receipt. Both endpoints must also validate exact origin and source Window.
+Inspection binds the same connection/document to a bounded list of operation
+IDs and reports pending/settled/failed/missing states without invoking tools.
+Recovery requires every lost operation to be settled and the binding to have no
+pending calls. Discovery of a new document cannot validate an old operation.
+This contract provides no ordering authorization or arbitrary browser control;
+the service runtime validates its tools and domain rules.
+
+## Kiosk conversation facts
+
+`@proj-airi/stage-shared/kiosk-conversation` owns the neutral Main context,
+application handoff and outcome contracts. Valibot validates explicit bounded
+fields, complete product coverage and the 256 KiB abnormal-payload cap. It excludes
+browser/Node runtime dependencies, images and vendor payloads. Menu produces the
+snapshot; Kiosk binds it to a current task; Server projects it once per model
+request. This is not the Jev candidate contract or an authorization token.
+`conversationRequestSchema` describes an uncommitted meal draft: original request
+when known, active/suspended/confirming status, known quantity and option values,
+explicit missing slots, and domain revisions. An absent quantity is unknown,
+never one serving. Menu projects these facts into `retainedRequests`; Host passes
+them to Jev and Main without turning them into candidate or write authority.
+Read-only Main handoffs retain draft progress even when the catalog is omitted.
+Drafts do not represent successful cart effects or renew question tickets.
+`conversationQuestionSchema.requestId` correlates meal questions with stable
+draft identity; the answer's `questionId` identifies its separate short lease.
+`intentRecoverySchema` carries Menu-issued request effects or question-bound
+answer effects for bounded Main interpretation. The HTTP/Host boundaries validate
+this shape; the actual Menu operation still validates the current issued choice,
+customer text, domain revisions and execution rules. Passive reads issue no new
+interpretation scope from historical focus.
+
+`contextReplySchema` and `replyFromContext` let Main select information or
+clarification while the application renders facts from a fresh snapshot. They
+never render model-supplied success prose or turn snapshot data into a write receipt.
+Offered payment labels are independent of phase-specific allowed operations.
+
+`@proj-airi/stage-shared/kiosk-audio` owns the PCM sample rate/width, WAV header,
+maximum upload chunk duration and request-byte ceiling. It describes transport,
+not Site VAD segmentation or authorization to execute an utterance.
+
+The same subpath exports service-recovery result/progress contracts, read-only
+service-clarification schema, domain-version/question correlation and shared time
+ceilings. `SERVICE_RECOVERY_PROGRESS` start is only provider work notification;
+service admission must be established independently, and neither grants a Menu
+operation ticket. It carries no fabricated Jev confidence.
+
+## Quantity-limit refusal
+
+`kiosk-conversation` owns the20-serving policy constant, the current Menu
+`quantityPolicy` projection (including raw `mentionedCounts` evidence) and strict `quantityLimitRejectionSchema` receipt.
+Count evidence grants no order authority; semantic negation/item binding remains
+Main-owned. A refusal proves that the named operation did not execute; it does not roll back
+other successful operations. Hosts retain successful sibling receipts and show
+them together with the refusal. Do not retry, reduce or split the rejected count.
+A model may select `quantity-limit` for a factual policy reply; customer-facing
+wording comes from the current Menu projection rather than model success prose.

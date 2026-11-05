@@ -5,7 +5,7 @@ import { readonly, shallowRef } from 'vue'
 
 export type AiCapability = 'chat' | 'vision' | 'asr' | 'tts'
 export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
-export type SystemOneImplementation = 'dasein' | 'lookski'
+export type SystemOneImplementation = 'dasein' | 'lookski' | 'slm'
 
 export interface AiProviderProfile {
   enableThinking: boolean
@@ -83,6 +83,7 @@ export interface SystemOneProfileInput {
 /** Model currently loaded by the configured local System One implementation. */
 export interface SystemOneRuntimeModel {
   modelId: string
+  modelIds?: string[]
 }
 
 /** System One's editable semantic prompt and optional store-specific addition. */
@@ -259,7 +260,7 @@ export function useWebnaviorAiControl() {
     }, '無法儲存 System One 設定。')
   }
 
-  async function inspectSystemOneRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs'>) {
+  async function inspectSystemOneRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs' | 'plaintextKey'>) {
     return await run(async () => {
       return await (await request('/system-one/runtime-model:inspect', {
         body: JSON.stringify(input),

@@ -3,12 +3,12 @@ import { render } from 'vitest-browser-vue'
 
 import ScenarioSurface from './ScenarioSurface.vue'
 
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
-import { webMcpAdapter } from '../services/webmcp-adapter'
 
 afterEach(() => {
   scenarioRegistry.setServices([])
-  webMcpAdapter.activate(undefined)
+  interactiveServiceClient.activate(undefined)
 })
 
 it('revokes assistant handles on same-service reload and unmount without blocking the iframe', async () => {
@@ -25,14 +25,14 @@ it('revokes assistant handles on same-service reload and unmount without blockin
   const frame = screen.container.querySelector('iframe')
   expect(frame?.getAttribute('allow')).toContain('geolocation')
   expect(frame?.getAttribute('sandbox')).toBeNull()
-  await expect.poll(() => webMcpAdapter.availability.value).not.toBe('idle')
+  await expect.poll(() => interactiveServiceClient.availability.value).not.toBe('idle')
 
   scenarioRegistry.reloadActive()
-  expect(webMcpAdapter.availability.value).toBe('idle')
-  expect(webMcpAdapter.tools.value).toEqual([])
-  await expect.poll(() => webMcpAdapter.availability.value).not.toBe('idle')
+  expect(interactiveServiceClient.availability.value).toBe('idle')
+  expect(interactiveServiceClient.tools.value).toEqual([])
+  await expect.poll(() => interactiveServiceClient.availability.value).not.toBe('idle')
 
   screen.unmount()
-  expect(webMcpAdapter.availability.value).toBe('idle')
-  expect(webMcpAdapter.tools.value).toEqual([])
+  expect(interactiveServiceClient.availability.value).toBe('idle')
+  expect(interactiveServiceClient.tools.value).toEqual([])
 })

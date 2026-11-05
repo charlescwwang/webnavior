@@ -1,3 +1,6 @@
+import type { ConversationQuestion, ConversationRequest, IntentRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ServiceMode } from '@proj-airi/stage-shared/kiosk-service-mode'
+
 import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { CatalogMentionEvidence } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { PriceConditions, PriceEvidence } from '../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
@@ -6,7 +9,14 @@ import type { IngredientFilters } from './domain/composition'
 import type { CartLine, CartSnapshot, MenuItem, Selection } from './domain/order-machine'
 import type { SeatingContext } from './domain/seating'
 
+import { conversationOptionSchema, conversationRequestSchema } from '@proj-airi/stage-shared/kiosk-conversation'
+import { array, parse } from 'valibot'
+
+import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
+import { invoiceDraftReady } from './domain/checkout-flow'
 import { filterIngredients, mentionedDietaryReferences, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
+import { possibleMenuItems, productFragment, resolveCategories, resolveMenuItems } from './domain/menuIdentity'
+import { parseNumericSlot } from './domain/numericSlots'
 import { priceEvidence } from './domain/pricing'
 import { partySizeSlot } from './domain/seating'
 import { paymentLabels } from './pos-bridge'
@@ -14,7 +24,7 @@ import { paymentLabels } from './pos-bridge'
 /** Customer intent vocabulary. These names deliberately never expose WebMCP. */
 export type KioskIntent
   = | 'ADD_ITEM' | 'CANCEL_CHECKOUT' | 'CHOOSE_INVOICE' | 'CLEAR_CART'
-    | 'CONFIRM_TAX_ID' | 'RECOMMEND' | 'REMOVE_ITEM' | 'REQUEST_TAX_ID'
+    | 'CONFIRM_INVOICE' | 'CONFIRM_TAX_ID' | 'RECOMMEND' | 'REMOVE_ITEM' | 'REQUEST_TAX_ID'
     | 'SEARCH_MENU' | 'SCROLL_MENU' | 'SELECT_ITEM' | 'SELECT_PAYMENT' | 'SET_FULFILLMENT'
     | 'SET_OPTION' | 'SET_QUANTITY' | 'SET_TAX_ID' | 'SHOW_RECOMMENDATIONS'
     | 'SKIP_CUSTOMER_ENTRY' | 'SKIP_MEMBERSHIP' | 'START_CHECKOUT' | 'VIEW_CART' | 'SET_PARTY_SIZE' | 'RESERVE_TABLES' | 'DEFER_QUESTION' | 'RETURN_MENU'
@@ -26,6 +36,7 @@ export const targetReferenceLimit = 5
 export type KioskPhase = 'customer_entry' | 'ordering' | 'checkout_membership' | 'checkout_invoice' | 'checkout_tax_id' | 'checkout_payment_select' | 'payment_locked' | 'checkout_complete'
 
 export interface KioskIntentContext {
+  serviceMode?: ServiceMode
   customerEntryPending?: boolean
   customerEntrySkipSupported?: boolean
   menuReturnSupported?: boolean
@@ -81,6 +92,10 @@ export interface DecisionContext extends KioskIntentContext {
 }
 
 export interface DomainPlan {
+  /** Stable draft identity; question/answer leases have separate IDs. */
+  requestId?: string
+  /** Original customer text when this plan came from a spoken/typed request. */
+  sourceUtterance?: string
   questionId?: string
   expectedRevisions: Partial<KioskRevisions>
   intent: KioskIntent
@@ -106,7 +121,7 @@ export function questionIsCurrent(question: PendingQuestion, revisions: KioskRev
 
 export type KioskOperationToolName
   = | 'cart_add_item' | 'cart_clear' | 'cart_get' | 'cart_remove_item' | 'cart_set_line_option' | 'cart_set_line_quantity'
-    | 'customer_skip_phone' | 'checkout_cancel' | 'checkout_choose_invoice' | 'checkout_confirm_tax_id' | 'checkout_request_tax_id' | 'checkout_select_payment' | 'checkout_set_tax_id' | 'checkout_skip_membership' | 'checkout_start'
+    | 'customer_skip_phone' | 'checkout_cancel' | 'checkout_choose_invoice' | 'checkout_confirm_invoice' | 'checkout_confirm_tax_id' | 'checkout_request_tax_id' | 'checkout_select_payment' | 'checkout_set_tax_id' | 'checkout_skip_membership' | 'checkout_start'
     | 'menu_get' | 'menu_open' | 'menu_scroll' | 'menu_recommend' | 'menu_select_item' | 'menu_set_item_option' | 'menu_set_quantity' | 'menu_show_recommendations'
     | 'order_add_item' | 'order_set_fulfillment' | 'order_set_party_size' | 'seating_reserve' | 'order_defer_question'
 
@@ -133,7 +148,7 @@ type ResolutionResult
 
 /** A one-use authorization for a high-risk customer action. */
 export interface PendingConfirmation {
-  action: 'CANCEL_CHECKOUT' | 'CLEAR_CART' | 'CONFIRM_TAX_ID'
+  action: 'CANCEL_CHECKOUT' | 'CLEAR_CART' | 'SET_FULFILLMENT'
   cartRevision?: number
   checkoutRevision?: number
   confirmationId: string
@@ -228,6 +243,10 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     referenceOrigins[reference.refId] = 'category'
   for (const reference of focusRefs)
     referenceOrigins[reference.refId] = 'presentation'
+  for (const id of input.presentationItemIds ?? []) {
+    if (menuItems.some(item => item.id === id))
+      referenceOrigins[`item:${id}`] ??= 'presentation'
+  }
   if (selectedRef)
     referenceOrigins[selectedRef.refId] = 'selection'
   for (const reference of cartRefs)
@@ -254,14 +273,14 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   if (input.customerEntryPending) {
     phase = 'customer_entry'
     if (input.customerEntrySkipSupported)
-      candidates.push(candidate('SKIP_CUSTOMER_ENTRY', 'intent:skip-customer-entry', '顧客明確表示略過、不留電話、不要會員或直接開始點餐；略過自願的電話登記，進入菜單，不新增餐點、不代表登入會員。'))
+      candidates.push(candidate('SKIP_CUSTOMER_ENTRY', 'intent:skip-customer-entry', '顧客明確表示略過、不留電話、不要會員、直接開始點餐或關閉目前電話登記畫面；略過自願的電話登記，進入菜單，不新增餐點、不代表登入會員。'))
   }
   else if (!checkout) {
     if (input.menuReturnSupported)
       candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。'))
     // Target resolution is independent of intent selection: Jev receives one
     // candidate per operation, never one per product or cart line.
-    candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。泛問販售內容或看全部每次最多展示三項推薦；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
+    candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。沒有既有瀏覽條件時，泛問販售內容可展示完整菜單；已有條件時沿用條件找其他，明確要全部則選查看完整菜單的獨立候選；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
     if (input.menuScrollSupported) {
       candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:up', '捲動菜單，顯示目前位置上方、較前段且接近開頭的內容；每次一個可視頁面，保留分類、推薦與購物車。', undefined, { direction: 'UP' }))
       candidates.push(candidate('SCROLL_MENU', 'intent:scroll-menu:down', '捲動菜單，顯示目前位置下方、較後段且接近結尾的內容；每次一個可視頁面，保留分類、推薦與購物車。', undefined, { direction: 'DOWN' }))
@@ -273,25 +292,30 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
       candidates.push(candidate('ADD_ITEM', 'intent:add-item', '顧客要求購買或加點餐點，才建立訂購項目。匹配品名／別名只提供查詢對象，不是購買授權；詢問種類、款式、有哪些或有沒有都選查詢，不選新增。明確要點餐點但缺份數／選項仍可新增，由程式補問；分類須有明確份數才建立待選品項訂購。品項歧義由程式釐清，不自行挑選。'))
     if (!itemRefs.length && (!categoryRefs.length || priceEvidence(transcript)) && !possibleItems.length)
       candidates.push(candidate('RECOMMEND', 'intent:recommend', '顧客請系統挑選值得吃的餐點：開始一輪簡單推薦，最多三項；可套用已知分類、單份價格及飲食限制。不是列出整份菜單，也不是換掉剛推薦的一批。'))
-    if (!itemRefs.length && !categoryRefs.length && !possibleItems.length && input.recommendationConditions !== undefined)
-      candidates.push(candidate('RECOMMEND', 'intent:recommend-more', `顧客追問其他選擇、要求換一批或在已展示後要求看全部；依店家政策每次最多三項，排除已推薦餐點，沿用${input.recommendationConditions}，不展開整份菜單或重顯上一批。`, undefined, { more: 1 }))
+    // Full catalog and retained-condition continuation are different effects.
+    // Let the semantic model choose; no keyword parser silently clears filters.
+    if (input.recommendationConditions !== undefined && !itemRefs.length && !categoryRefs.length && !possibleItems.length)
+      candidates.push(candidate('SEARCH_MENU', 'intent:search-all-menu', '顧客明確要求看全部／完整菜單，解除原瀏覽價位與分類限制，展示全部販售內容；只問其他餐點不選本項，不新增訂單。', undefined, { entireCatalog: 1 }))
+    if (!itemRefs.length && !possibleItems.length && (input.recommendationConditions !== undefined || input.presentationItemIds?.length))
+      candidates.push(candidate('RECOMMEND', 'intent:recommend-more', `顧客追問其他推薦、要求換一批；明確要求全部菜單應選查看完整菜單的獨立候選，而非本項。每次最多三項，排除已推薦餐點，釋放前次精確單品查詢並保留有效的飲食條件，沿用${input.recommendationConditions ?? '目前的飲食條件'}，不展開整份菜單或重顯上一批。`, undefined, { more: 1 }))
     if (input.cart.lines.length)
       candidates.push(candidate('VIEW_CART', 'intent:view-cart', '查看目前購物車。'))
     if (selected || input.cart.lines.length) {
       candidates.push(candidate('SET_QUANTITY', 'intent:set-quantity', '修改已選或購物車現有餐點數量，不新增品項。'))
       candidates.push(candidate('SET_OPTION', 'intent:set-option', '修改已選或購物車現有餐點客製選項。'))
     }
+    if (input.cart.lines.length || currentItems.length === 1)
+      candidates.push(candidate('REMOVE_ITEM', 'intent:remove-item', matchingCartLines > 1 ? '移除購物車中的餐點；若有多筆同名品項，程式會詢問是哪一筆。' : '移除購物車中的特定一筆餐點；若目前已無該餐點，只回報目前沒有，不移除其他餐點。'))
     if (input.cart.lines.length) {
       const modes = input.fulfillmentModes ?? [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }]
-      candidates.push(candidate('REMOVE_ITEM', 'intent:remove-item', matchingCartLines > 1 ? '移除購物車中的餐點；若有多筆同名品項，程式會詢問是哪一筆。' : '移除購物車中的特定一筆餐點。'))
       candidates.push(candidate('CLEAR_CART', 'intent:clear-cart', '明確要求清空整個購物車。'))
-      if ((input.cart.fulfillmentMode !== 'dine-in' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'dine-in')))
+      if (input.serviceMode !== 'table-service' && (input.cart.fulfillmentMode !== 'dine-in' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'dine-in')))
         candidates.push(candidate('SET_FULFILLMENT', 'intent:set-fulfillment:dine-in', input.cart.fulfillmentMode === 'dine-in' ? `顧客重申本次${modes.find(mode => mode.id === 'dine-in')!.label}；維持原設定與未回答問題，不表示暫緩或拒絕。` : `這筆訂單設為${modes.find(mode => mode.id === 'dine-in')!.label}，接著詢問用餐人數與選桌。`, undefined, { mode: 'dine-in' }))
-      if ((input.cart.fulfillmentMode !== 'takeout' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'takeout')))
+      if (input.serviceMode !== 'table-service' && (input.cart.fulfillmentMode !== 'takeout' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'takeout')))
         candidates.push(candidate('SET_FULFILLMENT', 'intent:set-fulfillment:takeout', input.cart.fulfillmentMode === 'takeout' ? `顧客重申本次${modes.find(mode => mode.id === 'takeout')!.label}；維持原設定與未回答問題，不表示暫緩或拒絕。` : `這筆訂單設為${modes.find(mode => mode.id === 'takeout')!.label}，釋放尚未付款的暫留桌位。`, undefined, { mode: 'takeout' }))
       if (input.cart.fulfillmentMode) {
         if (!seating || seating.ready)
-          candidates.push(candidate('START_CHECKOUT', 'intent:start-checkout', '開始結帳，進入會員與發票步驟。'))
+          candidates.push(candidate('START_CHECKOUT', 'intent:start-checkout', input.serviceMode === 'table-service' ? '顧客確認本桌訂單，直接送出，不進行付款。' : '開始結帳，進入會員與發票步驟。'))
       }
     }
     if (seating) {
@@ -316,6 +340,8 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   }
   else if (checkout.stage === 'invoice') {
     phase = 'checkout_invoice'
+    if (invoiceDraftReady(checkout))
+      candidates.push(candidate('CONFIRM_INVOICE', 'intent:confirm-invoice', '確認畫面上已填妥且格式有效的發票載具資料；確認、送出、已經輸入／輸入完成是承接這份資料並進入付款方式，不選擇付款、不付款。'))
     candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:donation', '顧客選擇「略過」或「捐贈發票」：記錄捐贈選擇，直接進入付款方式，不輸入捐贈碼，也不執行付款。', undefined, { method: 'donation' }))
     candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:carrier', '選擇手機載具；資料未確認前停留在輸入畫面。', undefined, { method: 'carrier' }))
     candidates.push(candidate('CHOOSE_INVOICE', 'intent:choose-invoice:citizen', '選擇自然人憑證條碼；資料未確認前停留在輸入畫面。', undefined, { method: 'citizen' }))
@@ -327,8 +353,8 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     const taxId = extractTaxId(transcript)
     if (taxId)
       candidates.push(candidate('SET_TAX_ID', 'intent:set-tax-id', '將顧客說出的八位統編帶入畫面。', undefined, { taxId }))
-    if (/^\d{8}$/.test(checkout.taxId ?? ''))
-      candidates.push(candidate('CONFIRM_TAX_ID', 'intent:confirm-tax-id', '確認畫面上的統編正確。', undefined, { taxId: checkout.taxId! }))
+    if (invoiceDraftReady(checkout))
+      candidates.push(candidate('CONFIRM_TAX_ID', 'intent:confirm-tax-id', '確認或送出畫面上已填妥的八碼統編；表示資料沒問題、填完了、繼續或就用這個，是確認當前資料並進入付款方式，不另外重問確認、不選擇付款或付款。', undefined, { taxId: checkout.taxId! }))
     candidates.push(candidate('CANCEL_CHECKOUT', 'intent:cancel-checkout', '取消結帳並回到訂單。'))
   }
   else if (checkout.stage === 'payment') {
@@ -342,13 +368,27 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     phase = 'checkout_complete'
   }
 
+  if (checkout && ['checkout_membership', 'checkout_invoice', 'checkout_tax_id', 'checkout_payment_select'].includes(phase) && input.cart.lines.length) {
+    for (const mode of input.fulfillmentModes ?? [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }]) {
+      if (mode.id !== input.cart.fulfillmentMode)
+        candidates.push(candidate('SET_FULFILLMENT', `intent:set-fulfillment:${mode.id}`, `顧客要求改為${mode.label}；先確認返回訂單，確認後取消尚未付款的結帳並切換方式，尚未完成修改。`, undefined, { mode: mode.id }))
+    }
+  }
+
   if (possibleItems.length) {
     // Discovery fragments cannot redirect edits/removals to the selected item
     // or cart just because there is no verified target in this utterance.
     const targetedMutations: KioskIntent[] = ['ADD_ITEM', 'SELECT_ITEM', 'SET_OPTION', 'SET_QUANTITY', 'REMOVE_ITEM']
     candidates.splice(0, candidates.length, ...candidates.filter(choice => !targetedMutations.includes(choice.intent)))
   }
-  const waiting = input.waitingFor?.phase === phase ? input.waitingFor : undefined
+  // A current POS mode reference is a new foreground entity. It cannot
+  // simultaneously assent to an older checkout invitation. Main may still
+  // qualify a compound request; this only removes the incompatible shortcut.
+  const newFulfillmentReference = input.cart.lines.length > 0 && input.waitingFor?.purpose !== 'fulfillment'
+    && input.fulfillmentModes?.some(mode => transcript.includes(mode.label)) === true
+  const waiting = input.waitingFor?.phase === phase && !newFulfillmentReference ? input.waitingFor : undefined
+  if (newFulfillmentReference)
+    candidates.splice(0, candidates.length, ...candidates.filter(choice => choice.intent !== 'START_CHECKOUT'))
   if (waiting) {
     // Keep explicit new targets available, but do not turn a bare acknowledgment
     // into a repeat purchase or draft edit simply because a cart exists.
@@ -399,7 +439,7 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     }
     else {
       purpose = 'checkout-entry'
-      question = '要進入結帳流程嗎？'
+      question = context.serviceMode === 'table-service' ? '確認這份訂單並送出嗎？' : '要進入結帳流程嗎？'
       intents = ['START_CHECKOUT']
     }
   }
@@ -407,7 +447,7 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     const definitions = {
       customer_entry: { purpose: 'customer-entry', question: '手機號碼可自願填寫，也可以選擇略過，直接開始點餐。', intents: ['SKIP_CUSTOMER_ENTRY'] },
       checkout_membership: { purpose: 'membership', question: '請掃描會員條碼，或選擇略過會員。', intents: ['SKIP_MEMBERSHIP'] },
-      checkout_invoice: { purpose: 'invoice', question: '請選擇手機載具、自然人憑證、公司統編，或略過並捐贈發票。', intents: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID'] },
+      checkout_invoice: { purpose: 'invoice', question: invoiceDraftReady(context.checkout) ? orderingMessages['zh-Hant'].checkout.invoiceConfirmQuestion : orderingMessages['zh-Hant'].checkout.invoiceQuestion, intents: ['CHOOSE_INVOICE', 'CONFIRM_INVOICE', 'REQUEST_TAX_ID'] },
       checkout_tax_id: { purpose: 'tax-id', question: context.checkout?.taxId ? `請確認畫面上的統編 ${context.checkout.taxId.split('').join(' ')} 是否正確。` : '請提供八位統編。', intents: ['SET_TAX_ID', 'CONFIRM_TAX_ID'] },
       checkout_payment_select: { purpose: 'payment-method', question: `請選擇${context.allowedPaymentMethods.map(method => paymentLabels[method]).join('或')}。`, intents: ['SELECT_PAYMENT'] },
     } as const
@@ -419,11 +459,9 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     intents = [...definition.intents]
   }
   const choices = context.candidates.filter(choice => intents.includes(choice.intent)).map(choice => ({ ...choice }))
-  if (purpose === 'invoice')
-    question = `請選擇發票方式：${choices.map(choice => choice.description).join(' ')} `.trim()
   if (purpose === 'checkout-entry') {
     for (const choice of choices)
-      choice.description = '顧客同意開始結帳；進入會員與發票步驟。'
+      choice.description = context.serviceMode === 'table-service' ? '顧客確認本桌訂單，直接送出。' : '顧客同意開始結帳；進入會員與發票步驟。'
   }
   // Party size and tax ID are finite validated slots supplied on the next
   // utterance; an unanswered question does not manufacture a slot value.
@@ -438,13 +476,32 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   if (!resolved)
     return { kind: 'IGNORE' }
   const transcript = context.transcript?.trim() ?? ''
+  // One finite operation cannot determine which of several explicit counts
+  // survives a correction or split order. Keep the whole utterance for Main;
+  // selecting the first count can reject a negated200 or invent the wrong order.
+  if (['ADD_ITEM', 'SET_QUANTITY'].includes(resolved.intent) && [...normalizeSlotNumbers(transcript).matchAll(/(?:^|[^\d.-])(\d+)\s*[份個碗杯]/g)].length > 1)
+    return { kind: 'NEEDS_ASSISTANT' }
   if (resolved.intent === 'SEARCH_MENU' && ['possible', 'overflow'].includes(context.productResolution.status) && !context.searchInterpretation)
     return { kind: 'NEEDS_ASSISTANT' }
   const menuRefs = context.references.filter(reference => reference.refId.startsWith('item:'))
   const categoryRefs = context.references.filter(reference => reference.refId.startsWith('category:'))
-  const namedNow = resolveMenuItems(context.menu, transcript)
-  const namedItemIds = new Set((namedNow.length ? namedNow : resolveMenuItems(context.menu, context.previousTranscript ?? '')).map(item => item.id))
+  // deriveDecisionContext already excludes old names when this turn supplies a
+  // new category or discovery fragment. Re-resolving the previous transcript
+  // here would incorrectly promote a category member to an explicit product.
+  const namedItemIds = new Set(context.targetConstraints.itemIds)
   const explicitMenuRefs = menuRefs.filter(reference => namedItemIds.has(reference.refId.slice(5)))
+  // Separately named dishes are a whole request, not alternatives for one target.
+  // Preserve that boundary even if a retained single-choice answer supplies a ref;
+  // otherwise one high-confidence choice silently discards the other dishes.
+  const namedSubjects = new Set(context.catalogEvidence.products.filter(product => product.source !== 'fragment').map(product => product.matchedText))
+  if (resolved.intent === 'ADD_ITEM' && explicitMenuRefs.length > 1 && namedSubjects.size > 1)
+    return { kind: 'NEEDS_ASSISTANT' }
+  // A category match is browsing evidence, not a product identity. An unknown
+  // dish can contain a category word (鱔魚意麵 -> 麵食); even one available
+  // category member cannot become that dish. Preserve the original request for
+  // Main instead of offering a substitution disguised as target clarification.
+  if (['ADD_ITEM', 'SELECT_ITEM'].includes(resolved.intent) && !chosenTargetRef && !explicitMenuRefs.length && menuRefs.length === 1 && context.referenceOrigins[menuRefs[0]!.refId] === 'category')
+    return { kind: 'NEEDS_ASSISTANT' }
   const hasNamedItem = namedItemIds.size > 0
   const selectedRefs = context.references.filter(reference => reference.refId.startsWith('selected:') && (!hasNamedItem || namedItemIds.has(reference.refId.slice(9))))
   const cartRefs = context.references.filter(reference => reference.refId.startsWith('cart:') && (!hasNamedItem || namedItemIds.has(context.cart.lines.find(line => lineRef(line) === reference.refId)?.itemId ?? '')))
@@ -472,6 +529,21 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
       // A selected draft and the last cart addition are both plausible for a
       // bare repeat request. Never silently prefer one when they differ.
       targetRefs = menuRefs.length ? menuRefs : [...selectedRefs, ...distinctRecentAddedRefs]
+      // An ordinal belongs to the pre-task visible order, never catalog order
+      // or a later lookup. The whole short phrase must be a reference with an
+      // optional quantity; it cannot turn a quoted/query sentence into a buy.
+      if (!explicitMenuRefs.length && context.presentationItemIds?.length) {
+        const ordinal = /^那?(?:我要|[要點來])?(第[0-9一二三四五六七八九十]+[項個筆])(?:[，,]?(?:要|來)?[0-9一二兩三四五六七八九十百]+[份碗個])?[。！!]?$/u.exec(transcript.replace(/\s/g, ''))
+        if (ordinal) {
+          const shown = context.presentationItemIds.flatMap((id) => {
+            const item = context.menu.find(item => item.id === id)
+            return item ? [{ refId: itemRef(item), label: item.name }] : []
+          })
+          const reference = resolveClarificationReference(ordinal[1]!, shown)
+          if (reference)
+            targetRefs = shown.filter(item => item.refId === reference)
+        }
+      }
       break
     case 'SET_OPTION':
     case 'SET_QUANTITY':
@@ -549,6 +621,20 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   }
 
   const targetRef = targetRefs[0]?.refId
+  if (resolved.intent === 'ADD_ITEM' && targetRef) {
+    const itemId = targetRef.startsWith('cart:') ? context.cart.lines.find(line => lineRef(line) === targetRef)?.itemId : targetRef.slice(targetRef.indexOf(':') + 1)
+    const item = context.menu.find(item => item.id === itemId)
+    if (item) {
+      const current = optionSlotsFromTranscript(item, transcript)
+      const overridden = new Set(current.map(option => option.groupId))
+      const effective = [...optionSlotsFromTranscript(item, context.previousTranscript ?? '').filter(option => !overridden.has(option.groupId)), ...current]
+      // One cart line has one value per option group. Multiple values can be
+      // a split order or a correction; neither may be reduced to the last value
+      // for every serving. Main must resolve the complete original utterance.
+      if (new Set(effective.map(option => option.groupId)).size !== effective.length)
+        return { kind: 'NEEDS_ASSISTANT', targetResolution }
+    }
+  }
   if (resolved.intent === 'SEARCH_MENU') {
     if (targetRef?.startsWith('item:'))
       slots.query = context.menu.find(item => item.id === targetRef.slice(5))?.name ?? ''
@@ -618,7 +704,7 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   }
   // Broad catalog exploration uses the current recommendation batch. Named
   // products, categories and newly requested food conditions remain searches.
-  if (resolved.intent === 'SEARCH_MENU' && slots.scope === 'all' && !slots.priceConditions && !slots.dietary && !slots.excludeIngredients && !slots.includeIngredients && context.recommendationConditions !== undefined)
+  if (resolved.intent === 'SEARCH_MENU' && slots.scope === 'all' && !slots.priceConditions && !slots.dietary && !slots.excludeIngredients && !slots.includeIngredients && !slots.entireCatalog && context.recommendationConditions !== undefined)
     slots.more = 1
   if (resolved.intent === 'SET_TAX_ID' && !slots.taxId)
     return { kind: 'NEEDS_ASSISTANT' }
@@ -627,8 +713,84 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   const expectedRevisions = revisionsFor({ ...resolved, targetRef, slots }, context)
   const waiting = context.waitingFor
   const questionId = waiting && (waiting.choices.some(choice => choice.id === resolved.id) || resolved.intent === 'DEFER_QUESTION' || (waiting.purpose === 'party-size' && resolved.intent === 'SET_PARTY_SIZE') || (waiting.purpose === 'tax-id' && resolved.intent === 'SET_TAX_ID')) ? waiting.questionId : undefined
-  const plan = { expectedRevisions, intent: resolved.intent, slots, ...(questionId ? { questionId } : {}), ...(targetRef ? { targetRef } : {}) }
+  const plan = { expectedRevisions, intent: resolved.intent, slots, ...(context.transcript ? { sourceUtterance: context.transcript } : {}), ...(questionId ? { questionId } : {}), ...(targetRef ? { targetRef } : {}) }
   return { kind: configurationQuestion(plan, context.menu, 'check') ? 'CONFIGURATION' : 'PLAN', plan, targetResolution }
+}
+
+/** Current question projection shared by readers and bounded model recovery. */
+export function describeQuestion(question: PendingQuestion, candidates = question.choices) {
+  const intents = new Set(question.choices.map(choice => choice.intent))
+  if (question.purpose === 'party-size')
+    intents.add('SET_PARTY_SIZE')
+  if (question.purpose === 'tax-id') {
+    intents.add('SET_TAX_ID')
+    intents.add('CONFIRM_TAX_ID')
+  }
+  return { questionId: question.questionId, purpose: question.purpose, question: question.question, expiresAt: question.expiresAt, choices: candidates.filter(choice => intents.has(choice.intent) || choice.intent === 'DEFER_QUESTION').map(choice => ({ id: choice.id, description: choice.description })) }
+}
+
+/**
+ * Projects Menu's bounded interpretation scope for either model. Model choice
+ * does not bypass resolveIntent, authorize, question leases or cart execution.
+ * Entry/payment phases and ambiguous new meal targets remain outside this scope.
+ * Invoice confirmation exposes only its valid Menu-owned draft effect.
+ */
+export function intentRecovery(context: DecisionContext, question: ConversationQuestion | undefined = context.waitingFor ? describeQuestion(context.waitingFor, context.candidates) : undefined): IntentRecovery | undefined {
+  // Passive snapshots carry progress, but cannot issue a new interpretation
+  // scope from old focus after an answer lease expires.
+  // Confirming a valid visible invoice draft is a finite Menu-owned effect,
+  // separate from payment selection. Main may resolve this issued candidate
+  // after service admission even when no spoken question lease exists.
+  const confirmationIntent = context.phase === 'checkout_invoice' ? 'CONFIRM_INVOICE' : context.phase === 'checkout_tax_id' ? 'CONFIRM_TAX_ID' : undefined
+  if (context.transcript?.trim() && confirmationIntent && invoiceDraftReady(context.checkout)) {
+    const candidateIds = context.candidates.filter(choice => choice.intent === confirmationIntent).map(choice => choice.id)
+    return candidateIds.length ? { kind: 'request', candidateIds } : undefined
+  }
+  if (!context.transcript?.trim() || context.phase !== 'ordering' || context.constraints.unresolvedPrice)
+    return undefined
+  const exact = context.productResolution.status === 'exact' && context.productResolution.count === 1
+  // A newly named meal is an independent request even while an ordinary
+  // fulfillment question waits; draft confirmation/configuration stays owned.
+  const newMeal = exact && !question?.requestId && question?.questionId === context.waitingFor?.questionId
+  // A POS-owned mode label is independent entity evidence, just like a named
+  // meal. It does not authorize changing the mode: Main still interprets the
+  // complete utterance (including negation), and Menu validates the effect.
+  const namedFulfillment = context.cart.lines.length > 0 && question?.purpose !== 'fulfillment'
+    && context.fulfillmentModes?.some(mode => context.transcript!.includes(mode.label)) === true
+  if (question && !newMeal && !namedFulfillment) {
+    if (question.expiresAt <= Date.now() || !question.choices.length)
+      return undefined
+    // Owned draft questions use their stable request ID; ordinary ordering
+    // questions must be the domain's current presented question. Neither path
+    // admits an arbitrary question copied from model dialogue.
+    if (!question.requestId && context.waitingFor?.questionId !== question.questionId)
+      return undefined
+    return { kind: 'answer', questionId: question.questionId, ...(question.requestId ? { requestId: question.requestId } : {}), candidateIds: question.choices.map(choice => choice.id) }
+  }
+  const contextual = context.productResolution.status === 'none' && context.modelReferences.length === 1
+    && !context.catalogEvidence.categories.length && context.candidates.some(candidate => candidate.intent === 'ADD_ITEM')
+  if (!exact && !contextual && !namedFulfillment)
+    return undefined
+  const candidateIds = context.candidates.filter(candidate => (namedFulfillment && candidate.intent === 'SET_FULFILLMENT') || ['SEARCH_MENU', 'SELECT_ITEM', 'ADD_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'REMOVE_ITEM'].includes(candidate.intent)).map(candidate => candidate.id)
+  return candidateIds.length ? { kind: 'request', candidateIds } : undefined
+}
+
+/** Projects one live domain draft without inventing defaults or cart effects. */
+export function describeRequest(id: string, status: ConversationRequest['status'], plan: DomainPlan, menu: readonly MenuItem[]): ConversationRequest {
+  const item = menu.find(item => item.id === plan.slots.itemId)
+  if (plan.intent !== 'ADD_ITEM' || !item)
+    throw new Error('A retained request must reference a current meal plan.')
+  const options = parse(array(conversationOptionSchema), typeof plan.slots.options === 'string' ? JSON.parse(plan.slots.options) : [])
+  return parse(conversationRequestSchema, {
+    id,
+    itemId: item.id,
+    status,
+    ...(plan.sourceUtterance ? { sourceUtterance: plan.sourceUtterance } : {}),
+    ...(plan.slots.quantity !== undefined ? { quantity: plan.slots.quantity } : {}),
+    options,
+    missing: { quantity: plan.slots.quantity === undefined, optionGroupIds: item.optionGroups.filter(group => group.required && !options.some(option => option.groupId === group.id)).map(group => group.id) },
+    expectedRevisions: plan.expectedRevisions,
+  })
 }
 
 /** Builds missing-slot choices solely from the resolved item and its POS options. */
@@ -655,69 +817,9 @@ export function configurationQuestion(plan: DomainPlan, menu: readonly MenuItem[
   return undefined
 }
 
-/** Only known catalog names and merchant-provided aliases can identify items. */
-function resolveMenuItems(menu: readonly MenuItem[], transcript: string) {
-  const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
-  const occurrences = menu.flatMap((item) => {
-    return [item.name, ...(item.aliases ?? [])].flatMap((name) => {
-      const token = name.toLocaleLowerCase().replace(/\s/g, '')
-      if (!token)
-        return []
-      const matches: Array<{ end: number, item: MenuItem, start: number }> = []
-      for (let start = normalized.indexOf(token); start >= 0; start = normalized.indexOf(token, start + 1)) matches.push({ end: start + token.length, item, start })
-      return matches
-    })
-  })
-  // Prefer the longest real catalog name at an overlapping location, while
-  // retaining separately spoken products elsewhere in the same utterance.
-  const chosen: typeof occurrences = []
-  for (const match of occurrences.sort((left, right) => (right.end - right.start) - (left.end - left.start))) {
-    if (chosen.some(existing => existing.item.id === match.item.id))
-      continue
-    if (chosen.some(existing => match.start < existing.end && existing.start < match.end && (match.start !== existing.start || match.end !== existing.end)))
-      continue
-    chosen.push(match)
-  }
-  return menu.filter(item => chosen.some(match => match.item.id === item.id))
-}
-
-/** Proposes literal catalog fragments, never a fuzzy match accepted as an item ID. */
-function possibleMenuItems(menu: readonly MenuItem[], transcript: string) {
-  return menu.filter(item => productFragment(item, menu, transcript) !== undefined)
-}
-
-/** Longest literal fragment is discovery evidence only, never a configured alias. */
-function productFragment(item: MenuItem, menu: readonly MenuItem[], transcript: string) {
-  const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
-  const categories = new Set(menu.flatMap(item => [item.category.toLocaleLowerCase(), ...(item.category.endsWith('食') ? [item.category.slice(0, -1).toLocaleLowerCase()] : [])]))
-  const fragments = [item.name, ...(item.aliases ?? [])].flatMap((name) => {
-    const token = name.toLocaleLowerCase().replace(/\s/g, '')
-    const matches: string[] = []
-    for (let length = token.length; length >= 2; length--) {
-      for (let start = 0; start <= token.length - length; start++) {
-        const fragment = token.slice(start, start + length)
-        if (!categories.has(fragment) && normalized.includes(fragment))
-          matches.push(fragment)
-      }
-    }
-    return matches
-  })
-  return fragments.sort((left, right) => right.length - left.length)[0]
-}
-
-function resolveCategories(menu: readonly MenuItem[], transcript: string) {
-  const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
-  const matches = [...new Set(menu.map(item => item.category))].filter((category) => {
-    const name = category.toLocaleLowerCase()
-    return normalized.includes(name) || (name.endsWith('食') && normalized.includes(name.slice(0, -1)))
-  })
-  const best = Math.max(0, ...matches.map(category => category.length))
-  return matches.filter(category => category.length === best)
-}
-
 /** The question is assembled exclusively from the revision-bound real refs. */
 export function buildClarificationPrompt(references: readonly DomainReference[]) {
-  return `您指的是${references.map(reference => reference.label).join('、')}？`
+  return orderingMessages['zh-Hant'].targetChoice.replace('{items}', references.map(reference => reference.label).join('或'))
 }
 
 /** Resolves only a spoken choice among the already-bound clarification refs. */
@@ -733,6 +835,8 @@ export function resolveClarificationReference(transcript: string, references: re
       || normalized === `第${chineseOrdinals[index]}筆`
       || normalized === `第${position}個`
       || normalized === `第${chineseOrdinals[index]}個`
+      || normalized === `第${position}項`
+      || normalized === `第${chineseOrdinals[index]}項`
   })
   return matches.length === 1 ? matches[0]!.refId : undefined
 }
@@ -753,8 +857,15 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
     case 'SEARCH_MENU':
       // Keep the customer's search intent in the trace while applying the
       // venue's bounded presentation policy through the recommendation tool.
-      if (plan.slots.scope === 'all' && !filters.dietary && !filters.excludeIngredients?.length && !filters.includeIngredients?.length)
+      // The resolver has already bound broad exploration to the retained
+      // recommendation batch. Keep that continuation even when this utterance
+      // supplies no new price fields; menu_get would reset to the full catalog.
+      if (plan.slots.scope === 'all' && plan.slots.more)
+        return { ...base, input: { more: true, ...filters }, toolName: 'menu_recommend' }
+      if (plan.slots.scope === 'all' && Object.keys(filters).some(key => ['minPrice', 'maxPrice', 'priceOrder'].includes(key)))
         return { ...base, input: { ...(plan.slots.more ? { more: true } : {}), ...filters }, toolName: 'menu_recommend' }
+      if (plan.slots.scope === 'all')
+        return { ...base, input: { scope: 'catalog', display: true, ...filters }, toolName: 'menu_get' }
       return { ...base, input: { ...(plan.slots.queries ? { queries: JSON.parse(String(plan.slots.queries)) as string[] } : plan.slots.scope === 'all' ? { display: true } : plan.slots.category ? { category: plan.slots.category } : { query: plan.slots.query }), ...filters }, toolName: 'menu_get' }
     case 'RECOMMEND': return { ...base, input: { ...(plan.slots.more ? { more: true } : {}), ...(plan.slots.category ? { category: plan.slots.category } : {}), ...(plan.slots.needs ? { needs: [plan.slots.needs] } : {}), ...filters }, toolName: 'menu_recommend' }
     case 'SHOW_RECOMMENDATIONS': return { ...base, input: { itemIds: String(plan.slots.itemIds).split(',') }, toolName: 'menu_show_recommendations' }
@@ -767,6 +878,7 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
           ...base,
           input: {
             itemId: plan.slots.itemId ?? targetId,
+            ...(plan.slots.replaceLineId ? { replaceLineId: plan.slots.replaceLineId } : {}),
             ...(plan.slots.options ? { options: JSON.parse(String(plan.slots.options)) as Array<{ groupId: string, valueId: string }> } : {}),
             quantity: plan.slots.quantity,
           },
@@ -784,6 +896,7 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
     case 'CHOOSE_INVOICE': return { ...base, input: { method: plan.slots.method }, toolName: 'checkout_choose_invoice' }
     case 'REQUEST_TAX_ID': return { ...base, input: {}, toolName: 'checkout_request_tax_id' }
     case 'SET_TAX_ID': return { ...base, input: { taxId: plan.slots.taxId }, toolName: 'checkout_set_tax_id' }
+    case 'CONFIRM_INVOICE': return { ...base, input: { confirmedByUser: true }, toolName: 'checkout_confirm_invoice' }
     case 'CONFIRM_TAX_ID': return { ...base, input: { confirmedByUser: true }, toolName: 'checkout_confirm_tax_id' }
     case 'SELECT_PAYMENT': return { ...base, input: { method: plan.slots.method }, toolName: 'checkout_select_payment' }
     case 'CANCEL_CHECKOUT': return { ...base, input: { confirmedByUser: true }, toolName: 'checkout_cancel' }
@@ -806,10 +919,10 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
   const allowedByPhase: Record<KioskPhase, readonly KioskIntent[]> = {
     customer_entry: ['SKIP_CUSTOMER_ENTRY', 'SEARCH_MENU', 'RECOMMEND', 'SHOW_RECOMMENDATIONS'],
     ordering: ['ADD_ITEM', 'CLEAR_CART', 'RECOMMEND', 'REMOVE_ITEM', 'SEARCH_MENU', 'SCROLL_MENU', 'SELECT_ITEM', 'SET_FULFILLMENT', 'SET_OPTION', 'SET_QUANTITY', 'SHOW_RECOMMENDATIONS', 'START_CHECKOUT', 'VIEW_CART', 'SET_PARTY_SIZE', 'RESERVE_TABLES', 'RETURN_MENU'],
-    checkout_membership: ['SKIP_MEMBERSHIP', 'CANCEL_CHECKOUT'],
-    checkout_invoice: ['CHOOSE_INVOICE', 'REQUEST_TAX_ID', 'CANCEL_CHECKOUT'],
-    checkout_tax_id: ['SET_TAX_ID', 'CONFIRM_TAX_ID', 'CANCEL_CHECKOUT'],
-    checkout_payment_select: ['SELECT_PAYMENT', 'CANCEL_CHECKOUT'],
+    checkout_membership: ['SKIP_MEMBERSHIP', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
+    checkout_invoice: ['CONFIRM_INVOICE', 'CHOOSE_INVOICE', 'REQUEST_TAX_ID', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
+    checkout_tax_id: ['SET_TAX_ID', 'CONFIRM_TAX_ID', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
+    checkout_payment_select: ['SELECT_PAYMENT', 'CANCEL_CHECKOUT', 'SET_FULFILLMENT'],
     payment_locked: [],
     checkout_complete: [],
   }
@@ -820,6 +933,8 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
   if (plan.intent === 'SCROLL_MENU' && (!context.menuScrollSupported || !['UP', 'DOWN'].includes(String(plan.slots.direction)) || plan.input.direction !== plan.slots.direction))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
   if (plan.intent === 'START_CHECKOUT' && (!context.cart.lines.length || !context.cart.fulfillmentMode))
+    return { kind: 'BLOCKED' as const, reason: 'INVALID_PHASE' as const }
+  if (context.serviceMode === 'table-service' && ['SET_FULFILLMENT', 'SELECT_PAYMENT', 'CHOOSE_INVOICE', 'SET_PARTY_SIZE', 'RESERVE_TABLES'].includes(plan.intent))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_PHASE' as const }
   if (plan.intent === 'SET_FULFILLMENT' && context.fulfillmentModes && !context.fulfillmentModes.some(mode => mode.id === plan.slots.mode))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
@@ -860,6 +975,8 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
     return { kind: 'BLOCKED' as const, reason: 'TARGET_MISSING' as const }
   if ((plan.intent === 'SET_QUANTITY' || plan.intent === 'ADD_ITEM') && (!Number.isInteger(Number(plan.slots.quantity ?? 1)) || Number(plan.slots.quantity ?? 1) < 1 || Number(plan.slots.quantity ?? 1) > 20))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
+  if (plan.intent === 'CONFIRM_INVOICE' && !invoiceDraftReady(context.checkout))
+    return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
   if (plan.intent === 'CONFIRM_TAX_ID' && plan.slots.taxId !== context.checkout?.taxId)
     return { kind: 'BLOCKED' as const, reason: 'STALE_PLAN' as const }
   if (plan.intent === 'SET_TAX_ID' && !/^\d{8}$/.test(String(plan.slots.taxId ?? '')))
@@ -878,9 +995,15 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
 export function requiresConfirmation(plan: OperationPlan, context: DecisionContext) {
   // Selecting a method opens the test scan step and remains reversible during
   // its countdown. Only the simulator's result proves payment authorization.
-  if (plan.intent === 'CLEAR_CART' || plan.intent === 'CONFIRM_TAX_ID')
+  if (plan.intent === 'SET_FULFILLMENT' && context.checkout)
     return true
-  return plan.intent === 'CANCEL_CHECKOUT' && (context.checkout?.stage === 'payment' || Boolean(context.checkout?.carrierCode || context.checkout?.taxId))
+  // Invoice identifiers advance only to payment-method selection. The
+  // customer's confirmation is already the intent, so do not ask it twice.
+  if (plan.intent === 'CLEAR_CART')
+    return true
+  // Returning discards both committed identifiers and unsubmitted form drafts.
+  // Main's confirmedByUser flag is a proposal, not the separate user answer.
+  return plan.intent === 'CANCEL_CHECKOUT' && (context.checkout?.stage === 'payment' || Boolean(context.checkout?.invoiceDraft?.code || context.checkout?.carrierCode || context.checkout?.citizenCode || context.checkout?.taxId))
 }
 
 function revisionsFor(candidate: IntentCandidate, context: DecisionContext): Partial<KioskRevisions> {
@@ -910,8 +1033,8 @@ function extractTaxId(transcript: string) {
 
 function quantityFromTranscript(transcript: string, allowBare = false) {
   const normalized = normalizeSlotNumbers(transcript)
-  const matched = /(?:^|\D)(20|1\d|[1-9])\s*[份個碗杯]/.exec(normalized)
-    ?? (allowBare ? /^(?:要|改成|[改再])?\s*(20|1\d|[1-9])\s*$/.exec(normalized) : null)
+  const matched = /(?:^|[^\d.-])(\d+)\s*[份個碗杯]/.exec(normalized)
+    ?? (allowBare ? /^(?:要|改成|[改再])?\s*(\d+)\s*$/.exec(normalized) : null)
   return matched ? Number(matched[1]) : undefined
 }
 
@@ -925,7 +1048,9 @@ function optionSlotsFromTranscript(item: MenuItem, transcript: string) {
 // Normalize only local numeric slots, never the ASR text used for item names.
 // A 顆 value is an option; it must not become the number of servings.
 function normalizeSlotNumbers(transcript: string) {
-  const digits: Record<string, number> = { 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
   return transcript.replace(/[\uFF10-\uFF19]/g, digit => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
-    .replace(/二十|十[一二三四五六七八九]?|[一二兩三四五六七八九]/g, token => String(token === '二十' ? 20 : token.startsWith('十') ? 10 + (digits[token.slice(1)] ?? 0) : digits[token]))
+    .replace(/[零〇一二兩两三四五六七八九十百千萬万]+/g, (token) => {
+      const value = parseNumericSlot(token)
+      return value === undefined ? token : String(value)
+    })
 }

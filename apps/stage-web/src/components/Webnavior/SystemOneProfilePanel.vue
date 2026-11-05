@@ -2,8 +2,10 @@
 import type { SystemOneImplementation, SystemOneProfile } from '../../composables/useWebnaviorAiControl'
 
 import { Button, DoubleCheckButton } from '@proj-airi/ui'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ busy: boolean, profiles: readonly SystemOneProfile[] }>()
+
 const emit = defineEmits<{
   activate: [profileId: string]
   create: []
@@ -13,7 +15,11 @@ const emit = defineEmits<{
   readiness: [profileId: string]
 }>()
 
+const { t } = useI18n()
+
 function implementationLabel(implementation: SystemOneImplementation) {
+  if (implementation === 'slm')
+    return t('stage.system-one.slm-label')
   return implementation === 'dasein' ? 'Dasein open-jev' : 'lookski/openjev'
 }
 </script>
@@ -26,7 +32,7 @@ function implementationLabel(implementation: SystemOneImplementation) {
           System One 快速決策
         </h2>
         <p :class="['mb-0 mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300']">
-          可選擇 Dasein open-jev 或 lookski/openjev 作為 Kiosk Fast Path；兩者都不會取代對話 AI 或 POS。readiness 會以真實決策確認所選部署可用。
+          {{ t('stage.system-one.panel-description') }}
         </p>
       </div>
       <Button :disabled="props.busy" @click="emit('create')">

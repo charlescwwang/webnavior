@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest'
 
-import { getAuthTrustedOrigins, getTrustedOrigin, resolveCheckoutRedirectBase, resolveTrustedRequestOrigin } from '../origin'
+import { getAuthTrustedOrigins, getTrustedOrigin, isLoopbackOrigin, resolveCheckoutRedirectBase, resolveTrustedRequestOrigin } from '../origin'
 
 describe('origin utils', () => {
+  it('identifies configured HTTP loopback origins for local development', () => {
+    expect(isLoopbackOrigin('http://localhost:3000')).toBe(true)
+    expect(isLoopbackOrigin('https://127.0.0.1:3000')).toBe(true)
+    expect(isLoopbackOrigin('http://[::1]:3000')).toBe(true)
+    expect(isLoopbackOrigin('https://kiosk.example.com')).toBe(false)
+    expect(isLoopbackOrigin('https://localhost.attacker.example')).toBe(false)
+    expect(isLoopbackOrigin('file://localhost')).toBe(false)
+    expect(isLoopbackOrigin('invalid')).toBe(false)
+  })
+
   it('allows localhost origins', () => {
     expect(getTrustedOrigin('http://localhost:5173')).toBe('http://localhost:5173')
   })

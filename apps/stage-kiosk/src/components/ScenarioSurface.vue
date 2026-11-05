@@ -4,28 +4,28 @@ import { onUnmounted, useTemplateRef, watch } from 'vue'
 import CustomerPhoneModal from './customerPhoneModal.vue'
 
 import { useKioskCustomerEntry } from '../composables/useKioskCustomerEntry'
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
-import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{ listening?: boolean }>()
 const emit = defineEmits<{ activity: [] }>()
-const customerEntry = useKioskCustomerEntry(webMcpAdapter)
+const customerEntry = useKioskCustomerEntry(interactiveServiceClient)
 const scenarioFrame = useTemplateRef<HTMLIFrameElement>('scenarioFrame')
 function attachFrame() {
   scenarioRegistry.attachActiveFrame(scenarioFrame.value?.contentWindow ?? null)
-  webMcpAdapter.activate(scenarioRegistry.activeScenario.value?.serviceUrl)
+  interactiveServiceClient.activate(scenarioRegistry.activeScenario.value?.serviceUrl, scenarioFrame.value?.contentWindow)
 }
 
 // Reloads and URL edits can replace the document without changing its service
 // ID. Revoke the old tool handles before the new iframe starts loading.
 watch([scenarioRegistry.activeScenarioId, scenarioRegistry.iframeRevision], () => {
   scenarioRegistry.attachActiveFrame(null)
-  webMcpAdapter.activate(undefined)
+  interactiveServiceClient.activate(undefined)
 }, { immediate: true, flush: 'sync' })
 
 onUnmounted(() => {
   scenarioRegistry.attachActiveFrame(null)
-  webMcpAdapter.activate(undefined)
+  interactiveServiceClient.activate(undefined)
 })
 </script>
 
@@ -36,8 +36,8 @@ onUnmounted(() => {
       ref="scenarioFrame"
       :key="`${scenarioRegistry.activeScenario.value?.id ?? 'none'}:${scenarioRegistry.iframeRevision.value}`"
       :src="scenarioRegistry.activeScenario.value?.serviceUrl"
-      :inert="customerEntry.pending.value || webMcpAdapter.availability.value === 'loading'"
-      allow="tools; geolocation; camera 'none'; microphone 'none'; display-capture 'none'"
+      :inert="customerEntry.pending.value || interactiveServiceClient.availability.value === 'loading'"
+      allow="geolocation; camera 'none'; microphone 'none'; display-capture 'none'"
       :title="scenarioRegistry.activeScenario.value?.title ?? '互動服務'"
       @load="attachFrame"
     />

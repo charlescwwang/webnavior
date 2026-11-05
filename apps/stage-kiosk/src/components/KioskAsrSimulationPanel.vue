@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 
+import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { BasicTextarea, Button } from '@proj-airi/ui'
 import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -55,7 +56,7 @@ function simulate() {
   <section class="simulation-section">
     <h3>測試用：模擬 ASR 辨識結果</h3>
     <p class="simulation-description">
-      不使用麥克風或 ASR；會直接把這段文字交給與正式語音相同的 System One、候選操作與 WebMCP 流程。可能操作目前購物車，請只在測試時使用。
+      不使用麥克風或 ASR；會直接把這段文字交給與正式語音相同的 System One、候選操作與 互動服務工具流程。可能操作目前購物車，請只在測試時使用。
     </p>
     <form class="simulation-form" @submit.prevent="simulate">
       <BasicTextarea
@@ -69,10 +70,10 @@ function simulate() {
       </button>
     </form>
     <p v-if="props.status" class="simulation-status" role="status">
-      {{ props.status }}
+      {{ toTaiwanTraditionalChinese(props.status) }}
     </p>
     <div v-if="props.timing" class="simulation-timing" aria-label="Jev 執行時間">
-      <p>計時語句：{{ props.timing.transcript }}</p>
+      <p>計時語句：{{ toTaiwanTraditionalChinese(props.timing.transcript) }}</p>
       <p>Jev 請求等待：{{ (props.timing.requestDurationMs / 1000).toFixed(2) }} 秒</p>
       <p v-if="props.timing.firstResultDurationMs !== undefined">
         首個判斷回來：{{ (props.timing.firstResultDurationMs / 1000).toFixed(2) }} 秒

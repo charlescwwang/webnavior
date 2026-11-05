@@ -6,7 +6,7 @@ Read this first for local installation. Do not re-discover the repository unless
 
 - Upstream: `https://github.com/moeru-ai/airi.git`
 - Verified tag: `v0.11.3` / `dbf812488829a61cc2e95909e021b215704d066c`
-- Node: `24.13.0`; pnpm: `10.33.0`
+- Node: `24.22.1`; pnpm: `10.33.0`
 - Do not copy `node_modules` between operating systems.
 
 ## Customization handoff

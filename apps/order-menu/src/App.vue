@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { InteractionLifecycleMessage, InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 import type { ComponentPublicInstance } from 'vue'
 
 import type { ContinuationAccess } from './continuation'
@@ -9,6 +10,7 @@ import type { PaymentMethod, PaymentStatus } from './pos-bridge'
 import type { AgentAction, MenuPresentationToolName, MenuToolName, RecommendationPresentation } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch } from 'vue'
 
 import CheckoutInvoice from './components/CheckoutInvoice.vue'
@@ -20,18 +22,19 @@ import MenuItemDialog from './components/MenuItemDialog.vue'
 import MenuPresentationSkeleton from './components/MenuPresentationSkeleton.vue'
 import MenuPresentationSubjects from './components/MenuPresentationSubjects.vue'
 import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
-import OrderHandoff from './components/orderHandoff.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
+import { usePaymentSelectionCountdown } from './composables/usePaymentSelectionCountdown'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { continuationUrl } from './continuation'
-import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmTaxId, requestTaxId, returnToPreviousStep, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
+import { connectInteractiveService } from './interactiveService'
 import { scrollViewport } from './menuScroll'
-import { createPayment, createPosBridgeGateway, getPayment, paymentLabels, testPaymentMethods } from './pos-bridge'
+import { createPayment, createPosBridgeGateway, getPayment, loadOrderingContext, paymentLabels, testPaymentMethods } from './pos-bridge'
 import { createMenuToolRuntime } from './webmcp'
 
 // A deployment can lock the service to one approved host. Otherwise, a page
@@ -64,14 +67,16 @@ const selectedItemId = shallowRef<string>()
 const orderReviewOpen = shallowRef(false)
 const menuInteractionMessage = shallowRef<string>()
 const checkout = shallowRef<CheckoutSnapshot>()
+const orderingContext = shallowRef<OrderingContext>()
+const tableSubmitting = shallowRef(false)
 const paymentMethod = shallowRef<PaymentMethod>()
 const paymentStatus = shallowRef<PaymentStatus>()
 const paymentError = shallowRef<string>()
 const customerPhone = shallowRef<string>()
 // Phone entry is optional; an explicit skip is distinct from an untouched page.
 const customerEntryStatus = shallowRef<'unstarted' | 'pending' | 'provided' | 'skipped'>('unstarted')
-const continuationAccess = shallowRef<ContinuationAccess>()
-const handoffUrl = computed(() => continuationAccess.value ? continuationUrl(continuationAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
+const receiptAccess = shallowRef<ContinuationAccess>()
+const receiptUrl = computed(() => receiptAccess.value ? continuationUrl(receiptAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
 let checkoutRevision = 0
 // Synchronous observation preserves every checkout/payment write, including
 // a change that is undone before the next System One request arrives.
@@ -81,11 +86,10 @@ watch([checkout, paymentMethod, paymentStatus, customerEntryStatus], () => {
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
 let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
-let checkoutTimeoutTimer: ReturnType<typeof setTimeout> | undefined
 let paymentPollTimer: ReturnType<typeof setTimeout> | undefined
 let paymentAttempt = 0
-let unregisterNativeWebMcp: (() => void) | undefined
-let nativeWebMcpUnmounted = false
+let disconnectService: (() => void) | undefined
+let menuUnmounted = false
 const quantities = reactive<Record<string, number>>({})
 const expandedCustomizations = reactive<Record<string, boolean>>({})
 const selectedOptionsByItem = reactive<Record<string, Record<string, string>>>({})
@@ -164,7 +168,7 @@ const cartSummaryLines = computed(() => cart.value.lines.map((line) => {
 const completedOrderLabel = '訂單已確認'
 
 function currency(amount: number) {
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
+  return formatOrderingPrice(amount)
 }
 
 function setCardElement(id: string, element: Element | ComponentPublicInstance | null) {
@@ -225,7 +229,13 @@ function travelDuration(from: { x: number, y: number }, to: { x: number, y: numb
   return Math.round(Math.min(agentCursorTiming.maximumTravelMs, Math.max(agentCursorTiming.minimumTravelMs, duration)))
 }
 
+let itemBrowsePosition: { x: number, y: number } | undefined
+
 async function animateAction(nextAction: AgentAction) {
+  // Selecting a card may scroll it into view before the dialog opens. Return
+  // to the customer's original browsing position when that dialog closes.
+  if (!selectedItemId.value && !nextAction.controlId && nextAction.targetId && menuItems.value.some(item => item.id === nextAction.targetId))
+    itemBrowsePosition ??= { x: window.scrollX, y: window.scrollY }
   cursorTargetId.value = nextAction.targetId
   showAgentCursor.value = true
 
@@ -237,6 +247,8 @@ async function animateAction(nextAction: AgentAction) {
     ? controlElements.get(nextAction.controlId) ?? (nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined)
     : nextAction.targetId ? cardElements.get(nextAction.targetId) : undefined
   if (!target) {
+    if (nextAction.controlId?.startsWith('cart:remove:') || nextAction.controlId?.startsWith('order:fulfillment:'))
+      throw new Error('The requested order control is not visible.')
     cursorPhase.value = 'resting'
     await waitForAgentCursor(agentCursorTiming.dwellMs)
     return
@@ -267,6 +279,21 @@ async function animateAction(nextAction: AgentAction) {
 }
 
 const agentControlsOrder = shallowRef(false)
+watch(selectedItemId, async (itemId, previousId) => {
+  if (itemId) {
+    itemBrowsePosition ??= { x: window.scrollX, y: window.scrollY }
+    return
+  }
+  const position = itemBrowsePosition
+  itemBrowsePosition = undefined
+  if (!previousId || !position)
+    return
+  await nextTick()
+  // An immediately reopened dialog owns its own position; an older close
+  // must not move the viewport underneath it.
+  if (!selectedItemId.value && !orderReviewOpen.value && !checkout.value)
+    window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' })
+})
 const runtime = createMenuToolRuntime({
   testing: import.meta.env.DEV,
   onMenuChanged: (items) => {
@@ -285,6 +312,7 @@ const runtime = createMenuToolRuntime({
     return selectedItem.value ? 'item_configuration' : 'menu'
   },
   visibleItemId: () => selectedItem.value?.id,
+  visibleItemIds: () => visibleMenuItems.value.map(item => item.id),
   fulfillmentModes: [],
   orderingReady: () => customerEntryStatus.value !== 'pending',
   onCustomerEntrySkipped: skipCustomerEntry,
@@ -292,13 +320,18 @@ const runtime = createMenuToolRuntime({
   onCustomerEntryRequested: () => {
     // Only a fresh host order can offer phone entry. Rediscovery must never
     // reopen it after a choice or after a standalone customer started ordering.
+    if (orderingContext.value?.serviceMode === 'table-service')
+      return
     if (customerEntryStatus.value === 'unstarted' && cart.value.lines.length === 0 && !checkout.value && !completedOrderId.value)
       customerEntryStatus.value = 'pending'
   },
-  onSessionReset: () => {
+  serviceContext: () => orderingContext.value,
+  onSessionReset: async () => {
+    if (orderingContext.value)
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
     customerPhone.value = undefined
     customerEntryStatus.value = 'unstarted'
-    continuationAccess.value = undefined
+    receiptAccess.value = undefined
     completedOrderId.value = undefined
     completedOrder.value = undefined
     checkout.value = undefined
@@ -309,6 +342,12 @@ const runtime = createMenuToolRuntime({
     assertCanRestart,
     cancel: cancelCheckout,
     chooseInvoice,
+    confirmInvoice: () => {
+      if (!checkout.value)
+        throw new Error('尚未進入發票確認。')
+      checkout.value = confirmInvoiceDraft(checkout.value)
+      return checkout.value
+    },
     confirmTaxId: confirmTaxIdNumber,
     paymentMethods: testPaymentMethods,
     paymentStatus: () => paymentStatus.value === 'pending' || paymentStatus.value === 'uncertain' ? paymentStatus.value : undefined,
@@ -321,7 +360,7 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onContinuation: access => continuationAccess.value = access }),
+  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
   menu: [],
   onAction: animateAction,
   onReviewRequested: async () => {
@@ -361,11 +400,12 @@ const runtime = createMenuToolRuntime({
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
   onOrderSubmission: handleOrderSubmission,
-  onRecommendationsChange: (presentation) => {
+  onRecommendationsChange: async (presentation) => {
     returnToMenuForAdditionalItems()
     recommendations.value = presentation
     selectedPresentationSubjectId.value = undefined
     activeCategory.value = recommendedCategoryId
+    await nextTick()
   },
   onMenuPresentationActivity: async ({ state, toolName }) => {
     if (state === 'idle') {
@@ -378,10 +418,10 @@ const runtime = createMenuToolRuntime({
     }
 
     menuPresentationLoadingTools.value = [...menuPresentationLoadingTools.value, toolName]
-    // Yield one paint before the synchronous catalog lookup replaces the grid,
-    // otherwise customers never see that the confirmed tool is doing work.
+    // Yield briefly for the skeleton without making the operation depend on
+    // an animation frame: background/hidden documents can suspend those frames.
     await nextTick()
-    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    await waitForAgentCursor(16)
   },
 })
 
@@ -405,26 +445,46 @@ function handleOrderConfirmed(order: SubmittedOrder) {
 
   completedOrderId.value = order.id
   completedOrder.value = order
-  orderStatus.value = order.receipt.customerMessage
+  orderStatus.value = order.receipt.pickupNumber
+    ? `${order.receipt.customerMessage} 取餐號碼：${order.receipt.pickupNumber}`
+    : order.receipt.customerMessage
   checkout.value = undefined
   orderReviewOpen.value = true
   // Completion must reach the host immediately so its configured reward appears.
   // The host displays the carry-away QR alongside that reward until dismissal.
   notifyHost('completed', {
+    ...(order.serviceMode === 'table-service' ? { serviceMode: order.serviceMode, table: order.table, lines: order.cart.lines.map(line => ({ name: line.name, quantity: line.quantity, total: line.unitPrice * line.quantity })) } : {}),
     environment: order.receipt.environment,
     fulfillmentMode: order.cart.fulfillmentMode!,
     id: order.id,
     itemCount: order.cart.itemCount,
+    ...(order.receipt.pickupNumber ? { pickupNumber: order.receipt.pickupNumber } : {}),
     ...(order.receipt.posOrderId ? { posOrderId: order.receipt.posOrderId } : {}),
     status: 'accepted',
     total: order.cart.total,
-  }, handoffUrl.value)
+  }, receiptUrl.value)
 }
 
-function completeCustomerSession() {
+async function completeCustomerSession() {
   const order = completedOrder.value
   if (!order)
     return
+  if (window.parent === window && orderingContext.value?.serviceMode === 'table-service') {
+    try {
+      await runtime.reset()
+    }
+    catch (error) { orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。' }
+    return
+  }
+  if (window.parent === window && orderingContext.value) {
+    try {
+      await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
+    }
+    catch (error) {
+      orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。'
+      return
+    }
+  }
   customerPhone.value = undefined
   customerEntryStatus.value = 'pending'
   if (window.parent === window)
@@ -485,6 +545,19 @@ function skipCustomerEntry() {
 function identifyCustomer(phone: string) {
   customerPhone.value = phone
   customerEntryStatus.value = 'provided'
+}
+
+async function confirmVisibleOrder() {
+  if (orderingContext.value?.serviceMode !== 'table-service')
+    return startCheckout()
+  if (tableSubmitting.value)
+    return
+  tableSubmitting.value = true
+  try {
+    await runtime.confirmTableOrder()
+  }
+  catch (error) { orderStatus.value = errorMessageFrom(error) ?? '訂單未送出。' }
+  finally { tableSubmitting.value = false }
 }
 
 function startCheckout() {
@@ -585,6 +658,8 @@ function returnToMenuForAdditionalItems() {
   checkout.value = undefined
   orderReviewOpen.value = false
   selectedItemId.value = undefined
+  activeCategory.value = undefined
+  selectedPresentationSubjectId.value = undefined
 }
 
 function resetPaymentAttempt() {
@@ -722,19 +797,10 @@ async function simulatePayment() {
   }
 }
 
-watch([checkout, agentControlsOrder], ([nextCheckout, locked]) => {
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
-  if (locked || !nextCheckout)
-    return
-
-  checkoutTimeoutTimer = setTimeout(() => {
-    if (checkout.value?.stage !== nextCheckout.stage)
-      return
-    if (!paymentMethod.value && nextCheckout.stage === 'payment')
-      void returnToOrderReview()
-  }, 30_000)
-})
+const paymentSelectionSeconds = usePaymentSelectionCountdown(
+  () => checkout.value?.stage === 'payment' && !paymentMethod.value && !paymentStatus.value && !agentControlsOrder.value,
+  () => { void returnToOrderReview() },
+)
 
 async function setFulfillmentMode(mode: FulfillmentMode) {
   await invoke('order_set_fulfillment', { mode }, { animate: false })
@@ -793,32 +859,18 @@ function optionLabel(line: CartSnapshot['lines'][number]) {
     .join('、')
 }
 
-async function registerNativeWebMcp() {
-  nativeWebMcpUnmounted = false
-  if (!expectedAiriOrigin)
-    return
-
+async function loadCatalog() {
   try {
-    const unregister = await runtime.registerNativeWebMcp({ exposedTo: [expectedAiriOrigin] })
-    if (!unregister)
-      return
-
-    // Registration is asynchronous. If Vite replaces this component while
-    // it is pending, release the tools immediately instead of leaving their
-    // names registered in the document.
-    if (nativeWebMcpUnmounted)
-      unregister()
-    else
-      unregisterNativeWebMcp = unregister
+    if (!orderingContext.value)
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
   }
   catch (error) {
-    console.error('[order-menu] failed to register native WebMCP tools:', errorMessageFrom(error))
+    catalogError.value = errorMessageFrom(error) ?? '無法取得服務模式。'
+    catalogState.value = 'error'
+    return
   }
-}
-
-async function loadCatalog() {
   const catalog = await loadPosCatalog()
-  if (!catalog)
+  if (!catalog || menuUnmounted)
     return
 
   runtime.setMenu(catalog.items, catalog.revision)
@@ -828,7 +880,9 @@ async function loadCatalog() {
     expandedCustomizations[item.id] = false
     selectedOptionsByItem[item.id] = defaultOptionsFor(item)
   }
-  await registerNativeWebMcp()
+  disconnectService?.()
+  if (expectedAiriOrigin)
+    disconnectService = connectInteractiveService(runtime, expectedAiriOrigin)
 }
 
 onMounted(() => {
@@ -836,14 +890,11 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  nativeWebMcpUnmounted = true
-  unregisterNativeWebMcp?.()
-  unregisterNativeWebMcp = undefined
-  runtime.disposeNativeWebMcp()
+  menuUnmounted = true
+  disconnectService?.()
+  disconnectService = undefined
   if (cartUpdateTimer)
     clearTimeout(cartUpdateTimer)
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
   if (paymentPollTimer)
     clearTimeout(paymentPollTimer)
 })
@@ -867,6 +918,7 @@ onUnmounted(() => {
       :total="currency(cart.total)"
       @back="backCheckout"
       @choose="chooseInvoice"
+      @draft="(method, code) => { if (checkout) checkout = setInvoiceDraft(checkout, method, code) }"
       @details="(method, code) => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) }"
       @tax-id="openTaxId"
       @register-control="setControlElement"
@@ -887,6 +939,7 @@ onUnmounted(() => {
       :error="paymentError"
       :method="paymentMethod"
       :status="paymentStatus"
+      :selection-seconds="paymentSelectionSeconds"
       :total="currency(cart.total)"
       @back="backCheckout"
       @change-method="() => { assertCanRestart(); resetPaymentAttempt() }"
@@ -900,27 +953,23 @@ onUnmounted(() => {
       :completed="!!completedOrderId"
       :completed-label="completedOrderLabel"
       :fulfillment-mode="fulfillmentMode"
-      :fulfillment-modes="posCatalog?.store.fulfillmentModes ?? []"
+      :fulfillment-modes="orderingContext?.serviceMode === 'table-service' ? [] : posCatalog?.store.fulfillmentModes ?? []"
+      :service-context="orderingContext"
+      :submitting="tableSubmitting"
       :seating-ready="true"
       :lines="reviewLines"
       :order-status="orderStatus"
       :submission-status="submissionStatus"
       :total="currency(cart.total)"
       @back="orderReviewOpen = false"
-      @checkout="startCheckout"
+      @checkout="confirmVisibleOrder"
       @remove="removeCartLine"
       @register-control="setControlElement"
       @set-fulfillment="setFulfillmentMode"
       @update-quantity="updateCartLineQuantity"
     >
-      <template #seating>
-        <p v-if="fulfillmentMode === 'dine-in' && !completedOrderId" :class="['table-binding-note']">
-          完成點餐後，請先用手機掃訂單接續碼；入座後再掃桌碼綁定送餐位置。
-        </p>
-      </template>
       <template #continuation>
-        <OrderHandoff v-if="handoffUrl" :url="handoffUrl" @done="completeCustomerSession" />
-        <button v-else type="button" @click="completeCustomerSession">
+        <button type="button" @click="completeCustomerSession">
           完成，開始下一筆
         </button>
       </template>

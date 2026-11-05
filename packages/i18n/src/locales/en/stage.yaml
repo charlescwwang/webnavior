@@ -23,7 +23,50 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
-  voice-presence-ignored: Ignored because local presence is unavailable
+  asr-awaiting-decision: Speech recognized (confirming)
+  admin-access:
+    trigger: Tap five times to open administrator mode
+    mode: Administrator mode
+    title: Enter PIN
+    description: Enter the administrator PIN using the number pad below.
+    pin-label: Administrator PIN
+    keypad: PIN number pad
+    clear: Clear
+    backspace: Delete last digit
+    cancel: Cancel
+    continue: Continue
+    missing-pin: Administrator PIN is not configured. Set VITE_KIOSK_ADMIN_PIN and restart the Kiosk.
+    incorrect-pin: Incorrect PIN. Please try again.
+  service-recovery:
+    queued: Received. Waiting for the previous request to finish…
+    confirming: Checking what you mean…
+    still-confirming: Still checking, please wait…
+    processing: Working on your request…
+    ignored: No ordering action was taken for this message.
+    uncertain: Please rephrase your request or use the screen.
+    failed: Unable to confirm right now. Please try again or use the screen.
+  voice-presence-ignored: Voice admission check failed; result ignored
+  voice-capturing: Speech detected; waiting for the end
+  voice-blocked: Audio received; not sent to ASR
+  voice-block-reasons:
+    observation_disabled: Visual observation is disabled
+    fresh_person: Fresh valid person observation
+    not_observing: Camera inference has not started
+    no_person: No observation meets voice admission conditions yet
+    low_quality: Person detection quality is below the admission threshold
+    outside_zone: Detected person is outside the configured zone
+    stale: Valid person observation has expired
+    no_candidate: No voice candidate was created at speech start
+    queue_full: Voice processing queue is full
+    empty_audio: Final utterance contains no audio samples
+    capture_stopped: Microphone capture stopped or restarted
+    incomplete_segment: Previous speech did not form a complete segment
+  voice-stages:
+    speech_start: 'Check: VAD speech start'
+    speech_end: 'Check: VAD complete segment'
+    before_asr: 'Check: before ASR upload'
+    after_asr: 'Check: after ASR response'
+    capture: 'Check: capture lifecycle'
   text-console:
     title: Text input and trace
     reset: Reset position
@@ -63,11 +106,11 @@ kiosk:
     skip: Skip with button
     voice-hint: Your phone is used only for this transaction record and does not sign in to the external ordering site.
     test-phone-hint: 'For testing, you can enter: 0912345678'
-    query-reminder: Your phone is optional. To start ordering, say “skip” or enter a phone number. For testing, you can enter 0912345678.
-    complete-first: Please say “skip” or enter a phone number first. Then I can recommend dishes or help you order. For testing, you can enter 0912345678.
+    complete-first: Enter your mobile number or say “skip” to browse the menu and order.
     failed: We could not confirm completion. Please choose again or ask the assistant to skip.
     invalid: Enter a 10-digit phone number starting with 09.
   welcome:
+    language-hint: You can also order in Taiwanese.
     preparing: Preparing your welcome…
     first: Welcome! I can introduce our menu whenever you need.
     second: Hello and welcome! I can help you choose your meal.
@@ -90,6 +133,14 @@ kiosk:
     vlm-prompt-hint: Generates an opening from the current image and this guidance. Save and publish changes.
 customer-session:
   completion:
+    table-number: Table
+    total: Total
+    pickup-number: Pickup number
+    survey-switch-title: Post-order survey
+    survey-switch-label: Show post-order survey
+    survey-switch-description: Saved for this browser across reloads. Turning this off hides only the survey; order completion details remain visible.
+    order-number: POS order number
+    pickup-unavailable: No pickup number was provided. Please confirm collection details with staff.
     title: Order submitted
     description: Thank you for your order. This order flow is complete.
     simulated-notice: This is a simulated order and has not been sent to the POS system.
@@ -98,12 +149,12 @@ customer-session:
     qr-alt: Survey QR code
     qr-loading: Preparing the survey QR code…
     qr-error: The survey QR code could not be generated right now.
-    order-title: Take your order to your phone
-    order-description: Scan this order code first, then scan your table code and confirm the delivery table.
-    order-qr-alt: Order continuation QR code
-    order-qr-loading: Preparing the order code…
-    order-qr-error: The order code could not be generated. Please use the link below.
-    order-link: Open the order continuation page on this computer
+    order-title: Take your order details with you
+    order-description: Worried about forgetting your pickup number? Scan to view your pickup number and order details on your phone.
+    order-qr-alt: Order details QR code
+    order-qr-loading: Preparing your order details QR code…
+    order-qr-error: The order details QR code could not be generated. Please use the link below.
+    order-link: Open order details
   idle-confirmation:
     title: Would you like to continue?
     description: Your current conversation and selections are still here. Choose continue to keep going, or clear the current content and start over.
@@ -195,6 +246,14 @@ websocket-status:
   open-settings: Open connection settings
 
 kiosk-agent:
+  retry-stale: The screen or order has changed. Please tell me what you need now.
+  retry-busy: Another request is still being processed. Please try again shortly.
+  context-unavailable: Menu information is unavailable. This request is unfinished; check the connection and say it again.
+  service-unavailable: The menu connection was lost. New operations are paused; reconnect and check your existing order.
+  service-reconnect: Reconnect menu
+  service-recovered: The menu connection is restored. Earlier operations were not replayed; check your order before speaking again.
+  audio-too-large: This recording exceeds the upload limit. No request was executed; please speak in shorter turns.
+  audio-failed: Your speech could not be fully transcribed. No request was executed; please say it again.
   service-connecting: Connecting assistant controls. You can also use the service screen directly.
   service-manual: Assistant controls are unavailable for this service. Please use the service screen directly and check the result there.
   service-browser-unsupported: This browser does not support assistant controls. Please use the service screen directly.
@@ -210,5 +269,20 @@ kiosk-agent:
   tool-limit: The assistant reached its processing limit. Check the completed steps on screen before continuing.
   duplicate-tool-call: The assistant requested a duplicate operation. It was stopped to avoid executing it twice. Please check the screen.
   session-error: The conversation could not be started. Please check the kiosk connection.
-  no-reply: The assistant did not return a usable reply. Please try again.
-  decision-uncertain: Your meaning could not be confirmed. Please clarify or use the screen.
+  no-reply: I couldn’t finish the reply this time. Please try again.
+  result-unknown: The operation result is uncertain. Please check the menu, cart or order currently shown.
+  reply-incomplete: This reply is incomplete. Please try again or explain your request.
+  decision-uncertain: I couldn’t understand your request. Please say it again.
+
+system-one:
+  slm-profile-name: 'Local SLM'
+  slm-label: 'SLM (field test, OpenAI compatible)'
+  slm-option: 'SLM (field test, OpenAI compatible / Docker Model Runner)'
+  model-setup-hint: 'Choose an engine and model, save, then run readiness. SLM returns one choice without reasoning text or tool authority.'
+  slm-base-url-hint: 'Use the OpenAI-compatible API root. Local Docker Model Runner usually uses http://127.0.0.1:12434/engines/v1 without /chat/completions.'
+  available-models: 'Available models'
+  read-models: 'Read available models'
+  discovery-hint: 'Read available IDs from /models. Readiness calls the selected model. Discovery does not mean the model is loaded.'
+  panel-description: 'Choose Dasein open-jev, lookski/openjev or SLM for Kiosk Fast Path. They share staged admission, demand and operation selection. SLM returns one choice. Readiness checks connectivity with a real decision; semantic quality requires separate testing.'
+  policy-description: 'Jev and SLM first separate service, greeting, background and uncertainty, then select demand and operation groups. The application owns candidates, confirmation, payment and WebMCP authorization. Complex requests reach Main intact.'
+  policy-hint: 'Custom instructions apply to demand interpretation after admission. They cannot expand service scope or operation authority. Existing custom text is preserved; restore and save the default to use the concise current policy.'

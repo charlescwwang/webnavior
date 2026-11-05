@@ -15,10 +15,10 @@ function replay(choice: string, confidence: number, speech = 'REQUEST') {
     if (questions.requestPurpose)
       return { answers: { requestPurpose: { choice: 'OPERATION', confidence: 0.95 } } }
     if (questions.service)
-      return { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }
+      return { answers: { serviceRequest: { choice: 'REQUEST', confidence: 0.95 }, recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }
     if (questions.speech)
       return { answers: { speech: { choice: speech, confidence: 0.95 } } }
-    return { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }
+    return { answers: { serviceRequest: { choice: 'REQUEST', confidence: 0.95 }, recipient: { choice: 'KIOSK', confidence: 0.95 }, service: { choice: 'REQUEST', confidence: 0.95 }, filterRequirement: { choice: 'COVERED', confidence: 0.95 }, filterPresence: { choice: 'NO_FILTER', confidence: 0.95 } } }
   }
 }
 
@@ -54,8 +54,8 @@ describe('recorded missing-item complaint recovery', () => {
       invoke: replay(choice, confidence),
     })
     expect(result.kind).toBe(kind)
-    expect(result.modelCalls).toBe(choice === 'INCOMPLETE' ? 3 : confidence < 0.6 ? 2 : 1)
-    expect(result.modelQuestions).toBe(choice === 'INCOMPLETE' ? 3 : confidence < 0.6 ? 2 : 1)
+    expect(result.modelCalls).toBe(choice === 'INCOMPLETE' ? 3 : confidence < 0.6 ? (choice === 'NEEDS_ASSISTANT' ? 3 : 2) : 1)
+    expect(result.modelQuestions).toBe(choice === 'INCOMPLETE' ? 3 : confidence < 0.6 ? (choice === 'NEEDS_ASSISTANT' ? 3 : 2) : 1)
     expect(result.answeredQuestionId).toBeUndefined()
     expect(result.supersededQuestionId).toBeUndefined()
     if (result.kind === 'FAST_ACTION')

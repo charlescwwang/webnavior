@@ -63,6 +63,7 @@ export function useAudioDevice(requestPermission: boolean = false) {
       selectedAudioInput.value = resolvePreferredAudioInput(audioInputs.value)
   }
 
+  const captureConstraints = ref<MediaTrackConstraints>()
   const deviceConstraints = computed<MediaStreamConstraints>(() => ({
     audio: selectedAudioInput.value
       ? {
@@ -70,11 +71,13 @@ export function useAudioDevice(requestPermission: boolean = false) {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
+          ...captureConstraints.value,
         }
       : {
           autoGainControl: true,
           echoCancellation: true,
           noiseSuppression: true,
+          ...captureConstraints.value,
         },
   }))
   const { stream, stop: stopStream, start: startUserMediaStream } = useUserMedia({ constraints: deviceConstraints, enabled: false, autoSwitch: true })
@@ -160,6 +163,7 @@ export function useAudioDevice(requestPermission: boolean = false) {
     selectedAudioInput,
     stream,
     deviceConstraints,
+    captureConstraints,
     permissionGranted,
     permissionState,
 

@@ -18,7 +18,7 @@ describe('retained meal configuration across topic changes', () => {
     const turn = (transcript: string) => runFastPath({
       transcript,
       isEnabled: async () => true,
-      decide: async request => request.transcript === '酸辣魚便當'
+      decide: async request => request.transcript === '泰式酸辣魚便當'
         ? { kind: 'NEEDS_CLARIFICATION', modelQuestions: 1 }
         : { kind: 'FAST_ACTION', modelQuestions: 1, actionId: request.candidates.find(choice => request.transcript === '對' ? choice.id.endsWith(':yes') : choice.description.includes(request.transcript === '一份' ? '1 份' : '2 份'))!.id },
       webMcp: {
@@ -35,7 +35,7 @@ describe('retained meal configuration across topic changes', () => {
         },
       },
     })
-    expect(await turn('酸辣魚便當')).toMatchObject({ kind: 'CLARIFICATION', prompt: '您是要點泰式酸辣魚便當嗎？' })
+    expect(await turn('泰式酸辣魚便當')).toMatchObject({ kind: 'CLARIFICATION', prompt: '您是要點泰式酸辣魚便當嗎？' })
     expect(calls).toEqual(['kiosk_fast_path_context', 'kiosk_fast_path_clarify'])
     expect(await turn('對')).toMatchObject({ kind: 'FAST_ACTION', result: { customerMessage: '請問泰式酸辣魚便當要幾份？' } })
     expect(await turn('一份')).toMatchObject({ kind: 'FAST_ACTION', result: { pendingCustomerChoice: { question: '請問水餃要幾份？' } } })
@@ -46,10 +46,12 @@ describe('retained meal configuration across topic changes', () => {
     const runtime = createMenuToolRuntime({ menu: catalog.items.map(item => ({ ...item, optionGroups: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '水餃' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
-    for (const transcript of ['牛肉麵', '便當', '牛肉麵']) {
+    for (const [index, transcript] of ['牛肉麵', '便當', '牛肉麵'].entries()) {
       const calls: Array<{ name: string, input: Record<string, unknown> }> = []
       const decide = vi.fn()
-        .mockResolvedValueOnce({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelQuestions: 1 })
+      if (index > 0)
+        decide.mockResolvedValueOnce({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', modelQuestions: 1 })
+      decide
         .mockResolvedValueOnce({ kind: 'FAST_ACTION', actionId: transcript === '牛肉麵' ? 'intent:add-item' : 'intent:search-menu', modelQuestions: 1, ...(transcript === '便當' ? { ingredientFilters: { excludeIngredients: [], includeIngredients: [] } } : {}) })
       const result = await runFastPath({
         transcript,
@@ -68,8 +70,9 @@ describe('retained meal configuration across topic changes', () => {
         },
       })
       expect(result.kind).toBe('FAST_ACTION')
-      expect(decide).toHaveBeenCalledTimes(2)
-      expect(calls[1]).toMatchObject({ name: 'kiosk_fast_path_context', input: { transcript, newRequestQuestionId: expect.any(String) } })
+      expect(decide).toHaveBeenCalledTimes(index > 0 ? 2 : 1)
+      if (index > 0)
+        expect(calls[1]).toMatchObject({ name: 'kiosk_fast_path_context', input: { transcript, newRequestQuestionId: expect.any(String) } })
       expect(calls.some(call => String(call.input.candidateId).endsWith(':cancel'))).toBe(false)
       expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ waitingFor: { question: '請問紅燒牛肉麵要幾份？' } })

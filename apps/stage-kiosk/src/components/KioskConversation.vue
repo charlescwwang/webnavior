@@ -4,7 +4,9 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
+import { normalizeOrderingPrices } from '@proj-airi/stage-shared/kiosk-conversation'
 import { ChatHistory } from '@proj-airi/stage-ui/components'
+import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -12,8 +14,8 @@ import KioskAssistantPresence from './KioskAssistantPresence.vue'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 import KioskTextConsole from './kioskTextConsole.vue'
 
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
-import { webMcpAdapter } from '../services/webmcp-adapter'
 
 const props = defineProps<{
   activityStatus?: string
@@ -29,15 +31,19 @@ const props = defineProps<{
   fastPathSimulationTiming?: FastPathTiming
   fontSize: number
   messages: readonly ChatHistoryItem[]
+  recognizedTranscripts?: Array<{ id: number, text: string }>
   pendingTranscript?: string
   retryAvailable?: boolean
   sending: boolean
+  serviceRecoveryBlocked?: boolean
+  serviceRecovering?: boolean
   streamingAssistantMessage?: ChatHistoryItem
   voiceConversationOnly: boolean
 }>()
 
 const emit = defineEmits<{
   retryMessage: []
+  recoverService: []
   simulateAsr: [transcript: string]
 }>()
 
@@ -48,25 +54,43 @@ const assistantLabel = 'Webnavior'
 const historyMessages = computed<ChatHistoryItem[]>(() => [
   ...props.messages,
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
-])
+].map((message): ChatHistoryItem => {
+  // Presentation owns a copy: ASR, model history and tool payloads remain the
+  // original evidence even when their visible text uses Taiwan Traditional.
+  if (message.role === 'assistant') {
+    return {
+      ...message,
+      content: typeof message.content === 'string'
+        ? toTaiwanTraditionalChinese(normalizeOrderingPrices(message.content))
+        : message.content?.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
+      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(slice.text)) } : slice),
+    }
+  }
+  if (message.role === 'user') {
+    return {
+      ...message,
+      content: typeof message.content === 'string'
+        ? toTaiwanTraditionalChinese(normalizeOrderingPrices(message.content))
+        : message.content.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
+    }
+  }
+  if (message.role === 'error')
+    return { ...message, content: toTaiwanTraditionalChinese(message.content) }
+  return message
+}))
 // Tool discovery describes assistant control, not whether the embedded menu
 // loaded successfully. Keep the service usable while that capability is absent.
 const serviceStatus = computed(() => {
-  if (!scenarioRegistry.activeScenario.value || webMcpAdapter.availability.value === 'ready')
+  if (props.serviceRecoveryBlocked)
+    return t('stage.kiosk-agent.service-unavailable')
+  if (!scenarioRegistry.activeScenario.value || interactiveServiceClient.availability.value === 'ready')
     return undefined
-  const reason = webMcpAdapter.unavailableReason.value
-  if (reason === 'unsupported-browser')
-    return t('stage.kiosk-agent.service-browser-unsupported')
-  if (reason === 'missing-health-check')
-    return t('stage.kiosk-agent.service-check-missing')
-  if (reason === 'compatibility-check-failed')
-    return t('stage.kiosk-agent.service-check-failed')
-  return t(webMcpAdapter.availability.value === 'unavailable'
+  return t(interactiveServiceClient.availability.value === 'unavailable'
     ? 'stage.kiosk-agent.service-manual'
     : 'stage.kiosk-agent.service-connecting')
 })
 const orderToolCallRenderers = computed(() => Object.fromEntries(
-  webMcpAdapter.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
+  interactiveServiceClient.tools.value.map(tool => [tool.name, KioskOrderToolStatus]),
 ))
 const chatHistory = useTemplateRef<InstanceType<typeof ChatHistory>>('chatHistory')
 let lateTailFollow: ReturnType<typeof setTimeout> | undefined
@@ -102,10 +126,13 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <div class="message-history">
       <KioskAssistantPresence
         v-if="historyMessages.length === 0 && !props.pendingTranscript"
-        :description="props.assistantPresence.description"
+        :description="toTaiwanTraditionalChinese(props.assistantPresence.description)"
         :mode="props.assistantPresence.mode"
-        :title="props.assistantPresence.title"
+        :title="toTaiwanTraditionalChinese(props.assistantPresence.title)"
       />
+      <p v-if="historyMessages.length === 0" :class="['text-sm opacity-80']">
+        {{ t('stage.kiosk.welcome.language-hint') }}
+      </p>
       <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
            placeholder would otherwise render only the assistant name. -->
       <ChatHistory
@@ -120,20 +147,24 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       />
     </div>
 
+    <div v-for="entry in props.recognizedTranscripts" :key="entry.id" :class="['pending-transcript']" role="status" aria-live="polite">
+      <span>{{ t('stage.kiosk.asr-awaiting-decision') }}</span>
+      <span>{{ toTaiwanTraditionalChinese(entry.text) }}</span>
+    </div>
     <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
-        <span>{{ props.pendingTranscript }}</span>
+        <span>{{ toTaiwanTraditionalChinese(props.pendingTranscript) }}</span>
       </div>
       <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ props.activityStatus }}</span>
+        <span>{{ toTaiwanTraditionalChinese(props.activityStatus) }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
       <ol v-if="props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
         <li v-for="step in props.activitySteps" :key="step.toolName" :class="['assistant-activity-step', `is-${step.state}`]">
           <span class="activity-step-marker" aria-hidden="true" />
-          <span>{{ step.label }}</span>
+          <span>{{ toTaiwanTraditionalChinese(step.label) }}</span>
         </li>
       </ol>
       <output v-if="props.executionDurationMs !== undefined" class="conversation-execution-duration" aria-label="本輪對話處理耗時">
@@ -158,7 +189,15 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       @simulate="emit('simulateAsr', $event)"
     />
     <p v-if="serviceStatus" class="service-status" role="status">
-      {{ serviceStatus }}
+      {{ toTaiwanTraditionalChinese(serviceStatus) }}
+      <button
+        v-if="props.serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
+        type="button"
+        :disabled="props.sending || props.serviceRecovering"
+        @click="emit('recoverService')"
+      >
+        {{ t('stage.kiosk-agent.service-reconnect') }}
+      </button>
     </p>
   </section>
 </template>

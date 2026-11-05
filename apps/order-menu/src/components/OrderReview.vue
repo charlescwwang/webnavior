@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 import type { ComponentPublicInstance } from 'vue'
 
 import type { FulfillmentMode } from '../domain/order-machine'
 
-import { fulfillmentControlId } from '../webmcp'
+import { cartRemovalControlId, fulfillmentControlId } from '../webmcp'
 
 interface ReviewLine {
   id: string
@@ -15,6 +16,8 @@ interface ReviewLine {
 
 const props = defineProps<{
   fulfillmentModes: Array<{ id: FulfillmentMode, label: string }>
+  serviceContext?: OrderingContext
+  submitting?: boolean
   completed: boolean
   fulfillmentMode: FulfillmentMode | undefined
   lines: ReviewLine[]
@@ -49,6 +52,12 @@ const emit = defineEmits<{
       </div>
     </header>
 
+    <p v-if="props.serviceContext?.table" :class="['order-status']">
+      桌號 {{ props.serviceContext.table.label }}
+    </p>
+    <p v-if="props.serviceContext?.serviceMode === 'table-service' && !props.serviceContext.directSubmissionSupported" role="alert">
+      目前 POS 尚未支援未付款的隨桌送單。
+    </p>
     <p v-if="props.lines.length === 0" class="review-empty">
       尚未加入餐點，返回菜單開始點餐。
     </p>
@@ -60,7 +69,7 @@ const emit = defineEmits<{
         </div>
         <strong class="review-line-total">{{ line.total }}</strong>
         <div class="review-line-actions">
-          <button type="button" class="remove-button" :disabled="props.completed" @click="emit('remove', line.id)">
+          <button :ref="element => emit('registerControl', cartRemovalControlId(line.id), element)" type="button" :class="['remove-button']" :disabled="props.completed" @click="emit('remove', line.id)">
             移除
           </button>
           <div class="review-quantity" :aria-label="`${line.name} 購物車數量`">
@@ -80,7 +89,9 @@ const emit = defineEmits<{
       <span>總計</span><strong>{{ props.total }}</strong>
     </section>
 
-    <section v-if="props.lines.length > 0 && !props.completed" class="review-fulfillment" aria-labelledby="fulfillment-heading">
+    <!-- Fulfillment may be chosen before adding food; the Agent and touch UI
+         must expose the same legal controls even when the cart is empty. -->
+    <section v-if="props.fulfillmentModes.length > 0 && !props.completed" :class="['review-fulfillment']" aria-labelledby="fulfillment-heading">
       <div>
         <h3 id="fulfillment-heading">
           用餐方式
@@ -96,8 +107,8 @@ const emit = defineEmits<{
 
     <slot name="seating" />
     <footer class="review-footer">
-      <button v-if="!props.completed" :ref="element => emit('registerControl', 'checkout:start', element)" :class="['confirm-button']" type="button" :disabled="props.lines.length === 0 || !props.fulfillmentMode || !props.seatingReady || props.submissionStatus === 'uncertain'" @click="emit('checkout')">
-        確認訂單，進入結帳
+      <button v-if="!props.completed" :ref="element => emit('registerControl', 'checkout:start', element)" :class="['confirm-button']" type="button" :disabled="props.submitting || (props.serviceContext?.serviceMode === 'table-service' && !props.serviceContext.directSubmissionSupported) || props.lines.length === 0 || !props.fulfillmentMode || !props.seatingReady || props.submissionStatus === 'uncertain'" @click="emit('checkout')">
+        {{ props.serviceContext?.serviceMode === 'table-service' ? '確認訂單，直接送出' : '確認訂單，進入結帳' }}
       </button>
       <p v-if="props.orderStatus" class="order-status">
         {{ props.orderStatus }}

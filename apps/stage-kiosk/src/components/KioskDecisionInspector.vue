@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 
+import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { shallowRef } from 'vue'
 
 export interface KioskDecisionEntry {
@@ -71,7 +72,7 @@ const routeLabels: Record<KioskDecisionEntry['route'], string> = {
         <ol v-else class="entry-list">
           <li v-for="entry in [...entries].reverse()" :key="entry.id" class="entry-card">
             <div class="entry-heading">
-              <strong>{{ entry.transcript }}</strong>
+              <strong>{{ toTaiwanTraditionalChinese(entry.transcript) }}</strong>
               <span>{{ entry.source === 'simulation' ? '模擬 ASR' : '語音 ASR' }} · {{ routeLabels[entry.route] }}</span>
             </div>
             <dl class="entry-grid">
@@ -89,7 +90,7 @@ const routeLabels: Record<KioskDecisionEntry['route'], string> = {
               </dt><dd v-if="entry.reason">
                 {{ entry.reason }}
               </dd>
-              <dt>WebMCP 操作</dt><dd>{{ entry.operation ?? '未執行' }}</dd>
+              <dt>工具操作</dt><dd>{{ entry.operation ?? '未執行' }}</dd>
               <dt>授權結果</dt><dd>{{ entry.authorization ?? '不適用' }}</dd>
               <dt>Main Agent</dt><dd>{{ entry.agentStep ?? '未轉交' }}</dd>
               <dt>Jev 階段</dt><dd>{{ entry.systemOneStep ?? '尚未開始' }}</dd>

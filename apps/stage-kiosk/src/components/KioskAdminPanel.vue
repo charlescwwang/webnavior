@@ -7,7 +7,9 @@ import { useI18n } from 'vue-i18n'
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import MenuSimulationPanel from './menuSimulationPanel.vue'
 
-import { webMcpAdapter } from '../services/webmcp-adapter'
+import { useFeedbackInvitationEnabled } from '../composables/useFeedbackInvitationSettings'
+import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 
 const props = defineProps<{
   device?: KioskDevice
@@ -22,6 +24,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const development = import.meta.env.DEV
+const feedbackInvitationEnabled = useFeedbackInvitationEnabled()
+const textOnlyMode = useKioskTextOnlyMode()
 const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
 const idleDiagnosticsEnabled = defineModel<boolean>('idleDiagnosticsEnabled', { required: true })
 const presenceDiagnosticsEnabled = defineModel<boolean>('presenceDiagnosticsEnabled', { required: true })
@@ -66,7 +70,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
       </section>
 
       <slot name="device-settings" />
-      <MenuSimulationPanel v-if="development" :bridge="webMcpAdapter" />
+      <MenuSimulationPanel v-if="development" :bridge="interactiveServiceClient" />
       <KioskCameraPreviewSettings v-model="cameraPreviewEnabled" />
 
       <section :class="['admin-section']">
@@ -99,6 +103,13 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
 
       <section class="admin-section">
         <h3>對話顯示</h3>
+        <label :class="['toggle-row']">
+          <Checkbox v-model="textOnlyMode" :aria-label="t('deviceSettings.localTextMode.label')" />
+          <span>{{ t('deviceSettings.localTextMode.label') }}</span>
+        </label>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.localTextMode.description') }}
+        </p>
         <FieldRange
           v-model="conversationFontSize"
           :default-value="20"
@@ -140,8 +151,19 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
         </button>
       </section>
 
+      <section :class="['admin-section']">
+        <h3>{{ t('stage.customer-session.completion.survey-switch-title') }}</h3>
+        <label :class="['flex items-center gap-3']">
+          <Checkbox v-model="feedbackInvitationEnabled" :aria-label="t('stage.customer-session.completion.survey-switch-label')" />
+          {{ t('stage.customer-session.completion.survey-switch-label') }}
+        </label>
+        <p :class="['session-description']">
+          {{ t('stage.customer-session.completion.survey-switch-description') }}
+        </p>
+      </section>
+
       <p class="admin-note">
-        互動服務與完成後問卷請在 Webnavior 管理後台的「互動體驗」調整並發布；此頁只保留 Kiosk 現場設定。
+        互動服務與問卷網址請在 Webnavior 管理後台的「互動體驗」調整並發布；此頁只保留 Kiosk 現場設定。
       </p>
     </div>
   </section>

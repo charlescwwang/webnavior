@@ -70,6 +70,7 @@ async function prepare(scenario: Scenario) {
       chooseInvoice: () => { throw new Error('Experiment cannot select invoices') },
       requestTaxId: () => { throw new Error('Experiment cannot handle tax IDs') },
       setTaxId: () => { throw new Error('Experiment cannot handle tax IDs') },
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => { throw new Error('Experiment cannot handle tax IDs') },
       cancel: () => {
         checkout = undefined

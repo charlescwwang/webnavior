@@ -9,7 +9,7 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
 import { usePaymentSimulation } from '../composables/usePaymentSimulation'
 import { paymentLabels, testPaymentMethods } from '../pos-bridge'
 
-const props = defineProps<{ error?: string, method?: PaymentMethod, status?: PaymentStatus, total: string }>()
+const props = defineProps<{ error?: string, method?: PaymentMethod, status?: PaymentStatus, total: string, selectionSeconds?: number }>()
 const emit = defineEmits<{ registerControl: [id: string, element: Element | ComponentPublicInstance | null], cancel: [], back: [], changeMethod: [], select: [method: PaymentMethod], simulate: [] }>()
 const copy = orderingMessages['zh-Hant'].payment
 const selection = computed(() => props.method && props.status === undefined && !props.error ? { method: props.method, total: props.total } : undefined)
@@ -30,6 +30,9 @@ onMounted(start)
     <template v-if="status !== 'pending' && status !== 'uncertain' && status !== 'authorized'">
       <template v-if="!method">
         <p>{{ copy.methodHint }}</p>
+        <p v-if="selectionSeconds !== undefined" role="timer" aria-live="off">
+          {{ copy.selectionCountdown.replace('{seconds}', String(selectionSeconds)) }}
+        </p>
       </template>
       <!-- Keep the same controls available while the unpaid QR is visible so
            touch and voice can both change the selected method. -->

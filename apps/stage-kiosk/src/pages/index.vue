@@ -10,6 +10,7 @@ import KioskStandby from '../components/kioskStandby.vue'
 import { useKioskCharacterAsset } from '../composables/useKioskCharacterAsset'
 import { useKioskDeviceRegistration } from '../composables/useKioskDeviceRegistration'
 import { applyKioskProfile } from '../composables/useKioskInteractiveServices'
+import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
 import { waitForKioskRuntime } from '../services/kiosk-runtime-initialization'
 
 const {
@@ -31,7 +32,10 @@ const isDraftPreview = computed(() => route.query.preview === 'webnavior')
 const kioskCharacterAsset = useKioskCharacterAsset()
 const profileReady = shallowRef(false)
 const profileSyncError = shallowRef<string>()
-const voiceConversationOnly = computed(() => Boolean(
+const localTextOnlyMode = useKioskTextOnlyMode()
+// Either operator preference or central policy may enable text input. Turning
+// off the browser switch defers to central policy; it never forces voice capture.
+const voiceConversationOnly = computed(() => !localTextOnlyMode.value && !deviceSettings.value?.effective.textOnlyMode && Boolean(
   profile.value?.snapshot.voiceConversationOnly,
 ))
 function kioskAssetUrl(asset: { id: string, sha256: string }) {

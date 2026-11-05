@@ -1,8 +1,14 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
+import type { AudioWarning, KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
+import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
+
+import { normalizeOrderingPrices, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
@@ -95,7 +101,7 @@ export type KioskConversationStreamEvent
   = | { type: 'turn-started' }
     | { text: string, type: 'assistant-delta' }
     | { toolCall: KioskToolCall, type: 'tool-requested' }
-    | { agentMode: KioskAgentInteractionMode, answer?: string, toolCalls: KioskToolCall[], type: 'turn-finished' }
+    | { agentMode: KioskAgentInteractionMode, answer?: string, reply?: ContextReply, toolCalls: KioskToolCall[], type: 'turn-finished' }
     | { message: string, reason: KioskReplyFailureReason, type: 'turn-failed' }
 
 const apiBaseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
@@ -126,9 +132,24 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
   return response
 }
 
+/** Advances the authenticated POS round before the host clears or reloads its Menu. */
+export async function resetKioskOrderingContext() {
+  const { context } = await request<{ context: OrderingContext }>('/api/kiosk/pos/v1/ordering-context', { cache: 'no-store', signal: AbortSignal.timeout(5_000) })
+  return await request<{ context: OrderingContext }>('/api/kiosk/pos/v1/ordering-context', { method: 'POST', body: JSON.stringify({ previousId: context.id }), signal: AbortSignal.timeout(5_000) })
+}
+
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */
 export async function fetchKioskBootstrap() {
   return await request<{ device: KioskDevice, deviceSettings: DeviceSettingsSnapshot, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadSettings: KioskVoiceVadSettings }>('/api/kiosk/bootstrap')
+}
+
+/** Best-effort device diagnostics, independent of visitor sessions and model dialogue. */
+export function reportKioskAudioWarning(warning: AudioWarning) {
+  return request<{ accepted: true }>('/api/kiosk/audio/warnings', {
+    method: 'POST',
+    body: JSON.stringify(warning),
+    signal: AbortSignal.timeout(5000),
+  })
 }
 
 /** Reads the current policy only for the device identified by its HttpOnly cookie. */
@@ -281,17 +302,24 @@ export async function recordKioskOrderResult(input: {
 }
 
 /** Builds the multipart request body for the device-authenticated ASR gateway. */
-export function createKioskTranscriptionBody(recording: Blob) {
+export function createKioskTranscriptionBody(recording: Blob, chunk?: KioskAudioChunk) {
   const body = new FormData()
   // useAudioRecorder serializes microphone samples as WAV/PCM. The filename
   // is part of the ASR protocol: providers may choose a decoder from it.
   body.set('file', recording, 'recording.wav')
+  if (chunk) {
+    body.set('utteranceId', chunk.utteranceId)
+    body.set('chunkIndex', String(chunk.index))
+    body.set('sampleStart', String(chunk.sampleStart))
+    body.set('sampleEnd', String(chunk.sampleEnd))
+    body.set('finalChunk', String(chunk.final))
+  }
   return body
 }
 
 /** Sends microphone bytes to the device-authenticated ASR gateway. */
-export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal) {
-  const body = createKioskTranscriptionBody(recording)
+export async function transcribeKioskAudio(recording: Blob, signal?: AbortSignal, chunk?: KioskAudioChunk) {
+  const body = createKioskTranscriptionBody(recording, chunk)
   const response = await requestAudio('/api/kiosk/audio/transcriptions', { body, method: 'POST', signal })
   return await response.json() as { text: string }
 }
@@ -304,8 +332,11 @@ export async function isKioskFastPathEnabled() {
 
 /** Sends bounded choices; only provider failures, not semantic refusals, allow fallback. */
 export async function decideKioskInteraction(input: {
-  onProgress?: (stage: Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }>) => void
+  onProgress?: (stage: Extract<DecisionStageResult, { kind: 'DECISION_PROGRESS' }> | ServiceRecoveryProgress) => void
   maxQuestions?: number
+  budgetMs?: number
+  recoveryUsed?: boolean
+  utteranceId?: number
   isCurrent?: () => boolean
   signal?: AbortSignal
   visitorSessionId?: string
@@ -322,10 +353,13 @@ export async function decideKioskInteraction(input: {
     body: JSON.stringify({ ...input, signal: undefined, onProgress: undefined, isCurrent: undefined, segmented: true }),
   })
   const consumed = new Set<string>()
-  while (result.kind === 'DECISION_PROGRESS') {
+  let jevQuestions = 0
+  while (result.kind === 'DECISION_PROGRESS' || result.kind === 'SERVICE_RECOVERY_PROGRESS') {
     if (input.isCurrent?.() === false)
       throw new Error('Decision replaced before continuation')
-    if (consumed.size >= decisionQuestionBudget || consumed.has(result.continuationId) || result.expiresAt <= Date.now())
+    if (result.kind === 'DECISION_PROGRESS' && ++jevQuestions > decisionQuestionBudget)
+      throw new Error('Jev question budget exhausted')
+    if (consumed.size >= decisionQuestionBudget + serviceRecoveryLimits.progressEvents || consumed.has(result.continuationId) || result.expiresAt <= Date.now())
       throw new Error('Decision continuation expired or exceeded its budget')
     consumed.add(result.continuationId)
     input.onProgress?.(result)
@@ -364,10 +398,10 @@ export async function uploadKioskVisitorMedia(input: {
   await requestAudio(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/media`, { body, method: 'POST' })
 }
 
-/** Requests speech from the Site policy without exposing its model or voice. */
+/** Requests speech with Taiwan Traditional text, using the Site's private model/voice policy. */
 export async function synthesizeKioskSpeech(input: { locale: string, text: string, signal?: AbortSignal }) {
   const response = await requestAudio('/api/kiosk/audio/speech', {
-    body: JSON.stringify({ locale: input.locale, text: input.text }),
+    body: JSON.stringify({ locale: input.locale, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(input.text)) }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
     signal: input.signal,

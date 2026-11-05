@@ -239,7 +239,8 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const updateCredits = async () => {
-    if (!isAuthenticated.value)
+    // Kiosk has its own ordering service; restored AIRI login must not start cloud billing requests.
+    if (import.meta.env.VITE_AIRI_CLOUD_ENABLED === 'false' || !isAuthenticated.value)
       return
     const res = await client.api.v1.flux.$get()
     if (res.ok) {

@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server'
 
 import { createPosBridgeApp } from '../app'
 import { createHttpPosGateway } from '../gateway/http'
+import { createKioskAuthentication, createKioskModeSelector } from '../gateway/kiosk'
 import { createPosSimulator } from '../simulator'
 
 function portFromEnvironment(name: string, fallback: number) {
@@ -17,10 +18,15 @@ const simulatorPort = portFromEnvironment('ORDER_MENU_POS_SIMULATOR_PORT', 5171)
 const simulator = createPosSimulator('accepted', 'authorized', 'after-order')
 const simulatorServer = serve({ fetch: simulator.app.fetch, hostname: host, port: simulatorPort })
 const bridge = createPosBridgeApp({
+  authenticate: createKioskAuthentication(process.env.ORDER_MENU_KIOSK_API_URL ?? 'http://127.0.0.1:5168'),
+  serviceMode: createKioskModeSelector(process.env.ORDER_MENU_KIOSK_API_URL ?? 'http://127.0.0.1:5168'),
   tableAssignment: 'after-order',
   allowedOrigin: process.env.ORDER_MENU_ALLOWED_ORIGIN ?? 'http://localhost:5166',
   gateway: createHttpPosGateway({
     baseUrl: process.env.ORDER_MENU_POS_UPSTREAM_URL ?? `http://${host}:${simulatorPort}`,
+    // Only the bundled simulator has this explicit contract. Unknown external
+    // vendors remain disabled until their own unpaid-order adapter is implemented.
+    tableOrdersSupported: (process.env.ORDER_MENU_POS_UPSTREAM_URL ?? `http://${host}:${simulatorPort}`).replace(/\/$/, '') === `http://${host}:${simulatorPort}`,
     timeoutMs: portFromEnvironment('ORDER_MENU_POS_TIMEOUT_MS', 3_000),
   }),
 })

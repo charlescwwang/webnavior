@@ -5,11 +5,14 @@
   "description": "Full-screen touch-first AIRI experience for restaurant kiosks",
   "scripts": {
     "build": "vite build",
+    "build:audio-check": "vite build --config vite.audioCheck.config.ts",
     "dev": "vite --host",
     "lint": "eslint .",
     "preview": "vite preview",
     "test:run": "vitest run",
-    "typecheck": "vue-tsc --noEmit"
+    "test:history": "pnpm run test:ordering-regressions",
+    "typecheck": "vue-tsc --noEmit",
+    "test:ordering-regressions": "pnpm -w exec vitest run --project kiosk-field-regressions && pnpm -F @proj-airi/server exec vitest run src/services/domain/kiosk-conversation-skills/index.test.ts src/services/domain/kiosk-agent-interaction/conversationContext.test.ts && pnpm -F @proj-airi/stage-shared exec vitest run src/kioskConversation.test.ts"
   },
   "dependencies": {
     "@formkit/auto-animate": "catalog:",
@@ -32,7 +35,9 @@
     "@xsai-ext/providers": "catalog:",
     "@xsai/shared-chat": "catalog:",
     "@xsai/tool": "catalog:",
+    "fft.js": "catalog:",
     "pinia": "catalog:",
+    "valibot": "catalog:",
     "vue": "catalog:",
     "vue-i18n": "catalog:",
     "vue-router": "catalog:",
@@ -43,6 +48,7 @@
     "@iconify-json/solar": "catalog:",
     "@intlify/unplugin-vue-i18n": "catalog:",
     "@proj-airi/unplugin-live2d-sdk": "catalog:",
+    "@types/audioworklet": "catalog:",
     "@unocss/reset": "catalog:",
     "@vitejs/plugin-vue": "catalog:",
     "@vitest/browser-playwright": "catalog:vitest",

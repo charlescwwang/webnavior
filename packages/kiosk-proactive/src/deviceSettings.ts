@@ -1,3 +1,4 @@
+import type { BackgroundSpeechMode, ServiceMode } from '../../stage-shared/src/kioskServiceMode'
 import type { KioskInteractionSettings } from './types'
 
 import { defaultKioskInteractionSettings } from './interaction-settings'
@@ -24,6 +25,10 @@ export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
 
 /** Operational policy shared by Server, management UI, and the device runtime. */
 export interface DeviceSettingsValues {
+  serviceMode: ServiceMode
+  backgroundSpeechMode: BackgroundSpeechMode
+  /** Allows this device to use text input regardless of its shared voice-only Profile. */
+  textOnlyMode: boolean
   observationEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean
@@ -53,6 +58,9 @@ export interface DeviceSettingsValues {
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
 export const deviceSettingKeys = [
+  'serviceMode',
+  'backgroundSpeechMode',
+  'textOnlyMode',
   'observationEnabled',
   'greetingEnabled',
   'reminderEnabled',
@@ -101,7 +109,18 @@ export const defaultDeviceSettings: DeviceSettings = {
   localOverrides: {},
 }
 
+/** Birth policy for newly enrolled devices; existing saved overrides remain authoritative. */
+export const newDeviceSettings: DeviceSettings = {
+  version: 1,
+  localControls: ['observationEnabled', 'greetingEnabled', 'reminderEnabled', 'triggerMode', 'voiceDiagnosticsEnabled'],
+  overrides: { observationEnabled: true, greetingEnabled: true, reminderEnabled: true, triggerMode: 'mixed', voiceDiagnosticsEnabled: true },
+  localOverrides: {},
+}
+
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
+  serviceMode: 'kiosk',
+  backgroundSpeechMode: 'off',
+  textOnlyMode: false,
   observationEnabled: false,
   greetingEnabled: false,
   reminderEnabled: false,

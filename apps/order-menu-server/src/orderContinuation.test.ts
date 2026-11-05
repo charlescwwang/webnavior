@@ -3,16 +3,16 @@ import { describe, expect, it, vi } from 'vitest'
 import { createPosBridgeApp } from './app'
 import { createInMemorySimulatorGateway } from './simulator'
 
-async function placeDineIn(mode: 'accepted' | 'uncertain' = 'accepted') {
+async function placeDineIn(mode: 'accepted' | 'uncertain' = 'accepted', fulfillmentMode: 'dine-in' | 'takeout' = 'dine-in') {
   const gateway = createInMemorySimulatorGateway(mode, 'authorized', Date.now, 'after-order')
-  const app = createPosBridgeApp({ allowedOrigin: 'http://localhost:5166', gateway, tableAssignment: 'after-order' })
+  const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway, tableAssignment: 'after-order' })
   const catalog = await gateway.getCatalog()
   const item = catalog.items[0]!
-  const payment = await gateway.createPayment(item.price, 'linepay')
+  const { payment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: item.price, method: 'linepay' }) })).json()
   const submission = {
     customerPhone: '0900000000',
     idempotencyKey: 'continuation-order-0001',
-    cart: { catalogRevision: catalog.revision, fulfillmentMode: 'dine-in', itemCount: 1, paymentId: payment.id, total: item.price, lines: [{ id: 'line-1', itemId: item.id, name: item.name, options: {}, quantity: 1, unitPrice: item.price }] },
+    cart: { catalogRevision: catalog.revision, fulfillmentMode, itemCount: 1, paymentId: payment.id, total: item.price, lines: [{ id: 'line-1', itemId: item.id, name: item.name, options: {}, quantity: 1, unitPrice: item.price }] },
   }
   const send = () => app.request('/v1/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(submission) })
   const result = await (await send()).json()
@@ -20,6 +20,26 @@ async function placeDineIn(mode: 'accepted' | 'uncertain' = 'accepted') {
 }
 
 describe('order continuation after kiosk checkout', () => {
+  it.each(['dine-in', 'takeout'] as const)('offers a read-only receipt QR for %s with the same pickup number', async (mode) => {
+    const { app, result, send } = await placeDineIn('accepted', mode)
+    expect(result.receiptAccess.token).toBeTypeOf('string')
+    const path = `/v1/continuations/${result.receiptAccess.token}`
+    const snapshot = await (await app.request(path)).json()
+    expect(snapshot.readOnly).toBe(true)
+    expect(snapshot.pickupNumber).toBe(result.order.receipt.pickupNumber)
+    expect(snapshot.fulfillmentMode).toBe(mode)
+    expect(snapshot.lines).toHaveLength(1)
+    expect(snapshot.total).toBe(result.order.cart.total)
+    expect(snapshot.phoneLabel).toBeUndefined()
+    expect((await (await send()).json()).receiptAccess).toEqual(result.receiptAccess)
+    expect((await app.request(`${path}/table`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tableCode: 'demo-a08' }) })).status).toBe(409)
+    expect((await app.request(`${path}/takeout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) })).status).toBe(409)
+    expect(await (await app.request(path)).json()).toEqual(snapshot)
+  })
+  it('does not issue a portable receipt for an uncertain order', async () => {
+    const { result } = await placeDineIn('uncertain')
+    expect(result.receiptAccess).toBeUndefined()
+  })
   it.each([false, true])('changes the same test order to pickup with table bound=%s and retains its payment and expiry', async (bound) => {
     const { app, result, send } = await placeDineIn()
     const path = `/v1/continuations/${result.continuation.token}`
@@ -98,7 +118,10 @@ describe('order continuation after kiosk checkout', () => {
       const { app, result, send } = await placeDineIn()
       vi.setSystemTime(Date.now() + 31 * 60_000)
       expect((await app.request(`/v1/continuations/${result.continuation.token}`)).status).toBe(404)
-      expect((await (await send()).json()).continuation).toBeUndefined()
+      expect((await app.request(`/v1/continuations/${result.receiptAccess.token}`)).status).toBe(404)
+      const replay = await (await send()).json()
+      expect(replay.continuation).toBeUndefined()
+      expect(replay.receiptAccess).toBeUndefined()
     }
     finally { vi.useRealTimers() }
   })

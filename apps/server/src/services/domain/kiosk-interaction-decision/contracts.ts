@@ -1,3 +1,5 @@
+import type { ConversationContext, ConversationHandoff, ConversationQuestion, ConversationRequest, IntentRecovery, ServiceClarification, ServiceRecovery, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import type { PriceConditions, PriceEvidence } from './priceContracts'
 import type { ScopeChoice } from './queryScopeContracts'
 
@@ -12,6 +14,7 @@ export interface CatalogMentionEvidence {
 
 /** Safe application-owned interaction facts shared by Jev and Agent requests. */
 export interface KioskDecisionState {
+  serviceMode?: 'kiosk' | 'table-service'
   /** Host response guard for a semantically admitted food query, never order authority. */
   requireMenuRead?: boolean
   /** This Agent task may read menu information, never change the order or pending question. */
@@ -35,6 +38,10 @@ export interface KioskDecisionState {
   dietaryReferences?: readonly { id: 'vegetarian', label: string }[]
   /** Mentioned condition topics without supporting store data; mention is not a request. */
   unavailableConditionReferences?: readonly { id: string, label: string }[]
+  /** Current Menu-owned drafts; omission means no draft snapshot was supplied. */
+  retainedRequests?: ConversationRequest[]
+  /** Menu alone issues which finite effects Main may independently interpret. */
+  intentRecovery?: IntentRecovery
   waitingFor?: PresentedQuestion
   activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
   allowedPaymentMethods?: readonly string[]
@@ -42,16 +49,22 @@ export interface KioskDecisionState {
   constraints?: { exclude: readonly string[], include?: readonly string[], dietary?: 'vegetarian', price?: PriceConditions, unresolvedPrice?: boolean }
   interactionState?: InteractionState
   paymentState?: string
+  serviceClarification?: ServiceClarification
   phase: string
   references?: readonly { label: string, refId: string }[]
 }
 
 /** Safe handoff facts; completed reads do not authorize any later mutation. */
-export type KioskConversationDecisionState = Pick<KioskDecisionState, 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence'>
+export type KioskConversationDecisionState = Pick<KioskDecisionState, 'serviceMode' | 'intentRecovery' | 'retainedRequests' | 'revisions' | 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff, serviceReply?: boolean }
 
 /** A finite semantic outcome. Food slots are chosen from application-issued references. */
 export type KioskInteractionDecision = {
   /** Selected application-issued interpretation; never model-authored amounts. */
+  recovery?: ServiceRecovery
+  /** Main skill selection is distinct from JEV scores; execution still validates the issued candidate. */
+  resolvedBy?: 'main-skill' | 'main-service'
+  /** Qualified whole-turn purpose; independent from admission and effect targets. */
+  requestScope?: 'menu-information' | 'order-information' | 'order-operation' | 'service-information'
   priceChoiceId?: string
   /** Correlated conversational invitation consumed by this answer, never mutation permission. */
   answeredQuestionId?: string
@@ -63,7 +76,7 @@ export type KioskInteractionDecision = {
   /** Questions actually evaluated; one HTTP exchange can contain several forwards. */
   modelQuestions?: number
   /** Mechanical refusal cause; never a second interpretation of the utterance. */
-  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
+  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'UNCERTAIN_GREETING' | 'UNCERTAIN_SERVICE_REQUEST' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
 } & (
   | { kind: 'SCOPE_CHOICE', choice: ScopeChoice }
   | { kind: 'COMPLETE', confidence?: number }
@@ -77,17 +90,20 @@ export type KioskInteractionDecision = {
   | { kind: 'CUSTOMER_ENTRY_REQUIRED', confidence?: number }
   | { kind: 'FOLLOW_UP_ACTIVE', confidence?: number }
   | { kind: 'NEEDS_ASSISTANT', confidence?: number }
+  | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
   | { kind: 'UNAVAILABLE' }
 )
 
 /** A server-owned one-use checkpoint, never permission to execute a tool. */
-export type DecisionStageResult = KioskInteractionDecision | {
+export type DecisionStageResult = KioskInteractionDecision | ServiceRecoveryProgress | {
   kind: 'DECISION_PROGRESS'
   continuationId: string
   expiresAt: number
   question: string
   choice?: string
   confidence?: number
+  /** Adapter-validated label with no calibrated probability; presentation only. */
+  selectionMode?: 'unscored'
   durationMs: number
 }
 
@@ -108,14 +124,7 @@ export interface InteractionState {
 export type KioskScreen = 'customer_entry' | 'menu' | 'cart_review' | 'item_configuration' | 'request_confirmation' | 'checkout'
 
 /** Presented application-owned question; choices describe effects, never tool arguments. */
-export interface PresentedQuestion {
-  questionId: string
-  purpose: string
-  question: string
-  expiresAt: number
-  /** Legal effects for this turn, including values parsed after the question was presented. */
-  choices: Array<{ id: string, description: string }>
-}
+export type PresentedQuestion = ConversationQuestion
 
 /** A bounded host invitation; accepting can recommend, never add or pay. */
 export function createRecommendationInvitation(questionId: string, now: number): PresentedQuestion {

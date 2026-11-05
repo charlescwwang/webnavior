@@ -100,7 +100,7 @@ describe('price-qualified menu reads', () => {
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '100元以下' })
     if (!context || typeof context !== 'object' || !('menuRevision' in context))
       throw new Error('Expected a runtime-issued catalog revision')
-    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '查詢餐點', taskId: 'price-1', expectedMenuRevision: context.menuRevision, constraints: { maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' } })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', transcript: '便當0一份', taskId: 'price-1', expectedMenuRevision: context.menuRevision, constraints: { maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' } })
     expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 1000 })).toMatchObject({ items: [{ price: 60 }, { price: 70 }, { price: 80 }], appliedPriceConditions: { maxPrice: 100, maxPriceExclusive: true } })
     await expect(runtime.invokeForAgent('menu_show_recommendations', { itemIds: ['dish-0'] })).rejects.toThrow('constraints')
     await expect(runtime.invokeForAgent('order_add_item', { itemId: 'dish-0', quantity: 1 })).rejects.toThrow('price conditions')

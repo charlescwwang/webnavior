@@ -9,7 +9,7 @@
 # is exposed through this Nginx site's same-origin proxy routes.
 set -Eeuo pipefail
 
-readonly NODE_VERSION='24.13.0'
+readonly NODE_VERSION='24.22.1'
 readonly NODE_ARCHIVE="node-v${NODE_VERSION}-linux-x64.tar.xz"
 readonly NODE_URL="https://nodejs.org/dist/v${NODE_VERSION}/${NODE_ARCHIVE}"
 
@@ -72,6 +72,11 @@ install_node_locally() {
     temporary_dir="$(mktemp -d)"
     trap 'rm -rf "$temporary_dir"' RETURN
     curl --fail --location --retry 3 --output "$temporary_dir/$NODE_ARCHIVE" "$NODE_URL"
+    curl --fail --location --retry 3 --output "$temporary_dir/SHASUMS256.txt" "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"
+    (
+      cd "$temporary_dir"
+      grep " ${NODE_ARCHIVE}\$" SHASUMS256.txt | sha256sum --check
+    )
     tar -xJf "$temporary_dir/$NODE_ARCHIVE" -C "$node_root"
   fi
 
@@ -111,7 +116,7 @@ corepack pnpm install --frozen-lockfile
 # Vite's --base makes static asset URLs valid below the Nginx subpaths.
 VITE_SERVER_URL="$origin" VITE_ORDER_MENU_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-web build
 VITE_API_SERVER_URL="$origin" VITE_ORDERING_SCENARIO_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
-VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
+VITE_ORDER_MENU_SERVER_URL="$origin/api/kiosk/pos" VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
 sudo install -d -m 0755 "$site_root/web" "$site_root/kiosk" "$site_root/menu"
 sudo rsync -a --delete apps/stage-web/dist/ "$site_root/web/"

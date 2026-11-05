@@ -2,12 +2,57 @@ import type { MenuItem } from './domain/order-machine'
 
 import { describe, expect, it } from 'vitest'
 
-import { authorize, compileOperationPlan, createConfirmation, createQuestion, deriveDecisionContext, questionIsCurrent, resolveClarificationReference, resolveIntent, validateConfirmation } from './kiosk-intents'
+import { authorize, compileOperationPlan, createConfirmation, createQuestion, deriveDecisionContext, intentRecovery, questionIsCurrent, resolveClarificationReference, resolveIntent, validateConfirmation } from './kiosk-intents'
 
 const shrimpRoll: MenuItem = { available: true, category: '小吃', description: '現炸蝦捲', id: 'shrimp-roll', imageUrl: '', name: '蝦捲', optionGroups: [{ id: 'ginger', label: '嫩薑', required: false, values: [{ id: 'with', label: '要薑', priceDelta: 0 }] }], price: 75, recommendationTags: ['fried'] }
 const base = { cart: { fulfillmentMode: undefined, itemCount: 0, lines: [], total: 0 }, menu: [shrimpRoll], revisions: { cart: 0, checkout: 0, selectedItem: 0 } }
 
+// Report: attachment b0b98800, 2026-10-21; category-only evidence substituted three beef noodles for eel noodles.
+it('does not turn an unmatched dish into the sole member of a matching category', () => {
+  const menu = [{ ...shrimpRoll, id: 'beef', name: '紅燒牛肉麵', aliases: ['牛肉麵'], category: '麵食', optionGroups: [] }]
+  const context = deriveDecisionContext({ ...base, menu, transcript: '鱔魚意麵3份，不要蔥花，一份大辣兩份小辣' })
+  expect(context.productResolution.status).toBe('none')
+  expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+})
+
+// Report: this chat, attachment b0b98800; the prior product must not identify a new category-only request.
+it('does not let a previous product name bypass the category identity guard', () => {
+  const menu = [{ ...shrimpRoll, id: 'beef', name: '紅燒牛肉麵', aliases: ['牛肉麵'], category: '麵食', optionGroups: [] }]
+  const context = deriveDecisionContext({ ...base, menu, previousTranscript: '牛肉麵', transcript: '鱔魚意麵三份' })
+  expect(context.productResolution.status).toBe('none')
+  expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+})
+
+it('does not collapse two spice values into one option for three servings', () => {
+  const menu = [{ ...shrimpRoll, id: 'beef', name: '紅燒牛肉麵', aliases: ['牛肉麵'], category: '麵食', optionGroups: [{ id: 'spice', label: '辣度', required: true, values: [{ id: 'hot', label: '大辣', priceDelta: 0 }, { id: 'mild', label: '小辣', priceDelta: 0 }] }] }]
+  const context = deriveDecisionContext({ ...base, menu, transcript: '牛肉麵3份，一份大辣兩份小辣' })
+  expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+})
+
 describe('kiosk intent routing', () => {
+  // Report: this chat, Nov2; typed carrier /PTGRJP2 + 確認／送出 had no operation.
+  it('offers confirmation only for the current valid invoice draft', () => {
+    const checkout = { stage: 'invoice' as const, invoiceMethod: 'carrier' as const, invoiceDraft: { method: 'carrier' as const, code: '/PTGRJP2' } }
+    const context = deriveDecisionContext({ ...base, checkout, transcript: '確認' })
+    const confirm = context.candidates.find(candidate => candidate.intent === 'CONFIRM_INVOICE')
+    expect(confirm).toMatchObject({ id: 'intent:confirm-invoice' })
+    expect(intentRecovery(context)).toEqual({ kind: 'request', candidateIds: ['intent:confirm-invoice'] })
+    expect(createQuestion(context, 'invoice-draft', Date.now())?.question).toContain('請確認畫面上的發票資料')
+    const invalid = deriveDecisionContext({ ...base, checkout: { ...checkout, invoiceDraft: { method: 'carrier', code: '/PT' } }, transcript: '送出' })
+    expect(invalid.candidates.some(candidate => candidate.id === 'intent:confirm-invoice')).toBe(false)
+    expect(intentRecovery(invalid)).toBeUndefined()
+  })
+
+  it('issues one tax-ID confirmation effect without a second confirmation question', () => {
+    const context = deriveDecisionContext({ ...base, checkout: { stage: 'tax-id', invoiceMethod: 'tax-id', taxId: '12345678' }, transcript: '資料沒問題' })
+    expect(intentRecovery(context)).toEqual({ kind: 'request', candidateIds: ['intent:confirm-tax-id'] })
+    const choice = context.candidates.find(candidate => candidate.id === 'intent:confirm-tax-id')!
+    const result = resolveIntent(choice, context)
+    if (result.kind !== 'PLAN')
+      throw new Error('A valid invoice confirmation must compile one plan')
+    expect(authorize(compileOperationPlan(result.plan), context)).toEqual({ kind: 'EXECUTE' })
+  })
+
   it('offers only LINE Pay and 街口支付 when those are the deployed payment choices', () => {
     const cart = { ...base.cart, fulfillmentMode: 'dine-in' as const, lines: [{ id: 'L1', itemId: shrimpRoll.id, name: shrimpRoll.name, quantity: 1, options: {}, unitPrice: 75 }], total: 75, itemCount: 1 }
     const context = deriveDecisionContext({ ...base, cart, checkout: { stage: 'payment' }, paymentMethods: ['linepay', 'jkopay'], transcript: '街口' })
@@ -36,7 +81,7 @@ describe('kiosk intent routing', () => {
     expect(preference.candidates.some(candidate => candidate.intent === 'ADD_ITEM')).toBe(false)
     expect(preference.candidates.some(candidate => candidate.intent === 'RECOMMEND')).toBe(false)
     const order = deriveDecisionContext({ ...base, menu, transcript: '我要吃麵，一碗' })
-    expect(resolveIntent(order.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, order)).toMatchObject({ kind: 'PLAN', plan: { slots: { itemId: 'beef', quantity: 1 } } })
+    expect(resolveIntent(order.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, order)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
     const alias = deriveDecisionContext({ ...base, menu, transcript: '我要牛肉麵' })
     expect(alias.catalogEvidence.products).toEqual([{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }])
     expect(alias.candidates.some(candidate => candidate.intent === 'ADD_ITEM')).toBe(true)
@@ -120,13 +165,13 @@ describe('kiosk intent routing', () => {
     const locked = deriveDecisionContext({ ...ready, checkout: { stage: 'payment', invoiceMethod: 'donation' }, paymentStatus: 'pending' })
     expect(locked.candidates).toEqual([])
   })
-  it('compiles broad menu exploration into bounded recommendations without inventing a target', () => {
+  it('compiles whole-menu browsing into an explicit complete catalog presentation', () => {
     const context = deriveDecisionContext({ ...base, transcript: '有賣什麼' })
     const resolution = resolveIntent(context.candidates.find(candidate => candidate.intent === 'SEARCH_MENU')!, context)
     expect(resolution).toMatchObject({ kind: 'PLAN', plan: { slots: { scope: 'all' } } })
     if (resolution.kind !== 'PLAN')
       throw new Error('Expected a menu exploration plan')
-    expect(compileOperationPlan(resolution.plan)).toMatchObject({ intent: 'SEARCH_MENU', toolName: 'menu_recommend', input: {} })
+    expect(compileOperationPlan(resolution.plan)).toMatchObject({ intent: 'SEARCH_MENU', toolName: 'menu_get', input: { scope: 'catalog', display: true } })
   })
 
   it('keeps a discussed dish separate from an unanswered question, with expiry and revision checks', () => {
@@ -264,7 +309,20 @@ describe('kiosk intent routing', () => {
       transcript: '我要蝦捲和牛肉麵',
     })
     expect(context.references.map(reference => reference.refId)).toEqual(['item:shrimp-roll', 'item:beef-noodle'])
-    expect(resolveIntent(context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!, context)).toMatchObject({ kind: 'CLARIFICATION', candidateRefs: ['item:shrimp-roll', 'item:beef-noodle'] })
+    const add = context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!
+    expect(resolveIntent(add, context)).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+    expect(resolveIntent(add, context, 'item:shrimp-roll')).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
+  })
+
+  it('still clarifies one merchant alias shared by two dishes rather than treating it as two requests', () => {
+    const menu = [
+      { ...shrimpRoll, aliases: ['招牌餐'] },
+      { ...shrimpRoll, id: 'beef-noodle', name: '牛肉麵', aliases: ['招牌餐'] },
+    ]
+    const context = deriveDecisionContext({ ...base, menu, transcript: '招牌餐一份' })
+    const add = context.candidates.find(candidate => candidate.intent === 'ADD_ITEM')!
+    expect(resolveIntent(add, context)).toMatchObject({ kind: 'CLARIFICATION', candidateRefs: ['item:shrimp-roll', 'item:beef-noodle'] })
+    expect(resolveIntent(add, context, 'item:beef-noodle')).toMatchObject({ kind: 'PLAN', plan: { targetRef: 'item:beef-noodle', slots: { quantity: 1 } } })
   })
 
   it('keeps two matching cart lines as a bound clarification for the original remove intent', () => {
@@ -435,4 +493,21 @@ describe('kiosk intent routing', () => {
     expect(authorize(compileOperationPlan(paymentResult.plan), payment)).toEqual({ kind: 'EXECUTE' })
     expect(deriveDecisionContext({ ...base, checkout: { stage: 'payment' }, paymentStatus: 'pending' }).candidates.some(candidate => candidate.intent === 'SELECT_PAYMENT')).toBe(false)
   })
+})
+
+// Plan: Nov1 common intent handoff. Eligibility moved out of Server into Menu.
+it('never issues new-meal recovery for entry, payment, category-only or multiple targets', () => {
+  expect(intentRecovery(deriveDecisionContext({ ...base, transcript: '我要蝦捲', customerEntryPending: true }))).toBeUndefined()
+  expect(intentRecovery(deriveDecisionContext({ ...base, transcript: '我要蝦捲', checkout: { stage: 'payment' }, paymentMethods: ['linepay'] }))).toBeUndefined()
+  expect(intentRecovery(deriveDecisionContext({ ...base, transcript: '我要小吃' }))).toBeUndefined()
+  expect(intentRecovery(deriveDecisionContext({ ...base, menu: [shrimpRoll, { ...shrimpRoll, id: 'other', name: '水餃' }], transcript: '蝦捲和水餃' }))).toBeUndefined()
+})
+
+it('keeps new meal recovery independent of an unanswered fulfillment question', () => {
+  const waitingFor = { questionId: 'fulfillment', phase: 'ordering' as const, purpose: 'fulfillment' as const, question: '內用還是自取？', choices: [], expectedRevisions: { cart: 0 }, expiresAt: Date.now() + 30000 }
+  const context = deriveDecisionContext({ ...base, transcript: '我要蝦捲一份', waitingFor })
+  const scope = intentRecovery(context)
+  expect(scope?.kind).toBe('request')
+  expect(scope?.candidateIds).toContain('intent:add-item')
+  expect(scope).not.toHaveProperty('questionId')
 })

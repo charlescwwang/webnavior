@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+
 import type { FeedbackInvitationSettings } from '../feedback-invitation/settings'
 
 import QRCode from 'qrcode'
 
 import { errorMessageFrom } from '@moeru/std'
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed, onScopeDispose, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -11,6 +14,7 @@ import { canShowFeedbackInvitation, normalizeFeedbackInvitationDuration } from '
 
 const props = defineProps<{
   settings: FeedbackInvitationSettings
+  orderResult?: InteractiveServiceOrderResult
   /** Transient order capability, kept separate from the configured static survey URL. */
   orderContinuationUrl?: string
 }>()
@@ -104,6 +108,32 @@ onScopeDispose(clearCountdown)
         <p class="completion-description">
           {{ t('stage.customer-session.completion.description') }}
         </p>
+
+        <section v-if="orderResult" :class="['completion-option']" aria-live="polite">
+          <template v-if="orderResult.serviceMode === 'table-service'">
+            <h3>{{ t('stage.customer-session.completion.table-number') }} {{ orderResult.table?.label }}</h3>
+            <ul :class="['text-left']">
+              <li v-for="(line, index) in orderResult.lines" :key="index">
+                {{ line.name }} × {{ line.quantity }} · {{ formatOrderingPrice(line.total) }}
+              </li>
+            </ul>
+            <strong>{{ t('stage.customer-session.completion.total') }} {{ formatOrderingPrice(orderResult.total) }}</strong>
+          </template>
+          <template v-else-if="orderResult.pickupNumber">
+            <h3>{{ t('stage.customer-session.completion.pickup-number') }}</h3>
+            <strong :class="['text-6xl font-bold tabular-nums']">{{ orderResult.pickupNumber }}</strong>
+          </template>
+          <template v-if="orderResult.posOrderId">
+            <h3>{{ t('stage.customer-session.completion.order-number') }}</h3>
+            <strong :class="['text-2xl break-all']">{{ orderResult.posOrderId }}</strong>
+          </template>
+          <p v-if="orderResult.serviceMode !== 'table-service' && !orderResult.pickupNumber" :class="['survey-description']">
+            {{ t('stage.customer-session.completion.pickup-unavailable') }}
+          </p>
+          <p v-if="orderResult.environment === 'test'" :class="['survey-description']">
+            {{ t('stage.customer-session.completion.simulated-notice') }}
+          </p>
+        </section>
 
         <div v-if="hasSurvey || orderContinuationUrl" :class="['completion-options']">
           <section v-if="hasSurvey" :class="['completion-option']">

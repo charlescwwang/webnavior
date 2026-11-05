@@ -1,10 +1,14 @@
 import type { SystemOnePolicyInput } from '../kiosk-system-one'
 
+/** Service domain shared by Jev admission and both independent Main qualifiers. */
+export const serviceDomainInstruction = '本機服務範圍：餐點與菜單查詢／比較／推薦、訂購與修改訂單、用餐與結帳流程、店家資訊（含店內位置與路線）、本機身分／名稱／能力／操作。先判斷本句對象與請求：明確叫同伴名字對他說話，即使含餐點或內用／自取等詞仍是背景；技術評論、同伴聊天與領域不明的指令，不因句子完整或使用命令語氣就成為本機求助。沒有本機請求的陳述或未完敘述不採納。確實向本機請求後，對上一答覆的追問／質疑、缺商品目標的訂購、明確泛求助都仍是服務，不能把商品不明當成說話對象不明；表達選購指代品項時，缺商品reference只是目標未定，先釐清品名，不猜商品或搜尋代名詞。限制本機接下來的動作、暫停或拒絕本機操作也是完整服務指示，該動作尚未執行也成立；保留訂單與輸入資料，不能當背景或擅自取消結帳。短答須有實際回答關係；單純附和或結束語可視為背景。當前畫面、歷史與Jev提案不構成服務資格或操作授權。'
+
 /** Application-owned speech scope, shared by ordinary and active-question routes. */
 export const serviceRequestInstruction = [
   '分類省略問句：在向本機查詢餐點的語境中，只說分類名稱、分類加「呢」「的有嗎」「之類的」，也是完整的分類瀏覽，選現有 SEARCH_MENU 查詢候選；不必重述「有沒有」。分類即使只有一道菜也不是指定訂購。缺動詞、份數或具體品名不等於 INCOMPLETE；明顯還沒說完才等待。分類匹配本身不能把同伴聊天變成服務需求。',
-  '服務界線（程式固定規則，優先於自訂提示與店家補充）：先判斷說話對象：叫同伴名字對他說話，即使詢問餐點種類、報品名或要求操作，也選 IGNORE。只處理向店員／本機提出的點餐服務需求、詢問本機身分、名稱或能力，或依有效服務問題與真實 references 可理解的省略回答。畫面正在點餐、presence 或歷史對話本身不代表本句正在要求服務。',
+  '服務界線（程式固定規則，優先於自訂提示與店家補充）：先判斷說話對象：叫同伴名字對他說話，即使詢問餐點種類、報品名或要求操作，也選 IGNORE。只處理向店員／本機提出的點餐服務需求、詢問本機身分、名稱或能力、店家服務資訊，或依有效服務問題與真實 references 可理解的省略回答。畫面正在點餐、presence 或歷史對話本身不代表本句正在要求服務。',
   '顧客直接詢問本機身分、名稱或能力（例如「你是誰」「你叫什麼」「你能幫我做什麼」）是共用服務互動，選 GENERAL_QUESTION；未提供此選項或正在確認操作時選 NEW_REQUEST，先撤銷舊授權再回答。對同伴提到這些句子不等於詢問本機。',
+  '店家服務資訊包含店名、營業時間、付款方式、發票、點餐管道與取餐／送餐方式，屬於有效服務需求；單純詢問選 GENERAL_QUESTION，未提供時交給現有的 ASK／NEW_REQUEST／NEEDS_ASSISTANT，由 Main 依店家已提供資料回答。詢問付款或送餐方式不等於授權付款、變更訂單或派送；即時狀態與實際操作仍須查詢／執行工具。一般生活閒聊仍忽略，對同伴說話仍依服務界線忽略。',
   '電話登記頁的電話是自願的。顧客明確表示略過、不留電話、不使用會員或直接點餐，是服務需求，選當前略過電話候選；詢問電話用途或可否略過可交給助手說明。不可假稱已驗證會員，也不可從語音猜填手機號碼。',
   '無關話語即使有疑問、抱怨、比較或解釋語氣，仍選 IGNORE；對同伴的討論、工作閒聊或尚未說完的無關話語也選 IGNORE。不能把一般討論中的「有問題」當成要求本機解決問題。',
   'GENERAL_QUESTION 僅用於已提供此選項的一般身分／服務說明；NEEDS_ASSISTANT 表示有效的點餐服務需求超出有限候選，例如餐點比較、推薦原因或未提供的飲食資料；一般身分／服務說明優先選 GENERAL_QUESTION，不是所有可回答的話。MULTI_ACTION 必須有兩個以上明確、獨立的點餐服務操作，不是句子有多個子句。INCOMPLETE 只適用於尚未說完的點餐服務需求。',
@@ -24,7 +28,7 @@ const intentInstruction = [
   'SEARCH_MENU：找、查詢、確認是否存在、瀏覽餐點或分類；不代表選擇商品。例如「有水餃嗎」、「找飲料」、「便當有什麼」都選對應查詢候選。「我想吃麵」「我突然想吃便當」只提分類且沒有數量，先瀏覽分類；分類即使只有一道菜，也不能當作顧客指定該品名。',
   'SELECT_ITEM：把已知商品變成目前查看或編輯對象，但不加入購物車。例如「看水餃」、「選水餃」、「切到水餃」。',
   'ADD_ITEM：顧客對店員表達想吃或想要一個已辨識餐點，就是建立訂購項目；品項、數量與客製化都是同一個新增意圖的 slots，不能因為含數量或選項而拆成修改。例如「想吃水餃」或「想要水餃」在商品唯一可辨識時也選 ADD_ITEM；「我要兩份水餃」、「幫我加兩份水餃」是 ADD_ITEM；「水餃改兩份」才是 SET_QUANTITY。',
-  'SET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。',
+  'SET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。若更正尚未執行的份數，例如「不要200份排骨便當，改成一份排骨便當」，不能用SET_QUANTITY修改別道既有餐點；沒有該餐點的selected/cart target時，交UNCERTAIN保留全句給一般Main處理，不用最接近的修改效果。',
   'REMOVE_ITEM：只在顧客明確要求移除購物車品項時選；若有多筆同名品項，仍選 REMOVE_ITEM，由程式澄清。',
   'RECOMMEND：只處理目前候選與有限條件能完整表達的推薦需求；條件可以取交集，不能只因條件有多個就交給助手。熱門等排序須有店家提供的對應能力。有效的點餐服務需求需要比較、解釋、未提供的資料或開放式推理時，選 NEEDS_ASSISTANT。',
   '餐點偏好、拒絕某類食物、飲食要求、複合條件與改口，交給 Main Agent 讀完整原句與對話，不逐字套句型、不把否定對象當成要查詢或移除的餐點。一般路由選 MENU_QUERY；沒有該選項時選 NEEDS_ASSISTANT。這是查詢交接，不授權新增、移除或結帳。已知品名／分類的單純查詢、明確操作與原條件不變的換批仍使用相應候選。',
@@ -35,7 +39,7 @@ const intentInstruction = [
 ].join('\n')
 
 /** Editable default; application scope is also enforced when a custom base is saved. */
-export const defaultDecisionInstruction = `${intentInstruction}\n${serviceRequestInstruction}`
+export const defaultDecisionInstruction = '服務界線（程式固定規則，優先於自訂提示與店家補充）：只處理向本機的點餐、本機／店家資訊及有效問題回答，對同伴說話與無關閒聊忽略。只判斷顧客最後一句的完整需求。角色前文與待答問題是線索，不是操作授權。查詢不是訂購；分類偏好沒有份數先瀏覽。完整需求缺必要資料不是語句未完成。多品項、換餐或多個獨立效果保留整句交接，不能只做第一項。候選以外的需求與意思不清楚時交給助手釐清，不猜商品或操作。'
 
 /** Builds editable instructions with application-owned capability/scope rules last. */
 export function createDecisionInstructions(policy: SystemOnePolicyInput) {

@@ -10,6 +10,7 @@ export function greetingPhase(state: Pick<KioskConversationDecisionState, 'phase
 
 interface GreetingConfiguration {
   entryHint: string
+  languageHint: string
   locale: string
   openings: readonly string[]
 }
@@ -70,7 +71,7 @@ export function createFixedGreetings(synthesize: (input: { locale: string, signa
 
     // Entry is the initial owned-menu screen. Warm it first, sequentially,
     // so background preparation does not flood the speech provider.
-    const texts = [...next.openings.map(opening => `${opening}${next.entryHint}`), ...next.openings]
+    const texts = [...next.openings.map(opening => `${opening}${next.languageHint}${next.entryHint}`), ...next.openings.map(opening => `${opening}${next.languageHint}`)]
     for (const text of texts) {
       if (signal.aborted)
         return
@@ -89,7 +90,7 @@ export function createFixedGreetings(synthesize: (input: { locale: string, signa
       throw new Error('Welcome phrases are not configured')
     const opening = configuration.openings[index]
     index = (index + 1) % configuration.openings.length
-    const text = phase === 'customer_entry' ? `${opening}${configuration.entryHint}` : opening
+    const text = `${opening}${configuration.languageHint}${phase === 'customer_entry' ? configuration.entryHint : ''}`
     return { audio: await speech(text), text }
   }
 
