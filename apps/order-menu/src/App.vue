@@ -72,15 +72,12 @@ const tableSubmitting = shallowRef(false)
 const paymentMethod = shallowRef<PaymentMethod>()
 const paymentStatus = shallowRef<PaymentStatus>()
 const paymentError = shallowRef<string>()
-const customerPhone = shallowRef<string>()
-// Phone entry is optional; an explicit skip is distinct from an untouched page.
-const customerEntryStatus = shallowRef<'unstarted' | 'pending' | 'provided' | 'skipped'>('unstarted')
 const receiptAccess = shallowRef<ContinuationAccess>()
 const receiptUrl = computed(() => receiptAccess.value ? continuationUrl(receiptAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
 let checkoutRevision = 0
 // Synchronous observation preserves every checkout/payment write, including
 // a change that is undone before the next System One request arrives.
-watch([checkout, paymentMethod, paymentStatus, customerEntryStatus], () => {
+watch([checkout, paymentMethod, paymentStatus], () => {
   checkoutRevision += 1
 }, { flush: 'sync' })
 const cardElements = new Map<string, HTMLElement>()
@@ -303,8 +300,6 @@ const runtime = createMenuToolRuntime({
   onAgentControlChange: locked => agentControlsOrder.value = locked,
   // Match template precedence: checkout hides review, which hides the item dialog.
   screen: () => {
-    if (customerEntryStatus.value === 'pending')
-      return 'customer_entry'
     if (checkout.value)
       return 'checkout'
     if (orderReviewOpen.value)
@@ -314,23 +309,10 @@ const runtime = createMenuToolRuntime({
   visibleItemId: () => selectedItem.value?.id,
   visibleItemIds: () => visibleMenuItems.value.map(item => item.id),
   fulfillmentModes: [],
-  orderingReady: () => customerEntryStatus.value !== 'pending',
-  onCustomerEntrySkipped: skipCustomerEntry,
-  onCustomerPhoneProvided: identifyCustomer,
-  onCustomerEntryRequested: () => {
-    // Only a fresh host order can offer phone entry. Rediscovery must never
-    // reopen it after a choice or after a standalone customer started ordering.
-    if (orderingContext.value?.serviceMode === 'table-service')
-      return
-    if (customerEntryStatus.value === 'unstarted' && cart.value.lines.length === 0 && !checkout.value && !completedOrderId.value)
-      customerEntryStatus.value = 'pending'
-  },
   serviceContext: () => orderingContext.value,
   onSessionReset: async () => {
     if (orderingContext.value)
       orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
-    customerPhone.value = undefined
-    customerEntryStatus.value = 'unstarted'
     receiptAccess.value = undefined
     completedOrderId.value = undefined
     completedOrder.value = undefined
@@ -360,7 +342,7 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
+  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => undefined, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
   menu: [],
   onAction: animateAction,
   onReviewRequested: async () => {
@@ -485,8 +467,6 @@ async function completeCustomerSession() {
       return
     }
   }
-  customerPhone.value = undefined
-  customerEntryStatus.value = 'pending'
   if (window.parent === window)
     window.location.reload()
 }
@@ -537,16 +517,6 @@ async function removeCartLine(lineId: string) {
   await invoke('cart_remove_item', { lineId }, { animate: false })
 }
 
-function skipCustomerEntry() {
-  customerPhone.value = undefined
-  customerEntryStatus.value = 'skipped'
-}
-
-function identifyCustomer(phone: string) {
-  customerPhone.value = phone
-  customerEntryStatus.value = 'provided'
-}
-
 async function confirmVisibleOrder() {
   if (orderingContext.value?.serviceMode !== 'table-service')
     return startCheckout()
@@ -567,8 +537,6 @@ function startCheckout() {
     throw new Error('Choose dine-in or self-pickup before starting checkout.')
   if (!posCatalog.value?.store.fulfillmentModes.some(mode => mode.id === fulfillmentMode.value))
     throw new Error('This fulfillment mode is not offered by the POS.')
-  if (customerEntryStatus.value === 'pending')
-    throw new Error('請先輸入手機或選擇略過。')
   if (completedOrderId.value)
     throw new Error('This order has already been completed.')
 
@@ -907,14 +875,14 @@ onUnmounted(() => {
     :state="catalogState"
     @retry="loadCatalog"
   />
-  <main v-else :inert="agentControlsOrder || customerEntryStatus === 'pending'" class="menu-app" @pointerdown="handleMenuPointerDown">
+  <main v-else :inert="agentControlsOrder" class="menu-app" @pointerdown="handleMenuPointerDown">
     <p v-if="menuInteractionMessage" role="status" :class="['presentation-context']">
       {{ menuInteractionMessage }}
     </p>
     <CheckoutInvoice
       v-if="checkout?.stage === 'invoice'"
       :checkout="checkout"
-      :locked="agentControlsOrder || customerEntryStatus === 'pending'"
+      :locked="agentControlsOrder"
       :total="currency(cart.total)"
       @back="backCheckout"
       @choose="chooseInvoice"
@@ -926,7 +894,7 @@ onUnmounted(() => {
     <CheckoutTaxId
       v-else-if="checkout?.stage === 'tax-id'"
       :tax-id="checkout.taxId ?? ''"
-      :locked="agentControlsOrder || customerEntryStatus === 'pending'"
+      :locked="agentControlsOrder"
       @back="backCheckout"
       @confirm="confirmTaxIdNumber"
       @update-tax-id="updateTaxId"
