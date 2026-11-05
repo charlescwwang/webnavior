@@ -7,6 +7,184 @@ accumulating history.
 
 ## Current State
 
+- Nov5 service modes + per-device/local text mode RELEASE PREPARED, not switched:
+  `/home/aimax/.local/share/webnavior/releases/service-settings-20261105-192331`. User requested batch commits and deployment.
+  Commits:2fd9e8d(existing audio/ordering),811c728(table/background/early ASR),
+  559ed94(device and PIN Admin text mode); normal hooks changed no source bytes.
+  API/Menu/Kiosk/Admin plus immutable POS Bridge. No DB/provider change;
+  comparison Admin/media0047 excluded; /ui/mic-check unchanged. Existing PIN
+  inherited privately and public URLs/base paths checked. Six scoped package
+  types pass,whole lint0errors/11warnings;one full typecheck failed existing desktop
+  Plugin SDK declarations (logs retained,not a full-project pass).
+  Isolated source `/tmp/webnavior-service-settings-release-source`: Menu902,
+  Bridge58,Server216,Host171,browser24 pass; public three frontends build.
+  Previous live batch CLOSED_PASS: six cases,125calls,2earlier failures retained.
+  Current new context/receipt state remains process-local; real unpaid POS needs
+  explicit adapter. All4425 release file checks pass. sudo requires user password:
+  `sudo python3 /home/aimax/.local/share/webnavior/releases/service-settings-20261105-192331/switch-release.py`.
+  After switch verify both systemd WorkingDirectories,health,origin assets and
+  Admin frontend. Rollback via same script --rollback; prior ordering-receipt-170314.
+  Runtime/source/acceptance/backup immutable copies are under release; do not
+  publish the shared experimental checkout. No fresh provider calls in release work.
+
+- Frontend Admin **對話顯示 → 本機純文字模式** uses VueUse browser key
+  kiosk/conversation/text-only. PIN access is enough;no backend login/delegation.
+  It applies immediately across readers and survives reload. Off follows central
+  textOnlyMode/Profile;it never forces microphone over a central text-only policy.
+  Existing TTS retained. Server-backed edits still enforce device delegation.
+
+- NEW Nov5 18:20 field regression, confirmed NOT fixed/accepted: after two valid
+  recommendation invitations, customer 對啊 was admitted/recovered to Main; one
+  Main round requested zero tools, then structured information presentation asked
+  about three customer-unsupplied dish names. Actual API is ordering-receipt-170314
+  (running), so the older note below saying that release was not switched is stale.
+  Service-mode release above is prepared but not switched. Evidence in orderingIncidents.ts under
+  reported-20261105-recommendation-assent-subjects; private correlated excerpt:
+  /tmp/webnavior-affirmation-20261105-182013-evidence.json. Next reproduce invitation
+  consent/recovery handoff plus subject grounding; no phrase blacklist or blanket
+  ignoring 對啊. Previous six-mode acceptance does NOT cover this new incident.
+
+- Nov5 ordering UX + portable receipt release now observed RUNNING (Nov5 18:43 read-only check): `/home/aimax/.local/share/webnavior/releases/ordering-receipt-20261105-170314`.
+  Supersedes ordering-pickup-165332 and both earlier ordering-ux packages; old switch
+  scripts refuse publication. API/Menu/Kiosk plus isolated POS Bridge, no DB/Admin change.
+  Random 100–999 pickup number assigned once on acceptance and archived; survey has
+  persisted local Admin switch. New completion QR is independent of survey, for both
+  dine-in/takeout; separate read-only receipt token carries pickup number, meals/qty/total,
+  no phone, expires30min or Bridge restart. Replays cannot renew expiry; both mutation
+  endpoints reject this token. Earlier test table-binding capabilities remain separate.
+  Latest 64 related tests (Bridge50, gateway3, lifecycle5, browser6), three affected
+  package types, lint and public builds pass. Prior API archive test1 remains passed.
+  Six prior live ordering cases pass; provider batch CLOSED; 9 failed runs retained.
+  Source `/tmp/webnavior-ordering-ux-final-release-source`, archived under release.
+  Existing PIN and catalog preserved; deferred Admin/media0047 excluded. Physical
+  phone scan not tested. No commits. Sudo requires user password:
+  `sudo python3 /home/aimax/.local/share/webnavior/releases/ordering-receipt-20261105-170314/switch-release.py`.
+  After switch verify API/Bridge runtimes, both health and origin files.
+
+- Nov5 ordering UX IMPLEMENTED/VALIDATED,NOT committed or deployed.
+  Acceptance: /home/aimax/.local/share/webnavior/acceptance/ordering-ux-20261105-153406/acceptance.json
+  Final isolated source:/tmp/webnavior-ordering-ux-final-release-source
+  Plan:/tmp/webnavior-ordering-ux-final-release-plan.json (69explicit overlays).
+  Price display/TTS uses 元,normalizes presentation copies only. Initial/fixed/
+  custom/VLM/direct greetings mention Taiwanese ordering. Return-menu clears the
+  recommendation category;whole-catalog releases positive tastes (fish),retains
+  dietary/exclusions. Actual Nov5 repeated full-menu requests only showed fish.
+  Missing ranking/promotion evidence is service-information/topic:other,not unclear
+  meaning. Fixed Server tool restriction AND Host's receipt-required fallback;
+  typed clarification/topic:other is invalid and uses existing bounded repair.
+  orderingSkill v3 adds background as an answer-coverage outcome. Phone skip
+  proposals get existing independent Main effect verification. Jev abstention on
+  a waiting answer must complete service admission before Main sees executable
+  choices;otherwise background comments repeatedly became dine-in. No thresholds,
+  phrase blacklist,new dependencies,POS/payment or provider-setting changes.
+  Final live six N05-UX-* cases PASS;218calls across28runs,9failed historical runs
+  retained. Ledger CLOSED_PASS;do not reuse this batch's limited-scope authorization.
+  Gold audit:nonempty meant menu presentation,not reply;ranking/promotion corrected
+  to factual reply without requiring dishes. All original failures preserved.
+  Offline:Menu190+1skip,Host/greetings67,shared/Main93,browser14;routes81passed plus
+  2stale ordering@2 fixtures fixed and targeted2passed (full83 not rerun afterward).
+  Isolated critical routes8+Host67 pass. Menu/Kiosk/Server types and scoped lint pass.
+  Public Menu/Kiosk build/PIN inheritance pass. Prior audio/ROI141not rerun.
+  Device default now automatic8CH preference:useArrayMicrophone overrides only
+  the saved/default device pin with deviceId:undefined plus ideal8CH;native browser
+  ranks available inputs. Explicit Admin choice restores exact device pin and is
+  persisted. No extra probe streams/permission preflight. Actual Worklet channels
+  still own Mask vs standard,+65dB/limiter/VAD unchanged. Mic browser23+1skip,
+  device-store3 and Kiosk types pass;physical Firefox selection remains unverified.
+  Deferred Admin/media/schema0047 excluded from isolated source;route/client files
+  selectively patched from HEAD because working copies contain deferred edits.
+  NEXT deployment must include approved Server+frontends;older frontend-only
+  ordering-confirm package does NOT contain these changes. No deployment performed.
+
+- Prior invoice/cancellation frontend package (does not contain the UX changes above):
+  /home/aimax/.local/share/webnavior/releases/ordering-confirm-20261105-131227
+  Supersedes invoice-scan-20261105-121842;only switch the latest package.
+  User reported scanning still skips confirmation AFTER invoice-scan deployment;
+  confirmed that release's manifest and actual Menu/Kiosk indexes match. Previous
+  input-keydown guard was insufficient: native form submit still advances; choosing
+  a prefilled carrier/citizen also directly enters payment. Both paths reproduced
+  (unit2failed,actualApp browser2failed). Invoice form now blocks all native submits;
+  explicit type=button click/focused-button keyboard and existing voice confirmation
+  remain. Choosing a personal invoice type always stays on invoice page,including
+  prefilled identifiers and returning from payment. Physical scanner event sequence
+  has NOT been captured;do not claim its exact cause confirmed.
+  Second confirmed report:不要了 while asked 幾份 cancels the draft but leaves its
+  dialog visible (unit1failed). Cancel now closes the dialog,preserves exact cart,
+  keeps earlier suspended questions answerable without opening another dialog;
+  stale cancellation ticket still rejected. No new model policy/routing changes.
+  After fixes:137 relevant unit+14invoice/checkout browser tests pass,Menu types,
+  affected lint,both public builds,588 release-file checks pass. Failure logs and
+  regression counts stored in release acceptance.37prior admin/audio overlays
+  unchanged;prior141audio/ROI suite NOT rerun. No commits/provider calls/API restart.
+  User must sudo switch package;no deployment performed during this task.
+
+- Included admin access:five clicks/taps within one2s window (no long-press),
+  reset on timeout/disposal. Onscreen0–9/clear/backspace/explicit submit,password
+  mask,inputmode none;physical input remains. Existing PIN retained,never logged.
+  Overlay z100 above camera90/diagnostics75. Wrong PIN cannot create admin session.
+
+- Current deployed frontend is invoice-scan-20261105-121842 (manifest and actual
+  Menu/Kiosk indexes checked). API stays firefox-audio-20261105-091423;
+  frontend followups never restart it. After latest switch,confirm actual UMA ASR
+  requests;no real UMA pass claimed. Deferred Admin/media/schema0047 excluded.
+
+- Confirmed UMA admission bug from user's screenshot: quality0.5993,ENGAGED,
+  ROI interaction,but voice outside_zone/false/valid-evidence age39s;7 complete
+  VAD segments,all7 starts blocked,0 ASR. The person centre is below configured
+  greeting box yet inside default interaction ROI. Voice rechecked greeting-only
+  geometry while presence classified both ROIs. Same geometry reproduced:before
+ 1fail/10pass;after fix passes. Digital gain is working:-97.1+65=-32.1dBFS.
+  User physically present;NEVER explain this case as nobody being present.
+
+- ROI FIX: handlePresenceCandidate computes presenceWindow.decide once with one
+  timestamp;voicePresence.observe consumes that actual enriched PresenceCandidate
+  (no raw-point/zone argument). Voice accepts greetingRoiHit OR interactionRoiHit,
+  preserving greeting-only admission and admitting interaction-only customers.
+  Still requires camera observing,quality>=0.5 andvalid evidence<=1500ms;ENGAGED
+  itself is NOT a bypass. Outside both zones,poor quality/stale/failed camera
+  remain rejected. API change also updated fast-path test callers.141 related
+  tests pass (118Kiosk/fast-path+12gain/VAD+11browser),lint,Kiosk types/public build/
+  PIN pass;588 release files checked. No full-project typecheck/commits/providers.
+  Screenshot and actual failure preserved privately in release acceptance.
+
+- Deployed voice-trace already fixes missing overlay rows:one diagnostic ID from
+  VAD speech start BEFORE admission,carries through final segment/queue/ASR,keeps
+  pre-upload block reason/stage even without customer candidate. Post-ASR ignored
+  result is separate;capture retirement closes pending row.8-row bound/toggle
+  retained. Exact rejection snapshots also appear in operator audio panel.
+  Temporary permission-only requests removed;actual getUserMedia owns consent on
+  reload/operator restart. Saved Firefox Allow/Remember needed for automatic reuse.
+  No permission bypass. Prior non-array10:35 ASR must not count as UMA acceptance.
+  Actual route /api/kiosk/audio/transcriptions (old /audio/asr queries invalid).
+
+- Actual8CH→Mask+65dB once after Mask/before shared VAD/ASR;other counts standard
+  0dB. No name gating. Limiter0.98 immediate attack/50ms release across blocks/reset
+  ondispose. Raw/Mask comparisons unamplified. ROI repair does not alter DSP/gain/
+  VAD threshold/Gate. Deferred Admin/media/schema0047 changes remain excluded.
+
+- Nov5 Firefox audio repair DEPLOYED and independently origin-verified.
+  Release: /home/aimax/.local/share/webnavior/releases/firefox-audio-20261105-091423
+  Isolated source build,30 tests and Server/Kiosk types passed;3198 files checked.
+  switch-release.py inherits existing PIN in the compiled Kiosk; Menu/Admin/DB/
+  mic-check unchanged. No commits requested or created; exact source hashes retained.
+  Active production: firefox-audio-20261105-091423; rollback spatial-mask-20261105-002420.
+  Exact API runtime, livez/readyz,3198 files and50 origin assets verified. Built-in microphone and
+  user-switched gpt-sovits confirmed. Public release omitted the existing ignored
+  PIN config; preserve the existing value and explicitly inherit it in isolated
+  release builds. Public-origin build now rejects a missing PIN.
+  Player avoids suspended shared AudioContext output; rejection becomes device
+  WARN, not silent success. Operator panel distinguishes VAD/presence from input
+  preprocessing; VAD errors report WARN. TTS WARN includes safe upstream status/
+  endpoint metadata without text/credentials. No presence-rule/Mask/ASR changes.
+  Targeted30 tests, affected lint and Server/Kiosk types pass; candidate build and
+  real Linux Firefox synthetic playback/VAD harnesses pass. No root typecheck.
+  Mac Firefox ASR root remains unresolved: no ASR request observed; camera gate
+  is a hypothesis, not established cause. Direct synthetic WAV/MP3 TTS probes both
+  returned403; separate base GET showed Cloudflare1010. Format compatibility and
+  actual speaker/microphone behavior remain unverified. Never bypass Cloudflare
+  or globally switch format based on model name. Deferred Admin/media/schema0047
+  changes remain separate. Evidence: local acceptance/firefox-audio-fix-20261105.
+
 - Nov5 SPATIAL MASK DEPLOYED and independently origin-verified.
   Path: /home/aimax/.local/share/webnavior/releases/spatial-mask-20261105-002420
   Code1d65731(audio/local comparison),1cf7b9f(automatic routing/VAD),ce7e977(Server
@@ -268,6 +446,50 @@ accumulating history.
   Prior projector last12 had9assistant/3user. Do not infer acceptance-rate from
   partial archives or claim unbounded tokens (12msg/4k cap). Prior erroneous
   user_text cannot be retroactively identified from wording alone; no bulk deletion.
+
+- Nov3 STANDALONE AUDIO CHECK published separately at
+  https://webnavior.aikcitri.qzz.io/ui/mic-check/ (only static files under
+  /var/www/airi/web/ui/mic-check; no Nginx/API switch or migration).
+  Source apps/stage-kiosk/src/audioCheck; build:audio-check outputs dist-audio-check.
+  Reuses existingLCMV/Worklet/WAV, owns page-local capture; noSession/provider/upload.
+  Four browser downloads:raw8float32/refMono/LCMVmono +JSON; latestgroup only.
+  CSP connect-src none. /ui/ already excluded from Admin SW navigation fallback.
+  Chrome2permanent browser cases, package types/lint/build pass; installedFirefox157
+  built-page/publicHTTPS synthetic15s and real4downloads/mobilelayout pass.
+  Noactualmic accessed in standalone acceptance (usercannot speak currently).
+  Proof /tmp/webnavior-mic-check-publication.json and
+  /tmp/audio-check-firefox-public-acceptance.json. Physicaldirection/quality stillpending.
+  Source uncommitted; integratedKiosk/API remainundeployed. A later fullAdmin static
+  sync must preserve/republish thisdirectory from its dedicatedbuild.
+
+- Nov2 ARRAY MICROPHONE implemented in production repair worktree, uncommitted/undeployed.
+  Plan/status: docs/plans/2026-11-02-kiosk-array-microphone.md. User approved starting
+  recommended fft.js implementation. Firefox frontend fixed-geometry LCMV before existing
+  VAD/ASR; ordinary USB remains default, no Python backend or Jev/Main changes.
+  Kernel matches supplied Python48k/FFT1024/hop256/r44mm/loading.03 fixtures; browser
+  synthetic AudioWorklet15s capture verifies raw/reference/processed1024-frame alignment.
+  Kiosk operator settings own local mode/map/radius; stop mic before changing. Manual
+  comparison uses existing Session media auth/storage, new audio_details and partialunique
+  role index; deploy requires migration0047 before new Server. Admin private mono playback
+  and all3downloads; raw8float32 WAV max23.04MB, no ASR-training pairing.
+  DSP/shared/media/VAD/Admin browser/mode-switch tests and application builds/types validated;
+  details in plan. No production migration, commits, deployment or provider calls.
+  System-installed Snap Firefox157.0/Linux also passed standalone geckodriver0.37.1
+  isolated smoke: real15s eight-channel Worklet alignment(maxerror0), mode lifecycle,
+  Admin realWAV decode/muted playback/download control. Evidence /tmp/firefox-native-audio-result.json;
+  harness /tmp/firefoxAudioCheck.ts + /tmp/runFirefoxAudioCheck.py. Admin permanent
+  browser tests now check validWAV decoding too(2pass). Nov3 user confirmedTHIS Linux;
+  afterreplug USB2752:001d/ALSAcard2/PipeWire8ch appeared. ActualFirefox157 getUserMedia
+  eightchannels,AGC/AEC/NSfalse; track sampleRate absent, liveALSA8ch48k verified.
+  Production composable/Worklet made15s raw8float32+ref/processed monoPCM16,720000frames;
+  reconstruction maxPCM16difference0. Evidence /tmp/webnavior-uma8-firefox-20261103/result.json
+  and3WAVs. Separate existingVAD manager/worklet16k ingress got97x512samples/nonzero;
+  noVADmodel/ASR/Jev/Main/POS/realServer upload. /tmp/firefox-uma8-vad-ingress-result.json.
+  Sevenchannels havebottomnoise, eighthzero. PhysicalMICmapping stillUNVERIFIED;
+  Linux7.1 canreorderchannels. Usercurrentlycannot speak, STOP recordings/directiontest.
+  Front/side speech suppression/quality,10min latency/dropout,TTS echo,Windows remain
+  pending; do notpresent bottomnoise captures as fullhardware acceptance. See plan.
+  Current deployed release remains ordering-copy-20261102-171742.
 
 - Nov2 ORDERING-SCOPED COPY ONLY: user explicitly rejected expanding decisions,
   prompts, states or reply-rotation mechanisms. Exactly7existing literals in

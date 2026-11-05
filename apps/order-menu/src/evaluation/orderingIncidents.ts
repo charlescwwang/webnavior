@@ -44,6 +44,14 @@ export const orderingIncidents = {
  */
 export const reportedIncidentEvidence = [
   {
+    id: 'reported-20261105-recommendation-assent-subjects',
+    source: 'User report; read-only field records Nov5 18:20 Asia/Taipei, API ordering-receipt-20261105-170314; correlated recovery utterance3 and Main task telemetry retained privately.',
+    utterances: ['對啊'],
+    observed: 'Immediately before this utterance, the system twice asked 我可以協助您繼續點餐。需要我推薦幾樣餐點嗎？. Recovery admitted service and handed to Main. Main task recorded one round, zero requested tools, then the displayed reply asked which menu dishes were meant by 招牌蝦捲便當, 香酥排骨便當, 泰式酸辣魚. Those three names were not supplied by the customer in this round. This is a recommendation-consent failure, not evidence that 對啊 must always be ignored.',
+    gaps: ['CONFIRMED, NOT FIXED OR ACCEPTED: retain a live recommendation-invitation fixture before replay. Do not report the service-mode six-case acceptance as coverage for this incident.', 'Need to reproduce the recovery-to-Main handoff and structured menu-information subject handling. Zero requested tools proves there was no menu/recommendation operation in this Main task; the exact private model draft is not archived and must not be invented.', 'Expected behavior is valid menu recommendations with no cart mutation after consent to an unexpired invitation; without a valid question, casual assent must not fabricate dishes or purchase intent.'],
+    syntheticScripts: [],
+  },
+  {
     id: 'reported-20261103-background-service-clarification-loop',
     source: 'User report Nov3; read-only production ASR, reply and recovery telemetry retained privately; utterance13/15/52 correlate by utteranceId, not timestamp adjacency',
     utterances: ['判斷的話就是回答出來的東西', '它卻出現了第四個字', '我... 而且它是一個...', '資源放上去', '然後也設計掉了一個燈', '這邊雙區統統使用電子蓋', '讓他查出來的東西非常的多'],

@@ -43,7 +43,7 @@ and browser tests. No real POS/payment or provider calls without new authorizati
 
 ## Implementation and acceptance
 
-Implemented and validated, not committed or deployed. Central settings, pinned
+Implemented and validated; code committed in batches. Deployment package prepared, awaiting the local administrator switch. Central settings, pinned
 rounds, explicit unpaid capability, table completion, independent background
 policy and provisional/early-committed ASR use the existing architecture.
 Host reset renews the server round before closing its old session/reloading;
@@ -57,3 +57,5 @@ builds passed; no full-project typecheck. External unpaid POS is unsupported
 until an adapter explicitly implements it; random tables/context receipts remain
 process-local test behavior. Physical hardware, real payment/POS and a top-level
 standalone-browser reset were not part of this acceptance.
+
+Prepared release: `/home/aimax/.local/share/webnavior/releases/service-settings-20261105-192331`.
