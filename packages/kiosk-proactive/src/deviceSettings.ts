@@ -27,6 +27,8 @@ export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
 export interface DeviceSettingsValues {
   serviceMode: ServiceMode
   backgroundSpeechMode: BackgroundSpeechMode
+  /** Allows this device to use text input regardless of its shared voice-only Profile. */
+  textOnlyMode: boolean
   observationEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean
@@ -58,6 +60,7 @@ export interface DeviceSettingsValues {
 export const deviceSettingKeys = [
   'serviceMode',
   'backgroundSpeechMode',
+  'textOnlyMode',
   'observationEnabled',
   'greetingEnabled',
   'reminderEnabled',
@@ -117,6 +120,7 @@ export const newDeviceSettings: DeviceSettings = {
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   serviceMode: 'kiosk',
   backgroundSpeechMode: 'off',
+  textOnlyMode: false,
   observationEnabled: false,
   greetingEnabled: false,
   reminderEnabled: false,

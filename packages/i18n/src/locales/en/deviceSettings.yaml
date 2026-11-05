@@ -13,6 +13,7 @@ conflict: Another operator changed these settings. Reload before saving; your dr
 login: Sign in as a site operator
 loginRequired: Sign in through the management page, then return here to save. Only delegated fields on this device can be changed.
 fields:
+  textOnlyMode: Text-only mode
   serviceMode: Service mode
   backgroundSpeechMode: Background speech classification
   observationEnabled: Local camera observation
@@ -37,6 +38,7 @@ fields:
   voiceDiagnosticsEnabled: Voice diagnostics (testing)
   conversationDiagnosticsEnabled: Conversation duration (testing)
 fieldDescriptions:
+  textOnlyMode: Show text input and disable voice capture on this Kiosk only. When off, follow the shared Profile. Speech playback keeps its existing configuration.
   serviceMode: Applies to the next order round. Test tables are randomly assigned a01–a09.
   backgroundSpeechMode: Off by default. Observe records decisions; enforce may reject background speech. VAD and operation authorization remain independent.
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
@@ -84,3 +86,7 @@ localDiagnostics:
   presenceDescription: Shows presence states such as engaged, pose quality, dwell time, and detection cadence. Requires active camera observation.
   decision: Show decision flow
   decisionDescription: Shows the per-utterance phase, candidates, model decision, operation, and authorization trace.
+
+localTextMode:
+  label: Local text-only mode
+  description: Show text input and disable voice capture immediately. Saved in this browser across reloads. When off, follow device and Profile settings. Speech playback keeps its existing policy.

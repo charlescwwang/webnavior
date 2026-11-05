@@ -6,8 +6,9 @@ import { createI18n } from 'vue-i18n'
 import KioskAdminPanel from './KioskAdminPanel.vue'
 
 import { useKioskDiagnostics } from '../composables/useKioskDiagnostics'
+import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
 
-const preferenceKeys = ['kiosk/diagnostics/idle-enabled', 'kiosk/diagnostics/presence-enabled', 'kiosk/diagnostics/decision-enabled']
+const preferenceKeys = ['kiosk/diagnostics/idle-enabled', 'kiosk/diagnostics/presence-enabled', 'kiosk/diagnostics/decision-enabled', 'kiosk/conversation/text-only']
 
 afterEach(() => {
   for (const key of preferenceKeys)
@@ -61,4 +62,28 @@ it('independently toggles diagnostic overlays and restores browser preferences o
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.idle', exact: true })).toHaveAttribute('aria-checked', 'false')
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.presence', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.decision', exact: true })).toHaveAttribute('aria-checked', 'true')
+})
+
+it('lets the PIN-protected administrator enable text input locally and retains the choice when reopening', async () => {
+  localStorage.removeItem('kiosk/conversation/text-only')
+  const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false, fallbackWarn: false })
+  const reader = render(defineComponent({ setup() {
+    const preference = useKioskTextOnlyMode()
+    return () => h('output', preference.value ? 'text-input-active' : 'follow-published-profile')
+  } }))
+  const view = render(settings, { global: { plugins: [i18n] } })
+  const toggle = view.getByRole('switch', { name: 'deviceSettings.localTextMode.label', exact: true })
+  await expect.element(toggle).toHaveAttribute('aria-checked', 'false')
+  await toggle.click()
+  await expect.poll(() => localStorage.getItem('kiosk/conversation/text-only')).toBe('true')
+  await expect.element(reader.getByText('text-input-active', { exact: true })).toBeVisible()
+  view.unmount()
+  const reopened = render(settings, { global: { plugins: [i18n] } })
+  const restored = reopened.getByRole('switch', { name: 'deviceSettings.localTextMode.label', exact: true })
+  await expect.element(restored).toHaveAttribute('aria-checked', 'true')
+  await restored.click()
+  await expect.poll(() => localStorage.getItem('kiosk/conversation/text-only')).toBe('false')
+  await expect.element(reader.getByText('follow-published-profile', { exact: true })).toBeVisible()
+  reopened.unmount()
+  reader.unmount()
 })

@@ -12,6 +12,22 @@ unchanged for decisions and troubleshooting. Text typed into the simulation
 input is also submitted unchanged. This normalizes Chinese writing; it does
 not translate other languages or verify the truth of a model reply.
 
+## Per-device text input
+
+Device settings expose **純文字模式** (`textOnlyMode`, default false). Enabling it
+shows text input and disables automatic microphone/VAD capture on that device,
+even when the shared Profile enables voice-only conversation. Turning it off or
+clearing the override restores the Profile's behavior. Reply synthesis retains
+its existing policy; this is the current text-input experience, not a mute switch.
+The PIN-protected frontend Admin panel also has **對話顯示 → 本機純文字模式**.
+It uses browser storage (`kiosk/conversation/text-only`) and applies immediately,
+including after a reload; no backend account or delegated setting is needed for
+this local preference. When this switch is off, the device/Profile policy still
+applies; it cannot force microphone capture over a central text-only setting.
+An administrator can also set the server-backed option for one Kiosk and
+optionally delegate edits to that server setting. Settings persist through reload without changing other
+Kiosks or the shared Profile. Existing synchronization/local reload applies.
+
 ## Central service and background settings
 
 Device settings expose `serviceMode: kiosk | table-service` and independent

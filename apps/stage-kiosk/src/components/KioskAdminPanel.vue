@@ -8,6 +8,7 @@ import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import MenuSimulationPanel from './menuSimulationPanel.vue'
 
 import { useFeedbackInvitationEnabled } from '../composables/useFeedbackInvitationSettings'
+import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 
 const props = defineProps<{
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const development = import.meta.env.DEV
 const feedbackInvitationEnabled = useFeedbackInvitationEnabled()
+const textOnlyMode = useKioskTextOnlyMode()
 const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
 const idleDiagnosticsEnabled = defineModel<boolean>('idleDiagnosticsEnabled', { required: true })
 const presenceDiagnosticsEnabled = defineModel<boolean>('presenceDiagnosticsEnabled', { required: true })
@@ -101,6 +103,13 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
 
       <section class="admin-section">
         <h3>對話顯示</h3>
+        <label :class="['toggle-row']">
+          <Checkbox v-model="textOnlyMode" :aria-label="t('deviceSettings.localTextMode.label')" />
+          <span>{{ t('deviceSettings.localTextMode.label') }}</span>
+        </label>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.localTextMode.description') }}
+        </p>
         <FieldRange
           v-model="conversationFontSize"
           :default-value="20"

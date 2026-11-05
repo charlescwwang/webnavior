@@ -10,6 +10,7 @@ const fraction = pipe(number(), minValue(0), maxValue(1))
 const overrides = partial(strictObject({
   serviceMode: picklist(['kiosk', 'table-service']),
   backgroundSpeechMode: picklist(['off', 'observe', 'enforce']),
+  textOnlyMode: boolean(),
   observationEnabled: boolean(),
   greetingEnabled: boolean(),
   reminderEnabled: boolean(),
