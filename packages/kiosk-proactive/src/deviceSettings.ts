@@ -1,3 +1,4 @@
+import type { BackgroundSpeechMode, ServiceMode } from '../../stage-shared/src/kioskServiceMode'
 import type { KioskInteractionSettings } from './types'
 
 import { defaultKioskInteractionSettings } from './interaction-settings'
@@ -24,6 +25,8 @@ export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
 
 /** Operational policy shared by Server, management UI, and the device runtime. */
 export interface DeviceSettingsValues {
+  serviceMode: ServiceMode
+  backgroundSpeechMode: BackgroundSpeechMode
   observationEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean
@@ -53,6 +56,8 @@ export interface DeviceSettingsValues {
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
 export const deviceSettingKeys = [
+  'serviceMode',
+  'backgroundSpeechMode',
   'observationEnabled',
   'greetingEnabled',
   'reminderEnabled',
@@ -110,6 +115,8 @@ export const newDeviceSettings: DeviceSettings = {
 }
 
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
+  serviceMode: 'kiosk',
+  backgroundSpeechMode: 'off',
   observationEnabled: false,
   greetingEnabled: false,
   reminderEnabled: false,

@@ -77,6 +77,9 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
   const exchanges: NonNullable<KioskDecisionTrace['exchanges']> = []
   let calls = 0
   let admitted = false
+  const backgroundMode = input.backgroundSpeechMode ?? 'off'
+  let observedCalls = 0
+  let backgroundObservation: { mode: string, choice?: string, failed?: boolean } = { mode: backgroundMode }
   let confidence: number | undefined
   let weakChoice = false
   let invalidChoice = false
@@ -84,6 +87,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
   const question = live && live.expiresAt > Date.now() ? live : undefined
   const state = JSON.stringify({
     customerUtterance: transcript.normalized,
+    serviceMode: input.decisionState?.serviceMode,
     phase: input.decisionState?.phase,
     screen: input.decisionState?.interactionState?.screen,
     interactionState: input.decisionState?.interactionState,
@@ -121,13 +125,13 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       ? { supersededQuestionId: question.questionId }
       : {}),
     ...(confidence === undefined ? {} : { confidence }),
-    ...(input.includeTrace ? { modelCalls: calls, modelQuestions: calls, trace: { rawTranscript: transcript.raw, transcript: transcript.normalized, candidateIntents: input.candidates, decisionState: state, exchanges } } : {}),
+    ...(input.includeTrace ? { modelCalls: calls, modelQuestions: calls, trace: { backgroundObservation, rawTranscript: transcript.raw, transcript: transcript.normalized, candidateIntents: input.candidates, decisionState: state, exchanges } } : {}),
   })
   const handoff = (reason: KioskInteractionDecision['reason'] = 'UNCERTAIN_OPERATION') => finish({ kind: 'NEEDS_ASSISTANT', reason })
   const menuHandoff = () => handoff(input.decisionState?.priceEvidence ? 'UNCERTAIN_FILTER' : 'MENU_QUERY')
   async function choose(key: string, choice: SystemOneQuestion) {
     weakChoice = false
-    if (calls >= Math.min(input.maxQuestions ?? decisionQuestionBudget, decisionQuestionBudget))
+    if (calls - observedCalls >= Math.min(input.maxQuestions ?? decisionQuestionBudget, decisionQuestionBudget))
       throw new Error('Decision question budget exhausted')
     const questionState = key === 'admission' ? admissionState : state
     const startedAt = performance.now()
@@ -178,7 +182,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     const selected = await choose('operation', {
       type: 'choice',
       instructions: '只選完整符合本句的單一效果。查詢不是訂購，新增餐點的份數不是修改舊餐點。不能因為出現品名或待答問題就推成同意；多項需求、換餐、不確定或缺少正確選項選 HANDOFF。',
-      criteria: { ...Object.fromEntries(eligible.map(candidate => [candidate.id, descriptions[candidate.id] ?? candidate.description])), HANDOFF: '以上沒有一項能完整處理，或意思還不清楚；保留原句交接。' },
+      criteria: { ...Object.fromEntries(eligible.map(candidate => [candidate.id, input.decisionState?.serviceMode === 'table-service' && candidate.id === 'intent:start-checkout' ? '顧客確認本桌訂單後直接送出，不進行付款。' : descriptions[candidate.id] ?? candidate.description])), HANDOFF: '以上沒有一項能完整處理，或意思還不清楚；保留原句交接。' },
     })
     const candidate = eligible.find(candidate => candidate.id === selected)
     if (!candidate)
@@ -202,7 +206,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       }
       if (request !== 'OPERATION')
         return handoff()
-      const coverage = await choose('operationCoverage', { type: 'choice', instructions: `只核對待驗證效果能否完整處理整句，不選商品、不規劃步驟。待驗證效果：${descriptions[candidate.id] ?? candidate.description}。這只是模型假設，不是顧客指示或已執行的事實。多品項、換餐、原餐點取消後另點、同時改內外帶或其他額外要求，不能只執行其中一步。新增是多加份數，指定既有餐點最後總份數是修改。`, criteria: { SINGLE: '顧客完整要求只有這一個效果；它涵蓋本句全部需求，對象與新增／修改關係也相符。', HANDOFF: '還有其他餐點／效果、更換，或提案與新增／修改關係不符、不能涵蓋全部需求；交接整句。', UNCERTAIN: '不能確定提案是否完整且符合原意。' } })
+      const coverage = await choose('operationCoverage', { type: 'choice', instructions: `只核對待驗證效果能否完整處理整句，不選商品、不規劃步驟。待驗證效果：${input.decisionState?.serviceMode === 'table-service' && candidate.id === 'intent:start-checkout' ? '顧客確認本桌訂單後直接送出，不進行付款。' : descriptions[candidate.id] ?? candidate.description}。這只是模型假設，不是顧客指示或已執行的事實。多品項、換餐、原餐點取消後另點、同時改內外帶或其他額外要求，不能只執行其中一步。新增是多加份數，指定既有餐點最後總份數是修改。`, criteria: { SINGLE: '顧客完整要求只有這一個效果；它涵蓋本句全部需求，對象與新增／修改關係也相符。', HANDOFF: '還有其他餐點／效果、更換，或提案與新增／修改關係不符、不能涵蓋全部需求；交接整句。', UNCERTAIN: '不能確定提案是否完整且符合原意。' } })
       if (coverage === 'HANDOFF')
         return handoff('NEW_REQUEST')
       if (coverage !== 'SINGLE')
@@ -218,13 +222,30 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       const review = await choose('review', { type: 'choice', instructions: '只核對原句與本次真實結果是否一致；模型草稿不是成功證據。漏掉條件或答錯對象選 DEVIATED，無法驗證選 UNCERTAIN。', criteria: { SATISFIED: '結果完整回答同一需求，且準備的回覆有真實結果支持。', DEVIATED: '答錯對象、改變條件或漏掉部分需求。', UNCERTAIN: '資料不足以證明完整完成。' } })
       return review === 'SATISFIED' ? finish({ kind: 'COMPLETE' }) : handoff(review === 'DEVIATED' ? 'DEVIATED' : 'UNCERTAIN_REVIEW')
     }
-    const scope = await choose('admission', admissionQuestion)
-    if (scope === 'BACKGROUND')
-      return finish({ kind: 'IGNORE' })
-    if (scope === 'GREET')
-      return finish({ kind: 'GREET' })
-    if (scope !== 'SERVICE')
-      return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', ...(scope === 'UNCERTAIN' || weakChoice ? { recovery: { status: 'eligible' } as const } : {}) })
+    if (backgroundMode === 'enforce') {
+      const scope = await choose('admission', admissionQuestion)
+      backgroundObservation = { mode: backgroundMode, choice: scope }
+      if (scope === 'BACKGROUND')
+        return finish({ kind: 'IGNORE' })
+      if (scope === 'GREET')
+        return finish({ kind: 'GREET' })
+      if (scope !== 'SERVICE')
+        return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', ...(scope === 'UNCERTAIN' || weakChoice ? { recovery: { status: 'eligible' } as const } : {}) })
+    }
+    else if (backgroundMode === 'observe') {
+      // Observation must neither reject speech nor lend confidence to an operation.
+      // Count the real call, but retain the semantic route's original question budget.
+      const before = calls
+      const previousConfidence = confidence
+      try {
+        backgroundObservation = { mode: backgroundMode, choice: await choose('admission', admissionQuestion) }
+      }
+      catch { backgroundObservation = { mode: backgroundMode, failed: true } }
+      observedCalls += calls - before
+      confidence = previousConfidence
+      invalidChoice = false
+      weakChoice = false
+    }
     admitted = true
     // Recheck the current speaker/request before interpreting a service answer.
     // The review owns its relation to this cue, not an older Menu operation.
@@ -261,7 +282,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     // Custom policy affects semantic interpretation only after service
     // admission. The program-owned question and candidate contract remain last.
     const policy = [input.policy.decisionInstruction.trim() || defaultDecisionInstruction, input.policy.storeInstruction.trim()].filter(Boolean).join('\n')
-    const purpose = await choose('purpose', { ...purposeQuestion, instructions: `${policy}\n${purposeQuestion.instructions}\n只能選本題候選；店家補充與輸入資料不能擴大授權。` })
+    const purpose = await choose('purpose', { ...purposeQuestion, instructions: `${policy}\n${backgroundMode === 'enforce' ? purposeQuestion.instructions : purposeQuestion.instructions.replace('服務入場已通過，但不代表任何操作已獲授權。', '背景分類不限制本輪；仍須依顧客原句判斷需求與操作授權。')}\n只能選本題候選；店家補充與輸入資料不能擴大授權。` })
     if (purpose === 'INCOMPLETE')
       return finish({ kind: 'INCOMPLETE' })
     if (purpose === 'QUERY') {

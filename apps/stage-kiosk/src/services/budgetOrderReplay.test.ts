@@ -20,12 +20,14 @@ import { array, object, optional, parse, safeParse, string, unknown } from 'vali
 import { expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
-import { createPosSimulator } from '../../../order-menu-server/src/simulator'
+import { createTableOrders } from '../../../order-menu-server/src/domain/tableOrders'
+import { createInMemorySimulatorGateway, createPosSimulator } from '../../../order-menu-server/src/simulator'
 import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, requestTaxId, setInvoiceDraft, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
 import { applyAcceptancePolicy } from '../../../order-menu/src/evaluation/conversationAcceptance'
 import { conversationScripts } from '../../../order-menu/src/evaluation/conversationMatrix'
 import { assessScriptTurn } from '../../../order-menu/src/evaluation/conversationOracle'
 import { incidentConversationScripts, orderingIncidents, supersededConversationScripts } from '../../../order-menu/src/evaluation/orderingIncidents'
+import { serviceModeCases } from '../../../order-menu/src/evaluation/serviceModeCases'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { createDrizzle } from '../../../server/src/libs/db'
 import { mockDB } from '../../../server/src/libs/mock-db'
@@ -49,8 +51,10 @@ vi.mock('./kiosk-device', () => api)
 // Opt-in: only profiles/policy are selected from live DB. All sessions, Menu,
 // cart and profile copies are scratch; providers receive synthetic utterances.
 const matrixId = process.env.KIOSK_CONVERSATION_SCRIPT
+const modeCase = serviceModeCases.find(value => value.script.id === matrixId)
 const incidentScript = matrixId ? incidentConversationScripts.find(value => value.id === matrixId) : undefined
-const historicalScript = incidentScript ?? (matrixId ? conversationScripts.find(value => value.id === matrixId) : undefined)
+const inputChannel = modeCase?.channel ?? incidentScript?.channel ?? 'jev-main'
+const historicalScript = modeCase?.script ?? incidentScript ?? (matrixId ? conversationScripts.find(value => value.id === matrixId) : undefined)
 const acceptance = historicalScript ? applyAcceptancePolicy(historicalScript) : undefined
 const script = acceptance?.script
 if (matrixId && !script)
@@ -91,7 +95,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
   record('historicalScript', historicalScript)
   record('acceptancePolicy', acceptance?.revision)
   record('script', script ?? { id: 'legacy-budget-probe' })
-  record('inputChannel', { channel: incidentScript?.channel ?? 'jev-main', finiteDecisionBypassed: incidentScript?.channel === 'main-direct' })
+  record('inputChannel', { channel: inputChannel, finiteDecisionBypassed: inputChannel === 'main-direct' })
   record('configuration', { jev: { implementation: active.implementation, model: active.modelId, origin: new URL(active.baseURL).origin }, main: { model: main.modelId, origin: new URL(main.baseURL).origin, thinking: main.enableThinking }, personaRelease: profile.id, policy, persona: { instructions: profile.snapshot.agentInstructions, card: profile.snapshot.characterCard }, synthetic: true })
   const secret = main.apiKeyCiphertext ? envelopeCrypto.decryptKey(main.apiKeyCiphertext, { keyEntryId: 'default', modelName: `webnavior-ai:provider-profile:${main.id}` }) : undefined
   const startedAt = Date.now()
@@ -145,6 +149,10 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
   expect(registered.status).toBe(201)
   const headers = { 'Cookie': registered.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
   const { device } = await registered.json() as { device: { id: string } }
+  // Historical admission gold explicitly uses enforce; new service-mode cases
+  // exercise the independent setting, including the new default off.
+  const { settings } = await kioskService.getDeviceSettings(device.id)
+  await db.update(schema.kioskDevices).set({ settings: { ...settings, overrides: { ...settings.overrides, serviceMode: modeCase?.serviceMode ?? 'kiosk', backgroundSpeechMode: modeCase?.backgroundSpeechMode ?? 'enforce' } } })
   const assigned = await kioskService.getDeviceProfile(device.id)
   expect(assigned).toBeDefined()
   await db.update(schema.kioskProfileReleases).set({ snapshot: { ...profile.snapshot, interactiveService: { ...profile.snapshot.interactiveService, id: 'development-ordering-service' } } })
@@ -183,7 +191,19 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
   }
   let reviewOpen = false
   let entryReady = script?.initial.entry !== 'pending'
-  const runtime = createMenuToolRuntime({ ...(script?.group === 'checkout-navigation'
+  const tableOrders = createTableOrders(createInMemorySimulatorGateway())
+  const orderingContext = tableOrders.open(modeCase?.serviceMode ?? 'kiosk')
+  let tableSubmissions = 0
+  let confirmedTableOrder: Awaited<ReturnType<typeof tableOrders.submit>> | undefined
+  const runtime = createMenuToolRuntime({ ...(modeCase ? { serviceContext: () => orderingContext } : {}), ...(modeCase?.serviceMode === 'table-service'
+    ? { gateway: { submit: async (cart) => {
+        tableSubmissions++
+        if (!cart.catalogRevision)
+          throw new Error('Synthetic fixture must load the catalog revision before submission.')
+        confirmedTableOrder = await tableOrders.submit({ confirmedByUser: true, contextId: orderingContext.id, idempotencyKey: `synthetic-${orderingContext.id}`, cart: { ...cart, catalogRevision: cart.catalogRevision } })
+        return confirmedTableOrder
+      } } }
+    : {}), ...(script?.group === 'checkout-navigation'
     ? { screen: () => checkoutState ? 'checkout' as const : reviewOpen ? 'cart_review' as const : 'menu' as const, onReviewRequested: () => {
         if (!checkoutState)
           reviewOpen = true
@@ -220,6 +240,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         },
       } }
     : {}) })
+  runtime.setMenu(catalog.items, catalog.revision)
   const snapshot = async () => parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
   const clarification = createServiceClarificationWindow()
   api.startKioskVisitorSession.mockResolvedValue({ session })
@@ -265,7 +286,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
   }
   if (script)
     stages = script.steps.map((_, index) => 100 + index)
-  record('flow', { stages, freshProviders: true, seededPrefix: queryScopeProbe || skillProbe || lookupPrefix || (checkoutProbe && !contextOrderProbe && !confirmationOrderProbe && !configurationOrderProbe), injectedJevAbstention: checkoutProbe && process.env.KIOSK_CHECKOUT_MAIN_PROBE === '1' })
+  record('flow', { stages, freshProviders: true, seededPrefix: !script && (queryScopeProbe || skillProbe || lookupPrefix || (checkoutProbe && !contextOrderProbe && !confirmationOrderProbe && !configurationOrderProbe)), injectedJevAbstention: checkoutProbe && process.env.KIOSK_CHECKOUT_MAIN_PROBE === '1' })
   try {
     if (script) {
       for (const line of script.initial.cart) {
@@ -341,6 +362,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
       const text = matrixStep?.text ?? utterances[queryScopeProbe ? stage - 21 : configurationOrderProbe ? stage - 17 : confirmationOrderProbe ? stage - 12 : stage - 1]!
       turn++
       const turnDeadlineAt = Date.now() + 60_000
+      let policyDecision: KioskInteractionDecision | undefined
       let recordedInput = false
       const before = await snapshot()
       const cueBefore = clarification.current(before)
@@ -398,7 +420,13 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         }
         return receipt
       }
-      const fast = await runFastPath({ transcript: text, onTrace: trace => record('fastTrace', { turn, trace }), isEnabled: async () => incidentScript?.channel !== 'main-direct' && await systemOne.isEnabled(), serviceClarification: state => clarification.current(state), decide: async ({ signal, ...request }) => {
+      const fast = await runFastPath({ transcript: text, onUtteranceAccepted: async () => {
+        if (!recordedInput) {
+          await append('asr_transcript', text, { utteranceId: turn, decisionRoute: 'utterance_accepted' })
+          recordedInput = true
+          record('utteranceAccepted', { turn, toolsCompleted: tools.filter(name => !name.startsWith('kiosk_')).length })
+        }
+      }, onTrace: trace => record('fastTrace', { turn, trace }), isEnabled: async () => inputChannel !== 'main-direct' && await systemOne.isEnabled(), serviceClarification: state => clarification.current(state), decide: async ({ signal, ...request }) => {
         if (checkoutProbe && process.env.KIOSK_CHECKOUT_MAIN_PROBE === '1') {
           // Replay the observed admission abstention against the real Main, not
           // a lucky strong JEV result. This is a fault-injection probe, separate
@@ -410,9 +438,10 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
           record('injectedFault', { turn, fault: matrixStep.fault, schemaFailure: true })
           return { kind: 'UNAVAILABLE', reason: 'INVALID_CHOICE' }
         }
-        const response = await app.request('/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, utteranceId: turn, visitorSessionId: session.id }) })
+        const response = await app.request('/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, includeTrace: Boolean(modeCase), utteranceId: turn, visitorSessionId: session.id }) })
         expect(response.status).toBe(200)
-        return await response.json() as KioskInteractionDecision
+        policyDecision = await response.json() as KioskInteractionDecision
+        return policyDecision
       }, onExecuted: async (result) => {
         record('fastReceipt', { turn, result })
         if (!recordedInput) {
@@ -430,6 +459,16 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         return await execute(tool.name as MenuToolName, input)
       } } })
       record('decision', { turn, text, fast })
+      if (modeCase && inputChannel !== 'main-direct') {
+        const observed = safeParse(object({ backgroundObservation: object({ mode: string() }), exchanges: array(object({ answers: optional(object({ admission: optional(object({ choice: string() })) })) })) }), policyDecision?.trace)
+        expect(observed.success, 'Policy trace must be present, not inferred from a reply').toBe(true)
+        if (observed.success) {
+          const admissionCalls = observed.output.exchanges.filter(exchange => exchange.answers?.admission).length
+          record('backgroundPolicyAssessment', { turn, mode: modeCase.backgroundSpeechMode, admissionCalls, observation: observed.output.backgroundObservation })
+          expect(observed.output.backgroundObservation.mode).toBe(modeCase.backgroundSpeechMode)
+          expect(admissionCalls).toBe(modeCase.backgroundSpeechMode === 'off' ? 0 : 1)
+        }
+      }
       // Observe the final qualifier before falling back to earlier Jev evidence.
       // IGNORE alone is insufficient: a declined invitation is accepted service.
       const scoped = safeParse(object({ trace: object({ serviceResolution: object({ choice: string(), recipient: optional(string()) }) }) }), fast)
@@ -507,7 +546,7 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         finally { await runtime.invoke('kiosk_agent_task', { action: 'END', taskId }) }
       }
       else {
-        if (!recordedInput || fast.kind === 'SERVICE_CLARIFICATION') {
+        if ((!recordedInput && !['IGNORE', 'INCOMPLETE', 'UNAVAILABLE'].includes(fast.kind)) || fast.kind === 'SERVICE_CLARIFICATION') {
           await append('asr_transcript', text, fast.kind === 'SERVICE_CLARIFICATION'
             ? { utteranceId: turn, decisionRoute: 'fast_path', source: 'service_clarification', questionId: fast.question.questionId }
             : { utteranceId: turn })
@@ -669,7 +708,15 @@ it.skipIf(process.env.KIOSK_BUDGET_ORDER_REPLAY !== '1')(`configured conversatio
         expect(answer).not.toMatch(/推薦一項/)
       }
     }
-    if (incidentScript?.channel !== 'main-direct') {
+    if (modeCase?.serviceMode === 'table-service') {
+      expect(tableSubmissions).toBe(1)
+      expect(confirmedTableOrder).toMatchObject({ serviceMode: 'table-service', table: orderingContext.table, receipt: { status: 'accepted' }, cart: { itemCount: 1, total: 80 } })
+      expect(confirmedTableOrder?.receipt).not.toHaveProperty('pickupNumber')
+      expect(checkoutStarts).toBe(0)
+      expect(paymentSelections).toBe(0)
+      record('tableSubmissionAssessment', { tableSubmissions, checkoutStarts, paymentSelections, order: confirmedTableOrder })
+    }
+    if (inputChannel !== 'main-direct') {
       expect(jevRequests, 'Jev/Main acceptance requires actual Jev requests').toBeGreaterThan(0)
       expect(jevFailures, 'Main fallback does not prove Jev acceptance').toBe(0)
     }

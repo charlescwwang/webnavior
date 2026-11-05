@@ -650,3 +650,41 @@ it.each(['timeout', 'provider-error', 'invalid'] as const)('distinguishes failed
   expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'failed', failure } })).toBe(true)
   expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'completed', admission: 'uncertain' } })).toBe(false)
 })
+
+it('commits a JEV-complete utterance before an asynchronous tool starts or finishes', async () => {
+  const events: string[] = []
+  let release: () => void = () => {}
+  const accepted = new Promise<void>(resolve => release = resolve)
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === candidateTool.name)
+      return { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }
+    events.push('tool')
+    return { customerMessage: '已加入。' }
+  })
+  const running = runFastPath({ transcript: '水餃一份', isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item' }), onUtteranceAccepted: async () => {
+    events.push('history')
+    await accepted
+  }, webMcp: { tools: [candidateTool, executeTool], execute } })
+  await vi.waitFor(() => expect(events).toEqual(['history']))
+  expect(execute.mock.calls.filter(([tool]) => tool.name === executeTool.name)).toHaveLength(0)
+  release()
+  expect((await running).kind).toBe('FAST_ACTION')
+  expect(events).toEqual(['history', 'tool'])
+})
+
+it.each(['IGNORE', 'INCOMPLETE'] as const)('does not commit a %s speech candidate to conversation history', async (kind) => {
+  const onUtteranceAccepted = vi.fn()
+  const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
+  await runFastPath({ transcript: '那個', isEnabled: async () => true, decide: async () => ({ kind }), onUtteranceAccepted, webMcp: { tools: [candidateTool, executeTool], execute } })
+  expect(onUtteranceAccepted).not.toHaveBeenCalled()
+})
+
+it('does not turn a failed Host history write into a provider fallback or execute a tool', async () => {
+  const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
+  const result = await runFastPath({ transcript: '水餃一份', isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item' }), onUtteranceAccepted: async () => {
+    throw new Error('History unavailable')
+  }, webMcp: { tools: [candidateTool, executeTool], execute } })
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result.reason).not.toBe('PROVIDER_FAILURE')
+  expect(execute.mock.calls).toHaveLength(1)
+})

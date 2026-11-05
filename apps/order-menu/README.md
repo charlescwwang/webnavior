@@ -199,6 +199,22 @@ Main and Jev/Main paths; the accepted original112 positions remain unchanged.
 Provider replays are opt-in and require authorization to use the configured
 resources; deterministic tests never spend provider calls.
 
+## Service modes
+
+The authenticated Bridge ordering context selects `kiosk` (default) or
+`table-service` from central device settings. The current round keeps its mode
+and table until an explicit new-session reset; changing settings does not replace
+a live cart. Kiosk keeps fulfillment, invoice and payment behavior. Table service
+uses the same cart and tools, skips phone/fulfillment/payment screens, and submits
+only after explicit touch or voice confirmation. Its completion shows table,
+meal quantities and total, without a pickup number.
+
+For the current test environment, the Bridge assigns a random `a01`–`a09` once
+per round. This is not physical table verification or reservation. Unpaid order
+submission requires an explicitly supported adapter; an unknown POS is refused,
+not treated as a successful payment. See the Bridge README for its separate
+`/v1/table-orders` contract.
+
 ## Run locally
 
 Historical evidence and deterministic boundary replays live in `src/evaluation`.

@@ -26,6 +26,17 @@ describe('device policy authorization and concurrency', () => {
     deviceId = (await service.createDevice({ siteId, label: 'A', registrationMethod: 'qr_code' })).id
   })
 
+  it('supports central service/background choices while rejecting invalid or undelegated changes', async () => {
+    const initial = await service.getDeviceSettings(deviceId)
+    expect(initial.effective.serviceMode).toBe('kiosk')
+    expect(initial.effective.backgroundSpeechMode).toBe('off')
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: initial.settings.version, overrides: { serviceMode: 'table-service' } } })).rejects.toThrow()
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { serviceMode: 'invalid' }, localControls: [] } })).rejects.toThrow()
+    const changed = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { serviceMode: 'table-service', backgroundSpeechMode: 'observe' }, localControls: [] } })
+    expect(changed.effective.serviceMode).toBe('table-service')
+    expect(changed.effective.backgroundSpeechMode).toBe('observe')
+  })
+
   // Report: this chat, 2026-10-28 — new machines must start with the field-test policy.
   it('creates independent overridden settings and permits local field adjustments', async () => {
     const initial = await service.getDeviceSettings(deviceId)

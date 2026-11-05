@@ -65,3 +65,18 @@ it('preserves the local survey switch when a published profile is applied again'
     localStorage.removeItem('kiosk/feedback-invitation/enabled')
   }
 })
+
+it('shows table, meal details and total without pickup details for table service', async () => {
+  const screen = render(CustomerSessionCompletion, { global, props: {
+    settings: { ...defaultFeedbackInvitationSettings },
+    orderResult: { environment: 'test', serviceMode: 'table-service', table: { id: 'a03', label: 'a03' }, lines: [{ name: '水餃', quantity: 2, total: 160 }], fulfillmentMode: 'dine-in', id: 'table-order-1', status: 'accepted', itemCount: 2, total: 160 },
+  } })
+  try {
+    await expect.element(screen.getByRole('heading', { name: 'stage.customer-session.completion.table-number a03' })).toBeVisible()
+    await expect.element(screen.getByText('水餃 × 2 · 160元', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('stage.customer-session.completion.total 160元', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('stage.customer-session.completion.pickup-unavailable')).not.toBeInTheDocument()
+    await expect.element(screen.getByRole('heading', { name: 'stage.customer-session.completion.pickup-number' })).not.toBeInTheDocument()
+  }
+  finally { screen.unmount() }
+})

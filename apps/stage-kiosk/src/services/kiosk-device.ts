@@ -1,6 +1,7 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
 import type { AudioWarning, KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -129,6 +130,12 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
   if (!response.ok)
     throw new KioskDeviceRequestError(response.status, await response.text())
   return response
+}
+
+/** Advances the authenticated POS round before the host clears or reloads its Menu. */
+export async function resetKioskOrderingContext() {
+  const { context } = await request<{ context: OrderingContext }>('/api/kiosk/pos/v1/ordering-context', { cache: 'no-store', signal: AbortSignal.timeout(5_000) })
+  return await request<{ context: OrderingContext }>('/api/kiosk/pos/v1/ordering-context', { method: 'POST', body: JSON.stringify({ previousId: context.id }), signal: AbortSignal.timeout(5_000) })
 }
 
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */

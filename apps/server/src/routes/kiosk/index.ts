@@ -116,6 +116,7 @@ const conversationMessageSchema = object({
   utteranceId: optional(pipe(number(), integer(), minValue(1))),
   content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
   decisionState: optional(pipe(object({
+    serviceMode: optional(picklist(['kiosk', 'table-service'])),
     serviceClarification: optional(serviceClarificationSchema),
     context: optional(conversationContextSchema),
     handoff: optional(handoffSchema),
@@ -142,6 +143,9 @@ const conversationMessageSchema = object({
 })
 
 const orderResultSchema = object({
+  serviceMode: optional(literal('table-service')),
+  table: optional(object({ id: pipe(string(), regex(/^a0[1-9]$/)), label: pipe(string(), maxLength(40)) })),
+  lines: optional(pipe(array(object({ name: pipe(string(), maxLength(200)), quantity: pipe(number(), integer(), minValue(1)), total: pipe(number(), minValue(0)) })), maxLength(200))),
   environment: picklist(['test', 'live']),
   fulfillmentMode: picklist(['dine-in', 'takeout']),
   id: pipe(string(), regex(/^[\w-]+$/), maxLength(120)),
@@ -175,6 +179,7 @@ const interactionDecisionSchema = object({
   review: optional(object({ answer: pipe(string(), maxLength(2_000)), observation: pipe(string(), maxLength(4_000)) })),
   candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
   decisionState: optional(object({
+    serviceMode: optional(picklist(['kiosk', 'table-service'])),
     clarificationOffer: optional(object({ id: pipe(string(), maxLength(120)), label: pipe(string(), maxLength(120)) })),
     priceEvidence: optional(priceEvidenceSchema),
     incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: optional(boolean()) })),
@@ -278,7 +283,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
   // replacement lifecycle or issue a new device cookie.
   routes.get('/identity', async (c) => {
     const device = await resolveAuthenticatedDevice(c, options.kioskService)
-    return c.json({ device: { id: device.id, siteId: device.siteId } })
+    const { effective } = await options.kioskService.getDeviceSettings(device.id)
+    return c.json({ device: { id: device.id, siteId: device.siteId }, serviceMode: effective.serviceMode })
   })
 
   routes.get('/bootstrap', async (c) => {
@@ -415,10 +421,12 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     }
     if (!options.systemOne || !await options.systemOne.isEnabled())
       return c.json({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
+    const { effective: decisionSettings } = await options.kioskService.getDeviceSettings(device.id)
     const cue = result.output.decisionState?.serviceClarification
     if (cue && (cue.expiresAt <= Date.now() || cue.contextKey !== serviceContextKey(result.output.decisionState!)))
       delete result.output.decisionState!.serviceClarification
     const decisionInput = {
+      backgroundSpeechMode: decisionSettings.backgroundSpeechMode,
       conversation: session ? buildConversationContext(session.entries, result.output.review ? result.output.transcript : undefined) : undefined,
       review: result.output.review,
       candidates: result.output.candidates,
@@ -467,14 +475,19 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         return decision
       }
       let bounded = await decideInteraction({ ...decisionInput, invoke, routing: 'staged' })
+      if (decisionSettings.backgroundSpeechMode !== 'enforce' && bounded.kind === 'UNAVAILABLE' && bounded.reason === 'UNCERTAIN_SERVICE_REQUEST')
+        bounded = { ...bounded, kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', recovery: undefined }
       // Jev failure establishes no service intent. The same independent Main
       // admission used for semantic uncertainty must run before Agent fallback.
-      if (bounded.kind === 'UNAVAILABLE' && bounded.reason === 'PROVIDER_FAILURE')
-        bounded = { ...bounded, reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } }
+      if (bounded.kind === 'UNAVAILABLE' && bounded.reason === 'PROVIDER_FAILURE') {
+        bounded = decisionSettings.backgroundSpeechMode === 'enforce'
+          ? { ...bounded, reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } }
+          : { ...bounded, kind: 'NEEDS_ASSISTANT', reason: 'PROVIDER_FAILURE', recovery: undefined }
+      }
       // A waiting question is not proof this utterance answers it. If Jev
       // abstained from the answer, qualify service intent before Main sees
       // executable answer choices; otherwise its old question anchors a guess.
-      if (!result.output.review && bounded.kind === 'NEEDS_ASSISTANT' && bounded.reason === 'UNCERTAIN_OPERATION'
+      if (decisionSettings.backgroundSpeechMode === 'enforce' && !result.output.review && bounded.kind === 'NEEDS_ASSISTANT' && bounded.reason === 'UNCERTAIN_OPERATION'
         && result.output.decisionState?.waitingFor && bounded.recovery?.admission !== 'service') {
         bounded = { ...bounded, kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } }
       }
@@ -897,6 +910,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         fulfillmentMode: result.output.fulfillmentMode,
         id: result.output.id,
         itemCount: result.output.itemCount,
+        ...(result.output.serviceMode === 'table-service' ? { serviceMode: result.output.serviceMode, table: result.output.table, lines: result.output.lines } : {}),
         ...(result.output.pickupNumber ? { pickupNumber: result.output.pickupNumber } : {}),
         ...(result.output.posOrderId ? { posOrderId: result.output.posOrderId } : {}),
         status: result.output.status,

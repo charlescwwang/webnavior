@@ -6,7 +6,9 @@ describe('kiosk customer entry and seating capabilities', () => {
   // Report: this chat, 2026-10-21; all menu operations require an explicit phone choice.
   it('blocks browsing, recommendations and ordering until the visitor explicitly skips', async () => {
     let ready = false
-    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onSessionReset: () => ready = false, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onSessionReset: () => {
+      ready = false
+    }, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await expect(runtime.invokeForAgent('menu_get', { display: false })).rejects.toThrow('略過')
     await expect(runtime.invokeForAgent('menu_get', { query: '周氏蝦捲', display: true })).rejects.toThrow('略過')
     await expect(runtime.invokeManual('menu_recommend', { action: 'update' })).rejects.toThrow('略過')
@@ -65,7 +67,9 @@ describe('kiosk customer entry and seating capabilities', () => {
     const runtime = createMenuToolRuntime({
       orderingReady: () => ready,
       onCustomerEntrySkipped: () => ready = true,
-      onSessionReset: () => ready = false,
+      onSessionReset: () => {
+        ready = false
+      },
       onAction: () => {},
       onCartChange: () => {},
       onMenuSelection: () => {},
@@ -100,7 +104,9 @@ describe('kiosk customer entry and seating capabilities', () => {
     let ready = false
     const runtime = createMenuToolRuntime({
       orderingReady: () => ready,
-      onSessionReset: () => ready = false,
+      onSessionReset: () => {
+        ready = false
+      },
       onAction: () => {},
       onCartChange: () => {},
       onMenuSelection: () => {},

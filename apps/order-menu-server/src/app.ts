@@ -1,13 +1,15 @@
+import type { ServiceMode } from '../../../packages/stage-shared/src/kioskServiceMode'
 import type { PaymentMethod, PosGateway } from './domain/contracts'
 import type { TableAssignment } from './domain/seatingContracts'
 
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
-import { array, boolean, integer, maxValue, minLength, minValue, number, object, optional, picklist, pipe, record, regex, safeParse, string } from 'valibot'
+import { array, boolean, integer, literal, maxValue, minLength, minValue, number, object, optional, picklist, pipe, record, regex, safeParse, string } from 'valibot'
 
 import { createBridge } from './domain/bridge'
 import { createOrderContinuations } from './domain/orderContinuation'
+import { createTableOrders } from './domain/tableOrders'
 
 const orderSubmissionSchema = object({
   cart: object({
@@ -33,15 +35,26 @@ const orderSubmissionSchema = object({
 /**
  * Browser-facing vendor-neutral catalog, seating, payment and order contracts.
  */
-export function createPosBridgeApp(options: { allowedOrigin: string, gateway: PosGateway, tableAssignment?: TableAssignment, authenticate: (request: Request) => Promise<string | undefined> }) {
+export function createPosBridgeApp(options: { allowedOrigin: string, gateway: PosGateway, tableAssignment?: TableAssignment, authenticate: (request: Request) => Promise<string | undefined>, serviceMode?: (request: Request) => Promise<ServiceMode> }) {
   const app = new Hono<{ Variables: { owner: string } }>()
   const bridge = createBridge(options.gateway, options.tableAssignment)
   const continuations = createOrderContinuations()
   // Resource ownership and idempotency live for this simulator process. A real
   // provider integration must persist both before enabling live payments.
   const paymentOwners = new Map<string, string>()
+  const completedPayments = new Set<string>()
   const holdOwners = new Map<string, string>()
   const bridges = new Map<string, ReturnType<typeof createBridge>>()
+  const tableRounds = new Map<string, ReturnType<typeof createTableOrders>>()
+
+  function orderRound(owner: string) {
+    let round = tableRounds.get(owner)
+    if (!round) {
+      round = createTableOrders(options.gateway)
+      tableRounds.set(owner, round)
+    }
+    return round
+  }
 
   app.use('/v1/*', bodyLimit({ maxSize: 1024 * 1024 }))
   app.use('/v1/*', cors({ origin: options.allowedOrigin }))
@@ -122,6 +135,49 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
     const payment = await bridge.getPayment(c.req.param('paymentId'))
     return payment ? c.json({ payment }) : c.json({ error: 'Unknown payment.' }, 404)
   })
+  app.get('/v1/ordering-context', async (c) => {
+    c.header('Cache-Control', 'no-store')
+    const mode = await options.serviceMode?.(c.req.raw) ?? 'kiosk'
+    return c.json({ context: orderRound(c.get('owner')).open(mode) })
+  })
+  app.post('/v1/ordering-context', async (c) => {
+    const body = safeParse(object({ previousId: pipe(string(), minLength(1)) }), await c.req.json().catch(() => null))
+    if (!body.success)
+      return c.json({ error: 'Invalid order context.' }, 400)
+    const mode = await options.serviceMode?.(c.req.raw) ?? 'kiosk'
+    const owner = c.get('owner')
+    const round = orderRound(owner)
+    if (round.open(mode).serviceMode !== mode) {
+      // A preference change is not cancellation of a pending/charged Kiosk
+      // payment. Keep its pinned round until its accepted receipt is known.
+      for (const [paymentId, paymentOwner] of paymentOwners) {
+        if (paymentOwner !== owner || completedPayments.has(paymentId))
+          continue
+        const payment = await options.gateway.getPayment(paymentId)
+        if (!payment || ['pending', 'authorized', 'uncertain'].includes(payment.status))
+          return c.json({ error: '付款尚待確認，服務模式將於訂單完成後再切換。' }, 409)
+      }
+    }
+    try {
+      return c.json({ context: round.open(mode, body.output.previousId) })
+    }
+    catch { return c.json({ error: '訂單進行中或情境已更新，無法切換。' }, 409) }
+  })
+  app.post('/v1/table-orders', async (c) => {
+    const result = safeParse(object({
+      confirmedByUser: literal(true),
+      contextId: pipe(string(), minLength(1)),
+      idempotencyKey: pipe(string(), regex(/^[\w-]+$/), minLength(16)),
+      cart: object({ catalogRevision: pipe(string(), minLength(1)), itemCount: pipe(number(), integer(), minValue(1)), total: pipe(number(), minValue(0)), lines: pipe(array(object({ id: string(), itemId: string(), name: string(), quantity: pipe(number(), integer(), minValue(1)), unitPrice: pipe(number(), minValue(0)), options: record(string(), string()) })), minLength(1)) }),
+    }), await c.req.json().catch(() => null))
+    if (!result.success)
+      return c.json({ error: 'Invalid table order.' }, 400)
+    try {
+      const order = await orderRound(c.get('owner')).submit(result.output)
+      return c.json({ order }, 201)
+    }
+    catch { return c.json({ error: '未送出：POS 尚未支援隨桌送單、情境無效或訂單尚待確認。' }, 409) }
+  })
   app.post('/v1/orders', async (c) => {
     const result = safeParse(orderSubmissionSchema, await c.req.json().catch(() => null))
     if (!result.success)
@@ -136,6 +192,8 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
       bridges.set(owner, ownedBridge)
     }
     const order = await ownedBridge.submit(result.output)
+    if (order.receipt.status === 'accepted')
+      completedPayments.add(result.output.cart.paymentId)
     const continuation = continuations.issue(order, result.output.customerPhone)
     const receiptAccess = continuations.issueReceipt(order)
     return c.json({ order, ...(continuation ? { continuation } : {}), ...(receiptAccess ? { receiptAccess } : {}) }, 201)

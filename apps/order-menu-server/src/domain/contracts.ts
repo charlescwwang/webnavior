@@ -93,6 +93,22 @@ export interface SubmittedOrder {
   receipt: SubmissionReceipt
 }
 
+/** Explicit unpaid table order; never a paid cart with a fabricated payment identifier. */
+export interface TableOrderSubmission {
+  confirmedByUser: true
+  contextId: string
+  idempotencyKey: string
+  cart: Pick<CartSnapshot, 'catalogRevision' | 'itemCount' | 'lines' | 'total'>
+}
+
+export interface SubmittedTableOrder {
+  id: string
+  serviceMode: 'table-service'
+  table: { id: string, label: string }
+  cart: TableOrderSubmission['cart'] & { fulfillmentMode: 'dine-in' }
+  receipt: SubmissionReceipt
+}
+
 export interface PosSubmission {
   cart: CartSnapshot
   idempotencyKey: string
@@ -100,6 +116,8 @@ export interface PosSubmission {
 
 /** The only vendor-facing port used by the POS Bridge. */
 export interface PosGateway {
+  /** Absent means the adapter has no explicit unpaid table-order capability. */
+  submitTableOrder?: (submission: TableOrderSubmission & { table: { id: string, label: string } }) => Promise<SubmissionReceipt>
   createPayment: (amount: number, method: PaymentMethod, tableHoldId?: string) => Promise<PaymentIntent>
   getSeating: () => Promise<SeatingSnapshot>
   reserveTables: (request: HoldRequest) => Promise<TableHold>

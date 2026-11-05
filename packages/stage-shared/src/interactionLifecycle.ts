@@ -1,8 +1,11 @@
 import type { InferOutput } from 'valibot'
 
-import { literal, number, object, optional, picklist, pipe, regex, safeParse, string, url } from 'valibot'
+import { array, literal, number, object, optional, picklist, pipe, regex, safeParse, string, url } from 'valibot'
 
 const orderResultSchema = object({
+  serviceMode: optional(literal('table-service')),
+  table: optional(object({ id: string(), label: string() })),
+  lines: optional(array(object({ name: string(), quantity: number(), total: number() }))),
   environment: picklist(['test', 'live']),
   fulfillmentMode: picklist(['dine-in', 'takeout']),
   id: string(),

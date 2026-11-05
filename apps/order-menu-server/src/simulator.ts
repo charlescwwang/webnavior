@@ -196,6 +196,13 @@ export function createPosSimulator(initialMode: SimulatorMode = 'accepted', init
     const payment = await gateway.getPayment(c.req.param('paymentId'))
     return payment ? c.json({ payment }) : c.json({ error: 'Unknown payment.' }, 404)
   })
+  app.post('/v1/table-orders', async (c) => {
+    const body = await c.req.json()
+    if (!body?.table || !/^a0[1-9]$/.test(body.table.id))
+      return c.json({ error: 'Invalid test table.' }, 400)
+    const receipt = await gateway.submitTableOrder!(body)
+    return c.json({ receipt })
+  })
   app.post('/v1/orders', async (c) => {
     const body = await c.req.json().catch(() => null)
     if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.idempotencyKey !== 'string')
@@ -255,6 +262,14 @@ function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => Si
     },
     getPayment: async (paymentId: string) => payments.get(paymentId),
     getCatalog: async () => simulatorCatalog,
+    submitTableOrder: async (submission) => {
+      const existing = receiptsByKey.get(submission.idempotencyKey)
+      if (existing)
+        return existing
+      const { pickupNumber: _pickupNumber, ...receipt } = receiptFor(mode())
+      receiptsByKey.set(submission.idempotencyKey, receipt)
+      return receipt
+    },
     submit: async (submission: PosSubmission) => {
       const existing = receiptsByKey.get(submission.idempotencyKey)
       if (existing)

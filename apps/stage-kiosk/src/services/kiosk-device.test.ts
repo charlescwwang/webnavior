@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled, reportKioskAudioWarning, synthesizeKioskSpeech } from './kiosk-device'
+import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled, reportKioskAudioWarning, resetKioskOrderingContext, synthesizeKioskSpeech } from './kiosk-device'
 
 describe('segmented device requests', () => {
   afterEach(() => vi.restoreAllMocks())
@@ -103,4 +103,16 @@ describe('createKioskTranscriptionBody', () => {
       type: 'audio/wav',
     })
   })
+})
+
+it('advances only the current authenticated round and propagates a pending-order refusal', async () => {
+  const network = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ context: { id: 'round-old' } })).mockResolvedValueOnce(Response.json({ error: '訂單尚待確認' }, { status: 409 }))
+  try {
+    await expect(resetKioskOrderingContext()).rejects.toThrow('訂單尚待確認')
+    expect(network).toHaveBeenCalledTimes(2)
+    expect(network.mock.calls[0]![1]).toMatchObject({ cache: 'no-store', credentials: 'include' })
+    expect(JSON.parse(String(network.mock.calls[1]![1]?.body))).toEqual({ previousId: 'round-old' })
+    expect(network.mock.calls[1]![1]).toMatchObject({ method: 'POST', credentials: 'include' })
+  }
+  finally { network.mockRestore() }
 })

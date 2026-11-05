@@ -12,6 +12,28 @@ unchanged for decisions and troubleshooting. Text typed into the simulation
 input is also submitted unchanged. This normalizes Chinese writing; it does
 not translate other languages or verify the truth of a model reply.
 
+## Central service and background settings
+
+Device settings expose `serviceMode: kiosk | table-service` and independent
+`backgroundSpeechMode: off | observe | enforce`. Defaults are `kiosk` and `off`.
+The existing Admin device-settings editor controls both; normal device delegation
+rules apply. Mode changes apply on the next explicit order round, preserving
+ongoing carts and unresolved submissions. Table service currently uses a random
+test table `a01`–`a09`, confirms orders without payment, and shows table/items/total
+without a pickup number. Kiosk retains its paid flow and receipt behavior.
+
+`off` skips the dedicated background classifier. `observe` records its result
+without using it to reject speech or increase operation confidence. `enforce`
+allows that classifier to withhold background speech. All three still require
+semantic tool authorization; disabling background classification is not consent
+to arbitrary cart or payment operations.
+
+ASR text appears immediately as a provisional conversation row. After Jev
+accepts a complete utterance, Host promotes it once into formal conversation
+history before Agent/tool execution finishes. Incomplete or ignored candidates
+are not promoted; session reset clears pending rows. Existing ASR/VAD/TTS
+capture and provider configuration are reused.
+
 ## Run
 
 Start the menu service, then the kiosk:

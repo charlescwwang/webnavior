@@ -23,6 +23,7 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  asr-awaiting-decision: 語音辨識（確認中）
   admin-access:
     trigger: 連點五下以開啟管理員模式
     mode: 管理員模式
@@ -132,6 +133,8 @@ kiosk:
     vlm-prompt-hint: 依現場影像及此指引生成開場台詞。修改後需儲存並發布。
 customer-session:
   completion:
+    table-number: 桌號
+    total: 總計
     pickup-number: 取餐號碼
     survey-switch-title: 完成後問卷
     survey-switch-label: 顯示完成後問卷

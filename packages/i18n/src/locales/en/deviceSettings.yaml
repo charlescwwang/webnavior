@@ -13,6 +13,8 @@ conflict: Another operator changed these settings. Reload before saving; your dr
 login: Sign in as a site operator
 loginRequired: Sign in through the management page, then return here to save. Only delegated fields on this device can be changed.
 fields:
+  serviceMode: Service mode
+  backgroundSpeechMode: Background speech classification
   observationEnabled: Local camera observation
   greetingEnabled: Proactive greeting
   reminderEnabled: Inactivity reminder
@@ -35,6 +37,8 @@ fields:
   voiceDiagnosticsEnabled: Voice diagnostics (testing)
   conversationDiagnosticsEnabled: Conversation duration (testing)
 fieldDescriptions:
+  serviceMode: Applies to the next order round. Test tables are randomly assigned a01–a09.
+  backgroundSpeechMode: Off by default. Observe records decisions; enforce may reject background speech. VAD and operation authorization remain independent.
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
   faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
   voiceDiagnosticsEnabled: Enable only while testing. The kiosk shows ASR, Speech Guard, and turn-decision results; ordinary visitors never see this information.
@@ -53,6 +57,10 @@ vad:
     minSilenceDurationMs: Silence before ending (ms)
     speechPadMs: Audio padding (ms)
 options:
+  kiosk: Kiosk
+  table-service: AI table service
+  observe: Observe only
+  enforce: Enforce
   attention: Looking at kiosk
   presence: Presence in area
   mixed: Either signal

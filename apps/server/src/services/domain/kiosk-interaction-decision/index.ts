@@ -43,6 +43,7 @@ export interface KioskDecisionTrace {
 }
 
 export interface DecisionInput {
+  backgroundSpeechMode?: 'off' | 'observe' | 'enforce'
   /** Runtime uses staged routing; omitted only for frozen flat-contract diagnostic replays. */
   routing?: 'staged'
   conversation?: DecisionConversation

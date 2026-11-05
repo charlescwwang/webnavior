@@ -14,6 +14,7 @@ export interface CatalogMentionEvidence {
 
 /** Safe application-owned interaction facts shared by Jev and Agent requests. */
 export interface KioskDecisionState {
+  serviceMode?: 'kiosk' | 'table-service'
   /** Host response guard for a semantically admitted food query, never order authority. */
   requireMenuRead?: boolean
   /** This Agent task may read menu information, never change the order or pending question. */
@@ -54,7 +55,7 @@ export interface KioskDecisionState {
 }
 
 /** Safe handoff facts; completed reads do not authorize any later mutation. */
-export type KioskConversationDecisionState = Pick<KioskDecisionState, 'intentRecovery' | 'retainedRequests' | 'revisions' | 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff, serviceReply?: boolean }
+export type KioskConversationDecisionState = Pick<KioskDecisionState, 'serviceMode' | 'intentRecovery' | 'retainedRequests' | 'revisions' | 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff, serviceReply?: boolean }
 
 /** A finite semantic outcome. Food slots are chosen from application-issued references. */
 export type KioskInteractionDecision = {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { InteractionLifecycleMessage, InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 import type { ComponentPublicInstance } from 'vue'
 
 import type { ContinuationAccess } from './continuation'
@@ -33,7 +34,7 @@ import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
 import { connectInteractiveService } from './interactiveService'
 import { scrollViewport } from './menuScroll'
-import { createPayment, createPosBridgeGateway, getPayment, paymentLabels, testPaymentMethods } from './pos-bridge'
+import { createPayment, createPosBridgeGateway, getPayment, loadOrderingContext, paymentLabels, testPaymentMethods } from './pos-bridge'
 import { createMenuToolRuntime } from './webmcp'
 
 // A deployment can lock the service to one approved host. Otherwise, a page
@@ -66,6 +67,8 @@ const selectedItemId = shallowRef<string>()
 const orderReviewOpen = shallowRef(false)
 const menuInteractionMessage = shallowRef<string>()
 const checkout = shallowRef<CheckoutSnapshot>()
+const orderingContext = shallowRef<OrderingContext>()
+const tableSubmitting = shallowRef(false)
 const paymentMethod = shallowRef<PaymentMethod>()
 const paymentStatus = shallowRef<PaymentStatus>()
 const paymentError = shallowRef<string>()
@@ -317,10 +320,15 @@ const runtime = createMenuToolRuntime({
   onCustomerEntryRequested: () => {
     // Only a fresh host order can offer phone entry. Rediscovery must never
     // reopen it after a choice or after a standalone customer started ordering.
+    if (orderingContext.value?.serviceMode === 'table-service')
+      return
     if (customerEntryStatus.value === 'unstarted' && cart.value.lines.length === 0 && !checkout.value && !completedOrderId.value)
       customerEntryStatus.value = 'pending'
   },
-  onSessionReset: () => {
+  serviceContext: () => orderingContext.value,
+  onSessionReset: async () => {
+    if (orderingContext.value)
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
     customerPhone.value = undefined
     customerEntryStatus.value = 'unstarted'
     receiptAccess.value = undefined
@@ -352,7 +360,7 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onReceipt: access => receiptAccess.value = access }),
+  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
   menu: [],
   onAction: animateAction,
   onReviewRequested: async () => {
@@ -445,6 +453,7 @@ function handleOrderConfirmed(order: SubmittedOrder) {
   // Completion must reach the host immediately so its configured reward appears.
   // The host displays the carry-away QR alongside that reward until dismissal.
   notifyHost('completed', {
+    ...(order.serviceMode === 'table-service' ? { serviceMode: order.serviceMode, table: order.table, lines: order.cart.lines.map(line => ({ name: line.name, quantity: line.quantity, total: line.unitPrice * line.quantity })) } : {}),
     environment: order.receipt.environment,
     fulfillmentMode: order.cart.fulfillmentMode!,
     id: order.id,
@@ -456,10 +465,26 @@ function handleOrderConfirmed(order: SubmittedOrder) {
   }, receiptUrl.value)
 }
 
-function completeCustomerSession() {
+async function completeCustomerSession() {
   const order = completedOrder.value
   if (!order)
     return
+  if (window.parent === window && orderingContext.value?.serviceMode === 'table-service') {
+    try {
+      await runtime.reset()
+    }
+    catch (error) { orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。' }
+    return
+  }
+  if (window.parent === window && orderingContext.value) {
+    try {
+      await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
+    }
+    catch (error) {
+      orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。'
+      return
+    }
+  }
   customerPhone.value = undefined
   customerEntryStatus.value = 'pending'
   if (window.parent === window)
@@ -520,6 +545,19 @@ function skipCustomerEntry() {
 function identifyCustomer(phone: string) {
   customerPhone.value = phone
   customerEntryStatus.value = 'provided'
+}
+
+async function confirmVisibleOrder() {
+  if (orderingContext.value?.serviceMode !== 'table-service')
+    return startCheckout()
+  if (tableSubmitting.value)
+    return
+  tableSubmitting.value = true
+  try {
+    await runtime.confirmTableOrder()
+  }
+  catch (error) { orderStatus.value = errorMessageFrom(error) ?? '訂單未送出。' }
+  finally { tableSubmitting.value = false }
 }
 
 function startCheckout() {
@@ -822,6 +860,15 @@ function optionLabel(line: CartSnapshot['lines'][number]) {
 }
 
 async function loadCatalog() {
+  try {
+    if (!orderingContext.value)
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
+  }
+  catch (error) {
+    catalogError.value = errorMessageFrom(error) ?? '無法取得服務模式。'
+    catalogState.value = 'error'
+    return
+  }
   const catalog = await loadPosCatalog()
   if (!catalog || menuUnmounted)
     return
@@ -906,14 +953,16 @@ onUnmounted(() => {
       :completed="!!completedOrderId"
       :completed-label="completedOrderLabel"
       :fulfillment-mode="fulfillmentMode"
-      :fulfillment-modes="posCatalog?.store.fulfillmentModes ?? []"
+      :fulfillment-modes="orderingContext?.serviceMode === 'table-service' ? [] : posCatalog?.store.fulfillmentModes ?? []"
+      :service-context="orderingContext"
+      :submitting="tableSubmitting"
       :seating-ready="true"
       :lines="reviewLines"
       :order-status="orderStatus"
       :submission-status="submissionStatus"
       :total="currency(cart.total)"
       @back="orderReviewOpen = false"
-      @checkout="startCheckout"
+      @checkout="confirmVisibleOrder"
       @remove="removeCartLine"
       @register-control="setControlElement"
       @set-fulfillment="setFulfillmentMode"

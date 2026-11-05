@@ -88,6 +88,8 @@ export type ConversationRequest = InferOutput<typeof conversationRequestSchema>
 
 /** Complete product coverage with explicit fields; images and vendor metadata are excluded. */
 export const conversationContextSchema = pipe(object({
+  serviceMode: optional(picklist(['kiosk', 'table-service'])),
+  serviceTable: optional(object({ id, label })),
   contextId: id,
   capturedAt: number(),
   taskId: optional(id),

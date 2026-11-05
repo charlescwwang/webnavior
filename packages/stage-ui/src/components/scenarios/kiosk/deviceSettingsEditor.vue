@@ -18,6 +18,8 @@ const overrides = ref<Partial<DeviceSettingsValues>>({})
 const localControls = ref<DeviceSettingKey[]>([])
 const clearLocalOverrides = ref<DeviceSettingKey[]>([])
 const options: Partial<Record<DeviceSettingKey, string[]>> = {
+  serviceMode: ['kiosk', 'table-service'],
+  backgroundSpeechMode: ['off', 'observe', 'enforce'],
   triggerMode: ['attention', 'presence', 'mixed'],
   mediaCaptureMode: ['off', 'snapshot', 'triggered', 'continuous'],
   performanceProfile: ['constrained', 'balanced', 'high'],

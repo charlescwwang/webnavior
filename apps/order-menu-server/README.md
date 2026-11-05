@@ -5,9 +5,32 @@ customer-facing Order Menu and a POS provider. It owns normalized catalog and
 order-submission HTTP contracts; the customer UI and WebMCP never receive POS
 credentials or vendor response shapes.
 
+## Authenticated service modes and unpaid table orders
+
+`GET /v1/ordering-context` creates or reads the authenticated device's pinned
+round. The Bridge obtains `serviceMode` from the existing read-only Kiosk identity
+API, not a browser-supplied mode or table. `POST /v1/ordering-context` accepts
+`{ previousId }` to open the next round and apply current configuration. Pending
+or uncertain submissions block reset; unresolved payments block a mode change.
+
+`POST /v1/table-orders` requires `contextId`, `idempotencyKey`,
+`confirmedByUser: true`, and `cart` (catalogRevision, itemCount, lines, total).
+The server supplies the random test table `a01`–`a09`, validates the current
+catalog/prices/options, and calls an explicit unpaid gateway operation. Concurrent
+identical requests reuse the receipt; changed payloads with the same key fail.
+Unknown submission results stay locked to prevent a duplicate order. Accepted
+table orders return table, cart and receipt, and never a pickup number.
+
+The bundled simulator implements this contract. The HTTP gateway advertises it
+only for the locally started simulator; external POS adapters need an explicit
+implementation and capability. Existing paid `/v1/orders` still requires an
+authorized payment. Neither path fabricates payment identifiers. Mode contexts
+and idempotency receipts currently have the same process-local lifetime as the
+simulator; production vendor integration needs durable order reconciliation.
+
 ## Pickup numbers
 
-After acceptance, the Bridge assigns a random three-digit pickup number (100–999)
+After acceptance of a paid Kiosk order, the Bridge assigns a random three-digit pickup number (100–999)
 to the order receipt. It is separate from the POS order identifier. The existing
 idempotency cache returns the same number on concurrent requests and receipt
 replays; rejected or uncertain orders receive none. This follows the current

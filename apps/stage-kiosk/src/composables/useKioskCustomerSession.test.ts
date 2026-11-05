@@ -34,10 +34,14 @@ describe('useKioskCustomerSession', () => {
       initialize: vi.fn().mockResolvedValue(undefined),
       setActiveSession: vi.fn(),
     } as unknown as ReturnType<typeof useChatSessionStore>
+    const resetOrderRound = vi.fn(async () => {})
+    const endVisitorSession = vi.fn(async () => {})
     const scope = effectScope()
     scopes.push(scope)
     const session = scope.run(() => useKioskCustomerSession({
       activeCardId: shallowRef('default'),
+      resetOrderRound,
+      endVisitorSession,
       chatSession,
     }))
     if (!session)
@@ -50,14 +54,22 @@ describe('useKioskCustomerSession', () => {
     // The shared lifecycle awaits the host's iframe reset because a host may
     // need to finish an asynchronous reload before creating the next session.
     expect(reloadScenario).toHaveBeenCalledWith()
+    expect(resetOrderRound).toHaveBeenCalledOnce()
+    expect(endVisitorSession).toHaveBeenCalledOnce()
+    expect(resetOrderRound.mock.invocationCallOrder[0]).toBeLessThan(endVisitorSession.mock.invocationCallOrder[0]!)
+    expect(endVisitorSession.mock.invocationCallOrder[0]).toBeLessThan(reloadScenario.mock.invocationCallOrder[0]!)
     expect(chatSession.createSession).toHaveBeenCalledTimes(2)
     expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
     expect(session.customer.value).toBeUndefined()
     expect(session.state.value).toBe('standby')
   })
 
-  it('restores the active customer session when interactive reset fails', async () => {
-    reloadScenario.mockRejectedValueOnce(new Error('iframe unavailable'))
+  it.each(['round', 'iframe'])('restores the active customer session when %s reset fails', async (boundary) => {
+    const resetOrderRound = vi.fn(async () => {})
+    if (boundary === 'round')
+      resetOrderRound.mockRejectedValueOnce(new Error('reset unavailable'))
+    else
+      reloadScenario.mockRejectedValueOnce(new Error('reset unavailable'))
     const chatSession = {
       createSession: vi.fn().mockResolvedValue('customer-chat'),
       deleteSession: vi.fn().mockResolvedValue(undefined),
@@ -68,14 +80,17 @@ describe('useKioskCustomerSession', () => {
     scopes.push(scope)
     const session = scope.run(() => useKioskCustomerSession({
       activeCardId: shallowRef('default'),
+      resetOrderRound,
       chatSession,
     }))
     if (!session)
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    await expect(session.end('staff')).rejects.toThrow('iframe unavailable')
+    await expect(session.end('staff')).rejects.toThrow('reset unavailable')
 
+    if (boundary === 'round')
+      expect(reloadScenario).not.toHaveBeenCalled()
     expect(session.state.value).toBe('active')
     expect(session.customer.value?.sessionId).toBeTruthy()
   })

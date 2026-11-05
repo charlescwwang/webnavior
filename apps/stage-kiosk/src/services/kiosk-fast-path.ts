@@ -144,6 +144,7 @@ export async function runFastPath(input: {
   isEnabled: () => Promise<boolean>
   activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
   decide: (request: { candidates: FastPathCandidate[], decisionState?: FastPathDecisionState, includeTrace?: boolean, maxQuestions?: number, presenceState?: PresenceState, review?: { answer: string, observation: string }, signal?: AbortSignal, recoveryUsed?: boolean, transcript: string }) => Promise<FastPathDecision>
+  onUtteranceAccepted?: () => Promise<void> | void
   onExecuted?: (result: unknown) => Promise<void>
   onTrace?: (trace: { browserContext: unknown, decision: FastPathDecision, decisionSource?: 'application' | 'system-one' | 'main-skill', executionResult?: unknown, rawTranscript?: string, transcript: string }) => void
   onActionSelected?: (action: FastPathCandidate) => Promise<'DEFER' | void> | 'DEFER' | void
@@ -165,6 +166,7 @@ export async function runFastPath(input: {
     return { kind: 'SERVICE_UNAVAILABLE' }
   let browserContext: unknown
   let recoveryUsed = false
+  let utteranceAccepted = false
   let decisionState: FastPathDecisionState | undefined
   const handoff = async (reason: 'SYSTEM_ONE_DISABLED' | 'PROVIDER_FAILURE', failedDecision?: FastPathDecision): Promise<FastPathResult> => {
     if (input.isCurrent?.() === false)
@@ -207,17 +209,24 @@ export async function runFastPath(input: {
   // Catch only the external decision call. Browser execution errors remain a
   // separate outcome so a lost mutation receipt cannot cause an Agent replay.
   const decide = async (request: Parameters<typeof input.decide>[0]): Promise<FastPathDecision> => {
+    let result: FastPathDecision
     try {
       const cue = request.decisionState && input.serviceClarification?.(request.decisionState)
       if (cue && decisionState)
         decisionState = { ...decisionState, serviceClarification: cue }
-      const result = await input.decide({ ...request, recoveryUsed, ...(cue ? { decisionState: { ...request.decisionState!, serviceClarification: cue } } : {}) })
-      recoveryUsed ||= result.recovery?.status === 'completed' || result.recovery?.status === 'failed'
-      return result
+      result = await input.decide({ ...request, recoveryUsed, ...(cue ? { decisionState: { ...request.decisionState!, serviceClarification: cue } } : {}) })
     }
     catch {
       return { kind: 'UNAVAILABLE', reason: 'PROVIDER_FAILURE' }
     }
+    // History admission is a Host side effect, not a provider response. A local
+    // recording failure must not be relabeled as model failure and replayed.
+    if (!utteranceAccepted && ['SCOPE_CHOICE', 'FAST_ACTION', 'NEEDS_ASSISTANT', 'GREET', 'FOLLOW_UP_ACTIVE', 'CLARIFICATION', 'NEEDS_CLARIFICATION', 'SERVICE_CLARIFICATION'].includes(result.kind)) {
+      await input.onUtteranceAccepted?.()
+      utteranceAccepted = true
+    }
+    recoveryUsed ||= result.recovery?.status === 'completed' || result.recovery?.status === 'failed'
+    return result
   }
   const candidateTool = input.webMcp.tools.find(tool => tool.name === candidateToolName)
   if (!candidateTool) {
@@ -559,6 +568,7 @@ export function refreshConversationState(context: ConversationContext, task?: Ki
     phase: context.phase,
     menuRevision: context.revisions.menu,
     readOnly: task?.readOnly === true || context.readOnly,
+    serviceMode: context.serviceMode,
     handoff: context.handoff ?? task?.handoff,
     constraints: { exclude: excludeIngredients, include: includeIngredients, ...(dietary ? { dietary } : {}), ...(Object.keys(price).length ? { price } : {}), ...(task?.constraints?.unresolvedPrice ? { unresolvedPrice: true } : {}) },
     retainedRequests: context.retainedRequests,
@@ -617,6 +627,7 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   const serviceAnswer = uncertainMeaning && state.serviceClarification && decision?.recovery?.readOnly === true
   const readOnly = priceInformation || orderInformation || decision?.requestScope === 'menu-information' || decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
+    ...(state.serviceMode ? { serviceMode: state.serviceMode } : {}),
     phase: state.phase,
     ...(state.revisions ? { revisions: state.revisions } : {}),
     ...(decision?.reason === 'GENERAL_QUESTION' || serviceAnswer ? { serviceReply: true } : {}),
@@ -657,6 +668,7 @@ function decisionStateFrom(value: unknown) {
   if (typeof state.phase !== 'string')
     return undefined
   const waitingFor = presentedQuestionFrom(state.waitingFor)
+  const serviceMode: FastPathDecisionState['serviceMode'] = state.serviceMode === 'kiosk' || state.serviceMode === 'table-service' ? state.serviceMode : undefined
   return {
     phase: state.phase,
     ...(state.intentRecovery !== undefined ? { intentRecovery: parse(intentRecoverySchema, state.intentRecovery) } : {}),
@@ -671,6 +683,7 @@ function decisionStateFrom(value: unknown) {
     ...(state.incompleteSpeech && typeof state.incompleteSpeech === 'object' ? { incompleteSpeech: state.incompleteSpeech as FastPathDecisionState['incompleteSpeech'] } : {}),
     ...(state.revisions && typeof state.revisions === 'object' ? { revisions: state.revisions as FastPathDecisionState['revisions'] } : {}),
     ...(Number.isInteger(state.menuRevision) && Number(state.menuRevision) >= 0 ? { menuRevision: Number(state.menuRevision) } : {}),
+    ...(serviceMode ? { serviceMode } : {}),
     ...(Array.isArray(state.completedReads) ? { completedReads: state.completedReads as NonNullable<KioskConversationDecisionState['completedReads']> } : {}),
     ...(Array.isArray(state.fulfillmentModes) ? { fulfillmentModes: state.fulfillmentModes.filter((mode): mode is NonNullable<FastPathDecisionState['fulfillmentModes']>[number] => Boolean(mode && typeof mode === 'object' && (mode.id === 'dine-in' || mode.id === 'takeout') && typeof mode.label === 'string' && mode.label.trim())) } : {}),
     ...(Array.isArray(state.ingredientReferences) ? { ingredientReferences: state.ingredientReferences as Array<{ id: string, label: string }> } : {}),

@@ -22,13 +22,16 @@ window.parent.postMessage({
     environment,
     status: 'accepted',
     ...(posOrderId ? { posOrderId } : {}),
+    ...(pickupNumber ? { pickupNumber } : {}), // paid Kiosk only
+    // Table service omits pickupNumber and includes its server-issued table.
+    ...(serviceMode === 'table-service' ? { serviceMode, table, lines } : {}),
   },
 }, { targetOrigin: hostOrigin })
 ```
 
 The Order Menu implementation uses `targetOrigin: '*'` because it can be
 embedded at a configured public origin or a local development origin. That is
-safe for this deliberately payload-free channel only because the host rejects
+safe for this bounded non-personal result channel only because the host rejects
 messages unless both `event.source` and `event.origin` match the active,
 approved iframe. New services should use the known host origin when one is
 available.
@@ -47,6 +50,14 @@ The host accepts a message only when both the event's service origin and
 `event.source` match the currently embedded, allow-listed service iframe.
 
 ## Session reset
+
+For the Order Menu, the host first renews the authenticated Bridge ordering
+context using its previous round ID, then closes the visitor session and reloads
+the iframe. A pending/uncertain refusal preserves the current customer state.
+This allows central mode changes to apply only on a deliberate fresh round.
+Standalone table completion uses the same explicit context reset before clearing
+its local cart. Other approved interactive services retain their normal reload.
+
 
 When reset is authorized, the host reloads the active iframe. Stage Kiosk resets
 after unanswered idle-confirmation expiry (three minutes inactive, then a 15-second

@@ -118,6 +118,8 @@ export interface SubmissionReceipt {
 
 /** Combines the local order snapshot with the authoritative submission receipt. */
 export interface SubmittedOrder {
+  serviceMode?: 'table-service'
+  table?: { id: string, label: string }
   id: string
   cart: CartSnapshot
   receipt: SubmissionReceipt

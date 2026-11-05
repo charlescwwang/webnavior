@@ -1,4 +1,5 @@
 import type { ConversationQuestion, ConversationRequest, IntentRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ServiceMode } from '@proj-airi/stage-shared/kiosk-service-mode'
 
 import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { CatalogMentionEvidence } from '../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -35,6 +36,7 @@ export const targetReferenceLimit = 5
 export type KioskPhase = 'customer_entry' | 'ordering' | 'checkout_membership' | 'checkout_invoice' | 'checkout_tax_id' | 'checkout_payment_select' | 'payment_locked' | 'checkout_complete'
 
 export interface KioskIntentContext {
+  serviceMode?: ServiceMode
   customerEntryPending?: boolean
   customerEntrySkipSupported?: boolean
   menuReturnSupported?: boolean
@@ -307,13 +309,13 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     if (input.cart.lines.length) {
       const modes = input.fulfillmentModes ?? [{ id: 'dine-in', label: '內用' }, { id: 'takeout', label: '自取' }]
       candidates.push(candidate('CLEAR_CART', 'intent:clear-cart', '明確要求清空整個購物車。'))
-      if ((input.cart.fulfillmentMode !== 'dine-in' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'dine-in')))
+      if (input.serviceMode !== 'table-service' && (input.cart.fulfillmentMode !== 'dine-in' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'dine-in')))
         candidates.push(candidate('SET_FULFILLMENT', 'intent:set-fulfillment:dine-in', input.cart.fulfillmentMode === 'dine-in' ? `顧客重申本次${modes.find(mode => mode.id === 'dine-in')!.label}；維持原設定與未回答問題，不表示暫緩或拒絕。` : `這筆訂單設為${modes.find(mode => mode.id === 'dine-in')!.label}，接著詢問用餐人數與選桌。`, undefined, { mode: 'dine-in' }))
-      if ((input.cart.fulfillmentMode !== 'takeout' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'takeout')))
+      if (input.serviceMode !== 'table-service' && (input.cart.fulfillmentMode !== 'takeout' || input.waitingFor) && (!input.fulfillmentModes || input.fulfillmentModes.some(mode => mode.id === 'takeout')))
         candidates.push(candidate('SET_FULFILLMENT', 'intent:set-fulfillment:takeout', input.cart.fulfillmentMode === 'takeout' ? `顧客重申本次${modes.find(mode => mode.id === 'takeout')!.label}；維持原設定與未回答問題，不表示暫緩或拒絕。` : `這筆訂單設為${modes.find(mode => mode.id === 'takeout')!.label}，釋放尚未付款的暫留桌位。`, undefined, { mode: 'takeout' }))
       if (input.cart.fulfillmentMode) {
         if (!seating || seating.ready)
-          candidates.push(candidate('START_CHECKOUT', 'intent:start-checkout', '開始結帳，進入會員與發票步驟。'))
+          candidates.push(candidate('START_CHECKOUT', 'intent:start-checkout', input.serviceMode === 'table-service' ? '顧客確認本桌訂單，直接送出，不進行付款。' : '開始結帳，進入會員與發票步驟。'))
       }
     }
     if (seating) {
@@ -437,7 +439,7 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     }
     else {
       purpose = 'checkout-entry'
-      question = '要進入結帳流程嗎？'
+      question = context.serviceMode === 'table-service' ? '確認這份訂單並送出嗎？' : '要進入結帳流程嗎？'
       intents = ['START_CHECKOUT']
     }
   }
@@ -459,7 +461,7 @@ export function createQuestion(context: DecisionContext, questionId: string, now
   const choices = context.candidates.filter(choice => intents.includes(choice.intent)).map(choice => ({ ...choice }))
   if (purpose === 'checkout-entry') {
     for (const choice of choices)
-      choice.description = '顧客同意開始結帳；進入會員與發票步驟。'
+      choice.description = context.serviceMode === 'table-service' ? '顧客確認本桌訂單，直接送出。' : '顧客同意開始結帳；進入會員與發票步驟。'
   }
   // Party size and tax ID are finite validated slots supplied on the next
   // utterance; an unanswered question does not manufacture a slot value.
@@ -931,6 +933,8 @@ export function authorize(plan: OperationPlan, context: DecisionContext) {
   if (plan.intent === 'SCROLL_MENU' && (!context.menuScrollSupported || !['UP', 'DOWN'].includes(String(plan.slots.direction)) || plan.input.direction !== plan.slots.direction))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }
   if (plan.intent === 'START_CHECKOUT' && (!context.cart.lines.length || !context.cart.fulfillmentMode))
+    return { kind: 'BLOCKED' as const, reason: 'INVALID_PHASE' as const }
+  if (context.serviceMode === 'table-service' && ['SET_FULFILLMENT', 'SELECT_PAYMENT', 'CHOOSE_INVOICE', 'SET_PARTY_SIZE', 'RESERVE_TABLES'].includes(plan.intent))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_PHASE' as const }
   if (plan.intent === 'SET_FULFILLMENT' && context.fulfillmentModes && !context.fulfillmentModes.some(mode => mode.id === plan.slots.mode))
     return { kind: 'BLOCKED' as const, reason: 'INVALID_SLOTS' as const }

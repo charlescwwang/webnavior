@@ -1,4 +1,4 @@
-import { expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
 
 import App from '../../../order-menu/src/App.vue'
@@ -40,4 +40,19 @@ it('changes recommendation batches, queries another dish, then returns to all me
     view.unmount()
     vi.unstubAllEnvs()
   }
+})
+
+// A standalone unauthenticated catalog retains the Kiosk flow; the new round
+// endpoint grants table ordering only to a verified device.
+beforeEach(() => {
+  vi.stubEnv('VITE_ORDER_MENU_SERVER_URL', 'http://bridge.test')
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    if (String(input).includes('/v1/ordering-context'))
+      return new Response(null, { status: 401 })
+    throw new Error(`Unexpected external request: ${String(input)}`)
+  })
+})
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllEnvs()
 })

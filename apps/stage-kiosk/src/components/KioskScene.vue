@@ -69,7 +69,7 @@ import { setKioskLocale } from '../modules/i18n'
 import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
-import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, reportKioskAudioWarning, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, reportKioskAudioWarning, resetKioskOrderingContext, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
@@ -158,6 +158,7 @@ const {
 } = useKioskConversationProgress()
 const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
 const pendingTranscript = shallowRef<string>()
+const recognizedTranscripts = shallowRef<Array<{ id: number, text: string }>>([])
 const customerResetError = shallowRef<string>()
 const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
 let nextVoiceDiagnosticId = 0
@@ -401,9 +402,18 @@ function requestManualOrderControl() {
     activeAgentRequest.stage = 'mutating'
   interactionRecording.requestManualControl()
 }
+const completedOrderResult = shallowRef<InteractiveServiceOrderResult>()
+const completedOrderReceiptUrl = shallowRef<string>()
 const customerSession = useKioskCustomerSession({
   activeCardId,
   chatSession: chatSessionStore,
+  resetOrderRound: async () => {
+    // Other approved interactive services do not own a POS ordering context.
+    // Keep their existing reload behavior; Menu completion also survives a
+    // temporary tool-discovery outage until the round has safely advanced.
+    if (completedOrderResult.value || interactiveServiceClient.tools.value.some(tool => tool.name === 'kiosk_conversation_context'))
+      await resetKioskOrderingContext()
+  },
   endVisitorSession: () => interactionRecording.end('idle'),
   resetConversation: clearConversationPresentation,
 })
@@ -458,8 +468,6 @@ const customerSessionButtonLabel = computed(() => (
 const { idleDiagnosticsEnabled, presenceDiagnosticsEnabled, decisionDiagnosticsEnabled } = useKioskDiagnostics()
 const showDevelopmentDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
-const completedOrderResult = shallowRef<InteractiveServiceOrderResult>()
-const completedOrderReceiptUrl = shallowRef<string>()
 const proactiveSettings = computed(() => observationSettings(props.deviceSettings ?? defaultDeviceSettingsValues))
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
@@ -753,6 +761,7 @@ async function processVoiceCandidate(
     updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text, stage: 'after_asr' })
     if (!interactionTurn.isCurrentVoiceCandidate(candidate))
       return
+    recognizedTranscripts.value = [...recognizedTranscripts.value.filter(entry => entry.id !== reservation.id), { id: reservation.id, text }].slice(-16)
     reservation.complete({ recording, text })
     submitted = true
     pendingTranscript.value = undefined
@@ -807,6 +816,20 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     const active = currentAgentRequest()
     let selectedTurn: ReturnType<typeof interactionTurn.begin> | undefined
     const result = await runFastPath({
+      onUtteranceAccepted: async () => {
+        if (shownInput || !ticket.isCurrent())
+          return
+        // Commit the confirmed customer turn before any browser write or Agent
+        // completion. Utterance ID prevents retries/re-decisions adding it twice.
+        shownInput = true
+        conversationMessages.value = [...conversationMessages.value, { role: 'user', content: utterance.text }]
+        recognizedTranscripts.value = recognizedTranscripts.value.filter(entry => entry.id > utterance.id)
+        await recordCustomerActivity(utterance.source === 'asr' ? 'voice_input' : 'asr_simulation')
+        if (!recordedFastPathInput) {
+          await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'utterance_accepted', source: utterance.source, utteranceId: utterance.id })
+          recordedFastPathInput = true
+        }
+      },
       isEnabled: isKioskFastPathEnabled,
       serviceClarification: state => serviceClarificationWindow.current(state),
       activeRequest: active ? { stage: active.stage, text: active.text.slice(0, 240) } : undefined,
@@ -1033,6 +1056,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     }
     if (result.kind === 'IGNORE' || result.kind === 'INCOMPLETE' || result.kind === 'UNAVAILABLE') {
+      if (result.kind !== 'INCOMPLETE')
+        recognizedTranscripts.value = recognizedTranscripts.value.filter(entry => entry.id !== utterance.id)
       // A social response or unfinished fragment does not warrant a retry.
       if (shouldShowDecisionRetry(result) && !result.recovery && shownInput) {
         const message = t('stage.kiosk-agent.decision-uncertain')
@@ -1082,7 +1107,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       updateDecisionEntry(utterance.id, { route: 'main_agent' })
       if (utterance.source === 'simulation')
         asrSimulationStatus.value = 'System One：相關補充已中斷尚未操作工具的 AI 回合，正在重新處理。'
-      void persistAssistantEscalation(input)
+      void persistAssistantEscalation(input, recordedFastPathInput)
       void sendConversationMessage(utterance.text, turn, { waitSpeech: true, appendUserMessage: !shownInput, deadlineAt: input.deadlineAt, decisionEntryId: utterance.id, decisionState: conversationDecisionStateFrom(result.decisionState) })
         .catch(error => console.error('Failed to restart Main Agent with kiosk follow-up:', error))
       finishVoiceDiagnostic(utterance.id, 'decided')
@@ -1251,7 +1276,7 @@ async function presentFastPathResult(
       await interactionRecording.append('assistant_text', earlyReadMessages.join('\n'), { decisionRoute: 'fast_path' })
     // A semantic handoff, disabled Fast Path or provider fault starts the same
     // guarded Agent flow. A fallback is not proof of intent or tool authority.
-    void persistAssistantEscalation(input)
+    void persistAssistantEscalation(input, recordedInput)
     void sendConversationMessage(input.text, turn, { waitSpeech: result.reason !== 'PROVIDER_FAILURE' && result.reason !== 'SYSTEM_ONE_DISABLED', appendUserMessage: !shownInput, decisionEntryId: input.id, utteranceId: input.id, deadlineAt: input.deadlineAt, decisionState })
       .catch(error => console.error('Failed to forward kiosk request to Main Agent:', error))
   }
@@ -1300,13 +1325,14 @@ async function replyWithCustomerEntryGate(content: string, turn: ReturnType<type
   return await readCustomerEntryPhase(turn) === 'customer_entry' ? t('stage.kiosk.customer-entry.complete-first') : content
 }
 
-async function persistAssistantEscalation(input: FastPathInput) {
+async function persistAssistantEscalation(input: FastPathInput, alreadyRecorded = false) {
   try {
     const activity = await recordCustomerActivity(input.source === 'asr' ? 'voice_input' : 'asr_simulation')
     if (!input.recording)
       return
     mediaCapture.saveAudio(input.recording, activity?.id)
-    await interactionRecording.append('asr_transcript', input.text)
+    if (!alreadyRecorded)
+      await interactionRecording.append('asr_transcript', input.text, { utteranceId: input.id })
   }
   catch (error) {
     // The deliberate escalation still reaches the Agent; persistence failure is
@@ -1581,8 +1607,10 @@ watch(customerSessionState, (state) => {
     releaseChatPendingWork?.()
     releaseChatPendingWork = undefined
   }
-  if (state === 'standby')
+  if (state === 'standby') {
+    recognizedTranscripts.value = []
     assistanceReminderWindow.reset()
+  }
 })
 
 watch([conversationSending, customerSessionState], ([sending, sessionState]) => {
@@ -2406,6 +2434,7 @@ async function restartCustomerSession() {
     await interactionRecording.append('service_event', 'customer_requested_restart')
     await interactionRecording.end('idle')
     await customerSession.end('staff')
+    recognizedTranscripts.value = []
     conversationMessages.value = []
     streamingAssistantMessage.value = undefined
     retryableConversationRequest.value = undefined
@@ -2561,6 +2590,7 @@ onUnmounted(() => {
         :messages="conversationMessages"
         :streaming-assistant-message="streamingAssistantMessage"
         :pending-transcript="pendingTranscript"
+        :recognized-transcripts="recognizedTranscripts"
         :retry-available="!serviceRecoveryBlocked && interactiveServiceClient.availability.value === 'ready' && (Boolean(retryableConversationRequest) || decisionStatus?.retryable === true)"
         :sending="conversationSending"
         :font-size="conversationFontSize"

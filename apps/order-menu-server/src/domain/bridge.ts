@@ -106,7 +106,8 @@ function paymentReceipt(status: 'authorized' | 'pending' | 'rejected' | 'uncerta
 }
 
 /** Final validation prevents a stale browser catalog from changing an order silently. */
-function validateCartAgainstCatalog(submission: PosSubmission, catalog: CatalogSnapshot) {
+/** Validates shared meal/price facts without granting payment or table-order authority. */
+export function validateCartAgainstCatalog(submission: Pick<PosSubmission, 'cart'> | { cart: Pick<PosSubmission['cart'], 'lines' | 'itemCount' | 'total'> }, catalog: CatalogSnapshot) {
   const itemById = new Map(catalog.items.map(item => [item.id, item]))
   let count = 0
   let total = 0

@@ -144,3 +144,17 @@ it('normalizes prices in final and streaming assistant content without changing 
   expect(messages[0].content).toBe('預算NT$100')
   expect(messages[1].content).toBe('便當 NT$80。')
 })
+
+it('shows recognized speech provisionally before it becomes a formal chat message', async () => {
+  const messages: ChatHistoryItem[] = []
+  const screen = render(KioskConversation, {
+    props: { ...props, messages, voiceConversationOnly: true, recognizedTranscripts: [{ id: 11, text: '水餃兩份' }] },
+    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
+  })
+  try {
+    await expect.element(screen.getByText('水餃兩份', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('stage.kiosk.asr-awaiting-decision', { exact: true })).toBeVisible()
+    expect(messages).toHaveLength(0)
+  }
+  finally { screen.unmount() }
+})

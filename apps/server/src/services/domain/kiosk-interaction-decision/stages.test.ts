@@ -12,7 +12,7 @@ describe('segmented bounded decisions', () => {
     const owner = { deviceId: 'slm-checkpoints' }
     const choices: Record<string, string> = { admission: 'SERVICE', purpose: 'SINGLE', family: 'ITEM', operation: 'intent:add-item', operationRequest: 'OPERATION', operationCoverage: 'SINGLE' }
     const invoke = vi.fn(async (_state: string, questions: Record<string, unknown>) => ({ selectionMode: 'unscored' as const, answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: choices[key] }])) }))
-    let result = await stages.start(owner, checkpoint => decideInteraction({ routing: 'staged', transcript: '水餃一份', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:add-item', description: '新增水餃' }], decisionState: { phase: 'ordering' }, includeTrace: true, invoke: checkpoint(invoke) }))
+    let result = await stages.start(owner, checkpoint => decideInteraction({ routing: 'staged' as const, backgroundSpeechMode: 'enforce' as const, transcript: '水餃一份', policy: { decisionInstruction: '', storeInstruction: '' }, candidates: [{ id: 'intent:add-item', description: '新增水餃' }], decisionState: { phase: 'ordering' }, includeTrace: true, invoke: checkpoint(invoke) }))
     const questions: string[] = []
     while (result.kind === 'DECISION_PROGRESS') {
       expect(result).toHaveProperty('selectionMode', 'unscored')
