@@ -8,7 +8,7 @@ import type { DecisionStageResult, KioskConversationDecisionState, KioskDecision
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 
 import { normalizeOrderingPrices, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
@@ -401,7 +401,7 @@ export async function uploadKioskVisitorMedia(input: {
 /** Requests speech with Taiwan Traditional text, using the Site's private model/voice policy. */
 export async function synthesizeKioskSpeech(input: { locale: string, text: string, signal?: AbortSignal }) {
   const response = await requestAudio('/api/kiosk/audio/speech', {
-    body: JSON.stringify({ locale: input.locale, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(input.text)) }),
+    body: JSON.stringify({ locale: input.locale, text: toOrderingTraditionalChinese(normalizeOrderingPrices(input.text)) }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
     signal: input.signal,

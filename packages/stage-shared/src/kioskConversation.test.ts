@@ -72,3 +72,15 @@ it('rejects an unavailable-information topic masquerading as unclear meaning', (
   expect(safeParse(contextReplySchema, { kind: 'clarification' }).success).toBe(true)
   expect(safeParse(contextReplySchema, { kind: 'clarification', topic: 'menu-kind' }).success).toBe(true)
 })
+
+it('varies fixed ordering replies by turn while keeping one turn stable', () => {
+  const context = parse(conversationContextSchema, { contextId: 'a', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
+  const greetings = ['a', 'b', 'c'].map(contextId => replyFromContext('{"kind":"greeting"}', { ...context, contextId })?.content)
+  expect(new Set(greetings).size).toBe(3)
+  for (const greeting of greetings) {
+    expect(greeting).toContain('菜單')
+    expect(greeting).toContain('台語點餐')
+  }
+  expect(replyFromContext('{"kind":"greeting"}', context)).toEqual(replyFromContext('{"kind":"greeting"}', context))
+  expect(new Set(['a', 'b', 'c'].map(contextId => replyFromContext('{"kind":"acknowledgement"}', { ...context, contextId })?.content)).size).toBe(3)
+})

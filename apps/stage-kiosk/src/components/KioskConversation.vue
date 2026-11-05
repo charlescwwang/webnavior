@@ -6,7 +6,7 @@ import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import { normalizeOrderingPrices } from '@proj-airi/stage-shared/kiosk-conversation'
 import { ChatHistory } from '@proj-airi/stage-ui/components'
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -61,21 +61,21 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
     return {
       ...message,
       content: typeof message.content === 'string'
-        ? toTaiwanTraditionalChinese(normalizeOrderingPrices(message.content))
-        : message.content?.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
-      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(slice.text)) } : slice),
+        ? toOrderingTraditionalChinese(normalizeOrderingPrices(message.content))
+        : message.content?.map(part => part.type === 'text' ? { ...part, text: toOrderingTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
+      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toOrderingTraditionalChinese(normalizeOrderingPrices(slice.text)) } : slice),
     }
   }
   if (message.role === 'user') {
     return {
       ...message,
       content: typeof message.content === 'string'
-        ? toTaiwanTraditionalChinese(normalizeOrderingPrices(message.content))
-        : message.content.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
+        ? toOrderingTraditionalChinese(normalizeOrderingPrices(message.content))
+        : message.content.map(part => part.type === 'text' ? { ...part, text: toOrderingTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
     }
   }
   if (message.role === 'error')
-    return { ...message, content: toTaiwanTraditionalChinese(message.content) }
+    return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
 }))
 // Tool discovery describes assistant control, not whether the embedded menu
@@ -126,9 +126,9 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <div class="message-history">
       <KioskAssistantPresence
         v-if="historyMessages.length === 0 && !props.pendingTranscript"
-        :description="toTaiwanTraditionalChinese(props.assistantPresence.description)"
+        :description="toOrderingTraditionalChinese(props.assistantPresence.description)"
         :mode="props.assistantPresence.mode"
-        :title="toTaiwanTraditionalChinese(props.assistantPresence.title)"
+        :title="toOrderingTraditionalChinese(props.assistantPresence.title)"
       />
       <p v-if="historyMessages.length === 0" :class="['text-sm opacity-80']">
         {{ t('stage.kiosk.welcome.language-hint') }}
@@ -149,22 +149,22 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 
     <div v-for="entry in props.recognizedTranscripts" :key="entry.id" :class="['pending-transcript']" role="status" aria-live="polite">
       <span>{{ t('stage.kiosk.asr-awaiting-decision') }}</span>
-      <span>{{ toTaiwanTraditionalChinese(entry.text) }}</span>
+      <span>{{ toOrderingTraditionalChinese(entry.text) }}</span>
     </div>
     <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
-        <span>{{ toTaiwanTraditionalChinese(props.pendingTranscript) }}</span>
+        <span>{{ toOrderingTraditionalChinese(props.pendingTranscript) }}</span>
       </div>
       <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ toTaiwanTraditionalChinese(props.activityStatus) }}</span>
+        <span>{{ toOrderingTraditionalChinese(props.activityStatus) }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
       <ol v-if="props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
         <li v-for="step in props.activitySteps" :key="step.toolName" :class="['assistant-activity-step', `is-${step.state}`]">
           <span class="activity-step-marker" aria-hidden="true" />
-          <span>{{ toTaiwanTraditionalChinese(step.label) }}</span>
+          <span>{{ toOrderingTraditionalChinese(step.label) }}</span>
         </li>
       </ol>
       <output v-if="props.executionDurationMs !== undefined" class="conversation-execution-duration" aria-label="本輪對話處理耗時">
@@ -189,7 +189,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       @simulate="emit('simulateAsr', $event)"
     />
     <p v-if="serviceStatus" class="service-status" role="status">
-      {{ toTaiwanTraditionalChinese(serviceStatus) }}
+      {{ toOrderingTraditionalChinese(serviceStatus) }}
       <button
         v-if="props.serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
         type="button"

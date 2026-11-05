@@ -34,7 +34,7 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
   await expect.element(screen.getByText('我要一碗牛肉麵', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('請確認這份訂單。', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('暫時無法連線，請稍後再試。', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢選單。', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單。', { exact: true })).toBeVisible()
   expect(messages[0]?.content).toBe('我要一碗牛肉面')
   expect(messages[1]?.content).toBe('请确认这份订单。')
   expect(streaming.content).toBe('正在查询菜单。')
@@ -47,7 +47,7 @@ it('presents pending recognition and processing text in Traditional Chinese', as
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   await expect.element(screen.getByText('請幫我推薦', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢選單', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
 })
 
@@ -59,7 +59,7 @@ it('keeps only the simulated ASR input in text mode and forwards its transcript'
   })
   expect(document.querySelectorAll('textarea')).toHaveLength(1)
   expect(screen.container.querySelector('[aria-label="送出訊息"]')).toBeNull()
-  await expect.element(screen.getByText('正在查詢選單', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await screen.getByRole('textbox').fill('我想吃面，一碗')
   await screen.getByRole('button', { name: '模擬辨識並執行' }).click()
   expect(onSimulateAsr).toHaveBeenCalledOnce()

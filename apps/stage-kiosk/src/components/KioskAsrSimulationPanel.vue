@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { BasicTextarea, Button } from '@proj-airi/ui'
 import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -70,10 +70,10 @@ function simulate() {
       </button>
     </form>
     <p v-if="props.status" class="simulation-status" role="status">
-      {{ toTaiwanTraditionalChinese(props.status) }}
+      {{ toOrderingTraditionalChinese(props.status) }}
     </p>
     <div v-if="props.timing" class="simulation-timing" aria-label="Jev 執行時間">
-      <p>計時語句：{{ toTaiwanTraditionalChinese(props.timing.transcript) }}</p>
+      <p>計時語句：{{ toOrderingTraditionalChinese(props.timing.transcript) }}</p>
       <p>Jev 請求等待：{{ (props.timing.requestDurationMs / 1000).toFixed(2) }} 秒</p>
       <p v-if="props.timing.firstResultDurationMs !== undefined">
         首個判斷回來：{{ (props.timing.firstResultDurationMs / 1000).toFixed(2) }} 秒
