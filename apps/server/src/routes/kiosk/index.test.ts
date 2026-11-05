@@ -180,7 +180,7 @@ describe('kiosk routes', () => {
     const events = transport === 'sse' ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))) : []
     const final = transport === 'sse' ? events.find(event => event.type === 'turn-finished') : JSON.parse(text)
     expect(final.reply).toEqual({ kind: 'payment-methods' })
-    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@3')
+    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@4')
     expect(final.toolCalls).toEqual([])
     expect(complete).toHaveBeenCalledTimes(2)
     expect(complete.mock.calls[1]![0].body.tools).toEqual([replyTool])
@@ -291,6 +291,31 @@ describe('kiosk routes', () => {
     expect(complete.mock.calls[1]![0].body.tools).toEqual([...tools, replyTool])
   })
 
+  // Report: this chat, Nov5; saying "cancelled" did not close the recipe confirmation.
+  it.each(['answer', 'proposal'] as const)('requires a real tool or substantive reply for an original recipe (%s)', async (stage) => {
+    const name = stage === 'answer' ? 'order_answer_confirmation' : 'menu_confirm_item'
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'answer', type: 'function', function: { name, arguments: JSON.stringify(stage === 'answer' ? { confirmationId: 'recipe', confirmedByUser: false } : { itemId: 'bento', originalRecipe: true }) } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    await useBackgroundEnforcement(db, headers.Cookie)
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'recipe', capturedAt: Date.now(), sourceUtterance: '那不要了', phase: stage === 'answer' ? 'meal_confirmation' : 'configuration', unavailableConditions: [{ id: 'spice', label: '辣度' }], entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [name] }
+    const tools = [{ type: 'function', function: { name, description: '回答原版確認', parameters: { type: 'object', properties: stage === 'answer' ? { confirmationId: { type: 'string' }, confirmedByUser: { type: 'boolean' } } : { itemId: { type: 'string' }, originalRecipe: { type: 'boolean' } }, required: stage === 'answer' ? ['confirmationId', 'confirmedByUser'] : ['itemId', 'originalRecipe'], additionalProperties: false } } }]
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase: context.phase, context } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ toolCalls: [{ function: { name } }] })
+    const policy = complete.mock.calls[0]![0].body
+    expect(policy.tool_choice).toBe('required')
+    const presented = policy.tools as Array<{ function: { name: string, parameters: { properties: { kind?: { enum: string[] } } } } }>
+    const reply = presented.find(tool => tool.function.name === 'respond_to_customer')!
+    expect(reply.function.parameters.properties.kind!.enum).not.toContain('acknowledgement')
+    expect(reply.function.parameters.properties.kind!.enum).toContain('menu-information')
+    if (stage === 'proposal')
+      expect(reply.function.parameters.properties.kind!.enum).not.toContain('clarification')
+  })
+
   // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 alternatives replay.
   it.each([false, true].flatMap(selector => [false, true].map(readOnly => ({ selector, readOnly }))))('preserves accepted menu receipts after one draft review (selector=$selector, readOnly=$readOnly)', async ({ selector, readOnly }) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
@@ -375,7 +400,7 @@ describe('kiosk routes', () => {
     expect(body).not.toHaveProperty('tool_choice')
     const prompt = JSON.stringify(body.messages)
     expect(prompt.split('完整菜單唯一測試便當')).toHaveLength(2)
-    expect(prompt).toContain('手機填寫／略過步驟已完成')
+    expect(prompt).toContain('目前可直接查詢菜單與點餐')
     expect(prompt).toContain('排骨便當')
     expect(prompt).not.toContain('imageUrl')
     // This route-only harness has no API error middleware; schema rejection is 500 here.

@@ -26,6 +26,8 @@ import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, 
 import { applyAcceptancePolicy } from '../../../order-menu/src/evaluation/conversationAcceptance'
 import { conversationScripts } from '../../../order-menu/src/evaluation/conversationMatrix'
 import { assessScriptTurn } from '../../../order-menu/src/evaluation/conversationOracle'
+import { customizationCases } from '../../../order-menu/src/evaluation/customizationCases'
+import { discoveryCases } from '../../../order-menu/src/evaluation/discoveryCases'
 import { incidentConversationScripts, orderingIncidents, supersededConversationScripts } from '../../../order-menu/src/evaluation/orderingIncidents'
 import { serviceModeCases } from '../../../order-menu/src/evaluation/serviceModeCases'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
@@ -53,8 +55,9 @@ vi.mock('./kiosk-device', () => api)
 const matrixId = process.env.KIOSK_CONVERSATION_SCRIPT
 const modeCase = serviceModeCases.find(value => value.script.id === matrixId)
 const incidentScript = matrixId ? incidentConversationScripts.find(value => value.id === matrixId) : undefined
-const inputChannel = modeCase?.channel ?? incidentScript?.channel ?? 'jev-main'
-const historicalScript = modeCase?.script ?? incidentScript ?? (matrixId ? conversationScripts.find(value => value.id === matrixId) : undefined)
+const customizationCase = customizationCases.find(value => value.script.id === matrixId)
+const inputChannel = customizationCase?.channel ?? modeCase?.channel ?? incidentScript?.channel ?? 'jev-main'
+const historicalScript = discoveryCases.find(value => value.id === matrixId) ?? customizationCase?.script ?? modeCase?.script ?? incidentScript ?? (matrixId ? conversationScripts.find(value => value.id === matrixId) : undefined)
 const acceptance = historicalScript ? applyAcceptancePolicy(historicalScript) : undefined
 const script = acceptance?.script
 if (matrixId && !script)

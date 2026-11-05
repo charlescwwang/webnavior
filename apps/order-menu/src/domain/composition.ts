@@ -79,7 +79,8 @@ export function mentionedDietaryReferences(transcript: string): Array<{ id: 'veg
 /** Finds topics the current composition contract cannot verify; Jev decides whether they are requirements. */
 export function mentionedUnavailableConditions(transcript: string) {
   const definitions = [
-    { id: 'spice', label: '整份菜單的不辣保證（只有各餐的客製選項，未提供全面辣度標示）', aliases: ['辣'] },
+    { id: 'preparation', label: '製作調整（依各餐點實際客製選項）', aliases: ['蔥', '香菜', '蒜'] },
+    { id: 'spice', label: '辣度或製作調整（依餐點選項；沒有全面不辣保證）', aliases: ['辣'] },
     { id: 'sodium', label: '鈉含量（沒有營養數據）', aliases: ['鈉', '鹽分'] },
     { id: 'sugar', label: '糖含量（沒有營養數據）', aliases: ['糖'] },
     { id: 'energy', label: '熱量（沒有營養數據）', aliases: ['熱量', '卡路里'] },

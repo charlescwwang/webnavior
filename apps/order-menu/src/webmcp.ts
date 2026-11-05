@@ -25,7 +25,7 @@ import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { ingredientDefinitions, vegetarianIngredients } from '../../order-menu-server/src/domain/composition'
 import { currentRecommendationSignal } from '../../order-menu-server/src/domain/recommendation'
 import { invoiceDraftReady } from './domain/checkout-flow'
-import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters, mentionedUnavailableConditions } from './domain/composition'
+import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
 import { itemMatchesQuery, possibleMenuItems } from './domain/menuIdentity'
 import { catalogInfo, createOrderMachine, itemAvailability, ItemSelectionError, menuPageState, menuPageStates } from './domain/order-machine'
 import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription } from './domain/pricing'
@@ -1120,6 +1120,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             pendingFastPathConfirmation = undefined
             issuedFastPathContext = undefined
           }
+          if (typeof input.questionId === 'string')
+            mealClarification.markPresented(input.questionId, currentFastPathContext())
           if (pendingFastPathConfirmation && input.questionId === pendingFastPathConfirmation.record.confirmationId && confirmationIsValid(pendingFastPathConfirmation, currentFastPathContext()))
             pendingFastPathConfirmation.presented = true
           if (offeredQuestion && offeredQuestion.phase === currentFastPathContext().phase && questionIsCurrent(offeredQuestion, currentFastPathRevisions(), Date.now()) && input.questionId === offeredQuestion.questionId) {
@@ -1156,7 +1158,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             throw new Error('A current ordering task is required to propose a meal.')
           const source = deriveDecisionContext({ ...currentFastPathContext(), transcript: agentTask.transcript })
           source.constraints = { ...source.constraints, exclude: agentTask.filters.excludeIngredients, include: agentTask.filters.includeIngredients, dietary: agentTask.filters.dietary, price: agentTask.prices, unresolvedPrice: agentTask.unresolvedPrice }
-          const question = mealClarification.propose(source, requiredString(input, 'itemId'), typeof input.replaceLineId === 'string' ? input.replaceLineId : undefined)
+          const preparationSpeech = source.catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), agentTask.transcript)
+          if (input.originalRecipe === true && !mentionedUnavailableConditions(preparationSpeech).length && !mentionedIngredients(preparationSpeech).length)
+            throw new Error('Original recipe confirmation requires a preparation request in this turn.')
+          const question = mealClarification.propose(source, requiredString(input, 'itemId'), typeof input.replaceLineId === 'string' ? input.replaceLineId : undefined, input.originalRecipe === true, agentTask.taskId)
           options.onClarificationChange?.(question)
           return { pendingCustomerChoice: question, outcome: { status: 'needs-confirmation', intent: input.replaceLineId ? 'REPLACE_ITEM' : 'ADD_ITEM', itemIds: [input.itemId], taskId: agentTask.taskId } }
         }
@@ -1925,7 +1930,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const question = active?.waitingFor ?? (context.waitingFor ? describeQuestion(context.waitingFor) : undefined)
           // A known target needs its original operation, not a second alias
           // confirmation that discards quantities or option combinations.
-          const names = availableToolDefinitions().map(tool => tool.name).filter(name => !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone' && (name !== 'menu_confirm_item' || !agentTask?.targetItemIds?.length))
+          const names = availableToolDefinitions().map(tool => tool.name).filter(name => !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone')
           const reads = ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'menu_open', 'menu_scroll', 'order_ask_question']
           let allowedToolNames = names
           if (phase === 'customer_entry') {
@@ -1998,6 +2003,21 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
           if (!confirmation)
             allowedToolNames = allowedToolNames.filter(name => name !== 'order_answer_confirmation')
+          if (!agentTask?.readOnly && mealClarification.canAnswer(context, agentTask?.taskId))
+            allowedToolNames.push('order_answer_confirmation')
+          if (!agentTask?.readOnly && phase === 'configuration' && pendingConfiguration && agentTask && mentionedUnavailableConditions(agentTask.transcript).length && machine.getMenu().some(item => item.id === pendingConfiguration!.plan.slots.itemId && !item.optionGroups.length))
+            allowedToolNames.push('menu_confirm_item')
+          const taskSpeech = agentTask?.transcript ?? ''
+          const preparationSpeech = deriveDecisionContext({ ...context, transcript: taskSpeech }).catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), taskSpeech)
+          const preparationOnly = agentTask && mentionedUnavailableConditions(preparationSpeech).some(reference => ['spice', 'preparation'].includes(reference.id))
+            && machine.getMenu().some(item => !item.optionGroups.length && (agentTask!.targetItemIds?.includes(item.id) || pendingConfiguration?.plan.slots.itemId === item.id))
+          // A named preparation request is not a recommendation-scope question.
+          // Factual lookup remains available; no purchase is granted by this filter.
+          if (preparationOnly)
+            allowedToolNames = allowedToolNames.filter(name => !['menu_recommend', 'menu_show_recommendations'].includes(name))
+          else if (agentTask?.targetItemIds?.length)
+            allowedToolNames = allowedToolNames.filter(name => name !== 'menu_confirm_item')
+
           const optionsFor = (values: Record<string, string>) => Object.entries(values).map(([groupId, valueId]) => ({ groupId, valueId }))
           const cart = context.cart
           const snapshot: ConversationContext = {
@@ -2232,10 +2252,17 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             return await invoke('menu_get', { query: item.name, display: true }, onAction)
           }
           if (candidateId.startsWith('confirm-meal:')) {
+            const proposedItemId = mealClarification.progress(currentContext)?.itemId
             const plan = mealClarification.consume(candidateId, currentContext)
             options.onClarificationChange?.(undefined)
             if (plan)
               return await beginMeal(plan, onAction)
+            // Rejecting the original recipe also retires that same unadded
+            // draft; it must not reopen the quantity question just declined.
+            if (pendingConfiguration?.plan.slots.itemId === proposedItemId) {
+              pendingConfiguration = undefined
+              options.onMenuSelection(undefined)
+            }
             const question = configurationSnapshot(currentContext, '', true)?.waitingFor
             return { customerMessage: `${mealMessages.declined}${question?.question ?? ''}`, ...(question ? { pendingCustomerChoice: question } : {}) }
           }
@@ -2248,6 +2275,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const issued = pending.issued
             if (!issued || issued.expiresAt <= Date.now() || !candidateId.startsWith(`configure:${issued.id}:`))
               throw new Error('STALE_PLAN: The configuration answer has expired or belongs to an earlier turn.')
+            const configuringItem = machine.getMenu().find(item => item.id === pending.plan.slots.itemId)
+            if (candidateId.includes(':quantity:') && configuringItem && !configuringItem.optionGroups.length && (mentionedUnavailableConditions(issued.transcript).length || mentionedIngredients(issued.transcript.replaceAll(configuringItem.name, '')).length))
+              return { needsAssistant: true, handoff: { intent: 'ADD_ITEM', status: 'unrepresentable', itemIds: [configuringItem.id], lineIds: [] } }
             if (candidateId === `configure:${issued.id}:inquiry`) {
               const item = machine.getMenu().find(item => item.id === pending.plan.slots.itemId)!
               // The customer corrects a mistaken draft, not an existing cart
@@ -2561,6 +2591,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     if (agentTask?.readOnly && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question'].includes(name))
       throw new Error('This task only authorizes menu reads; order changes require a new customer request.')
     if (name === 'order_answer_confirmation') {
+      const context = currentFastPathContext()
+      const meal = mealClarification.question(context)
+      if (mealClarification.canAnswer(context, agentTask?.taskId) && meal?.questionId === input.confirmationId && typeof input.confirmedByUser === 'boolean') {
+        const answerContext = deriveDecisionContext({ ...context, transcript: agentTask!.transcript })
+        const answer = mealClarification.issueAnswer(answerContext)!
+        return await invoke('kiosk_fast_path_execute', { candidateId: answer.choices[input.confirmedByUser ? 0 : 1]!.id })
+      }
       const pending = pendingFastPathConfirmation
       if (!pending || !pending.presented || (agentTask && pending.taskId === agentTask.taskId) || input.confirmationId !== pending.record.confirmationId || typeof input.confirmedByUser !== 'boolean' || !confirmationIsValid(pending, currentFastPathContext()))
         throw new Error('STALE_PLAN: This confirmation is not a current presented action for this customer turn.')
@@ -2602,6 +2639,20 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       // requested dish. A new customer choice must begin a new host-bound task.
       if (typeof itemId !== 'string' || !agentTask.targetItemIds.includes(itemId))
         return { ok: false, executed: false, toolName: name, error: 'UNCONFIRMED_ITEM', message: '這次新增未執行。顧客尚未指定唯一餐點，不能從幾道展示品項猜選一項。請回覆clarification詢問要哪一道，沒有真實選擇前不要新增、替代或重送。', customerMessage: mealMessages.unconfirmedItem }
+    }
+    if (agentTask && ['order_add_item', 'cart_add_item'].includes(name)) {
+      const itemId = name === 'cart_add_item' ? machine.getSelection()?.itemId : input.itemId
+      const item = machine.getMenu().find(item => item.id === itemId)
+      const source = deriveDecisionContext({ ...currentFastPathContext(), transcript: agentTask.transcript })
+      const addition = source.candidates.find(candidate => candidate.intent === 'ADD_ITEM')
+      const resolved = addition && resolveIntent(addition, source)
+      // Tool quantities are model output, not customer evidence. A named dish
+      // without a serving count uses the same existing draft as the Jev route.
+      if (resolved?.kind === 'CONFIGURATION' && resolved.plan.slots.quantity === undefined && pendingConfiguration?.plan.slots.quantity === undefined)
+        return await beginMeal(resolved.plan, options.onAction)
+      const remaining = source.catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), agentTask.transcript)
+      if (item && !item.optionGroups.length && (mentionedIngredients(remaining).length || mentionedUnavailableConditions(remaining).length))
+        return await invoke('menu_confirm_item', { itemId: item.id, originalRecipe: true, ...(input.replaceLineId ? { replaceLineId: input.replaceLineId } : {}) })
     }
     if (menuBrowsingToolNames.has(name) && agentTask && (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu))
       throw new Error('STALE_PLAN: Agent task constraints expired or catalog changed.')

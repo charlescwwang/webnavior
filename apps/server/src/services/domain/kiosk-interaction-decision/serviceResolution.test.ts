@@ -229,3 +229,19 @@ it('rejects a menu topic proposed for an explicit other recipient', async () => 
   expect(result.kind).toBe('IGNORE')
   expect(result).not.toHaveProperty('question')
 })
+
+// Report: this chat, Nov5; preparation requests use the existing meal confirmation.
+it('hands named meal preparation to Main without claiming absence or granting a write', async () => {
+  const result = await resolveServiceHandoff({ ...decision, reason: 'NEW_REQUEST' }, '排骨便當一份，不要辣', { ...state, catalogEvidence: { products: [{ label: '排骨便當', matchedText: '排骨便當', source: 'name' }], categories: [] }, unavailableConditionReferences: [{ id: 'spice', label: '辣度' }] }, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_condition_support', arguments: '{"choice":"REQUIREMENT"}' } }] } }] }))
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', resolvedBy: 'main-service' })
+  expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
+})
+
+// Report: this chat, Nov5; a late preparation condition belongs to the active draft.
+it('keeps a preparation continuation on its existing draft instead of starting another Jev topic', async () => {
+  const result = await resolveServiceHandoff({ ...decision, reason: 'NEW_REQUEST' }, '兩份，不要辣', { ...state, phase: 'configuration', catalogEvidence: { products: [], categories: [] }, retainedRequests: [{ id: 'meal', itemId: 'bento', status: 'active', sourceUtterance: '我要排骨便當', options: [], missing: { quantity: true, optionGroupIds: [] }, expectedRevisions: { menu: 1 } }], unavailableConditionReferences: [{ id: 'spice', label: '辣度' }] }, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_condition_support', arguments: '{"choice":"REQUIREMENT"}' } }] } }] }))
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result.reason).not.toBe('NEW_REQUEST')
+  expect(result).not.toHaveProperty('question')
+})

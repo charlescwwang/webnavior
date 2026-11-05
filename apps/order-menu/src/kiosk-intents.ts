@@ -290,8 +290,8 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     const categoryPreference = matchingCategories.length > 0 && quantityFromTranscript(transcript) === undefined && quantityFromTranscript(input.previousTranscript ?? '') === undefined
     if (!possibleItems.length && !categoryPreference && (matchingItems.some(item => item.available !== false) || categoryItemRefs.length || focusRefs.length || selected || recentAddedLine))
       candidates.push(candidate('ADD_ITEM', 'intent:add-item', '顧客要求購買或加點餐點，才建立訂購項目。匹配品名／別名只提供查詢對象，不是購買授權；詢問種類、款式、有哪些或有沒有都選查詢，不選新增。明確要點餐點但缺份數／選項仍可新增，由程式補問；分類須有明確份數才建立待選品項訂購。品項歧義由程式釐清，不自行挑選。'))
-    if (!itemRefs.length && (!categoryRefs.length || priceEvidence(transcript)) && !possibleItems.length)
-      candidates.push(candidate('RECOMMEND', 'intent:recommend', '顧客請系統挑選值得吃的餐點：開始一輪簡單推薦，最多三項；可套用已知分類、單份價格及飲食限制。不是列出整份菜單，也不是換掉剛推薦的一批。'))
+    if (!itemRefs.length && (!categoryRefs.length || categoryPreference || priceEvidence(transcript)) && !possibleItems.length)
+      candidates.push(candidate('RECOMMEND', 'intent:recommend', '顧客請系統挑選值得吃的餐點，包含不知道吃什麼、想吃某個分類但沒有具體品項與份數：開始一輪簡單推薦，最多三項；可套用已知分類、單份價格及飲食限制。不是列出整份菜單，也不是換掉剛推薦的一批。'))
     // Full catalog and retained-condition continuation are different effects.
     // Let the semantic model choose; no keyword parser silently clears filters.
     if (input.recommendationConditions !== undefined && !itemRefs.length && !categoryRefs.length && !possibleItems.length)
@@ -476,6 +476,9 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
   if (!resolved)
     return { kind: 'IGNORE' }
   const transcript = context.transcript?.trim() ?? ''
+  const preparationSpeech = context.catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), transcript)
+  if (resolved.intent === 'ADD_ITEM' && (context.ingredientReferences.length || context.unavailableConditionReferences.length) && context.targetConstraints.itemIds.some(id => context.menu.some(item => item.id === id && !item.optionGroups.length)) && (mentionedIngredients(preparationSpeech).length || mentionedUnavailableConditions(preparationSpeech).length))
+    return { kind: 'NEEDS_ASSISTANT' }
   // One finite operation cannot determine which of several explicit counts
   // survives a correction or split order. Keep the whole utterance for Main;
   // selecting the first count can reject a negated200 or invent the wrong order.
