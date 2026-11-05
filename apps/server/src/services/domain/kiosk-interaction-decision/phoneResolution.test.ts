@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest'
 
 import { resolvePhoneChoice } from './phoneResolution'
 
-it.each(['SKIP_PHONE', 'KEEP_PHONE', 'UNCERTAIN'] as const)('validates Main phone choice %s without exposing browser operations', async (choice) => {
+it.each(['SKIP_PHONE', 'KEEP_PHONE', 'BACKGROUND', 'UNCERTAIN'] as const)('validates Main phone choice %s without exposing browser operations', async (choice) => {
   const complete = vi.fn<(body: Record<string, unknown>) => Promise<Response>>(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_phone_choice', arguments: JSON.stringify({ choice }) } }] } }] }))
   const result = await resolvePhoneChoice('略過', complete)
   expect(result.choice).toBe(choice)

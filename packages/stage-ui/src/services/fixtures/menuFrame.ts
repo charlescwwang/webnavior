@@ -2,7 +2,7 @@ import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/intera
 
 import type { CheckoutSnapshot } from '../../../../../apps/order-menu/src/domain/checkout-flow'
 
-import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../../../apps/order-menu/src/domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../../../apps/order-menu/src/domain/checkout-flow'
 import { menu } from '../../../../../apps/order-menu/src/domain/order-machine'
 import { connectInteractiveService } from '../../../../../apps/order-menu/src/interactiveService'
 import { createMenuToolRuntime } from '../../../../../apps/order-menu/src/webmcp'
@@ -53,6 +53,7 @@ const runtime = createMenuToolRuntime({
       revision++
     },
     chooseInvoice: method => updateCheckout(chooseInvoiceMethod(checkout!, method)),
+    confirmInvoice: () => updateCheckout(confirmInvoiceDraft(checkout!)),
     confirmTaxId: () => updateCheckout(confirmTaxId(checkout!)),
     paymentMethods: ['linepay'],
     paymentStatus: () => payment === 'pending' || payment === 'uncertain' ? payment : undefined,

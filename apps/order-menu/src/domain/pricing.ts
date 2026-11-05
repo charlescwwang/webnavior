@@ -1,5 +1,7 @@
 import type { PriceChoice, PriceConditions, PriceEvidence } from '../../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
 
+import { parseNumericSlot } from './numericSlots'
+
 /** Safe clarification when no complete single-dish price interpretation exists. */
 export const priceClarification = '請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。'
 
@@ -85,45 +87,14 @@ export function priceDescription(conditions: PriceConditions): string {
   return labels.join('、')
 }
 
-function amountFrom(text: string) {
-  const normalized = text.normalize('NFKC').replace(/万/g, '萬')
-  if (normalized === '零' || normalized === '〇')
-    return 0
-  if (/^\d+$/.test(normalized))
-    return Number(normalized)
-  const sectionPattern = '(?:[一二兩两三四五六七八九]?千)?(?:[一二兩两三四五六七八九]?百)?(?:[零〇]?[一二兩两三四五六七八九]?十)?(?:[零〇]?[一二兩两三四五六七八九])?'
-  if (!new RegExp(`^(?:${sectionPattern}萬[零〇]?)?${sectionPattern}$`).test(normalized)) {
-    return undefined
-  }
-  const digits: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 兩: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
-  const units: Record<string, number> = { 十: 10, 百: 100, 千: 1000, 萬: 10000 }
-  let total = 0
-  let section = 0
-  let digit = 0
-  let lastUnit = 1
-  for (const character of normalized) {
-    if (character in digits) {
-      digit = digits[character]!
-    }
-    else if (character in units) {
-      lastUnit = units[character]!
-      if (lastUnit === 10000) {
-        // 萬 scales the whole preceding section: 十二萬 is120000, not20010.
-        total += (section + digit || 1) * lastUnit
-        section = 0
-      }
-      else {
-        section += (digit || 1) * lastUnit
-      }
-      digit = 0
-    }
-    else { return undefined }
-  }
-  // Taiwanese price speech omits the trailing place: 百二 means120, 千二
-  // means1200. An explicit zero blocks that elision, so 百零二 stays102.
-  // Apply the rule to the last written unit, including 千二百三→1230.
-  const trailingPlace = /[百千萬][一二兩两三四五六七八九]$/.test(normalized) ? lastUnit / 10 : 1
-  return total + section + digit * trailingPlace
+const priceAmountFrom = (text: string) => parseNumericSlot(text, true)
+
+// Clause punctuation may precede a new amount. Only punctuation joining numeric
+// fragments is a malformed amount; a leading minus remains non-executable.
+function brokenAmountBoundary(before: string, after: string): boolean {
+  return /-\s*$/.test(before)
+    || /[0-9零〇一二兩两三四五六七八九十百千萬万億亿][.,]\s*$/.test(before)
+    || /^[.,]\d/.test(after)
 }
 
 /**
@@ -154,11 +125,11 @@ export function priceEvidence(transcript: string): PriceEvidence | undefined {
     // money. Semantic price polarity still belongs to Jev, including NONE.
     if (before.endsWith(':') || after.startsWith(':') || (!/[元塊块]/.test(match[0]) && /^\s*(?:[份位人碗杯顆個个]|分鐘|分钟|小時|小时)/.test(after)))
       continue
-    if (/[.,-]\s*$/.test(before) || /^[.,]\d/.test(after))
+    if (brokenAmountBoundary(before, after))
       malformed = true
     consumed.push([match.index!, match.index! + match[0].length])
     for (const text of [match[1]!, match[2]!]) {
-      const amount = amountFrom(text)
+      const amount = priceAmountFrom(text)
       if (amount !== undefined && Number.isSafeInteger(amount))
         amounts.push({ text, amount })
       else malformed = true
@@ -182,9 +153,9 @@ export function priceEvidence(transcript: string): PriceEvidence | undefined {
       const after = transcript.slice(start + text.length)
       if (before.endsWith(':') || after.startsWith(':') || /^\s*(?:[份位人碗杯顆個个]|分鐘|分钟|小時|小时)/.test(after))
         continue
-      if (/[.,-]\s*$/.test(before) || /^[.,]\d/.test(after))
+      if (brokenAmountBoundary(before, after))
         malformed = true
-      const amount = amountFrom(text)
+      const amount = priceAmountFrom(text)
       if (amount !== undefined && Number.isSafeInteger(amount))
         amounts.push({ text: match[0], amount })
       else malformed = true

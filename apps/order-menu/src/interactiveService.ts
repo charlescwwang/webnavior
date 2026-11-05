@@ -13,6 +13,8 @@ import { createContext } from '@moeru/eventa/adapters/window-message'
 import { discoverService, discoveryRequestSchema, executeServiceTool, executionRequestSchema, inspectionRequestSchema, inspectService, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
 import { parse } from 'valibot'
 
+import { rejectQuantity } from './domain/quantityPolicy'
+
 /** Binds the current Menu document to one approved parent; runtime retains all commerce state. */
 export function connectInteractiveService(runtime: ReturnType<typeof createMenuToolRuntime>, hostOrigin: string) {
   const documentId = crypto.randomUUID()
@@ -71,7 +73,7 @@ export function connectInteractiveService(runtime: ReturnType<typeof createMenuT
             const serialized = JSON.stringify(result)
             return serialized === undefined ? null : JSON.parse(serialized)
           })
-        : Promise.resolve({ ok: false, error: 'INVALID_TOOL_INPUT', recovery: 'Check the tool schema and retry only with valid arguments.' })
+        : Promise.resolve(rejectQuantity(definition.name, request.input.quantity) ?? { ok: false, executed: false, toolName: definition.name, error: 'INVALID_TOOL_INPUT', message: `尚未執行。請依工具參數契約修正：${JSON.stringify(validate?.errors ?? []).slice(0, 1600)}。不要重做已成功的操作。` })
       // Cache before awaiting, including in-flight operations. No eviction within a
       // binding: an old repeated ID must never become a second commerce operation.
       const accepted = { fingerprint: operationFingerprint, result: operation, status: 'pending' as 'pending' | 'settled' | 'failed' }

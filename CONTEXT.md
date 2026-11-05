@@ -83,6 +83,24 @@ no cart or payment authority. Uncertain service recipients remain silent. The
 browser owns the proposed real item, Yes/No answers, revisions and expiry;
 confirmation resumes missing-slot collection while retaining suspended meals.
 
+## Kiosk Conversation Skill
+
+An application-owned, versioned Main procedure, currently the built-in
+`ordering@1` in `apps/server/src/services/domain/kiosk-conversation-skills`.
+It describes inquiry/purchase boundaries, menu browsing, missing-slot collection,
+cart edits and completion from real receipts. JSON/SSE Main chat and admitted
+operation recovery load the same procedure; repository `.agents/skills` are
+contributor instructions and are not loaded into customer conversations.
+
+For one exact product in ordinary ordering, an admitted uncertain JEV operation
+can be independently selected by Main from the current browser-issued meal
+effects. `resolvedBy:main-skill` identifies its source without JEV confidence.
+A live item-configuration answer may likewise be selected only from the current
+question/candidate intersection and retains its browser `answeredQuestionId`.
+The browser still resolves targets/slots, validates revisions and owns questions
+and execution; loading a skill alone grants no write authority. Explicit read-only
+or recovered restrictions, phone/checkout and unresolved prices are retained.
+
 ## Fast Path Action
 
 A domain-level plan produced after the application validates a System One

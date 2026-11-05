@@ -1,0 +1,4027 @@
+{
+  "scope": "Synthetic provider failures, retained before fixes. Multiple source revisions; not final acceptance. No raw provider prompts or field sessions.",
+  "goldV1Sha256": "892879877b5a10e8ca4097ab9e8df9b6dfa9be526b5dd579bb09b87ed3f5a9f9",
+  "firstSweep": {
+    "executable": 110,
+    "passed": 71,
+    "failed": 39,
+    "diagnostic": 2
+  },
+  "failures": [
+    {
+      "scriptId": "C01-F1",
+      "attempt": 1,
+      "sourceHash": "689603ca401b06adf1343e8ef49a654868767014cc92db037692cff568810247",
+      "artifact": "webnavior-112-20261101-001-C01-F1.jsonl",
+      "artifactSha256": "28b07bb80bb9f16d69f02bf63f86c189475ddce5f74f96d8bac38a335e2efa53",
+      "calls": 4,
+      "errors": [
+        "Reply does not satisfy 助手|助理|點餐|服務"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "你是誰",
+        "answer": "您好，請問需要什麼協助？"
+      }
+    },
+    {
+      "scriptId": "C02-F1",
+      "attempt": 2,
+      "sourceHash": "689603ca401b06adf1343e8ef49a654868767014cc92db037692cff568810247",
+      "artifact": "webnavior-112-20261101-002-C02-F1.jsonl",
+      "artifactSha256": "62049ceffb491a2389b354176bd134cd522ed79228f5bd820425389701fdc5c0",
+      "calls": 15,
+      "errors": [
+        "Reply does not satisfy 80"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃一份多少錢",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C08-F1",
+      "attempt": 7,
+      "sourceHash": "689603ca401b06adf1343e8ef49a654868767014cc92db037692cff568810247",
+      "artifact": "webnavior-112-20261101-007-C08-F1.jsonl",
+      "artifactSha256": "ef158e4bca5557271cfa701892caceb2f067716d7b9d092db0f907c27f1c874d",
+      "calls": 8,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":3,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":2,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃總共改三份",
+        "answer": "您是要點水餃嗎？"
+      }
+    },
+    {
+      "scriptId": "C12-F1",
+      "attempt": 10,
+      "sourceHash": "689603ca401b06adf1343e8ef49a654868767014cc92db037692cff568810247",
+      "artifact": "webnavior-112-20261101-010-C12-F1.jsonl",
+      "artifactSha256": "b58ff6259f1947f1134c36a8ef6ce87b584011c4d5c070272433c88db8d16d2e",
+      "calls": 8,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":2,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃總共兩份就好",
+        "answer": "您是要點水餃嗎？"
+      }
+    },
+    {
+      "scriptId": "C14-F2",
+      "attempt": 11,
+      "sourceHash": "689603ca401b06adf1343e8ef49a654868767014cc92db037692cff568810247",
+      "artifact": "webnavior-112-20261101-011-C14-F2.jsonl",
+      "artifactSha256": "528bfd4ef7269fc0333e3e0cbdfc2c82092c014c3b1331d86d9e70ec4772daec",
+      "calls": 13,
+      "errors": [
+        "Expected fulfillment dine-in"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "更正，我要內用",
+        "answer": "已進入結帳，請選擇發票方式。"
+      }
+    },
+    {
+      "scriptId": "C01-F1",
+      "attempt": 13,
+      "sourceHash": "cad17cfd919db8c0cad07faeeb358d14e02d571c42b3b574274523227a2b42a4",
+      "artifact": "webnavior-112-20261101-013-C01-F1.jsonl",
+      "artifactSha256": "e37b519956b969e9aba7fa7b99db1bbdd76092cbaa2530fa487b6026714e35e5",
+      "calls": 4,
+      "errors": [
+        "Reply does not satisfy 助手|助理|點餐|服務"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "你是誰",
+        "answer": "您好，請問需要什麼協助？"
+      }
+    },
+    {
+      "scriptId": "C02-F1",
+      "attempt": 14,
+      "sourceHash": "cad17cfd919db8c0cad07faeeb358d14e02d571c42b3b574274523227a2b42a4",
+      "artifact": "webnavior-112-20261101-014-C02-F1.jsonl",
+      "artifactSha256": "1b77947d13cd49911f48541397ca9c1b91437fb5a77e860a79c1995f8a6e8b6f",
+      "calls": 14,
+      "errors": [
+        "Reply does not satisfy 80"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃一份多少錢",
+        "answer": "水餃目前可以點。"
+      }
+    },
+    {
+      "scriptId": "C12-F1",
+      "attempt": 16,
+      "sourceHash": "cad17cfd919db8c0cad07faeeb358d14e02d571c42b3b574274523227a2b42a4",
+      "artifact": "webnavior-112-20261101-016-C12-F1.jsonl",
+      "artifactSha256": "3b35a2948a13e325835e29af54074bd69ba93bfd3651ccccc10bc0d447458bd0",
+      "calls": 18,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃總共兩份就好",
+        "answer": "已將水餃調整為 2 份。"
+      }
+    },
+    {
+      "scriptId": "C14-F2",
+      "attempt": 17,
+      "sourceHash": "cad17cfd919db8c0cad07faeeb358d14e02d571c42b3b574274523227a2b42a4",
+      "artifact": "webnavior-112-20261101-017-C14-F2.jsonl",
+      "artifactSha256": "1ebf426905f7e38619de4b3e390ee8b3f8fa38ed55a1038a43f2775ac0494758",
+      "calls": 15,
+      "errors": [
+        "Expected fulfillment dine-in"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "更正，我要內用",
+        "answer": "好的，保留目前訂單，你可以繼續提出需求。"
+      }
+    },
+    {
+      "scriptId": "C14-F2",
+      "attempt": 21,
+      "sourceHash": "e46c5cf00ceb4ebfc0e630f5853a2804ce22568dacaf9d9dc377f9611612a9aa",
+      "artifact": "webnavior-112-20261101-021-C14-F2.jsonl",
+      "artifactSha256": "6a1a0b4601fb91b5ef22c079e315443b75a5d903b464d0289f4ea8824667999f",
+      "calls": 15,
+      "errors": [
+        "Expected fulfillment dine-in"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "更正，我要內用",
+        "answer": "好的，保留目前訂單，你可以繼續提出需求。"
+      }
+    },
+    {
+      "scriptId": "D01",
+      "attempt": 23,
+      "sourceHash": "fb1ac07448900539b5edfbb0ea915f5d93c2cf5f1e79b89bc9ec8821578377ac",
+      "artifact": "webnavior-112-20261101-023-D01.jsonl",
+      "artifactSha256": "f9e192a174c35de97eff89fa2482e0a0c13ee1a0fbebac7731b9efbde2a0e801",
+      "calls": 5,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received []",
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "我要水餃一份",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "D03",
+      "attempt": 25,
+      "sourceHash": "fb1ac07448900539b5edfbb0ea915f5d93c2cf5f1e79b89bc9ec8821578377ac",
+      "artifact": "webnavior-112-20261101-025-D03.jsonl",
+      "artifactSha256": "a1e931beb8d29edf6e6f40e68a86c5ee05cccaeb57237f489d8419772b73cf11",
+      "calls": 4,
+      "errors": [
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "我想請你幫忙，那個，我還沒說清楚。",
+        "answer": "你想調整價位，還是換餐點種類？"
+      }
+    },
+    {
+      "scriptId": "D09",
+      "attempt": 30,
+      "sourceHash": "fb1ac07448900539b5edfbb0ea915f5d93c2cf5f1e79b89bc9ec8821578377ac",
+      "artifact": "webnavior-112-20261101-030-D09.jsonl",
+      "artifactSha256": "17753ec1fbf78c7a4ed32562019518d3acea4ea014659ea3711140886217ac84",
+      "calls": 10,
+      "errors": [
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "我想問，那個，我還沒說清楚。",
+        "answer": "你想調整價位，還是換餐點種類？"
+      }
+    },
+    {
+      "scriptId": "D11",
+      "attempt": 32,
+      "sourceHash": "fb1ac07448900539b5edfbb0ea915f5d93c2cf5f1e79b89bc9ec8821578377ac",
+      "artifact": "webnavior-112-20261101-032-D11.jsonl",
+      "artifactSha256": "a6d4537941ad9fd8352607c67ecf0306b2578c1962e59f46b991439109cf6fa0",
+      "calls": 12,
+      "errors": [
+        "Reply does not satisfy LINE Pay|街口"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "先不要結帳，只告訴我能用什麼付款。",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "H02",
+      "attempt": 35,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-035-H02.jsonl",
+      "artifactSha256": "3c1b38e7b3569d268078b7a76fecab0e087c1afbff5cf13b08f540ff3b9d2edb",
+      "calls": 4,
+      "errors": [
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "點餐機，請幫我，我還不知道怎麼說那個。",
+        "answer": "你想調整價位，還是換餐點種類？"
+      }
+    },
+    {
+      "scriptId": "H06",
+      "attempt": 38,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-038-H06.jsonl",
+      "artifactSha256": "0948e736763f7a033e4b6894a9bad53c64295cd30eddb13c0b1f8dc2479f5512",
+      "calls": 9,
+      "errors": [
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "機器請幫忙，我的意思，我還沒講清楚。",
+        "answer": "你想調整價位，還是換餐點種類？"
+      }
+    },
+    {
+      "scriptId": "H07",
+      "attempt": 39,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-039-H07.jsonl",
+      "artifactSha256": "8ab7c7d907f89023a995de6f9f9d4e86411ff6670e732d82bc4bbcaa0f1b21ce",
+      "calls": 8,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "現在測試語音，這裡有接收到我的話嗎？",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "H08",
+      "attempt": 40,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-040-H08.jsonl",
+      "artifactSha256": "a480d11f696dab5752cdde85e7ed2cbb06141bd650a68dc993ff97bca44a96c4",
+      "calls": 9,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "不要動訂單，我只想確認這句話有收到嗎？",
+        "answer": "好的，保留目前訂單，你可以繼續提出需求。"
+      }
+    },
+    {
+      "scriptId": "M01",
+      "attempt": 41,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-041-M01.jsonl",
+      "artifactSha256": "a6cd9be5d1b9389dcb38881951be675204406ba59005adffd0d43c1ba39a176c",
+      "calls": 11,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "M04",
+      "attempt": 44,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-044-M04.jsonl",
+      "artifactSha256": "71cc4ff1cb9413290bb10e37aca46b7abd6658510c8ac034b1e9a1463eb1c8a1",
+      "calls": 7,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵不要了，改水餃一份",
+        "answer": "水餃目前可以點。單份基本售價 NT$80。"
+      }
+    },
+    {
+      "scriptId": "M05",
+      "attempt": 45,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-045-M05.jsonl",
+      "artifactSha256": "df8928538db529e6fe0e7c36f2de956ca6b4775c64dda5a7947a15efb63bdfa3",
+      "calls": 5,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵一份幫我加，水餃一份多少錢？",
+        "answer": "紅燒牛肉麵目前可以點。單份基本售價 NT$150。 水餃目前可以點。單份基本售價 NT$80。 單份基本售價：紅燒牛肉麵 NT$150、水餃 NT$80。"
+      }
+    },
+    {
+      "scriptId": "M10",
+      "attempt": 50,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-050-M10.jsonl",
+      "artifactSha256": "03c70476fa302dc9698344314576fb90cf0b3af561de1c7ab161456546bd912c",
+      "calls": 11,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{\"spice\":\"hot\"}},{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{\"spice\":\"mild\"}}], received [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{\"spice\":\"hot\"}}]"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵一份大辣、一份小辣",
+        "answer": "已選擇紅燒牛肉麵，請確認需要的餐點設定。 已將紅燒牛肉麵加入購物車，共 1 份。 請問要內用還是自取？"
+      }
+    },
+    {
+      "scriptId": "M12",
+      "attempt": 52,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-052-M12.jsonl",
+      "artifactSha256": "669da2af16e2b00eb383b36cd3f0df5c972e03f81f65d2a62ccd4b505e52b91d",
+      "calls": 9,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"spicy-chicken-bento\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "第二項一份",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C01-A2",
+      "attempt": 57,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-057-C01-A2.jsonl",
+      "artifactSha256": "9cafc2d7da771d19a42fa8fdbeba831e1144e3d52b85bbd235ed6b181799d075",
+      "calls": 2,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "你當我的朋友就好",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C02-F2",
+      "attempt": 59,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-059-C02-F2.jsonl",
+      "artifactSha256": "d8d8c394a8da61406ced267ed8b200e44ec7a83060f0c9eb9e661d8192b5788c",
+      "calls": 6,
+      "errors": [
+        "Reply does not satisfy 沒有|查無|未找到|找不到"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "有冰淇淋嗎",
+        "answer": "目前菜單查不到「冰淇淋」。"
+      }
+    },
+    {
+      "scriptId": "C02-A1",
+      "attempt": 61,
+      "sourceHash": "31468989e2e7e49d8a218957ecf1a3d85a405b9d46ab2c982c5d8a7937eaeaba",
+      "artifact": "webnavior-112-20261101-061-C02-A1.jsonl",
+      "artifactSha256": "e076e38a9567df9d3202eb2274a4cec1c462f3e9b31a352b49e43fc36d00671a",
+      "calls": 4,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "有牛肉麵嗎",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C04-F3",
+      "attempt": 70,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-070-C04-F3.jsonl",
+      "artifactSha256": "aa083b0970aabc77ede8197c5b1526a9edefd68229faa9e93dfa54579d477447",
+      "calls": 8,
+      "errors": [
+        "Repeated alternative signature-shrimp-roll-bento",
+        "Repeated alternative spicy-chicken-bento",
+        "Repeated alternative thai-sour-spicy-fish-bento"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "有更便宜的嗎",
+        "answer": "請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 75,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-075-C05-F3.jsonl",
+      "artifactSha256": "640bfd54fb29289e64a4af77ba6acc519f86c6f04a4e2a6d9cb11388a2b86a0b",
+      "calls": 14,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "推薦一項：紅燒牛肉麵。"
+      }
+    },
+    {
+      "scriptId": "C05-A1",
+      "attempt": 76,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-076-C05-A1.jsonl",
+      "artifactSha256": "9a8d8d650ffaaeb3ef19273daaa62d0df7eb571cd6c22f5cc56e4dd1c2efb152",
+      "calls": 8,
+      "errors": [
+        "Reply does not satisfy 沒有|找不到|調整|條件",
+        "Absent query presented unrelated items"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "其他的",
+        "answer": "請問您想點其他餐點嗎？"
+      }
+    },
+    {
+      "scriptId": "C05-A2",
+      "attempt": 77,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-077-C05-A2.jsonl",
+      "artifactSha256": "1c7b6596768e30ccde77569106d22b8340f1f8ea0cbc842cb01a762b96211bb6",
+      "calls": 6,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要含牛肉，一百五十元以下的",
+        "answer": "請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。"
+      }
+    },
+    {
+      "scriptId": "C06-F1",
+      "attempt": 78,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-078-C06-F1.jsonl",
+      "artifactSha256": "51d41ef7fa251de200050b3a94f4b5a0e006ef75f7d93079ebeef11f70c5240b",
+      "calls": 5,
+      "errors": [
+        "Spicy item shown thai-sour-spicy-fish-bento"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "兩百以下不要辣的餐點",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-F2",
+      "attempt": 79,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-079-C06-F2.jsonl",
+      "artifactSha256": "568c11e987dca32475c4011be8ab6d286135d84c7704c3890905e03e9462f8fb",
+      "calls": 9,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":2,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "便宜的水餃兩份",
+        "answer": "請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。"
+      }
+    },
+    {
+      "scriptId": "C06-F3",
+      "attempt": 80,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-080-C06-F3.jsonl",
+      "artifactSha256": "2ce04055d8ba43df8f180ebe962126a8bcd73865406f246304b70d52231a2147",
+      "calls": 3,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 81,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-081-C06-A1.jsonl",
+      "artifactSha256": "19507c557bd07a0196fee63e93f18d05ca8f73a9c80b239b33a0b3eb077c393d",
+      "calls": 3,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "C06-A2",
+      "attempt": 82,
+      "sourceHash": "63a6c152161bdc929504a916c2f62bf1c0205c08834f3e354be100de5f302979",
+      "artifact": "webnavior-112-20261101-082-C06-A2.jsonl",
+      "artifactSha256": "3e627b54592231ddfd2597518605ae0618a47cad86aa1fb2342a1c8ee9886cc9",
+      "calls": 9,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "一百元以下，而且完全不含豬肉",
+        "answer": "排除豬肉：目前沒有符合條件的餐點。"
+      }
+    },
+    {
+      "scriptId": "C09-A2",
+      "attempt": 97,
+      "sourceHash": "1fe107e3a69633634170494a03c99637b04fd6ed9413b6c233359ab32dec3acc",
+      "artifact": "webnavior-112-20261101-097-C09-A2.jsonl",
+      "artifactSha256": "f8f202fc7e5165d731ec2fbf1a3dba73523f5ad316e8f72576ae79ae50fe8d29",
+      "calls": 11,
+      "errors": [
+        "Read-only turn changed cart lines"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "小辣",
+        "answer": "已將紅燒牛肉麵加入購物車，共 2 份。"
+      }
+    },
+    {
+      "scriptId": "C10-F2",
+      "attempt": 99,
+      "sourceHash": "1fe107e3a69633634170494a03c99637b04fd6ed9413b6c233359ab32dec3acc",
+      "artifact": "webnavior-112-20261101-099-C10-F2.jsonl",
+      "artifactSha256": "9019cc3cf049dfd0c9e0921e488a11005af699143b85996971c3dde91d3e75e6",
+      "calls": 7,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "先加水餃一份",
+        "answer": "了解，您是在詢問，沒有要點這道。紅燒牛肉麵目前可以點。單份基本售價 NT$150。"
+      }
+    },
+    {
+      "scriptId": "C11-F1",
+      "attempt": 103,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-103-C11-F1.jsonl",
+      "artifactSha256": "9d0a7d29033d6b9e28e73d7dd58a82e0042a49b332794ff25399f3dc4f5a0adb",
+      "calls": 10,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "顯示全部菜單",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "C11-A1",
+      "attempt": 106,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-106-C11-A1.jsonl",
+      "artifactSha256": "7c79f9fc6f65ecfd3f8dcb3900fb7b23d8b253bc14cd0c0329da793124c1626e",
+      "calls": 8,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "便當有哪些",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當。"
+      }
+    },
+    {
+      "scriptId": "C11-A2",
+      "attempt": 107,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-107-C11-A2.jsonl",
+      "artifactSha256": "a16fa5eee91130b0d61f06405a9f7ddfe97cfb4ca5eaa7a9e2dc0787268197e5",
+      "calls": 16,
+      "errors": [
+        "Read-only turn changed cart lines",
+        "Reply does not satisfy 80"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃多少錢",
+        "answer": "已選擇水餃，請確認需要的餐點設定。 已設定為 2 份。 已將水餃加入購物車，共 2 份。 請問要內用還是自取？"
+      }
+    },
+    {
+      "scriptId": "C12-F3",
+      "attempt": 110,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-110-C12-F3.jsonl",
+      "artifactSha256": "a93ab027bb6430cc22421e5a41ac5c6e3c307d54014cab1dec8ff92656d88b47",
+      "calls": 15,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "炸排骨便當一份，水餃一份",
+        "answer": "已將炸排骨便當加入購物車，共 1 份。 已將水餃加入購物車，共 1 份。 請問要內用還是自取？"
+      }
+    },
+    {
+      "scriptId": "C12-A2",
+      "attempt": 112,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-112-C12-A2.jsonl",
+      "artifactSha256": "a2af8b9a209b90743586a4ecf0acf791a9d9d9281f3bd8b5d257e7466ef0c47f",
+      "calls": 14,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵一份",
+        "answer": "已將紅燒牛肉麵加入購物車，共 1 份。"
+      }
+    },
+    {
+      "scriptId": "C14-A1",
+      "attempt": 121,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-121-C14-A1.jsonl",
+      "artifactSha256": "77a67f049c3ab778785330c7141c90d55463862280e7a91070b27eaa08040ebd",
+      "calls": 3,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "好",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C14-A2",
+      "attempt": 122,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-122-C14-A2.jsonl",
+      "artifactSha256": "67b2bd46590ed274cf9fe929d2500ef9874d6622033cfa3d9c8c797bd5bd939e",
+      "calls": 6,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "水餃一份",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C15-F1",
+      "attempt": 123,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-123-C15-F1.jsonl",
+      "artifactSha256": "9b6bce71805cddb8d20414458e9c744449ef854c8be0834985732134505cd89f",
+      "calls": 2,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "請幫忙，我還沒說清楚",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C15-A1",
+      "attempt": 126,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-126-C15-A1.jsonl",
+      "artifactSha256": "da0d8bba9dc344d153790fe6b5c5b6abb3f1018678e59ab41de6354b4326ae46",
+      "calls": 11,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"signature-shrimp-roll-bento\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "我明確要水餃一份",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 1 份。"
+      }
+    },
+    {
+      "scriptId": "C16-F2",
+      "attempt": 129,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-129-C16-F2.jsonl",
+      "artifactSha256": "f2a569d013608bbdff3cfde8ce3ef5a85739684e1e0e6aac5cbe79e7ca643721",
+      "calls": 4,
+      "errors": [
+        "Fault injection never reached the declared boundary: read-timeout"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "請顯示全部菜單",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "C16-A1",
+      "attempt": 131,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-131-C16-A1.jsonl",
+      "artifactSha256": "494ce963580a62b2887524d59da3b6a4aa4a9c1feaaca2b00f5802abd76cf0cb",
+      "calls": 1,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "C16-A2",
+      "attempt": 132,
+      "sourceHash": "eb1b59cb1a0cd79143555e1d34ad32e9d2fbe07ec1739cfe01cb09293a44befe",
+      "artifact": "webnavior-112-20261101-132-C16-A2.jsonl",
+      "artifactSha256": "7b36054e0b04472f7d244ee6130800f4cbad5d26a9c2e3d081de0c563e0bbc63",
+      "calls": 6,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "水餃一份",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "D03",
+      "attempt": 134,
+      "sourceHash": "449baa3611464d041ccb4c671392cbc237f5ca3a36154634c45eccff4676f266",
+      "artifact": "webnavior-112-20261101-134-D03.jsonl",
+      "artifactSha256": "0d675dd26391817a7f0ad35aa434be7ad8dc06433f3163b05fed51b6308bc791",
+      "calls": 10,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "我現在說清楚：我要水餃一份。",
+        "answer": "水餃目前可以點。單份基本售價 NT$80。 推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "M01",
+      "attempt": 136,
+      "sourceHash": "449baa3611464d041ccb4c671392cbc237f5ca3a36154634c45eccff4676f266",
+      "artifact": "webnavior-112-20261101-136-M01.jsonl",
+      "artifactSha256": "8b770c092c55140d14798bd984f0dabbbb62614c28b2e770d514a52a513ac523",
+      "calls": 9,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "M10",
+      "attempt": 139,
+      "sourceHash": "449baa3611464d041ccb4c671392cbc237f5ca3a36154634c45eccff4676f266",
+      "artifact": "webnavior-112-20261101-139-M10.jsonl",
+      "artifactSha256": "6ba778bd06107048125c1a53a9da211f232c3b36a42e0d4c6037c1c515b0d47a",
+      "calls": 7,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "D03",
+      "attempt": 144,
+      "sourceHash": "791343d67bb1ba9308ebd25910f5cc5530d52da862dce050df9ca2e9d46dfc7d",
+      "artifact": "webnavior-112-20261101-144-D03.jsonl",
+      "artifactSha256": "d7cc48d3056947d8eccca97908cf43c73ba696b43271703bf1fd17dc9184aeb1",
+      "calls": 9,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "我現在說清楚：我要水餃一份。",
+        "answer": "水餃目前可以點。單份基本售價 NT$80。 推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "M10",
+      "attempt": 146,
+      "sourceHash": "791343d67bb1ba9308ebd25910f5cc5530d52da862dce050df9ca2e9d46dfc7d",
+      "artifact": "webnavior-112-20261101-146-M10.jsonl",
+      "artifactSha256": "84359c6cbe6caa49056cbc9b24dc33573e3783b27c394b99190ea75d280d853c",
+      "calls": 8,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "D03",
+      "attempt": 147,
+      "sourceHash": "d54f30aab51a7d6c32fd11417d896ffefce00b079d322753037696465a317b8a",
+      "artifact": "webnavior-112-20261101-147-D03.jsonl",
+      "artifactSha256": "1ed75d62341de24924125c45a3a0093a1cde7a185cd8f09a8c2a737e5b612842",
+      "calls": 10,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "我現在說清楚：我要水餃一份。",
+        "answer": "水餃目前可以點。單份基本售價 NT$80。 推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "M10",
+      "attempt": 148,
+      "sourceHash": "d54f30aab51a7d6c32fd11417d896ffefce00b079d322753037696465a317b8a",
+      "artifact": "webnavior-112-20261101-148-M10.jsonl",
+      "artifactSha256": "6635baa40a5461bf910844a5a4de2641a93ae291eaf67effd435678b5ee2d376",
+      "calls": 8,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{\"spice\":\"hot\"}},{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{\"spice\":\"mild\"}}], received [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{\"spice\":\"hot\"}}]"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵一份大辣、一份小辣",
+        "answer": "已將紅燒牛肉麵加入購物車，共 1 份。 請問要內用還是自取？"
+      }
+    },
+    {
+      "scriptId": "C06-F3",
+      "attempt": 149,
+      "sourceHash": "d54f30aab51a7d6c32fd11417d896ffefce00b079d322753037696465a317b8a",
+      "artifact": "webnavior-112-20261101-149-C06-F3.jsonl",
+      "artifactSha256": "9016bfb0243d6695275eca199b96225d7478b00b56f5f3364e93f1766b781663",
+      "calls": 9,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "哪些餐點沒有牛肉",
+        "answer": "排除牛肉：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 150,
+      "sourceHash": "d54f30aab51a7d6c32fd11417d896ffefce00b079d322753037696465a317b8a",
+      "artifact": "webnavior-112-20261101-150-C06-A1.jsonl",
+      "artifactSha256": "b011e361d3f78072a032f3b82fa88a012fbafed1328cf8ca7512063333a9e5b5",
+      "calls": 4,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "H06",
+      "attempt": 154,
+      "sourceHash": "9cdd3c6599c9638e95ae6300faad7dad84b7a90e28ef6270c9de43140cf00f3c",
+      "artifact": "webnavior-112-20261101-154-H06.jsonl",
+      "artifactSha256": "b44051b01306d1650bc778b3fb1f2bf2678e4318cb2a0ecf6699c639f0a4a46e",
+      "calls": 10,
+      "errors": [
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "機器請幫忙，我的意思，我還沒講清楚。",
+        "answer": "你想調整價位，還是換餐點種類？"
+      }
+    },
+    {
+      "scriptId": "H08",
+      "attempt": 155,
+      "sourceHash": "9cdd3c6599c9638e95ae6300faad7dad84b7a90e28ef6270c9de43140cf00f3c",
+      "artifact": "webnavior-112-20261101-155-H08.jsonl",
+      "artifactSha256": "3d6e8223c7195a7d005106a3ed2675a36ca5ee3ac0b7daa38f6fff12a202728a",
+      "calls": 9,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "不要動訂單，我只想確認這句話有收到嗎？",
+        "answer": "好的，保留目前訂單，你可以繼續提出需求。"
+      }
+    },
+    {
+      "scriptId": "C06-F1",
+      "attempt": 158,
+      "sourceHash": "5cefe89fa9ed610cf90ad9cc0efc8344534939908e96132bb4dd99929262e8c4",
+      "artifact": "webnavior-112-20261101-158-C06-F1.jsonl",
+      "artifactSha256": "0a54811e6169e2b93f993c1767795da4b7620d1b29bd9304d761c379c7059f45",
+      "calls": 5,
+      "errors": [
+        "Spicy item shown thai-sour-spicy-fish-bento"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "兩百以下不要辣的餐點",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-F2",
+      "attempt": 159,
+      "sourceHash": "5cefe89fa9ed610cf90ad9cc0efc8344534939908e96132bb4dd99929262e8c4",
+      "artifact": "webnavior-112-20261101-159-C06-F2.jsonl",
+      "artifactSha256": "90752c6135fbc046d1de7b960e35fdc349cfb4da481bcff1035334826056573c",
+      "calls": 15,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "水餃和牛肉麵哪個便宜",
+        "answer": "推薦2 項：水餃、紅燒牛肉麵。"
+      }
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 160,
+      "sourceHash": "5cefe89fa9ed610cf90ad9cc0efc8344534939908e96132bb4dd99929262e8c4",
+      "artifact": "webnavior-112-20261101-160-C06-A1.jsonl",
+      "artifactSha256": "855c3c061fe0bbcafb00d4442295dad506c5cf59fdc3a4a2ab20885428cf6cc5",
+      "calls": 4,
+      "errors": [
+        "Host aborted before final assessment; see private artifact"
+      ],
+      "lastTurn": null
+    },
+    {
+      "scriptId": "D09",
+      "attempt": 161,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-161-D09.jsonl",
+      "artifactSha256": "23bd40486788d0088b5e99c865930e4ce21a005aab5c676c7c507b7ba6fb19c3",
+      "calls": 9,
+      "errors": [
+        "Missing customer reply",
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "我想問，那個，我還沒說清楚。",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "H06",
+      "attempt": 162,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-162-H06.jsonl",
+      "artifactSha256": "0d1c2ef03a16c5c52122b0b79ffd7037dedd0119a20974a364e4e8009b2ee6aa",
+      "calls": 9,
+      "errors": [
+        "Missing customer reply",
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "機器請幫忙，我的意思，我還沒講清楚。",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "H07",
+      "attempt": 163,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-163-H07.jsonl",
+      "artifactSha256": "8dc0f0153565c6358999e7766b4b55140bebfaa84000ad9c7ba462f5b04edc65",
+      "calls": 8,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "現在測試語音，這裡有接收到我的話嗎？",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "H08",
+      "attempt": 164,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-164-H08.jsonl",
+      "artifactSha256": "8b88b06fd34cc1df19ff5f7c4aa81135726120ae22cf835c268121969a6d51a6",
+      "calls": 12,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "不要動訂單，我只想確認這句話有收到嗎？",
+        "answer": "好的，請繼續告訴我您的需求。"
+      }
+    },
+    {
+      "scriptId": "M12",
+      "attempt": 165,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-165-M12.jsonl",
+      "artifactSha256": "f5f153eb0b2be100bcd2c08d6fb955544f6a284ec3900109d27f7e5bbf5e7b33",
+      "calls": 10,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "看全部菜單",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "C02-F2",
+      "attempt": 167,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-167-C02-F2.jsonl",
+      "artifactSha256": "a05c482da8df373408b0632afd8118fb0717dd55743628d216a78f1a49d923ec",
+      "calls": 11,
+      "errors": [
+        "Absent query presented unrelated items"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "那有什麼甜點",
+        "answer": "推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 169,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-169-C05-F3.jsonl",
+      "artifactSha256": "2698c17031d925a9b2b666a23734e966cfa6856ca6f993dc128c56b0010ead26",
+      "calls": 16,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "推薦一項：紅燒牛肉麵。"
+      }
+    },
+    {
+      "scriptId": "C05-A1",
+      "attempt": 170,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-170-C05-A1.jsonl",
+      "artifactSha256": "23fe0ff8374786308b26f043bd81a6de40e6b4467bd1d731c56dc58e1d22bd80",
+      "calls": 9,
+      "errors": [
+        "Reply does not satisfy 沒有|找不到|調整|條件"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "其他的",
+        "answer": "請問您想點其他餐點嗎？"
+      }
+    },
+    {
+      "scriptId": "C05-A2",
+      "attempt": 171,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-171-C05-A2.jsonl",
+      "artifactSha256": "1ffbb7a58a716b70ea545d969985430904ca72e6521d176064229a78e95e060e",
+      "calls": 7,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要含牛肉，一百五十元以下的",
+        "answer": "請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。"
+      }
+    },
+    {
+      "scriptId": "C06-F1",
+      "attempt": 172,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-172-C06-F1.jsonl",
+      "artifactSha256": "c2c398d9c45d1de7ab6018babce989aa0227cc7d90e194cee2a7507e3793a9c6",
+      "calls": 5,
+      "errors": [
+        "Spicy item shown thai-sour-spicy-fish-bento"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "兩百以下不要辣的餐點",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-F3",
+      "attempt": 174,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-174-C06-F3.jsonl",
+      "artifactSha256": "9fadc8a90464b51b900af935d368d5e19f07412c3ab7522748d2fee32f04286a",
+      "calls": 9,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "哪些餐點沒有牛肉",
+        "answer": "排除牛肉：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 175,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-175-C06-A1.jsonl",
+      "artifactSha256": "51f9c573d3e5077651536c39ca390afe327de5e5c7841b2e7126c7540b235c19",
+      "calls": 4,
+      "errors": [
+        "tool-rejected"
+      ]
+    },
+    {
+      "scriptId": "C09-A2",
+      "attempt": 176,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-176-C09-A2.jsonl",
+      "artifactSha256": "9d45c4d3f08d1467c17298bd3b83864f524c961f865218342a0e5dafaa09d610",
+      "calls": 19,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "小辣",
+        "answer": "已將紅燒牛肉麵加入購物車，共 2 份。"
+      }
+    },
+    {
+      "scriptId": "C11-F1",
+      "attempt": 177,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-177-C11-F1.jsonl",
+      "artifactSha256": "da6a3156b71d59e9b27f574d5818cd291956eba385e984dfc160b2a4bb0993d6",
+      "calls": 9,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "顯示全部菜單",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "C12-F3",
+      "attempt": 179,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-179-C12-F3.jsonl",
+      "artifactSha256": "8dd23778ff0acc1085955af546a0f11be2cc6f85bb5f84954c5e9ee960647add",
+      "calls": 14,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{}},{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "排骨便當不要了，換牛肉麵一份",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C12-A2",
+      "attempt": 180,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-180-C12-A2.jsonl",
+      "artifactSha256": "7e20f165f772d16c974f8268c3fb6be31a66bd8699449b955c82c62cc3a067f7",
+      "calls": 14,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "牛肉麵換水餃一份",
+        "answer": "水餃目前可以點。單份基本售價 NT$80。 推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "C15-F1",
+      "attempt": 183,
+      "sourceHash": "173f082c6f4f9e8bec89369b4f79c5dc1abd2bcf072e2062b6303cec9dd92652",
+      "artifact": "webnavior-112-20261101-183-C15-F1.jsonl",
+      "artifactSha256": "10b48c4963d6131ea27170e3ab86489308d917dffd342aafbc22b3c36ae586d2",
+      "calls": 2,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "請幫忙，我還沒說清楚",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "M12",
+      "attempt": 191,
+      "sourceHash": "670856767d0f03b3fe388fc6ea8bd60d9ff8f2f2cd7e8999ba694ab14e5f4b4d",
+      "artifact": "webnavior-112-20261101-191-M12.jsonl",
+      "artifactSha256": "b61f00b363ed33ad14f0af3adadbe2cd1d6f7b232228282cbf2131a20003b229",
+      "calls": 10,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "看全部菜單",
+        "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。"
+      }
+    },
+    {
+      "scriptId": "C02-F2",
+      "attempt": 192,
+      "sourceHash": "670856767d0f03b3fe388fc6ea8bd60d9ff8f2f2cd7e8999ba694ab14e5f4b4d",
+      "artifact": "webnavior-112-20261101-192-C02-F2.jsonl",
+      "artifactSha256": "de720975d59375781b0cd2cc3f50ec8d5a8bd057aafc84c86a3e509edc06b516",
+      "calls": 11,
+      "errors": [
+        "Absent query presented unrelated items"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "那有什麼甜點",
+        "answer": "推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 193,
+      "sourceHash": "8b71816478e68413f7457018b2fe9e46736fb2fc037dd68d92b929ca52ba9007",
+      "artifact": "webnavior-112-20261101-193-C05-F3.jsonl",
+      "artifactSha256": "3ce6cb1ec59f5f0f83f74befe4ea5e73fd5a542cfab6dcfa4b07ba81d568905e",
+      "calls": 16,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "推薦一項：紅燒牛肉麵。"
+      }
+    },
+    {
+      "scriptId": "C05-A1",
+      "attempt": 194,
+      "sourceHash": "8b71816478e68413f7457018b2fe9e46736fb2fc037dd68d92b929ca52ba9007",
+      "artifact": "webnavior-112-20261101-194-C05-A1.jsonl",
+      "artifactSha256": "762ef1cd51fe1bfd72be193da26ff9408408cfa63acc1e94a836277acbb343b2",
+      "calls": 9,
+      "errors": [
+        "Missing customer reply",
+        "Reply does not satisfy 沒有|找不到|調整|條件"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "其他的",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C05-A2",
+      "attempt": 195,
+      "sourceHash": "8b71816478e68413f7457018b2fe9e46736fb2fc037dd68d92b929ca52ba9007",
+      "artifact": "webnavior-112-20261101-195-C05-A2.jsonl",
+      "artifactSha256": "20578487bea94be82efe324d2246aa757f770ae717391afe411c6fa9a08050a6",
+      "calls": 7,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要含牛肉，一百五十元以下的",
+        "answer": "請指定單份餐點的價格上限或範圍，例如「100 元以下」。整筆預算、左右或更便宜的需求，目前需要先確認單份價格條件。"
+      }
+    },
+    {
+      "scriptId": "C06-F1",
+      "attempt": 196,
+      "sourceHash": "8b71816478e68413f7457018b2fe9e46736fb2fc037dd68d92b929ca52ba9007",
+      "artifact": "webnavior-112-20261101-196-C06-F1.jsonl",
+      "artifactSha256": "7ce9498bdd9c5fc6e33651b3e89c2076389c1eab00f5ce348e18c8fccb8cb4c3",
+      "calls": 5,
+      "errors": [
+        "Spicy item shown thai-sour-spicy-fish-bento"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "兩百以下不要辣的餐點",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-F3",
+      "attempt": 197,
+      "sourceHash": "85d96f63f90a32861bdeba379019c428dcb2535d571022b788a6610cbff2127f",
+      "artifact": "webnavior-112-20261101-197-C06-F3.jsonl",
+      "artifactSha256": "2b3d9e3948e9d07fb0b6dd85c2689cfc7db66cbab8ecd480d9d873d8e96dfde5",
+      "calls": 9,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "哪些餐點沒有牛肉",
+        "answer": "排除牛肉：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 198,
+      "sourceHash": "85d96f63f90a32861bdeba379019c428dcb2535d571022b788a6610cbff2127f",
+      "artifact": "webnavior-112-20261101-198-C06-A1.jsonl",
+      "artifactSha256": "4fbb9224669ea6bd410f3b3881eacb07d7d30ab13f38d57ae273e1ce020a66f0",
+      "calls": 4,
+      "errors": [
+        "tool-rejected"
+      ]
+    },
+    {
+      "scriptId": "C09-A2",
+      "attempt": 199,
+      "sourceHash": "85d96f63f90a32861bdeba379019c428dcb2535d571022b788a6610cbff2127f",
+      "artifact": "webnavior-112-20261101-199-C09-A2.jsonl",
+      "artifactSha256": "56042cf9163d21b77d98dae85a7de01d0b8a7a1cfd97f0a497ad860e981591c7",
+      "calls": 20,
+      "errors": [
+        "tool-limit"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "小辣",
+        "answer": "已將紅燒牛肉麵加入購物車，共 2 份。"
+      }
+    },
+    {
+      "scriptId": "C12-F3",
+      "attempt": 201,
+      "sourceHash": "85d96f63f90a32861bdeba379019c428dcb2535d571022b788a6610cbff2127f",
+      "artifact": "webnavior-112-20261101-201-C12-F3.jsonl",
+      "artifactSha256": "96142feaea150d2fc339a68075eb110e482cb326ef15a84cf0447a656afcef48",
+      "calls": 12,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"beef-noodle-soup\",\"quantity\":1,\"options\":{}},{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "排骨便當不要了，換牛肉麵一份",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C12-A2",
+      "attempt": 202,
+      "sourceHash": "85d96f63f90a32861bdeba379019c428dcb2535d571022b788a6610cbff2127f",
+      "artifact": "webnavior-112-20261101-202-C12-A2.jsonl",
+      "artifactSha256": "b2dadf38303517d33e31c9d73da01ad9613dbcef133989fc8d8bc192a714b9d6",
+      "calls": 15,
+      "errors": [
+        "tool-limit"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵一份",
+        "answer": "已將紅燒牛肉麵加入購物車，共 1 份。"
+      }
+    },
+    {
+      "scriptId": "C15-F1",
+      "attempt": 203,
+      "sourceHash": "85d96f63f90a32861bdeba379019c428dcb2535d571022b788a6610cbff2127f",
+      "artifact": "webnavior-112-20261101-203-C15-F1.jsonl",
+      "artifactSha256": "9be0715c3bf926c7f6341b53cdd9cc6060834fe10274cb82c832f73bdbd7cb53",
+      "calls": 2,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "請幫忙，我還沒說清楚",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "M12",
+      "attempt": 204,
+      "sourceHash": "1f3c603b8ece8d577f480dea1a1d9a4005e4947cbe2d6e032ee64ccebf514700",
+      "artifact": "webnavior-112-20261101-204-M12.jsonl",
+      "artifactSha256": "65cd99771735ece7cd374ac2f2f095cb1fb3da9183f2495a366150e125f213de",
+      "calls": 11,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"spicy-chicken-bento\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "第二項一份",
+        "answer": "已選擇椒麻雞便當，請確認需要的餐點設定。"
+      }
+    },
+    {
+      "scriptId": "C05-A2",
+      "attempt": 205,
+      "sourceHash": "1f3c603b8ece8d577f480dea1a1d9a4005e4947cbe2d6e032ee64ccebf514700",
+      "artifact": "webnavior-112-20261101-205-C05-A2.jsonl",
+      "artifactSha256": "c3f37ba2489609dd6e0d68d5e715b0b12ace40505db455256dcb8076d4b3b8a9",
+      "calls": 9,
+      "errors": [
+        "continue cannot change query conditions."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要含牛肉，一百五十元以下的",
+        "answer": "排除牛肉：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-F3",
+      "attempt": 206,
+      "sourceHash": "1f3c603b8ece8d577f480dea1a1d9a4005e4947cbe2d6e032ee64ccebf514700",
+      "artifact": "webnavior-112-20261101-206-C06-F3.jsonl",
+      "artifactSha256": "1ae2b8b4068d0c677f273da317fadd4bf7dd99e7bab510afb76556ef6385e052",
+      "calls": 9,
+      "errors": [
+        "continue cannot change query conditions."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "哪些餐點沒有牛肉",
+        "answer": "排除牛肉：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C09-A2",
+      "attempt": 207,
+      "sourceHash": "1f3c603b8ece8d577f480dea1a1d9a4005e4947cbe2d6e032ee64ccebf514700",
+      "artifact": "webnavior-112-20261101-207-C09-A2.jsonl",
+      "artifactSha256": "f190dadb3987c5f0a4e807c5139b2848543752ed16133c6503721a950c14eedf",
+      "calls": 19,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"beef-noodle-soup\",\"quantity\":2,\"options\":{\"spice\":\"mild\"}}]"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "先不要牛肉麵，改水餃一份",
+        "answer": "水餃目前可以點。單份基本售價 NT$80。"
+      }
+    },
+    {
+      "scriptId": "C12-A2",
+      "attempt": 208,
+      "sourceHash": "1f3c603b8ece8d577f480dea1a1d9a4005e4947cbe2d6e032ee64ccebf514700",
+      "artifact": "webnavior-112-20261101-208-C12-A2.jsonl",
+      "artifactSha256": "71c2ec6ecbc33c3915eda4bd7e73e60b3ac18e82e6564249ce0a56d39b13d513",
+      "calls": 15,
+      "errors": [
+        "tool-limit"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵一份",
+        "answer": "已將紅燒牛肉麵加入購物車，共 1 份。"
+      }
+    },
+    {
+      "scriptId": "C15-F1",
+      "attempt": 209,
+      "sourceHash": "1f3c603b8ece8d577f480dea1a1d9a4005e4947cbe2d6e032ee64ccebf514700",
+      "artifact": "webnavior-112-20261101-209-C15-F1.jsonl",
+      "artifactSha256": "454f8b07ed917230239d678f8ebe04bcecd9143e863e0971a46129ae06c7e5a7",
+      "calls": 2,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "請幫忙，我還沒說清楚",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "M12",
+      "attempt": 210,
+      "sourceHash": "9b4105465ee0a3254610e9c6c64dc01f508fb2b99aa3c21ba4b2943a37cc8e3c",
+      "artifact": "webnavior-112-20261101-210-M12.jsonl",
+      "artifactSha256": "cff29eb03cf01c287464b88a7759057d23e2e2c46b11da2cc19f28ddc19929fc",
+      "calls": 11,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"spicy-chicken-bento\",\"quantity\":1,\"options\":{}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "第二項一份",
+        "answer": "已選擇椒麻雞便當，請確認需要的餐點設定。"
+      }
+    },
+    {
+      "scriptId": "C02-F2",
+      "attempt": 211,
+      "sourceHash": "9b4105465ee0a3254610e9c6c64dc01f508fb2b99aa3c21ba4b2943a37cc8e3c",
+      "artifact": "webnavior-112-20261101-211-C02-F2.jsonl",
+      "artifactSha256": "acf7d12197320e2a381dac0103df59969550194fa1bdd8f6d1b8d26f46607d22",
+      "calls": 11,
+      "errors": [
+        "Absent query presented unrelated items"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "那有什麼甜點",
+        "answer": "推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 212,
+      "sourceHash": "9b4105465ee0a3254610e9c6c64dc01f508fb2b99aa3c21ba4b2943a37cc8e3c",
+      "artifact": "webnavior-112-20261101-212-C05-F3.jsonl",
+      "artifactSha256": "7c39e8b81957b4ac68545c3910e65616d82f22d6273556c1f34df3cb79b10564",
+      "calls": 16,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "推薦一項：紅燒牛肉麵。"
+      }
+    },
+    {
+      "scriptId": "C06-F1",
+      "attempt": 215,
+      "sourceHash": "9b4105465ee0a3254610e9c6c64dc01f508fb2b99aa3c21ba4b2943a37cc8e3c",
+      "artifact": "webnavior-112-20261101-215-C06-F1.jsonl",
+      "artifactSha256": "1088bc144c61af4137f05e7a4f08b0a19e27a077c59fb8de525d5c51b250c546",
+      "calls": 6,
+      "errors": [
+        "Spicy item shown thai-sour-spicy-fish-bento"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "兩百以下不要辣的餐點",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 217,
+      "sourceHash": "9b4105465ee0a3254610e9c6c64dc01f508fb2b99aa3c21ba4b2943a37cc8e3c",
+      "artifact": "webnavior-112-20261101-217-C06-A1.jsonl",
+      "artifactSha256": "1f5e08dfd2b23120172cb26c3a46de92269ad0500a6d421ad50ceeb7987156cd",
+      "calls": 4,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "那我先問店員",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C15-F1",
+      "attempt": 221,
+      "sourceHash": "4fceb9904ba56327e221fd94a6424d980759c5277873f9f7bdcd32c5e84cbf54",
+      "artifact": "webnavior-112-20261101-221-C15-F1.jsonl",
+      "artifactSha256": "b71c213de651fef4db0a81454553bddefb7d3b0a869fff31b7b2e42c9056599a",
+      "calls": 6,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "飯",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C02-F2",
+      "attempt": 223,
+      "sourceHash": "5b97a00418b5c94f99b46bbae46fca531d5484555f9b90e7e015d04d1abc34da",
+      "artifact": "webnavior-112-20261101-223-C02-F2.jsonl",
+      "artifactSha256": "f1c11bc3f62cca6696d737fefea143430f8f47f1454397d8d0369509e6f0a0d2",
+      "calls": 11,
+      "errors": [
+        "Absent query presented unrelated items"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "那有什麼甜點",
+        "answer": "推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 224,
+      "sourceHash": "5b97a00418b5c94f99b46bbae46fca531d5484555f9b90e7e015d04d1abc34da",
+      "artifact": "webnavior-112-20261101-224-C05-F3.jsonl",
+      "artifactSha256": "d29e9dcfec57584f6a749d8a2a0a3e6d266d228d72d7954ad3361853ee6ff700",
+      "calls": 16,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "推薦一項：紅燒牛肉麵。"
+      }
+    },
+    {
+      "scriptId": "C06-A1",
+      "attempt": 226,
+      "sourceHash": "5b97a00418b5c94f99b46bbae46fca531d5484555f9b90e7e015d04d1abc34da",
+      "artifact": "webnavior-112-20261101-226-C06-A1.jsonl",
+      "artifactSha256": "003e48873a77555adcc3440059d48f2984df403057f63e661fc60b0aaea653c6",
+      "calls": 6,
+      "errors": [
+        "STALE_PLAN: the question is no longer current."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "保證完全不含花生的餐點有哪些",
+        "answer": "目前菜單未提供可確認的過敏／交叉污染安全保證（成分表不提供保證）。請先詢問店員確認；您還想了解什麼？"
+      }
+    },
+    {
+      "scriptId": "C02-F2",
+      "attempt": 228,
+      "sourceHash": "ead3ff2d0322d8b26ac0a09abafac5328095fece8e08d5ff0cc20b0c64be0e49",
+      "artifact": "webnavior-112-20261101-228-C02-F2.jsonl",
+      "artifactSha256": "e7a69a0dec592682123467214daa220769d49d4c6597f1d65a67e000b6391997",
+      "calls": 12,
+      "errors": [
+        "Absent query presented unrelated items"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "那有什麼甜點",
+        "answer": "推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "D04",
+      "attempt": 235,
+      "sourceHash": "663ab12e3f13d4effeafe302d2c0089872146d909c8f6a1d2fe987978a0a65b4",
+      "artifact": "webnavior-112-20261101-235-D04.jsonl",
+      "artifactSha256": "549c125d468e660e7af5efbb76d9749cdf762af9ae65b42a43c654c86b95324d",
+      "calls": 3,
+      "errors": [
+        "Missing customer reply",
+        "Reply does not satisfy 請|什麼|哪|說明|清楚"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "幫我那個，那個，先不要變更。",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "D08",
+      "attempt": 238,
+      "sourceHash": "663ab12e3f13d4effeafe302d2c0089872146d909c8f6a1d2fe987978a0a65b4",
+      "artifact": "webnavior-112-20261101-238-D08.jsonl",
+      "artifactSha256": "d238da99b80d0890b4b6bf179befad5f668e9f4b9c42008b80003ba9bfd147d8",
+      "calls": 8,
+      "errors": [
+        "Background/idle turn produced a customer reply"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "謝謝，我先看看。",
+        "answer": "好的，請繼續告訴我您的需求。"
+      }
+    },
+    {
+      "scriptId": "M02",
+      "attempt": 251,
+      "sourceHash": "663ab12e3f13d4effeafe302d2c0089872146d909c8f6a1d2fe987978a0a65b4",
+      "artifact": "webnavior-112-20261101-251-M02.jsonl",
+      "artifactSha256": "d7b9658b936d75cb4e4ac0efb648f750b71fce4219583771c10ede0b253cd411",
+      "calls": 11,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "我要一份便當",
+        "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。"
+      }
+    },
+    {
+      "scriptId": "M10",
+      "attempt": 259,
+      "sourceHash": "663ab12e3f13d4effeafe302d2c0089872146d909c8f6a1d2fe987978a0a65b4",
+      "artifact": "webnavior-112-20261101-259-M10.jsonl",
+      "artifactSha256": "552ceade690d88886e83f339aae48d03613a6d1b4f95f55f52e3b7edf39dcfec",
+      "calls": 7,
+      "errors": [
+        "The proposed meal does not satisfy the current verified request conditions."
+      ]
+    },
+    {
+      "scriptId": "M12",
+      "attempt": 261,
+      "sourceHash": "455a03760ee41b61a1cf4b47851fbf8d3443a913cee52fef93fcd49fbef18211",
+      "artifact": "webnavior-112-20261101-261-M12.jsonl",
+      "artifactSha256": "fb32e4e4e3857898fc85efffd688b0777fbbe64a5228eee36167dd9e7f965f58",
+      "calls": 20,
+      "errors": [
+        "Read-only turn changed fulfillment"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "核對訂單",
+        "answer": "已設為內用。 要進入結帳流程嗎？"
+      }
+    },
+    {
+      "scriptId": "C02-A2",
+      "attempt": 271,
+      "sourceHash": "455a03760ee41b61a1cf4b47851fbf8d3443a913cee52fef93fcd49fbef18211",
+      "artifact": "webnavior-112-20261101-271-C02-A2.jsonl",
+      "artifactSha256": "b81a20314948316e5f7d391d3b6b7e2f517916d4d3ff6d247823e04f12190bc0",
+      "calls": 5,
+      "errors": [
+        "tool-rejected"
+      ]
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 284,
+      "sourceHash": "a75d98b33ce80e9f1e0b16322657dd5ec8178de1e162bd6f38549bb0ab60cff6",
+      "artifact": "webnavior-112-20261101-284-C05-F3.jsonl",
+      "artifactSha256": "e36122e9551dcbbcd9edcf085233fe14f7d3f0e9ece03b3e98e63cd04cea22cb",
+      "calls": 17,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C07-F1",
+      "attempt": 292,
+      "sourceHash": "a75d98b33ce80e9f1e0b16322657dd5ec8178de1e162bd6f38549bb0ab60cff6",
+      "artifact": "webnavior-112-20261101-292-C07-F1.jsonl",
+      "artifactSha256": "3fbd63ba9d1fdba9436864b0f05cbac1f9cbcaff3ab231642626030053ea149d",
+      "calls": 14,
+      "errors": [
+        "Full catalog was not presented"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "先只看菜單",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C07-A1",
+      "attempt": 295,
+      "sourceHash": "c4a479708c0b135bc24544cd5d4d58b6d0bb9cf6f5a46f76fc3c3e92235969b0",
+      "artifact": "webnavior-112-20261101-295-C07-A1.jsonl",
+      "artifactSha256": "6ee6ff5b8e6987a54ab1adb33bc2da50603e43d086bec9bbb41039ea07ad7a6d",
+      "calls": 11,
+      "errors": [
+        "The Agent WebMCP operation is blocked: INVALID_PHASE."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵或水餃哪個好，先別點",
+        "answer": "紅燒牛肉麵目前可以點。單份基本售價 NT$150。 水餃目前可以點。單份基本售價 NT$80。 我推薦：紅燒牛肉麵、水餃。 單份基本售價：紅燒牛肉麵 NT$150、水餃 NT$80。"
+      }
+    },
+    {
+      "scriptId": "C09-F3",
+      "attempt": 304,
+      "sourceHash": "3cf9a336993f8992e3b4137925e9379f711c2621ef092075f743c9dbf69096c1",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-304-C09-F3.jsonl",
+      "artifactSha256": "0f56ff8d6065748c3c43dce0722e2ec756fc0bb3247834f97a19b3ad849fa843",
+      "calls": 18,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":2,\"options\":{\"sauce\":\"sesame\"}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "芝麻醬",
+        "answer": "你想調整價位，還是換餐點種類？"
+      }
+    },
+    {
+      "scriptId": "C12-F3",
+      "attempt": 319,
+      "sourceHash": "bbbec9a976bd00b132489264ac633efaaa4cc061aeb8fd361df47b3ac18f41a0",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-319-C12-F3.jsonl",
+      "artifactSha256": "8b2665e892ff30f2235ee750dd0f7b14ebbe59f25aa2bbbf5d6a452558539415",
+      "calls": 9,
+      "errors": [
+        "tool-limit"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "炸排骨便當一份，水餃一份"
+      }
+    },
+    {
+      "scriptId": "D08",
+      "attempt": 343,
+      "sourceHash": "a0c274833d438f9c6a6929d1f324a91cf4feaa7752293dee3dd0246bf6cd2af8",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-343-D08.jsonl",
+      "artifactSha256": "59d2a74d1ad652756e8619d3bb7fd1c242e0729ecf53ec863064ee1c0584fe92",
+      "calls": 8,
+      "errors": [
+        "Background/idle turn produced a customer reply"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "謝謝，我先看看。",
+        "answer": "好的，請繼續告訴我您的需求。"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 348,
+      "sourceHash": "a0c274833d438f9c6a6929d1f324a91cf4feaa7752293dee3dd0246bf6cd2af8",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-348-C05-F3.jsonl",
+      "artifactSha256": "fb252482a108b91af1ccc162fc29292d72202fda7fd7b0f693a9ebcf840986d8",
+      "calls": 17,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C07-A1",
+      "attempt": 350,
+      "sourceHash": "a0c274833d438f9c6a6929d1f324a91cf4feaa7752293dee3dd0246bf6cd2af8",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-350-C07-A1.jsonl",
+      "artifactSha256": "6027f81eab0d02ae0e29d3616fa28dd6a058b8bf13bf5cf5610c56ca51b01921",
+      "calls": 10,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "好",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C09-F3",
+      "attempt": 351,
+      "sourceHash": "a0c274833d438f9c6a6929d1f324a91cf4feaa7752293dee3dd0246bf6cd2af8",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-351-C09-F3.jsonl",
+      "artifactSha256": "90bd33453a566c9e77ce165fbdba60c322e317a3e6cda6dcc4babdc33db2da6f",
+      "calls": 19,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "芝麻醬"
+      }
+    },
+    {
+      "scriptId": "C12-F3",
+      "attempt": 352,
+      "sourceHash": "a0c274833d438f9c6a6929d1f324a91cf4feaa7752293dee3dd0246bf6cd2af8",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-352-C12-F3.jsonl",
+      "artifactSha256": "96c2e28eef526b7feda71725d641e986dea8fc1a9de5dec3c619040ce525d09e",
+      "calls": 9,
+      "errors": [
+        "tool-limit"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "炸排骨便當一份，水餃一份"
+      }
+    },
+    {
+      "scriptId": "C05-F3",
+      "attempt": 354,
+      "sourceHash": "a7115163f045c7a070e2b6a4c1b9e34913ff13a91d14ef7135afe288ff2653c3",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-354-C05-F3.jsonl",
+      "artifactSha256": "3f83102bf780f96bb0df980f66590729044bc43c82eae08d8ba974618919de81",
+      "calls": 17,
+      "errors": [
+        "Repeated alternative beef-noodle-soup"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "其他麵食呢",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C09-F3",
+      "attempt": 356,
+      "sourceHash": "a7115163f045c7a070e2b6a4c1b9e34913ff13a91d14ef7135afe288ff2653c3",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-356-C09-F3.jsonl",
+      "artifactSha256": "57f14c5cee8c7d64658f729e342742e610209145e9105768d3aad2a916cdafc2",
+      "calls": 20,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":2,\"options\":{\"sauce\":\"sesame\"}}], received []"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "芝麻醬",
+        "answer": "推薦一項：水餃。"
+      }
+    },
+    {
+      "scriptId": "C09-F3",
+      "attempt": 359,
+      "sourceHash": "b3911ba568358e99c5496aaf3d8fcadd6d49b0549c992f6df050b07ac714f1c5",
+      "implementationHash": null,
+      "acceptancePhase": null,
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-359-C09-F3.jsonl",
+      "artifactSha256": "aefcc4fc5eb318d7e2074fc86f746d4be4b0213e3761d755f61c909c9b5a7341",
+      "calls": 12,
+      "errors": [
+        "Reply does not satisfy 80"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃一份多少錢",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "D09",
+      "attempt": 368,
+      "sourceHash": "99efdc0ffe6a0d89af0595d7b52f9758fd8d673cec0b8b87a13b931207349b70",
+      "implementationHash": "ece9337e26daabf53b81b4834447d4f9b280ce4e6c1d99c3bea632d254b2723d",
+      "acceptancePhase": "uniform-full",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-368-D09.jsonl",
+      "artifactSha256": "9821cab7ccaaf2ff46b153cecaa05cb7ae9b0d3a7650ccdecef80694c8138087",
+      "calls": 11,
+      "errors": [
+        "Reply does not satisfy LINE Pay|街口"
+      ],
+      "lastTurn": {
+        "turn": 4,
+        "text": "我現在要問付款方式。",
+        "answer": "請再說明您想詢問或調整什麼，我會接著協助您。"
+      }
+    },
+    {
+      "scriptId": "C12-F3",
+      "attempt": 376,
+      "sourceHash": "23c51342acd5ab6caa0bbbfeb4f9884048195df5f11c81ab9c15b363c23bd4af",
+      "implementationHash": null,
+      "acceptancePhase": "exploratory",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-376-C12-F3.jsonl",
+      "artifactSha256": "ead02a02b4f05ccae602e989621a37c1fa09233e3c1a38ca6c794c93cb24655f",
+      "calls": 16,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "排骨便當不要了，換牛肉麵一份"
+      }
+    },
+    {
+      "scriptId": "C14-F2",
+      "attempt": 377,
+      "sourceHash": "23c51342acd5ab6caa0bbbfeb4f9884048195df5f11c81ab9c15b363c23bd4af",
+      "implementationHash": null,
+      "acceptancePhase": "exploratory",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-377-C14-F2.jsonl",
+      "artifactSha256": "d07b6a1fbcca38d455e5246a10ae03b796678251e394a5abed3b9f66d4047f13",
+      "calls": 16,
+      "errors": [
+        "Expected fulfillment dine-in"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "更正，我要內用",
+        "answer": "已進入結帳，請選擇發票方式。"
+      }
+    },
+    {
+      "scriptId": "C14-F3",
+      "attempt": 381,
+      "sourceHash": "56861bcd66ee7dbb469c4b229b5853039a8b1fada5a2f22d0c3ddce265edcd68",
+      "implementationHash": null,
+      "acceptancePhase": "exploratory",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-381-C14-F3.jsonl",
+      "artifactSha256": "39ced5424d0f4b90c41b944741a4a4567dd76eb133d2f1e1e7f3ce9d7df3475a",
+      "calls": 16,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "先不要結帳",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "H08",
+      "attempt": 385,
+      "sourceHash": "7cc418b956e6609a710b2d215087302db5ce33b5abbb9d8172ff6e1ea013e9a8",
+      "implementationHash": null,
+      "acceptancePhase": "exploratory",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-385-H08.jsonl",
+      "artifactSha256": "fc9925ddcce2da681836676d8dc3e4b3c123b5c427b0b626121c2b886060fb81",
+      "calls": 9,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "不要動訂單，我只想確認這句話有收到嗎？",
+        "answer": "好的，保留目前訂單，你可以繼續提出需求。"
+      }
+    },
+    {
+      "scriptId": "D03",
+      "attempt": 400,
+      "sourceHash": "5f5f6f3c15503b28b71456b74b205e25b3ceaed5e18cf629c223a61debb56e0e",
+      "implementationHash": "d1b691fa3d35a9ea39acb8edaba4c28b89592146fe656ef8553363eeae0a41f8",
+      "acceptancePhase": "uniform-full-v3",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-400-D03.jsonl",
+      "artifactSha256": "f4bcb7b9360ad555e4b74e4cda31617d1a8c57c8a3c7434be97ad5ec6d4fe263",
+      "calls": 6,
+      "errors": [
+        "STALE_PLAN: the question is no longer current.",
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "我現在說清楚：我要水餃一份。"
+      }
+    },
+    {
+      "scriptId": "C09-A1",
+      "attempt": 477,
+      "sourceHash": "57523d0126f02e6db8c793be5239178eac47441cd767acc1371e0571bd39cf95",
+      "implementationHash": "8af9b4225a68a263d40b33a84417668a0c192b5093196484d7452f192b179caf",
+      "acceptancePhase": "uniform-full-v4",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-477-C09-A1.jsonl",
+      "artifactSha256": "10db6eb7a9a37e635956062ef8fb2ee62e8d8fcb0ff0c42ada330175492d67c7",
+      "calls": 12,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "先等一下",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "H08",
+      "attempt": 483,
+      "sourceHash": "ab602ac559ba45cacdc29e014ae4644a790340d68b47d007d8ac0e2bc362482f",
+      "implementationHash": null,
+      "acceptancePhase": "service-reply-repair",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-483-H08.jsonl",
+      "artifactSha256": "7a9065a75d40ed17dbe9fa286db381f0566a0c9b095135526562aea50f27453e",
+      "calls": 12,
+      "errors": [
+        "Reply does not satisfy 收到|聽|接收"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "不要動訂單，我只想確認這句話有收到嗎？",
+        "answer": "好的，請繼續告訴我您的需求。"
+      }
+    },
+    {
+      "scriptId": "C07-A2",
+      "attempt": 552,
+      "sourceHash": "b6e9d697d738e476c60b9930c7e5127c25257f2d3aa5e6d7e181452a1bf1be3b",
+      "implementationHash": "0cedf352bb9fe2ffacb3afec42c782651dfa0e1f219749289b610933fa62bd3b",
+      "acceptancePhase": "uniform-full-v5",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-552-C07-A2.jsonl",
+      "artifactSha256": "e628c5fc654682b3603e83ef36d0973860f9d32ea1e6b2f68b47c845a2e9b4d4",
+      "calls": 17,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "好",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C02-A2",
+      "attempt": 613,
+      "sourceHash": "ee17fda67ad54961a510ad52fa8603ec52834729ae81bd6f5f22531929cea380",
+      "implementationHash": "b1b59e46b932d683bce6d311a02793f3867ec7330965bd2e9a0828551673b34e",
+      "acceptancePhase": "uniform-full-v7",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-613-C02-A2.jsonl",
+      "artifactSha256": "6c07bb1707f38348e69bfb02884e65b27ff309144fbc847720904dd039fb326d",
+      "calls": 6,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "我要排骨飯一份"
+      }
+    },
+    {
+      "scriptId": "C10-A2",
+      "attempt": 697,
+      "sourceHash": "1f54ee2779b3e2f0fdb874ce357a98fa34ac4a95e559d27aa66ecb53a761961b",
+      "implementationHash": "8db1b1e510ad37c5fa7043205abdb1d5e5976aed489d18ea2a6d7144ee16f8c8",
+      "acceptancePhase": "uniform-full-v8",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-697-C10-A2.jsonl",
+      "artifactSha256": "3183c086daeb78f9b34a6c19448fb0e00199b6ef7f1bf0b07d35ace40649a142",
+      "calls": 9,
+      "errors": [
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "水餃一份，牛肉麵兩份"
+      }
+    },
+    {
+      "scriptId": "C11-A2",
+      "attempt": 706,
+      "sourceHash": "64e71ff51c9dc6f362cb7b86b8f8f7b41231b976c7297923fa122d385fdbc2b6",
+      "implementationHash": null,
+      "acceptancePhase": "late-matrix-preflight",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-706-C11-A2.jsonl",
+      "artifactSha256": "2fd24375f6efaea6461da48e72f7e5d21a07d0339dcc64597d1658809b49b411",
+      "calls": 20,
+      "errors": [
+        "Missing customer reply"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "先不要加任何餐",
+        "answer": ""
+      }
+    },
+    {
+      "scriptId": "C11-A2",
+      "attempt": 707,
+      "sourceHash": "7b2fb953d00c1fe1e15710727ff693dc6995a195fd3c140729b59094de3b8f2c",
+      "implementationHash": null,
+      "acceptancePhase": "keep-order-repair",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-707-C11-A2.jsonl",
+      "artifactSha256": "75941f6ea7be4cff8b933f0c17720d4726428b186ba7f63a0b92156084ccb773",
+      "calls": 9,
+      "errors": [
+        "The Agent WebMCP operation is blocked: TARGET_MISSING.",
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "那個兩份"
+      }
+    },
+    {
+      "scriptId": "C11-A2",
+      "attempt": 708,
+      "sourceHash": "6518befa5b110f56eedb384bca23784ef772032f7a30467990c7425e755064d4",
+      "implementationHash": null,
+      "acceptancePhase": "unbound-reference-repair",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-708-C11-A2.jsonl",
+      "artifactSha256": "3bba0067ff0db2ea382891af2364ef0895313c1b38a420a27f424d6f390a0af1",
+      "calls": 9,
+      "errors": [
+        "Reply does not satisfy 80"
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "水餃多少錢",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      }
+    },
+    {
+      "scriptId": "C13-A2",
+      "attempt": 723,
+      "sourceHash": "203cffcfacff458899b63090519547669129b3affe00b5374a9a92adba7752c7",
+      "implementationHash": null,
+      "acceptancePhase": "late-matrix-preflight-v2",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-723-C13-A2.jsonl",
+      "artifactSha256": "f9349755cb3676defbce40e3bd229233ac43f183ee9157bc433f04034fbcc9c7",
+      "calls": 18,
+      "errors": [
+        "Payment is outside checkout-entry probe.",
+        "tool-rejected"
+      ],
+      "lastTurn": {
+        "turn": 3,
+        "text": "不要牛肉麵，先這樣"
+      }
+    },
+    {
+      "scriptId": "M01",
+      "attempt": 762,
+      "sourceHash": "7b290d0b7cd61bc324be55b43118c1328cbce4d60b5f282f3eece7437100cb0b",
+      "implementationHash": "d41e87f657b15785be6528e1589829f5e4d6e92ccc33e14f4cdb2e7611e7eb64",
+      "acceptancePhase": "uniform-full-v9",
+      "diagnosticOnly": false,
+      "artifact": "webnavior-112-20261101-762-M01.jsonl",
+      "artifactSha256": "d891b22f5f1c528ca74afeff120100c4dbe5c2c564a63b8589d518fa999ca337",
+      "calls": 11,
+      "errors": [
+        "tool-limit"
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "牛肉麵跟水餃各一份"
+      }
+    },
+    {
+      "batch": "checkout-navigation-20261102",
+      "scriptId": "N01-M-F1",
+      "attempt": 1,
+      "sourceHash": "149bee93ff314f4185d9efe02717545f3ce4d8863f87da622258fea5c16489e4",
+      "artifact": "webnavior-order-navigation-20261102-001-N01-M-F1.jsonl",
+      "artifactSha256": "87b918ba07a24f2fb0df6a9f5205fbdc0d827abd92e2eeb0674a58657bd4b3d4",
+      "calls": 3,
+      "errors": [
+        "Host continued after asking operation confirmation; later unoffered tool proposal rejected the turn."
+      ],
+      "diagnosis": [
+        "Host continued after asking operation confirmation; later unoffered tool proposal rejected the turn."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "我要自取",
+        "answer": "No presented reply; turn rejected after continuing past its new confirmation."
+      },
+      "fixedByAcceptedRuns": [
+        21
+      ]
+    },
+    {
+      "batch": "checkout-navigation-20261102",
+      "scriptId": "N01-J-A1",
+      "attempt": 14,
+      "sourceHash": "aca2c776a7fde7712a01d343b2192855e893748aa24d1723f947f9e9b3d8c73c",
+      "artifact": "webnavior-order-navigation-20261102-014-N01-J-A1.jsonl",
+      "artifactSha256": "62aa7eac2c8fa6c99e27fa47e90e4bb37fc3e3846944dca90bff30f7fe6948c4",
+      "calls": 14,
+      "errors": [
+        "Expected phase checkout_invoice, received pending_confirmation"
+      ],
+      "diagnosis": [
+        "After cancelling mode change, reaffirming dine-in incorrectly offered a second change confirmation."
+      ],
+      "lastTurn": {
+        "turn": 2,
+        "text": "取消，還是內用",
+        "answer": "已取消剛才的確認，結帳進度保留；繼續操作前請重新確認。 需要先返回訂單才能改為內用，要返回並更改嗎？請回答確認或取消。"
+      },
+      "fixedByAcceptedRuns": [
+        31
+      ]
+    },
+    {
+      "batch": "checkout-navigation-20261102",
+      "scriptId": "N01-J-R1",
+      "attempt": 16,
+      "sourceHash": "aca2c776a7fde7712a01d343b2192855e893748aa24d1723f947f9e9b3d8c73c",
+      "artifact": "webnavior-order-navigation-20261102-016-N01-J-R1.jsonl",
+      "artifactSha256": "79b96ad6b4b9eac2add4bd95e2b85d63880deefebdf41c6ee8c60fb89e7c8997",
+      "calls": 8,
+      "errors": [
+        "Expected screen cart_review, received checkout",
+        "Expected phase ordering, received checkout_invoice"
+      ],
+      "diagnosis": [
+        "Return-to-order was classified as an information read; cart_get preserved invoice screen."
+      ],
+      "lastTurn": {
+        "turn": 1,
+        "text": "回到訂單頁面",
+        "answer": "目前訂單：水餃 1 份。合計 NT$80。"
+      },
+      "fixedByAcceptedRuns": [
+        33
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 1,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "4977005c088a04a6727d9dc897fd151b451dd066b96887e52ee4b9b8aff82038",
+      "artifact": "webnavior-quantity-limit-20261102-001-Q01-M-F1.jsonl",
+      "artifactSha256": "223ed34baeacf2feaa011223b975086b583c88a22cd840288bf3f76cdb4956a2",
+      "calls": 1,
+      "errors": [
+        "Main network ETIMEDOUT before response; no effect."
+      ],
+      "diagnosis": "Main network ETIMEDOUT before response; no effect.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 2,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "9c4f11b4d7109ec7dee49bcf29fc21c1d852f70fa17df498ec1585aadeb74226",
+      "artifact": "webnavior-quantity-limit-20261102-002-Q01-M-F1.jsonl",
+      "artifactSha256": "bffa2a4f5a4248a89ee7bfed62c01f43608e6aa27fdf7a92d2283b0f7ae75cf4",
+      "calls": 1,
+      "errors": [
+        "Main network ETIMEDOUT before response; no effect."
+      ],
+      "diagnosis": "Main network ETIMEDOUT before response; no effect.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 3,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "9c4f11b4d7109ec7dee49bcf29fc21c1d852f70fa17df498ec1585aadeb74226",
+      "artifact": "webnavior-quantity-limit-20261102-003-Q01-M-F1.jsonl",
+      "artifactSha256": "6b58c177455bb937318f67332ffb4555e6ebe18765cf8b43cfa969793b18cdb4",
+      "calls": 1,
+      "errors": [
+        "Main network ETIMEDOUT before response; no effect."
+      ],
+      "diagnosis": "Main network ETIMEDOUT before response; no effect.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A1",
+      "attempt": 5,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "b57719ca0db625eb20bff4ad5471b7f41e02c6c3fa5b430aaad787870fd4f9b3",
+      "artifact": "webnavior-quantity-limit-20261102-005-Q01-M-A1.jsonl",
+      "artifactSha256": "0cfe806695e0ef4da109fba93c144b57b364b573d37d8c3a4c3b7ae29b50bda1",
+      "calls": 3,
+      "errors": [
+        "Reply does not satisfy 20"
+      ],
+      "diagnosis": "Provider refusal prose became generic clarification.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "排骨便當一份，再加200份招牌便當",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      },
+      "fixedByAcceptedRuns": [
+        43
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 7,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "583f4ae2fc4488943b83a5ebe32904b07d024e17b124220598df911b0d190113",
+      "artifact": "webnavior-quantity-limit-20261102-007-Q01-M-A2.jsonl",
+      "artifactSha256": "64ab02f579ebfe103a4a2747286cfb09751bafd3d510c3166cbf52225a1b6004",
+      "calls": 3,
+      "errors": [
+        "Reply does not satisfy 20"
+      ],
+      "diagnosis": "Provider refusal prose became generic clarification.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "剛才沒有理解清楚，請再說一次您想詢問或調整的內容。"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 8,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "a3d71e926b61ae43565da9b05dddecf0ccbb06e21afbf4a1fd20859a19212ac0",
+      "artifact": "webnavior-quantity-limit-20261102-008-Q01-M-A2.jsonl",
+      "artifactSha256": "7744370cb80b53c1ea5ee1b88ac3d45ff7e02a61de4aa3c041ffb794c58afaa0",
+      "calls": 4,
+      "errors": [
+        "Read-only turn changed cart lines",
+        "Reply does not satisfy 20",
+        "Reply contains forbidden claim 已加入|已將.+加入|尚未完成|無法回覆"
+      ],
+      "diagnosis": "Old whole-batch expectation; user subsequently allowed legal sibling additions.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "已將炸排骨便當加入購物車，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 13,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "20e0f7e6b3aba651fd29bde5eeb237e0702c07053a390ac2c5fbe7a1dbb33b2c",
+      "artifact": "webnavior-quantity-limit-20261102-013-Q01-M-A2.jsonl",
+      "artifactSha256": "6b42cd0caf54f212db290fb996f6aea718dc7e70335288922e13536b9b599308",
+      "calls": 2,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}},{\"itemId\":\"signature-shrimp-roll-bento\",\"quantity\":20,\"options\":{}}]"
+      ],
+      "diagnosis": "Provider silently reduced200 to20 and added it.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 20 份。 已將炸排骨便當加入購物車，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-A2",
+      "attempt": 14,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "8b843a6dce797e8a4a17115aa373f4a4b34431529319fd852cbba71d278afb0f",
+      "artifact": "webnavior-quantity-limit-20261102-014-Q01-M-A2.jsonl",
+      "artifactSha256": "9e6b3e517b69aa9df3e5192f53dc71360813e5561e0d32c6533f45fd9b45e36e",
+      "calls": 2,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}},{\"itemId\":\"signature-shrimp-roll-bento\",\"quantity\":20,\"options\":{}}]"
+      ],
+      "diagnosis": "Provider silently reduced200 to20 and added it.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "招牌便當200份，再加一份排骨便當",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 20 份。 已將炸排骨便當加入購物車，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        44
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 18,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "4b71f83db4c0cc1d7ed4fb4198c5dc351b34a367b9bc7b6fc000da8709085173",
+      "artifact": "webnavior-quantity-limit-20261102-018-Q01-J-B3.jsonl",
+      "artifactSha256": "2cad92e232a00381b8e1835cb042bb4b8fd5b9dd0d55ba14d25e4c1f23adb97e",
+      "calls": 6,
+      "errors": [
+        "Correction misrouted to existing-line quantity modification."
+      ],
+      "diagnosis": "Correction misrouted to existing-line quantity modification.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 19,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "8d56d94b6da24cb7af9a168a8e1d86812d7d26406f492558d3495408fe51dcd9",
+      "artifact": "webnavior-quantity-limit-20261102-019-Q01-J-B3.jsonl",
+      "artifactSha256": "79e8840a4a7c4a2a46646d763839d99eab5ba56fe796936c1f49d0401bface0c",
+      "calls": 6,
+      "errors": [
+        "Correction misrouted to existing-line quantity modification."
+      ],
+      "diagnosis": "Correction misrouted to existing-line quantity modification.",
+      "lastTurn": null,
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 20,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "e6817b752d23b468b5237154c782d04153f1b396195d087c7529caadb346a86d",
+      "artifact": "webnavior-quantity-limit-20261102-020-Q01-J-B3.jsonl",
+      "artifactSha256": "83b3b3364fecef1c4d34f6c1c97f31928e986c4b48a6ae1fec0a577d85f08ee0",
+      "calls": 7,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "diagnosis": "Correction became cart read/acknowledgement instead of requested addition.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要200份排骨便當，改成一份排骨便當就好",
+        "answer": "要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-J-B3",
+      "attempt": 21,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "d8adf53cf0970f6a7c5d4a6bd3aaaeada11788171637a1796af35058c54e8a4b",
+      "artifact": "webnavior-quantity-limit-20261102-021-Q01-J-B3.jsonl",
+      "artifactSha256": "e048e4413f79536795d4a046c27761abd6966cda8e8e05ccf876445601bee018",
+      "calls": 3,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}}]",
+        "Reply contains forbidden claim 每種餐點單次最多|這次超量"
+      ],
+      "diagnosis": "Finite parser used the negated first200 count.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要200份排骨便當，改成一份排骨便當就好",
+        "answer": "每種餐點單次最多 20 份。超過上限的品項未加入，已加入的餐點仍保留。請調整份數後再告訴我。"
+      },
+      "fixedByAcceptedRuns": [
+        55
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 23,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "19c54c2719e32b11df5094cafd1ab5183755a51e8f67c52b5a7081a1617c250b",
+      "artifact": "webnavior-quantity-limit-20261102-023-Q01-M-F1.jsonl",
+      "artifactSha256": "ddb73fa2a4be7a94f319579d9cfd261a58cd36d7773bfbc899f533e0906fdb5c",
+      "calls": 5,
+      "errors": [
+        "Read-only turn changed cart lines",
+        "Reply contains forbidden claim 已加入|已將.+加入|尚未完成|無法回覆"
+      ],
+      "diagnosis": "Provider silently reduced200 to20 on separate continuations.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "那我要200份招牌便當、200份排骨便當",
+        "answer": "已將周氏蝦捲招牌便當加入購物車，共 20 份。 已將炸排骨便當加入購物車，共 20 份。 每種餐點單次最多 20 份。超過上限的品項未加入，已加入的餐點仍保留。請調整份數後再告訴我。"
+      },
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 24,
+      "acceptancePhase": "exploratory",
+      "sourceHash": "d553b6f00a49cd2cd296c0b481af1606ab3a708f43973546e17145720dce3fdf",
+      "artifact": "webnavior-quantity-limit-20261102-024-Q01-M-F1.jsonl",
+      "artifactSha256": "d320d2c11967b44e85b82c8012f3448374ae4696c8aff0c7eeb2a0b381d607ce",
+      "calls": 1,
+      "errors": [
+        "Reply contains forbidden claim 已加入|已將.+加入|尚未完成|無法回覆"
+      ],
+      "diagnosis": "Cart correctly preserved; retained-items wording matched the no-new-success assertion.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "那我要200份招牌便當、200份排骨便當",
+        "answer": "每種餐點單次最多 20 份。超過上限的品項未加入，已加入的餐點仍保留。請調整份數後再告訴我。"
+      },
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-B3",
+      "attempt": 38,
+      "acceptancePhase": "final",
+      "sourceHash": "8ed88d8bd23a1abe97480d6ccc6a1912cfcef298ba3d96bd9b12474789e55c4e",
+      "artifact": "webnavior-quantity-limit-20261102-038-Q01-M-B3.jsonl",
+      "artifactSha256": "7278960977215d143ccc95f625d24a58a2a9dcbd3033af0671ed391360c787de",
+      "calls": 3,
+      "errors": [
+        "Cart mismatch: expected [{\"itemId\":\"dumplings\",\"quantity\":1,\"options\":{}},{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}], received [{\"itemId\":\"fried-pork-chop-bento\",\"quantity\":1,\"options\":{}}]"
+      ],
+      "diagnosis": "Quantity correction proposed replacement of unrelated existing dumplings.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "不要200份排骨便當，改成一份排骨便當就好",
+        "answer": "已將水餃更換為炸排骨便當，共 1 份。 要進入結帳流程嗎？"
+      },
+      "fixedByAcceptedRuns": [
+        47
+      ]
+    },
+    {
+      "batch": "quantity-limit-20261102",
+      "scriptId": "Q01-M-F1",
+      "attempt": 39,
+      "acceptancePhase": "final-v2",
+      "sourceHash": "b42eb9be4b6817f1f03509ea02be875d2dd0134c187287a0867fabbf4efed010",
+      "artifact": "webnavior-quantity-limit-20261102-039-Q01-M-F1.jsonl",
+      "artifactSha256": "a8025638bc36e9d8e0e7bd42a478c813b6dbc1069ae54a4de61bbd2f4e601f22",
+      "calls": 1,
+      "errors": [
+        "Reply does not satisfy 20"
+      ],
+      "diagnosis": "Explicit bulk order was incorrectly changed into menu recommendation clarify.",
+      "lastTurn": {
+        "turn": 1,
+        "text": "那我要200份招牌便當、200份排骨便當",
+        "answer": "你想調整價位，還是換餐點種類？"
+      },
+      "fixedByAcceptedRuns": [
+        40
+      ]
+    }
+  ],
+  "capturedThroughAttempt": 299,
+  "oracleGaps": [
+    {
+      "attempt": 478,
+      "scriptId": "C09-A1",
+      "observedReply": "你想調整價位，還是換餐點種類？",
+      "oldOracleStatus": "passed",
+      "acceptedAsCustomerSuccess": false,
+      "resolution": "Gold V3 strengthens pause acknowledgement and forbids unrelated price/category/recommendation. V2 backup and ledger revision retained."
+    },
+    {
+      "attempt": 706,
+      "scriptId": "C11-A2",
+      "turn": 1,
+      "observedReply": "購物車目前沒有餐點。",
+      "oldOracleStatus": "passed",
+      "acceptedAsCustomerSuccess": false,
+      "resolution": "Gold V4 requires clarification of the unbound reference; cart evidence does not complete that demand. Original V3 retained."
+    }
+  ],
+  "offlineGates": [
+    {
+      "candidate": 2,
+      "reason": "Named read receipt cannot complete writable purchase; fieldQuantityRecovery regression caught broadened completion."
+    },
+    {
+      "candidate": 6,
+      "reason": "Passive revalidation correlation tuple differed for pending confirmation; questions.test red preserved before fix. Clarification projection shared with passive reader; no answer lease issued by read."
+    }
+  ],
+  "acceptedCandidate": {
+    "implementationHash": "6baeb0c9f45066cf80b835eb13c3a2728c55ee6f54e22e9b0b0fd288fe1d5505",
+    "goldHash": "5f05f1090d4f8975eb482e38a02ea7f5f6daf3e1afcd1b0225f3d54be23bac67",
+    "executableScriptsPassed": 110,
+    "includesSyntheticAndFaultControls": true,
+    "highRiskScripts": 24,
+    "passesPerHighRiskScript": 3,
+    "diagnosticsOnly": [
+      "D07",
+      "H05"
+    ],
+    "diagnosticsHistoricalReplay": false,
+    "acceptedRunNumbers": [
+      769,
+      770,
+      771,
+      772,
+      773,
+      774,
+      775,
+      776,
+      777,
+      778,
+      779,
+      780,
+      781,
+      782,
+      783,
+      784,
+      785,
+      786,
+      787,
+      788,
+      789,
+      790,
+      791,
+      792,
+      793,
+      794,
+      795,
+      796,
+      797,
+      798,
+      799,
+      800,
+      801,
+      802,
+      803,
+      804,
+      805,
+      806,
+      807,
+      808,
+      809,
+      810,
+      811,
+      812,
+      813,
+      814,
+      815,
+      816,
+      817,
+      818,
+      819,
+      820,
+      821,
+      822,
+      823,
+      824,
+      825,
+      826,
+      827,
+      828,
+      829,
+      830,
+      831,
+      832,
+      833,
+      834,
+      835,
+      836,
+      837,
+      838,
+      839,
+      840,
+      841,
+      842,
+      843,
+      844,
+      845,
+      846,
+      847,
+      848,
+      849,
+      850,
+      851,
+      852,
+      853,
+      854,
+      855,
+      856,
+      857,
+      858,
+      859,
+      860,
+      861,
+      862,
+      863,
+      864,
+      865,
+      866,
+      867,
+      868,
+      869,
+      870,
+      871,
+      872,
+      873,
+      874,
+      875,
+      876,
+      877,
+      878,
+      879,
+      880,
+      881,
+      882,
+      883,
+      884,
+      885,
+      886,
+      887,
+      888,
+      889,
+      890,
+      891,
+      892,
+      893,
+      894,
+      895,
+      896,
+      897,
+      898,
+      899,
+      900,
+      901,
+      902,
+      903,
+      904,
+      905,
+      906,
+      907,
+      908,
+      909,
+      910,
+      911,
+      912,
+      913,
+      914,
+      915,
+      916,
+      917,
+      918,
+      919,
+      920,
+      921,
+      922,
+      923,
+      924,
+      925,
+      926,
+      927,
+      928
+    ],
+    "cumulativeProviderCalls": 11668,
+    "retainedFailedAttempts": 143,
+    "productionSessionCartPosPaymentChanged": false,
+    "deployment": "deployed-origin-verified",
+    "release": "conversation-matrix-20261102-012607",
+    "postDeploymentVerification": {
+      "state": "deployed-origin-verified",
+      "health": {
+        "livez": {
+          "status": "live"
+        },
+        "readyz": {
+          "status": "ready",
+          "checks": {
+            "db": "ok",
+            "redis": "ok"
+          }
+        }
+      },
+      "verifiedReleaseFiles": 3189,
+      "originVerifiedFiles": 47,
+      "publicVerifiedFiles": 0,
+      "apiWorkingDirectory": "/home/aimax/.local/share/webnavior/releases/conversation-matrix-20261102-012607/runtime/apps/server",
+      "publicBrowserLandingLoaded": true,
+      "publicOrderingFlowTested": false,
+      "publicByteVerification": "HTTP 403 for non-browser request; browser landing loaded successfully"
+    }
+  },
+  "postDeploymentPhoneClose": {
+    "date": "2026-11-02",
+    "deployment": "deployed-origin-verified",
+    "actualProviderCalls": 31,
+    "limits": {
+      "calls": 40,
+      "durationMs": 180000
+    },
+    "acceptedRunNumbers": [
+      9,
+      10,
+      11
+    ],
+    "sameSourceHash": "24eb07f60921acc87e918c201b73a7cd648781514190e0005e9e927b6cdb5cb3",
+    "syntheticScripts": [
+      "P01-F1",
+      "P01-A1",
+      "P01-A2"
+    ],
+    "observedCloseReplayDurationMs": 1557,
+    "durationIsPublicBrowserLatency": false,
+    "offlineReassessment": "Run11 correctly kept phone entry and silence; original oracle contradicted silentOnly by requiring a reply. Corrected oracle, preserved raw failure and rescored saved outputs without provider rerun.",
+    "retainedFailures": [
+      {
+        "number": 2,
+        "id": "P01-A1",
+        "calls": 2,
+        "sourceHash": "2a8bc3569cc66f47a5af78e2314a8019a84188d8c55bbbf2b69b122730c8c730",
+        "artifactSha256": "d567848c14e87b59528691dc31746cbc8ef2ca804287798ced2be95d375578cb",
+        "classification": "semantic-failure"
+      },
+      {
+        "number": 5,
+        "id": "P01-A2",
+        "calls": 2,
+        "sourceHash": "adc37adbff5a9c26c4388c136ee309baece306fe6dfab396a0fa199a4dd1ba2d",
+        "artifactSha256": "697ef9f76d9f25090af11114d9130b422e64f9b73dcc422f77fe0eb52462c5c0",
+        "classification": "semantic-failure"
+      },
+      {
+        "number": 8,
+        "id": "P01-A2",
+        "calls": 4,
+        "sourceHash": "deb3c60a1a1257637d260344d7c3ffaa2e61f14447e4258995da9d9337b5c323",
+        "artifactSha256": "0302f23294b69c3329b1fe68f782da424be2266ea82881e8f16880fe58e7838c",
+        "classification": "semantic-failure"
+      },
+      {
+        "number": 11,
+        "id": "P01-A2",
+        "calls": 3,
+        "sourceHash": "24eb07f60921acc87e918c201b73a7cd648781514190e0005e9e927b6cdb5cb3",
+        "artifactSha256": "48cc52f19d77f0b45e7365052b7f43eaa5d4f07158f6818b0a078d74195fe966",
+        "classification": "oracle-contradiction"
+      }
+    ],
+    "release": "/home/aimax/.local/share/webnavior/releases/phone-close-20261102-092848",
+    "verifiedReleaseFiles": 3189,
+    "postDeploymentVerification": {
+      "state": "deployed-origin-verified",
+      "health": {
+        "livez": {
+          "status": "live"
+        },
+        "readyz": {
+          "status": "ready",
+          "checks": {
+            "db": "ok",
+            "redis": "ok"
+          }
+        }
+      },
+      "verifiedReleaseFiles": 3189,
+      "originVerifiedFiles": 47,
+      "publicVerifiedFiles": 0,
+      "apiWorkingDirectory": "/home/aimax/.local/share/webnavior/releases/phone-close-20261102-092848/runtime/apps/server",
+      "publicBrowserLandingLoaded": true,
+      "publicOrderingFlowTested": false,
+      "publicByteVerification": "HTTP 403 for non-browser request; browser landing loaded successfully"
+    }
+  },
+  "postDeploymentInvoiceConfirmation": {
+    "acceptedRunNumbers": [
+      13,
+      14,
+      15,
+      16,
+      17,
+      18
+    ],
+    "sourceHash": "5bf1cfd2143b318f87432b91f8686257bd44c422fd682b65ca8bbd7adb8c9116",
+    "configurationSha256": "30002c50f7f3af5b316e9fdbc030aa00a098b43b9a2846e162d7b53a7b124751",
+    "goldHash": "097684844326cb4fcdef15a3c535f5e7e30f4269f1156c35be5376650c88b98e",
+    "cases": [
+      "P02-F1",
+      "P02-F2",
+      "P02-F3",
+      "P02-F4",
+      "P02-A1",
+      "P02-A2"
+    ],
+    "totalProviderCalls": 59,
+    "initialWindowCalls": 39,
+    "extensionCalls": 20,
+    "retainedFailedAttempts": [
+      1,
+      6,
+      12
+    ],
+    "rawDraftInMainRequests": 0,
+    "deployment": "not-deployed",
+    "scope": "Six focused synthetic invoice cases with explicit visible-draft setup; original112 not rerun.",
+    "productionSessionCartPosPaymentChanged": false,
+    "failures": [
+      {
+        "number": 1,
+        "case": "P02-F1",
+        "reason": "Valid invoice confirmation lacked a Menu-issued Main recovery scope; became order-information then rejected menu_recommend.",
+        "calls": 4,
+        "sourceHash": "6b75bfffcb5d2c8879bd3c864b512eab063792367af27975a6090aec9aca864d",
+        "artifactSha256": "2701861595e32f1e62cb2b6f6b6a03c87592277885e8109439f5ab3d4c1b0ea4"
+      },
+      {
+        "number": 6,
+        "case": "P02-A1",
+        "reason": "Invalid invoice read-only recovery exposed menu browsing forbidden by checkout phase.",
+        "calls": 4,
+        "sourceHash": "57ffd7914f50d06f8f95ba990b85a8bea9fbd36a2ccbc7b46c9184cce53c63a4",
+        "artifactSha256": "87fd5bf65e456b4a3db56c2c47b13b4bf295f95b1d083b39936ff4a91e6b3224"
+      },
+      {
+        "number": 12,
+        "case": "P02-A2",
+        "reason": "Complete refusal 還沒輸入完，不要送出 retained INCOMPLETE despite Main KEEP_ORDER, producing no customer reply.",
+        "calls": 3,
+        "sourceHash": "eb5d22f96987e0868444da196384e9e9beadd2cc67cfeaf79c3ca6721e9e5ddd",
+        "artifactSha256": "f5372d30f9dfa6605e6b1ed3ae3b905f816a3ca55fb5790c7d1fe1b99ae9d3cd"
+      }
+    ]
+  },
+  "postDeploymentInvoiceKinds": {
+    "acceptedRunNumbers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36
+    ],
+    "sourceHash": "c67c6f4b13267f4cbbc12172133b29d6fab2d8a2b3c367ed251316b6a8e0ec02",
+    "configurationSha256": "30002c50f7f3af5b316e9fdbc030aa00a098b43b9a2846e162d7b53a7b124751",
+    "goldHash": "4eeed2a86aa8f6f6a6c15e9f58954e1b0eab712226db4bf8c83b4d24dd5bf3b6",
+    "cases": [
+      "I03-C-P1",
+      "I03-C-P2",
+      "I03-C-P3",
+      "I03-C-P4",
+      "I03-C-P5",
+      "I03-C-P6",
+      "I03-C-P7",
+      "I03-C-A1",
+      "I03-C-A2",
+      "I03-C-A3",
+      "I03-C-A4",
+      "I03-C-A5",
+      "I03-N-P1",
+      "I03-N-P2",
+      "I03-N-P3",
+      "I03-N-P4",
+      "I03-N-P5",
+      "I03-N-P6",
+      "I03-N-P7",
+      "I03-N-A1",
+      "I03-N-A2",
+      "I03-N-A3",
+      "I03-N-A4",
+      "I03-N-A5",
+      "I03-T-P1",
+      "I03-T-P2",
+      "I03-T-P3",
+      "I03-T-P4",
+      "I03-T-P5",
+      "I03-T-P6",
+      "I03-T-P7",
+      "I03-T-A1",
+      "I03-T-A2",
+      "I03-T-A3",
+      "I03-T-A4",
+      "I03-T-A5"
+    ],
+    "totalProviderCalls": 129,
+    "elapsedMs": 140593,
+    "retainedFailedAttempts": [],
+    "carrierCitizenDraftOccurrencesInMainRequests": 0,
+    "deployment": "deployed-origin-verified",
+    "scope": "36 synthetic visible-draft cases: carrier/citizen/tax-ID crossed with seven confirmations and five negative/invalid cases; original112 not rerun.",
+    "productionSessionCartPosPaymentChanged": false,
+    "artifacts": [
+      {
+        "number": 1,
+        "case": "I03-C-P1",
+        "calls": 3,
+        "outputSha256": "39478dbd159e4ddaa4b0cd35ce7dfaf728cfe381e028086e6acf2a510e7d68e1",
+        "manifestSha256": "94e6f1de3e0ec29e23b9f002093d8c089f564c9edcc47399866b389b35e4b46f"
+      },
+      {
+        "number": 2,
+        "case": "I03-C-P2",
+        "calls": 3,
+        "outputSha256": "99c69e83c20852d6356c17be3a7e713cd12e25293b060c05e81886659c55cd87",
+        "manifestSha256": "6ae9afeb9e5ad3feb6efeb362fdf55ea5c57bed0df290d2d2f3195f0775d83d4"
+      },
+      {
+        "number": 3,
+        "case": "I03-C-P3",
+        "calls": 3,
+        "outputSha256": "9b48e7b764f8170e15994da7eb220e061d30aabf56a21b1521f8c8593d5d3b4f",
+        "manifestSha256": "64e2c9e47ed43ab6e7691f0dfb38835be30a740815289e5128f26b7d5e63de62"
+      },
+      {
+        "number": 4,
+        "case": "I03-C-P4",
+        "calls": 3,
+        "outputSha256": "3d238e158f8a7dfcf10eddb802396db6b89b0d53a6332fac69e6b04ad7a85b62",
+        "manifestSha256": "c3530d8794155ae72be7adcc6ad4f7eac7c86a59dcc54b098fa4c96fafdab6fe"
+      },
+      {
+        "number": 5,
+        "case": "I03-C-P5",
+        "calls": 3,
+        "outputSha256": "089c9f5806401323150f79c2eb3fc3f79e182fa50174938d65c822f9445be71b",
+        "manifestSha256": "f4477eb123285e0071778d8560e69661ec651b3f59ea941dee10267821481645"
+      },
+      {
+        "number": 6,
+        "case": "I03-C-P6",
+        "calls": 3,
+        "outputSha256": "7202a957f1a79eb5e8e54ab77dc3e03a0cc569d67edcfb244560751947044c8f",
+        "manifestSha256": "36178b32f4ab177ea99019c9befd73cc689ae76d0c3c37772aaded2bc11159ea"
+      },
+      {
+        "number": 7,
+        "case": "I03-C-P7",
+        "calls": 3,
+        "outputSha256": "73ac41561bdde3a7c3271fa9d1a6ee3c83f53a463b9536cb3d9bd75e3e61ba82",
+        "manifestSha256": "5814e4eee4b76a4ed8634128c17a2ccf4de92351b874cd4e6c8f2e78b92bea47"
+      },
+      {
+        "number": 8,
+        "case": "I03-C-A1",
+        "calls": 4,
+        "outputSha256": "feb419ad00b17413e9d136f93330a107317150fe3ae9500c4d7bc81c93a9e007",
+        "manifestSha256": "845021d6d7afa89daa8a976e7ab572a7634faa3ae6c3f9caa3ea8f8f7f31d979"
+      },
+      {
+        "number": 9,
+        "case": "I03-C-A2",
+        "calls": 5,
+        "outputSha256": "83e483a011d39fdf1bf45745141cc48a4550ceabdb825db71fdbca2b3b648c4d",
+        "manifestSha256": "b74b4733265a661126a073efcf90f2c6cf7a1f72ac61d3e5f19e035d9b2fd1ac"
+      },
+      {
+        "number": 10,
+        "case": "I03-C-A3",
+        "calls": 4,
+        "outputSha256": "b849e6ef549423d6d9ff04ac52f24153e42dda1ed6bd84decfd8cdc2623ec10c",
+        "manifestSha256": "9ea84aa36f77bc9ad3035aaa0f78bbf091aa4972ff719962fb5852e5b9632eea"
+      },
+      {
+        "number": 11,
+        "case": "I03-C-A4",
+        "calls": 5,
+        "outputSha256": "6d137def70880f0e02535c86932473bea702af0ba80e887dc70e0ccc937ffa67",
+        "manifestSha256": "5d74ad3f25409732714fad3ca662ec2b599656e8fdeade693caa1074a16b57ce"
+      },
+      {
+        "number": 12,
+        "case": "I03-C-A5",
+        "calls": 4,
+        "outputSha256": "d10fc8ef792662f0e0e079b3c7889cc9671ffc54522c956a434975913001c609",
+        "manifestSha256": "162c8812ca81367367e787da96ada69e50a9511bcdf041ceb84335c32f377cc3"
+      },
+      {
+        "number": 13,
+        "case": "I03-N-P1",
+        "calls": 3,
+        "outputSha256": "adeee5d224ef303bada9006be23dce97c4e1010a1ef447d52d23c8b89f5a94a0",
+        "manifestSha256": "bdbf43fe82b36215bc8ad3ea24db8d03f990eda9f781df87fcbc4663aae60bfd"
+      },
+      {
+        "number": 14,
+        "case": "I03-N-P2",
+        "calls": 3,
+        "outputSha256": "0579d23a77666722ad4307cea6c3d52037c4fc1f704dea3369155eb054700def",
+        "manifestSha256": "0d97f7494b84541ffb1ec265dd821864dd77afc7816953c3cdf10665c5d02808"
+      },
+      {
+        "number": 15,
+        "case": "I03-N-P3",
+        "calls": 3,
+        "outputSha256": "a7a68f7b035d01e9ed79db97b0c406b9fa19febb315d057527018f7539b01a1c",
+        "manifestSha256": "ed09e49b21e6cc1540fe9af4c7a87340a6360417d5a891998f3c722a3edf415e"
+      },
+      {
+        "number": 16,
+        "case": "I03-N-P4",
+        "calls": 3,
+        "outputSha256": "0f43b1e4004fc0a5d9777114a94bd653d4496204f0f6c8df424b97ab965e7e1e",
+        "manifestSha256": "02eddb022d6bd02c925ac988985c3a7ec0f5bafc595fbe87dc124ae74f3ca920"
+      },
+      {
+        "number": 17,
+        "case": "I03-N-P5",
+        "calls": 3,
+        "outputSha256": "89a7afdbaae0f40e7682965abc6af90f06c24c80f1cd613cfab5475d4c6d8870",
+        "manifestSha256": "13427e99c30c64e507abbe51ffa1f47aafcbf2be4dd12f859988e68371f20f3c"
+      },
+      {
+        "number": 18,
+        "case": "I03-N-P6",
+        "calls": 3,
+        "outputSha256": "e2ad219cce42294c5a4d5369a865f2976792d46c09b1e51fff50892cc1d92b55",
+        "manifestSha256": "c92c7e8d09141acb18d7ff1837d704a09dcdb669808ad69a57686cb71272d038"
+      },
+      {
+        "number": 19,
+        "case": "I03-N-P7",
+        "calls": 3,
+        "outputSha256": "873ccd63775479ab45fe0031cea103588c546612a2fd77f67de007be915b943f",
+        "manifestSha256": "0da617872ba8f68dda5ca12c39223037a49006232dcc26794063c077f774162c"
+      },
+      {
+        "number": 20,
+        "case": "I03-N-A1",
+        "calls": 4,
+        "outputSha256": "25fa9d3de0540a553f98d471496b0334b9f62eb580b27608bddae67877b215af",
+        "manifestSha256": "4ec963b10cf2c710207aff45721ddcb6f874915a82a1bf0dafcc9c4442095ee0"
+      },
+      {
+        "number": 21,
+        "case": "I03-N-A2",
+        "calls": 5,
+        "outputSha256": "b6ca72068bf404c7d518baf0bc1cb1995bffe70c1fe637883db8f44bb1019139",
+        "manifestSha256": "c6c009984ba780505e85a4f7f38aaca19af95880729304f621bab5482773b76a"
+      },
+      {
+        "number": 22,
+        "case": "I03-N-A3",
+        "calls": 4,
+        "outputSha256": "ce9d63e44aea4075e3acfbc2fde8b0cef5683a266f09dbb908acbd2c4d0ef430",
+        "manifestSha256": "c2962cc2010b1aad5d0b07fde1a0dbeddda6c9596c408f246115b5b031b8ab41"
+      },
+      {
+        "number": 23,
+        "case": "I03-N-A4",
+        "calls": 5,
+        "outputSha256": "94c8f62a29129dcdc772da90ddac602ed9e784c412de66de2681f9b41f83b3e9",
+        "manifestSha256": "8d908525e746c68a19bc25312d6aa7f09e713c2e17ceb2a664149e921ba7dce0"
+      },
+      {
+        "number": 24,
+        "case": "I03-N-A5",
+        "calls": 4,
+        "outputSha256": "0cab1ced8055637053d13e9f8503df1cf3f49ae79f9235f51621407497efd8cc",
+        "manifestSha256": "1dc1d0693b5ec946edb2bd9ca82525ca738e006599d86c6a43c64c5deb09a76f"
+      },
+      {
+        "number": 25,
+        "case": "I03-T-P1",
+        "calls": 3,
+        "outputSha256": "4df109a22daac1cf1eba803b5c161465ecf2b9417a11bd2377c05fbb7cf85628",
+        "manifestSha256": "c751e97d69f3bb6d1624e245220b08049ceaa8ff83c8d714a2a43affea49af20"
+      },
+      {
+        "number": 26,
+        "case": "I03-T-P2",
+        "calls": 3,
+        "outputSha256": "587f9f4de9ac56ee2ad5c61e2ae8485faeb3b89c51cfe126708d7dca86e15c97",
+        "manifestSha256": "758636f2fd8eb4472fcbc3be6d0c243a6030d91f29cd03afa15648bf0ab5ae76"
+      },
+      {
+        "number": 27,
+        "case": "I03-T-P3",
+        "calls": 3,
+        "outputSha256": "42b4abcb90125475cbcda6f21a045650d142048b08255444525892f5c21c9532",
+        "manifestSha256": "8abae60f6268619a297f7346e9091937280e1aa1ca4d9844efb07883bc8aa295"
+      },
+      {
+        "number": 28,
+        "case": "I03-T-P4",
+        "calls": 3,
+        "outputSha256": "66984cb7e777b292fcf6891c13f8acc52a83cb137e7dcd3058becccc8c427ef7",
+        "manifestSha256": "23ed4479d1dac6b3055a8455e9a8630ef7cd2acb965051d683facfddd18ddd3e"
+      },
+      {
+        "number": 29,
+        "case": "I03-T-P5",
+        "calls": 3,
+        "outputSha256": "56a7d6d3cf478f58f25bc2967769fa6ce413d05483128825055c824b34b6f9d9",
+        "manifestSha256": "a99d736f0f2ebff6ee54e2ef3cb32a1264c3f366d1e00fe63b344ad7c46a139b"
+      },
+      {
+        "number": 30,
+        "case": "I03-T-P6",
+        "calls": 3,
+        "outputSha256": "c0a9dcf08450a52a25d56176af706e00a7493a637aea432c6eeec06a0bc55d1d",
+        "manifestSha256": "2acd68ca3f1b8015e6424b271b310e206f574e309af46eb1c95fcb619d2d7319"
+      },
+      {
+        "number": 31,
+        "case": "I03-T-P7",
+        "calls": 3,
+        "outputSha256": "bf832918c12a820e84c616ea294474b7343b39d4acbf5512e3bdc4c6070ecd29",
+        "manifestSha256": "8dda287c47b432b59ab939d03a3a7a87a62c31f37f6b7130a3289f05000c2d96"
+      },
+      {
+        "number": 32,
+        "case": "I03-T-A1",
+        "calls": 4,
+        "outputSha256": "343f874cd4f7fe3ad9bcc4803e4f9167fffd057f2552ad3cef73ce79797b99dc",
+        "manifestSha256": "54046344ce015de9cd725f8f0f90731a8511cd1b8a7e19ad129e2ec9796eb8fa"
+      },
+      {
+        "number": 33,
+        "case": "I03-T-A2",
+        "calls": 5,
+        "outputSha256": "7ff5371087b112c16373bf059d37de031f731caa91c21786ee8014c4ec724de4",
+        "manifestSha256": "f0d15ccaf9723823cd180bfd994592f1eb3e01d35991bfd8e7ae485a627b77fe"
+      },
+      {
+        "number": 34,
+        "case": "I03-T-A3",
+        "calls": 4,
+        "outputSha256": "15cec2d74702d0e818a14eec38c15e6ec79f5d86177ee7a2bbb30906618421b2",
+        "manifestSha256": "878efc5688285e7d9cd9f7e0160e8eb3f7dda1de03687a88366feee24f1475bb"
+      },
+      {
+        "number": 35,
+        "case": "I03-T-A4",
+        "calls": 5,
+        "outputSha256": "5a46c6f298a4aab782009859b9d9a49703b36efc7d841ea7a8c8206301b5262b",
+        "manifestSha256": "2dfe13b405b438c43cf162ad9ab8dded7db9cc33fccbc73c6fc7038a1c16e9c7"
+      },
+      {
+        "number": 36,
+        "case": "I03-T-A5",
+        "calls": 4,
+        "outputSha256": "1d3eb42ba58587fb9c3da0f841b14803ccf4458a6974e2e94076baf091606b8a",
+        "manifestSha256": "f28008ab5befe46bd3f0920350889817b22848b0b291cbe97e8195c8385bc5c9"
+      }
+    ],
+    "deploymentVerification": {
+      "state": "deployed-origin-verified",
+      "releaseFilesVerified": 3189,
+      "originVerifiedFiles": 47,
+      "health": {
+        "livez": {
+          "status": "live"
+        },
+        "readyz": {
+          "status": "ready",
+          "checks": {
+            "db": "ok",
+            "redis": "ok"
+          }
+        }
+      },
+      "apiWorkingDirectory": "/home/aimax/.local/share/webnavior/releases/invoice-kinds-20261102-132158/runtime/apps/server",
+      "publicBrowserVerified": false,
+      "productionOrderingFlowTested": false
+    }
+  },
+  "postDeploymentInvoiceStuck": {
+    "status": "related-direct-main-fix-accepted-original-loop-not-yet-verified",
+    "reportedAt": "2026-11-02",
+    "deployedRelease": "invoice-kinds-20261102-132158",
+    "source": "user report in this chat after deployment",
+    "observedUtterances": [
+      "好了",
+      "載具填好了",
+      "已經填寫完成",
+      "送出",
+      "送出載具",
+      "送出",
+      "確認送出"
+    ],
+    "observedFailure": "Main repeatedly invoked checkout_choose_invoice(carrier). Receipts contain no invoiceDraft and keep asking invoice method. No confirmation tool invoked.",
+    "evidenceSha256": "4a54d9148d388124223190fe4ecd2a2310a8c476e141f5919c652123727ddc47",
+    "privateEvidencePath": "/tmp/webnavior-invoice-stuck-tools-20261102.json",
+    "actualTypedValueKnown": false,
+    "loadedClientBuildKnown": false,
+    "serviceUrlVerified": "https://webnavior.aikcitri.qzz.io/menu/",
+    "fullHistoricalReplay": false,
+    "previousAcceptanceGap": "36 model cases preseeded visible invoice drafts; browser cases used a substitute parent instead of App.vue.",
+    "additionalVerification": {
+      "actualAppBrowserCases": 3,
+      "actualAppBrowserResult": "passed",
+      "catalogNetworkMockOnly": true,
+      "publicFreshStandaloneCarrierNativeSubmission": "reached payment-method selection with /PTGRJP2",
+      "publicHostVoiceFlowVerified": false,
+      "paymentSelected": false,
+      "modelCalls": 0,
+      "actualAppHostBridgeCases": 3,
+      "actualAppHostBridgeResult": "passed with native input, current context readiness, actual Eventa transport, task-bound confirmation and idle payment",
+      "sourceProfileMatchesReportedSession": true
+    },
+    "nextAcceptanceRequirements": [
+      "Identify loaded client build and whether typed input enables confirmation before any voice request.",
+      "Replay actual App input through the Host bridge and verify semantic confirmation, without preseeded draft.",
+      "Keep repeated choose-invoice sequence as a failure; do not claim previous seeded matrix reproduces this incident."
+    ],
+    "userConfirmed": {
+      "kioskRefreshed": true,
+      "confirmationButtonEnabled": true
+    },
+    "receiptCaveat": "Absence of invoiceDraft in persisted receipts alone does not prove the active input state; no full current Main context was retained.",
+    "directMainCoverageGap": "Observed user_text turns bypassed finite Jev/Main candidate selection. Previous36 did not validate direct Main.",
+    "pendingSyntheticScripts": [
+      "I04-C-P1",
+      "I04-C-P2",
+      "I04-C-P3",
+      "I04-C-P4",
+      "I04-C-A1",
+      "I04-C-A2",
+      "I04-N-P1",
+      "I04-N-P2",
+      "I04-N-P3",
+      "I04-N-P4",
+      "I04-N-A1",
+      "I04-N-A2",
+      "I04-T-P1",
+      "I04-T-P2",
+      "I04-T-P3",
+      "I04-T-P4",
+      "I04-T-A1",
+      "I04-T-A2"
+    ]
+  },
+  "postDeploymentInvoiceDirectMain": {
+    "status": "accepted",
+    "acceptedRunNumbers": [
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      44
+    ],
+    "cases": [
+      "I04-C-P1",
+      "I04-C-P2",
+      "I04-C-P3",
+      "I04-C-P4",
+      "I04-C-A1",
+      "I04-C-A2",
+      "I04-N-P1",
+      "I04-N-P2",
+      "I04-N-P3",
+      "I04-N-P4",
+      "I04-N-A1",
+      "I04-N-A2",
+      "I04-T-P1",
+      "I04-T-P2",
+      "I04-T-P3",
+      "I04-T-P4",
+      "I04-T-A1",
+      "I04-T-A2"
+    ],
+    "configurationSha256": "30002c50f7f3af5b316e9fdbc030aa00a098b43b9a2846e162d7b53a7b124751",
+    "goldHash": "6b123b97fab3243f8819931834fcc6946fa7eda6b4ccbbeb50472356379c0037",
+    "currentSourceHash": "914809e9728228cd554cb4ff20498b33fd7cba3e8672fadb910d1c214a26c28c",
+    "currentSourceManifest": "/tmp/webnavior-invoice-direct-main-20261102-044-I04-T-A2.manifest.json",
+    "sourceEquivalence": {
+      "earlier17SourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+      "formatOnlyRuntimeRevision": {
+        "path": "apps/server/src/routes/kiosk/index.ts",
+        "beforeSha256": "f6b194a92947f1212a00f946e7fbcd23ea4ad702ba7c56686acf8efb643431b3",
+        "afterSha256": "0e72fff357926b048f29038af20cfd9105db358861bc6b0ec298dd9e68f52a66",
+        "nonWhitespaceBytesIdentical": true
+      },
+      "otherNonEvidenceFilesIdentical": true,
+      "evidenceOnlyChangedPaths": [
+        "apps/order-menu/src/evaluation/conversationFindings.json"
+      ]
+    },
+    "totalProviderCalls": 51,
+    "initialWindowCalls": 50,
+    "extensionCalls": 1,
+    "retainedFailedAttempts": [
+      {
+        "number": 7,
+        "case": "I04-N-P1",
+        "calls": 2,
+        "sourceHash": "2aff395753467db60a45757075ad31fc8206be6eb539eec2afe4f2091408525d",
+        "reason": "Main returned please-click-confirm prose then acknowledgement; completion review excluded invoice phase.",
+        "outputSha256": "ff32cda3eae5f9afe23a04808a6865f653db780987a92c7f3193414fbeea66e5"
+      }
+    ],
+    "retainedBudgetTimeout": {
+      "number": 43,
+      "case": "I04-T-A2",
+      "calls": 0
+    },
+    "carrierCitizenDraftOccurrencesInMainRequests": 0,
+    "originalCarrierRepeatSelectionReproduced": false,
+    "deployment": "not-deployed",
+    "scope": "18 synthetic direct-Main invoice cases, explicit valid visible drafts; separate App/Host native-input bridge tests. Not a full historical browser snapshot replay.",
+    "productionSessionCartPosPaymentChanged": false,
+    "artifacts": [
+      {
+        "number": 26,
+        "case": "I04-C-P1",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "8bbe13a623ccae59889b5cab97b9482dd1486a59f2a31d01084141bfdbf3f127",
+        "manifestSha256": "568b9fdae4dff1db4ecc7460712c080b8d6fe590b1ed1905873da6f0b133d3f9"
+      },
+      {
+        "number": 27,
+        "case": "I04-C-P2",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "00e45a13d8b6bac7139005bfbe593950862f8dd091db9970c43966421fb14d28",
+        "manifestSha256": "cc6cc9c4ffc4a991236c08a9486ecb8646aaed7875e6137d2ff583b07221c201"
+      },
+      {
+        "number": 28,
+        "case": "I04-C-P3",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "d2a82168756fbe12a039cdb952663eba7801f970fa04b812ec4a91099d458989",
+        "manifestSha256": "72e0433dc6e1c2707c9801a4231ce1ce324210a4f1180e3c51744d19c21c5982"
+      },
+      {
+        "number": 29,
+        "case": "I04-C-P4",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "4e7d7c947e217a3115545840a4929289c96c5260653d00c6122f62246b0b6a12",
+        "manifestSha256": "bb088306897ff2848a4d338b63faf0db1c8c1d8f8bcc327a7b5ea740f4e9fca0"
+      },
+      {
+        "number": 30,
+        "case": "I04-C-A1",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "b92547b75610316802478901bdd95d4683a966a93901db5424c659a6b722b3ec",
+        "manifestSha256": "bcd32c7a917511fa51059620f56376e7661996bb19b4a0c4fb4ad7174c5f136a"
+      },
+      {
+        "number": 31,
+        "case": "I04-C-A2",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "4046b8478fbfe2add22f015a2371467c68aef46dee5b0de1b3519c254d5723ee",
+        "manifestSha256": "937cd42ab05e7bdcbecaa5d768020835790583fa10517b4af195569b42cc1081"
+      },
+      {
+        "number": 32,
+        "case": "I04-N-P1",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "80dbcaf342c0c14d4e6f15807bd576c350e269b1fa4cec4f5dfea5cb0a7b382c",
+        "manifestSha256": "5b3c72bbc2f77f36b03d70e0e4230e08b1bbfef89a8fe5fa089a1f6d66d54e28"
+      },
+      {
+        "number": 33,
+        "case": "I04-N-P2",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "dd927f79573ce68eec276915f7a98f20a2350ea774e14e28a1e0a02dd8c35bab",
+        "manifestSha256": "7a4844d2c6ecda02cf3b201f96ad7d74b861cd772784cc032afa810e476d5dcb"
+      },
+      {
+        "number": 34,
+        "case": "I04-N-P3",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "161d851b2818c376a9b1ce4a9cee5092ef2123b6e7e8d51018f52f824e33af02",
+        "manifestSha256": "83ef40f1c5cc7f2776e34d917a85001f7c2166da39eb07bab615a21a3b319eed"
+      },
+      {
+        "number": 35,
+        "case": "I04-N-P4",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "477c8443f9f2a9607b5ee51025ca83ba554a2c6b2a41b1fefb92f80ab0091008",
+        "manifestSha256": "e658b6449194a6c79886d43193fe610e2df58c8fc6b8625922604e53e15ea332"
+      },
+      {
+        "number": 36,
+        "case": "I04-N-A1",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 2,
+        "outputSha256": "7b2225360092b77ea709c02d8ea976978b2795f5c4c35704263d07732aa9616f",
+        "manifestSha256": "445ea1bd77a769e727d034b152e567158c5f6f077c2e4fa7692ff819122acd37"
+      },
+      {
+        "number": 37,
+        "case": "I04-N-A2",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "ae8e1172dd00cf51b2fd7476ad675e96e9308b475cbda54beb9d15ee1a1d743e",
+        "manifestSha256": "1b845b99888bc474452d69ee210c25623f5867792a97669becf86bc657efbc1a"
+      },
+      {
+        "number": 38,
+        "case": "I04-T-P1",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "22df773eeed36cd71eeef2dfb2b67c1dacd7ad173d238bc1d603fa12439dcfe2",
+        "manifestSha256": "1e90212e69d553bf50dc7acd9bbb89aa675542fc23974dbe5d2b14703789e32c"
+      },
+      {
+        "number": 39,
+        "case": "I04-T-P2",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "69dfc722757045571f4aa78e97d35a30744cd2ced5eaf50e870ea28618774923",
+        "manifestSha256": "587e0ef9448734746ebda116c61922bed2a2402f61564011255f9ee3aed99084"
+      },
+      {
+        "number": 40,
+        "case": "I04-T-P3",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "0d8f3acb90dc27f9c6b3c2385a458d9cef9d412547d4858e5b8f30ca7ec4e72e",
+        "manifestSha256": "edad4ee1bcf92ddeb05d26ad7dd2db619ef452b5907297827405fa1a18c825ea"
+      },
+      {
+        "number": 41,
+        "case": "I04-T-P4",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 1,
+        "outputSha256": "445aaadc0f9cf0078eb059d5076316b94bffd4fe7cb976bbb6c6c8a85d4bd1b9",
+        "manifestSha256": "7d31c453de4bd80ade212dae37e32218102e6e9b9e0ea54c93fd51b850c6217d"
+      },
+      {
+        "number": 42,
+        "case": "I04-T-A1",
+        "sourceHash": "e9c214f6c6bf58f08f3ff747e25014ccc11d47d87145fb942832af88ac4b9fe0",
+        "calls": 2,
+        "outputSha256": "e18de224b007d3a4f61b4b7c67fa45a3433c029d931205d2129e62eac80f2b9c",
+        "manifestSha256": "679556767098d9bca052eddcafab86d00bdf2d5abdbd76310948d808c0862e21"
+      },
+      {
+        "number": 44,
+        "case": "I04-T-A2",
+        "sourceHash": "914809e9728228cd554cb4ff20498b33fd7cba3e8672fadb910d1c214a26c28c",
+        "calls": 1,
+        "outputSha256": "7e511cbd9834236c9c35ff15f170e41b4e0859fceaa46693576581cb5b051ed4",
+        "manifestSha256": "f2fadb12a7b2bba922ac354574f7434771d116e2274482cc4351086af26da416"
+      }
+    ]
+  },
+  "checkoutNavigationAcceptance": {
+    "scope": "14 synthetic explicit invoice/order preconditions through direct Main and Jev/Main; original112 gold unchanged. Screen-owner assertions plus separate real-component browser checks; not a full replay of the private field session.",
+    "calls": 212,
+    "finalCalls": 86,
+    "finalRuns": [
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34
+    ],
+    "finalSourceHash": "7d1ee2025fe42be5d4f18b19aea7d59e4ae5816902c569c98e233f1bf7f7dc42",
+    "runtimeHash": "a8fdd1647a0336e1824127f31f4a6d205314c905ed8873e644392ff43353e357",
+    "finalArtifacts": [
+      {
+        "scriptId": "N01-M-F1",
+        "artifact": "webnavior-order-navigation-20261102-021-N01-M-F1.jsonl",
+        "sha256": "9d291462fea25fd4f209aebcb881ace8beb1a013abd9827923fec1bca324388c"
+      },
+      {
+        "scriptId": "N01-M-F2",
+        "artifact": "webnavior-order-navigation-20261102-022-N01-M-F2.jsonl",
+        "sha256": "6bc665c7df857e14a1aebf518a15c60812e176512aa406a16653a94ed386f985"
+      },
+      {
+        "scriptId": "N01-M-F3",
+        "artifact": "webnavior-order-navigation-20261102-023-N01-M-F3.jsonl",
+        "sha256": "29e242a8c3bba2db2d7613a7117b7688dc200a9f041026aef75f603144521e23"
+      },
+      {
+        "scriptId": "N01-M-A1",
+        "artifact": "webnavior-order-navigation-20261102-024-N01-M-A1.jsonl",
+        "sha256": "68061b5f2ad31a05001dbe7ec6a8c73c7531a734326067ce2e241891c494ad3d"
+      },
+      {
+        "scriptId": "N01-M-V1",
+        "artifact": "webnavior-order-navigation-20261102-025-N01-M-V1.jsonl",
+        "sha256": "819b864a71596ddbb4c51b1670b422a7c523ffdc8f6beecac013b1db67fbcd40"
+      },
+      {
+        "scriptId": "N01-M-R1",
+        "artifact": "webnavior-order-navigation-20261102-026-N01-M-R1.jsonl",
+        "sha256": "6e03f2c61e02c79240b5e9140c176fd048f6f964b6e813f0e19c1f7d6eb9aa10"
+      },
+      {
+        "scriptId": "N01-M-R2",
+        "artifact": "webnavior-order-navigation-20261102-027-N01-M-R2.jsonl",
+        "sha256": "4a2b6feb729636fbe4e9ecda0a8a539e62f9c39b9bde9971e5b89948b745de5e"
+      },
+      {
+        "scriptId": "N01-J-F1",
+        "artifact": "webnavior-order-navigation-20261102-028-N01-J-F1.jsonl",
+        "sha256": "3773156741ccd41d5446c30fa9ff18fdc805a8104c1d1c9c334cd4dedbfad05c"
+      },
+      {
+        "scriptId": "N01-J-F2",
+        "artifact": "webnavior-order-navigation-20261102-029-N01-J-F2.jsonl",
+        "sha256": "bba93a26e046660e6f4b2b728e760c497946300ba7df024fbb8e12789f602b69"
+      },
+      {
+        "scriptId": "N01-J-F3",
+        "artifact": "webnavior-order-navigation-20261102-030-N01-J-F3.jsonl",
+        "sha256": "92ec97fa4d00ceb1128ef0815f769539d0b5948b555e69764a3e413614769e8d"
+      },
+      {
+        "scriptId": "N01-J-A1",
+        "artifact": "webnavior-order-navigation-20261102-031-N01-J-A1.jsonl",
+        "sha256": "b54e5539bc63f438eb38c02ae8c23db278a6e3e9fd178dab83c7b3314d334e8f"
+      },
+      {
+        "scriptId": "N01-J-V1",
+        "artifact": "webnavior-order-navigation-20261102-032-N01-J-V1.jsonl",
+        "sha256": "fb135c0be3944f7bb404094af16e3692d3c25e251ceb05c74e9214041d16caa0"
+      },
+      {
+        "scriptId": "N01-J-R1",
+        "artifact": "webnavior-order-navigation-20261102-033-N01-J-R1.jsonl",
+        "sha256": "a1ba30d233de1534ee652fd704a1b9ea8d6989b112184be1e36d54cfe4a840cb"
+      },
+      {
+        "scriptId": "N01-J-R2",
+        "artifact": "webnavior-order-navigation-20261102-034-N01-J-R2.jsonl",
+        "sha256": "3fa4862972cb950462976635a3e4b5f3465dd5f1595b9194b226be7c1eb593de"
+      }
+    ],
+    "privateFieldEvidence": {
+      "artifact": "webnavior-latest-ordering-20261102.json",
+      "sha256": "96873cfb0025b5ef0b7dceb31c80cc6d25cdc9314f7a1e89788d8e0fe7b1a7e6"
+    },
+    "failedAttemptsRetained": [
+      1,
+      14,
+      16
+    ],
+    "status": "accepted-not-deployed"
+  },
+  "largeQuantityIncident": {
+    "status": "fixed-synthetic-accepted-not-deployed",
+    "artifact": "webnavior-large-quantity-20261102.json",
+    "artifactSha256": "a33ed5097c13983e8af8426add9d1a018a8a43a7edc557e890f651540213d5bd",
+    "actualUtterance": "那我要200份招牌便當、200份排骨便當",
+    "requestedQuantity": 200,
+    "currentToolMaximum": 20,
+    "executed": false,
+    "failureStages": [
+      "INVALID_TOOL_INPUT at quantity maximum validation",
+      "unverified-reply rejected clarification presentation"
+    ],
+    "syntheticAcceptance": true,
+    "policy": "Retain20 per identical line. Add legal siblings; refuse oversized items; no automatic reduction/splits; preserve existing cart."
+  },
+  "quantityLimitAcceptance": {
+    "scope": "16 synthetic direct Main/Jev-Main scripts with isolated existing cart; Arabic/Chinese bulk counts, legal siblings in either order,20/21 boundary, budgets, negated old count corrected to1. Original112 positions unchanged. Not a replay of full field sessions.",
+    "status": "accepted-not-deployed",
+    "policy": "Retain20 per identical line. Add legal siblings; refuse oversized items; no automatic reduction/splits; preserve existing cart.",
+    "calls": 241,
+    "finalCalls": 94,
+    "finalRuns": [
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55
+    ],
+    "finalSourceHash": "0e12dceabb15a88eeb15c3a314a8c3ed719b0446a992a9b2b061bd1fad20b5d5",
+    "runtimeHash": "0d6a8f8c4188884cc07348f4be97da52959d3a90f70b0af06bc68180773689fd",
+    "finalArtifacts": [
+      {
+        "scriptId": "Q01-M-F1",
+        "artifact": "webnavior-quantity-limit-20261102-040-Q01-M-F1.jsonl",
+        "sha256": "d65b1ae6fa197b243f910d72454e96c2ae3f62d9881e10674f5b4ea46220ba93"
+      },
+      {
+        "scriptId": "Q01-M-F2",
+        "artifact": "webnavior-quantity-limit-20261102-041-Q01-M-F2.jsonl",
+        "sha256": "1773e004348f54d0a8cd43875cd41996739dae35133f38a4cafda3cbb0183f6b"
+      },
+      {
+        "scriptId": "Q01-M-F3",
+        "artifact": "webnavior-quantity-limit-20261102-042-Q01-M-F3.jsonl",
+        "sha256": "b42b94a1b669b6ac65791fe2f096518f4566120865edae9052b35e898573f4b1"
+      },
+      {
+        "scriptId": "Q01-M-A1",
+        "artifact": "webnavior-quantity-limit-20261102-043-Q01-M-A1.jsonl",
+        "sha256": "b2d67cbfa1061755587d45eb3476c276d177bb9a9e5d74c4fe006e74ed7d60bc"
+      },
+      {
+        "scriptId": "Q01-M-A2",
+        "artifact": "webnavior-quantity-limit-20261102-044-Q01-M-A2.jsonl",
+        "sha256": "b7e5cd3a90669302fa07bef3dcf88a0d30448e273d1b24d86681982040d6ab2a"
+      },
+      {
+        "scriptId": "Q01-M-B1",
+        "artifact": "webnavior-quantity-limit-20261102-045-Q01-M-B1.jsonl",
+        "sha256": "120086bb2e2bd7f302c05062aca2d0fba0f54ef5c00bf04398d24f3f663cfe06"
+      },
+      {
+        "scriptId": "Q01-M-B2",
+        "artifact": "webnavior-quantity-limit-20261102-046-Q01-M-B2.jsonl",
+        "sha256": "a30d701090ef37b7e5a95bae60899ea9722fda0e42612847c8b7946b6f3de021"
+      },
+      {
+        "scriptId": "Q01-M-B3",
+        "artifact": "webnavior-quantity-limit-20261102-047-Q01-M-B3.jsonl",
+        "sha256": "e0024c4e3430393c6cb245701ca3a309fc80d7581fd6b9e9b4a9545e300ccde0"
+      },
+      {
+        "scriptId": "Q01-J-F1",
+        "artifact": "webnavior-quantity-limit-20261102-048-Q01-J-F1.jsonl",
+        "sha256": "cfff19f45d11197d3b21a86bc2bc2ff73021ed527efcd9834aa9da1b3cf07fd2"
+      },
+      {
+        "scriptId": "Q01-J-F2",
+        "artifact": "webnavior-quantity-limit-20261102-049-Q01-J-F2.jsonl",
+        "sha256": "827eb987b54e9a4f664a70e0261b8479f16e19d0ad68d0604500f2dd56369c73"
+      },
+      {
+        "scriptId": "Q01-J-F3",
+        "artifact": "webnavior-quantity-limit-20261102-050-Q01-J-F3.jsonl",
+        "sha256": "225eab2934136fdba5472ef1462e3da2ffaf005d4a28e197170515d6f5ebb2e6"
+      },
+      {
+        "scriptId": "Q01-J-A1",
+        "artifact": "webnavior-quantity-limit-20261102-051-Q01-J-A1.jsonl",
+        "sha256": "58f59ae55e6da39ca7381010e33a2915ecd18dbd8274ee01c8f8a409ec3e1ac2"
+      },
+      {
+        "scriptId": "Q01-J-A2",
+        "artifact": "webnavior-quantity-limit-20261102-052-Q01-J-A2.jsonl",
+        "sha256": "684a87ca4accf3bb11f0dff78b62c1a87eebd10bd5bf1f99206d785563b15c87"
+      },
+      {
+        "scriptId": "Q01-J-B1",
+        "artifact": "webnavior-quantity-limit-20261102-053-Q01-J-B1.jsonl",
+        "sha256": "1b1e37ff88df017258529daabd4f695451d12d1916c4071e111980e161d0f7e2"
+      },
+      {
+        "scriptId": "Q01-J-B2",
+        "artifact": "webnavior-quantity-limit-20261102-054-Q01-J-B2.jsonl",
+        "sha256": "04e8d7f578e5bdd23f76c9ea9b6203298d1527930f7f16a0951ca13531e169f5"
+      },
+      {
+        "scriptId": "Q01-J-B3",
+        "artifact": "webnavior-quantity-limit-20261102-055-Q01-J-B3.jsonl",
+        "sha256": "9bafcf287abfb9f5b2d20b3fa8faf788718844a31f54fca9816d060edcb4faa9"
+      }
+    ],
+    "failedAttemptsRetained": [
+      1,
+      2,
+      3,
+      5,
+      7,
+      8,
+      13,
+      14,
+      18,
+      19,
+      20,
+      21,
+      23,
+      24,
+      38,
+      39
+    ],
+    "policyRevisions": [
+      {
+        "previous": "d67644724e6c1fb2124ef45e181973a9db72561e03c46ef161ec729a80a38455",
+        "current": "704011af635977c599dd39c15448c0c38809a143ba4cf4af4c08845b436fda5e",
+        "reason": "ESLint formatting of incident declarations; Q01 utterances, preconditions and expected outcomes unchanged."
+      },
+      {
+        "previous": "704011af635977c599dd39c15448c0c38809a143ba4cf4af4c08845b436fda5e",
+        "current": "cb73df2b18e96eb3569f2829f349fa76c346eff82f49ddda7861f6eed816634a",
+        "reason": "Add Q01-M/J-B3 negated200 corrected to1 adversarial cases; original14 cases unchanged. Scope remains this authorized quantity batch."
+      },
+      {
+        "previous": "cb73df2b18e96eb3569f2829f349fa76c346eff82f49ddda7861f6eed816634a",
+        "current": "b744c8dda0c03920fddb704699c554a0dbc05dfe94d363870dfdfae2569e6a78",
+        "reason": "User clarified: 加入合法選項我覺得ok欸. Q01-M/J-A1/A2 now require legal pork1 added while signature200 refused; previous expectations/failures retained in run manifests. Remove whole-utterance semantic guard; per-item policy."
+      }
+    ],
+    "privateFieldEvidence": {
+      "artifact": "webnavior-large-quantity-20261102.json",
+      "sha256": "a33ed5097c13983e8af8426add9d1a018a8a43a7edc557e890f651540213d5bd"
+    }
+  }
+}

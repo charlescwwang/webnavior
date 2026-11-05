@@ -1,6 +1,441 @@
 # Kiosk 語音不確定、回覆與重試的整體修正計畫
 
-日期：2026-10-28（Asia/Taipei）。狀態：使用者已核准並完成主要流程的本機實作；整體驗收尚未通過，未commit、未部署。實際結果與限制見末節。
+2026-11-02 部署後再次回報：已重整、載具確認按鈕可按，但文字Main反覆選載具。
+實際App父層輸入與真實iframe／Host通道各三種資料都通過；不能把現場問題歸因於未重整。
+另增18個文字直接Main案例（I04），區別之前有限Jev／Main候選流程。
+真實模型定位到相關缺口：自然人「填好了」只要求自行按確認，而發票階段不在漏做操作
+的完成檢查中。修正為有效且已提供發票確認工具時，先以原句與原工具核對一次，再做
+純文字修復；不把就緒視為授權、不代替模型判定確認／否定／修改。
+修正後18案同版本通過；增加不含識別資料的現場就緒／工具提供診斷後，17案通過，
+最後統編修改反例遇5分鐘截止（0模型呼叫），使用者另允許最多3次／1分鐘，補跑1次通過。
+最新診斷版本18案已驗收（最後補跑前僅ESLint空白排版，非空白內容完全一致）；
+本批50＋1共51呼叫，帳本已關閉。原始失敗與截止紀錄保留，原載具反覆選擇
+尚未完整重現；相關漏做修正已驗收，尚未重新部署。
+
+
+2026-11-02 三種發票資料確認的一致化計畫（本次使用者要求規劃後實作）：
+
+| 資料 | 可送出前提 | 顧客確認後 | 不送出情況 |
+| --- | --- | --- | --- |
+| 手機載具 | 畫面現有8碼條碼符合既有格式 | 直接進付款方式 | 無效、未完成、否定、仍在修改 |
+| 自然人憑證 | 畫面現有2英字＋14數字符合既有格式 | 直接進付款方式 | 同上 |
+| 統編 | 畫面現有完整8碼 | 直接進付款方式，移除額外第二次確認 | 同上 |
+
+實作順序：先用測試重現統編多一道確認與Main恢復缺口；共用既有草稿就緒檢核，
+讓Main只能選當輪有效資料的確認候選；保留checkout版本／修改後舊結果拒絕，
+不把確認資料視為選擇付款或付款。三種畫面均以真實輸入／控制測試驗證。
+相似語句透過模型理解，不新增逐句關鍵字白名單。擴充矩陣涵蓋七種確認說法，
+並交叉驗證無效資料、否定送出、未輸入完、要求修改；保留原始失敗與每次模型結果。
+使用者已授權200次／8分鐘。實作後，同一版本36案例全部通過，實際129次呼叫，
+零失敗；資料保持原值、未選擇付款方式。36個案例與逐案雜湊已永久列入
+orderingIncidents／conversationFindings，私有原始結果保留於本批帳本。
+此次為三種發票頁既有草稿前態的合成驗收，未重跑112條、未操作正式訂單，尚未部署。
+證據：`/tmp/webnavior-invoice-kinds-acceptance.json`；帳本已關閉，不繼續使用餘額。
+
+
+2026-11-02 發票確認回歸已實作並完成本次模型驗收，**尚未部署**。畫面輸入改由Menu保存草稿，
+有效時才提供發票確認候選及工具，按鈕與語音共用驗證與checkoutrevision；只進付款方式，不選擇付款。
+真實模型另定位並修正：Main恢復範圍漏掉發票確認、唯讀恢復錯開推薦工具、完整拒絕被保留為INCOMPLETE。
+最後同一程式版本六案例通過。此批原授權39次、追加20次，共59次，帳本已關閉；三次失敗全部保留。
+這是明示發票草稿前態的合成驗收，不冒稱原事件完整重播，也沒有重跑原112矩陣。細節與證據見交接文件。
+
+
+2026-11-02 部署後新增回歸：電話入口「關閉」應略過登記進菜單，現場卻回通用附和。
+已在隔離工作樹修正恢復入場後漏接電話操作判斷，以及診斷紀錄阻塞對話儲存；**此修正已部署為phone-close-20261102-092848**，發布檔案3189／origin47與DB、Redis健康複驗通過；公開頁面可載入，正式點餐耗時尚未實測。
+本次另授權40次／3分鐘，實用31次；最後三個相同程式版本合成結果涵蓋關閉、不要關閉、同伴關閉其他視窗。
+關閉合成回放1.557秒，不能視為公開瀏覽器耗時。原始四次失敗全留存，其中最後一筆為silentOnly判分矛盾，
+已離線測試修正並重判保存的輸出，未重送模型。詳細證據與限制見交接文件及conversationFindings.json。
+原112固定gold及先前發布包保持不變；新修正以獨立發布包部署。
+
+更新：2026-11-02（Asia/Taipei）。完整驗收及部署完成：固定候選10的110條可執行劇本、高風險24條各三次及兩條明示補前態診斷均完成。使用者執行切換後，已獨立確認新版API工作目錄、3189個發布檔案、47個origin檔案及DB/Redis健康；正式公開Kiosk頁面可載入。公開網址對非瀏覽器請求回403，故公開檔案逐位元比對未完成；未操作正式點餐、購物車或付款流程。
+
+## 2026-11-01／02 完整112驗收與部署完成
+
+使用者要求完成112劇本、驗證後部署，允許本次使用既有Jev/Main資源，並保留實際失敗供未來provider回歸。此批與已關閉145-call限定批次分開記帳。不commit，不操作正式Session/cart/POS/付款。正式隔離工作樹為`/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`；原no_mcp與SLM比較不修改。正式環境已切換為`conversation-matrix-20261102-012607`。
+
+固定候選10完整110條通過，高風險24條各三次通過，D07/H05兩條明示seeded-entry診斷完成。110條含合成與故障控制，不冒稱112條自然歷史對話；原始兩條入場前態缺口仍保留。接受的160次執行有一致程式/gold及紀錄的模型/角色版本證據；不能把前幾輪探索或部分通過拼成最終結果。
+
+最終離線Menu806通過/202跳過、Kiosk312/51、相關Server641/80、固定入口295/3；三套件型別、改檔lint與Menu/Kiosk正式建置通過。集合有重疊，不加總；未執行全專案typecheck。本批累計11668次provider呼叫，143次失敗全部保留，帳本已關閉，不再花剩餘額度。
+
+發布包為`/home/aimax/.local/share/webnavior/releases/conversation-matrix-20261102-012607`。使用者已執行sudo切換，部署回報與獨立唯讀複驗均通過；未改DB/provider設定。公開頁面已透過新瀏覽器分頁載入，驗證限制如上；證據保存在`/tmp/webnavior-112-postdeploy-verification.json`。
+
+- `conversationMatrix.ts`有112個位置與逐輪gold。來源為20原連續鏈、8既有probe擴寫、4規劃重建、80新劇本；舊稱32條既有完整流程不正確。110條可重建，D07/H05缺原始入場權威，僅允許明示seeded-entry診斷，輸出historicalReplay:false，不當完整歷史成功。
+- `conversationOracle.ts`核對真實cart品項/份數/options、售價條件、分類、成分篩選、展示、回覆與phase。反例測試涵蓋錯餐、錯份數、只推薦未購買及超預算。`orderingIncidents.ts`保留實際回報原文、100員原字、觀測錯誤、缺前態與連到合成劇本的關聯，不能把重建成功冒稱原事件完整重播。
+- gold目前V5，原V1至V4私有備份及帳本修訂保留。V2審核原有背景/前態/規格/故障期待；V3加強暫緩應答，V4加強未明指代與保持現況，V5明確拒絕餐點不得進結帳。這些回覆/狀態強化不放寬cart效果。`conversationFindings.json`目前保留143次失敗、兩個弱斷言假通過缺口及離線門檻；所有原始逐次證據另以hash關聯私有JSONL，不覆寫或挑掉失敗。
+- 共用草稿、穩定requestId與短期回答票據由Menu持有。被動Host狀態讀取不發新票據；恢復驗證用`kiosk_interaction_state`。配置、餐點確認、一般問題、清空確認與目標釐清的關聯版本一致；狀態真正改變仍拒絕舊結果。目標釐清投影共用，決策入口才更新回答票據。
+- Main技能2收到分開的歷史/事實與最後一則當句原文。Menu回答候選先核對完整句子覆蓋；診斷trace不是成功理解。恢復服務入場後即使有品名，尚未完成目的判斷仍須獨立分類，不能直接給一般可寫Main。交接保留目前引用、商品解析、購物車匹配與未完成需求。KEEP_ORDER與自行瀏覽IDLE分開；純服務只用typed回覆。價格INFORMATION唯讀，但整句order-operation優先於先前片段的價格判斷。
+- Main工具能力與既有領域前提一致：有已綁目標才提供餐點效果；有當輪選餐才提供分步客製與加車；空車不提供項目修改/清空；問題已呈現才可defer；取餐方式須本句POS引用/已解析交接；結帳須Menu就緒。有限操作交接保留證據查詢，不另推薦。這些是移除必然被拒絕的提案，不把品名命中改成操作授權。
+- Host遇到新的菜單/餐點必要問題或會員/發票/統編/支付問題即等待顧客，暫停同批後續效果，不再由Main自己回答。一般內用/自取問題不截斷原句其餘餐點。工具批次預設4，初始Menu交接每多一個已確認目標預留查證/效果2批，最多8；總16工具與60秒截止保留，不從後續讀取擴大額度。未知/失落寫入回執不自動重送。
+- 重播使用真實Host/Hono/Menu與同一編譯AJV驗證器；只有確定未執行的輸入拒絕可在效果前修正一次。成功展示回執不因後續讀取消失，但空車證據與未執行提案不能代替模糊訂購的釐清。價格句間逗號、保存換批條件、種類適配、未支援條件說明均有回歸。
+- 本批私有帳本`/tmp/webnavior-112-20261101.ledger.json`與wrapper`/tmp/webnavior-112-replay.py`保留所有累計呼叫；已告知估算12000次/12小時wall window。實際配置為Jev Qwen3.5-4B與Main qwen36/thinking關閉，僅合成資料及隔離資料庫。原始wire/角色提示不入repo。
+- 發布門檻：固定同一實作完整110條、高風險24條各三次、D07/H05明示診斷、套件驗證及建置；逐次manifest需同gold/程式證據，provider/角色設定亦須一致。通過後才準備Server/Shared/Menu/Kiosk配套release、可回復切換、健康/檔案/公開瀏覽器檢查。尚未滿足時不得宣稱可發布或已部署。
+
+## 2026-11-01 對話進度與交接契約重構計畫（目前執行依據）
+
+狀態：**核心流程已離線驗證，本次限定真實模型驗收完成；完整112劇本矩陣與部署未完成**。本節優先於下方舊計畫的實作順序與「最新狀態」標示；舊內容保留作背景。使用正式版隔離工作樹，不修改SLM／Jev實驗工作樹；本批未commit、未改正式設定／正式Session／購物車或部署；模型驗收只使用授權的合成對話與隔離資料庫。
+
+實作範圍與證據：
+
+- 基線保存在私有 `/tmp/webnavior-conversation-refactor-baseline-20261101.json`，記錄正式release、工作樹HEAD及dirty檔案hash，與後續source驗證分開。
+- `conversationRequestSchema`現在保留原始需求、active／suspended／confirming、已知quantity／options、缺少欄位及expectedRevisions；未知份數保持缺值。Menu由同一投影供Main、Host與fast-path讀取，資料經Host／HTTP schema傳給Jev與Main；唯讀Main也保留草稿，但不取得操作權限。
+- 新測試先重現讀取入口遺失欄位，以及「對，兩份」覆蓋原始需求，再修正；同時驗證確認第二道餐、暫存前餐、已選規格仍缺其他欄位、快照隔離與真實入車後清除。
+- 固定回歸入口已加入新Menu、共享schema、工具迴圈與呈現測試；Menu／Server／Kiosk型別及改檔lint通過。這是離線契約／行為證據，不代表真實模型或正式環境完成驗收。
+- 問題新增穩定requestId；餐點確認的草稿、回答票據及原需求分開，確認轉為配置時保留同一草稿ID。回答過期保留需求，新回答另發票據，舊答案與未發回答票據的提議不能執行；被動快照不產生新的理解範圍。
+- Menu intent domain現在產生intentRecovery的有限候選與問題／需求關聯；Server移除逐phase／purpose／字面商品判定的第二套白名單，只核對當輪scope與候選、live question、唯讀／價格與服務入場限制。Jev與Main仍提出同一既有candidate ID，由Menu編譯並驗證執行；付款／入口、含糊／多品項／分類證據的排除測試留在Menu。
+- Main工具迴圈遇到需要顧客回答的問題，回傳waiting並暫停同批後續工具；未執行的每個tool-call都有結果紀錄，不自動重送，不再呼叫模型猜欄位或改問題。呈現保留本輪全部已成功回執；後續失敗顯示部分成功，最終驗證失效的問題不可從舊模型結果復活。
+- 同一份數草稿走Jev直接、Main恢復、Main仍不確定三條整合路徑均已驗證：前兩者相同效果，後者保留原草稿不寫入。完整112劇本／跨菜單／真實provider矩陣仍未完成，不能把套件測試數量當作這些劇本的完成率。
+- 本輪離線驗證：固定入口332項通過／3項opt-in跳過；Menu套件788通過／202跳過，Kiosk套件297通過／51跳過；Server相關路由與domain607通過／80跳過。這些集合有重疊，不加總。Menu與Kiosk建置通過；未跑全專案typecheck。另有5項跨菜單離線驗收：現場菜單＋三份不同品名／ID／分類／價格／必填規格的合成菜單，以及菜單改價／選項後的過期草稿。保留驗收菜單未用於提示調整；這些測試明示有限語意選擇，不是假稱模型理解正確。本次限定模型驗收結果如下；不把此結果擴張成完整矩陣通過。
+
+### 本次限定真實模型驗收（2026-11-01）
+
+使用者另行允許150次呼叫／10分鐘。既有Jev為lookski／Qwen3.5-4B，Main為qwen36、thinking關閉；複製既有場域角色到隔離資料庫。只傳合成對話與菜單，不重送現場顧客完整對話；正式設定、Session、購物車、POS與付款均未操作。
+
+實際145次（Jev100、Main45），最後一輪在約7分16秒完成；各次測試程序累計53.235秒，兩種時間口徑不可混用。批次已關閉，不再花剩餘5次。10次執行中，初跑1次失敗、修正後9次通過；通過組含6次自然完整對話與3次明示種入前提／故障注入探測，不能合併宣稱9條自然完整流程。
+
+| 流程 | 執行／結果 | 真實狀態斷言 |
+| --- | --- | --- |
+| 100元→其他→200元其他→其他→水餃→兩份 | 修正後自然六輪2次通過，52次呼叫 | 價格與批次正確；最後水餃2份／160元，之前不加車 |
+| 一份排骨飯→排骨便當→對，一份→內用→好 | 自然五輪2次通過，35次呼叫 | 炸排骨便當1份／130元；內用；結帳只到發票，開始一次、付款0次 |
+| 水餃兩份→芝麻醬→自取→好 | 自然四輪1次通過，14次呼叫；菜單為明示合成必填規格變體 | 缺醬料時cart0；補醬後兩份、單價85／總額170；自取；發票階段，付款0次 |
+| 我想吃排骨便當→那我要一份→內用→好 | 自然四輪1次通過，15次呼叫 | 同一品項1份／130元，內用與結帳入口正確 |
+| 單品查詢後→那我要一份→內用→好 | 種入查詢前提，後三輪真實模型通過，10次呼叫 | 覆蓋獨立的read-first分支；不冒稱自然四輪 |
+| 100元條件下→其他→明確看全部菜單 | 種入預算前提，後兩輪真實模型通過，10次呼叫 | 其他不解除預算；明確全部才展示完整菜單，cart0 |
+| 有效結帳邀請→好，注入Jev入場棄權 | 既有前提＋真實Main單輪通過，1次呼叫 | 開啟一次發票階段；無支付效果；不是自然Jev成功 |
+
+原始失敗保留：最初預算兩輪用了8次呼叫，第二輪Jev選SEARCH_MENU，Menu resolver已產生slots.more=1，但compiler忽略它、呼叫menu_get catalog，丟掉100元條件。先加入queryActions失敗回歸再修compiler；同時將「保留條件探索」與「明確全部菜單」拆成Menu發出的不同有限選項，避免修換批時攔住完整菜單。原有完整菜單保留飲食排除的斷言未放寬，並把recommendationFlow測試納入固定gate。
+
+驗收中新增的完整菜單候選，由後續query-continuation探測驗證；較早的完整對話紀錄在此新增之前，不能聲稱所有完整流程都在最後候選集合重跑。最終離線回歸／型別／建置另行通過。這批不涵蓋完整112劇本、全菜單變體矩陣、真實ASR／語音、公開瀏覽器註冊流程或正式POS／付款。
+
+私有證據為 `/tmp/webnavior-refactor-acceptance-20261101-report.json` 與同前綴JSONL（0600）；報告保留失敗、種入前提、故障注入、逐輪購物車／phase、呼叫與時間。原始provider payload／角色提示不入repo。
+
+### 目的與現況
+
+顧客連續點餐時，商品、份數、規格、待答問題、已完成操作與未完成需求應保持一致。Jev判斷不確定或轉交Main，不能讓訂購變成推薦、把問題回答當成一般附和，或丟失本句補上的資料。
+
+目前已有基礎，重構以此為起點：
+
+- `packages/stage-shared/src/kioskConversation.ts` 已有 `ConversationContext`、question、handoff、outcome與schema。
+- Menu已有購物車、selection、pendingConfiguration、suspendedConfigurations、mealClarification、查詢條件及revision；它們是實際領域狀態。
+- Host已有utterance／turn／task生命週期、工具回執與手動接管；Server已有Jev路由、Main技能與對話記錄。
+- 首批前的缺口是投影與決策不一致：`retainedRequests`只有ID／品項／active或suspended，沒有完整草稿資料；商品、問題、份數等散落於不同流程。Server與Host還會依語意不確定原因重新縮限能力，Main接手機制逐phase加條件，與Menu的合法動作規則重複。
+- 過去測試常驗到相鄰成功分支。例如第一句走「補問份數」可通過，沒有覆蓋現場「查到商品後再購買」；Menu單測確認yes可通過，沒有覆蓋「Main接手確認＋本句份數」。
+
+已核實的正式執行基線為 `checkout-entry-answer-20261031-225320`（2026-10-31 22:58:31 Taipei啟動）。後續省略品名、餐點確認兼份數與固定回歸入口仍在正式隔離工作樹，尚未commit／push／部署。它們的離線結果不代表本重構完成；不得混用正式與工作樹版本的驗收證據。
+
+### 範圍與保留能力
+
+範圍涵蓋查詢／推薦條件、訂購、缺份數／規格、商品確認、指涉、加改餐、內用／自取、結帳入口，以及它們之間的交接。多人數／選桌、發票與支付沿用現有領域狀態及驗證，在共用契約修改時做相容行為回歸；本重構不放寬付款授權或新增支付能力。
+
+沿用目前Jev／Main、店別角色、Menu／POS契約及技能機制。先不引入新的狀態框架、Agent框架、全域store、模型或依賴套件；實作若發現現有模組無法承擔，先列出具體缺口與候選方案再決定。原有菜單資料更換範圍仍有效，不把品名、價格、分類或選項硬編碼成分支。
+
+### 統一的意思：各種狀態有明確擁有者
+
+「同一份進度」是由同一組領域事實投影出的契約。每次模型接手與工具執行都引用可核對的當輪版本；模型歷史、畫面狀態和購物車不能互相冒充。
+
+| 資料 | 唯一擁有者 | 其他層可做什麼 |
+| --- | --- | --- |
+| 菜單、可售狀態、價格、規格、實際購物車／座位／結帳階段 | Menu及其既有POS／checkout邊界 | 讀取當輪快照；提出受限操作 |
+| 訂購草稿、已確認／缺少欄位、前景與暫存需求、待答問題 | Menu的對話領域狀態 | Jev／Main讀取；Host提交原句及有限選擇 |
+| 收音、ASR原句、當輪排程、取消／手動接管、TTS | Kiosk現有turn／utterance生命週期 | 關聯至相同session／document／turn，不另保存一套訂購進度 |
+| Jev／Main的理解提案、使用的輸入快照與選擇來源 | Server的對話決策流程 | 產生提案；不能寫購物車、創造票據或宣稱執行成功 |
+| 已接受操作、成功／拒絕／結果未明回執 | 實際執行該操作的領域邊界 | Host呈現／記錄；歷史文字不能替代回執 |
+| 對話／診斷記錄 | Server既有Session記錄 | 供理解與追查；不能反向還原已失效的操作授權 |
+
+Server路由保留驗證身分、解析HTTP／SSE、取消與回傳等傳輸責任。真正可共享的對話決策程序留在domain；不為拆檔建立只轉傳參數的service或新的通用gateway框架。套用server-gateway-refactor的責任邊界，檔名遵守本專案AGENTS的camelCase規範。
+
+### 共同契約要補齊什麼
+
+在既有中立schema與Menu狀態上擴充；先列所有producer／consumer，再同步修改。以下是需要表達的資訊，實作時才定最小欄位名稱，不預先新增第二套平行API。
+
+| 契約部分 | 必須保留的內容與規則 |
+| --- | --- |
+| 當輪來源 | 既有session／document或連線綁定、utterance／turn、task、原始文字；每次續接保留原需求，不能用後來一次查詢取代 |
+| 目前事實 | 菜單／cart／selection／checkout等相關revision、目前展示的商品參照；區分「字面未匹配品名」與「沒有可解析的商品指涉」 |
+| 未完成需求 | 可有多個草稿／需求，標示目前前景與暫存；已確認的item、quantity、options、仍缺欄位與各欄位來源；未知份數與預設份數不能混為一談 |
+| 待答問題 | questionId、purpose、對應哪個需求／欄位、是否真的已呈現、有效期限、當輪有限選項及適用revision |
+| 理解提案 | 回答目前問題／提出新需求／否定／查詢／背景／無法確認，以及選到的既有候選或參照；Jev信心只表示Jev證據，Main獨立理解另記來源 |
+| 執行與結果 | 關聯原需求及操作的ID、受影響資源版本、未執行／執行中／成功／拒絕／結果未明；多項需求須表達部分完成，不能只完成第一項就結案 |
+
+模型只能使用當輪提供的商品／選項／價格解讀／動作參照；既有Menu仍負責解析原句份數、編譯參數與核對領域條件。跨欄位的「對，一份」必須同時帶回問題確認與新份數。後句只修改明示欄位，其他已確認規格保留；新餐點或獨立需求不能偷繼承舊餐的份數／選項。
+
+### 一句話的共同處理順序
+
+1. Host接收原句，取得Menu同一來源的當輪狀態、待答問題與合法候選；保留原句與相關ID。
+2. Jev先提出理解；可執行的完整提案走既有快速路。Main接手時取得相同契約的最新事實、原需求、有效問題與未完成資料，依同一ordering skill重新理解。
+3. 語意不確定先完成理解，不把「Jev不確定」永久等同成「只能推薦」。Main也不能藉此解除顯式唯讀、入口、付款或其他領域限制；它須提出可驗證的新提案，由Menu判定是否能執行。
+4. Menu核對提案與當輪問題／參照，補齊或修改該需求的資料。缺份數／必填規格時由同一問題機制產生下一問；對另一需求的回答不能消耗舊問題。
+5. 欄位與條件齊全後，經同一編譯／授權邊界執行一次。既有安全或同意條件有真實業務意義時保留；逐案例補出的重複語意白名單逐步移除。
+6. Host先提供與真實階段相符的處理中回饋；成功回執到達後呈現已完成／下一個有效問題。草稿文字不作完成證據。若結果未明，先讀取可驗證狀態，不自動重送寫入。
+
+快速路、Main接手、typed與ASR輸入共用以上契約。一般資訊／背景互動仍可自然回應，不因存在購物車或歷史提議就變成訂購。技術失敗與語意不確定分開記錄，避免讓修正一個分支時改變另一種權限。
+
+### 狀態與生命週期的不變條件
+
+- 草稿不等於購物車。只有實際成功回執才能記為已加入；失敗保留尚未完成需求，不能改成另一道餐或推薦來結案。
+- 問題由需求狀態推導並記錄真正呈現；原句、問題與選擇須同一session／document／當輪綁定。模型不能生成有效questionId／operationId或重新使用歷史問題。
+- 票據過期與需求是否仍未解決分開。新回答可取得新的有限處理窗口；舊回覆、被動讀取、reset／換文件不能延長舊操作授權。
+- 取消／插話若發生在操作前，停止後續操作；已送出的效果先等回執或查明狀態，再釋放控制。新輪不能清掉前一輪已接受效果或誤報未執行。
+- 手動操作、菜單更新或座位／購物車改變，核對該操作真正依賴的revision。不要因無關展示更新重送已完成操作，也不要因保留歷史就使用過期價格／商品／規格。
+- 同意進入結帳只開啟後續流程。發票、支付選擇、付款各有自己的合法階段與必要同意，不由前一句「好」一併取得。
+- 保留查詢條件、已看批次與訂購進度各自的領域含義；查詢不加車，明確訂購不能被查詢結果冒充完成。
+
+### 分階段工作與通過條件
+
+| 階段 | 工作內容／既有落點 | 通過條件與交付證據 |
+| --- | --- | --- |
+| 0：凍結基線 | 保存正式release與dirty工作樹的HEAD／hash／配置來源；盤點每種pending question、草稿、state投影與權限判斷的讀寫者。以`orderingIncidents.ts`及既有history fixtures建立需求－測試對照，列出未覆蓋分支 | 每個已回報案例有原句、先前狀態、錯誤結果、預期實際狀態與執行版本；清楚標示只有局部／種入前提的測試。既有固定回歸可重跑，未部署補丁與正式版本分開 |
+| 1：共同契約 | 擴充`stage-shared/kioskConversation.ts`；將原句、完整草稿、問題目標／呈現狀態、當輪提案與結果的語義寫清楚；列出Server／Kiosk／Menu所有producer與consumer | schema／型別／序列化契約測試通過；同一Menu狀態輸出的一般Main與fast-path投影不再漏掉已確認欄位；不洩漏電話、憑證、vendor metadata |
+| 2：Menu統一進度 | 在Menu既有領域模組集中草稿／問題的生命週期與狀態投影，讓`kiosk_fast_path_context`、`kiosk_interaction_state`、`kiosk_conversation_context`源自同一組事實；保留查詢與實際order machine各自職責 | 查詢後訂購、補資料、確認兼份數、否定、暫存／恢復、多項需求、手動修改／過期／重播的狀態測試通過；原先各pending變數不再對外形成互相矛盾的進度 |
+| 3：Jev／Main共同接手 | 在既有Server domain及ordering skill收斂理解程序；兩種模型輸出映射到同一提案契約。Host只維持當輪、轉交與執行；路由保留薄傳輸邊界 | 同一案例強制走Jev直接成功、Jev棄權後Main、Main仍不確定／失敗三條路；成功路有同樣正確效果，失敗路保留需求／有效釐清。移除一個重複判斷時，其保護由唯一領域邊界測試證明仍在 |
+| 4：回執與呈現收斂 | 沿用`useKioskInteractionRecording`、questionPresentation與既有progress；任務完成判斷依需求覆蓋與回執，不以「有任何工具回傳」結案。JSON／SSE共享同一對話程序 | UI文字、購物車、問題與語音對同一結果；進度及成功時序明確，取消／timeout／late result不誤蓋新輪、不補造成功、不重複寫入 |
+| 5：完整驗收與發布 | 固定腳本、菜單、模型配置及source hash；先離線矩陣，再在隔離Session／cart以實際provider走完整連續流程；準備獨立runtime與原子版本發布／回復 | 下列驗收矩陣通過並記失敗數／各分支覆蓋、呼叫與耗時、未知結果；API／Menu／Kiosk契約版本一致。正式健康／資產核對與對話功能驗收分開，不互相替代 |
+
+各階段完成可review的邏輯單位後才推進下一階段；不以拆出檔案數或測試總數當完成標準。中途保留一條正式寫入路徑；若做新舊決策對照只能做測試或不執行效果的比較，不得對同一訂單雙重執行。變更producer／consumer的階段以同批契約同步交付，不留下長期雙版本fallback。
+
+### 固定案例與驗收矩陣
+
+`apps/order-menu/src/evaluation/orderingIncidents.ts`作為近期現場原句的保留來源，既有`historyData.ts`及價格／查詢fixtures繼續保留。每個案例記錄來源與前提；觀察到的錯誤回覆是反例，預期值必須核對真實cart／phase／工具效果。
+
+| 必保留流程 | 核對結果 |
+| --- | --- |
+| 查到唯一排骨便當→那我要一份 | 正確item／quantity入車；沒有用推薦代替購買 |
+| 一份排骨飯→排骨便當→確認餐點→對，一份 | 確認與份數一起保留；同一筆加入一次 |
+| 明確訂購→缺份數／必填規格→回答 | 缺資料時cart不動；已給欄位不遺失、不重問，完整後入車 |
+| 問內用或自取→內用／自取 | 真正設定方式；依現有場域能力接人數／桌位或下一步 |
+| 問進入結帳→好／先不要 | 同意才開啟一次；拒絕保留訂單；沒有支付效果 |
+| 預算→其他→改預算→其他→訂購 | 價格與批次正確，最後才按訂購寫入 |
+| 多品項／加改餐／否定／資訊插話後恢復 | 原整段需求不只完成第一項；舊草稿不污染新餐，查詢不購買 |
+| 菜單價格／分類／必填選項變更 | 從當輪資料取得ID及金額，過期計畫重核對；不依示範菜名固定判斷 |
+| timeout／取消／手動接管／重複回覆／跨session | 不重做已成功效果，不跨顧客引用問題，不把未知結果宣稱成功 |
+
+每條適用案例至少分出：快速成功、Main接手、必要釐清／缺資料、明確否定、無關話語；不要只改一句同義詞就當另一條結構覆蓋。第一步可能走查詢、補份數、名稱確認，須各自驗到後續相同訂購結果；自然模型剛好選到成功分支，不能替代其他分支。
+
+固定離線入口沿用：
+
+```sh
+pnpm -F @proj-airi/stage-kiosk test:ordering-regressions
+```
+
+這個入口需隨實作補上共同契約／轉移／整合測試並保留根CI註冊；不能因重構移除現場原句案例。先寫失敗重現，再改production code。型別／lint按影響套件執行；不自動跑全專案typecheck。
+
+真實provider測試沿用既有opt-in測試程序與隔離資料庫，合成內容、配置、呼叫／時間範圍按該次已授權範圍執行；本計畫不新增模型呼叫額度，也不把先前指定流程的授權擴大。`confirmation-order`目前只是已準備的五輪驗收模式，尚未執行。完整自然流程與種入前提／故障注入分開報告。常規Jev快速路不預設增加模型輪次；Main／復核有總回合界線，與改前比較實際呼叫及延遲，不能暗中放大限制來換通過。
+
+### 完成與停止條件
+
+本重構完成須同時滿足：
+
+1. 草稿／問題／實際訂單的擁有者清楚，Jev與Main使用共同契約，重複語意權限分支已移除或有明確獨立業務理由；不能只是把舊條件搬進新檔。
+2. 每個已回報案例有可重跑的實際狀態斷言；連續流程及不同起始分支通過，原有加改餐、價格／規格與支付邊界沒有已知退步。
+3. 隔離真實provider的完整流程已驗，明列未涵蓋的ASR／菜單變體與失敗情形；健康檢查、單次成功或離線測試數量不作替代。
+4. 正式實驗分支維持隔離；交付來源可重建、可review、可回復。只有使用者要求發布時切換正式版本，發布後核對來源版本／健康／公開資產；未知訂單不重送。
+
+若某階段發現必須改變原有商業規則、增加依賴／新POS能力、無法移除的循環依賴或擴大產品範圍，先記錄具體決策與影響再處理。目前核心流程已離線實作，未commit、未開始本重構的模型測試或部署。
+
+
+## 2026-10-30 完整對話修復計畫（目前執行依據）
+
+狀態：已開始正式版續作；首個價格交接缺口已離線重現並修復，尚未部署或開始本節真實模型測試。本節優先於下方10/28–29的進度與部署敘述；下方保留作既有設計及歷史依據。本節歷經規劃與首批本機實作；本次範圍補充僅更新文件，不改程式、Prompt、模型、正式設定或部署。
+
+### 目標與範圍
+
+使用者最新確認的工作分工：本對話負責正式版本的功能正確性、穩定性、回歸驗收與發布；另一對話負責SLM／Jev的比較、選型與合作實驗。先前提到的V1限制僅是另一工作區的歷史修改，不能當作另一對話目前唯一目標，也不是本次正式修復前提。
+
+兩邊使用獨立工作樹／分支及測試資料，正式服務固定發布快照。實驗產出的模型、Prompt、候選、路由或合作方案，須附來源版本、配置、完整對話效果、延遲／呼叫成本及已知失敗；正式線評估採用後，以正式規則及同一整合版本重新驗收。實驗結果不直接覆寫正式程式或配置。本輪不替另一對話改檔、停工、發訊息或調整其實驗。
+
+以顧客整段需求是否完成為交付標準：預算與條件持續有效、問答能接續、點餐真的進車、回覆與畫面反映同一個結果。沿用正式版功能；原工作區另一聊天的V1入車後禁改政策不納入本次。現有1–20份上限先保留，改善辨識及超限說明；是否放寬是獨立產品決定。
+
+本計畫先固定目前正式Jev與Main配置，不以換模型、調信心門檻、加長歷史或新增逐句模型審查作預設解法。需要模型比較時另列實驗，不與程式修復同批變更。優先減少重複交接與矛盾提示，不增加一般合法需求的限制。
+
+### 2026-10-31 部署完成（最新狀態）
+
+使用者明確要求部署，完成發布準備後由使用者本機sudo切換。
+ordering-skill-20261031-182642於18:39:56 Taipei生效，正式API執行路徑核對一致、
+3190發布hash及47原站前端資產檢查通過，DB／Redis健康。公開IAB載入Kiosk
+註冊頁與本次index-D1UL0_nW.js，未建立裝置或正式訂單。發布腳本可回復前一
+獨立runtime與前端；未改schema、provider或管理後台。以下保留發布前驗收歷程。
+
+### 2026-10-31 本輪完整驗收結果（最新）
+
+使用者要求完整驗收並明確「此次不限額度」。第一輪在最後「兩份」失敗：Jev
+將SINGLE與ANSWER低信心混淆，skill只接新餐點，未接有效配置問題。已新增
+configuration／item-configuration待答問題的候選交集接手，保留answeredQuestionId；
+過期、錯purpose、未發行與明確readOnly仍不提升，先重現失敗再修正。
+
+同一六輪劇本以全新隔離DB／Session完整真實重播3次，全部通過：100元→其他
+→200元其他→還有其他→我要水餃→兩份。三次都沒有超預算或重播舊批、缺份數
+時Cart0，最後真實Menu cart水餃2份、160元。每次26呼叫，9.248／10.540／8.916秒。
+未部署、無正式訂單／POS／付款操作。此結果只代表現有菜單這條合成文字流程，
+不代表112劇本、跨菜單、ASR或全部正式情境。技能批次下段保留實作歷程。
+
+### 2026-10-31 Main skill 落地批次
+
+查詢結論：正式Kiosk沒有runtime skill registry／loader；`.agents/skills`是開發工具技能，
+不是顧客對話時Main會讀取的技能。現有Main的程序散在route提示與工具描述。
+
+本批次不引入套件、檔案掃描或另一個Agent框架。Server domain擁有內建、版本化
+ordering skill（適用範圍、理解／查詢／新增／加改餐程序、工具選擇及成功條件）。
+一般Main的JSON／SSE共用相同技能內容，路由不再重複保存那兩段流程提示。
+
+已入場且Jev回UNCERTAIN_OPERATION、在ordering、具有當輪精確商品證據時，
+Main載入同一skill，獨立讀原句與真實近期對話，最多一次從當輪browser-issued
+餐點效果候選選擇，或明確保留不確定。它不填品項ID／份數／工具參數、不偽造Jev
+confidence。選定的效果仍進既有Menu候選解析、缺slot問答、revision與執行驗證。
+其他背景、服務入場未定、phone／checkout、既有readOnly／recovery唯讀限制不提升。
+未能完整表示需求、無效／多個tool calls、provider失敗均維持原交接；不重試寫入。
+第一版以精確品項的單一需求為界；不宣稱涵蓋別稱歧義、多餐組合或所有操作。
+
+本批次已實作於隔離工作樹，未部署。新增重現先失敗再通過：弱family交接由
+Main ordering@1選ADD_ITEM→Menu問份數→兩份實際入車；查有沒有只讀不加車。
+JSON／SSE共用技能，決策來源獨立標記main-skill，不偽造Jev信心。
+Server87／Kiosk78與scoped types、lint通過。真實單輪診斷重建已知兩輪前置情境，
+新Jev弱family→新Main技能選新增→Menu問幾份成功，4次呼叫；不冒充全新六輪。
+累計118／120，剩2次；完整真實四／六輪與其他技能涵蓋仍待驗收。
+
+
+先寫route／Host／Menu的失敗重現，再實作。離線驗收：訂購→缺份數→兩份入車；
+詢問有沒有只讀；否定／資訊／未知效果不能加車；原有readonly與失效候選仍拒絕。
+同時測JSON／SSE技能載入及既有數量回歸。完成scoped tests／types／lint後停。
+真實provider仍受既有累計120次限制（已用114）；不重設額度，不部署、不commit。
+
+### 2026-10-31 範圍補充：同一網頁的菜單資料更換
+
+依使用者最新要求，先驗證現有點餐網頁／工具契約內的菜單資料變動。品項ID、品名／店家別名、分類、價格、客製化群組與選項、預設／必填、選項加價，以及現有schema支援的供應狀態／成分資料在範圍內。網頁版面改造、DOM控制項重構、新網站介接、模型選型與新POS能力不在本次擴充範圍。原有正式版預算、問答及加改餐修復繼續進行。
+
+驗收以當輪實際菜單資料推導結果，不把水餃、牛肉麵、固定分類、選項名稱／順序或售價寫成程式規則。既有現場回歸仍保留其原始品名與狀態，跨菜單變體另列來源及預期，不能以換資料為由刪除原失敗。
+
+| 資料變動 | 要驗證的行為 |
+|---|---|
+| 品項新增、移除、改名、換ID或別名 | 找到新資料中的正確對象；同名不同品項要能釐清；不沿用舊ID或替換成歷史商品。 |
+| 漲降價、相同價格、預算邊界 | 依最新售價篩選、排序與回覆，涵蓋低於／等於／高於邊界；基本價與客製後金額分清，不把單份價格保證當整單預算。 |
+| 分類增刪、改名、單項或空分類 | 候選與推薦由新分類生成；分類唯一餐點不自動等於購買，空分類不回播舊餐點。 |
+| 客製群組／選項增刪、改名、重排、預設、必填與加價 | 僅使用目前品項實際支援的選項及現有schema能力；綁定群組／值ID，必要問題不漏問，不把另一品項的辣度／尺寸硬套過來；Cart與金額一致。 |
+| 售完、恢復供應及資料未知 | 售完不當可購買推薦；重新上架可正常查詢；缺成分／選項資料不當作已確認支援。 |
+| 對話途中更新menuRevision | 舊商品／價格／客製問題與待執行計畫須重新核對，不以舊快照下單；保留已確認實際結果，不自動重送。已入車後改價等商業規則沿用既有契約，未定義時另列決策，不默默新增重新計價政策。 |
+
+跨菜單資料至少規劃：目前菜單快照、品名／ID／分類／價格皆不同的替代菜單、客製群組與必填配置不同的菜單；另外保留一份未用於調整Prompt的菜單作保留驗收。資料集仍需建立與凍結，尚未宣稱已驗證。對適用的預算／其他、查詢／加改餐、指涉及客製流程重播，價格／目標／選項預期從各fixture明確產生。
+
+跨菜單是112條劇本之外的覆蓋軸，報告分開列劇本ID、菜單變體及實際執行次數，不把同義改名算成新的獨立場域。先校驗相容案例，避免強迫不支援某選項的菜單通過原選項成功預期；沒有支援時應具體說明或依實際選項釐清。離線矩陣先跑完，真實模型變體優先選資料敏感的高風險流程，沿用既定呼叫／時間上限，不因增加菜單變體自行放大推論批次。
+
+### 基線及已知證據
+
+- 正式release：`/home/aimax/.local/share/webnavior/releases/main-recovery-20261030-191156`，來源基線e8491ec；與原工作區未提交V1修改分離。
+- 本次唯讀核對：Main數量修復已發布；前端正式API網址修正已發布；`clarification-loop-fix/fix.json`顯示deployed，runtime檔案SHA與修復檔一致。這些只證明版本，不證明下列需求都已通過。
+- `HmfwjMy74UzFO2jp7zhCj`六輪「好、好、好、對、飯、吃飯」均產生相同service_clarification。已發布的有限交接修復有456項決策測試，但無整串真實模型驗收。
+- `eCda22nNnyhWzB5rMVvsM`：「一百份水餃」後問份數；「一百份」實際呼叫menu_recommend，沒有新增回執。quantityFromTranscript僅辨識1–20、order-machine也限制1–20，超限被混成缺資料。
+- 「你是誰」實際顯示固定greeting；非操作selector目前缺少明確身分回答契約。需要追原始選擇與呈現，不能據固定文字推定模型原話。
+- 預算截圖顯示100元收到150元商品、改200元／問其他反覆回牛肉麵。此時尚未核對該截圖每輪provider輸入／工具參數，不能先斷定是價格解析、條件遺失、Main錯工具或呈現任一單獨原因。
+- recoveryId `e60aa1c8-813f-4417-b423-6de86bee18d2`只保留review invalid，原始回應與精確不符欄位缺失；仍屬未解問題。不能以合成輸出補成當時原始wire。
+
+### 首批進度：預算與其他
+
+Oct31限定真實模型驗收仍失敗：預算前三輪正常；200元下一批工具已成功展示，接續被
+完成審查標記覆寫成泛用釐清的缺口已局部修正。核心四輪在「我要水餃」暴露更根本
+問題：Jev服務入場及SINGLE需求形態通過後，family操作分類低信心→UNCERTAIN_OPERATION→Host強制readOnly，Main
+無新增工具而反覆讀取至tool-limit，沒有進入數量問題。下一修復單位必須處理Main
+獨立釐清操作需求與受驗證的handoff，不能全域解除readOnly或靠特定句子放行。
+原80次加追加40次，已用114，六輪及核心四輪都未通過、未部署。下段是此前局部進度。
+
+已核對現場Session612–728號，並取得限定合成對話的真實Jev／Main wire。價格交接缺口同時發生在service recovery及已入場但UNCERTAIN_OPERATION的需求；六個route／Host／Menu回歸已通過。修正單份預算探索被錯當整單分配，以及只讀換批草稿過早進入文字選擇器；Server80＋Kiosk12通過。真實模型前三輪可完成100元→無其他符合者→200元其他餐點，第四輪已選continue但夾帶舊價位被拒，最新提示修正尚待驗證。六輪至實際入車尚未通過，未部署。100員未辨識及112條完整驗收仍未完成；不能將局部通過當整段已修好。
+
+### 階段0：固定案例、版本與每輪成功條件
+
+交付「案例＋初始狀態＋逐輪預期結果」表。沿用現場可確認的對話、既有32組完整流程與H01、a06、a08、a11、a15，不刪除失敗案例或採用V1新預期。缺失的回合／購物車／菜單不能補造成現場事實；合成重現另標來源。固定菜單價格、庫存、可選規格與角色設定；合法追問分支及對應顧客回答先列入劇本，不根據模型輸出更改成功標準。先離線重現，再改production code。
+
+對每句保留三種獨立判定：需求理解是否正確、操作／狀態是否達成、顧客看到的回答與畫面是否正確。Jev命中、合法工具、成功回執、有文字都不能單獨代表完成。
+
+### 階段1：把失敗定位到實際邊界
+
+沿用utteranceId、taskId、questionId、tool callId、session/document及revisions串起同一輪：
+
+1. 實際輸入與當前問題；在分流前留下已受理的服務輸入，包含失敗回合，避免只存成功回合；背景／忽略僅保留必要決策狀態，不擴大保存旁人對話。
+2. Jev選擇、應用解析出的對象／份數／價格證據、目前與承接的條件。
+3. recovery的實際request與response驗證結果；invalid需區分envelope、工具數量／名稱、JSON、欄位、處置組合等，不把每種原因合併為不理解。
+4. Main真正收到的投影、工具清單／schema、每次提案與參數，並與來源快照對照。
+5. Menu執行前後的真實Cart／查詢條件／問題、拒絕代碼與回執。
+6. Host最終選取的呈現來源、文字及畫面，與未完成需求逐項對照。
+
+一般metrics只存必要代碼、大小、次數、耗時及關聯，不記憑證或隱藏推理。需原始wire的診斷採明確啟用、私有本機檔0600及有限保留；不提交repo、不將原始客戶Session任意重送provider。報告分列Jev、recovery、Main及格式修復呼叫，避免modelCalls:0掩蓋實際呼叫。
+
+完成條件：核心失敗可指出「第一個偏離預期的邊界」，無法還原者明列缺證據，不先改分類或Prompt。
+
+### 階段2：依重現結果修正現有責任邊界
+
+| 優先 | 修復工作 | 主要現有位置／完成條件 |
+|---|---|---|
+| P0 | 預算與「其他」承接 | `domain/pricing.ts`、`kiosk-intents.ts`、`webmcp.ts`、Server輸入投影。分開檢查原始價格證據、已解析條件與有效推薦歷史；篩選後才排序／限量。「其他」保留條件並跳過該輪已展示品項，沒有其他符合者明說，不偷偷reset條件或循環同菜。 |
+| P0 | 點餐效果與完成判定 | `kiosk-fast-path.ts`、Server `finishConversationReply`、Host `useKioskInteractionRecording`／`questionPresentation`。保留ADD／SET／REMOVE／REPLACE等原需求；只推薦／查到可點不能結束加購任務。先修需求傳遞或完成判定缺口，不再一律新增review。 |
+| P0 | 問題及答案接續 | `serviceRecovery.ts`、Menu現有question/configuration流程、Host釐清窗口。服務釐清、選餐、份數、規格、購買及付款確認分清責任；答案回到發問的有效問題，保留原商品與操作。新獨立需求可正常離開舊題，不能永久繼承readOnly。 |
+| P0 | 數量超限不等於沒說 | `quantityFromTranscript`、Menu現有schema／order-machine、i18n。沿用既有數字解析能力前先搜尋；區分未提供、有效、超限、不確定，保留原值並說明既有限制；不得取一百的局部數字當一份、默認新增或變推薦。 |
+| P1 | 身分及店家資訊可回答 | `contextReplySchema`／`replyFromContext`、`conversationContext.ts`及Profile事實投影。身分依既有角色／裝置Profile回答；廁所、營業資訊依店家已配置事實。未知就說明未提供，不當招呼、不改推薦，也不要求重述已清楚的問題。 |
+| P1 | 協定失敗與可恢復性 | `serviceRecovery.ts`、route／Host。先取得invalid具體原因，再修生產者／schema契約；維持既有有效性檢查，不直接放行錯格式，不把技術錯誤包成語意澄清或無限重試。 |
+
+總預算與單份價格必須分開：目前PriceConditions只處理單品基本售價。單一餐點探索可列出預算內的明確單份選項；不能宣稱多份／整張訂單也符合總預算。需要分配多餐總預算且既有能力不足時，保留原始預算及需求並釐清必要資訊，不能丟掉條件推薦超額品項。本次不暗中新增組餐／預算分配產品。
+
+有真實匹配時查詢與訂購仍不同；查無品名要回答查無，資訊問題不能改問價位／分類。回覆契約要能表達合法的服務答案；交易成功依回執，不能因害怕假成功而把所有自然資訊回答壓成固定澄清。
+
+每個實作批次只修已重現的責任缺口；不另建全域訂單store、泛用猜意圖分類器或只有轉送作用的service。保留原時限、取消、版本與結果未知不可重放等不變量；正確且已生效的工具不能因後續失敗再執行。
+
+### 核心驗收：16類，規劃112條完整劇本
+
+12組是前版的問題分類，不能當作12條劇本已足夠。本版改成：既有32條完整流程原樣保留，新增48條具體功能流程（下表每類3條），再增加32條針對性反例（每類2條）。共112個劇本位置；這是規劃數量，不是已建立、已執行或已通過的測試數。階段0逐條建立ID、來源、初始狀態、合法追問分支和逐輪結果，完成去重及可重建性稽核後才凍結清單。
+
+每條包含連續輸入、系統可能的合法追問與預先定義的回答分支，不能只測最後一句。相同語意至少覆蓋明確完整說法、自然口語／省略、帶問題／插入查詢的接續；變體需檢查不同失敗機制，不以同義詞換字灌數量。
+
+| 類別 | 新增3條功能流程的骨架 | 新增2條反例／干擾 |
+|---|---|---|
+| C01 身分與店家資訊 | 你是誰→你能幫什麼；廁所在哪→怎麼走；幾點營業→現在還能點嗎 | 未配置位置不得編造；角色對話不得冒充交易已完成 |
+| C02 商品有無與查無 | 有水餃嗎→多少錢；有冰淇淋嗎→那有什麼甜點；未知品名→明確重問→換有效商品 | 查無不得替換舊商品；只有近似字不得當精確同品 |
+| C03 菜單與分類探索 | 想吃飯→看便當；有麵嗎→列出選擇；看全部→看點心→回全部 | 查詢不得加購；分類唯一品也不等於訂購 |
+| C04 價格與預算 | 100元能吃什麼→200元；不超過200→150以下；100到150→便宜一點 | 超預算不得宣稱符合；整單預算不得默默當單價承諾 |
+| C05 其他與耗盡 | 推薦→其他→其他；200以下→其他不超過200→其他；分類＋預算→換種類→其他 | 無其他結果不得重播同菜假裝新推薦；不得丟掉仍有效的價位／飲食限制 |
+| C06 複合條件與比較 | 200以下不要辣→其他；兩道哪個便宜→選便宜那個→明確份數；指定成分→有別的嗎 | 未知成分不得當符合；多條件只符合一部分不得宣稱全符合 |
+| C07 同意詞與問題用途 | 要推薦嗎→好→看結果；要點水餃嗎→好→有效份數；否定目前問題→提出新需求 | 推薦同意不等於購買；過期／被取代問題不得消耗「好」 |
+| C08 份數與有效範圍 | 水餃兩份→改三份；一百份→說明限制→改兩份；點水餃→問份數→兩份 | 超限不得取局部數字／默認一份；金額及每份顆數不得當份數 |
+| C09 客製與草稿 | 點麵→微辣→一份；兩份不同辣度→逐項設定；設定中問價格→回原規格 | 缺必填不能假完成；原商品規格不得套給新商品 |
+| C10 多品項與交錯 | 麵一碗＋便當一個；先點麵→插入水餃→回原份數；兩個餐點各自客製→查訂單 | 不得漏第二項；不得把各自份數／選項合併到同一行 |
+| C11 指涉與省略 | 展示三項→第二個一份；單一水餃展示→那我要三份；Cart兩行→指明其中一行→改數量 | 多個候選的「好」不得替選；後來查出的商品不得倒推為原加購目標 |
+| C12 加點、修改與換餐 | 水餃1→總數改2；已有1→再加2；便當換麵→保留另一份水餃 | 改總數不得變追加；換餐不得只新增、留下原餐 |
+| C13 取消、否定與撤回 | 取消水餃→再核對；設定草稿→先不要→點另一道；取消一項→新加點 | 取消單項不得清整單；否定餐點不得變電話略過／改用餐方式 |
+| C14 入口、用餐方式與結帳 | 明確略過電話→點餐；外帶→更正內用→回點餐；呈現訂單→先不要結帳→加一項 | 未授權不得略過電話；未確認／已付款或結果未知不得重送交易 |
+| C15 澄清與切換主題 | 服務追問→好→飯→吃飯；問餐點份數→查廁所→回份數；資訊問答→明確新訂購 | 不得無限重建服務問題；新需求不得永久繼承舊readOnly或舊主題 |
+| C16 背景、技術錯誤與恢復 | 同伴對話→明確向機台點餐；讀取逾時→恢復→新查詢；操作拒絕→合法更正→核對結果 | invalid不得冒充語意不清；回執遺失／過期任務不得重放可能生效寫入 |
+
+表中涉及數量／客製／桌位／店家資訊的劇本，以fixture明確支援能力；未支援者的正確結果是具體說明或必要釐清，不以編造成功湊完成率。現場ASR錯字另用可追溯原文／原音版本，不偷偷改成正確句後聲稱現場通過。
+
+既有32條的背景、故障及狀態不足標籤全部保留，不強行歸為正常成功。原先D07／H05等缺少權威前提者仍列診斷，除非取得真實前提，否則不得納入正常完成率。正常需求完成率、反例正確拒絕率、技術故障恢復率分開報；不能把拒絕成功加進正常需求的成功分子。
+
+逐輪檢查：當前問題及用途、來源需求／仍未完成部分、查詢條件與已展示品項、真實Cart每行份數／規格、工具與參數／回執、畫面及顧客文字。另測長度：短流程2–3輪、一般4–6輪、交錯7輪以上；歷史／問題過期與狀態版本不同時另列。案例不足以涵蓋某軸時明列缺口，不宣稱窮盡所有組合。
+
+### 階段3：驗證順序與停止條件
+
+1. 每個bug先加最小自動重現，確認修正前失敗；修正後跑對應Menu／Server／Host測試及必要package typecheck、changed-file lint。不自動跑root typecheck。
+2. 以scratch DB＋真實route＋Menu runtime＋Host迴圈，跑凍結後的112條劇本；先用錯誤結果校驗判定器確實抓到超預算、錯品項、錯數量及只推薦未新增。固定模型輸出只證明契約，不算語意成功。
+3. 真實Jev／Main先跑12條涵蓋不同類別的冒煙流程，用來確認輸入、串接和成本；它們不取代完整驗收。再以同一正式配置跑所有可重建的功能流程及需模型判斷的反例。逾時、壞格式、回執遺失等反例使用可控故障注入，不依賴provider碰巧失敗。
+4. 在看候選模型結果之前，從完整清單指定24條高風險流程，各完整重播3次（首次計入）；至少涵蓋預算／其他、肯定詞、份數、指涉、多品項、改總數／加點、換餐及主題切換。其餘可重建劇本至少一遍，不能只挑曾成功的案例重跑。既有32條比較相同狀態的修改前後結果；狀態不足者維持診斷，不補造金標。
+5. 整輪真實模型測試暫定上限1500次呼叫或60分鐘，包含冒煙、各階段模型及重播，達一即停止；執行前以冒煙成本核對完整清單能否容納，需調整時先說明。分批保存檢查點、從未執行劇本續跑不代表可暗增上限。超限未完成就報未完成，不能刪案例、降低門檻或自行重開另一批規避限制。本次仍只有規劃，未執行模型呼叫。
+6. Browser驗證實際問答、畫面、Cart與bundle；文字模擬ASR通過後才測現場ASR／TTS，不用文字測試宣稱語音硬體通過。
+
+交付門檻：凍結清單內可重建功能劇本逐輪通過，24條高風險流程3次均通過，反例無錯誤寫入且按預期處理；相關既有通過案例無新增退步。任一超額推薦冒充符合、錯加／錯改／錯刪、假成功或無限追問均阻擋發布；不能以整體平均掩蓋。非核心舊缺陷與前提不足診斷單列，不為湊分改標籤；新增案例不能任意移出核心避過失敗。
+
+報告同時列完整流程完成率、有效需求漏接、誤寫入／重複寫入、無進展追問、錯題推薦、模型各階段呼叫數及端到端耗時p50／p95；清楚列規劃、已凍結、已執行、通過、失敗、跳過與排除的分母。基線與候選同硬體／模型／設定／資料；延遲若有實質退步需說明重複呼叫來源，不能先宣稱更快。
+
+### 階段4：發布及交付
+
+形成一個可驗收的修復版本再發布。獨立release明列來源SHA／diff、三個app資產、正式Vite API／嵌入／POS網址、模型及Profile身份、測試結果及已知限制；保留備份與回復命令，不從含V1修改的原checkout重啟API。
+
+先驗實際編譯後連線目標、註冊流程及公開頁面，再驗凍結清單的核心場景。API健康、檔案hash與單元測試通過均不足以標記整體成功。部署需管理員時提供同一份可檢查腳本；只在需要該系統權限的最後切換要求本機操作，不要求使用者反覆代測未驗證版本。
+
+### 開始實作前的交付物與待定項
+
+先交付案例／預期表、每個失敗的首個偏離邊界、最小修改清單與測試執行清單，再進入階段2。第一個實作批次建議合併「預算＋其他」這個完整需求；其後問答／數量／完成判定，最後補齊資訊回答及協定診斷；依階段1證據可調整先後，不能先改Prompt再補理由。
+
+目前不需使用者重新提供已存在的截圖或逐句重試。另待產品決定：是否放寬20份、是否支援多餐總預算分配、店家資訊來源與缺資料時的說法。未決前按既有能力明確回答限制，正常查詢／加點／改餐能力不得順帶刪除。
+
+---
+
+以下為10/28–29設計、實驗與驗證記錄；最新工作範圍及發布狀態以前節和研究稽核為準。
+
+
 
 ## 2026-10-29 本機補強與模型控制實驗
 
@@ -219,3 +654,406 @@ SLM快速16例與歷史26例使用不同分類契約／上下文／候選，不�
 - D09尚未通過：顧客明說「我想問，那個，我還沒說清楚」，原句retry正常重新送判斷，但得到INCOMPLETE，沒有回覆；gold要求clarify。沒有查回舊水果、錯誤訊息或訂單副作用。這是「明顯還沒說完時等待」與「使用者主動重試時應有澄清回饋」的行為／預期差異，不能把所有INCOMPLETE硬交Main，也不能臨時改gold算通過。需在現有等待／重試呈現流程解決並補對照測試後，再推進20×3驗收。
 
 以上兩輪皆保留當時source hash manifest；後一輪不覆蓋前一輪失敗。新的提示修改已有admission regression、decision套件測試、Server typecheck及改檔lint驗證紀錄（`/tmp/kiosk-repair-restored-*`）。CUDA恢復代表能推論，不代表全部對話驗收通過；20×3及其他尚未跑的矩陣仍保留未完成。
+
+
+### 2026-11-03 無關話語反覆服務澄清：已定位，未修正
+
+使用者回報測試時大量無關話被當作點餐。唯讀取得最新三個接待的最近250筆入口，但由於單一最新接待事件密集，這份摘錄實際集中在同一接待；不可當完整歷史統計。完整摘錄0600保留`/tmp/webnavior-admission-recent-20261103.json`。正式API仍為`ordering-copy-20261102-171742`，其`routing.ts`與`serviceRecovery.ts`和工作區完全相同，路由有效cue分支亦已直接核對正式runtime。
+
+- 正常入口有SERVICE／GREET／BACKGROUND／UNCERTAIN，BACKGROUND→IGNORE。這批23筆補判紀錄中12筆background/ignore，故不能說忽略規則完全不存在；也不能把23筆補判當全部語句數。
+- 實際原句「判斷的話就是回答出來的東西」（utterance13）、「它卻出現了第四個字」（15）與「我... 而且它是一個...」（52），依同一utteranceId核對，Main recovery為uncertain/abstain，卻出現服務澄清回覆。「資源放上去」也有澄清回覆，但摘錄缺少同回合補判記錄，不能借相鄰utterance40的background結果冒充41的判斷。
+- 路由`validCue`會直接建立eligible UNAVAILABLE，跳過一般Jev staged admission；recovery有cue時只跑review。`serviceRecovery.ts`在uncertain＋既有cue時，仍回SERVICE_CLARIFICATION、換questionId並延長30秒。Frontend呈現後又保留cue，因此無關／未確認對象的語句容易繼續收到點餐反問。背景被明確判定時仍可IGNORE並清掉cue，不宣稱每輪都是同一路由。
+- 既有`admissionRecovery.test.ts`明確期待uncertain/abstain＋cue回SERVICE_CLARIFICATION，驗了沒有actionId，卻沒驗『未確認服務範圍應靜默』；這是行為契約／驗收缺口，不能只補提示或調信心門檻算修好。
+- 最小修正方向待實作：每句重新確認服務對象／範圍，cue僅用來理解有效省略回答；未入場不得新問或續期；已確認服務但意思不清楚，才做既有澄清。保留『好／兩份』有效短答與明確模糊求助的正例，不能直接把所有不確定一律忽略。
+
+去識別原句及觀察保留在`reported-20261103-background-service-clarification-loop`，目前無syntheticScripts連結，明確標示未修、未做真實provider重驗。本次僅調查及證據保存，未修改正式決策程式、呼叫provider、commit或部署。
+
+
+同日後續：使用者指出整段持續增長、幾乎每句都被採納，不能只處理幾個原句。擴為同一接待完整文字與recovery事件（私有`/tmp/webnavior-admission-session-20261103-full.json`，0600）：07:39:39–07:53:14 UTC約13分35秒，68則助手回覆，其中47則service_clarification、20則verified_reply、1則其他；20則user_text、68則asr_transcript含重複保存，不能加總為獨立語句數。99則補判事件中59background/ignore，但忽略語句不會完整保存為正式文字，因此不能用此檔推算全部擷取語音的採納百分比，也不能拿部分IGNORE否定持續誤收症狀。
+
+除了重新反問，還確認上下文隔離缺口：Frontend把SERVICE_CLARIFICATION原句與回覆加入可見對話；持久化asr_transcript只帶source/utteranceId，沒有fast_path標記，因此Server`conversationEntries`排除這些原句，卻無條件保留其assistant_text。Main升級則另外寫成user_text並進agentInteraction。直接執行正式使用的純`buildConversationContext`投影該現場摘錄，得到21個user與68個assistant；最後12則中9則為assistant、3則user，多個追問缺少對應原句。『電子蓋』技術談話被問是哪道菜，也已落進此歷史。這是持續誤入＋自我追問污染上下文；不能只修反問措辭或單一UNCERTAIN分支。
+
+後續修正／驗收範圍應擴到服務入場、可見／持久化正式對話、Main上下文投影與釐清生命週期：未確認服務範圍的話只留診斷，不當已承接對話，也不透過自動反問產生新的有效上下文；真實短答與明確求助保留。上下文原有12則／4000字上限，未證實模型token無限成長。保留整段背景談話序列做長鏈回歸，明確區分觀測與預期；目前仍未修或provider重驗。
+
+
+### 2026-11-03 背景語音採納邊界：本次調整計畫與最後完整驗收
+
+使用者要求先規劃調整，並記住最後執行全部測試。本節為本次後續實作與交付依據；目前只有規劃及證據保存，未修正決策、未跑新版驗收、未部署。這裡的完整測試指點餐流程及此次採納邊界的完整回歸；麥克風方向／LCMV實機驗收另依陣列麥克風計畫，不混算已完成。
+
+#### 最小調整範圍
+
+1. **每輪服務採納重新成立。** 調整Server入口與recovery的既有判斷責任：有效serviceClarification只提供解讀回答的上下文，不能直接證明本句在對機器請求服務。未確認對象／服務範圍、背景談話保持靜默；已確認服務但需求不清楚才澄清。保留有效省略回答，不另堆關鍵字白名單、信心門檻或龐大提示規則。是否沿用既有review或一般admission入口，由重現測試與實作檢查決定，避免無必要地每句增加模型呼叫。
+2. **澄清不因未採納話語續命。** 移除uncertain/abstain＋cue自動新問、換ID及延長期限的行為；未採納句不得變更原問題的內容／有效期限，超時及狀態變更沿既有失效規則。清除或保留未到期問題須明確一致，並用「背景插話後真正回答」對照測試決定，不靠無限續期維持對話。拒絕、取消、切換主題與新需求也需正常結束或取代舊問題。
+3. **正式對話與診斷分開。** 沿用現有entry metadata／對話投影邊界，檢查Kiosk可見對話與conversationMessages、Server持久化／conversationEntries、Main的agentInteraction。未採納話語僅留必要診斷，不送Main作已承接需求；已採納的釐清問題與來源顧客句需能正確配對，不能留下孤立助手追問。新的狀態／欄位只有在現有契約不足時才增加。核對當前session重載歷史的處理，不直接刪除現場訂單或整批歷史，也不憑關鍵字清洗舊資料。
+4. **先重現，再改。** 從已保留incident建立會在現版失敗的測試，改掉既有「uncertain仍應反問」錯誤預期；接到永久回歸與合成provider劇本。保留原始失敗證據及修正後結果，二者分開。沿用現有runner，不另建平行測試系統。
+
+#### 必補情境與斷言
+
+- 無cue／有cue／cue過期下的背景、未確認對象、未說完片段；包含餐點字眼或「你／訂單」的旁人談話，不能只按字面認定服務。
+- 同一session長鏈：開始正常點餐→連續背景談話→有效短答→再插話→明確新需求。覆蓋此次保留的整段談話形態與近似合成變體，不把現場私有完整紀錄傳給provider。
+- 正例：「好／對／兩份／內用」依當前有效問題接續；明確模糊求助可澄清；正常加點、修改、換推薦與結帳繼續運作。
+- 每輪同時驗回覆／工具／購物車／頁面、cue ID與期限、可見對話、持久化角色配對及實際模型上下文。靜默必須沒有助手訊息／播音／寫入；診斷事件不算正式對話。背景句不得擠走有效上下文或藉自動追問成為下一輪服務證據。
+- 對象無法僅靠文字辨識時，明列限制及實際誤判；不能宣稱同方向背景語音保證可排除，亦不能把LCMV當成本次語意採納修正。
+
+#### 最後完整測試：交付前必做，不得以局部通過替代
+
+先凍結最後待交付的程式、提示／policy、菜單與模型設定身份；下列結果均對應該版本。修正期間的單檔測試不是最終完整驗收，過去版本通過不沿用成新版結果。
+
+| 層級 | 必跑範圍 | 通過依據 |
+| --- | --- | --- |
+| 離線回歸 | 此次admission/recovery/context/cue生命週期；相關Server路由與Main上下文、Host對話呈現／排隊、Menu工具／訂單流程；既有incident與矩陣的完整相關套件 | 新案先在舊版重現；新版正反例皆通過，無未授權或重複操作；未執行／條件略過分開列出 |
+| 真實Jev/Main | 凍結既有112劇本全部；orderingIncidents現存所有後續回歸劇本；新增背景長鏈及有效短答對照。既有Jev→Main與直接Main入口都覆蓋，沿現有runner核對實際路徑 | 逐案保存期望與實際路由／工具／畫面／上下文結果；修正前失敗仍保留。不得以Main備援代替Jev成功、以全部IGNORE代替正常點餐成功，或自動重跑挑最好一次 |
+| 瀏覽器整合 | 實際Host與Menu連接，背景靜默無新泡泡／播音，正常短答能完成餐點→內外帶→結帳→發票確認；背景插話後可恢復，頁面重載歷史不重引入未採納片段 | 同時看畫面與底層工具回執／上下文，不能只驗mock文字；記錄使用瀏覽器及真實／合成音訊範圍 |
+| 套件整合 | 受影響套件typecheck、改檔lint、必要Kiosk/Menu/Server建置與diff檢查；不自動跑root全專案typecheck | 對應最後程式版本完成；無關既有失敗單列，不擴大修復範圍 |
+
+新增長鏈在實作時先固定gold及重複次數，再進最後模型驗收；對隨機性敏感的背景／短答鏈至少三次獨立session，全部結果保留。112與後續incident分開列數，不更改凍結112來湊通過率。清單要追蹤每個實際案例，避免只有manifest完整性測試通過便宣稱112全部對話驗收完成。
+
+真實模型測試使用當次明確授權的既有provider／合成資料／隔離Session與購物車；本次規劃不沿用已關閉舊批次授權，也不操作正式POS或付款。最終報告分列通過、失敗、略過、未跑與限制；若測試未完或已知必要鏈仍失敗，不宣稱完成、不部署。部署須另依使用者指示，部署後另核對health與公開版本身份，不能取代以上回歸。
+
+
+#### Nov3 實作進度（尚未完成最後驗收）
+
+使用者已指示實作，並明確允許本次完整Jev／Main合成驗收使用既有設定與憑證、不預設額度；隔離Session／購物車、不操作正式POS／付款、不傳現場完整對話。授權在此批有效，不沿用到未來獨立工作。
+
+已在正式修復工作樹實作每輪入場、未採納不續問／不升級Main、孤立追問排除與有效澄清來源配對、背景不消耗原cue，以及重新報品名走Menu補份數。測試先在原版重現三個缺口；另保留Main範圍不確定仍追問的重現。真實模型再抓到未理解的澄清回答被升級成Main、與不明需求目的仍承接Jev入場提案的缺口，因此補上獨立服務補判。入場提示改為精簡獨立契約，Main交接改為明確優先順序，不能把其他領域指令或技術敘述改成餐廳求助。
+
+永久合成長鏈B01-J-L1/L2與B02-J-L1已連回incident；既有112金標未改。Runner新增正式上下文、cue生命週期與靜默副作用斷言，能抓到購物車未變但背景被保存的失敗。原始失敗與修正後結果分開保留，不能以後一次通過抹除先前失敗。
+
+第一個全量候選曾開始112＋96案例，但正常資訊追問、模糊求助及型別契約仍有問題，已停止該候選再修正；沒有完成完整驗收。真實模型與source manifests在`/tmp/webnavior-admission-model-20261103/`，用量ledger包含探索與各候選，不能混用不同sourceHash宣稱全過。最終仍須新版全量模型、三條背景鏈各三次、相關離線／瀏覽器／型別／建置驗收。未commit、未部署；正式API仍為ordering-copy。
+
+### Nov3 deferred contextual challenge
+
+The user deferred D04 (「幫我那個，那個，先不要變更」). Its frozen gold
+and failed attempts remain intact. The dependent chain is excluded from this
+batch's blocking acceptance, never counted as passed. Removed the unsuccessful
+extra reply-coverage model call. The 214 planned positions now comprise 211
+required functional runs, two diagnostic positions, and one explicit deferral.
+The fresh complete provider run remains pending.
+
+### Nov4 resumed validation
+
+The completed final3 candidate attempted all 214 positions: 191 functional passes,
+20 failures, two diagnostic completions, and one explicit D04 deferral. This is
+not a passed release gate. All failures remain in their original artifacts.
+Follow-up fixes prevent any vague fragment renewing an open service question,
+compare independent request scopes against read-only state without mistaking an
+unrelated displayed question for a revision change, and remove repeated Main
+admission after an explicit independent REQUEST. Purpose qualification still runs
+before operation authority. The replay now mirrors KioskScene's existing
+CUSTOMER_ENTRY_REQUIRED response, which it previously omitted. No frozen gold
+was changed. The final4 run completed; previous passes are not combined
+with it. C15-A1's repeated unbound reference is awaiting a user behavior choice.
+
+Final4 attempted all 214 planned positions: **189 functional passes, 22 failures,
+2 diagnostic attempts (one completed, one failed), and one user-deferred D04**.
+All nine background-chain runs passed. Source and model/role/policy fingerprints
+were constant. Actual Jev requests: 1240, failures: 0; total provider requests:
+2144. Full gate failed. Restoring explicit hearing wording afterwards passed
+D10/H04/H08/D12 and three background chains in focused probes; C06-A1 remained
+failed. No claim that the latest source passed all scripts. Full originals and
+followups are retained privately under
+`/home/aimax/.local/share/webnavior/acceptance/background-admission-20261104/`
+(owner-only access), including `model-runs/acceptanceReport.md` and
+`model-runs/final4-audit.json`. C15's unbound-reference response rule awaits user
+choice; no gold was silently relaxed. No commit or deployment.
+
+### Nov4 confirmed unbound-reference policy
+
+The user confirmed retaining the order and silently waiting after an answer still
+fails to identify a meal. Historical C15-A1 and its failed attempts remain intact;
+`supersededConversationScripts` links the current-policy replacement B03-J-A1.
+Its strict silent turn must not alter formal conversation/cart or renew the cue;
+the next explicit “我明確要水餃一份” must still add exactly one portion. Three
+independent actual Jev/Main runs passed (30 provider calls). The final scope
+qualifier now also refuses to reopen a live service question, closing a second
+path reproduced by a failing regression test. Relevant Server tests498, oracle
+tests4 and lint passed. This is a targeted acceptance, not a new full release gate.
+Future full selection must include the replacement, mark original C15-A1 as
+superseded (never passed), retain D04 as deferred, and preserve prior full scores.
+
+### Nov4 failure-cause audit
+
+All original22 failed scripts are individually mapped in the private
+`failure-analysis-20261104/analysis.md` and `analysis.json` under the retained
+acceptance directory. Counts:3hearing-definition failures,3historical reply
+expectation conflicts,5real refusals/closings rejected as background,6wrong
+operations(5invoice cancellation choices and1unrequested same-item replacement),
+1partial quantity task incorrectly completed,4Main recovery timeouts. These are
+case counts, not22independent root defects. No original scores were changed.
+
+The execution boundary validates legal tools/parameters but does not reliably
+bind cancellation/replacement to the whole current request. A quantity-limit
+receipt completes the Host round even when Main never proposed a legal sibling.
+Recovery timeouts preserve an uncertain-service outer reason; the current retry
+predicate does not read recovery.failure. These shared boundaries, rather than
+more per-utterance prompt patches, are the next repair targets. DirectMain invoice
+cases must be covered too. Code unchanged in these older execution modules is
+not proof that all failures predated this task; no formal-version A/B was run.
+
+Sequential replay of the4original timeout chains used61provider calls. All four
+original timed-out turns completed;3chains passed and C11-A2 failed later when
+“先不要加任何餐” was classified background. This supports separating timeout and
+semantic failures, but does not prove provider queueing or concurrency causality.
+This audit changed no ordering runtime code and made no deployment.
+
+### Nov4 user clarification: outcome-based acceptance
+
+The user clarified that hearing checks (“有收到我的話嗎”) and closing remarks
+(“那我先問店員”) may reasonably be treated as background. Silence is an
+acceptable outcome; a particular acknowledgement/hearing response is not a
+product requirement. Synthetic “還沒填完，不要送出／不要送出／先修改” phrases
+are low-priority adversarial inputs, not representative core customer flows.
+Do not add phrase-specific behavior merely to satisfy their old reply regexes.
+
+For a mixed legal/oversized order, rejecting the whole request is acceptable
+as well as adding only legal items. The20-per-item limit and existing cart
+must remain intact; no invented quantity reduction and no false claim that an
+unexecuted item was added. This supersedes the previously mandatory partial-add
+expectation, without rewriting historical scores.
+
+Current acceptance should judge allowed outcomes and side effects rather than
+require specific prose: background can remain silent, legitimate responses can
+vary, and business refusals are not technical failures. Unrequested cancellation
+or replacement still needs separate scrutiny: an uncommon utterance does not
+authorize changing the order. Preserve old gold/results as historical evidence;
+version the new outcome expectations explicitly before another full gate. The
+old22 failures are not22 confirmed product defects and must not be presented
+as such under this clarified policy.
+
+The implemented policy is `2026-11-04-outcomes-v3` in the test-only
+`conversationAcceptance.ts`. The harness retains historical/current scripts and
+explicit revisions. Harmless read-only pauses/closing replies are optional;
+companion/technical background remains strictly silent. Failed recovery or state
+changes are never waived. Production clauses added solely to force hearing or
+closing acknowledgements were removed; no phrase-specific classifier was added.
+
+The full outcome2 provider run completed215positions (213functional/2diagnostic)
+with one source/configuration fingerprint,2090provider requests,1197actualJev
+requests and0Jev failures. Raw v2 score was200pass/13fail; both diagnostic attempts
+failed and do not count as functional passes. V3 only relaxes C03-A1/C09-A1
+read-only pauses: both chains had reached their final turn, and their complete
+recorded outcomes pass reassessment without runtime changes. This is not a new
+v3 provider run. Current result is202accepted/11failed across7script IDs.
+
+Remaining failures: B02-J-L1 falsely admits background3/3; B03-J-A1 leaves the
+first vague ordering request silent3/3; C06-F1 misses a menu follow-up; four
+invoice edit/refusal scripts (I03-N-A3/I04-C-A1/I04-N-A1/I04-T-A1) cancel or ask
+cancellation without authorization. B01-J-L1/L2 each passed3/3. D04 stays deferred,
+C15-A1 stays superseded, original gold/scores remain immutable. Earlier outcome1
+was stopped and its passes are separate. Private evidence/report:
+`acceptance/background-admission-20261104/outcome-policy-20261104/acceptanceReport.md`.
+This is not a passed deployment gate; no commit/deployment was performed.
+
+### Nov4 correction: silence is presentation, not admission semantics (planned)
+
+The user clarified that a complete utterance can be unrelated companion speech
+or accidental background capture. Silence alone does not establish correct
+admission. Conversely, a contextual pause/refusal remains a service instruction
+even when no acknowledgement is spoken. The202/213 outcome reassessment above is
+an outcome score, not proof that every admission classification is correct;
+C03-A1/C09-A1 specifically need classification/continuation checks before being
+claimed as semantically repaired. Preserve those original results and revisions.
+
+Implementation sequence (not yet implemented):
+
+1. Extend the existing evaluation contract and real Host/Menu replay to assess
+   admission/meaning separately from response text and business effects. Reuse
+   existing admission, recovery disposition and scope decisions where available;
+   if their paths omit a necessary distinction, add only the owning diagnostic
+   reason needed to make it observable. Do not introduce another model stage or
+   equate every IGNORE/UNAVAILABLE with confirmed background. Background must not
+   become accepted dialogue, create/renew a cue or execute tools. A service pause
+   may remain unspoken, but must prevent the pending action from proceeding.
+   Preserve cart/form facts while distinguishing them from execution authority:
+   stopping an action may legitimately invalidate a pending authorization.
+2. Review the shared Jev/Main service boundary and the handoff paths against
+   the evidence, then make the smallest necessary correction. Explicit background
+   stays outside service regardless of sentence completeness. A real question
+   may use a recent qualified menu response as its referent; screen state or an
+   assistant-generated question alone cannot establish that relation. Missing
+   item/quantity is different from missing recipient/service evidence. A real
+   service request with an unknown target can receive one bounded clarification;
+   repeated unresolved input must not renew it indefinitely. Recipient/domain
+   uncertainty may wait silently, recorded as uncertainty rather than success at
+   filtering confirmed background. Never invent a target or act on a guess.
+3. Validate counterpart scenarios before full acceptance: the same short phrase
+   after a qualified menu answer, without a usable referent, and inside companion
+   speech; explicit and implicit pauses during pending actions; background then
+   recovery to a clear order; technical timeout distinct from semantic silence.
+   Preserve B01/B02/B03 and every prior failure, including invoice cancellation.
+   Use offline regressions and focused real Jev/Main probes first, then freeze
+   source/configuration/current expectations and repeat the complete executable
+   historical/incident set plus all four sensitive chains three times. Report
+   admission errors, wrong effects, technical failures, uncertainty and optional
+   response differences separately. Deferred/superseded gold remains historical.
+
+Difficulty boundary: text alone cannot always determine who is being addressed.
+Do not promise perfect recognition of “我要那個／有其他的嗎”. Require supported
+context to interpret them, allow bounded non-executing uncertainty, and measure
+both background false-admission and real-request rejection. No phrase blacklist,
+forced customer wording or unbounded prompt growth. This plan does not add ASR,
+beamforming, new dependencies, broad refactoring or deployment. Existing invoice
+errors stay visible and must not be waived as merely uncommon speech.
+
+#### Nov4 semantic correction implementation and acceptance in progress
+
+Implemented in the existing production repair worktree, not deployed. Two
+new oracle regressions reproduced silent wrong-admission false passes before the
+fix; additional tests reproduced invalid Main qualification escaping its guard,
+recovery failures appearing semantic, and unsupported-condition follow-ups being
+suppressed. Current evaluation version is `2026-11-04-admission-v4`: semantic
+admission, optional speech and business effects are separate assertions. C03-A1
+contains a price-only constraint as well as refusal, so a qualified read-only
+information interpretation is valid; C09-A1 is a pure pause. Neither may be
+misclassified as background. Raw old policy/results remain unchanged.
+
+Runtime changes stay in existing boundaries: unknown Jev purpose no longer uses
+the same reason as uncertain service recipient; valid Menu questions retain
+bounded intent recovery; contextual meaning uses the existing Main review, while
+no-context input retains independent admission. Main review includes an explicit
+recipient in the same call, and other/uncertain recipients cannot be admitted
+because of a matching topic. Invalid qualification is unavailable rather than an
+unqualified Agent handoff. A directed unavailable-data refinement retains the
+original deadline. No new classifier, package, phrase blacklist or model stage.
+The ordering skill distinguishes retaining an invoice draft from leaving checkout.
+
+B04-J-F1/A1 add same-phrase counterexamples with menu context, companion address,
+no usable referent, background imperatives after service and subsequent explicit
+ordering. The99 incident scripts supplement immutable112 positions; D04 deferred
+and C15-A1 superseded remain separate. Focused probes pass the latest counterparts,
+background chain and unbound order; their results do not substitute for the full
+gate. Full fixed-source `semantic1` is running221positions:219functional and
+2diagnostic, six sensitive chains each3 independent sessions, two workers.
+Private manifests/results: `/tmp/webnavior-admission-model-20261103/semantic1-*`.
+No source changes during that gate. Related offline validation:884Menu,
+321Host,642Server passed;11Chrome passed, Server/Kiosk package types and lint
+passed. Sets overlap and must not be summed. No full-project typecheck.
+
+The first full semantic candidate completed208/219functional passes,11failures;
+its two seeded diagnostic attempts completed but are not historical replay passes.
+Three B01-J-L1 repeats stayed silent and left history/order intact, yet their
+service-label false positive is still explicitly failed. Other failures included
+normal follow-up clarification/leakage, four direct-Main invoice edits/refusals
+changing checkout, and a cart-read followed by unrequested checkout.
+
+A subsequent fix routes review clarification proposals through the existing
+whole-service purpose boundary. Same-call recipient evidence is now shared by
+Main review, finite intent and scope qualification; review also has an unrelated
+relation choice, rather than forcing every cue-adjacent segment into new-request
+or clarification-answer. No additional model stage or transcript blacklist.
+Focused normal continuations/companion address pass; B01's remaining label error
+is retained, not rewritten into success. A fresh semantic2 fixed-source gate of
+221attempts is running; its results must stay separate from semantic1. Existing
+broader invoice/navigation faults remain in the full gate and are not waived.
+
+Semantic2 was stopped at case boundaries after C04-F1 exposed a task-caused price
+handoff regression: a review proposal became a menu read only after scope
+qualification, so the preceding price stage had skipped it. A new real API/Host/
+Menu test reproduced unresolvedPrice=true before the fix. The existing price
+resolver now runs after purpose qualification too; issued choices still skip it,
+so the test verifies the same3calls and accepted <=200Menu results. The real
+C04-F1 synthetic probe passes. Semantic2's partial result/source snapshot remain
+private and are not completed acceptance. Final semantic3 is running all221
+positions under the same immutable admission-v4 expectations. No keyword rule was
+added for the remaining B01 service-label error, and no deployment is implied.
+
+Semantic3 finished204/219functional passes,15failures;2seeded diagnostics completed.
+The raw result remains a failed gate. Its additional fixes are limited to actual
+observed boundaries: recipient is the addressee, not whether a request changes
+topic; cart display uses existing read-only order information; and an explicit
+continuation with no batch/presentation returns Menu's existing clarification
+instead of throwing. Stale catalog/plan rejection remains unchanged. A new Menu
+unit first reproduced the exception, and focused real C15-F2/N01-J-V1/B04-J-A1/
+B04-J-F1/C04-F1 pass. Final semantic4 now runs the same221positions and unchanged
+admission-v4 gold. All earlier failure counts, including class-only B01 errors and
+broader invoice/navigation effects, remain separate rather than being waived.
+
+#### Final Nov4 implementation/acceptance result
+
+The fixed semantic4 candidate attempted all221positions:219functional attempts
+(including repeated sessions),210passed/9failed;2seeded diagnostic attempts
+completed and do not prove the incomplete historical replays. Source/config hashes
+and immutable admission-v4 gold stayed constant. All six sensitive chains ran
+three independent sessions:16passed/2failed, with both failures on B01-J-L1's
+service-label error. Those two stayed silent without accepted-history/cue/tool
+effects; they remain classification failures, not retroactive passes.
+
+Other remaining failures: C15-F3 explicit dumplings1 became a recommendation;
+Q01-M-B3 replaced the existing dumplings while correcting pork200→1;
+I03-T-A3/I04-T-A2/I04-C-A1/I04-N-A1/I04-T-A1 canceled checkout or opened unwanted
+cancellation confirmation. Two invoice drafts were lost; three tax cases retained
+data but entered confirmation. No claim is made that all product issues are fixed
+or that the release gate passed. Next concern is Main's requested-effect/target
+authority and fulfillment, separate from background admission and optional speech.
+
+Final candidate used2222provider requests,1274actualJev requests with0Jev transport
+failures. This phase's full/exploratory total is854attempts/8969provider requests;
+earlier outcome-policy archives remain separate. All earlier failures, candidate
+hashes, whole dialogue outcomes, actual tools, source snapshots and frozen gold
+are retained privately under `acceptance/background-admission-20261104/
+semantic-admission-20261104/acceptanceReport.md`. Source2's partial run was stopped
+for a reproduced task-caused price-stage gap; the new API/Host/Menu regression
+and actual C04-F1 pass after the fix. No old scores or failed inputs were rewritten.
+
+Offline885Menu/322Host,569Server domain and83API route command tests,11Chrome,
+Server/Kiosk package types and changed-file lint passed; sets overlap, not summed.
+No root/full-project typecheck, commits or deployment. The production release and
+independent array-microphone work remain unchanged by this implementation phase.
+
+
+#### Purchase intent and cart-target authority
+
+An INFORMATION proposal from Jev is not a qualified read-only scope. An exact
+meal with a live Menu-issued request scope passes the existing Main finite
+choice before its task loses purchase tools. A genuinely qualified read remains
+read-only; price evidence and Menu-owned target/slot constraints still apply.
+
+The existing risky-count review also verifies consent for replacing or removing
+the precise current cart line, independently of the20-serving cap. Correcting a
+never-executed demand cannot replace another meal; clarifying an already-correct
+total cannot delete that meal. Invalid or unconfirmed reviews execute no proposal.
+Invoice cancellation similarly protects both unsubmitted identifier drafts and
+committed identifiers; a model's proposed confirmation flag is not the separately
+bound user answer. Actual manual controls keep their existing ownership.
+
+User-approved purchase-v5 gold remains separate from historical inputs/results:
+uncommon synthetic “先不要送出” cases are advisory, invoice edits may ask about
+returning while retaining data, and held-silent background class discrepancies
+are diagnostic while actual silence/history/cue/no-operation checks remain strict.
+The replay now records Host failure, resulting cart and history before asserting,
+so incomplete turns no longer omit the disputed after-state.
+
+
+Purchase3 fixed-source validation finished227positions:219required functional
+attempts passed,6advisory results(3passed/3failed),2seeded diagnostics completed.
+C15-F3/Q01-M-B3/C12-A1 each passed3 independent sessions; the6sensitive chains
+passed18sessions. Advisory invoice refusals still opened cancellation confirmation
+but retained drafts;2raw classification mismatches stayed unadopted. No blanket
+all-position pass is claimed. Historical112 gold is byte-for-byte unchanged.
+
+The final candidate used2367provider requests(1367actualJev,0transport failures).
+This repair's4840total also includes81initial focused requests,2343requests for
+failed purchase2 and49followup probes; those are separate evidence, not passes
+borrowed by purchase3. The private purchase-target-final-20261104 archive holds
+source/config hashes, full dialogue and effect receipts, compact caseEvidence,
+original failures and final results. Relevant offline681Server/891Menu/241Host
+services,three package typechecks,modified-file lint and diff checks passed.
+No root/full-project typecheck, commits or deployment.
+
+
+Deployment preparation: ordering-only commits9f685d6/60b958c/939664a are packaged
+at `/home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952`. Exact accepted ordering hunks were preserved while pending
+microphone/media hunks were excluded. Clean-source package tests/types and7Chrome
+checks passed. Whole-repository lint/type scans have unrelated failures, recorded
+separately. Menu requires explicit `--base=/menu/` for production; the first package
+was rejected by preflight, corrected and superseded before any switch. The new
+3189-file package passed switch preflight. Local sudo requires a password, so
+production is still the prior release until the user executes switch-release.py.
+
+
+User completed the ordering-admission-20261104-155952 switch. Independent checks
+confirmed its exact API WorkingDirectory,livez/readyz withDB/Redis,3189release
+hashes and47origin frontend HTML/assets. No production customer order or public
+browser interaction was performed. Rollback remains ordering-copy-20261102-171742.
+The deployed runtime/static files are independent of the temporary clean worktree;
+all pending array-microphone changes remain outside this release.

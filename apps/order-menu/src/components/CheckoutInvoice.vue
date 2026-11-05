@@ -3,13 +3,16 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { CheckoutSnapshot } from '../domain/checkout-flow'
 
-import { computed, shallowRef, useTemplateRef, watch } from 'vue'
+import { computed, useTemplateRef, watch } from 'vue'
+
+import { invoiceDraftReady } from '../domain/checkout-flow'
 
 const props = defineProps<{ checkout: CheckoutSnapshot, total: string, locked?: boolean }>()
 const emit = defineEmits<{
   back: []
   registerControl: [id: string, element: Element | ComponentPublicInstance | null]
   choose: [method: 'carrier' | 'citizen' | 'donation']
+  draft: [method: 'carrier' | 'citizen', code: string]
   details: [method: 'carrier' | 'citizen' | 'donation', code: string]
   taxId: []
 }>()
@@ -23,13 +26,20 @@ watch([input, () => props.checkout, () => props.locked], ([field, , locked]) => 
     field?.focus({ preventScroll: true })
 }, { flush: 'post' })
 
-const code = shallowRef('')
 const method = computed(() => props.checkout.invoiceMethod === 'citizen' || props.checkout.invoiceMethod === 'donation' ? props.checkout.invoiceMethod : 'carrier')
 const title = computed(() => ({ carrier: '手機條碼', citizen: '自然人憑證條碼', donation: '捐贈碼' })[method.value])
-const valid = computed(() => ({ carrier: /^\/[0-9A-Z+.-]{7}$/, citizen: /^[A-Z]{2}\d{14}$/, donation: /^\d{3,7}$/ })[method.value].test(code.value.trim().toUpperCase()))
-watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCode, () => props.checkout.donationCode], ([selected, carrier, citizen, donation]) => {
-  code.value = ({ carrier, citizen, donation })[selected] ?? ''
-}, { immediate: true })
+// The input and voice confirmation share Menu's checkout snapshot. A local
+// component-only value cannot participate in revision checks or semantic tools.
+const code = computed({
+  get: () => props.checkout.invoiceDraft?.method === method.value
+    ? props.checkout.invoiceDraft.code
+    : ({ carrier: props.checkout.carrierCode, citizen: props.checkout.citizenCode, donation: props.checkout.donationCode })[method.value] ?? '',
+  set: (value: string) => {
+    if (method.value !== 'donation')
+      emit('draft', method.value, value)
+  },
+})
+const valid = computed(() => invoiceDraftReady(props.checkout))
 </script>
 
 <template>
@@ -53,7 +63,7 @@ watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCod
       <input id="invoice-code" ref="invoiceInput" v-model="code" :disabled="props.locked" autocomplete="off" inputmode="text" :maxlength="method === 'citizen' ? 16 : 8" :placeholder="method === 'carrier' ? '/ABC1234' : 'AB12345678901234'">
       <small>測試僅驗證資料格式，尚未串接正式發票開立或受贈單位查詢。</small>
       <strong>本次訂單 {{ total }}</strong>
-      <button type="submit" :disabled="!valid">
+      <button :ref="element => emit('registerControl', 'checkout:invoice:confirm', element)" type="submit" :disabled="!valid">
         確認發票資料，選擇付款方式
       </button>
     </form>

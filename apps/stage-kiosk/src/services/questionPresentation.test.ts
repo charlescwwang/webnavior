@@ -36,7 +36,7 @@ it('turns an unverified no-operation completion into an owned clarification inst
   expect(result.role).toBe('assistant')
   expect(result.content).not.toContain('已移除')
   expect(result.content).not.toContain('再試一次')
-  expect(result.content).toContain('詢問或調整')
+  expect(result.content).toContain('查詢的餐點或訂單調整')
   expect(result).toHaveProperty('clarification', true)
   expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(context.cart)
 })
@@ -180,6 +180,13 @@ describe('question presentation receipts', () => {
     const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }], categories: [] }, references: [{ label: '購物車水餃', refId: 'CART_LINE_1' }] }, { reason: 'NEW_REQUEST' })
     expect(state).toMatchObject({ requireMenuRead: true })
     expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '請提供牛肉麵名稱，例如紅燒或清燉牛肉麵。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, serviceReply: state?.serviceReply, failureMessage: '查詢未完成。' })).toEqual({ role: 'error', content: '查詢未完成。' })
+  })
+
+  // Report: Nov1 C09-A2/C12-F3 whole-turn replacement replay.
+  it.each([undefined, 'INFORMATION'])('preserves whole-request operation scope with price choice %s', (priceChoiceId) => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } }, { reason: 'NEW_REQUEST', resolvedBy: 'main-service', requestScope: 'order-operation', priceChoiceId })
+    expect(state).not.toHaveProperty('requireMenuRead')
+    expect(state).not.toHaveProperty('readOnly')
   })
 
   it('does not reinterpret a phone-stage provider fallback as an admitted factual menu query', () => {
@@ -383,4 +390,56 @@ it('renders a typed hearing check without inventing fulfillment or payment facts
   expect(reply.content).toContain('有收到您的這句話')
   expect(reply.content).not.toContain('內用')
   expect(reply.content).not.toContain('刷卡')
+})
+
+// Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
+it('presents a reviewed clarification after reads instead of replacing it with menu availability', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { items: [], customerMessage: '沒有查到。' })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], reply: { kind: 'clarification' } }, { menu, context, failureMessage: '失敗。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('查詢的餐點或訂單調整')
+  expect(reply.content).not.toContain('沒有查到')
+})
+
+it('presents an owned waiting question without claiming completion or reporting an error', () => {
+  const question = { questionId: 'quantity', requestId: 'draft', purpose: 'item-configuration', question: '水餃要幾份？', expiresAt: Date.now() + 30000, choices: [] }
+  const receipts = createMenuReplyWindow()
+  receipts.record('order_add_item', { customerMessage: question.question, pendingCustomerChoice: question })
+  const result = replyFromConversation({ status: 'waiting', agentMode: 'active', requestedTools: ['order_add_item'], question }, { menu: receipts, question, outcome: question.question, handoff: { intent: 'ADD_ITEM' }, failureMessage: '系統失敗，請重試。' })
+  expect(result).toEqual({ role: 'assistant', content: question.question })
+})
+
+it('retains every confirmed operation receipt when a later operation fails', () => {
+  const receipts = createMenuReplyWindow()
+  receipts.record('order_add_item', { customerMessage: '水餃兩份已加入。' })
+  receipts.record('order_add_item', { customerMessage: '牛肉麵一份已加入。' })
+  receipts.record('cart_remove_item', { ok: false, customerMessage: '全部移除了。' })
+  const result = replyFromConversation({ status: 'incomplete', agentMode: 'active', requestedTools: ['order_add_item', 'order_add_item', 'cart_remove_item'], reason: 'tool-rejected' }, { menu: receipts, outcome: '牛肉麵一份已加入。', failureMessage: '移除未完成。' })
+  expect(result.content).toContain('水餃兩份已加入。')
+  expect(result.content).toContain('牛肉麵一份已加入。')
+  expect(result.content).toContain('移除未完成。')
+  expect(result.content).not.toContain('全部移除了')
+})
+
+it('cannot revive a question rejected by final Menu validation from the raw loop result', () => {
+  const question = { questionId: 'stale', purpose: 'item-configuration', question: '舊水餃要幾份？', expiresAt: Date.now() - 1, choices: [] }
+  const result = replyFromConversation({ status: 'waiting', agentMode: 'active', requestedTools: ['order_add_item'], question }, { menu: createMenuReplyWindow(), question: undefined, failureMessage: '問題已變更，請確認畫面。' })
+  expect(result).toEqual({ role: 'error', content: '問題已變更，請確認畫面。' })
+})
+
+it('reports accepted effects as partial progress when the requested effect is still missing', () => {
+  const receipts = createMenuReplyWindow()
+  receipts.record('order_add_item', { customerMessage: '水餃一份已加入。' })
+  const result = replyFromConversation({ status: 'incomplete', agentMode: 'active', requestedTools: ['order_add_item', 'cart_remove_item'], reason: 'tool-rejected' }, { menu: receipts, handoff: { intent: 'REMOVE_ITEM' }, failureMessage: '移除尚未完成。' })
+  expect(result.content).toBe('水餃一份已加入。 移除尚未完成。')
+})
+
+// Report: live112 C09-F3, price inquiry interrupted the retained sauce answer.
+it.each(['MENU_QUERY', 'NEW_REQUEST'] as const)('keeps a qualified factual price selector read-only after %s', (reason) => {
+  const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } }, { reason, priceChoiceId: 'INFORMATION' })
+  expect(state).toHaveProperty('readOnly', true)
+  expect(state).not.toHaveProperty('requireMenuRead')
 })

@@ -1,5 +1,8 @@
 import type { SystemOnePolicyInput } from '../kiosk-system-one'
 
+/** Service domain shared by Jev admission and both independent Main qualifiers. */
+export const serviceDomainInstruction = '本機服務範圍：餐點與菜單查詢／比較／推薦、訂購與修改訂單、用餐與結帳流程、店家資訊（含店內位置與路線）、本機身分／名稱／能力／操作。先判斷本句對象與請求：明確叫同伴名字對他說話，即使含餐點或內用／自取等詞仍是背景；技術評論、同伴聊天與領域不明的指令，不因句子完整或使用命令語氣就成為本機求助。沒有本機請求的陳述或未完敘述不採納。確實向本機請求後，對上一答覆的追問／質疑、缺商品目標的訂購、明確泛求助都仍是服務，不能把商品不明當成說話對象不明；表達選購指代品項時，缺商品reference只是目標未定，先釐清品名，不猜商品或搜尋代名詞。限制本機接下來的動作、暫停或拒絕本機操作也是完整服務指示，該動作尚未執行也成立；保留訂單與輸入資料，不能當背景或擅自取消結帳。短答須有實際回答關係；單純附和或結束語可視為背景。當前畫面、歷史與Jev提案不構成服務資格或操作授權。'
+
 /** Application-owned speech scope, shared by ordinary and active-question routes. */
 export const serviceRequestInstruction = [
   '分類省略問句：在向本機查詢餐點的語境中，只說分類名稱、分類加「呢」「的有嗎」「之類的」，也是完整的分類瀏覽，選現有 SEARCH_MENU 查詢候選；不必重述「有沒有」。分類即使只有一道菜也不是指定訂購。缺動詞、份數或具體品名不等於 INCOMPLETE；明顯還沒說完才等待。分類匹配本身不能把同伴聊天變成服務需求。',
@@ -25,7 +28,7 @@ const intentInstruction = [
   'SEARCH_MENU：找、查詢、確認是否存在、瀏覽餐點或分類；不代表選擇商品。例如「有水餃嗎」、「找飲料」、「便當有什麼」都選對應查詢候選。「我想吃麵」「我突然想吃便當」只提分類且沒有數量，先瀏覽分類；分類即使只有一道菜，也不能當作顧客指定該品名。',
   'SELECT_ITEM：把已知商品變成目前查看或編輯對象，但不加入購物車。例如「看水餃」、「選水餃」、「切到水餃」。',
   'ADD_ITEM：顧客對店員表達想吃或想要一個已辨識餐點，就是建立訂購項目；品項、數量與客製化都是同一個新增意圖的 slots，不能因為含數量或選項而拆成修改。例如「想吃水餃」或「想要水餃」在商品唯一可辨識時也選 ADD_ITEM；「我要兩份水餃」、「幫我加兩份水餃」是 ADD_ITEM；「水餃改兩份」才是 SET_QUANTITY。',
-  'SET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。',
+  'SET_QUANTITY、SET_OPTION：只修改已存在的 selected item 或 cart target；target 若有多個合理候選，仍選原本意圖，由程式澄清。「改成兩份」是 SET_QUANTITY，「不要辣」是 SET_OPTION。若更正尚未執行的份數，例如「不要200份排骨便當，改成一份排骨便當」，不能用SET_QUANTITY修改別道既有餐點；沒有該餐點的selected/cart target時，交UNCERTAIN保留全句給一般Main處理，不用最接近的修改效果。',
   'REMOVE_ITEM：只在顧客明確要求移除購物車品項時選；若有多筆同名品項，仍選 REMOVE_ITEM，由程式澄清。',
   'RECOMMEND：只處理目前候選與有限條件能完整表達的推薦需求；條件可以取交集，不能只因條件有多個就交給助手。熱門等排序須有店家提供的對應能力。有效的點餐服務需求需要比較、解釋、未提供的資料或開放式推理時，選 NEEDS_ASSISTANT。',
   '餐點偏好、拒絕某類食物、飲食要求、複合條件與改口，交給 Main Agent 讀完整原句與對話，不逐字套句型、不把否定對象當成要查詢或移除的餐點。一般路由選 MENU_QUERY；沒有該選項時選 NEEDS_ASSISTANT。這是查詢交接，不授權新增、移除或結帳。已知品名／分類的單純查詢、明確操作與原條件不變的換批仍使用相應候選。',

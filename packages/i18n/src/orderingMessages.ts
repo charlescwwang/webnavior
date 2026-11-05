@@ -1,11 +1,16 @@
 /** Copy for the standalone ordering runtime, without loading a Vue i18n instance. */
 export const orderingMessages = {
   'zh-Hant': {
+    quantityLimit: '每種餐點單次最多 20 份。超過上限的品項未加入，購物車原有餐點仍保留。請調整份數後再告訴我。',
     targetChoice: '請選擇其中一項：{items}。請說餐點名稱或第幾項，也可以說取消。',
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
     queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
     checkout: {
+      retainedFulfillment: '目前為{mode}。',
       invoiceQuestion: '請選擇手機載具、自然人憑證、公司統編，或略過並捐贈發票。',
+      invoiceConfirmed: '已確認發票資料，請選擇付款方式。',
+      invoiceConfirmQuestion: '請確認畫面上的發票資料，確認後選擇付款方式。',
+      invoiceDraftRequired: '請先在畫面輸入有效發票資料，再確認送出。',
       returnToOrder: '返回訂單內容，保留餐點',
       donation: '略過，捐贈發票',
       taxIdLabel: '統一編號',
@@ -33,6 +38,7 @@ export const orderingMessages = {
     payment: {
       chooseTitle: '選擇付款方式',
       methodHint: '可觸控或告訴助手要使用哪種付款方式，選好後直接進入掃碼付款畫面。',
+      selectionCountdown: '請於 {seconds} 秒內選擇付款方式；逾時返回訂單確認，餐點會保留。',
       scanTitle: '{method} 掃碼付款',
       waiting: '等待掃碼，尚未付款',
       scanHint: '這是測試付款畫面，不需要實際掃描或操作支付 App。',
@@ -75,11 +81,16 @@ export const orderingMessages = {
     inquiryCorrection: '了解，您是在詢問，沒有要點這道。',
   },
   'en': {
+    quantityLimit: 'Each item allows up to 20 servings per operation. Items exceeding the limit were not added; items already in your cart are retained. Please adjust the quantity and try again.',
     targetChoice: 'Choose one item: {items}. Say its name or position, or say cancel.',
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
     queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
     checkout: {
+      retainedFulfillment: 'This order is set to {mode}. ',
       invoiceQuestion: 'Choose a mobile carrier, citizen certificate, business tax ID, or skip and donate the invoice.',
+      invoiceConfirmed: 'Invoice details confirmed. Please choose a payment method.',
+      invoiceConfirmQuestion: 'Confirm the invoice details shown on screen to continue to payment methods.',
+      invoiceDraftRequired: 'Enter valid invoice details on the screen before confirming.',
       returnToOrder: 'Return to order, keep items',
       donation: 'Skip and donate invoice',
       taxIdLabel: 'Business tax ID',
@@ -107,6 +118,7 @@ export const orderingMessages = {
     payment: {
       chooseTitle: 'Choose a payment method',
       methodHint: 'Tap or tell the assistant your payment method to open the scan payment screen.',
+      selectionCountdown: 'Choose a payment method within {seconds} seconds. When time runs out, return to order review with your items retained.',
       scanTitle: '{method} scan payment',
       waiting: 'Waiting for scanning; not paid yet',
       scanHint: 'This is a payment test screen. No scan or payment app is needed.',

@@ -1,7 +1,13 @@
+import type { ConversationHandoff } from '@proj-airi/stage-shared/kiosk-conversation'
+
+import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { rawTool } from '@xsai/tool'
+import { parse } from 'valibot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
+import { menu } from '../../../order-menu/src/domain/order-machine'
+import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { createMenuReplyWindow, replyFromConversation } from '../services/questionPresentation'
 import { useKioskInteractionRecording } from './useKioskInteractionRecording'
 
@@ -18,6 +24,137 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat, Nov2; legal siblings may execute; oversized counts must not be reduced or retried.
+  it.each([false, true])('adds the legal sibling and explains oversized quantity (oversizedFirst=%s)', async (oversizedFirst) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'quantity-limit', state: 'active' } })
+    const execute = vi.fn(async (input: { quantity: number }) => input.quantity > 20 ? { ok: false, executed: false, rejection: 'quantity-limit', error: 'QUANTITY_LIMIT', toolName: 'order_add_item', requestedQuantity: input.quantity, maximum: 20, customerMessage: '每種餐點最多20份；超量未加入，原餐點保留。' } : { customerMessage: '已將排骨便當一份加入。' })
+    const add = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: { quantity: { type: 'integer', minimum: 1 } }, required: ['quantity'] }, execute })
+    const quantities = oversizedFirst ? [200, 1] : [1, 200]
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: quantities.map((quantity, index) => ({ id: `quantity-${index}`, type: 'function', function: { name: 'order_add_item', arguments: JSON.stringify({ quantity }) } })) })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const menuWindow = createMenuReplyWindow()
+      const result = await recording.send('ordering', '招牌便當200份，排骨便當一份', [add], { onToolResult: (name, content) => menuWindow.record(name, content) })
+      expect(result).toMatchObject({ status: 'completed', rejection: { error: 'QUANTITY_LIMIT', maximum: 20 } })
+      expect(execute).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+      const reply = replyFromConversation(result!, { menu: menuWindow, failureMessage: '這次回覆尚未完成' })
+      expect(reply.role).toBe('assistant')
+      expect(reply.content).toContain('已將排骨便當一份加入')
+      expect(reply.content).toContain('20')
+      expect(reply.content).toContain('保留')
+      expect(reply.content).not.toContain('尚未完成')
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: this chat, 2026-11-02; queued browser metrics delayed phone-close presentation.
+  it('saves customer turns without waiting for a stalled diagnostic write', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'diagnostic-latency', state: 'active' } })
+    let releaseMetric = () => {}
+    const metricSaved = new Promise<void>((resolve) => {
+      releaseMetric = resolve
+    })
+    kioskApi.appendKioskInteraction.mockImplementation(async (entry) => {
+      if (entry.metadata?.source === 'browser_tool_metrics')
+        await metricSaved
+      return { entry: { content: entry.content } }
+    })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      await recording.start('ordering')
+      const diagnostic = recording.append('service_event', '{"kind":"browser_tool_metrics"}', { source: 'browser_tool_metrics' })
+      const user = recording.append('user_text', '關閉')
+      const answer = recording.append('assistant_text', '已略過電話登記。')
+      try {
+        await vi.waitFor(() => expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'assistant_text' })), { timeout: 100 })
+        expect(kioskApi.appendKioskInteraction.mock.calls.map(([entry]) => entry.kind)).toEqual(['service_event', 'user_text', 'assistant_text'])
+      }
+      finally {
+        releaseMetric()
+        await Promise.all([diagnostic, user, answer])
+      }
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30, seq200–227.
+  it.each([false, true])('completes quantity changes after at most one unexecuted invalid proposal (legal=%s)', async (legal) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'quantity-diagnosis', state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], category: '點心', price: 80, optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 3 })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'quantity-diagnosis', transcript: '水餃三份改成兩份', expectedMenuRevision: parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).revisions.menu, constraints: {} })
+    await runtime.invoke('kiosk_conversation_context')
+    const cart = await runtime.invoke('cart_get', { display: false }) as { cart: { lines: Array<{ id: string }> } }
+    const lineId = cart.cart.lines[0]!.id
+    const definition = runtime.toolDefinitions.find(tool => tool.name === 'cart_set_line_quantity')!
+    const execute = vi.fn(async (args: Record<string, unknown>) => runtime.invokeForAgent('cart_set_line_quantity', args))
+    const tool = rawTool({ name: definition.name, description: definition.description, parameters: definition.inputSchema, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'quantity', type: 'function', function: { name: legal ? 'cart_set_line_quantity' : 'cart_update_item', arguments: JSON.stringify(legal ? { lineId, quantity: 2 } : { lineId }) } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: legal ? [] : [{ id: 'corrected-quantity', type: 'function', function: { name: 'cart_set_line_quantity', arguments: JSON.stringify({ lineId, quantity: 2 }) } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '水餃三份改成兩份', [tool])
+      if (legal) {
+        expect(result?.status).toBe('completed')
+        expect(execute).toHaveBeenCalledOnce()
+        expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+      }
+      else {
+        expect(result).toMatchObject({ status: 'completed', requestedTools: ['cart_set_line_quantity'] })
+        expect(execute).toHaveBeenCalledOnce()
+        expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(3)
+        expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0].toolResults).toMatchObject([{ name: 'cart_update_item', toolCallId: 'quantity', content: expect.stringContaining('UNKNOWN_TOOL') }])
+        expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+      }
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
+  it('stops after a second unknown proposal without executing either batch', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'bounded-tool-repair', state: 'active' } })
+    const execute = vi.fn(async () => ({ ok: true }))
+    const tool = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'bad-1', type: 'function', function: { name: 'unknown', arguments: '{}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'bad-2', type: 'function', function: { name: 'unknown-again', arguments: '{}' } }] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '加一份', [tool])).toMatchObject({ status: 'incomplete', reason: 'tool-rejected', requestedTools: [] })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+      expect(execute).not.toHaveBeenCalled()
+    }
+    finally { scope.stop() }
+  })
+
+  it('does not execute a valid sibling before correcting an unknown tool in the same batch', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'atomic-proposal', state: 'active' } })
+    const execute = vi.fn(async () => ({ ok: true, customerMessage: '已加入。' }))
+    const tool = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'valid-sibling', type: 'function', function: { name: 'order_add_item', arguments: '{}' } }, { id: 'unknown-sibling', type: 'function', function: { name: 'unknown', arguments: '{}' } }] })
+      .mockImplementationOnce(async ({ toolResults }) => {
+        expect(execute).not.toHaveBeenCalled()
+        expect(toolResults).toMatchObject([{ toolCallId: 'valid-sibling', content: expect.stringContaining('BATCH_NOT_EXECUTED') }, { toolCallId: 'unknown-sibling', content: expect.stringContaining('UNKNOWN_TOOL') }])
+        return { agentMode: 'active', toolCalls: [{ id: 'corrected', type: 'function', function: { name: 'order_add_item', arguments: '{}' } }] }
+      })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '加一份', [tool])).toMatchObject({ status: 'completed', requestedTools: ['order_add_item'] })
+      expect(execute).toHaveBeenCalledOnce()
+    }
+    finally { scope.stop() }
+  })
+
   // Report: this chat, 2026-10-26; XCUxZDdu entries236–365 contain 44 zero-round tasks.
   it('reports missing Menu context separately before any model request', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'missing-menu-context', state: 'active' } })
@@ -94,15 +231,15 @@ describe('useKioskInteractionRecording', () => {
     finally { scope.stop() }
   })
   // Report: this chat, session -_n4bX6MRFcoRGilxK9-_ entries14–21, 2026-10-19.
-  it.each(['same-batch', 'continuation', 'broad-menu-get'] as const)('presents one recommendation batch per customer turn: %s', async (path) => {
+  it.each(['same-batch', 'continuation', 'broad-menu-get', 'catalog'] as const)('presents one recommendation batch per customer turn: %s', async (path) => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'recommendation-limit', state: 'active' } })
-    const first = { id: 'recommend-first', type: 'function', function: { name: 'menu_recommend', arguments: '{}' } }
+    const first = { id: 'recommend-first', type: 'function', function: { name: path === 'catalog' ? 'menu_get' : 'menu_recommend', arguments: path === 'catalog' ? '{"scope":"catalog"}' : '{}' } }
     const second = { id: 'recommend-more', type: 'function', function: { name: path === 'broad-menu-get' ? 'menu_get' : 'menu_recommend', arguments: path === 'broad-menu-get' ? '{}' : '{"more":true}' } }
     kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: path === 'same-batch' ? [first, second] : [first] })
     if (path !== 'same-batch')
       kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [second] })
     kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
-    const execute = vi.fn(async () => ({ presentation: { kind: 'recommendation', itemIds: ['a', 'b', 'c'] }, items: [{ id: 'a', name: '甲', price: 100 }, { id: 'b', name: '乙', price: 110 }, { id: 'c', name: '丙', price: 120 }], customerMessage: '推薦3 項：甲、乙、丙。' }))
+    const execute = vi.fn(async () => ({ presentation: { kind: path === 'catalog' ? 'query-results' : 'recommendation', itemIds: ['a', 'b', 'c'] }, items: [{ id: 'a', name: '甲', price: 100 }, { id: 'b', name: '乙', price: 110 }, { id: 'c', name: '丙', price: 120 }], customerMessage: '推薦3 項：甲、乙、丙。' }))
     const tools = ['menu_recommend', 'menu_get'].map(name => rawTool({ name, description: name, parameters: { type: 'object', properties: {} }, execute }))
     const menu = createMenuReplyWindow()
     const scope = effectScope()
@@ -168,13 +305,148 @@ describe('useKioskInteractionRecording', () => {
   it('publishes a scope question without a second model continuation', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'scope-question', state: 'active' } })
     kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'scope-read', type: 'function', function: { name: 'menu_get', arguments: '{}' } }] })
-    const tool = rawTool({ name: 'menu_get', description: 'Menu', parameters: { type: 'object', properties: {} }, execute: async () => ({ pendingCustomerChoice: { purpose: 'menu-query-scope', questionId: 'scope-1', question: '請選擇範圍' } }) })
+    const tool = rawTool({ name: 'menu_get', description: 'Menu', parameters: { type: 'object', properties: {} }, execute: async () => ({ pendingCustomerChoice: { purpose: 'menu-query-scope', questionId: 'scope-1', question: '請選擇範圍', expiresAt: Date.now() + 30000, choices: [] } }) })
     const scope = effectScope()
     try {
       const recording = scope.run(() => useKioskInteractionRecording())!
-      expect(await recording.send('ordering', '120以下有什麼', [tool])).toMatchObject({ status: 'completed' })
+      expect(await recording.send('ordering', '120以下有什麼', [tool])).toMatchObject({ status: 'waiting' })
       expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
       expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'tool_result', metadata: expect.objectContaining({ name: 'menu_get' }) }))
+    }
+    finally { scope.stop() }
+  })
+
+  it('waits for missing meal slots without executing later batch calls or another model round', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'wait-for-slots', state: 'active' } })
+    const question = { questionId: 'quantity-ticket', requestId: 'meal-draft', purpose: 'item-configuration', question: '水餃要幾份？', expiresAt: Date.now() + 30000, choices: [] }
+    const add = rawTool({ name: 'order_add_item', description: 'Add', parameters: { type: 'object', properties: {} }, execute: async () => ({ customerMessage: question.question, pendingCustomerChoice: question }) })
+    const executeCheckout = vi.fn(async () => ({ customerMessage: '已進入結帳。' }))
+    const checkout = rawTool({ name: 'checkout_start', description: 'Checkout', parameters: { type: 'object', properties: {} }, execute: executeCheckout })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [
+        { id: 'missing-quantity', type: 'function', function: { name: 'order_add_item', arguments: '{}' } },
+        { id: 'too-early', type: 'function', function: { name: 'checkout_start', arguments: '{}' } },
+      ] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '全部完成了。' })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '點水餃，接著結帳', [add, checkout])).toMatchObject({ status: 'waiting', question, requestedTools: ['order_add_item'], deferredTools: ['checkout_start'] })
+      expect(executeCheckout).not.toHaveBeenCalled()
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+      expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'tool_result', content: expect.stringContaining('AWAITING_CUSTOMER_CHOICE') }))
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: live112 C13-A2, attempt723; after opening checkout Main
+  // answered new invoice/payment questions itself within the same tool loop.
+  it.each([
+    // Report: Nov2 navigation acceptance; Main continued after proposing a mode change.
+    { purpose: 'operation-confirmation', name: 'order_set_fulfillment' },
+    { purpose: 'membership', name: 'checkout_start' },
+    { purpose: 'invoice', name: 'checkout_start' },
+    { purpose: 'tax-id', name: 'checkout_request_tax_id' },
+    { purpose: 'payment-method', name: 'checkout_choose_invoice' },
+  ])('waits for a new checkout $purpose choice before later effects', async ({ purpose, name }) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'checkout-choice', state: 'active' } })
+    const question = { questionId: 'checkout-ticket', purpose, question: '請選擇下一步', expiresAt: Date.now() + 30000, choices: [] }
+    const first = rawTool({ name, description: name, parameters: { type: 'object', properties: {} }, execute: async () => ({ pendingCustomerChoice: question }) })
+    const executePayment = vi.fn(async () => ({ customerMessage: '已付款。' }))
+    const payment = rawTool({ name: 'checkout_select_payment', description: 'Payment', parameters: { type: 'object', properties: {} }, execute: executePayment })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [
+      { id: 'checkout-choice', type: 'function', function: { name, arguments: '{}' } },
+      { id: 'unanswered-payment', type: 'function', function: { name: 'checkout_select_payment', arguments: '{}' } },
+    ] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '已完成。' })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '進入結帳', [first, payment])).toMatchObject({ status: 'waiting', question, requestedTools: [name], deferredTools: ['checkout_select_payment'] })
+      expect(executePayment).not.toHaveBeenCalled()
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: live112 M01; a complete two-item batch continued into an unrelated edit.
+  it('does not let an ordinary fulfillment question truncate same-batch additions', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'batch-follow-up', state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu: [
+      { ...menu[0]!, id: 'first', name: '第一餐', aliases: [], optionGroups: [] },
+      { ...menu[0]!, id: 'second', name: '第二餐', aliases: [], optionGroups: [] },
+    ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const definition = runtime.toolDefinitions.find(tool => tool.name === 'order_add_item')!
+    const tool = rawTool({ name: definition.name, description: definition.description, parameters: definition.inputSchema, execute: async (args: Record<string, unknown>) => runtime.invoke('order_add_item', args) })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: ['first', 'second'].map(itemId => ({ id: itemId, type: 'function', function: { name: 'order_add_item', arguments: JSON.stringify({ itemId, quantity: 1 }) } })) }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '兩個餐點已加入。' })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '第一餐與第二餐各一份', [tool])).toMatchObject({ status: 'completed', requestedTools: ['order_add_item', 'order_add_item'] })
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: frozen live112 M01, attempt762; a four-round ceiling stopped
+  // before the second known meal after independent per-item evidence reads.
+  it('scales bounded rounds for issued targets without truncating the remaining meal', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'multi-round', state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu: [
+      { ...menu[0]!, id: 'first', name: '第一餐', aliases: [], optionGroups: [] },
+      { ...menu[0]!, id: 'second', name: '第二餐', aliases: [], optionGroups: [] },
+    ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const handoff: ConversationHandoff = { intent: 'ADD_ITEM', status: 'unmatched', itemIds: ['first', 'second'], lineIds: [] }
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'multi-round', transcript: '第一餐與第二餐各一份', expectedMenuRevision: 0, constraints: {}, handoff })
+    const calls = [
+      { name: 'menu_get', args: { query: '第一餐', display: false } },
+      { name: 'menu_get', args: { query: '第二餐', display: false } },
+      { name: 'menu_select_item', args: { itemId: 'first' } },
+      { name: 'cart_add_item', args: {} },
+      { name: 'order_add_item', args: { itemId: 'second', quantity: 1 } },
+    ] as const
+    const tools = [...new Set(calls.map(call => call.name))].map((name) => {
+      const definition = runtime.toolDefinitions.find(tool => tool.name === name)!
+      return rawTool({ name, description: definition.description, parameters: definition.inputSchema, execute: (args: Record<string, unknown>) => runtime.invokeForAgent(name, args) })
+    })
+    for (const [index, call] of calls.entries())
+      kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: `step-${index}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } }] })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '兩道餐點已加入。' })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '第一餐與第二餐各一份', tools, { decisionState: { phase: 'ordering', handoff } })).toMatchObject({ status: 'completed', requestedTools: calls.map(call => call.name) })
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { lines: [{ itemId: 'first', quantity: 1 }, { itemId: 'second', quantity: 1 }] } })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(6)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: live112 M10: two spice values in one line were rejected before any effect.
+  it.each(['corrected', 'repeated', 'after-write'] as const)('corrects only one proven unexecuted input, never an accepted write: %s', async (scenario) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: `input-${scenario}`, state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'noodle', name: '牛肉麵', aliases: [], optionGroups: [{ id: 'spice', label: '辣度', required: true, values: [{ id: 'hot', label: '大辣', priceDelta: 0 }, { id: 'mild', label: '小辣', priceDelta: 0 }] }] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const definition = runtime.toolDefinitions.find(tool => tool.name === 'order_add_item')!
+    const tool = rawTool({ name: definition.name, description: definition.description, parameters: definition.inputSchema, execute: async (args: Record<string, unknown>) => runtime.invokeForAgent('order_add_item', args) })
+    const call = (id: string, values: string[]) => ({ id, type: 'function' as const, function: { name: 'order_add_item', arguments: JSON.stringify({ itemId: 'noodle', quantity: values.length === 2 ? 2 : 1, options: values.map(valueId => ({ groupId: 'spice', valueId })) }) } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [...(scenario === 'after-write' ? [call('accepted', ['hot'])] : []), call('bad', ['hot', 'mild'])] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: scenario === 'repeated' ? [call('bad-again', ['hot', 'mild'])] : [call('hot', ['hot']), call('mild', ['mild'])] })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '兩種規格各一份已加入。' })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '牛肉麵一份大辣、一份小辣', [tool])
+      const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+      if (scenario === 'corrected') {
+        expect(result?.status).toBe('completed')
+        expect(context.cart.itemCount).toBe(2)
+        expect(context.cart.lines.map(line => line.options[0]?.valueId).sort()).toEqual(['hot', 'mild'])
+      }
+      else {
+        expect(result?.status).toBe('incomplete')
+        expect(context.cart.itemCount).toBe(scenario === 'after-write' ? 1 : 0)
+      }
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(scenario === 'after-write' ? 1 : scenario === 'corrected' ? 3 : 2)
     }
     finally { scope.stop() }
   })
@@ -479,7 +751,7 @@ describe('useKioskInteractionRecording', () => {
     scope.stop()
   })
 
-  it('sends the current payment phase on the first Main Agent request only', async () => {
+  it('refreshes the payment phase after an actual tool round without replaying stale methods', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
     kioskApi.streamKioskConversationMessage
       .mockResolvedValueOnce({ agentMode: 'active', answer: undefined, toolCalls: [{ id: 'call-1', type: 'function', function: { arguments: '{}', name: 'menu_get' } }] })
@@ -490,10 +762,15 @@ describe('useKioskInteractionRecording', () => {
       throw new Error('Expected interaction recording to initialize.')
 
     const decisionState = { phase: 'checkout_payment_select', paymentState: 'idle', allowedPaymentMethods: ['card', 'mobile'] as Array<'card' | 'mobile'> }
-    await recording.send('restaurant-ordering', '信用卡', [], { decisionState })
+    // NOTICE: The previous fixture offered no menu_get tool, so it never reached
+    // a continuation and its stale-state assertion passed without testing a round.
+    const tool = rawTool({ name: 'menu_get', description: 'Read', parameters: { type: 'object', properties: {} }, execute: async () => ({ items: [] }) })
+    const prepareRound = vi.fn().mockResolvedValueOnce({ decisionState, tools: [tool] }).mockResolvedValueOnce({ decisionState: { phase: 'checkout_invoice' }, tools: [] })
+    await recording.send('restaurant-ordering', '信用卡', [tool], { decisionState, prepareRound })
 
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
     expect(kioskApi.streamKioskConversationMessage.mock.calls[0]?.[0].decisionState).toEqual(decisionState)
-    expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].decisionState).toBeUndefined()
+    expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].decisionState).toEqual({ phase: 'checkout_invoice' })
     scope.stop()
   })
 

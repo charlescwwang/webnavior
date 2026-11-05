@@ -64,11 +64,11 @@ describe('recommendation batches', () => {
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
-  it('retains recommendation conditions when a customer requests the whole menu', async () => {
+  it('retains dietary exclusions when a customer requests the whole menu', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'], maxPrice: 400 })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我要看全部' })
-    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })).toMatchObject({ items: dishes.slice(1).map(item => ({ id: item.id })), appliedFilters: { excludeIngredients: ['pork'] }, decisionTrace: { operationPlan: { input: { scope: 'catalog', display: true } } } })
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-all-menu' })).toMatchObject({ items: dishes.slice(1).map(item => ({ id: item.id })), appliedFilters: { excludeIngredients: ['pork'] }, decisionTrace: { operationPlan: { input: { scope: 'catalog', display: true } } } })
   })
 
   it('rejects a broad browse plan when its recommendation batch has changed', async () => {

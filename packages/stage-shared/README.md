@@ -53,6 +53,21 @@ fields, complete product coverage and the 256 KiB abnormal-payload cap. It exclu
 browser/Node runtime dependencies, images and vendor payloads. Menu produces the
 snapshot; Kiosk binds it to a current task; Server projects it once per model
 request. This is not the Jev candidate contract or an authorization token.
+`conversationRequestSchema` describes an uncommitted meal draft: original request
+when known, active/suspended/confirming status, known quantity and option values,
+explicit missing slots, and domain revisions. An absent quantity is unknown,
+never one serving. Menu projects these facts into `retainedRequests`; Host passes
+them to Jev and Main without turning them into candidate or write authority.
+Read-only Main handoffs retain draft progress even when the catalog is omitted.
+Drafts do not represent successful cart effects or renew question tickets.
+`conversationQuestionSchema.requestId` correlates meal questions with stable
+draft identity; the answer's `questionId` identifies its separate short lease.
+`intentRecoverySchema` carries Menu-issued request effects or question-bound
+answer effects for bounded Main interpretation. The HTTP/Host boundaries validate
+this shape; the actual Menu operation still validates the current issued choice,
+customer text, domain revisions and execution rules. Passive reads issue no new
+interpretation scope from historical focus.
+
 `contextReplySchema` and `replyFromContext` let Main select information or
 clarification while the application renders facts from a fresh snapshot. They
 never render model-supplied success prose or turn snapshot data into a write receipt.
@@ -67,3 +82,14 @@ service-clarification schema, domain-version/question correlation and shared tim
 ceilings. `SERVICE_RECOVERY_PROGRESS` start is only provider work notification;
 service admission must be established independently, and neither grants a Menu
 operation ticket. It carries no fabricated Jev confidence.
+
+## Quantity-limit refusal
+
+`kiosk-conversation` owns the20-serving policy constant, the current Menu
+`quantityPolicy` projection (including raw `mentionedCounts` evidence) and strict `quantityLimitRejectionSchema` receipt.
+Count evidence grants no order authority; semantic negation/item binding remains
+Main-owned. A refusal proves that the named operation did not execute; it does not roll back
+other successful operations. Hosts retain successful sibling receipts and show
+them together with the refusal. Do not retry, reduce or split the rejected count.
+A model may select `quantity-limit` for a factual policy reply; customer-facing
+wording comes from the current Menu projection rather than model success prose.

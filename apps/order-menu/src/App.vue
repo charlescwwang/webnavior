@@ -20,14 +20,14 @@ import MenuItemDialog from './components/MenuItemDialog.vue'
 import MenuPresentationSkeleton from './components/MenuPresentationSkeleton.vue'
 import MenuPresentationSubjects from './components/MenuPresentationSubjects.vue'
 import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
-import OrderHandoff from './components/orderHandoff.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
+import { usePaymentSelectionCountdown } from './composables/usePaymentSelectionCountdown'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { continuationUrl } from './continuation'
-import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmTaxId, requestTaxId, returnToPreviousStep, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
 import { connectInteractiveService } from './interactiveService'
@@ -82,7 +82,6 @@ watch([checkout, paymentMethod, paymentStatus, customerEntryStatus], () => {
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
 let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
-let checkoutTimeoutTimer: ReturnType<typeof setTimeout> | undefined
 let paymentPollTimer: ReturnType<typeof setTimeout> | undefined
 let paymentAttempt = 0
 let disconnectService: (() => void) | undefined
@@ -334,6 +333,12 @@ const runtime = createMenuToolRuntime({
     assertCanRestart,
     cancel: cancelCheckout,
     chooseInvoice,
+    confirmInvoice: () => {
+      if (!checkout.value)
+        throw new Error('尚未進入發票確認。')
+      checkout.value = confirmInvoiceDraft(checkout.value)
+      return checkout.value
+    },
     confirmTaxId: confirmTaxIdNumber,
     paymentMethods: testPaymentMethods,
     paymentStatus: () => paymentStatus.value === 'pending' || paymentStatus.value === 'uncertain' ? paymentStatus.value : undefined,
@@ -748,19 +753,10 @@ async function simulatePayment() {
   }
 }
 
-watch([checkout, agentControlsOrder], ([nextCheckout, locked]) => {
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
-  if (locked || !nextCheckout)
-    return
-
-  checkoutTimeoutTimer = setTimeout(() => {
-    if (checkout.value?.stage !== nextCheckout.stage)
-      return
-    if (!paymentMethod.value && nextCheckout.stage === 'payment')
-      void returnToOrderReview()
-  }, 30_000)
-})
+const paymentSelectionSeconds = usePaymentSelectionCountdown(
+  () => checkout.value?.stage === 'payment' && !paymentMethod.value && !paymentStatus.value && !agentControlsOrder.value,
+  () => { void returnToOrderReview() },
+)
 
 async function setFulfillmentMode(mode: FulfillmentMode) {
   await invoke('order_set_fulfillment', { mode }, { animate: false })
@@ -846,8 +842,6 @@ onUnmounted(() => {
   disconnectService = undefined
   if (cartUpdateTimer)
     clearTimeout(cartUpdateTimer)
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
   if (paymentPollTimer)
     clearTimeout(paymentPollTimer)
 })
@@ -871,6 +865,7 @@ onUnmounted(() => {
       :total="currency(cart.total)"
       @back="backCheckout"
       @choose="chooseInvoice"
+      @draft="(method, code) => { if (checkout) checkout = setInvoiceDraft(checkout, method, code) }"
       @details="(method, code) => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) }"
       @tax-id="openTaxId"
       @register-control="setControlElement"
@@ -891,6 +886,7 @@ onUnmounted(() => {
       :error="paymentError"
       :method="paymentMethod"
       :status="paymentStatus"
+      :selection-seconds="paymentSelectionSeconds"
       :total="currency(cart.total)"
       @back="backCheckout"
       @change-method="() => { assertCanRestart(); resetPaymentAttempt() }"
@@ -917,14 +913,8 @@ onUnmounted(() => {
       @set-fulfillment="setFulfillmentMode"
       @update-quantity="updateCartLineQuantity"
     >
-      <template #seating>
-        <p v-if="fulfillmentMode === 'dine-in' && !completedOrderId" :class="['table-binding-note']">
-          完成點餐後，請先用手機掃訂單接續碼；入座後再掃桌碼綁定送餐位置。
-        </p>
-      </template>
       <template #continuation>
-        <OrderHandoff v-if="handoffUrl" :url="handoffUrl" @done="completeCustomerSession" />
-        <button v-else type="button" @click="completeCustomerSession">
+        <button type="button" @click="completeCustomerSession">
           完成，開始下一筆
         </button>
       </template>

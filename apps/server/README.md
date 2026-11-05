@@ -147,6 +147,13 @@ It exercises the production chunker, ASR gateway and whole-utterance queue,
 checking bounded uploads, correction order and one final delivery. It does not
 verify microphone capture, the HTTP device route, model interpretation or POS.
 
+The Kiosk ASR gateway supplies the short OpenAI-compatible transcription `prompt`
+“餐廳點餐與結帳，付款方式包含 LINE Pay、街口支付。” to help recognize payment
+brand names. This is recognition context, not a transcript replacement rule; the
+provider's returned text is preserved. Providers must support the transcription
+`prompt` field for the hint to take effect; actual recognition still requires
+recorded speech acceptance. See [transcription prompting](https://developers.openai.com/api/docs/guides/speech-to-text).
+
 Kiosk ASR uploads have a dedicated 1MiB body limit shared with the client audio
 contract. Oversized uploads return413 with `KIOSK_AUDIO_TOO_LARGE`; generic Hono
 HTTPException statuses are retained instead of being converted to500. Other
@@ -326,6 +333,10 @@ cart/menu lookups available throughout a replacement without replaying older
 tasks or increasing the tool-round limit. For an unambiguous complete swap, the
 Agent uses `order_add_item.replaceLineId`; the owned Menu commits the replacement
 once after validating the real original line, new item and required options.
+Before execution, the existing count review also checks replacement consent against
+the current cart and complete utterance, even when every count is within the limit.
+Main-proposed removals use this same review and require consent for their exact
+line. Correcting a count does not authorize replacing or deleting an existing meal.
 
 Device interaction metadata accepts `fast_path`, `execution_failed`, and
 `unavailable`, plus the correlated `questionId`. Failed ASR decisions remain
@@ -392,6 +403,90 @@ or frontend failure.
 pnpm -F @proj-airi/server-schema build
 ```
 
+## Main conversation skill
+
+`src/services/domain/kiosk-conversation-skills` owns the built-in `ordering@2`
+procedure: applicability, inquiry versus purchase, missing-slot handling, browsing,
+cart edits and receipt-based completion. Main JSON/SSE instruction assembly loads
+this same version instead of keeping separate copies of the workflow text in
+route wiring. `main_round_metrics` includes `skillId` and `skillVersion`. These are
+application runtime skills, separate from repository `.agents/skills` used by
+contributors. This procedure is code-managed, not an editable skill platform.
+
+Every staged utterance rechecks service admission, including while a service
+clarification is pending. Uncertain service relevance and unknown service meaning
+remain distinct: a valid Menu question keeps its existing bounded answer route;
+unknown meaning with admitted recent dialogue uses contextual Main review; without
+that context, independent admission still precedes review. Neither Jev admission
+nor the screen itself grants operation authority. Main review, finite intent and whole-service qualification share the required
+`recipient:kiosk|other|uncertain` output contract; another/unconfirmed recipient cannot be
+promoted by a matching menu topic or recent assistant question.
+Review may mark cue-adjacent speech as `unrelated`; it is not forced to invent a
+new request or an answer. Recipient describes who is addressed, not whether the
+utterance changes the service topic; a new question to this kiosk stays `kiosk`.
+Showing the cart uses the read-only order-information scope, so display does not
+authorize removal or checkout. Review clarification/held-answer proposals also pass
+whole-service purpose qualification before they can restart or suppress dialogue.
+An unresolved-target question cannot reopen or renew itself on another vague
+fragment. A directed follow-up to unavailable menu data can refine its conditions
+within the original expiry, without repeating the same question. A later explicit
+meal request continues through the ordinary Menu-owned ordering flow.
+Uncertain admission, an uninterpreted clarification answer and uncertain recipient
+scope stay silent. Accepted service questions enter model history only together
+with their correlated admitted ASR source (`source:service_clarification` and
+`questionId`); orphan prompts remain in the stored evidence but are not projected.
+
+Menu's intent domain issues `intentRecovery` for a current request or an answer
+to its current question. Server no longer independently infers eligibility from
+phase/purpose/product-name whitelists. After reliable service admission, an
+`UNCERTAIN_OPERATION` may select only the intersection of this scope and the
+current candidates. An unqualified `MENU_QUERY` proposal for a uniquely resolved
+meal also uses this same Main choice before a read-only task is bound; Jev
+information classification alone cannot erase a subsequent purchase request.
+An already qualified read-only scope remains read-only. Answer scopes must also match `waitingFor.questionId`, its
+optional stable `requestId`, the live expiry and its issued choices. A request
+scope does not consume an unrelated pending question. Domain-side tests retain
+entry/payment, ambiguous/multiple-target and category-only exclusions.
+
+A valid selection returns `FAST_ACTION` with `resolvedBy:main-skill` and, for an
+answer, `answeredQuestionId`. Its trace separately records skill/version, Main
+call count and duration without fabricating JEV confidence. Menu compilation
+still owns target/slot resolution, domain revisions, answer leases and execution.
+Missing quantity/options opens the existing Menu question. Provider failure,
+Main abstention, mismatched IDs or absence of a Menu scope leave the original
+handoff and its restrictions intact.
+
+Decision prompts keep facts/history separate from the final user message, which
+contains the exact current utterance. A diagnostic Main trace does not establish
+understanding; only an accepted `resolvedBy:main-skill` decision does. Before Main
+consumes an owned answer, an independent `verify_ordering_answer` decision checks
+that the selected answer covers the whole current request. An additional request
+returns to whole-request qualification without executing the proposed answer.
+Provider/protocol failure remains unavailable rather than authorizing a guess.
+
+Whole-request qualification retains `requestScope` separately from admission and
+product resolution: menu information, order information, order operation or service
+information. A browsing receipt remains authoritative through later evidence reads
+in the same task. A named lookup alone cannot complete a purchase request.
+
+Both Jev routing and bounded Main intent selection receive the Menu-owned
+`retainedRequests` contract: original request when known, foreground/retained
+status, known quantity/options, missing slots and expected revisions. The HTTP
+boundary validates it with the shared schema. General Main context retains these
+draft facts in read-only handoffs too, even if the catalog is omitted; this does
+not release task restrictions or count as a successful cart write. This progress does not itself issue an intent-recovery scope.
+
+For a live owned ordering question only, Main can also independently verify a
+weak recipient/service admission before selecting its finite answer. This does
+not promote a new catalog request from uncertain admission. Opening checkout
+requires its current checkout-entry question and never authorizes payment.
+
+Explicit read-only tasks, recovered read-only service answers, phone/later checkout,
+ambiguous or multiple products, unresolved prices, invalid/partial proposals and
+provider failure retain the prior handoff. Skill instructions do not grant writes.
+General Main still uses its existing scoped tools for demands outside this bounded
+recovery; this version does not claim full alias/multi-meal recovery coverage.
+
 ## Main conversation context and measurements
 
 Kiosk Main messages accept the neutral `stage-shared/kiosk-conversation`
@@ -399,6 +494,14 @@ contract. A current compact catalog supports identity/price/option understanding
 without a compulsory second literal lookup; requested menu presentation still
 needs its tool receipt. The current snapshot replaces historical state, and tool
 scope intersects its allowed tools with offered tools. Phone skip stays host-owned.
+A read-only task that drafts prose without a fresh menu receipt can use the same
+single task-scoped completion review before reply-only selection. That review
+retains read tools so a request for another batch can actually update the display;
+it never grants order writes. A subsequent successful presentation receipt ends
+the read normally; the review marker must not synthesize a clarification in its
+place. Continue calls retain runtime conditions and normally supply only action
+plus an optional limit. Repeated prices are equality-checked by Menu, never used
+to modify the active conditions.
 Decision and conversation transports accept bounded payment-method IDs from the
 current service, including LINE Pay and JKoPay; execution still validates the Menu's
 actual offered methods. Model prose is recorded as draft service events in both
@@ -421,7 +524,7 @@ mock tests do not establish those values.
 
 `kiosk-interaction-decision/serviceRecovery.ts` owns recovery eligibility,
 adjudication/review payloads, strict fixed-tool response validation and time caps.
-It runs only for a marked valid semantic service abstention; invalid answers,
+It runs only for a marked service-admission or meaning abstention; invalid answers,
 provider failures and confirmed background do not become eligibility. Existing
 phone skip validation runs first and is not repeated by generic recovery.
 
@@ -438,7 +541,18 @@ provider input tokens are present only if reported. No provider errors, prompts
 or hidden reasoning are persisted in those events. A read-only service question
 has a 30s lifetime; its next utterance uses one contextual review directly, which
 separates clarification answers from independent new requests. A clarification
-answer remains read-only when formally handed to Main.
+answer remains read-only when formally handed to Main. A recovered service request with unresolved
+price evidence completes the existing finite price resolution before the Host
+binds its Menu task. The resolver uses only this turn's issued choices, preserves
+the handoff's read authority and skips already-resolved prices. Admitted semantic
+handoffs also qualify price evidence when Jev cannot choose an operation. One
+amount in a single-dish exploration is a base-price upper bound; explicit multi-dish
+or whole-order allocation remains unsupported. Failed resolution
+keeps the price guard active. If that review admits
+service but still asks for clarification after the customer has already answered
+a service question, it hands the retained context to read-only Main instead of
+creating another recovery question. Main can browse or ask a domain-owned
+follow-up; this does not authorize an order or accept malformed review output.
 
 ## Kiosk system archives
 
@@ -496,3 +610,9 @@ private table-hold requests require an enrolled device. Configure the Menu with
 this same-origin endpoint so the HttpOnly device cookie keeps its existing
 `/api/kiosk` scope. Catalog queries and continuation capabilities retain their
 own public access policy. The proxy never retries a write after a lost response.
+
+
+The ordering skill also treats confirmation of a valid Menu-owned invoice draft
+as the finite `checkout_confirm_invoice` operation. It advances to payment-method
+selection only; draft identifiers are not supplied in conversational context,
+and confirmation does not grant payment selection or authorization.

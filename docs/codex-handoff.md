@@ -7,6 +7,876 @@ accumulating history.
 
 ## Current State
 
+- Nov4 PAYMENT SUPPORT DEPLOYED and independently origin-verified.
+  Active: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
+  User completed sudo switch; independently checked exact API WorkingDirectory,
+  livez/readyz(DB/Redis),3189 release hashes and47 origin Menu/Kiosk HTML/assets.
+  Evidence: release acceptance/postdeploy-verification.json and /tmp/
+  webnavior-payment-postdeploy-verification.json. No public-browser interaction,
+  real ASR recording accuracy or production customer order was tested. Reload
+  existing Kiosks for new bundles. Rollback: ordering-admission-20261104-155952.
+  Three code commits08969e9(cloud)/5931a77(ASR)/bcb7844(payment deadline), normal
+  hooks unchanged. Clean Menu34+ASR3+cloud7+Host241 passed,51Host skipped;
+  Server/Menu/Kiosk types and both public-URL builds passed. Full-repo lint2362
+  pre-existing errors and electron-vueuse/electron-eventa type failures are retained
+  in acceptance logs; never report whole-project checks passed. Runtime independent
+  of temporary payment-release worktree; noDB/provider/Admin/mic changes.
+  Pending microphone files preserved in production-recovery checkout.
+
+- Nov4 ASR payment vocabulary + payment-choice countdown implemented,
+  deployed in payment-support release. Kiosk audio gateway sends a short transcription prompt
+  naming LINE Pay/街口支付; no transcript rewriting or new model call. Provider
+  support/actual speech accuracy are not verified by mock tests. Menu previously
+  silently returned unpaid/unselected payment stage to review after30s. Replaced
+  that timer with usePaymentSelectionCountdown: visible60s, actual deadline,
+  sync cancellation on method/status/agent/page changes, scope cleanup and fresh
+  minute on reentry. Timeout retains cart and fulfillment; never authorizes or
+  cancels pending payment. Existing test QR five-second simulation unchanged.
+  Regression tests reproduced missing prompt/UI before fix. Final Menu34/ASR3
+  tests, modified-file lint and Menu/Server typecheck passed. Logs in /tmp/
+  webnavior-payment-*.log. No provider calls, full-project checks or public browser
+  acceptance. Preserve pending cloud opt-out and microphone changes separately.
+
+- Nov4 Kiosk AIRI cloud opt-out implemented, deployed in payment-support release.
+  Kiosk vite.config fixes VITE_AIRI_CLOUD_ENABLED=false. Shared auth gates credits
+  only; chat store gates WS/reconcile/outbox/tombstone/cloud deletes while keeping
+  local persistence and user isolation. Existing cloud queues remain untouched;
+  other apps default to cloud enabled. Webnavior visitor recording, OIDC and
+  ASR/TTS paths unchanged. Regression tests reproduced unwanted credits/WS before
+  fix; auth/session tests cover enabled/disabled behavior. Pending mic changes
+  remain separate. Auth/session7 tests, modified-file lint, Kiosk typecheck and
+  Vite build passed; /tmp/webnavior-kiosk-cloud-check contains no credits request
+  or generic chat WS/reconcile startup markers. Logs /tmp/webnavior-cloud-*.log.
+  No full-project typecheck, Jev/Main calls or public-browser verification run.
+
+- Nov4 ORDERING ADMISSION DEPLOYED and independently origin-verified.
+  Previous: /home/aimax/.local/share/webnavior/releases/ordering-admission-20261104-155952
+  User completed sudo switch. Independently checked exact systemd API directory,
+  livez/readyz(DB/Redis),3189release hashes and47origin Menu/Kiosk HTML/assets.
+  Proof: release acceptance/postdeploy-verification.json and /tmp/
+  webnavior-ordering-admission-postdeploy-verification.json. Public browser/real
+  customer ordering was NOT exercised. Existing Kiosks must reload for new bundles.
+  Rollback baseline: ordering-copy-20261102-171742. NoDB/provider/Admin/mic changes;
+  /ui/mic-check remains untouched. Three code batches9f685d6/60b958c/939664a;
+  production-recovery branch fast-forwarded while pending microphone bytes retained.
+  Release is independent of the temporary ordering-release worktree, now disposable.
+  Clean source681Server/891Menu/241Host/7Chrome pass; three package types pass.
+  Whole-repo scans have unrelated failures retained in release logs; not a clean
+  full-project validation. Accepted219required attempts and advisory/diagnostic
+  qualifications remain as described below. Exact ordering source projection and
+  unchanged normal hooks audited; only microphone/media hunks excluded.
+  Menu build requires --base=/menu/ and public URLs; Kiosk base/kiosk/. First
+ 155806 package failed preflight and remains marked superseded-invalid-build.
+
+- Nov4 PURCHASE/TARGET repair COMPLETE; purchase3 required acceptance PASSED.
+  C15-F3: exact-meal unqualified MENU_QUERY uses existing Main finite choice
+  before read-only binding. Q01-M-B3: existing count review verifies replacement
+  consent at normal counts too. C12-A1 followup: same review verifies exact-line
+  removal consent, so total-count correction cannot delete the meal. Invoice
+  cancellation protects invoiceDraft/citizenCode, not only carrier/tax. Host replay
+  records final cart/history before rejecting an incomplete result. No blacklist,
+  new provider/dependency or microphone change.
+  User-approved purchase-v5 keeps uncommon “先不要送出” advisory; edit may ask
+  return confirmation with retained data; background raw class advisory while
+  actual silence/history/cue/no-operation remain required. Historical gold intact.
+  FINAL purchase3:227positions =219required passed +6advisory(3pass/3fail) +2seeded
+  diagnostic completed (not original field replays). C15-F3/Q01-M-B3/C12-A1 each
+  3/3pass; six sensitive chains18/18pass. Two raw class deviations were held
+  silent;3advisory invoice negatives still opened cancel confirmation but kept
+  drafts. These are retained as observations, NEVER report every position passed.
+  Final source a80429514498b236be1b2a86544b0cf67ed69db8033331da1f4233bfb0af7729;
+  config hash unchanged;2367provider/1367actualJev requests,0Jev transport failures.
+  This repair total4840requests includes earlier81focus +2343failed candidate
+  +49followup; don't mix those passes into current gate. Old purchase2 required
+  213/217 +4fail and all original semantic4 failures remain separately retained.
+  Persistent owner-only archive: acceptance/background-admission-20261104/
+  purchase-target-final-20261104/acceptanceReport.md +audit,caseEvidence,ledgers,
+  rawdialogues,source snapshots,old gold,validation logs; prior candidate in
+  purchase-target-20261104. No runner active. Same batch authorization retained.
+  Final scoped offline681Server/891Menu/241Host services pass; Server/Menu/Host
+  package types,modified-file lint,diff pass; no root/full-project typecheck.
+
+- Nov3 ORDERING BACKGROUND ADMISSION implemented; acceptance NOT PASSED, uncommitted/undeployed.
+  User explicitly authorized this entire Nov3 Jev/Main synthetic acceptance with
+  existing credentials and no preset quota; isolated sessions/cart only, no real
+  POS/payment or full customer dialogue. Do NOT ask again within this active batch.
+  Plan: docs/plans/2026-10-28-kiosk-conversation-repair.md Nov3 sections.
+  Production remains ordering-copy; implementation only in production repair worktree.
+  Fixed cue shortcut (each turn now Jev admission), uncertain cue renewal, unknown
+  clarification-answer promotion into Main, orphan prompt context projection;
+  paired source/questionId recording and Host cue settle preserve silent expiry.
+  Recovered named new meal uses existing finite slot flow, not default quantity1.
+  Main scope prompt is now ordered/shorter; independent recovery also handles
+  unknown/weak purpose instead of treating proposed service admission as proved.
+  Real incident reported-20261103-background-service-clarification-loop retained,
+  synthetic B01-J-L1/L2 and B02-J-L1 added WITHOUT modifying frozen112 gold.
+  Final complete acceptance is REQUIRED; not yet passed. First full candidate
+  stopped after normal-service failures; do not reuse its passes for latest source.
+  Sources/config/gold hashes and every failed/successful run are in private
+  /tmp/webnavior-admission-model-20261103/ledger.json + per-run artifacts (0600).
+  Runner /tmp/webnavior-admission-model-run-20261103.py reads deployment env,
+  enforces live DB read-only, composes real route+Host+Menu in scratch DB, no POS.
+  Nov4 resumed: final3 finished191pass/20fail +2diagnostic; final4 finished all
+  214 positions:189 functional passes/22failures,2 diagnostic attempts(1failed),
+  1user-deferred D04. Its source/config hashes were constant; nine background
+  chain runs passed,1240 actual Jev requests with0failures. NOT a passed gate.
+  Main REQUEST now enters existing purpose/price/ordering qualification directly;
+  richer review remains for uncertain admission/live cue. No operation is granted
+  by admission. Open vague service questions never renew on another vague request.
+  Fixed independent-mode freshness mismatch: Menu omits unrelated old questions
+  from request scopes; read-only snapshot still includes them. Host compares the
+  issued scope with revision/expiry checks intact. Replay now mirrors the actual
+  CUSTOMER_ENTRY_REQUIRED UI reminder. Frozen112 gold remains untouched.
+  After final4, restored explicit hearing wording: D10/H04/H08/D12 and3 background
+  chains passed focused probes; C06-A1 still failed. These are NOT full acceptance
+  of latest source. Final4 failures include ambiguous-answer mandatory replies,
+  directMain invoice negatives, mixed quantity handling, tool budgets and timeouts.
+  User confirmed Nov4: repeated unidentifiable targets keep the order and wait
+  silently. Original C15-A1 remains historical gold; supersededConversationScripts
+  links its current-policy replacement B03-J-A1. Do NOT count historical C15 as
+  passed. New three-turn chain passed3 independent actualJev/Main runs(30calls),
+  including explicit dumplings1 after silence. Both recovery and final scope
+  qualification now keep a live question from reopening after an unclear reply.
+  New scope regression reproduced before the fix;498server/4oracle tests +lint
+  passed. Current incidence manifest has97scripts; future full acceptance must
+  exclude superseded C15-A1 from the blocking set and require B03-J-A1 instead.
+  Root replay runner's `all` honors deferred/superseded metadata; old final4 plans
+  remain historical and must not be reused unchanged as a current acceptance plan.
+  Persistent PRIVATE archive(0700/0600):
+  /home/aimax/.local/share/webnavior/acceptance/background-admission-20261104/
+  model-runs/acceptanceReport.md +final4-audit.json, all623attempts/7597provider
+  requests, original failures, source/config/gold manifests and local field extract.
+  This archive is historical; current active runner is listed below. Do not combine passes across source hashes.
+  Latest relevant offline:666Server,321Kiosk,868Menu,11Chrome passed; Server/Kiosk
+  package types and Kiosk build passed. Hearing-only followup decision tests493pass.
+  Nov4 cause audit completed, no runtime code changed during audit. Private report:
+  acceptance/background-admission-20261104/failure-analysis-20261104/analysis.md
+  Original22 map to:3hearing(focused fix),3historical reply-expectation conflicts,
+  5valid refusals/closings misclassified BACKGROUND,6wrong operations(5invoice
+  cancellations +1two-spice-order replacement),1premature quantity-refusal finish,
+  4Main recovery timeouts(3x8s,1x12s). Timeout replay sequential61calls: original
+  failed turns all completed;3chains passed, C11-A2 later refused-addition turn
+  still misclassified background. Four-way-load causality is NOT proven.
+  Critical boundaries: directMain cancellation trusts proposed effect/true flag;
+  cancel confirmation checks committed carrierCode/taxId, not invoiceDraft/citizen.
+  Normal-count replaceLineId is not covered by oversize-only quantity verifier.
+  Host returns completed after quantity rejection even if Main omitted a legal
+  sibling demand. Recovery timeout retains uncertain-service reason, and Host
+  retry predicate ignores recovery.failure, so technical faults look silent.
+  Latest USER clarification overrides strict old response gold: hearing checks
+  and “那我先問店員” may be background/silent; synthetic negative/edit phrases
+  are low-priority adversarial inputs, not core customer utterances. Do not force
+  an acknowledgement or specific wording to turn old regex failures green.
+  Mixed legal/oversized orders may be rejected as a whole OR add only legal items;
+  partial addition is no longer mandatory. Preserve existing cart/20 cap, never
+  silently reduce quantity or claim an unexecuted addition. Old22 are not22
+  confirmed product defects under this clarified policy. Historical gold/results
+  stay intact; explicitly version outcome-based expectations before re-scoring.
+  Implemented test-only acceptance version2026-11-04-outcomes-v3; immutable
+  historical gold stays alongside current script/policy. State/technical faults
+  still fail; companion/technical background stays strictly silent. Removed
+  runtime prompt clauses forcing hearing/closing acknowledgements; no phrase
+  classifier added. Outcome2 full provider gate FINISHED:215runs(213functional,
+  2diagnostic), one source/config hash,2090requests/1197actualJev/0Jev failures.
+  Raw v2 result200pass/13fail, both diagnostics failed. V3 only relaxes read-only
+  pauses C03-A1/C09-A1; both already finished all turns, re-evaluated evidence
+  passes, runtime unchanged. NOT a fresh v3 model run. Current result202accepted/
+  11failed across7IDs: B02-J-L1 background false-positive3/3; B03-J-A1 initial
+  vague-order silence3/3; C06-F1 valid menu follow-up silence; invoice edit/refusal
+  I03-N-A3/I04-C-A1/I04-N-A1/I04-T-A1 cancel or ask cancel without permission.
+  B01-J-L1/L2 each3/3passed. No active runner; NOT a passed deployment gate.
+  All failed/successful evidence, source manifests, old scores and v3 integrity
+  proof retained privately under acceptance/background-admission-20261104/
+  outcome-policy-20261104/acceptanceReport.md. Prior outcome1 stopped, separate.
+  Relevant offline880Menu/321Host/11Chrome/558Server pass, final v3policy13tests
+  and lint pass; Kiosk package types passed. Old22 failed-turn retrospective was
+  11acceptable/1superseded/10faults; never present that as a complete chain score.
+  Latest USER clarification: silence is presentation, not background semantics.
+  Complete companion speech stays ignored; a contextual pause/refusal is still a
+  valid service instruction.202/213 is outcome-only, not proof of correct admission;
+  re-audit C03-A1/C09-A1 classification and subsequent action suppression.
+  Nov4 semantic correction IMPLEMENTED; full semantic4 gate FINISHED, NOT PASSED.
+  Current policy admission-v4 separates semantic class, optional speech and effects.
+  Shared same-call recipient contract covers Main review, finite intent and scope;
+  other means another person, not a new request. Unrelated cue speech is explicit.
+  Review purpose proposals pass existing scope qualification; price is qualified
+  after a newly understood menu read (one-pass issued choices). Missing Menu
+  continuation context returns existing clarify reply, no invented first batch;
+  stale-catalog checks remain. Cart display uses read-only order-information scope.
+  API/Host/Menu red regressions and raw failures are retained; no phrase blacklist.
+  FINAL semantic4:221positions(219functional attempts incl repeats/2seeded diagnostic),
+  210functional passed/9failed; both diagnostics completed, not original field replay
+  passes. Six sensitive chains each3sessions:16pass/2fail (B01-J-L1=1/3pass; all
+  others3/3). B01 failures are class-only; held silent with no history/cue/tool
+  side effects, NEVER re-score them as passed.83semantic-class checks,none missing.
+  Remaining: C15-F3 explicit dumplings1 becomes recommendation, not addition;
+  Q01-M-B3 corrects pork200→1 but wrongly replaces existing dumplings;
+  I03-T-A3/I04-T-A2/I04-C-A1/I04-N-A1/I04-T-A1 cancel checkout or open unwanted
+  cancel confirmation (carrier/citizen draft loss2, tax confirmation3); B01-J-L1
+  class-only2repeats. These are real remaining failures/quality limits, not a passed
+  release gate. Main effect selection/target authority needs further work; don't
+  keep growing phrase prompts or claim admission alone proves the requested effect.
+  Source/config hashes each constant;2222provider requests/1274actualJev/0Jev HTTP
+  failures. Immutable112 and99incident gold unchanged; D04deferred/C15-A1superseded
+  not counted as passes. Older candidates remain separate: semantic1=208/219,
+  semantic2partial stopped to repair task-caused price regression, semantic3=204/219.
+  Current-phase total854attempts/8969provider requests includes59root exploratory
+  attempts151..209; don't report final2222 as all work's total. Existing user
+  resource authorization covers this same current repair/acceptance work, no preset
+  quota; no additional providers/data or production Session/POS/payment permitted.
+  No runner active. Private report/artifacts:
+  /home/aimax/.local/share/webnavior/acceptance/background-admission-20261104/
+  semantic-admission-20261104/acceptanceReport.md (all candidate successes/failures,
+  manifests, request ledgers, source snapshots2/3/final, frozen gold and regression
+  logs; owner-only). Source worktree remains uncommitted/undeployed.
+  Offline latest885Menu/322Host,569Server domain/83API route commands,11Chrome,
+  Server/Kiosk package types and modified-file lint pass; sets overlap, don't sum.
+  Package full-project root typecheck was not run. No runtime bug fixes after the
+  final semantic4 run; all implementation changes and remaining errors documented.
+  No root/full typecheck, no commits, no deployment. Source fingerprints must stay
+  frozen during final batch; stop prior runner and confirm completion BEFORE edits.
+  Actual field extract /tmp/webnavior-admission-session-20261103-full.json(0600):
+  ~13m35,68assistant(47clarification),20user_text,68ASR(includesduplicates).
+  Prior projector last12 had9assistant/3user. Do not infer acceptance-rate from
+  partial archives or claim unbounded tokens (12msg/4k cap). Prior erroneous
+  user_text cannot be retroactively identified from wording alone; no bulk deletion.
+
+- Nov2 ORDERING-SCOPED COPY ONLY: user explicitly rejected expanding decisions,
+  prompts, states or reply-rotation mechanisms. Exactly7existing literals in
+  packages/stage-shared/src/kioskConversation.ts now focus on menu/order assistance.
+  No new branches/types/model rules. Historical incident wording remains untouched.
+  9existing shared conversation tests and normal commit hook pass. User requested
+  plain-Chinese batch commits and deployment. Audit /tmp/webnavior-ordering-copy-audit.json
+  proves exact7string substitutions against active quantity-limit release; no provider calls.
+  Builder /tmp/prepare-webnavior-ordering-copy-release.py rebuilds Menu/Kiosk with public
+  URLs and overlays only this1shared source into the active runtime. Closed16-model
+  quantity acceptance is not rerun or represented as fresh validation for this wording edit.
+  Release path after packaging: /tmp/webnavior-ordering-copy-release-path.
+  User completed sudo switch. Active release is ordering-copy-20261102-171742;
+  independent3189file hashes/47origin assets, livez/readyz DB/Redis and exact API
+  WorkingDirectory passed. Evidence /tmp/webnavior-ordering-copy-postdeploy-verification.json.
+  Public browser/live ordering not exercised. Existing Kiosks must reload for new wording.
+  Quantity-limit release is now the rollback baseline; its model acceptance stays closed.
+
+- Nov2 QUANTITY LIMIT REPAIR COMMITTED, DEPLOYED AND INDEPENDENTLY VERIFIED.
+  Production repair checkout remains `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`,
+  branch `codex/kiosk-production-recovery`; do not edit the separate experiment checkout.
+  User retained20 and subsequently clarified that legal siblings SHOULD be added.
+  Exact field utterance was200 signature +200 pork, not the illustrative200/100.
+  Domain rejects oversized counts/merged lines before commit with typed receipt;
+  Host retains successful sibling receipts and presents refusal without generic unfinished error.
+  Tool syntax keeps original positive counts; business cap remains20. Main must not clamp/split.
+  Menu publishes raw count evidence; Server preserves a sole explicit oversized count directly,
+  otherwise constrains Main's per-call quantity review to numbers actually spoken. The review
+  also prevents a never-added quantity correction from replacing unrelated cart lines.
+  Ordinary counts/budgets add no provider review. Multiple explicit counts bypass finite
+  first-count compilation and retain full text for Main. Admitted bulk orders cannot turn
+  into recommendation/price clarification.16 Q01 scripts (both channels) preserve all cases.
+  User authorized THIS isolated synthetic batch with existing Jev/Main and no preset quota.
+  Final runs40..55 allpass on identical source,94 calls;241 total including failures.
+  Proof `/tmp/webnavior-quantity-limit-acceptance.json`; ledger
+  `/tmp/webnavior-quantity-limit-20261102.ledger.json` is CLOSED-ACCEPTED.
+  Every failure remains linked to its corrected final run in conversationFindings.json;
+  earlier whole-batch expectations are preserved with the user's policy revision.
+  Menu868pass/202skip; fixed field332pass/3skip; shared9pass; Server routes79 and
+  skills/context69pass (counts overlap). All4 affected package types and changed lint pass.
+  User requested plain-Chinese batch commits and deployment:66e2f6a Menu/contracts,
+  7021c61 Main/Host, b03713a permanent failures/tests; documentation is the fourth group.
+  Normal hooks pass. Hook changed only redundant regex hyphen escapes in2Menu files;
+  exact reverse-byte audit `/tmp/webnavior-quantity-hook-audit.json` matches accepted source,
+  with Menu868 tests repeated; do not pretend these are new provider runs.
+  Root lint failed on2368 errors in untouched files (log /tmp/webnavior-quantity-commit-lint.log);
+  scoped changes/hooks pass. Existing unrelated root types are not rerun.
+  No public browser/live ordering/POS/payment tests. Package Menu/Kiosk builds use public
+  API/Menu URLs. Builder /tmp/prepare-webnavior-quantity-release.py must copy active
+  checkout-navigation runtime and exactly5API/shared overlays, include model proof plus
+  syntax audit, and require clean committed source. Production switch needs sudo.
+  Prepared release: /home/aimax/.local/share/webnavior/releases/quantity-limit-20261102-165521.
+  Package3189files, exactly5API/shared overlays,16accepted scripts plus all failures/audit.
+  User completed the sudo switch. Independent checks passed3189release hashes,
+  47origin assets, livez/readyz DB/Redis, and exact active API WorkingDirectory:
+  <release>/runtime/apps/server. Evidence /tmp/webnavior-quantity-postdeploy-verification.json.
+  Public browser/live ordering/POS/payment not exercised; publicBrowserVerified:false.
+  Active release is quantity-limit-20261102-165521; checkout-navigation is rollback baseline.
+
+- Nov2 CHECKOUT NAVIGATION / CONFIRMATION COMMITTED, DEPLOYED AND VERIFIED.
+  User returned from array-microphone assessment to latest ordering attempt.
+  Latest field session evidence is private /tmp/webnavior-latest-ordering-20261102.json;
+  additional meal DID succeed; dine-in was explicitly selected earlier, not defaulted.
+  Actual failures: open-cart acknowledgement, takeout confirmation choosing carrier,
+  and return-to-order reading facts without leaving invoice. Retain these distinctions.
+  Menu publishes one operation-confirmation question to both Host and Main, bound
+  to the existing single-use15s/revision ticket; Main answers only on a subsequent
+  task after presentation, via order_answer_confirmation. Host stops at this question.
+  Expired/stale answers cannot become invoice choices. Cancellation retains checkout;
+  reaffirming current mode is a no-op. Read-only cart_get(display:true) may reveal
+  review, but preserves checkout; checkout_cancel owns return from invoice entry.
+  Main service qualification distinguishes screen return from order information.
+  Checkout names the retained POS mode. No keyword consent routing/new dependency.
+  Permanent15 navigation unit cases + compiled validator, Host stop regression,
+  4 real-component browser cases;14 separate N01 scripts (direct Main and Jev/Main)
+  retain original112 positions. User explicitly authorized THIS synthetic batch
+  with existing Jev/Main credentials and no preset quota. Ledger CLOSED-ACCEPTED:
+  /tmp/webnavior-order-navigation-20261102.ledger.json,212 total calls; final14
+  runs21..34 allpass on identical source,86calls. Failures1/14/16 retained and linked
+  to repaired cases in conversationFindings.json; never count them as final passes.
+  Acceptance /tmp/webnavior-order-navigation-acceptance.json records runtime hashes.
+  Current Persona matches latest field profile; production DB reads forced read-only,
+  isolated PGlite Session/cart; no production POS/payment or configuration writes.
+  Menu853pass/202skip; fixed gate315pass/3skip; Server routes/skill/context143pass;
+  browser13pass. Counts overlap. Menu/Kiosk/Server scoped types and changed ESLint
+  pass. User then explicitly requested plain-Chinese batch commits and deployment,
+  superseding earlier no-commit guidance. Commit groups: Menu/ticket; Main/Host;
+  permanent incident/browser regressions; README/handoff. Normal hooks and root lint
+  pass (11warnings,0errors); no new provider calls. Root types are not repeated:
+  the prior commit gate found untouched electron-vueuse/electron-eventa errors;
+  all3 affected package types passed. Menu/Kiosk production builds completed with
+  public API/Menu URLs. Deployment packaging must include Menu + Kiosk + API together,
+  preserve accepted runtime hashes, and start from active invoice-main release.
+  Builder /tmp/prepare-webnavior-navigation-release.py enforces clean committed
+  source, closed212-call proof,14 final cases,3 expected API overlays and build logs.
+  User completed sudo switch. Release:
+  /home/aimax/.local/share/webnavior/releases/checkout-navigation-20261102-153615.
+  Source head084d795; runtime changes committed in e4350fe/80c9aa3, tests c36e0f1.
+  Independent postdeploy verification passed3189release hashes,47Nginx origin files,
+  accepted API hashes and livez/readyz DB/Redis. API WorkingDirectory matches this
+  release's runtime/apps/server. Evidence:
+  /tmp/webnavior-navigation-postdeploy-verification.json.
+  Public browser ordering/payment not exercised; publicBrowserVerified:false and
+  productionOrderingFlowTested:false. Existing Kiosks must reload before testing
+  new confirmation/navigation; no live order/POS/payment was created for validation.
+  Rollback runtime/frontends preserved in release backup. No provider/config changes.
+  Earlier API-only invoice-main release is now the rollback baseline, not active.
+  Array audio remains assessment-only; Python supplied by user is not integrated.
+
+- Nov2 USER REQUESTED PLAIN-CHINESE BATCH COMMITS THEN DEPLOYMENT.
+  Current explicit commit request supersedes earlier no-commit implementation
+  instruction. Formal recovery worktree only, branch codex/kiosk-production-recovery.
+  dafe67a: Menu state/drafts, invoice confirmation, shared contracts and fixtures.
+  4e47c11: Main/Host conversation recovery and invoice completion review/diagnostics.
+  28aa24d: permanent real-incident cases and fixed regression entry points.
+  Fourth docs commit records these boundaries, validation and remaining live gap.
+  Before-commit root lint passed (11warnings,0errors). One allowed root typecheck
+  stopped on untouched electron-vueuse missing electron-eventa types (14errors).
+  Do not rerun root types or repair unrelated modules. Fixed gate299pass/3skip,
+  Server skill65pass/shared8pass; stage-ui scoped types passed after adding the
+  missing confirmInvoice implementation to its existing iframe test fixture.
+  Fixture lint passed. Commit hooks changed no source bytes.
+  Deployment requested, API-only package based on invoice-kinds-20261102-132158;
+  only runtime overlay apps/server/src/routes/kiosk/index.ts. Preserve deployed
+  frontend bytes and rollback runtime. Preparer:
+  /tmp/prepare-webnavior-invoice-main-release.py. Must verify accepted51-call proof
+  and clean committed source before packaging; no new provider calls required.
+  Package prepared and --check passed3189files:
+  /home/aimax/.local/share/webnavior/releases/invoice-main-20261102-141409.
+  Scopeapi only, one route overlay; frontend publishing disabled. Initial local
+  sudo needed a password; subsequent user deployment is now confirmed by active
+  API WorkingDirectory during the navigation investigation above. Do not repeat
+  the old switch or claim47origin/health were verified in this investigation.
+  Original carrier loop still not reproduced; diagnostics are for confirming
+  deployed readiness/tool offer, not proof of live fix. No POS/payment test.
+
+- Nov2 DIRECT MAIN INVOICE OMISSION FIXED AND ACCEPTED; API DEPLOYED ABOVE.
+  Existing completion review only covered ordering; direct Main could return
+  please-click-confirm prose then reply-only acknowledgement without an effect.
+  Extended one-per-task review to valid invoice/tax confirmation with offered
+  confirmation tool; Main still interprets confirm/refuse/edit/question, no
+  keyword routing or payment authority. Run7 I04-N-P1 failed before fix, retained.
+  Added scalar checkoutStage, invoiceDraftReady(null if missing) and
+  invoiceConfirmationOffered to existing main_round_metrics; no raw identifiers.
+  User initial80calls/5min used50; explicit finalcase3calls/1min used1. Total51,
+  ledger CLOSED-ACCEPTED /tmp/webnavior-invoice-direct-main-20261102.ledger.json.
+  Run43 timed out before HTTP (0calls), summary reconciled; never erase it.
+  Accepted18 cases runs26..42+44. Only runtime difference before44 is ESLint
+  whitespace (non-whitespace bytes identical, exact hashes preserved); findings
+  evidence also updated. All other tested source hashes match. Proof:
+  /tmp/webnavior-invoice-direct-main-acceptance.json; current source manifest
+  /tmp/webnavior-invoice-direct-main-20261102-044-I04-T-A2.manifest.json.
+  Closure then updated only evidence/docs. Old semantic-only runs8..25 also18pass,
+  retained separately; don't stitch exploratory failures into acceptance.
+  Server regression3red->3green; relevant suite82passed; final5targetedpassed;
+  scoped Server types/lintpassed. Actual App inputs3 and real Host bridge3passed,
+  same source Profile verified. Added18 permanent I04 direct-Main scenarios;
+  previous36 finite Jev/Main acceptance is a different route. No root types/commits.
+  IMPORTANT: original live carrier repeat-selection loop not reproduced; user had
+  refreshed and enabled button. Related omission fix accepted, original root not
+  proven. New diagnostics distinguish readiness/tool-offer/model mismatch after
+  deployment. No formal Session/POS/payment tests. The subsequent API-only invoice-main deployment is recorded above; retain
+  invoice-kinds frontends and rollback backup. New navigation changes now require
+  API/Menu/Kiosk together. Do not claim live fix
+  verified until the deployed original symptom is checked.
+
+- Nov2 INVOICE KINDS DEPLOYED AND INDEPENDENTLY VERIFIED.
+  User executed switch successfully. API/Menu/Kiosk release:
+  /home/aimax/.local/share/webnavior/releases/invoice-kinds-20261102-132158.
+  Independent verification passed3189 release hashes,47 Nginx origin files;
+  API WorkingDirectory matches release runtime; livez/readyz DB/Redis allok.
+  Evidence /tmp/webnavior-invoice-kinds-postdeploy-verification.json.
+  Public browser ordering/payment flow not exercised; publicBrowserVerified:false.
+  Previous frontend hide-phone-handoff and API phone-close backed up by release.
+  No commits, provider config changes or production order/payment test actions.
+
+- Nov2 THREE INVOICE KINDS IMPLEMENTED AND MODEL-ACCEPTED; DEPLOYED ABOVE.
+  Carrier/citizen/tax-ID share valid visible-draft confirmation; tax-ID no longer
+  needs a second question. Existing format validation, checkout revisions and
+  stale-edit rejection remain. Main receives only the current valid confirmation
+  effect, with no payment authority; semantic understanding has no phrase regex.
+  Final unchanged source passed all 36 synthetic I03 cases (three kinds × seven
+  confirmation phrases and five refusal/edit/question/invalid cases). Identifiers
+  preserved; no payment selection. This is seeded invoice-page acceptance, not a
+  full historical replay or a rerun of original112. User approved200calls/8min;
+  used129calls, zero failed attempts; ledger CLOSED-ACCEPTED, no remaining spend.
+  Evidence /tmp/webnavior-invoice-kinds-acceptance.json and
+  /tmp/webnavior-invoice-kinds-20261102.ledger.json; raw logs/manifests retained.
+  Accepted source c67c6f4b13267f4cbbc12172133b29d6fab2d8a2b3c367ed251316b6a8e0ec02.
+  Acceptance then added only findings evidence/docs; per-file manifests preserve
+  the exact tested source. All36 remain in orderingIncidents separate from112.
+  Offline: Menu837passed/202skipped, Chrome9passed, fixed gate299/3skipped,
+  server65 and shared8; four scoped typechecks and changed-file lint passed.
+  Counts overlap. No root typecheck or commits; builds/deployment completed above.
+  Previous focused P02 batch59calls and its three failures remain separately
+  recorded; do not treat that older acceptance as current source evidence.
+  API/Menu/Kiosk package built against current proof and deployed above.
+
+- Nov2 INVOICE CONFIRMATION IMPLEMENTED AND MODEL-ACCEPTED; NOT DEPLOYED.
+  User supplied testcarrier/PTGRJP2; recorded已經輸入→clarification and輸入完成→ack.
+  Private failing-session-only evidence /tmp/webnavior-invoice-confirm-20261102.json.
+  Source worktree only, no commits; production frontends hide-phone-handoff-
+  20261102-102731, APIphone-close-20261102-092848 unchanged.
+  CheckoutSnapshot.invoiceDraft owns visible carrier/citizen input. Input emits
+  draft toApp; everyedit bumpscheckoutrevision. DomainsetInvoiceDraft/
+  confirmInvoiceDraft/invoiceDraftReady share validation; button andvoice use
+  samefacts. CONFIRM_INVOICE/checkout_confirm_invoice only withvaliddraft,
+  rejectsedit/undo staleproposals, advancesonly to paymentmethod selection.
+  No selection/payment. RequiredcontrollerconfirmInvoice wired plusfixtures.
+  Context exposesreadiness, notrawdraft; actualMainrequestaudit0 rawdrafts.
+  Menu issuesrequest recovery scope forvalidinvoiceconfirm only (separate from
+  entry/payment); Mainskilldocumentsit. Read-only recovery retainscheckout
+  fact-toolcapabilities, cannot reopen menu recommendation. MainKEEP_ORDER can
+  acknowledgecompleteform-refusal even ifJev initiallycalleditINCOMPLETE;
+  genuinefragment/uncertainresultsremainincomplete. i18n ownsnewcopy.
+  Finalsame-source13..18 all6 passed: P02-F1確認,F2送出,F3輸入完成,F4已經輸入,
+  A1invaliddraft,A2還沒輸入完不要送出. Explicitseededinvoiceprecondition, notfull
+  historicalreplay. Existing112gold unchanged; incidents andguardedreplayseparate.
+  Firstwindow39/40 calls; userapprovedadditional30/3min, used20. Total59, budget
+  ledgerCLOSED-ACCEPTED /tmp/webnavior-invoice-confirm-20261102.ledger.json.
+  Do not spendremaining10. All3 failedattempts1/6/12 retained withhashes in
+  conversationFindings.json; privateJSONL/logs0600. No oracle/goldrelaxation.
+  Acceptance /tmp/webnavior-invoice-confirm-acceptance.json;
+  sourceHash5bf1cfd2143b318f87432b91f8686257bd44c422fd682b65ca8bbd7adb8c9116;
+  configSha30002c50f7f3af5b316e9fdbc030aa00a098b43b9a2846e162d7b53a7b124751.
+  OfflineMenu816/202skipped; focusedruntime/intent51, fixed298/3 plusServer65/
+  shared8; service/skill94; Chromecheckout8passed;4scopedtypes/lintpassed.
+  Sets overlap, don'tsum. No roottypes, builds or deployment forinvoicefix yet.
+  Next if user requests deployment: freshAPI/Menu/Kiosk package including
+  stage-shared schema, ordering i18n domain copy, Mainskill/serviceResolution,
+  Menu checkout/domain/intents/tools/UI andhost dependencies. Verify exact
+  acceptedruntimehashes; do not silently reusepreviousfrozen112acceptance.
+
+- Nov2 HIDE-PHONE-HANDOFF FRONTEND RELEASE DEPLOYED AND VERIFIED.
+  Frontends: /home/aimax/.local/share/webnavior/releases/hide-phone-handoff-20261102-102731.
+  User executed switch; independent verification passed3189 release files,47
+  origin files andlivez/readyz DB/Redisok. API WorkingDirectory remains
+  phone-close-20261102-092848/runtime/apps/server as intended. Scope Menu/Kiosk
+  only, zeroAPI overlays; switch does not activate/restart API. Public checkout
+  browser flow not exercised; publicBrowserVerified:false remains accurate.
+  Evidence /tmp/webnavior-hide-handoff-postdeploy-verification.json. No model
+  calls, commits, DB/provider changes or production order/payment test actions.
+
+- Nov2 PHONE ORDER HANDOFF UI HIDDEN (now deployed). User requested
+  temporarily hiding「把訂單帶到手機」related screens. Menu App no longer mounts
+  OrderHandoff or pre-checkout table-scan hint; standalone completion keeps
+  完成，開始下一筆. KioskScene no longer stores/passes orderContinuationUrl to
+  CustomerSessionCompletion. Backend continuation creation, lifecycle metadata,
+  standalone continuation implementation and shared completion props preserved.
+  Existing opt-in completion browser test updated to expect reward without phone
+  QR/link; browser integration not run (requires configured loopback fixtures).
+  Menu/Kiosk scoped typechecks and3changed-file lint passed. README updated.
+  No commits/model calls. Frontends deployed as above; API remains phone-close.
+
+- Nov2 PHONE-CLOSE FIX DEPLOYED AND INDEPENDENTLY VERIFIED.
+  Active release /home/aimax/.local/share/webnavior/releases/phone-close-20261102-092848;
+  API WorkingDirectory matches runtime/apps/server. All3189 release files and47
+  origin files verified; livez/readyz DB/Redisok. Fresh public Kiosk landing loaded
+  without registration/session/cart writes. Public customer close latency remains
+  untested; synthetic1.557s is not a public-browser guarantee. No new model calls.
+  Evidence /tmp/webnavior-phone-close-postdeploy-verification.json. Prior release
+  conversation-matrix-20261102-012607 remains rollback basis; release script handles
+  rollback. No commits; original checkout/SLM work untouched.
+
+- Nov2 POST-DEPLOY REGRESSION IMPLEMENTATION AND ACCEPTANCE (now deployed). Phone-entry
+  customer「關閉」means skip voluntary phone registration and reach Menu (user
+  confirmed), but live returned generic acknowledgement twice. Private read-only
+  trace /tmp/webnavior-close-latency-20261102.json: recovery5.1s/Main0.6s; diagnostic
+  writes shared the awaited transcript queue. Main recovery admitted NEW_REQUEST
+  without then applying the existing finite phone-effect resolver. Route now
+  reuses it after recovered admission. Phone choices explicitly distinguish close,
+  keep-entry and background/other-object; Main phone resolver can returnBACKGROUND.
+  Host *_metrics events now use independent nonblocking queue with capturedvisitor;
+  core transcript/tool-receipt ordering remains serialized. No UI public latency
+  result yet. Isolated synthetic P01-F1 close1.557s; P01-A1 negation preservedentry;
+  P01-A2 background silent/noeffect. Accepted outputs9..11 share sourcehash24eb07f609.
+  User separately allowed40calls/3min; batchclosed31calls, ledger
+  /tmp/webnavior-phone-close-20261102.ledger.json. Four failed attempts preserved
+  (three semantic, one oraclecontradiction). Last background originally failed
+  because silentOnly still demanded nonemptyreply; red/green oraclefix and offline
+  rescore saved9..11 passed, no provider rerun or goldrelaxation. Proof
+  /tmp/webnavior-phone-close-reassessment.json. Keep original112gold frozen;
+  incidents exported separately from orderingIncidents.ts through same guarded
+  budgetOrderReplay. OfflineServer103passed before lastbackgroundextension,
+  finalphone/routing57passed, Host46, Menu/manifest48;3scopedtypes/lintpass.
+  No commits. Prior conversation-matrix release remains immutable/unchanged;
+  these fixes are published in the phone-close release above. Do not claim
+  all112 rerun against this new source or public end-to-end speedverified.
+
+- Nov2 ACCEPTANCE AND DEPLOYMENT COMPLETE. User executed the prepared switch.
+  Production API now runs conversation-matrix-20261102-012607/runtime/apps/server.
+  Independent post-deploy verification passed3189 release files,47 origin files,
+  livez/readyz with DB/Redis ok. Fresh public Kiosk browser landing loaded.
+  Public non-browser byte requests returnedHTTP403, so public byte comparison
+  remains unverified; no production ordering/session/cart/POS/payment test run.
+  Evidence: /tmp/webnavior-112-postdeploy-verification.json. Release remains
+  immutable; release.json publicBrowserVerified:false is a conservative script
+  field, not a claim of full public customer-flow validation. No provider reruns.
+  Production worktree /home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior,
+  branch codex/kiosk-production-recovery, HEAD00b0a6121071e7f90c2b594c9e7855de293e4ebc.
+  Original no_mcp checkout and SLM comparison untouched. No commits.
+  Candidate10 accepted implementation hash
+  6baeb0c9f45066cf80b835eb13c3a2728c55ee6f54e22e9b0b0fd288fe1d5505.
+  /tmp/webnavior-112-candidate.sources.json + numbered10 backup. Gold V5 hash
+  5f05f1090d4f8975eb482e38a02ea7f5f6daf3e1afcd1b0225f3d54be23bac67.
+  Full110 passed769..878, high-risk24 each3 passed (48extras879..926), D07/H05
+  seeded-entry diagnostics927..928 completed with historicalReplay:false.
+  Accepted160 runs share source/gold and recorded provider/persona identity proof.
+  Matrix provenance20 original chains+8 expanded probes+4 planned reconstructions
+  +80new;110 includes synthetic/fault controls. Never claim112 natural historical
+  conversations. D07/H05 original entry evidence gaps remain.
+  Batch CLOSED-ACCEPTED /tmp/webnavior-112-20261101.ledger.json,11668 actual
+  provider calls including all failed attempts,928 total runs. Announced cap12000
+  /12h; do not spend remainder. No provider wrapper running. Report
+  /tmp/webnavior-112-final-acceptance.json. Raw wire/persona private0600 /tmp;
+  sanitized143 failed attempts + oracle gaps478/706 + offline gates retained in
+  conversationFindings.json. V1..V4 gold backups and ledger audits preserved;
+  never run /tmp/build-conversation-matrix.py or /tmp/audit-matrix-v2.py.
+  Offline final: Menu806/202,Kiosk312/51,relevant Server641/80,fixed295/3.
+  Three scoped typechecks, latest-lint, fresh Menu/Kiosk builds passed; no root
+  typecheck. Logs /tmp/webnavior-112-*. No further model/test runs needed unless
+  sources change or a new issue requires them. No changes after freeze except docs
+  and acceptance metadata; release files remain immutable after verification.
+  Core durable contracts: Menu owns retained drafts/stable request IDs/answer
+  leases/queryState/recovery scopes. Main skillv2 reads current raw utterance as
+  final user message; history is separate facts. Answers need whole-request
+  coverage, traces alone grant nothing. Unqualified recovered handoffs still get
+  whole-purpose qualification despite catalog hits. KEEP_ORDER is directed service
+  response, separate from silent self-browse IDLE. Typed service reply only.
+  Price INFORMATION is read-only after recovery; whole order-operation scope takes
+  precedence over partial price interpretation. Passive recovery revalidation uses
+  kiosk_interaction_state and matching version/question projection, never producer
+  that renews leases. Main capabilities match bound item/selection/cart/question/
+  fulfillment/checkout prerequisites. Finite operation handoffs keep lookup but
+  exclude new recommendations. Tool batches base4 +2 per additional issued target,
+  max8; total16 calls/deadline60s remain. New membership/invoice/tax/payment and
+  blocking meal/scope questions wait for customer; ordinary fulfillment does not
+  truncate remaining requested meals. Actual AJV replay, one proven-unexecuted
+  repair before effects, no unknown/lost-write replay, retained partial receipts.
+  Browser: agent-browser required skills command unsupported; CUA fallback
+  loaded new public registration landing without writes. Public customer ordering
+  remains untested. Source-of-truth plan112 section and app READMEs updated.
+  Authorized implementation/acceptance/deployment work is complete.
+
+- Nov1 user explicitly asked to continue implementation through completion unless
+  a real decision is needed. Work remains only in this production worktree; no
+  commit/deploy this round. Authorized synthetic provider acceptance now complete
+  for this limited batch; see the dedicated bullet below. Core flow implemented:
+  shared draft facts + neutral ConversationQuestion/requestId + IntentRecovery.
+  Menu intent domain owns bounded recovery scope; Server no longer repeats
+  phase/purpose/product whitelists, only validates scope/candidate/live question
+  intersection and explicit admission/readonly/price restrictions. Domain tests
+  retain entry/payment/category/multiple-target exclusions. Main and Jev select
+  existing candidate IDs; Menu retains execution/quantity/options/revision rules.
+  Meal confirmation keeps its request ID through configuration; answer leases
+  have new IDs/expiry and captured text. Old answers reject after expiry/new turn;
+  needs survive silence; passive reads cannot renew or manufacture scopes.
+  Main tool loop now returns waiting on owned scope/meal/configuration questions,
+  records unexecuted sibling results, stops their effects and further model
+  calls. Presentation retains all accepted operation receipts, reports partial
+  progress on later failure, and never revives a final-Menu-rejected question
+  from the diagnostic loop result. Existing current-turn/manual/timeout gates stay.
+  New red/green tests cover each gap; same quantity answer verified through Jev,
+  Main recovery and Main abstention. Fixed gate332passed/3opt-in skipped. Menu
+  suite788passed/202skipped; Kiosk297/51; relevant Server routes/domain607/80.
+  Extra conversationMenus.test.ts covers current+3 synthetic catalogs, required
+  option pricing (including a discount), lookup-first omitted-name purchase and
+  rejecting old answers after price/options replacement. This is explicit-choice
+  domain replay, not live model understanding; held-out fixture not prompt tuning.
+  Counts overlap. Menu/Kiosk builds, all three scoped typechecks and changed-file
+  lint passed; no full-project typecheck. Source of truth: Nov1 section in
+  docs/plans/2026-10-28-kiosk-conversation-repair.md. Baseline private
+  /tmp/webnavior-conversation-refactor-baseline-20261101.json; tests/logs
+  /tmp/webnavior-next-*. Complete112-script/cross-menu/live-provider matrix not
+  claimed complete. Current production last verified as
+  checkout-entry-answer-20261031-225320; no deployment this round.
+
+- Nov1 LIMITED LIVE ACCEPTANCE complete, authorized150calls/10min; used145calls
+  (Jev100/Main45), last run at436s, cumulative test-process53.235s. Batch closed.
+  Ten runs: initial budget failure8calls, then nine passed: budget six turns2x
+  52calls; confirmation→quantity→dine-in→invoice2x35calls; synthetic required
+  sauce→two portions/170→pickup→invoice14calls; natural contextual order15calls;
+  seeded read-prefix3turns10calls; seeded budget/other→explicit full catalog2turns
+  10calls; seeded checkout + injected Jev abstention, real Main1call. Payment0,
+  production POS/Session/cart/config untouched. Six natural full dialogues and
+  three seeded/injected probes are reported separately; not full112 scripts.
+  First budget failure was actual compiler loss: SEARCH_MENU slots.more=1 sent
+  menu_get catalog. Red/green queryActions test now compiles continuation through
+  menu_recommend. Separate Menu-issued intent:search-all-menu retains explicit
+  catalog reset, dietary exclusions and prior history; Server staged routing
+  includes that read choice. recommendationFlow is now part of fixed gate.
+  Query-continuation probe verifies the new catalog candidate; earlier full
+  dialogue runs precede its addition, so do not claim all latest candidates had
+  full live reruns. Full offline validation follows. New opt-in replay modes in
+  budgetOrderReplay.test.ts: configuration-order and query-continuation.
+  Evidence private /tmp/webnavior-refactor-acceptance-20261101-report.json and
+  matching JSONLs0600. No raw provider payload/persona in repo. No new spending
+  from this closed batch or prior allowances. Deployment remains a separate step.
+
+- Nov1 exact meal-confirmation incident FIXED OFFLINE IN SOURCE, NOT DEPLOYED:
+  live API is still checkout-entry-answer-20261031-225320, active22:58:31 Taipei.
+  Latest actual sequence: '一份排骨飯'→related-item read, '排骨便當'→'您是要點炸排骨便當嗎？',
+  '對，一份'→Main menu_recommend clarify (price/category question), cart0.
+  Two red/green gaps: Main skill omitted phase meal_confirmation/purpose
+  confirm-meal; Menu consumed the yes but ignored quantity in the answer.
+  Main now selects only current question yes/no intersection. Menu issues an
+  answer utterance on Host context creation, bound to questionId; passive reads
+  cannot overwrite it, consume clears it and parses current answer over previous
+  proposal slots, never model args. Decline/expiry/replay tests still pass.
+  Canonical sanitized source dialogue fixture is now checked in as a source FILE
+  apps/order-menu/src/evaluation/orderingIncidents.ts (UNCOMMITTED, new/untracked).
+  Four recorded incidents are consumed by Host integration tests, not only docs.
+  Root field-regression project now ALSO includes Menu mealClarification.test.ts,
+  which was previously missed by that focused gate. Gate198passed/2opt-in skipped,
+ 12files; Server/Kiosk types/lint passed. No live provider run for THIS incident;
+  previous40-call permission covered different context-order phrases only.
+  Prepared opt-in confirmation-order replay from this exact fixture: five fresh
+  turns through dine-in/checkout, no payment. Do not claim that mode was run.
+
+- Oct31 retained field-regression gate now wired IN WORKTREE (not committed or
+  pushed). Root Vitest projects previously omitted Kiosk/Menu. Added one Node
+  kiosk-field-regressions project with10 focused historical/ordering/receipt/
+  price/question/seating/target files; existing CI runs it through root test:run.
+  pnpm -F @proj-airi/stage-kiosk test:ordering-regressions runs that group plus
+  the existing Server skill suite; test:history aliases it. Actual run169passed,
+ 2opt-in provider tests skipped,11files. No provider calls. Kiosk README now maps
+  field failures to assertions and documents all opt-in live replay modes,
+  including both quantity-first and read-first purchase branches. These source
+  changes must be committed/pushed before another branch or remote CI has them.
+  After edits to Jev routing, Main prompt/skill, Host/Menu, run this fixed gate;
+  model/prompt behavior additionally needs separately authorized isolated live
+  replays. Offline success alone is not production acceptance.
+
+- Oct31 omitted-name purchase regression FIXED IN SOURCE, NOT DEPLOYED:
+  running API confirmed checkout-entry-answer-20261031-225320, active22:58:31
+  Taipei (user did deploy the previous package). New field flow: '我想吃排骨便當'
+  resolved as menu_get, '炸排骨便當目前可以點'; '那我要一份' then Main cart_get
+  + menu_recommend, cart stayed0. Cause: literal productResolution was none,
+  despite one current browser reference and issued ADD_ITEM; bounded skill
+  rejected handoff and Host became readonly. Fix allows independently admitted
+  ordinary ordering with exactly one current reference + issued ADD_ITEM, no
+  waiting question/category conflict. Main receives current references, still
+  chooses intent only; Menu owns quantity/target/revision validation. No new
+  permission from weak service admission or multi-item presentations.
+  User authorized40calls/2min current synthetic flow; used30calls12.111s:
+  natural four-turn before fix passed15calls via the DIFFERENT initial quantity
+  question path; seeded read-first prefix then order reproduced field failure
+ 4calls, recommendation/cart0; after fix seeded same prefix then '那我要一份→內用→好'
+  passed11calls, bento1/130, invoice once, no payment selection. Not an unseeded
+  four-turn after-fix claim. New red/green Server and real Host/Menu tests plus
+  refusal boundaries cover this branch. Private JSONL context-order-{before-fix,
+  read-prefix-before-fix,read-prefix-after-fix}-20261031. Do not spend remaining
+  test allowance on unrelated scenarios or claim deployed.
+
+- Oct31 checkout-entry regression FIXED IN SOURCE, NOT DEPLOYED:
+  User requested deployment; prepared checkout-entry-answer-20261031-225320,
+ 3189 release hashes checked, one API skill overlay; both frontends cloned from
+  current fulfillment release. sudo -n requires password, no switch occurred.
+  User must run its switch-release.py with sudo, then verify runtime/health. latest field
+  flow entered fulfillment correctly, then '好' after checkout invitation was
+  handed to Main and became acknowledgement with zero requested tools, despite
+  one completion review. Explicit '結帳' later succeeded. New live synthetic
+  single-turn probe reproduced even earlier weak JEV service admission/recovery
+  invalidity. Main skill now independently resolves weak recipient/service
+  answers ONLY for live owned ordering questions, including checkout-entry;
+  opening checkout allows only its issued START_CHECKOUT/defer choices, never
+  invoice/payment consent. Explicit readonly, failed/recovered readonly, expired,
+  unissued, phone and later-checkout questions remain restricted. No fake JEV
+  confidence. New meal requests still require service admission.
+  User explicitly authorized this probe30calls/2min; used8calls7.839s total:
+  before-fix natural fail3calls; natural after-fix pass2x2calls; observed admission
+  abstention replay with real Main pass1call (fault injection, not natural JEV).
+  All successful probes entered invoice exactly once, no payment selection.
+  Scratch DB/cart only; no live POS/payment or deployment. Private artifacts
+  /tmp/webnavior-budget-order-checkout-entry-{before-fix,after-fix,repeat-2,main-recovery}-20261031.jsonl.
+
+- Oct31 fulfillment correction DEPLOYED (uncommitted):
+  fulfillment-answer-20261031-202907, API active since21:49:49 Taipei.
+  3189 release hashes,47 origin assets,livez/readyz200 DB/Redis healthy.
+  Public Menu index-CTaMXh9r.js and Kiosk index-D1UL0_nW.js loaded in IAB,
+  matching release HTML. No production dialogue or order replay. Exact prior
+  ordering-skill runtime/frontends preserved by switch-release.py --rollback.
+  Field regression: user answered
+  fulfillment with '內用', Main invoked only menu_recommend, with no fulfillment
+  write; its internal draft falsely claimed success (customer UI used read receipt).
+  Subsequent explicit dine-in selected correctly but its old question lease expired
+  during inference. Read-only latest180 production entries inspected; no live writes.
+  Fix: bounded Main ordering selection also resumes live fulfillment choices with
+  answeredQuestionId; no checkout, expired, unissued or readonly promotion, and
+  exact new meal requests retain their separate path. Each new decision renews a
+  current presented question's answer lease; passive reads do not renew, expiry
+  and revision checks remain. New Server/Host/Menu regression tests reproduce
+  before fix and pass after. Prior six-turn acceptance did not cover fulfillment;
+  deployment is verified; real-provider dialogue acceptance is still not run.
+
+- Oct31 user explicitly authorized batch commits. Formal source now lives on
+  branch `codex/kiosk-production-recovery` in this isolated worktree, derived from
+  e8491ec. Code commits:09a6786 Menu targets/continuation prices; a5bc0e0 Host
+  tool-batch/receipt protection;06d4f0b Main ordering skill, service/price/question
+  handoff and integration/live replay fixtures. Documentation follows separately.
+  Existing deployed runtime remains independent; committing does not switch it.
+  Do not push or merge other branches without request. Original no_mcp and dirty
+  codex/slm-jev-experiments were read-only inspected, not changed. The experiment
+  branch still starts at e8491ec and has uncommitted work; preserve that work before
+  integrating this formal branch. Compare Jev/SLM against the SAME Main skill,
+  Menu/Host, fixtures and isolated test runtime/DB/provider settings, not live
+  production selections. Source worktree isolation alone does not isolate DB.
+  Commit-gate pnpm lint and pnpm typecheck each attempted once: global lint fails
+  only in untouched legacy code/docs/scripts; no changed files reported. Root
+  types fail in plugin-sdk-tamagotchi/electron-vueuse missing module declarations.
+  No unrelated cleanup and no repeat root check. Relevant scoped types/lint and
+  3/3 full live acceptance remain passed; Menu15/Host88 targeted tests also pass.
+  All code commits used normal nano-staged/moeru-lint hooks (no skip/--no-verify).
+
+- DEPLOYED Oct31 after user sudo switch at18:39:56 Taipei:
+  `/home/aimax/.local/share/webnavior/releases/ordering-skill-20261031-182642`.
+  Systemd active, API WorkingDirectory is its runtime/apps/server. Manifest
+  deployed-origin-verified;3190 release hashes and47 origin frontend assets
+  verified, livez/readyz200, DB/Redis ok. Browser IAB opens public Kiosk registration
+  page and loaded /kiosk/assets/index-D1UL0_nW.js matching release HTML; no test
+  device/session/order created. publicBrowserVerified:true. Generic HTTP client
+  public HTTPS got403; browser loaded normally, so do not claim public byte-hash
+  verification or infer an origin outage. agent-browser installed CLI lacks
+  required skills command; IAB was fallback. No production model dialogue replay.
+  Runtime cloned from previous Oct30 release with only4 API source overlays;
+  rebuilt Menu/Kiosk preserve production URLs and /menu/ base. No DB schema,
+  provider or admin changes, no commit. Rollback (only if user requests/needed)
+  uses same release/switch-release.py --rollback and exact prior runtime/frontends.
+  Original shared checkout and other experiments are still excluded.
+
+- Oct31 user explicitly requested investigation, planning and implementation of
+  Jev first, then Main with a skill. Implemented in isolated
+  kiosk-main-recovery and deployed via the release above; no commit. Previously there was no runtime
+  skill loading on this route: repository `.agents/skills` are developer tools.
+  New Server domain `kiosk-conversation-skills` owns built-in `ordering@1`
+  (workflow, tools, missing slots and completion). JSON/SSE use the same procedure;
+  two old route workflow paragraphs moved there, not duplicated. Main round
+  metrics include skill/version. First version is code-managed, not editable UI.
+  One bounded Main selection handles admitted UNCERTAIN_OPERATION, ordinary
+  ordering, exactly one exact product and browser-issued meal effects. It also resumes still-live Menu item-configuration answers by
+  question/candidate intersection and answeredQuestionId. It does
+  not author tool args, quantities/targets or JEV confidence; explicit readonly,
+  recovery, phone/checkout, unresolved prices and ambiguous/compound needs do
+  not gain authority. Invalid/provider-failed selection preserves prior handoff.
+  Browser still compiles/validates candidates and owns slot/question lifecycle.
+  `resolvedBy:main-skill` and Host trace source distinguish Main from JEV.
+
+- Oct31 user requested full acceptance and explicitly removed the call allowance
+  for THIS acceptance. Cumulative ledger is now informational; do not infer
+  unlimited future tests or deployment permission. Original120 cap superseded
+  for this acceptance; no further confirmation was needed/requested.
+  First fresh six-turn run failed on final '兩份': JEV service high, purpose
+  SINGLE0.5429/ANSWER0.4228, confidence0.4515. Skill handled a new exact meal
+  but not its owned slot answer, so Host rebound readOnly and Main browsed.
+  Added live item-configuration question recovery: candidate/choice intersection,
+  retain answeredQuestionId; expired/wrong-purpose/unissued/readonly denied.
+  Browser still checks phase, question ownership, expiry, revisions and one-use
+  execution. New weak-answer route/Host/Menu repro failed before/pass after.
+
+- FULL SIX-TURN LIVE ACCEPTANCE NOW PASS3/3 in fresh scratch DB/session per run:
+  100元→其他→200元其他→還有其他→我要水餃→兩份. All retain budget,
+  present unseen batches, ask quantity without early cart write, then actually
+  cart dumplings2,total160 with receipt. Same configured Jev/Main and role
+  across runs; unseeded full flow, real routes/Host/Menu and provider requests.
+  Successful artifacts `/tmp/webnavior-budget-order-skill-full-answer-fix-20261031`
+  and `skill-full-repeat-2/-3-20261031` JSONL/logs are private0600; source hash
+  metadata and sanitized evidence recorded in existing audit. Successful3 runs
+  used26calls each,9.248/10.540/8.916s (including scratch setup, not GPU timing).
+  No formal Session/cart/POS/payment writes, no deployment or commit. This proves
+  this current-menu synthetic six-turn path, not112 planned scripts, ASR, every
+  skill or changed-menu resilience. Source100員 remains outside this驗收.
+  Final scoped checks: Server92 and Kiosk79 tests pass; Server/Kiosk types and
+  changed lint pass. Full root typecheck not run. Acceptance for this flow is
+  complete; do not extend testing or deploy without a new request.
+
+- User clarified ownership: THIS chat maintains the production version and its
+  correctness/stability/release gates; the OTHER chat explores SLM versus Jev
+  selection and cooperation. V1 references below are historical workspace context,
+  not its current sole purpose. Keep separate worktrees/branches. Experimental
+  model/prompt/routing changes require an explicit adoption decision and production
+  integration validation; do not message or modify the other chat's work.
+
+- Oct30 user requested planning after further field screenshots. Active plan:
+  docs/plans/2026-10-28-kiosk-conversation-repair.md, Oct30 section supersedes
+  historical statuses below. Planning only: no new code/prompt/model/deployment
+  changes this turn. Plan fixes baseline/traces first, then budget+other choices,
+  question/quantity/completion boundaries, identity/service replies and invalid
+  diagnostics; expanded plan16 families,112 planned scripts (existing32 + new48
+  functional +32 adversarial), state/receipt/UI oracles. Not yet materialized
+  or run. Real replay full reconstructable set plus24 predetermined high-risk
+  flows3x, proposed total cap1500 calls/60min; smoke12 is not acceptance.
+  Keep current production policy; do not merge original checkout's paused V1.
+  Original32-flow evaluation supplies regressions, not new-rule expectations.
+
+- Oct30 service-clarification loop hotfix is now DEPLOYED: release fix.json says
+  deployed and runtime SHA matches prepared repair. This corrects prior pending
+  notes. Decision456/80 skipped + Server types/lint passed, no full real-model
+  flow acceptance. Later screenshot Session eCda22nNnyhWzB5rMVvsM shows 一百份
+  not parsed (existing quantity1–20), followed by Main menu_recommend instead
+  of order; identity also becomes greeting. Budget screenshot not yet traced
+  end-to-end; do not assign a single cause. Review-invalid raw response missing.
+
+- Oct30 Main quantity repair implemented ONLY in isolated worktree
+  `/home/aimax/.codex/worktrees/kiosk-main-recovery/webnavior`, base e8491ec.
+  Host rejects unknown-name batches before any effects and permits one corrected
+  proposal; actual rejected/uncertain writes still stop. Server ordering tasks
+  without effects get one scoped completion review (Session/taskId reservation),
+  preserving source/history/tools; no readOnly/payment/confirmation expansion.
+  Menu freezes only unique pre-task presentation targets with a quantity, fixing
+  omitted-name additions without letting later lookups authorize a substitute.
+  JSON/SSE scratch Cart regressions cover add3/edit3->2 and bounded failures;
+  Kiosk96 + Menu65 + Server69 =230 offline tests pass; live2 also pass.
+  three affected app typechecks and Menu/Kiosk builds pass, no root typecheck.
+  After initial auto-review denial, user explicitly approved the configured
+  qwen36 credential/egress; the same two-case synthetic replay passed at17:11
+  Taipei (5.68s including setup): real Host loop, actual add3/edit3->2 and receipt
+  presentation. Scratch API/DB/Menu, development persona, direct provider;
+  not a full semantic/ASR/POS acceptance. User then authorized deployment.
+  Prepared independent release at
+  /home/aimax/.local/share/webnavior/releases/main-recovery-20261030-191156;
+  6251 files verified, production Menu base=/menu/, new/rollback API imports pass.
+  User switched at19:24 Taipei; API now runs from the independent release.
+  Initial frontend build omitted ignored production Vite settings: Kiosk called
+  localhost and Menu lacked public POS/embedding settings. Corrected both builds
+  and published frontend-only at19:32; origin47 checks pass, public browser loads
+  corrected Kiosk, bootstrap reaches API (401 expected for unenrolled browser),
+  invalid enrollment payload returns400. No test device created; successful
+  enrollment still needs user retry. Release keeps before/after hotfix assets
+  and now validates compiled API/scenario/POS URLs before publishing.
+  Script installs only one WorkingDirectory drop-in,
+  publishes HTML after API health, and auto-rolls back to clean Oct29 snapshot
+  rather than dirty checkout. Current origin47 asset checks and DB/Redis pass.
+  No commit or production order writes.
+  See latest sections of docs/research/2026-10-26-kiosk-conversation-error-audit.md
+  and Kiosk README. Separate active chat edits V1 policy in original checkout;
+  do not merge/deploy that policy as part of this repair.
+
 - Oct29 user explicitly authorized plain-language batch commits after field
   deployment. Commits:907db15 new-device defaults;9c702f6 staged routing, SLM
   transport and verified character replies/retry guards;efd8e82 admin SLM

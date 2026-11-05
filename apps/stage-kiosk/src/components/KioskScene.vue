@@ -68,7 +68,7 @@ import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
 import { isKioskConversationRetrySafeTool, resumeConversationRetry } from '../services/kioskConversationRetry'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
-import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationRejectionMessage, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
 import { createVoicePresenceGate } from '../services/voicePresence'
 import { describeWebnaviorKioskToolActivity, loadWebnaviorKioskActivityManifest } from '../services/webnaviorKioskActivity'
@@ -432,11 +432,6 @@ const customerSessionButtonLabel = computed(() => (
 const { idleDiagnosticsEnabled, presenceDiagnosticsEnabled, decisionDiagnosticsEnabled } = useKioskDiagnostics()
 const showDevelopmentDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
-const orderContinuationUrl = shallowRef<string>()
-watch(customerSessionState, (state) => {
-  if (state === 'standby')
-    orderContinuationUrl.value = undefined
-})
 const proactiveSettings = computed(() => observationSettings(props.deviceSettings ?? defaultDeviceSettingsValues))
 const interactiveServices = useKioskInteractiveServices()
 watch(interactiveServices, services => scenarioRegistry.setServices(services), { deep: true, immediate: true })
@@ -920,8 +915,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     if (result.kind !== 'DEFERRED') {
       decisionProgress.finish(utterance.id, result)
-      if (result.kind !== 'SERVICE_CLARIFICATION')
-        serviceClarificationWindow.reset()
+      serviceClarificationWindow.settle(result)
     }
     // Do not escalate a late decision after the visitor has left. Accepted or
     // uncertain execution receipts still settle normally, without retrying.
@@ -941,10 +935,10 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       continue
     }
     if (result.kind === 'EXECUTION_FAILED') {
-      const receipt = result.result && typeof result.result === 'object' ? result.result as Record<string, unknown> : undefined
-      const knownRejection = !result.uncertain && receipt?.rejection === 'item-selection' && typeof receipt.customerMessage === 'string'
+      const rejectedMessage = operationRejectionMessage(result.result, result.uncertain)
+      const knownRejection = Boolean(rejectedMessage)
       const message = knownRejection
-        ? String(receipt.customerMessage).slice(0, 2_000)
+        ? rejectedMessage!
         : result.uncertain
           ? '暫時無法確認這次操作結果，請先確認畫面上的購物車或訂單，不要重複付款。'
           : '這次操作未完成，請確認畫面後再試一次或使用螢幕操作。'
@@ -1179,9 +1173,10 @@ async function presentFastPathResult(
     const content = entryPhase === 'customer_entry' ? t('stage.kiosk.customer-entry.complete-first') : result.question.question
     if (entryPhase !== 'customer_entry')
       serviceClarificationWindow.present(result.question)
-    if (!recordedInput)
-      await interactionRecording.append('asr_transcript', input.text, { source: input.source, utteranceId: input.id })
-    await interactionRecording.append('assistant_text', content, { source: 'service_clarification', questionId: result.question.questionId })
+    // A prior read may already have saved this utterance. Record the question
+    // correlation too; server projection deduplicates the same utterance ID.
+    await interactionRecording.append('asr_transcript', input.text, { decisionRoute: 'fast_path', source: 'service_clarification', utteranceId: input.id, questionId: result.question.questionId })
+    await interactionRecording.append('assistant_text', content, { source: 'service_clarification', questionId: result.question.questionId, utteranceId: input.id })
     if (!interactionTurn.isCurrent(turn))
       return
     conversationMessages.value = [...conversationMessages.value, ...(!shownInput ? [{ role: 'user' as const, content: input.text }] : []), { role: 'assistant', content, slices: [], tool_results: [] }]
@@ -2219,8 +2214,6 @@ function describeToolActivity(toolName: string, state: 'executing' | 'done' | 'e
 }
 
 async function handleScenarioCompleted(message?: InteractionLifecycleMessage) {
-  if (message?.orderContinuationUrl)
-    orderContinuationUrl.value = message.orderContinuationUrl
   if (customerSessionState.value === 'completing')
     return
   // A direct iframe click may emit `activity` and `completed` back-to-back.
@@ -2431,7 +2424,6 @@ onUnmounted(() => {
     <CustomerSessionCompletion
       v-if="customerSessionState === 'completing'"
       :settings="feedbackInvitationSettings"
-      :order-continuation-url="orderContinuationUrl"
       @finish="finishCustomerSessionCompletion"
     />
     <video ref="proactiveCamera" class="proactive-camera" muted playsinline aria-hidden="true" />

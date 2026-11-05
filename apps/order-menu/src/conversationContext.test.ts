@@ -78,7 +78,9 @@ describe('main conversation context', () => {
     expect(await runtime.invoke('kiosk_question_validate', { questionId: proposed.pendingCustomerChoice.questionId })).toHaveProperty('pendingCustomerChoice.questionId', proposed.pendingCustomerChoice.questionId)
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { lines: [{ itemId: 'dumplings', quantity: 2 }] } })
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'replace' })
-    const confirmed = await runtime.invoke('kiosk_fast_path_execute', { candidateId: `confirm-meal:${proposed.pendingCustomerChoice.questionId}:yes` })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: `confirm-meal:${proposed.pendingCustomerChoice.questionId}:yes` })).rejects.toThrow('STALE')
+    const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as { waitingFor: { questionId: string } }
+    const confirmed = await runtime.invoke('kiosk_fast_path_execute', { candidateId: `confirm-meal:${answer.waitingFor.questionId}:yes` })
     expect(confirmed).toMatchObject({ replacedLine: { id: original.line.id }, cart: { lines: [{ itemId: 'fried-pork-chop-bento', quantity: 2 }] } })
   })
 

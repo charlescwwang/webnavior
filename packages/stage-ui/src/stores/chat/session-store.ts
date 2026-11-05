@@ -48,6 +48,9 @@ interface CloudMergePayload {
 const OUTBOX_MAX_ATTEMPTS = 5
 
 export const useChatSessionStore = defineStore('chat-session', () => {
+  // Fixed for this app build, independently of restored auth or the current local session owner.
+  const cloudSyncEnabled = import.meta.env.VITE_AIRI_CLOUD_ENABLED !== 'false'
+
   const { userId, token: authToken } = storeToRefs(useAuthStore())
   const { activeCardId, systemPrompt } = storeToRefs(useAiriCardStore())
 
@@ -410,14 +413,14 @@ export const useChatSessionStore = defineStore('chat-session', () => {
       conversation_id: sessionId,
       source: options?.messages?.length ? 'fork' : 'new_session',
       character_id: characterId,
-      cloud_synced: currentUserId !== 'local',
+      cloud_synced: cloudSyncEnabled && currentUserId !== 'local',
     })
 
     // Fire-and-forget cloud reconcile so the freshly-minted session gets a
     // `cloudChatId` (POST /api/v1/chats) before the user types into it.
     // Reentrant: `reconcileCloudSessions` itself guards on `cloudReconcileTask`
     // so concurrent triggers collapse to a single in-flight task.
-    if (currentUserId !== 'local')
+    if (cloudSyncEnabled && currentUserId !== 'local')
       void reconcileCloudSessions()
 
     return sessionId
@@ -457,14 +460,14 @@ export const useChatSessionStore = defineStore('chat-session', () => {
     capturePosthogEvent('conversation_deleted', {
       conversation_id: sessionId,
       message_count: messageCount,
-      cloud_synced: !!meta.cloudChatId,
+      cloud_synced: cloudSyncEnabled && !!meta.cloudChatId,
     })
 
     const wasActive = activeSessionId.value === sessionId
     const characterId = meta.characterId
     const cloudChatId = meta.cloudChatId
     const currentUserId = getCurrentUserId()
-    const isCloudUser = currentUserId !== 'local'
+    const isCloudUser = cloudSyncEnabled && currentUserId !== 'local'
 
     // ROOT CAUSE:
     //
@@ -673,6 +676,8 @@ export const useChatSessionStore = defineStore('chat-session', () => {
    * pass is scheduled in `finally` so catch-up pulls do not get lost.
    */
   async function reconcileCloudSessions(): Promise<void> {
+    if (!cloudSyncEnabled)
+      return
     if (cloudReconcileTask) {
       pendingReconcile = true
       return cloudReconcileTask
@@ -860,6 +865,8 @@ export const useChatSessionStore = defineStore('chat-session', () => {
    * from the auth `watch`.
    */
   function ensureCloudWsClient() {
+    if (!cloudSyncEnabled)
+      return
     if (getCurrentUserId() === 'local') {
       console.info('[chat-sync] WS skipped: anonymous user')
       return
@@ -948,7 +955,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
    */
   async function refreshOutboxPendingCount() {
     const userId = getCurrentUserId()
-    if (userId === 'local') {
+    if (!cloudSyncEnabled || userId === 'local') {
       outboxPendingCount.value = 0
       return
     }
@@ -959,7 +966,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
   /**
    * Ship a single message up to the cloud (eventually).
    *
-   * Local-first contract: this method ALWAYS persists the send to the IDB
+   * When cloud sync is enabled, this method persists the send to the IDB
    * outbox first, then attempts an opportunistic WS dispatch. Failures
    * (offline, WS dropped, server 5xx) leave the entry in the outbox; the
    * next `drainOutbox` (fired on every reconcile / WS-open) retries it.
@@ -984,7 +991,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
    */
   async function pushMessageToCloud(sessionId: string, message: { id: string, role: CloudSyncableRole, content: string }) {
     const userId = getCurrentUserId()
-    if (userId === 'local')
+    if (!cloudSyncEnabled || userId === 'local')
       return
 
     const entry: ChatSendOutboxEntry = {
@@ -1045,7 +1052,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
       return outboxDrainTask
     outboxDrainTask = (async () => {
       const userId = getCurrentUserId()
-      if (userId === 'local')
+      if (!cloudSyncEnabled || userId === 'local')
         return
       if (!wsClient || wsClient.status() !== 'open')
         return
@@ -1119,7 +1126,7 @@ export const useChatSessionStore = defineStore('chat-session', () => {
    */
   async function drainTombstones(): Promise<void> {
     const userId = getCurrentUserId()
-    if (userId === 'local')
+    if (!cloudSyncEnabled || userId === 'local')
       return
 
     const tombstones = await chatSessionsRepo.getTombstones(userId)

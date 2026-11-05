@@ -1,8 +1,11 @@
 import type { ChatSessionMeta, ChatSessionRecord, ChatSessionsIndex } from '../../types/chat-session'
 
-import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, disposePinia, getActivePinia, setActivePinia } from 'pinia'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
+
+import { chatSessionsRepo } from '../../database/repos/chat-sessions.repo'
+import { createChatWsClient, createCloudChatMapper } from '../../libs/chat-sync'
 
 // Refs the store reads through the mocked `useAuthStore` / `useAiriCardStore`.
 // Tests mutate these to simulate auth and card swaps.
@@ -75,11 +78,11 @@ vi.mock('../../libs/server', () => ({
 vi.mock('../../libs/chat-sync', () => ({
   applyCreateActions: vi.fn().mockResolvedValue([]),
   reconcileLocalAndRemote: vi.fn().mockReturnValue({ adopt: [], claim: [], create: [] }),
-  createCloudChatMapper: () => ({
+  createCloudChatMapper: vi.fn(() => ({
     listChats: vi.fn().mockResolvedValue([]),
     deleteChat: vi.fn().mockResolvedValue(undefined),
-  }),
-  createChatWsClient: () => ({
+  })),
+  createChatWsClient: vi.fn(() => ({
     status: () => 'idle' as const,
     connect: vi.fn(),
     disconnect: vi.fn(),
@@ -88,7 +91,7 @@ vi.mock('../../libs/chat-sync', () => ({
     pullMessages: vi.fn().mockResolvedValue({ messages: [], maxSeq: 0 }),
     onNewMessages: () => () => {},
     onStatusChange: () => () => {},
-  }),
+  })),
   extractMessageText: (m: any) => (typeof m?.content === 'string' ? m.content : ''),
   isCloudSyncableMessage: () => false,
   mergeCloudMessagesIntoLocal: () => ({ dirty: false, messages: [], maxSeq: 0 }),
@@ -97,6 +100,7 @@ vi.mock('../../libs/chat-sync', () => ({
 const { useChatSessionStore } = await import('./session-store')
 
 beforeEach(() => {
+  vi.clearAllMocks()
   setActivePinia(createPinia())
   userIdRef.value = 'local'
   activeCardIdRef.value = 'default'
@@ -111,6 +115,12 @@ beforeEach(() => {
   dropOutboxForSessionMock.mockReset().mockResolvedValue(undefined)
   getTombstonesMock.mockReset().mockResolvedValue([])
   removeTombstonesMock.mockReset().mockResolvedValue(undefined)
+})
+afterEach(() => {
+  const pinia = getActivePinia()
+  if (pinia)
+    disposePinia(pinia)
+  vi.unstubAllEnvs()
 })
 
 async function flushMicrotasks(rounds = 8) {
@@ -292,5 +302,48 @@ describe('chat-session-store · loadSession vs concurrent deleteSession', () => 
 
     // Without the fix, sess-1 reappears here.
     expect(store.sessionMetas['sess-1']).toBeUndefined()
+  })
+})
+
+describe('kiosk local chat without AIRI cloud', () => {
+  it('retains authenticated local sessions without opening sockets, reconciling or queuing cloud delivery', async () => {
+    vi.stubEnv('VITE_AIRI_CLOUD_ENABLED', 'false')
+    userIdRef.value = 'customer'
+    const store = useChatSessionStore()
+    await store.initialize()
+    const id = await store.createSession('default', { messages: [{ id: 'order', role: 'user', content: '水餃一份' }] })
+    await store.pushMessageToCloud(id, { id: 'order', role: 'user', content: '水餃一份' })
+    expect(store.sessionMessages[id]).toContainEqual(expect.objectContaining({ content: '水餃一份' }))
+    expect(saveSessionMock).toHaveBeenCalledWith(id, expect.objectContaining({ meta: expect.objectContaining({ userId: 'customer' }) }))
+    expect(createChatWsClient).not.toHaveBeenCalled()
+    expect(createCloudChatMapper).not.toHaveBeenCalled()
+    expect(chatSessionsRepo.enqueueOutbox).not.toHaveBeenCalled()
+    expect(getOutboxMock).not.toHaveBeenCalled()
+    expect(store.outboxPendingCount).toBe(0)
+    expect(store.cloudSyncReady).toBe(false)
+
+    // A previously mapped local session must still delete locally without a cloud tombstone or DELETE.
+    store.sessionMetas[id].cloudChatId = 'previous-cloud-chat'
+    await store.deleteSession(id)
+    expect(deleteSessionRepoMock).toHaveBeenCalledWith(id)
+    expect(chatSessionsRepo.addTombstone).not.toHaveBeenCalled()
+    expect(createCloudChatMapper).not.toHaveBeenCalled()
+
+    userIdRef.value = 'another-customer'
+    await nextTick()
+    await flushMicrotasks(30)
+    expect(createChatWsClient).not.toHaveBeenCalled()
+    expect(createCloudChatMapper).not.toHaveBeenCalled()
+  })
+
+  it('keeps cloud connections and the delivery outbox for other apps by default', async () => {
+    vi.stubEnv('VITE_AIRI_CLOUD_ENABLED', undefined)
+    userIdRef.value = 'customer'
+    const store = useChatSessionStore()
+    await store.initialize()
+    await store.pushMessageToCloud(store.activeSessionId, { id: 'message', role: 'user', content: 'hello' })
+    expect(createChatWsClient).toHaveBeenCalled()
+    expect(createCloudChatMapper).toHaveBeenCalled()
+    expect(chatSessionsRepo.enqueueOutbox).toHaveBeenCalledWith('customer', expect.objectContaining({ messageId: 'message' }))
   })
 })

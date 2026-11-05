@@ -19,7 +19,7 @@ import { createChoiceRequest, readChoice } from '../../../server/src/services/do
 import { conversationDecisionStateFrom, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { resumeConversationRetry } from '../services/kioskConversationRetry'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
-import { createMenuReplyWindow, operationReplyFrom, replyFromConversation } from '../services/questionPresentation'
+import { createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation } from '../services/questionPresentation'
 
 it('executes a strict SLM label through staged routing and the real Menu cart without a retry', async () => {
   const cartCount = shallowRef(0)
@@ -63,7 +63,7 @@ it('shows an owned character clarification without a retry button after unsuppor
   const presented = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '已經把便當移除了。' }, { context, menu: createMenuReplyWindow(), handoff: { intent: 'REMOVE_ITEM' }, failureMessage: '再試一次。' })
   const messages: ChatHistoryItem[] = presented.role === 'assistant' ? [{ role: 'assistant', content: presented.content, slices: [], tool_results: [] }] : [{ role: 'error', content: presented.content }]
   const screen = render(KioskConversation, { props: { assistantPresence: { mode: 'listening', title: '點餐', description: '請點餐' }, fontSize: 20, messages, sending: false, voiceConversationOnly: false, retryAvailable: presented.role === 'error' }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: stageMessages } } })] } })
-  await expect.element(screen.getByText('剛才沒有理解清楚，請再說一次您想詢問或調整的內容。')).toBeVisible()
+  await expect.element(screen.getByText('剛才沒有理解清楚，請再說一次您想查詢的餐點或訂單調整。')).toBeVisible()
   await expect.element(screen.getByRole('button', { name: '再試一次' })).not.toBeInTheDocument()
   await expect.element(screen.getByText('已經把便當移除了。')).not.toBeInTheDocument()
   expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(context.cart)
@@ -97,8 +97,8 @@ it('clicks retry through production admission and clarification, then accepts th
       if (!ambiguous)
         return decision
       return await recoverServiceRequest(decision, { transcript: utterance.text, state: request.decisionState, complete: async (body) => {
-        const review = JSON.stringify(body).includes('前一輪有限選項仍不確定')
-        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(review ? { admission: 'service', disposition: 'clarify', question: '剛才沒有理解清楚，請再說一次您的需求。' } : { choice: 'REQUEST' }) } }] } }] })
+        const review = JSON.stringify(body.tools).includes('"admission"')
+        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(review ? { recipient: 'kiosk', admission: 'service', disposition: 'clarify', question: '剛才沒有理解清楚，請再說一次您的需求。' } : { choice: 'UNCERTAIN' }) } }] } }] })
       } })
     } })
     if (ambiguous) {
@@ -137,4 +137,39 @@ it('clicks retry through production admission and clarification, then accepts th
   await expect.element(screen.getByLabelText('購物車份數')).toHaveTextContent('1')
   await expect.element(screen.getByText(/已將水餃加入購物車/)).toBeVisible()
   queue.reset()
+})
+
+// Report: reported-20261103-background-service-clarification-loop in orderingIncidents.ts.
+it('keeps background recovery silent in the chat and accepts a real quantity answer afterward', async () => {
+  const messages = shallowRef<ChatHistoryItem[]>([])
+  const cartCount = shallowRef(0)
+  const runtime = createMenuToolRuntime({ menu: [{ id: 'dumplings', name: '水餃', category: '點心', description: '', imageUrl: '', price: 80, recommendationTags: [], optionGroups: [] }], onAction: () => {}, onMenuSelection: () => {}, onCartChange: cart => cartCount.value = cart.itemCount })
+  const window = createServiceClarificationWindow()
+  const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+  window.present({ questionId: 'q', question: '想查詢還是修改？', sourceUtterance: '幫我', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 })
+  const screen = render(defineComponent({ setup: () => () => h(KioskConversation, { messages: messages.value, fontSize: 20, sending: false, voiceConversationOnly: false, assistantPresence: { mode: 'listening', title: '點餐', description: '請點餐' } }) }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: stageMessages } } })] } })
+  const response = (args: unknown) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(args) } }] } }] })
+  for (const [index, text] of ['它卻出現了第四個字', '判斷的話就是回答出來的東西', '這是同事在討論程式'].entries()) {
+    const eligible = await decideInteraction({ transcript: text, decisionState: { ...state, serviceClarification: window.current(state) }, candidates: [], routing: 'staged', policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async () => ({ answers: { admission: { choice: 'UNCERTAIN', confidence: 0.99 } } }) })
+    const result = await recoverServiceRequest(eligible, { transcript: text, state: { ...state, serviceClarification: window.current(state) }, complete: async () => response(index === 1 ? { recipient: 'kiosk', admission: 'service', disposition: 'clarify', question: '需要什麼？', requestKind: 'clarification-answer' } : { recipient: 'uncertain', admission: 'uncertain', disposition: 'abstain', requestKind: 'clarification-answer' }) })
+    window.settle(result)
+    expect(result.kind).toBe('UNAVAILABLE')
+    expect(result).not.toHaveProperty('question')
+    expect(messages.value).toEqual([])
+    expect(window.current(state)?.questionId).toBe('q')
+    await expect.element(screen.getByText('需要什麼？')).not.toBeInTheDocument()
+  }
+  const first = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要水餃' })
+  expect(first).toBeDefined()
+  const pending = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+  const question = questionReceiptFrom(pending)!
+  await runtime.invoke('kiosk_dialogue_presented', { content: question.question, questionId: question.questionId })
+  const choices: Record<string, string> = { admission: 'SERVICE', purpose: 'ANSWER', operationRequest: 'OPERATION', operationCoverage: 'SINGLE', review: 'SATISFIED' }
+  const result = await runFastPath({ transcript: '兩份', isEnabled: async () => true, decide: async request => decideInteraction({ ...request, routing: 'staged', policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (_state, questions) => {
+    const key = Object.keys(questions)[0]!
+    const choice = key === 'operation' ? Object.keys(questions[key]!.criteria!).find(value => value.includes('quantity:2'))! : choices[key]!
+    return { selectionMode: 'unscored', answers: { [key]: { choice } } }
+  } }), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.test' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
+  expect(result.kind).toBe('FAST_ACTION')
+  expect(cartCount.value).toBe(2)
 })

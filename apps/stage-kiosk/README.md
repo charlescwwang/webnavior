@@ -23,6 +23,21 @@ pnpm --filter @proj-airi/stage-kiosk dev
 
 The layout follows the display orientation by default. Set `VITE_KIOSK_ORIENTATION=landscape` or `portrait` to lock a deployment to one orientation.
 
+## Local conversation storage and cloud services
+
+The Kiosk Vite configuration fixes `VITE_AIRI_CLOUD_ENABLED` to `false`.
+Restoring a shared AIRI login therefore does not query AIRI cloud credits,
+open the generic chat WebSocket, reconcile remote chats, or queue cloud sends
+and deletes. Existing local sessions remain readable and writable; queued cloud
+records are left intact. Other stage applications retain their existing cloud
+behavior unless their build explicitly disables it.
+
+Webnavior device enrollment and visitor interaction recording still use
+`VITE_API_SERVER_URL`. Microphone, VAD, ASR, TTS and ordering tool connections
+are independent of this switch. This setting does not disable shared OIDC login.
+`VITE_SERVER_URL` configures the separate shared AIRI API, not the Kiosk recording
+API; pointing it at Webnavior is not required to suppress cloud credits/chat sync.
+
 ## Development kiosk enrollment
 
 Before a Profile is available, the kiosk opens an enrollment screen. In a local
@@ -35,6 +50,17 @@ KIOSK_DEVELOPMENT_REGISTRATION_ENABLED=true pnpm --filter @proj-airi/server dev
 VITE_API_SERVER_URL=http://localhost:5168 pnpm --filter @proj-airi/stage-kiosk dev
 ```
 
+For a public deployment, build with `VITE_API_SERVER_URL` set to the public
+Webnavior API origin, and
+`VITE_ORDERING_SCENARIO_URL` set to the public Menu URL. These values are
+compiled into the browser bundle; changing Server environment variables after
+building does not update them. An isolated worktree does not inherit ignored
+`.env.production.local` files. Verify the compiled registration destination,
+not only static asset hashes, before publishing. Build the embedded Menu with
+its matching `VITE_AIRI_ORIGIN`, `VITE_ORDER_MENU_SERVER_URL`, and
+`VITE_ORDER_MENU_PUBLIC_URL`, plus the deployment's `/menu/` base path.
+
+
 The Server omits this endpoint unless the flag is exactly `true`, and always
 omits it when `NODE_ENV=production`. A production kiosk will replace this
 screen with the QR-code enrollment flow.
@@ -42,7 +68,8 @@ screen with the QR-code enrollment flow.
 ## Meal clarification
 
 `pnpm -F @proj-airi/stage-kiosk test:history` replays sanitized historical
-quantity and fulfillment claims through the current reply-grounding boundary.
+quantity and fulfillment claims plus the current ordering regressions described
+under Main ordering skill handoff. It aliases `test:ordering-regressions`.
 Shared evidence is checked in under Order Menu's test-only `src/evaluation`;
 reply tests stay in Kiosk so Menu does not import the Kiosk recording lifecycle.
 These offline tests do not call Jev/Main, and partial historical evidence is not
@@ -62,6 +89,20 @@ current confirmation without buying it, guessing quantity or asking the same
 purchase question again. This read has an additional recipient check; ordinary
 Yes/No answers still take one Jev call. Companion speech and uncertain recipients
 remain silent. Named alternatives, categories and filters use normal routing.
+
+Service clarification is a bounded context cue, not automatic admission for the
+next microphone segment. Silent background/uncertain segments neither renew nor
+consume its original expiry; an accepted handoff settles it, and Menu revisions
+or expiry invalidate it. Only admitted clarification turns add chat messages and
+paired transcript metadata. Existing short answers still require their current
+question and its issued operation authority. Background long-chain regressions
+are retained in Order Menu's incident scripts alongside the frozen112 suite.
+Silence describes presentation, not intent: background, uncertain recipient and a
+valid read-only pause are assessed separately. Recovery timeout/invalid/provider
+failures remain technical failures even if the outer decision still has an
+uncertainty reason. Model replay records `serviceObservation` from actual scope,
+recovery or finite decision evidence, and checks accepted dialogue/cue/tool effects
+before accepting an unadopted turn. A completed sentence is not service evidence.
 
 ## Fresh Main rounds
 
@@ -119,7 +160,9 @@ This is separate from a real Main Agent task: it admits service meaning, never
 an operation. A review can ignore, abstain, hand off the original request, or
 create a read-only service question. Its answer cannot consume an older Menu
 purchase/payment question. Independent new requests leave that clarification
-without inheriting its authority.
+without inheriting its authority. After the customer answers a service
+question, an admitted review that still requests clarification hands the context
+to read-only Main rather than renewing the recovery question indefinitely.
 
 `SERVICE_RECOVERY_PROGRESS` reaches the host before the provider starts. Explicit
 text shows receipt immediately, elapsed time, and a longer-wait message after
@@ -378,15 +421,42 @@ Kiosk. Preserve the full-page manual-input check when evaluating any CSS fix.
 ## Anonymous customer sessions
 
 Main Agent accepts both direct requests with Fast Path disabled and Jev handoffs
-through the same conversation loop. A completed turn without commerce tools can
-present natural model dialogue (for example, a greeting). Offering menu tools
-alone does not require a menu receipt or discard the answer. History-only reads
-also retain conversational replies. Once commerce tools are attempted, the host
-presents accepted current-turn menu/cart/operation/question receipts rather than
-model success prose. Rejected tools are not automatically replayed. No-tool
-prose relies on the model instructions to avoid unsupported commerce claims;
-this path does not perform a second semantic classification or guarantee that
-all model-written factual claims are grounded.
+through the same conversation loop. With current Menu context, customer text is
+rendered from validated reply selectors or actual tool receipts; draft success
+claims are not displayed as completed operations.
+
+An unknown tool name causes a preflight rejection of its entire proposed batch,
+before any sibling tool executes. The Host returns correlated `UNKNOWN_TOOL` /
+`BATCH_NOT_EXECUTED` results and allows one corrected proposal using refreshed
+facts and the current tool list. It never maps an unknown name or invents missing
+arguments. A second invalid proposal ends the task. Actual execution rejection,
+timeout or uncertain writes retain their existing stop/result-unknown behavior.
+
+An ordering task that ends without an operation may receive one completion
+review, preserving its original utterance, related dialogue, current facts and
+exact scoped tools. `main_completion_review` records this reservation by visitor
+session and task ID. Existing read-only authority, customer entry, checkout and
+payment boundaries are unchanged; a previous operation attempt suppresses review.
+The review can propose the missing operation or return a validated information /
+clarification selector. It shares the existing turn deadline and tool budgets;
+it is not an additional Jev classifier or permission grant. After the single
+review, malformed prose falls back to clarification without another provider
+repair. Once effects occur, displayed results still require actual receipts.
+
+Offline regressions for this flow run with:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/fieldQuantityRecovery.test.ts src/composables/useKioskInteractionRecording.test.ts src/services/questionPresentation.test.ts
+```
+
+`mainQuantityReplay.test.ts` is disabled by default. Its
+`KIOSK_MAIN_QUANTITY_REPLAY=1` opt-in uses the selected provider metadata in the
+existing local `/tmp/webnavior-main-scope-profile.json` fixture and a locally
+provided `LLM_ROUTER_MASTER_KEY`. It sends two synthetic scenarios, application
+instructions and a scratch menu/cart to that provider, consuming model quota.
+Provider credential use and external egress require explicit authorization.
+The Host, HTTP API and database are isolated; it never calls production Kiosk,
+POS or payment endpoints. Never commit the private profile or decryption key.
 
 Internal `menu_get(display:false)` results carry `dataOnly:true`. They provide
 catalog evidence to Main Agent and are excluded from customer reply receipts,
@@ -524,8 +594,10 @@ remaining budget under 24 questions across the entire utterance. Verified read
 receipts are visible before optional review, which may perform at most one extra
 read and then choose only completion or Agent handoff. Rejected tool envelopes
 are not success; a lost execution result is shown as unknown, without automatic
-mutation retries. Main Agent tools run serially, with four rounds, 16 calls and a
-60-second model deadline; exhaustion/rejection retains actual receipts and reports
+mutation retries. Main Agent tools run serially. A task starts with four tool
+batches; each additional verified target in its initial Menu handoff reserves one
+evidence read and one effect batch, up to eight batches. The total16-call limit
+and60-second model deadline remain; exhaustion/rejection retains actual receipts and reports
 unfinished work. Accepted external payment effects are not cancelled by that
 deadline. A complete new request during a pending
 confirmation revokes that exact confirmation before handing off; it never
@@ -807,6 +879,20 @@ pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 VITEST_BROWSER_CHANNEL=chrome pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 ```
 
+Invoice regressions cover both the actual `App.vue` parent wiring
+(`InvoiceApp.browser.test.ts`) and the real iframe-to-Host connection
+(`InvoiceHostBridge.browser.test.ts`). The latter reads the existing loopback POS
+simulator catalog and stops at payment-method selection. Start the same Bridge
+below with `ORDER_MENU_ALLOWED_ORIGIN='*'` on loopback only, then run:
+
+```sh
+VITEST_BROWSER_CHANNEL=chrome VITE_ORDER_MENU_INVOICE_BRIDGE_TEST=true VITE_ORDER_MENU_SERVER_URL=http://localhost:5182 pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts src/components/InvoiceHostBridge.browser.test.ts
+```
+
+Incident scripts with `channel: 'main-direct'` bypass finite Jev selection to test
+the typed-input Main route. Passing Jev/Main candidate recovery is not evidence
+that this separate route passed; guarded provider runs keep their own ledger.
+
 The paid-order reward regression is opt-in and uses an isolated loopback Bridge.
 Start it with `ORDER_MENU_SERVER_PORT=5182 ORDER_MENU_POS_SIMULATOR_PORT=5183
 ORDER_MENU_ALLOWED_ORIGIN=http://localhost:63315 pnpm -F @proj-airi/order-menu-server
@@ -857,3 +943,146 @@ question presentation or speech playback. A disconnected browser cannot prove
 release; restart the session to replace that document rather than unlocking on
 a timer. This control currently applies to Main Agent tasks; Fast Path retains
 its existing execution flow.
+
+
+### Main ordering skill handoff
+
+An admitted weak JEV operation may be independently selected by Main's built-in
+`ordering@2` skill. The decision marks `resolvedBy:main-skill`; Host traces use
+`decisionSource:main-skill` rather than attributing the selection to JEV. The Host
+still executes only a currently issued Menu candidate. Menu owns the resulting
+quantity/configuration question and later answer; skill loading never sets a
+blanket mutable flag or changes payment/confirmation authority. Menu now issues
+`intentRecovery` with current effect IDs and question/request correlation; Server
+intersects those IDs rather than reclassifying phase/purpose eligibility.
+
+Menu supplies one draft projection to all three context readers. Host validates
+and forwards its `retainedRequests` to both Jev and Main, then replaces it with
+the fresh Menu projection on continuation rather than keeping stale task data.
+It preserves original requests, known quantity/options and explicit missing
+slots; `confirming` and `suspended` describe unfinished work, never cart effects.
+Read-only task restrictions still apply even when their draft progress survives. Recovery revalidation reads `kiosk_interaction_state`, never the decision producer; checking freshness must not replace the current utterance's answer ticket. Revision/question changes still reject the recovered result.
+
+The Main tool loop distinguishes `waiting` from completed/failed. A Menu-owned
+scope/identity/configuration or new membership/invoice/tax/payment question
+pauses the batch before later sibling calls execute, records those siblings as unexecuted, and returns the question
+without another model continuation. Deferred calls are not automatically replayed.
+Final Host/Menu validation still decides which question may be shown. Operation
+presentation retains every accepted receipt in this turn, with only the current
+validated question; a later failure reports partial progress rather than losing
+earlier successes or claiming the entire request completed.
+
+Run the retained offline field regressions after changing Jev routing, Main
+instructions/skills, Host authority/receipts, or Menu ordering state:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk test:ordering-regressions
+```
+
+`test:history` aliases this command. Root `vitest.config.ts` registers the
+`kiosk-field-regressions` project, so the existing CI `pnpm run test:run` also runs
+these Kiosk/Menu cases; the Server skill tests already belong to its Server
+project. The focused command runs those suites plus the shared draft-schema tests without the full repository suite.
+It uses test model responses and isolated databases, makes no provider requests,
+and never writes a production order. These assertions inspect domain state and
+tool effects rather than accepting plausible assistant prose.
+
+| Retained failure | Stable test coverage | Required result |
+| --- | --- | --- |
+| Shown meal → omitted-name purchase | `orderingSkill.test.ts`, `agentTargetRecovery.test.ts` | Correct item/quantity in cart; later reads cannot change the target |
+| Meal identity confirmation → 對，一份 | `orderingSkill.test.ts`, Menu `mealClarification.test.ts` | Current proposal accepted once; answer quantity retained; refusal/replay cannot add |
+| Same answer through Jev / Main / Main abstention | `orderingSkill.test.ts` | Both successful paths have the same cart effect; abstention keeps the same draft and empty cart |
+| Missing slots followed by another proposed tool | `useKioskInteractionRecording.test.ts`, `questionPresentation.test.ts` | Wait for customer; no later checkout effect or extra model round; partial receipts survive failure |
+| Catalog identity/price/options changes | Menu `conversationMenus.test.ts` | Four catalogs complete lookup → omitted-name order → required options; old answers reject after catalog changes; new order uses current price |
+| Shared draft progress and options | Menu `conversationProgress.test.ts`, shared `kioskConversation.test.ts` | All readers agree; unknown quantity stays absent; confirmation keeps original request and selected options; reads do not mutate drafts/cart |
+| Missing quantity → quantity answer | `orderingSkill.test.ts` | No early cart write; exact requested quantity after answer |
+| Dine-in/pickup answer became recommendation | `orderingSkill.test.ts`, Server `kiosk-conversation-skills/index.test.ts` | Actual fulfillment change; no added dish |
+| Checkout invitation → 好 did nothing | Same integration/Server suites | Checkout opens once; no payment call; 先不要 keeps ordering |
+| Question expires during inference | Menu `questions.test.ts`, `seatingRuntime.test.ts` | New answer gets its lease; stale/revision-invalid executions remain rejected |
+| Price/query changes lose their scope | `priceHandoff.test.ts`, Menu `queryActions.test.ts` | Browser price/query contract and empty cart for inquiries |
+| Text claims completion without tool effect | `historicalReplies.test.ts`, `fieldRegression.test.ts`, `questionPresentation.test.ts` | Unverified completion is rejected |
+
+`apps/order-menu/src/evaluation/orderingIncidents.ts` retains sanitized reported
+utterances and observed wrong replies, separately from expected cart/phase. The
+integration tests consume these records; they are not only prose in a task log.
+
+Real-provider behavior is separately opt-in in `budgetOrderReplay.test.ts`; offline
+passing does not establish model/prompt accuracy. It requires the existing server
+`DATABASE_URL` and `LLM_ROUTER_MASTER_KEY` in the process environment, explicit
+`KIOSK_BUDGET_ORDER_REPLAY=1`, a new private `KIOSK_BUDGET_REPLAY_OUTPUT` path, and
+explicit aggregate call/time limits across all runs. It only reads live profiles,
+policy and persona; sessions/cart/profile copies are isolated. Do not commit raw
+provider artifacts or credentials. The default suite skips this test.
+
+| `KIOSK_BUDGET_REPLAY_FLOW` | Real-provider scenario |
+| --- | --- |
+| unset | Six fresh turns: 100元 → 其他 → 200元 → 其他 → 水餃 → 兩份 |
+| `core` | Four live budget/order turns |
+| `meal-skill` | One live meal request after a reconstructed query prefix |
+| `checkout-entry` | 好 after a seeded checkout invitation; invoice once, no payment |
+| `configuration-order` | 水餃兩份 → synthetic required sauce → pickup → invoice; no early cart effect or payment |
+| `query-continuation` | Seed 100元 browsing; live 其他 → 明確看全部; preserve budget until explicit catalog request |
+| `confirmation-order` | 一份排骨飯 → 排骨便當 → 對，一份 → 內用 → 好; fresh five-turn incident replay |
+| `context-order` | 想吃排骨便當 → 那我要一份 → 內用 → 好 |
+
+For `context-order`, also run with `KIOSK_CONTEXT_ORDER_LOOKUP_PREFIX=1` to retain
+the observed read-first branch: seed the verified one-dish lookup, then run the
+remaining three turns live. A natural run that instead asks quantity first does
+not cover this branch. `KIOSK_CHECKOUT_MAIN_PROBE=1` in `checkout-entry` explicitly
+injects the observed Jev admission abstention to exercise real Main recovery; it
+must be reported separately from natural Jev routing. Record seeded prefixes,
+actual cart/phase, model-call totals, and failures; a single probe is not full-flow
+or production acceptance. No payment is executed in these entry probes.
+
+
+### Frozen conversation matrix
+
+`apps/order-menu/src/evaluation/conversationMatrix.ts` owns112 script positions:
+20 original conversation chains, eight expanded existing provider probes, four
+reconstructed previously planned sessions, and80 new flows across16 families.
+The earlier plan called the baseline32 complete flows; that was inaccurate.
+D07/H05 retain insufficient-entry-state diagnostic labels and cannot pass as
+completed historical replays. `conversationMatrix.test.ts` verifies provenance
+links and tests that the oracle rejects wrong items/quantities, recommendation
+without purchase, and over-budget results. It is part of the fixed regression gate.
+
+To replay one reconstructable script using the same real Host/Hono/Menu harness,
+provide the existing environment and explicit limits described above, plus
+`KIOSK_CONVERSATION_SCRIPT=C14-F2`, then run:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/budgetOrderReplay.test.ts
+```
+
+The harness applies the explicitly versioned outcome policy from
+`conversationAcceptance.ts` without modifying the frozen matrix. Artifacts include
+both `historicalScript` and the current script plus `acceptancePolicy`; optional
+replies never waive state preservation or hide failed model recovery. Keep
+superseded/deferred positions separate from current functional results.
+
+Use a new0600 output path each time. The JSONL includes frozen script metadata,
+turn snapshots, raw provider wire without credentials, receipts, assessments and
+actual call totals. Keep a single aggregate budget across processes and failed
+runs. Preselected smoke12 and high-risk24 IDs are exported with the manifest;
+high-risk acceptance requires three complete passing replays on the accepted
+implementation. Gold never enters provider input. Do not silently edit gold after
+observing a failure or count a seeded/synthetic control as an original incident.
+
+For D07/H05 only, `KIOSK_CONVERSATION_DIAGNOSTIC=seeded-entry` explicitly supplies
+the missing entry-ready precondition. Their output records the evidence gap,
+`seededEntry` and `historicalReplay:false`; report them separately from the110
+reconstructable scripts, even when every diagnostic assertion passes.
+
+`orderingIncidents.ts` also retains screenshot wording (including100員), review
+invalid, repeated questions and100-portions reports, with explicit missing-state
+notes and links to synthetic scripts. Raw historical audio/session gaps remain
+unresolved; synthetic success cannot upgrade those incidents to full historical
+replay. Future provider changes must rerun the linked scripts, preserve previous
+failures, and report the actual final customer text as well as cart effects.
+
+
+電話登記關閉回歸以 `KIOSK_CONVERSATION_SCRIPT=P01-F1` 使用既有隔離 replay；
+`P01-A1`／`P01-A2` 分別驗證否定關閉與同伴／其他視窗，與原112固定gold分開。
+互動內容／工具回執維持順序儲存；`service_event` 的 `*_metrics` 使用獨立背景佇列，
+其網路往返不阻塞回覆。兩條佇列各自維持順序並捕捉原visitor ID；跨佇列的sequence
+代表伺服器儲存順序，不代表嚴格的事件發生順序。

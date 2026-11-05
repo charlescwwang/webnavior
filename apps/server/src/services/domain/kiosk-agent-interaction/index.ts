@@ -148,9 +148,11 @@ export function compactToolResultForModel(name: string, content: string, catalog
   // Persisted receipts retain environment/provenance. The model only needs
   // actual ingredients and operation status, not deployment labels to narrate.
   let parsed = parseToolPayload(content)
-  if (parsed && catalogItemIds) {
+  if (parsed && catalogItemIds && name !== 'cart_get') {
     // The latest context already owns full cart/selection state. Retain this
     // receipt's changed line/outcome, rather than replaying older snapshots.
+    // cart_get owns the requested current inspection itself; stripping it
+    // would return {} and invite a repeated read even though the cart is known.
     const { cart: _cart, selection: _selection, ...receipt } = parsed
     parsed = receipt
   }

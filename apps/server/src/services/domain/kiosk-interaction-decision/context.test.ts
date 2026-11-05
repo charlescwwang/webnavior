@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildConversationContext, conversationEntries, normalizeTranscript } from './context'
+import { buildConversationContext, buildDecisionMessages, conversationEntries, normalizeTranscript } from './context'
 
 describe('system One conversation context', () => {
   it('retains failed decisions as diagnostics, not completed customer requests', () => {
@@ -41,4 +41,43 @@ describe('system One conversation context', () => {
     expect(context.messages.reduce((sum, message) => sum + message.content.length, 0)).toBeLessThanOrEqual(4_000)
     expect(context.messages.at(-1)).toMatchObject({ role: 'assistant', content: '99'.repeat(200) })
   })
+})
+
+// Report: live112 D09, current request was shadowed by preceding dialogue.
+it('keeps history data before the exact current user message across Main stages', () => {
+  const history = { messages: [{ role: 'user', content: '我還沒說清楚' }] }
+  const messages = buildDecisionMessages('依技能釐清需求', history, '我現在要問付款方式')
+  expect(messages.map(message => message.role)).toEqual(['system', 'user', 'user'])
+  expect(JSON.parse(messages[1]!.content)).toEqual(history)
+  expect(messages.at(-1)!.content).toBe('我現在要問付款方式')
+})
+
+// Report: reported-20261103-background-service-clarification-loop in orderingIncidents.ts.
+it('excludes orphan service questions while retaining admitted clarification pairs', () => {
+  expect(conversationEntries([
+    { kind: 'user_text', content: '我要水餃' },
+    { kind: 'assistant_text', content: '幾份？' },
+    { kind: 'asr_transcript', content: '它卻出現了第四個字', metadata: { utteranceId: 13 } },
+    { kind: 'assistant_text', content: '您想點什麼？', metadata: { source: 'service_clarification', questionId: 'orphan' } },
+    { kind: 'asr_transcript', content: '幫我處理一下', metadata: { decisionRoute: 'fast_path', source: 'service_clarification', questionId: 'accepted', utteranceId: 14 } },
+    { kind: 'assistant_text', content: '要查詢還是修改訂單？', metadata: { source: 'service_clarification', questionId: 'accepted', utteranceId: 14 } },
+  ])).toEqual([
+    { kind: 'user_text', content: '我要水餃' },
+    { kind: 'assistant_text', content: '幾份？' },
+    { kind: 'user_text', content: '幫我處理一下' },
+    { kind: 'assistant_text', content: '要查詢還是修改訂單？' },
+  ])
+})
+
+it('keeps a clarification pair after an earlier read without duplicating its source utterance', () => {
+  expect(conversationEntries([
+    { kind: 'asr_transcript', content: '其他呢', metadata: { decisionRoute: 'fast_path', utteranceId: 10 } },
+    { kind: 'asr_transcript', content: '其他呢', metadata: { decisionRoute: 'fast_path', source: 'service_clarification', questionId: 'q', utteranceId: 10 } },
+    { kind: 'assistant_text', content: '要換價位還是種類？', metadata: { source: 'service_clarification', questionId: 'q' } },
+    { kind: 'asr_transcript', content: '其他呢', metadata: { decisionRoute: 'fast_path', utteranceId: 11 } },
+  ])).toEqual([
+    { kind: 'user_text', content: '其他呢' },
+    { kind: 'assistant_text', content: '要換價位還是種類？' },
+    { kind: 'user_text', content: '其他呢' },
+  ])
 })

@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import sourceMenu from '../../../../周氏蝦捲菜單_v2.json'
 
-import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { decideInteraction } from '../../../server/src/services/domain/kiosk-interaction-decision'
 import { createRecommendationInvitation } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -198,6 +198,7 @@ describe('staged decision through the actual ordering runtime', () => {
       chooseInvoice: method => update(chooseInvoiceMethod(snapshot!, method)),
       requestTaxId: () => update(requestTaxId(snapshot!)),
       setTaxId: value => update(setTaxIdDraft(snapshot!, value)),
+      confirmInvoice: () => update(confirmInvoiceDraft(snapshot!)),
       confirmTaxId: () => update(confirmTaxId(snapshot!)),
       selectPayment,
       cancel: () => {

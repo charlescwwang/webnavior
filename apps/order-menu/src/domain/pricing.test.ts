@@ -23,6 +23,11 @@ describe('single-dish price contract', () => {
     expect(evidence?.amounts.map(amount => amount.amount)).toEqual([minPrice, maxPrice])
     expect(evidence?.choices.find(choice => choice.id === 'RANGE')?.conditions).toEqual({ minPrice, maxPrice })
   })
+  // Report: Nov1 real-provider C05-A2 replay, retained in conversationFindings.
+  it('keeps a clause comma separate from a numeric separator', () => {
+    expect(priceEvidence('不要含牛肉，一百五十元以下的')?.choices.find(choice => choice.id === 'UPPER_INCLUSIVE')?.conditions).toEqual({ maxPrice: 150 })
+    expect(priceEvidence('不要含牛肉，100到150元')?.choices.find(choice => choice.id === 'RANGE')?.conditions).toEqual({ minPrice: 100, maxPrice: 150 })
+  })
   it.each(['一百二以下', '一百二元以下', '百二以下'])('offers shorthand bounds without assigning the comparison: %s', (text) => {
     expect(priceEvidence(text)?.choices.find(choice => choice.id === 'UPPER_INCLUSIVE')?.conditions).toEqual({ maxPrice: 120 })
     expect(priceEvidence(text)?.choices.find(choice => choice.id === 'LOWER_INCLUSIVE')?.conditions).toEqual({ minPrice: 120 })

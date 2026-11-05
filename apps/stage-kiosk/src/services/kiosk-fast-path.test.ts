@@ -641,3 +641,9 @@ describe('kiosk System One fast path', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 })
+
+// Report: Nov4 acceptance audit; recovery timeouts cannot count as semantic silence.
+it.each(['timeout', 'provider-error', 'invalid'] as const)('distinguishes failed recovery %s from recipient uncertainty', (failure) => {
+  expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'failed', failure } })).toBe(true)
+  expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'completed', admission: 'uncertain' } })).toBe(false)
+})

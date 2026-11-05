@@ -14,6 +14,8 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   base: '/kiosk/',
+  // Webnavior records ordering interactions through its own API, not AIRI cloud credits/chat sync.
+  define: { 'import.meta.env.VITE_AIRI_CLOUD_ENABLED': JSON.stringify('false') },
   optimizeDeps: {
     exclude: [
       // stage-ui's provider registry can reference DuckDB settings helpers,

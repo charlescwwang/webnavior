@@ -34,6 +34,13 @@ describe('explicit conversational query actions', () => {
     expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue' })).toMatchObject({ items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
   })
 
+  // Report: Nov1 C05-A2/C06-F3: Main restates the retained restriction.
+  it('checks restated category and ingredient conditions before continuing', async () => {
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue', category: '便當', dietary: 'vegetarian', excludeIngredients: [] })).toMatchObject({ queryAction: 'clarify' })
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', category: '點心' })).rejects.toThrow('continue cannot change')
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', excludeIngredients: ['egg'] })).rejects.toThrow('continue cannot change')
+  })
+
   it('clears only the requested price group', async () => {
     expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', clear: ['price'], excludeShown: true })).toMatchObject({ appliedPriceConditions: {}, appliedFilters: { dietary: 'vegetarian' }, items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
   })
@@ -49,13 +56,64 @@ describe('explicit conversational query actions', () => {
     expect(present).toHaveBeenCalledTimes(1)
   })
 
+  // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 live replay.
+  it('checks repeated continuation prices against retained conditions without changing them', async () => {
+    await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 150 })
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 150, limit: 3 })).toMatchObject({ queryAction: 'continue', appliedPriceConditions: { maxPrice: 150 }, items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 151 })).rejects.toThrow('continue')
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', minPrice: 0 })).rejects.toThrow('continue')
+    await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: '150' })).rejects.toThrow()
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  })
+
   it('does not accept changed conditions as continuation or an implicit action', async () => {
     await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 200 })).rejects.toThrow('continue')
     await expect(runtime.invokeForAgent('menu_recommend', {})).rejects.toThrow('action')
-    await expect(runtime.invokeForAgent('menu_get', { display: true })).rejects.toThrow('action')
+    await expect(runtime.invokeForAgent('menu_get', { display: true })).resolves.toMatchObject({ ok: false, executed: false, error: 'MENU_QUERY_ACTION_REQUIRED' })
   })
 
   it('keeps a real unmatched named lookup distinct from a generic request', async () => {
     expect(await runtime.invokeForAgent('menu_get', { query: '韭菜盒', display: false })).toMatchObject({ requestedQueries: ['韭菜盒'], items: [], availability: 'NONE' })
   })
+})
+
+// Report: Nov1 authorized refactor acceptance, budget turn2 selected SEARCH_MENU
+// with slots.more=1, but the compiler called menu_get and silently lost budget.
+it('preserves retained query conditions when the finite search choice continues browsing', async () => {
+  const runtime = createMenuToolRuntime({ menu: [
+    { ...menu[0]!, id: 'cheap', name: '入門餐', aliases: [], optionGroups: [], price: 80 },
+    { ...menu[0]!, id: 'dear', name: '特選餐', aliases: [], optionGroups: [], price: 150 },
+  ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('menu_recommend', { action: 'update', maxPrice: 100 })
+  await runtime.invoke('kiosk_fast_path_context', { transcript: '有其他的嗎' })
+  const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' }) as { items: Array<{ price: number }>, customerMessage: string, decisionTrace: { operationPlan: { toolName: string, input: unknown } } }
+  expect(result.decisionTrace.operationPlan).toMatchObject({ toolName: 'menu_recommend', input: { more: true } })
+  expect(result.items.every(item => item.price <= 100)).toBe(true)
+  expect(result.customerMessage).toMatch(/沒有|找不到|調整|條件/)
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+it('keeps an explicit full-catalog request separate from continuing retained budget browsing', async () => {
+  const runtime = createMenuToolRuntime({ menu: [
+    { ...menu[0]!, id: 'cheap', name: '入門餐', aliases: [], optionGroups: [], price: 80 },
+    { ...menu[0]!, id: 'dear', name: '特選餐', aliases: [], optionGroups: [], price: 150 },
+  ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('menu_recommend', { action: 'update', maxPrice: 100 })
+  const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '我想看全部菜單' }) as { candidates: Array<{ id: string }> }
+  expect(context.candidates.some(choice => choice.id === 'intent:search-all-menu')).toBe(true)
+  const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-all-menu' }) as { items: Array<{ id: string }> }
+  expect(result.items.map(item => item.id)).toEqual(['cheap', 'dear'])
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+// Report: semantic3 B04-J-A1; no preceding recommendation is a missing reference, not a transport failure.
+it('clarifies a continuation without usable presentation instead of inventing a recommendation or throwing', async () => {
+  const presented = vi.fn()
+  const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: presented })
+  const before = await runtime.invoke('kiosk_fast_path_context') as { revisions: unknown }
+  const result = await runtime.invokeForAgent('menu_recommend', { action: 'continue' })
+  expect(result).toMatchObject({ queryAction: 'clarify', items: [] })
+  expect(presented).not.toHaveBeenCalled()
+  expect(await runtime.invoke('kiosk_fast_path_context')).toMatchObject({ revisions: before.revisions })
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })
