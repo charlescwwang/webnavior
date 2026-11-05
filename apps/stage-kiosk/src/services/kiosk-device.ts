@@ -1,5 +1,5 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
-import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
+import type { AudioWarning, KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
@@ -134,6 +134,15 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */
 export async function fetchKioskBootstrap() {
   return await request<{ device: KioskDevice, deviceSettings: DeviceSettingsSnapshot, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadSettings: KioskVoiceVadSettings }>('/api/kiosk/bootstrap')
+}
+
+/** Best-effort device diagnostics, independent of visitor sessions and model dialogue. */
+export function reportKioskAudioWarning(warning: AudioWarning) {
+  return request<{ accepted: true }>('/api/kiosk/audio/warnings', {
+    method: 'POST',
+    body: JSON.stringify(warning),
+    signal: AbortSignal.timeout(5000),
+  })
 }
 
 /** Reads the current policy only for the device identified by its HttpOnly cookie. */

@@ -1,6 +1,7 @@
 /** Copy for the standalone ordering runtime, without loading a Vue i18n instance. */
 export const orderingMessages = {
   'zh-Hant': {
+    arrayAudio: { automatic: '開始收音時自動偵測；UMA-8 完整八聲道使用 Spatial Mask，其他麥克風使用一般收音。', geometry: '陣列幾何設定', suppressionOff: '方向抑制已停用，已切回一般收音：{reason}', mask: 'UMA-8 Spatial Mask（無 Gate）', localComparison: 'Mask 比較錄音請使用獨立驗證頁；此處不會上傳成 LCMV 音檔。', title: '陣列麥克風與比較錄音', stopToConfigure: '請先停止麥克風，再變更陣列幾何設定。', mode: '收音模式', standard: '一般麥克風（原流程）', mapping: 'MIC0..6 對應通道（0..7）', radius: '陣列半徑（mm）', front: 'mic5／mic6 之間朝向顧客；通道順序仍需現場核對。', status: '處理狀態：', recording: '錄音／保存中…', record: '錄製15秒原音與LCMV比較', sessionRequired: '請先開始測試接待，再錄製比較音訊。', comparison: '同次收音比較', raw: '原始八聲道', reference: '參考mic5原音', processed: 'LCMV處理音', download: '下載', play: '載入試聽', incomplete: '比較尚未完整（應有三個版本）' },
     quantityLimit: '每種餐點單次最多 20 份。超過上限的品項未加入，購物車原有餐點仍保留。請調整份數後再告訴我。',
     targetChoice: '請選擇其中一項：{items}。請說餐點名稱或第幾項，也可以說取消。',
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
@@ -81,6 +82,7 @@ export const orderingMessages = {
     inquiryCorrection: '了解，您是在詢問，沒有要點這道。',
   },
   'en': {
+    arrayAudio: { automatic: 'Capture automatically selects Spatial Mask for an UMA-8 with eight actual channels; other microphones use standard capture.', geometry: 'Array geometry settings', suppressionOff: 'Direction suppression is off. Standard capture restored: {reason}', mask: 'UMA-8 Spatial Mask (no Gate)', localComparison: 'Use the standalone page for Mask comparisons; these recordings are not uploaded as LCMV.', title: 'Array microphone and comparison', stopToConfigure: 'Stop the microphone before changing array geometry.', mode: 'Mode', standard: 'Standard microphone', mapping: 'MIC0..6 channels (0..7)', radius: 'Radius (mm)', front: 'Face MIC5/6 toward the customer; verify hardware channel mapping.', status: 'Status:', recording: 'Recording / saving…', record: 'Record15-second comparison', sessionRequired: 'Start a test visitor session first.', comparison: 'Same-capture audio comparison', raw: 'Raw eight-channel', reference: 'Reference MIC5', processed: 'LCMV output', download: 'Download', play: 'Load audio', incomplete: 'Incomplete comparison (three roles required)' },
     quantityLimit: 'Each item allows up to 20 servings per operation. Items exceeding the limit were not added; items already in your cart are retained. Please adjust the quantity and try again.',
     targetChoice: 'Choose one item: {items}. Say its name or position, or say cancel.',
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },

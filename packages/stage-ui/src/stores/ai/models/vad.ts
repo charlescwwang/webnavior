@@ -74,10 +74,14 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
   const minSpeechDurationMs = toRef(options.minSpeechDurationMs)
   const maxSpeechDurationS = toRef(options.maxSpeechDurationS)
 
-  async function init() {
+  let generation = 0
+  let inputMode: 'stream' | 'pcm' = 'stream'
+  async function init(mode: 'stream' | 'pcm' = 'stream') {
     if (loaded.value || loading.value || manager.value)
       return
 
+    inputMode = mode
+    const ticket = ++generation
     loading.value = true
     inferenceError.value = ''
 
@@ -90,27 +94,38 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
         maxSpeechDurationS.value,
       )
 
-      vad.value = await createVAD({
+      const created = await createVAD({
         sampleRate: 16000,
         ...vadConfig,
       })
 
+      if (ticket !== generation)
+        return
       // Set up event handlers
+      vad.value = created
       vad.value.on('speech-start', () => {
+        if (ticket !== generation)
+          return
         isSpeech.value = true
         options?.onSpeechStart?.()
       })
 
       vad.value.on('speech-end', () => {
+        if (ticket !== generation)
+          return
         isSpeech.value = false
         options?.onSpeechEnd?.()
       })
 
       vad.value.on('speech-ready', (event) => {
+        if (ticket !== generation)
+          return
         options?.onSpeechReady?.(event)
       })
 
       vad.value.on('debug', ({ data }) => {
+        if (ticket !== generation)
+          return
         if (data?.probability !== undefined) {
           isSpeechProb.value = data.probability
 
@@ -123,31 +138,41 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       })
 
       vad.value.on('status', ({ type, message }) => {
+        if (ticket !== generation)
+          return
         if (type === 'error') {
           inferenceError.value = message
         }
       })
 
-      // Create and initialize audio manager
-      const m = createVADStates(vad.value, workerUrl, {
-        minChunkSize: 512,
-        // NOTICE: VAD will have it's own audio context since
-        // it needs special sample rate and latency settings
-        audioContextOptions: {
-          sampleRate: 16000,
-          latencyHint: 'interactive',
-        },
-      })
+      if (inputMode === 'stream') {
+        // Create and initialize audio manager
+        const m = createVADStates(vad.value, workerUrl, {
+          minChunkSize: 512,
+          // NOTICE: VAD will have it's own audio context since
+          // it needs special sample rate and latency settings
+          audioContextOptions: {
+            sampleRate: 16000,
+            latencyHint: 'interactive',
+          },
+        })
 
-      await m.initialize()
-      manager.value = m
+        await m.initialize()
+        if (ticket !== generation) {
+          m.dispose()
+          return
+        }
+        manager.value = m
+      }
       loaded.value = true
     }
     catch (error) {
-      inferenceError.value = errorMessageFromValue(error)
+      if (ticket === generation)
+        inferenceError.value = errorMessageFromValue(error)
     }
     finally {
-      loading.value = false
+      if (ticket === generation)
+        loading.value = false
     }
   }
 
@@ -156,7 +181,17 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       await manager.value.start(stream)
   }
 
+  /** Already-resampled PCM, delivered serially by its owning input generation. */
+  async function processPcm(samples: Float32Array) {
+    if (inputMode !== 'pcm' || !loaded.value || !vad.value)
+      throw new Error('PCM VAD input is not initialized.')
+    if (!samples.length || samples.length > 512 || samples.some(value => !Number.isFinite(value)))
+      throw new Error('Expected at most 512 finite 16kHz PCM samples.')
+    await vad.value.processAudio(samples)
+  }
+
   function dispose() {
+    generation += 1
     manager.value?.stop()
     manager.value?.dispose()
     manager.value = undefined
@@ -213,6 +248,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
 
     init,
     start,
+    processPcm,
     dispose,
   }
 }

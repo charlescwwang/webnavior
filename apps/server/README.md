@@ -578,6 +578,13 @@ no new member-facing permanent history link or automatic membership integration.
 Device-authenticated decisions read only bounded current-session dialogue,
 never permanent archives or conversations from other visitors/devices.
 
+Device-authenticated `POST /api/kiosk/audio/warnings` records microphone
+preprocessing degradation in the existing structured Server WARN log. It accepts
+only bounded stage/channel/generation/outcome facts, derives device/site from the
+cookie, and works without an active visitor session. No dialogue, audio, customer
+notification, model invocation or database migration is involved. This is an
+operational log, not a new Admin alert dashboard or external notification service.
+
 ## Browser entrypoints
 
 Webnavior browser sign-in and the management dashboard live in `apps/stage-web`.

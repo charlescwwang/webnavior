@@ -1,0 +1,17 @@
+{
+  "sourceSha256": "5e5e7fa4d49d9b71f0b40aedf70cedf53f92d240bba4d44930488eedb6d0b32f",
+  "sampleRate": 48000,
+  "frames": 8192,
+  "seed": 20261102,
+  "fft": 1024,
+  "hop": 256,
+  "radiusMm": 44,
+  "loading": 0.03,
+  "extraSchedulingFrames": 256,
+  "binaryLayout": "little-endian; input frame-major8channels; weights bin-major7complex pairs",
+  "files": {
+    "input.f32": "cc1c620033ee889956522d44482b224642bbd81c06489fb47d87e661b0c37e8a",
+    "weights.f64": "2edaf8e0af50eb1835f60b4f3662aa0cac71d2b2b3f25c87834da3da6c556d4b",
+    "output.f32": "1b222684238d5958acf638d3f20cfc3e8ed13b25e1bf480736f9a1358c9bb451"
+  }
+}

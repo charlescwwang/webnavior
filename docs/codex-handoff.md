@@ -7,8 +7,36 @@ accumulating history.
 
 ## Current State
 
+- Nov5 SPATIAL MASK DEPLOYED and independently origin-verified.
+  Path: /home/aimax/.local/share/webnavior/releases/spatial-mask-20261105-002420
+  Code1d65731(audio/local comparison),1cf7b9f(automatic routing/VAD),ce7e977(Server
+  diagnostics). Normal commit hooks altered no files. Runtime overlays only kiosk
+  route + shared kioskAudio; Kiosk + /ui/mic-check updated, Menu/Admin/DB unchanged.
+  Automatically request ideal8CH48k/raw, observe actual Worklet channels, choose
+  Mask only for UMA-8-labelled8CH; ordinary devices restore existing track defaults.
+  Restart/device change redetect; generation + serialized constraints reject stale
+  work. Mask WITHOUT Gate→bounded Worker16kPCM→existing VAD/WAV/HTTP ASR. No Python.
+  Failure quietly falls back; operator panel diagnostics + authenticated device
+  /audio/warnings→Server WARN, no visitor/model/customer dialogue, best-effort5s.
+  Local comparison page retains LCMV and aligned15s raw48k/ref16k/mask16k downloads.
+  Admin comparison upload/UI/migration0047 remains pending in recovery checkout.
+  Release tests:35Kiosk units+2VAD+7WAV+1Server warning pass. Browser92pass,1fail,
+  6skip; CheckoutFocus scanner after unlock fails identically with unchanged Menu
+  and baseline i18n. Logs/screenshots retained, no checkout fix added. Root lint
+  11warnings0errors; one roottypes run failed in existing Electron/SDK modules.
+  Affected ESLint + Server/Kiosk types and public Kiosk/comparison builds pass.
+  Earlier synthetic oracle1e-7,1800s accelerated duration and Firefox130s transport
+  evidence retained; no human speech/real UMA-8 acceptance or provider calls.
+  User completed sudo switch. Independently verified exact API WorkingDirectory,
+  livez/readyz(DB/Redis),3198 release hashes and50 origin Menu/Kiosk/mic-check assets.
+  Evidence: release acceptance/postdeploy-verification.json. Public-browser/hardware
+  speech acceptance remain unverified; reload existing Kiosk/comparison pages.
+  Active: spatial-mask-20261105-002420; rollback payment-support-20261104-175133.
+  Release is independent of the temporary build checkout. Recovery branch synced
+  without dropping deferred Admin/media/schema changes. No experimental edits.
+
 - Nov4 PAYMENT SUPPORT DEPLOYED and independently origin-verified.
-  Active: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
+  Previous: /home/aimax/.local/share/webnavior/releases/payment-support-20261104-175133
   User completed sudo switch; independently checked exact API WorkingDirectory,
   livez/readyz(DB/Redis),3189 release hashes and47 origin Menu/Kiosk HTML/assets.
   Evidence: release acceptance/postdeploy-verification.json and /tmp/

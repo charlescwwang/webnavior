@@ -1,3 +1,4 @@
+import type { AudioWarning } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ConversationToolCall, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { Context } from 'hono'
 
@@ -12,6 +13,8 @@ import type { HonoEnv } from '../../types/hono'
 
 import { randomInt, randomUUID } from 'node:crypto'
 
+import { useLogger } from '@guiiai/logg'
+import { audioWarningSchema } from '@proj-airi/stage-shared/kiosk-audio'
 import { contextReplySchema, conversationContextSchema, conversationRequestSchema, handoffSchema, intentRecoverySchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
@@ -212,6 +215,8 @@ export interface KioskRoutesOptions {
   kioskService: KioskService
   /** Private media storage for internal POC recordings. */
   mediaService?: KioskMediaService
+  /** Structured device-warning logging boundary; defaults to the Server logger. */
+  audioWarningLogger?: (warning: AudioWarning & { deviceId: string, siteId: string }) => void
   /** Server-owned default model selection and Provider dispatch boundary. */
   llmGateway: {
     complete: (input: { abortSignal?: AbortSignal, body: Record<string, unknown>, modelName: string }) => Promise<Response>
@@ -338,6 +343,20 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       source: 'local',
       body: await c.req.json().catch(() => null),
     }))
+  })
+
+  routes.post('/audio/warnings', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const result = safeParse(audioWarningSchema, await c.req.json().catch(() => null))
+    if (!result.success)
+      throw createBadRequestError('Invalid kiosk audio warning', 'INVALID_REQUEST', result.issues)
+    // Available before any visitor session; never append to dialogue or invoke models.
+    const warning = { ...result.output, deviceId: device.id, siteId: device.siteId }
+    if (options.audioWarningLogger)
+      options.audioWarningLogger(warning)
+    else
+      useLogger('kiosk-audio').useGlobalConfig().withFields(warning).warn('Kiosk microphone preprocessing degraded')
+    return c.json({ accepted: true })
   })
 
   routes.post('/audio/transcriptions', async (c) => {
