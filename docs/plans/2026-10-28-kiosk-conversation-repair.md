@@ -11,12 +11,12 @@
 | --- | --- | --- |
 | 正式 JEV staged routing、Prompt、Main 情境與技能 | `codex/kiosk-release-20261108`；執行中的 API 15 個核心檔與81964ee逐檔相同 | 已部署；這次不改模型、不重跑推論；不代表歷次調校語意均已完整追溯 |
 | 推薦退出、魚／豬肉查詢的 discovery revision 修正 | bdefef4及後續發布分支；每輪權限仍由 runtime 檢查 | 已部署；沿用已有 iframe／泛化驗證 |
-| Admin 跨店設備目錄、排序、批次操作、設定彈窗 | 原主目錄13個檔案／差異已移入目前發布分支；保留版本頁尾、登出與唯一 worker URL | 整合後3個真瀏覽器合成 HTTP 案例、Web scoped typecheck通過；待 Web 建置／發布，非現場管理操作驗收 |
+| Admin 跨店設備目錄、排序、批次操作、設定彈窗 | 原主目錄13個檔案／差異已移入目前發布分支；保留版本頁尾、登出與唯一 worker URL | 整合後3個真瀏覽器合成 HTTP 案例、Web scoped typecheck、lint／build通過；116eccf後台已發布，origin30／public4核對通過，非現場管理操作驗收 |
 | 主目錄查無餐點提示 | 舊新增句與現行 `conversationContext.ts` 擴充規則已有語意重疊 | 不把整份舊檔覆蓋現版；其餘案例保存在主目錄未提交備份 |
 | SLM／JEV 調校實驗與採集結果 | `~/.codex/worktrees/slm-jev-experiments/webnavior`，見 `SLM_JEV_Worktree_Isolation.md` | 實驗素材仍在；既有文件明確標示未採用，不混入正式 routing |
 | V1 受限點餐政策 | `~/.codex/worktrees/kiosk-order-policy-v1/webnavior` | 未完成驗收；禁止已入車改單等規則屬另案，不混入正式助手 |
-| 菜單示範改名與其他主目錄未提交工作 | 整理前做完整檔案備份、binary patch及具名 Git stash，含未追蹤檔 | 不自動部署示範名稱或將舊檔套回新 HEAD |
-| 遠端歷史整合 | 本機 `master`／`origin/master` 記錄為f616ca4；`no_mcp` 為較舊基線；與發布分支有共同來源但歷史分岔 | 仍需以功能對照與逐項差異整合；不得用整棵舊工作樹覆蓋新版或只用 commit ancestry 推定內容遺失 |
+| 菜單示範改名與其他主目錄未提交工作 | 54個檔案、binary patch已備份；具名stash物件7b9a9fb保存原未提交與未追蹤檔 | 不自動部署示範名稱或將舊檔套回新 HEAD |
+| 遠端歷史整合 | 本機 `master`／`origin/master` 記錄為f616ca4；主目錄 `no_mcp` 已fast-forward到本次整合碼，仍與遠端歷史分岔 | 仍需以功能對照與逐項差異整合；不得用整棵舊工作樹覆蓋新版或只用 commit ancestry 推定內容遺失 |
 | 模型、custom prompt、裝置設定資料 | 設定／DB 與 Git 程式碼為不同來源 | 本次未寫入；程式檔核對不能證明所有 effective 設定相同 |
 
 Admin 元件邊界沿用已存在的實作：route只組裝畫面；`kioskDeviceManager`
@@ -25,7 +25,7 @@ Admin 元件邊界沿用已存在的實作：route只組裝畫面；`kioskDevice
 共用既有 authenticated HTTP 與204處理。沒有新增相依套件或改動JEV／API。
 
 後續每次發布須記錄來源 commit、前端各自入口 hash、API overlay hash、測試層級，
-並回填同一個 release manifest。仍在實驗 worktree 的檔案不能默認為正式版遺漏。
+並回填同一個 release manifest。本次後台116eccf、Kiosk／Menu81964ee是分開發布的正常結果，不表示JEV被回退。仍在實驗 worktree 的檔案不能默認為正式版遺漏。
 
 ## 2026-11-07 配套發布與分層驗證
 

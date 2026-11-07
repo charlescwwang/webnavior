@@ -7,17 +7,26 @@ accumulating history.
 
 ## Current State
 
-- Nov08 Admin restoration/inventory: current release branch now integrates the
-  previously uncommitted root device directory UI:13 files; multi-site filter,
-  natural/time/site sorting, per-owner batch results, accessible settings modal.
-  Existing loaded-version footer/account controls/versioned PWA worker retained.
-  No API/JEV/model/DB changes. Web scoped types and3 Chrome browser cases pass;
-  synthetic HTTP only, no live settings actions. See existing repair plan's
-  Nov08 Git/function table. Main directory will be aligned only after complete
-  file backup + named stash of all remaining tracked/untracked work; preserve
-  demo-menu rename and older context changes there, do not blindly reapply them.
-  Remote master history reconciliation is separate; do not push/reset branches
-  or merge unfinished V1/SLM experiments as part of restoring this UI.
+- Nov08 Admin restoration COMPLETE/DEPLOYED. Product commit116eccf on
+  `codex/kiosk-release-20261108`; main directory `no_mcp` was fast-forwarded to
+  the same code, clean. This following documentation-only commit records state;
+  do not confuse its HEAD with the product commit shown in the deployed UI.
+  Release `/home/aimax/.local/share/webnavior/releases/admin-restoration-20261107T173713Z-116eccf`:
+  Web only; Kiosk/Menu retain81964ee, API216097/Bridge unchanged. Origin30/public4
+  checks pass, all15 JEV/Main core files exactly unchanged. Web scoped types,
+ 3Chrome browser cases, lint/build and commit hook pass. Synthetic HTTP only;
+  no real management writes/model calls/DB settings changes or API restart.
+  Restored multi-site directory, filtering/natural/time/site sorting, per-site
+  batch receipts and accessible settings dialog; version/footer/auth/worker retained.
+  Complete root54-file backup + binary patch and hashes at
+  `/home/aimax/.local/share/webnavior/git-backups/pre-admin-integration-20261107T173431Z`;
+  named stash `preserve-root-before-admin-integration-20261108`, immutable object
+  `7b9a9fb7797864efaf190c4ea019c839addcbdb3`. Includes demo menu rename and earlier
+  mixed docs/tests/context; do not blindly pop it onto current code. Preserve
+  original audio stash and isolated SLM/V1 worktrees. Remote master/no_mcp history
+  reconciliation and push remain NOT DONE; no reset or experiment adoption.
+  Existing repair plan Nov08 table records each feature/source/validation layer.
+  Earlier bullets below are historical snapshots superseded by this release.
 
 - Public verification of 1a382f6 found Cloudflare serving Nov05 /sw.js, HIT,
   Cache-Control:max-age=14400, even with browser fetch no-cache. App entries,
