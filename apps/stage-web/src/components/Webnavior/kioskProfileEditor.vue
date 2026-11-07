@@ -260,7 +260,7 @@ function selectMotion(slot: MotionSlot, event: Event) {
       </label>
     </ExperienceEditorSection>
 
-    <ExperienceEditorSection title="互動服務" description="Kiosk 會在對話區下方內嵌此服務。">
+    <ExperienceEditorSection title="互動服務" :description="t('stage.kiosk.service-editor-description')">
       <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
         服務名稱
         <Input v-model="form.snapshot.interactiveService.title" :disabled="busy || !props.capabilities?.canEditExperience" placeholder="例如：線上點餐" />

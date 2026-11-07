@@ -7,6 +7,14 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
 
+it('does not present internal browser catalog preparation as completion of an order request', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('browser_cart_get', { ok: true, source: 'browser', dataOnly: true, customerMessage: '尚未加購的資料準備。' })
+  expect(menu.hasReceipts()).toBe(false)
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['browser_cart_get'], answer: '已加入兩份。' }, { menu, failureMessage: '未完成。' })
+  expect(result.content).not.toContain('已加入')
+})
+
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct29 cancellation -> takeout.
 it.each(['我不要便當了', '我不要便當了，哪有說我要自取'])('keeps an unresolved operation conversational without allowing an unrelated write: %s', async (transcript) => {
   const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
@@ -48,6 +56,16 @@ it('does not replace a failed or attempted write with a meaning clarification', 
   expect(result.role).toBe('error')
   expect(result.content).toBe('我還不能確認這次移除的結果。')
   expect(result).not.toHaveProperty('clarification')
+})
+
+// Report: this chat, 2026-10-29; real PB reads were discarded as unverified Menu results.
+it('presents both external browser read receipts without trusting generated prices', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('browser_search', { ok: true, source: 'browser', customerMessage: '雞腿便當，單份 NT$10。' })
+  menu.record('browser_search', { ok: true, source: 'browser', customerMessage: '排骨便當，單份 NT$10。' })
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['browser_search'], answer: '兩款都是100元。' }, { menu, failureMessage: '未完成。' })
+  expect(result.content).toBe('雞腿便當，單份 NT$10。 排骨便當，單份 NT$10。')
+  expect(result.role).toBe('assistant')
 })
 
 // Report: this chat, 2026-10-26; XCUxZDdu entries213–217 and LtPeoyq9 entries45–49.
@@ -383,4 +401,31 @@ it('renders a typed hearing check without inventing fulfillment or payment facts
   expect(reply.content).toContain('有收到您的這句話')
   expect(reply.content).not.toContain('內用')
   expect(reply.content).not.toContain('刷卡')
+})
+
+// Report: this chat, 2026-10-29; a repeated stale write hid the preceding successful quantity change.
+it('preserves verified PB effects when a later write is rejected without presenting an old cart as current', () => {
+  const replies = createMenuReplyWindow()
+  replies.record('browser_cart_quantity', { source: 'browser', ok: true, status: 'verified', effectMessage: '已將每日新品改為兩份。', customerMessage: '已改兩份。目前購物車小計50元。' })
+  expect(replies.browserOutcome()).toBe('已改兩份。目前購物車小計50元。')
+  replies.record('browser_cart_add', { source: 'browser', ok: false, status: 'rejected', customerMessage: '後一項價格已變更，未加入。' })
+  expect(replies.browserOutcome()).toBe('已將每日新品改為兩份。 後一項價格已變更，未加入。')
+  expect(replies.browserOutcome()).not.toContain('小計50元')
+})
+
+// Report: output/playwright/pb-electron/restored-S06-current-sequence.json.
+it('presents preservation as a fresh cart readback without claiming a write', () => {
+  const replies = createMenuReplyWindow()
+  replies.record('browser_cart_remove', { source: 'browser', ok: true, status: 'preserved', effect: 'none', customerMessage: '餐點維持不變。目前購物車：雞腿便當2份，小計20元。' })
+  expect(replies.browserOutcome()).toBe('餐點維持不變。目前購物車：雞腿便當2份，小計20元。')
+})
+
+// Report: this chat, 2026-10-31; configured rice inquiry was narrated with only the meal base quote.
+it('retains a verified configured-price receipt as menu evidence without inventing a cart change', () => {
+  const menu = createMenuReplyWindow()
+  const message = '雞腿便當（白飯 每份 1 個），單份 15 元，2 份合計 30 元。本次僅查價，尚未加入購物車。'
+  menu.record('browser_quote_selection', { ok: true, source: 'browser', effect: 'none', unitPrice: 15, total: 30, customerMessage: message })
+  expect(menu.hasReceipts()).toBe(true)
+  expect(menu.reply()).toBe(message)
+  expect(menu.browserOutcome()).toBeUndefined()
 })

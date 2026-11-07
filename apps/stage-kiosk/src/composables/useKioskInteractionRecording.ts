@@ -1,5 +1,6 @@
 import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { ContextReply } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ProductPresentation } from '@proj-airi/stage-shared/product-presentation'
 import type { Tool } from '@xsai/shared-chat'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
@@ -7,8 +8,10 @@ import type { GreetingPhase, InteractionMetadata } from '../../../server/src/ser
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 
 import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { productPresentationSchema } from '@proj-airi/stage-shared/product-presentation'
 import { executeTool } from '@xsai/shared-chat'
 import { rawTool } from '@xsai/tool'
+import { array, maxLength, minLength, pipe, safeParse, strictObject, string } from 'valibot'
 import { readonly, shallowRef } from 'vue'
 
 import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
@@ -28,10 +31,12 @@ interface ConversationPresentationCallbacks {
   taskId?: string
   budgetMs?: number
   onToolResult?: (toolName: string, content: string) => void
+  /** Host coverage proof; a vendor/model success flag cannot end the request. */
+  isRequestComplete?: () => boolean
   utteranceId?: number
   decisionState?: KioskConversationDecisionState
-  /** Reads this task's Menu facts; each model continuation must use a new snapshot. */
-  prepareRound?: () => Promise<{ decisionState: KioskConversationDecisionState, tools: Tool[] }>
+  /** Refreshes tools before each model round; owned Menu also supplies its current decision state. */
+  prepareRound?: () => Promise<{ decisionState?: KioskConversationDecisionState, tools: Tool[] }>
   onAssistantDelta?: (text: string) => void
   onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
   onToolRequested?: (toolName: string) => void
@@ -147,6 +152,7 @@ export function useKioskInteractionRecording() {
     const requestedTools: string[] = []
     const startedAt = performance.now()
     let rounds = 0
+    let correctionBatches = 0
     let metricTaskId = callbacks.taskId ?? callbacks.decisionState?.context?.taskId
     let agentMode: KioskAgentInteractionMode = 'active'
     let deadline: AbortSignal | undefined
@@ -196,7 +202,7 @@ export function useKioskInteractionRecording() {
         if (callbacks.prepareRound) {
           const current = await callbacks.prepareRound()
           decisionState = current.decisionState
-          metricTaskId = current.decisionState.context?.taskId ?? metricTaskId
+          metricTaskId = current.decisionState?.context?.taskId ?? metricTaskId
           toolsForTurn = [...current.tools, ...(!historyExhausted ? [historyTool] : [])]
         }
         toolsForTurn = toolsForTurn.filter(tool => !historyExhausted || tool.function.name !== 'kiosk_session_history')
@@ -215,6 +221,9 @@ export function useKioskInteractionRecording() {
       // evidence reads and named comparisons remain available after it; only a
       // new send() may admit another recommendation, including more:true.
       let recommendationPresented = false
+      // This cache belongs only to this turn's latest settled tool. A later
+      // read/draft/error invalidates it; it never authorizes another cart effect.
+      let lastBrowserWritePresentation: ProductPresentation | undefined
       await prepareRound()
       if (signal.aborted)
         return unfinished('timeout')
@@ -240,7 +249,9 @@ export function useKioskInteractionRecording() {
       // A browser-owned WebMCP tool cannot execute on the Server. Keep the
       // model credentials server-side while returning each requested call to
       // this kiosk, then resume the same persisted conversation with its result.
-      for (let round = 0; response.toolCalls.length > 0 && round < 4; round++) {
+      // Preserve the normal four batches. Only a fully acknowledged batch
+      // with no dispatched effect can earn one of two bounded repair batches.
+      for (let round = 0; response.toolCalls.length > 0 && round < 4 + correctionBatches; round++) {
         if (seenCalls.size + response.toolCalls.length > 16 || signal.aborted)
           break
         const toolResults = []
@@ -288,9 +299,17 @@ export function useKioskInteractionRecording() {
           const result = await executeTool({ captureToolErrors: true, messages: [], toolCall, tools: toolsForTurn })
           const content = serializeToolResultContent(result.message.content)
           let rejected = result.completionToolResult.isError
+          let browserFailureReceipt = false
+          lastBrowserWritePresentation = undefined
           try {
             const payload = JSON.parse(content)
             rejected ||= payload?.ok === false
+            const presentation = safeParse(productPresentationSchema, payload?.presentation)
+            if (!rejected && payload?.ok === true && payload.source === 'browser' && payload.status === 'verified' && ['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(toolCall.function.name) && presentation.success && presentation.output.cue === 'shown')
+              lastBrowserWritePresentation = presentation.output
+            browserFailureReceipt = payload?.source === 'browser' && payload?.ok === false
+              && ['unknown', 'rejected'].includes(payload.status) && typeof payload.customerMessage === 'string'
+              && toolCall.function.name.startsWith('browser_cart_')
             if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)))
               recommendationPresented = true
           }
@@ -298,7 +317,9 @@ export function useKioskInteractionRecording() {
             // Non-JSON tool prose is allowed by xsAI; only its error bit is
             // authoritative in that case, not a guessed success message.
           }
-          if (!rejected)
+          // A definitive rejection or known partial browser effect still needs
+          // its truthful customer explanation, without continuing/replaying it.
+          if (!rejected || browserFailureReceipt)
             callbacks.onToolResult?.(toolCall.function.name, content)
           batchRejected ||= Boolean(rejected)
           callbacks.onToolActivity?.(toolCall.function.name, rejected ? 'error' : 'done')
@@ -321,8 +342,11 @@ export function useKioskInteractionRecording() {
         // continuation that could replace it with a guessed search or answer.
         const scopeQuestion = toolResults.some((result) => {
           try {
-            const purpose = JSON.parse(result.content)?.pendingCustomerChoice?.purpose
-            return purpose === 'menu-query-scope' || (result.name === 'menu_confirm_item' && purpose === 'confirm-meal')
+            const payload = JSON.parse(result.content)
+            const purpose = payload?.pendingCustomerChoice?.purpose
+            return (result.name.startsWith('browser_') && payload?.source === 'browser' && ['browser-product-choice', 'browser-confirm-add'].includes(purpose))
+              || purpose === 'menu-query-scope' || (result.name === 'menu_confirm_item' && purpose === 'confirm-meal')
+              || ((result.name.startsWith('browser_cart_') || result.name === 'browser_product_get') && payload?.source === 'browser' && payload.status === 'clarification' && payload.effect === 'none')
           }
           catch { return false }
         })
@@ -337,6 +361,22 @@ export function useKioskInteractionRecording() {
           for (const result of toolResults)
             await append('tool_result', result.content, { name: result.name })
           return unfinished('tool-rejected')
+        }
+        if (callbacks.isRequestComplete?.()) {
+          // Persist every result before ending the loop. This shortcut requires
+          // Host proof of whole-utterance coverage, not merely one tool success.
+          for (const result of toolResults)
+            await append('tool_result', result.content, { name: result.name })
+          return { agentMode, requestedTools, status: 'completed' }
+        }
+        if (correctionBatches < 2 && toolResults.length && toolResults.every((result) => {
+          try {
+            const payload = JSON.parse(result.content)
+            return result.name.startsWith('browser_cart_') && payload?.source === 'browser' && payload.ok === true && payload.status === 'proposal_rejected' && payload.effect === 'none' && payload.dataOnly === true
+          }
+          catch { return false }
+        })) {
+          correctionBatches++
         }
         // Inquiry authority survives its read receipts. Mutation tasks keep the
         // existing first-request-only snapshot: their tools may change checkout
@@ -362,6 +402,32 @@ export function useKioskInteractionRecording() {
         // Persist the rejected receipt, but do not let generated success prose
         // or another automatic tool round conceal an unaccepted operation.
       }
+      if (response.toolCalls.length && !control.manual && !signal.aborted && lastBrowserWritePresentation?.products.length && seenCalls.size + response.toolCalls.length <= 16 && new Set(response.toolCalls.map(call => call.id)).size === response.toolCalls.length) {
+        // A verified write already displayed these exact products. A final
+        // model cue (sometimes using the official name instead of its ref) is
+        // redundant, not another purchase or proof that other requests finished.
+        // Acknowledge only this no-effect case: mixed writes, new products and
+        // malformed calls keep the ordinary budget failure below.
+        const shown = new Set(lastBrowserWritePresentation.products.flatMap(product => [product.ref, product.name]))
+        const redundant = response.toolCalls.every((call) => {
+          if (seenCalls.has(call.id) || call.function.name !== 'browser_present' || !toolsForTurn.some(tool => tool.function.name === call.function.name))
+            return false
+          try {
+            const args = safeParse(strictObject({ productRefs: pipe(array(string()), minLength(1), maxLength(10)) }), JSON.parse(call.function.arguments))
+            return args.success && args.output.productRefs.every(ref => shown.has(ref))
+          }
+          catch { return false }
+        })
+        if (redundant) {
+          for (const call of response.toolCalls) {
+            requestedTools.push(call.function.name)
+            seenCalls.add(call.id)
+            await append('tool_result', JSON.stringify({ ok: true, source: 'host', dataOnly: true, alreadyPresented: true, toolCallId: call.id, products: lastBrowserWritePresentation.products }), { name: call.function.name, source: 'host_presentation_dedup' })
+            callbacks.onToolActivity?.(call.function.name, 'done')
+          }
+          return { agentMode, requestedTools, status: 'completed' }
+        }
+      }
       if (response.toolCalls.length)
         return unfinished(control.manual ? 'manual-control' : signal.aborted ? 'timeout' : 'tool-limit')
       return { answer: response.answer, reply: response.reply, agentMode, requestedTools, status: 'completed' }
@@ -378,7 +444,7 @@ export function useKioskInteractionRecording() {
       // Record orchestration latency (models, context refresh and browser tools),
       // separately from provider-round timing. Never attach an old turn to a new visitor.
       if (visitorSessionId.value === sessionId)
-        await append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics' })
+        await append('service_event', JSON.stringify({ kind: 'main_task_metrics', ...(metricTaskId ? { taskId: metricTaskId } : {}), ...(terminalReason ? { reason: terminalReason, failureStage: stage } : {}), durationMs: performance.now() - startedAt, modelRounds: rounds, requestedToolCount: requestedTools.length, interrupted: control.manual || control.controller.signal.aborted || deadline?.aborted === true || callbacks.signal?.aborted === true }), { source: 'main_task_metrics', utteranceId: callbacks.utteranceId })
       // An older cancelled turn cannot release its replacement's controls.
       if (activeControl === control) {
         activeControl = undefined

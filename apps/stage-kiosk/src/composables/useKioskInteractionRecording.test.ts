@@ -18,6 +18,23 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat, 2026-10-29; PB exposes browser facts, not owned Menu state.
+  it('runs external browser tools without inventing Menu decision state', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-browser', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'pb-read', type: 'function', function: { name: 'browser_observe', arguments: '{}' } }] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '畫面上有雞腿便當。' })
+    const observe = vi.fn(async () => ({ source: 'browser', products: ['雞腿便當'] }))
+    const tool = rawTool({ name: 'browser_observe', description: 'Read the current external page', parameters: { type: 'object', properties: {} }, execute: observe })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '看一下雞腿便當', [tool], { prepareRound: async () => ({ tools: [tool] }) })
+      expect(result).toMatchObject({ status: 'completed', requestedTools: ['browser_observe'] })
+      expect(observe).toHaveBeenCalledTimes(1)
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[0]![0]).not.toHaveProperty('decisionState')
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0].toolResults[0].content).toContain('雞腿便當')
+    }
+    finally { scope.stop() }
+  })
   // Report: this chat, 2026-10-26; XCUxZDdu entries236–365 contain 44 zero-round tasks.
   it('reports missing Menu context separately before any model request', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'missing-menu-context', state: 'active' } })
@@ -344,6 +361,136 @@ describe('useKioskInteractionRecording', () => {
     scope.stop()
   })
 
+  it('presents a truthful partial browser failure receipt without continuing or retrying it', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-partial', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'replace', type: 'function', function: { name: 'browser_cart_replace', arguments: '{}' } }] })
+    const payload = { ok: false, source: 'browser', status: 'unknown', partial: true, customerMessage: '新餐已加入，原餐移除尚未確認，暫停代操作。' }
+    const execute = vi.fn(async () => payload)
+    const tool = rawTool({ name: 'browser_cart_replace', description: 'Replace', parameters: { type: 'object', properties: {} }, execute })
+    const onToolResult = vi.fn()
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '改另一份', [tool], { onToolResult })).toMatchObject({ status: 'incomplete', reason: 'tool-rejected' })
+      expect(onToolResult).toHaveBeenCalledWith('browser_cart_replace', JSON.stringify(payload))
+      expect(execute).toHaveBeenCalledTimes(1)
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: this chat, 2026-10-30; actual D01 omitted selection.version before dispatch.
+  it('allows a confirmed pre-dispatch argument correction while preserving the normal tool-round budget', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-argument-repair', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'missing-version', type: 'function', function: { name: 'browser_cart_add', arguments: '{"version":"cart"}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'corrected-version', type: 'function', function: { name: 'browser_cart_add', arguments: '{"version":"cart","selection":{"version":"configuration"}}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const execute = vi.fn(async (input: Record<string, unknown>) => input.selection
+      ? { ok: true, source: 'browser', status: 'verified', customerMessage: '已加入一份。' }
+      : { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, error: 'Missing selection.version' })
+    const tool = rawTool({ name: 'browser_cart_add', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '每日新品一份', [tool])).toMatchObject({ status: 'completed' })
+      expect(execute).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(3)
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0].toolResults[0].content).toContain('proposal_rejected')
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[2]![0].toolResults[0].content).toContain('verified')
+    }
+    finally { scope.stop() }
+  })
+
+  it('finishes a bounded pre-dispatch correction after the four normal tool batches', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-late-repair', state: 'active' } })
+    const call = (id: string, name: string, argumentsValue = '{}') => ({ id, type: 'function', function: { name, arguments: argumentsValue } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('cart', 'browser_cart_get')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('products', 'browser_product_get')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('first', 'browser_cart_add', '{"part":"first"}')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('incomplete', 'browser_cart_add', '{"part":"missing"}')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('corrected', 'browser_cart_add', '{"part":"corrected"}')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const vendorWrite = vi.fn()
+    const tools = ['browser_cart_get', 'browser_product_get', 'browser_cart_add'].map(name => rawTool({ name, description: name, parameters: { type: 'object', properties: {} }, execute: async (input: Record<string, unknown>) => {
+      if (name !== 'browser_cart_add')
+        return { ok: true, source: 'browser', dataOnly: true }
+      if (input.part === 'missing')
+        return { ok: true, source: 'browser', status: 'proposal_rejected', dataOnly: true, effect: 'none' }
+      vendorWrite()
+      return { ok: true, source: 'browser', status: 'verified' }
+    } }))
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '今日餐甲、今日餐乙各一份', tools)).toMatchObject({ status: 'completed' })
+      expect(vendorWrite).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(6)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: output/playwright/pb-electron/restored-S04-split-add.json, Nov3.
+  it.each(['already-shown', 'different-product', 'another-write', 'mixed'] as const)('settles only a redundant final product cue after four successful batches (%s)', async (mode) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-final-cue', state: 'active' } })
+    const call = (id: string, name: string, args = '{}') => ({ id, type: 'function', function: { name, arguments: args } })
+    const present = call('final-cue', 'browser_present', JSON.stringify({ productRefs: [mode === 'different-product' ? '另一餐' : '排骨便當'] }))
+    const write = call('extra-write', 'browser_cart_add')
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('observe', 'browser_observe')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('config', 'browser_product_get')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('plain', 'browser_cart_add')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [call('rice', 'browser_cart_add')] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: mode === 'another-write' ? [write] : mode === 'mixed' ? [present, write] : [present] })
+    const cue = vi.fn()
+    const writeMeal = vi.fn(async () => ({ ok: true, source: 'browser', status: 'verified', customerMessage: '目前三份，其中一份加飯。', presentation: { products: [{ ref: 'p-current', name: '排骨便當' }], cue: 'shown' } }))
+    const tools = ['browser_observe', 'browser_product_get', 'browser_cart_add', 'browser_present'].map(name => rawTool({ name, description: name, parameters: { type: 'object', properties: {} }, execute: name === 'browser_cart_add' ? writeMeal : name === 'browser_present' ? cue : async () => ({ ok: true, source: 'browser', dataOnly: true }) }))
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '三份排骨便當，其中一份加飯', tools)).toMatchObject(mode === 'already-shown' ? { status: 'completed' } : { status: 'incomplete', reason: 'tool-limit' })
+      expect(writeMeal).toHaveBeenCalledTimes(2)
+      expect(cue).not.toHaveBeenCalled()
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(5)
+      const acknowledgements = kioskApi.appendKioskInteraction.mock.calls.filter(([entry]) => entry.kind === 'tool_result' && entry.metadata?.name === 'browser_present')
+      expect(acknowledgements).toHaveLength(mode === 'already-shown' ? 1 : 0)
+    }
+    finally { scope.stop() }
+  })
+
+  it('stops after at most two extra confirmed no-effect correction batches', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-bounded-repair', state: 'active' } })
+    let id = 0
+    kioskApi.streamKioskConversationMessage.mockImplementation(async () => ({ agentMode: 'active', toolCalls: [{ id: `repair-${id++}`, type: 'function', function: { name: 'browser_cart_add', arguments: '{}' } }] }))
+    const execute = vi.fn(async () => ({ ok: true, source: 'browser', status: 'proposal_rejected', dataOnly: true, effect: 'none' }))
+    const tool = rawTool({ name: 'browser_cart_add', description: 'Add', parameters: { type: 'object', properties: {} }, execute })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '每日新品一份', [tool])).toMatchObject({ status: 'incomplete', reason: 'tool-limit' })
+      expect(execute).toHaveBeenCalledTimes(6)
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(7)
+    }
+    finally { scope.stop() }
+  })
+
+  it('ends a browser target clarification before the model can guess another cart target', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'pb-scope', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'guess', type: 'function', function: { name: 'browser_cart_add', arguments: '{}' } }] })
+    const payload = { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '請問您要哪一項？尚未加入。' }
+    const tool = rawTool({ name: 'browser_cart_add', description: 'Add', parameters: { type: 'object', properties: {} }, execute: async () => payload })
+    const scope = effectScope()
+    const onToolResult = vi.fn()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '我要一份便當', [tool], { onToolResult })).toMatchObject({ status: 'completed' })
+      expect(onToolResult).toHaveBeenCalledWith('browser_cart_add', JSON.stringify(payload))
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+    }
+    finally { scope.stop() }
+  })
+
   // Report: attachment a553fda2; the stored menu_get request followed a rejected phone skip and never executed.
   it('reports the rejected stale phone operation instead of executing the subsequent hotpot lookup', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'hotpot-rejection', state: 'active' } })
@@ -563,4 +710,25 @@ describe('useKioskInteractionRecording', () => {
     expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].toolResults).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'kiosk_session_history', content: expect.stringContaining('最早說想吃水餃') })]))
     scope.stop()
   })
+})
+
+// Report: this chat, Nov1: avoid a final prose model round only when Host has
+// established that the whole original request is covered by verified effects.
+it.each([true, false])('ends on verified Host coverage, otherwise continues Main (%s)', async (covered) => {
+  kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'single-edit', state: 'active' } })
+  kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'edit', type: 'function', function: { name: 'browser_cart_remove', arguments: '{}' } }] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: 'done' })
+  const tool = rawTool({ name: 'browser_cart_remove', description: 'Remove', parameters: { type: 'object', properties: {} }, execute: async () => ({ ok: true, source: 'browser', status: 'verified' }) })
+  let complete = false
+  const scope = effectScope()
+  try {
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    const result = await recording.send('ordering', '移除原餐', [tool], { onToolResult: () => {
+      complete = covered
+    }, isRequestComplete: () => complete })
+    expect(result?.status).toBe('completed')
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(covered ? 1 : 2)
+    if (covered)
+      expect(kioskApi.appendKioskInteraction.mock.calls.some(([entry]) => entry.kind === 'tool_result' && entry.metadata?.name === 'browser_cart_remove')).toBe(true)
+  }
+  finally { scope.stop() }
 })

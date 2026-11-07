@@ -23,7 +23,30 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
+  information-unavailable: The current page does not provide enough information to verify that condition. I can describe the available menu information.
+  product-presentation:
+    title: Featured products
+    completed: Change verified
+    unavailable: Cannot locate these verified products in the current PB view
+    price: 'From {price}'
+    capability-unavailable: This ordering service has no Jev candidate interface. Handed to the assistant.
+  cart-handoff:
+    reset-description: End this reception and discard unsubmitted drafts. The website cart and shared login remain; unfinished items require staff review before another customer can change them.
+    title: External cart handoff
+    required: An unfinished cart needs staff review before assisted changes can continue. Menu queries and manual use remain available.
+    explanation: Resume only after confirming this is the same in-progress cart. A new visitor never clears old items or unlocks an uncertain operation.
+    prepare: Prepare this visitor session
+    inspect: Review current cart
+    total: 'Current subtotal: {amount}'
+    reviewed: I have checked that this is the same cart to continue in this session
+    resume: Resume this reviewed cart
+    changed: The page or visitor changed. Review the cart again.
+    unknown: A previous operation is uncertain. Handoff review cannot unlock it.
+    failed: Cannot verify the cart. Review it again later.
+  native-view-failed: The service screen could not load. Ask staff to check the connection and reopen it.
+  service-editor-description: Choose the website shown on the kiosk, then publish the saved experience. An admin preview does not verify login or assistant controls; check those on the device.
   service-recovery:
+    browser-unavailable: The ordering page data is unavailable. No action was taken. Please retry later or use the screen.
     queued: Received. Waiting for the previous request to finish…
     confirming: Checking what you mean…
     still-confirming: Still checking, please wait…
@@ -40,6 +63,8 @@ kiosk:
   wait:
     recognizing: Understanding your request…
     confirming: Checking your request…
+    operating: Working on your request on screen…
+    receipt: Sure, let me check that for you.
     spoken: Let me check that for you. One moment, please.
   decision-trace:
     copy: Copy full trace

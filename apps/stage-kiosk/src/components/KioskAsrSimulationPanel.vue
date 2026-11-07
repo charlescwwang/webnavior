@@ -7,6 +7,7 @@ import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
+  compact?: boolean
   status?: string
   trace?: string
   timing?: FastPathTiming
@@ -53,7 +54,7 @@ function simulate() {
 </script>
 
 <template>
-  <section class="simulation-section">
+  <section :class="['simulation-section', { 'is-compact': props.compact }]">
     <h3>測試用：模擬 ASR 辨識結果</h3>
     <p class="simulation-description">
       不使用麥克風或 ASR；會直接把這段文字交給與正式語音相同的 System One、候選操作與 互動服務工具流程。可能操作目前購物車，請只在測試時使用。
@@ -102,6 +103,9 @@ function simulate() {
 
 <style scoped>
 .simulation-section { display: grid; gap: .8rem; border: 1px solid rgb(120 225 209 / 32%); border-radius: 1rem; padding: 1rem; background: rgb(18 82 80 / 22%); }
+.simulation-section.is-compact { gap: .45rem; padding: .5rem; }
+.is-compact .simulation-description { display: none; }
+.is-compact .simulation-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
 .simulation-section h3, .simulation-description, .simulation-status { margin: 0; }
 .simulation-section h3 { font-size: .95rem; }
 .simulation-description { color: rgb(217 250 246 / 74%); font-size: .84rem; line-height: 1.5; }

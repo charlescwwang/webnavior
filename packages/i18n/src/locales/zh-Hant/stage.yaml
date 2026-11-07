@@ -23,7 +23,30 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  information-unavailable: 目前網頁資料不足以確認這項條件，我可以幫您介紹已提供的餐點資訊。
+  product-presentation:
+    title: 正在介紹的餐點
+    completed: 已核對完成
+    unavailable: PB 畫面暫無法定位，以下為已查證商品
+    price: '{price} 元起'
+    capability-unavailable: 目前點餐服務未提供 Jev 候選介面，已交給 AI 助手處理。
+  cart-handoff:
+    reset-description: 結束本次接待並清除未送出的草稿，保留網站購物車與共用登入。未完成餐點須由現場人員確認交接後，才能讓下一位客人代操作。
+    title: 外站購物車交接
+    required: 目前有尚未完成交接的餐點，已暫停代操作。仍可查詢菜單或直接操作畫面，請由現場人員確認後繼續。
+    explanation: 只在確認仍為同一筆餐點時恢復；開始新客人不會清空舊餐點，也不會解除結果不明的操作。
+    prepare: 準備本次接待
+    inspect: 檢視目前購物車
+    total: '目前小計：{amount} 元'
+    reviewed: 我已確認這是本次要繼續操作的同一筆餐點
+    resume: 確認後繼續這筆餐點
+    changed: 畫面或接待已變更，請重新檢視。
+    unknown: 先前操作結果尚未確認，不能以交接確認解除暫停。
+    failed: 無法確認購物車，請稍後重新檢視。
+  native-view-failed: 服務畫面暫時無法載入，請工作人員檢查連線後重新開啟。
+  service-editor-description: 設定機台要顯示的網站，儲存後需發布。管理頁預覽不代表登入或助手操作已可用，請在機台驗證。
   service-recovery:
+    browser-unavailable: 目前無法取得完整點餐網頁資料，尚未執行操作，請稍後重試或直接使用畫面。
     queued: 已收到，正在等待前一項處理完成…
     confirming: 正在確認您的意思…
     still-confirming: 還在確認，請稍候…
@@ -40,6 +63,8 @@ kiosk:
   wait:
     recognizing: 正在辨識您的需求…
     confirming: 正在確認您的需求…
+    operating: 正在依照您的需求操作畫面…
+    receipt: 好，我幫您確認。
     spoken: 我幫您確認一下，請稍候。
   decision-trace:
     copy: 複製完整 trace

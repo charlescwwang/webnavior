@@ -9,10 +9,20 @@ interface WaitSpeechOptions {
   play: (audio: Blob, turn: KioskInteractionTurn, signal: AbortSignal) => Promise<void>
 }
 
+/** One input's fixed-text preparation; claiming transfers cancellation to its service turn. */
+export interface PreparedWaitSpeech {
+  readonly text: string
+  readonly locale: string
+  readonly ready: Promise<boolean>
+  claim: (signal: AbortSignal) => Promise<Blob | undefined>
+  /** Releases only unclaimed preparation; it cannot cancel an adopted order turn. */
+  dispose: () => void
+}
+
 /**
- * One optional acknowledgement per admitted Agent turn. Synthesis starts in
- * parallel with model work; playback waits one second to avoid speaking over
- * quick results. Cancelling this output never cancels its parent order task.
+ * One acknowledgement per admitted service turn, shared across Jev/Main.
+ * Receipt audio plays when ready; ordinary waiting audio retains its one-second
+ * grace period. Cancelling this output never cancels its parent order task.
  */
 export function useKioskWaitSpeech(options: WaitSpeechOptions) {
   let active: {
@@ -24,6 +34,34 @@ export function useKioskWaitSpeech(options: WaitSpeechOptions) {
     turn: KioskInteractionTurn
   } | undefined
   let lastTurnId: number | undefined
+  const preparations = new Set<() => void>()
+
+  function prepare(text: string, locale: string): PreparedWaitSpeech {
+    const controller = new AbortController()
+    let claimed = false
+    const pending = options.synthesize({ text, locale, signal: controller.signal }).then(audio => controller.signal.aborted ? undefined : audio, () => undefined)
+    const dispose = () => {
+      if (!claimed)
+        controller.abort()
+      preparations.delete(dispose)
+    }
+    preparations.add(dispose)
+    return {
+      text,
+      locale,
+      ready: pending.then(audio => Boolean(audio)),
+      claim(signal) {
+        if (claimed || controller.signal.aborted || signal.aborted)
+          return Promise.resolve(undefined)
+        claimed = true
+        preparations.delete(dispose)
+        const abort = () => controller.abort()
+        signal.addEventListener('abort', abort, { once: true })
+        return pending.finally(() => signal.removeEventListener('abort', abort))
+      },
+      dispose,
+    }
+  }
 
   const { start: startDelay, stop: stopDelay } = useTimeoutFn(() => {
     if (!active)
@@ -58,7 +96,7 @@ export function useKioskWaitSpeech(options: WaitSpeechOptions) {
     }
   }
 
-  function start(turn: KioskInteractionTurn, text: string, locale: string) {
+  function start(turn: KioskInteractionTurn, text: string, locale: string, mode: 'receipt' | 'waiting' = 'waiting', prepared?: PreparedWaitSpeech) {
     if (turn.signal.aborted || lastTurnId === turn.id)
       return
     finish()
@@ -67,18 +105,25 @@ export function useKioskWaitSpeech(options: WaitSpeechOptions) {
     const request = {
       audio: undefined as Blob | undefined,
       controller: new AbortController(),
-      elapsed: false,
+      elapsed: mode === 'receipt',
       playing: false,
       removeAbortListener: () => turn.signal.removeEventListener('abort', abort),
       turn,
     }
     active = request
     turn.signal.addEventListener('abort', abort, { once: true })
-    startDelay()
+    if (!request.elapsed)
+      startDelay()
     // Deliberately not awaited by the Agent. Text progress remains available
     // when speech is disabled, fails, or arrives after the final result.
-    void options.synthesize({ locale, text, signal: request.controller.signal }).then((audio) => {
-      if (active !== request || request.controller.signal.aborted)
+    // A locale/text change while deciding invalidates the preparation. Its
+    // audio is input-local and never reused for a different customer request.
+    const matches = prepared?.text === text && prepared.locale === locale
+    if (prepared && !matches)
+      prepared.dispose()
+    const pending = matches ? prepared.claim(request.controller.signal) : options.synthesize({ locale, text, signal: request.controller.signal })
+    void pending.then((audio) => {
+      if (active !== request || request.controller.signal.aborted || !audio)
         return
       request.audio = audio
       void playReady(request)
@@ -88,6 +133,10 @@ export function useKioskWaitSpeech(options: WaitSpeechOptions) {
     })
   }
 
-  onScopeDispose(() => finish())
-  return { start, finish }
+  onScopeDispose(() => {
+    finish()
+    for (const dispose of preparations)
+      dispose()
+  })
+  return { prepare, start, finish }
 }

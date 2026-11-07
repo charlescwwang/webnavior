@@ -2,6 +2,7 @@ import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } fro
 import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
+import type { AnswerDecision, BrowserAnswer, BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
@@ -155,6 +156,21 @@ export async function startKioskVisitorSession(serviceId: string) {
     method: 'POST',
     body: JSON.stringify({ serviceId }),
   })
+}
+
+/** Read-only finite semantic check; the browser still owns every vendor effect. */
+export async function decideBrowserEffect(visitorSessionId: string, proposal: BrowserEffect, signal?: AbortSignal) {
+  return request<EffectDecision>(`/api/kiosk/visitor-sessions/${visitorSessionId}/browser-effect`, { method: 'POST', body: JSON.stringify(proposal), signal })
+}
+
+/** Consumes a Server-issued plan; contextual/multi-row targets also receive bounded semantic verification. */
+export async function admitBrowserPlan(visitorSessionId: string, plan: BrowserPlan, signal?: AbortSignal) {
+  return request<EffectDecision>(`/api/kiosk/visitor-sessions/${visitorSessionId}/browser-plan`, { method: 'POST', body: JSON.stringify(plan), signal })
+}
+
+/** Resolves a short answer against a previously recorded Host question only. */
+export async function decideBrowserAnswer(visitorSessionId: string, answer: BrowserAnswer, signal?: AbortSignal) {
+  return request<AnswerDecision>(`/api/kiosk/visitor-sessions/${visitorSessionId}/browser-answer`, { method: 'POST', body: JSON.stringify(answer), signal })
 }
 
 /** Adds an ordered transcript turn or interaction lifecycle record to a visitor session. */

@@ -79,9 +79,11 @@ onUnmounted(clearHoldTimer)
 
   <Teleport to="body">
     <div v-if="pinPromptOpen" class="admin-backdrop" data-kiosk-admin-control @click.self="closePrompt">
-      <form class="pin-dialog" @submit.prevent="unlockAdmin">
+      <form class="pin-dialog" role="dialog" aria-modal="true" aria-labelledby="kiosk-admin-pin-title" @submit.prevent="unlockAdmin">
         <span class="pin-kicker">管理員模式</span>
-        <h2>輸入 PIN</h2>
+        <h2 id="kiosk-admin-pin-title">
+          輸入 PIN
+        </h2>
         <p>請輸入管理員 PIN 以調整 Kiosk 設定。</p>
         <input v-model="pin" type="password" inputmode="numeric" autocomplete="off" autofocus>
         <p v-if="pinError" class="pin-error">
@@ -102,7 +104,8 @@ onUnmounted(clearHoldTimer)
 
 <style scoped>
 .admin-trigger { border: 0; font: inherit; text-align: inherit; cursor: default; }
-.admin-backdrop { position: fixed; z-index: 29; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / 58%); backdrop-filter: blur(.35rem); }
+/* PIN input owns focus above diagnostics (40–75) and the administrator hold target (100). */
+.admin-backdrop { position: fixed; z-index: 110; inset: 0; display: grid; place-items: center; background: rgb(0 0 0 / 58%); backdrop-filter: blur(.35rem); }
 .pin-dialog { display: grid; width: min(24rem, calc(100vw - 2rem)); gap: .8rem; border: 1px solid rgb(255 255 255 / 18%); border-radius: 1.25rem; padding: 1.4rem; color: #ecfffb; background: #0d2225; box-shadow: 0 2rem 7rem rgb(0 0 0 / 52%); }
 .pin-kicker { color: #8bd9cb; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
 .pin-dialog h2, .pin-dialog p { margin: 0; }

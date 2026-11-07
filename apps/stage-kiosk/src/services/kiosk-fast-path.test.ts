@@ -606,7 +606,7 @@ describe('kiosk System One fast path', () => {
       webMcp: { execute, tools: [] },
     })
     expect(result.kind).toBe('NEEDS_ASSISTANT')
-    expect(result.reason).toBe('SYSTEM_ONE_DISABLED')
+    expect(result.reason).toBe('SERVICE_CAPABILITY_UNAVAILABLE')
     expect(decide).not.toHaveBeenCalled()
     expect(execute).not.toHaveBeenCalled()
   })

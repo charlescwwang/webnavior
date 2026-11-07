@@ -4,6 +4,16 @@ import { effectScope } from 'vue'
 import { useKioskDecisionProgress } from './useKioskDecisionProgress'
 
 afterEach(() => vi.useRealTimers())
+
+// Report: output/playwright/pb-electron/reception-fix-read-diagnostic-2.json.
+it('labels unavailable PB context as a website failure rather than an uncertain model decision', () => {
+  const scope = effectScope()
+  const progress = scope.run(useKioskDecisionProgress)!
+  progress.start(1, 'simulation')
+  progress.finish(1, { kind: 'UNAVAILABLE', browserContextError: 'PB cart unavailable' })
+  expect(progress.state.value).toMatchObject({ pending: false, messageKey: 'browser-unavailable', retryable: true })
+  scope.stop()
+})
 it('shows text receipt immediately, extends after five seconds, and settles uncertainty', async () => {
   vi.useFakeTimers()
   const scope = effectScope()

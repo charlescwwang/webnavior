@@ -37,6 +37,7 @@ const props = defineProps<{
   serviceRecovering?: boolean
   streamingAssistantMessage?: ChatHistoryItem
   voiceConversationOnly: boolean
+  textConsoleTarget?: string
 }>()
 
 const emit = defineEmits<{
@@ -174,6 +175,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     </p>
     <KioskTextConsole
       v-else
+      :dock-target="props.textConsoleTarget"
       :status="props.fastPathSimulationStatus"
       :trace="props.fastPathSimulationTrace"
       :timing="props.fastPathSimulationTiming"

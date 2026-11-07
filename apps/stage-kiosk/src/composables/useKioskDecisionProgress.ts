@@ -6,7 +6,7 @@ import { onScopeDispose, readonly, shallowRef } from 'vue'
 
 interface Progress {
   utteranceId: number
-  messageKey: 'confirming' | 'still-confirming' | 'processing' | 'ignored' | 'uncertain' | 'failed'
+  messageKey: 'confirming' | 'still-confirming' | 'processing' | 'ignored' | 'uncertain' | 'failed' | 'browser-unavailable'
   pending: boolean
   retryable: boolean
   elapsedMs: number
@@ -63,12 +63,17 @@ export function useKioskDecisionProgress() {
       active.admitted = event.status === 'completed' && event.admission === 'service'
       update()
     },
-    finish(id: number, result: Pick<FastPathResult, 'kind' | 'reason' | 'recovery'>) {
+    finish(id: number, result: Pick<FastPathResult, 'kind' | 'reason' | 'recovery' | 'browserContextError'>) {
       if (active?.id !== id)
         return
       stop()
       recovering.value = undefined
       if (['IGNORE', 'UNAVAILABLE', 'INCOMPLETE'].includes(result.kind) && (active.source === 'simulation' || active.admitted)) {
+        if (result.browserContextError) {
+          state.value = { utteranceId: id, pending: false, elapsedMs: Date.now() - active.startedAt, messageKey: 'browser-unavailable', retryable: true }
+          active = undefined
+          return
+        }
         const failed = result.kind === 'UNAVAILABLE' && (Boolean(result.recovery?.failure) || ['PROVIDER_FAILURE', 'INVALID_CHOICE', 'CANDIDATE_BUDGET'].includes(result.reason ?? ''))
         state.value = { utteranceId: id, pending: false, elapsedMs: Date.now() - active.startedAt, messageKey: failed ? 'failed' : result.kind === 'IGNORE' ? 'ignored' : 'uncertain', retryable: failed }
       }

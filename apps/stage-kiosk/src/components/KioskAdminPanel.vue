@@ -123,7 +123,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
       <section class="admin-section">
         <h3>顧客接待</h3>
         <p class="session-description">
-          清除目前匿名顧客的對話與購物車，回到等待下一位顧客的畫面。
+          {{ interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_customer_reset') ? t('stage.kiosk.cart-handoff.reset-description') : '清除目前匿名顧客的對話與購物車，回到等待下一位顧客的畫面。' }}
         </p>
         <button type="button" class="end-session-button" :disabled="props.sessionEnding" @click="emit('endSession')">
           {{ props.sessionEnding ? '正在結束目前接待…' : '結束目前接待' }}

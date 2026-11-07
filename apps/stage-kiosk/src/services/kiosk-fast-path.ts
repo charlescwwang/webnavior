@@ -36,6 +36,8 @@ export interface FastPathTiming {
 export type { KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
 export type FastPathResult = {
+  /** Local browser evidence failed before semantic admission; never a model verdict. */
+  browserContextError?: string
   handoff?: ConversationHandoff
   recovery?: ServiceRecovery
   decisionState?: FastPathDecisionState
@@ -58,7 +60,7 @@ export type FastPathResult = {
 
 /** Only failed service decisions warrant a retry prompt; social uncertainty stays silent. */
 export function shouldShowDecisionRetry(result: FastPathResult): boolean {
-  return result.kind === 'UNAVAILABLE' && (result.reason === 'PROVIDER_FAILURE' || result.reason === 'INVALID_CHOICE' || result.reason === 'CANDIDATE_BUDGET' || result.reason === 'SYSTEM_ONE_DISABLED')
+  return result.kind === 'UNAVAILABLE' && (Boolean(result.browserContextError) || result.reason === 'PROVIDER_FAILURE' || result.reason === 'INVALID_CHOICE' || result.reason === 'CANDIDATE_BUDGET' || result.reason === 'SYSTEM_ONE_DISABLED')
 }
 
 /** Owns checkpoint admission for one decision, never execution or transcript admission. */
@@ -128,6 +130,12 @@ interface WebMcpBridge {
   tools: readonly ServiceTool[]
 }
 
+/** Application-owned finite choices; vendor adapters do not impersonate Menu tools. */
+export interface FastPathSource {
+  context: (input: Record<string, unknown>) => Promise<unknown>
+  execute: (input: Record<string, unknown>) => Promise<unknown>
+}
+
 const candidateToolName = 'kiosk_fast_path_context'
 const executeToolName = 'kiosk_fast_path_execute'
 
@@ -150,6 +158,7 @@ export async function runFastPath(input: {
   serviceClarification?: (state: FastPathDecisionState) => ServiceClarification | undefined
   transcript: string
   webMcp: WebMcpBridge
+  source?: FastPathSource
 }): Promise<FastPathResult> {
   const transcript = normalizeTranscript(input.transcript)
   const onTrace = input.onTrace
@@ -163,7 +172,7 @@ export async function runFastPath(input: {
   let browserContext: unknown
   let recoveryUsed = false
   let decisionState: FastPathDecisionState | undefined
-  const handoff = async (reason: 'SYSTEM_ONE_DISABLED' | 'PROVIDER_FAILURE', failedDecision?: FastPathDecision): Promise<FastPathResult> => {
+  const handoff = async (reason: 'SYSTEM_ONE_DISABLED' | 'PROVIDER_FAILURE' | 'SERVICE_CAPABILITY_UNAVAILABLE', failedDecision?: FastPathDecision): Promise<FastPathResult> => {
     if (input.isCurrent?.() === false)
       return { kind: 'DEFERRED' }
     // The host-only snapshot does not issue/consume candidates or clear the
@@ -217,10 +226,11 @@ export async function runFastPath(input: {
     }
   }
   const candidateTool = input.webMcp.tools.find(tool => tool.name === candidateToolName)
-  if (!candidateTool) {
+  if (!candidateTool && !input.source) {
     browserContext = { error: 'Kiosk semantic context tool is unavailable.' }
-    return await handoff('SYSTEM_ONE_DISABLED')
+    return await handoff('SERVICE_CAPABILITY_UNAVAILABLE')
   }
+  const readContext = (args: Record<string, unknown>) => input.source ? input.source.context(args) : input.webMcp.execute(candidateTool!, args)
 
   let executionStarted = false
   const notifyExecuted = async (result: unknown) => {
@@ -234,9 +244,15 @@ export async function runFastPath(input: {
     }
   }
   try {
-    let rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript })
+    let rawCandidates = await readContext({ transcript: input.transcript })
     browserContext = rawCandidates
     decisionState = decisionStateFrom(rawCandidates)
+    if (input.isCurrent?.() === false)
+      return { kind: 'DEFERRED', decisionState }
+    if (input.source && rawCandidates && typeof rawCandidates === 'object' && 'contextError' in rawCandidates && typeof rawCandidates.contextError === 'string') {
+      input.onTrace?.({ browserContext: rawCandidates, decision: { kind: 'UNAVAILABLE' }, decisionSource: 'application', transcript: input.transcript })
+      return { kind: 'UNAVAILABLE', browserContextError: rawCandidates.contextError }
+    }
     let candidates = candidatesFrom(rawCandidates)
     const fragment = input.session?.snapshot()
     const unfinished = fragment && decisionState && fragment.stateKey === unfinishedStateKey(decisionState) ? fragment : undefined
@@ -261,7 +277,7 @@ export async function runFastPath(input: {
           transcript: input.transcript,
         })
     if (decision.recovery?.contextKey) {
-      const current = decisionStateFrom(await input.webMcp.execute(candidateTool, { transcript: input.transcript }))
+      const current = decisionStateFrom(await readContext({ transcript: input.transcript }))
       if ((decisionState?.waitingFor && decisionState.waitingFor.expiresAt <= Date.now()) || (decisionState?.serviceClarification && decisionState.serviceClarification.expiresAt <= Date.now()) || !current || serviceContextKey(current) !== serviceContextKey(decisionState ?? { phase: 'unknown' }) || input.isCurrent?.() === false)
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', decisionState }
       if (decision.kind === 'SERVICE_CLARIFICATION')
@@ -276,7 +292,7 @@ export async function runFastPath(input: {
       input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource: 'application', executionResult: receipt, transcript: input.transcript })
       const outcome = receipt as { status?: string, pendingCustomerChoice?: PresentedQuestion, customerMessage?: string }
       if (outcome.status === 'NEW_REQUEST') {
-        rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript })
+        rawCandidates = await readContext({ transcript: input.transcript })
         decisionState = decisionStateFrom(rawCandidates)
         candidates = candidatesFrom(rawCandidates)
         decision = await decide({ candidates, decisionState, transcript: input.transcript, includeTrace: true })
@@ -304,7 +320,7 @@ export async function runFastPath(input: {
         return { kind: 'NEEDS_ASSISTANT', decisionState }
       // The model established relation, not a joined transcript. The browser
       // resolves catalog targets and slots from the two separate fragments.
-      rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript, previousTranscript: unfinished.transcript })
+      rawCandidates = await readContext({ transcript: input.transcript, previousTranscript: unfinished.transcript })
       const current = decisionStateFrom(rawCandidates)
       if (!current || !decisionState || unfinishedStateKey(current) !== unfinishedStateKey(decisionState)) {
         input.session?.discard()
@@ -354,7 +370,7 @@ export async function runFastPath(input: {
         return { kind: 'DEFERRED', decisionState }
       // One route-qualified topic change, using the same utterance and ticket.
       // Queries leave the old draft intact; only a verified new meal replaces it.
-      rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript, newRequestQuestionId: question.questionId })
+      rawCandidates = await readContext({ transcript: input.transcript, newRequestQuestionId: question.questionId })
       decisionState = decisionStateFrom(rawCandidates)
       if (!decisionState || ['configuration', 'clarification', 'meal_confirmation', 'pending_confirmation'].includes(decisionState.phase))
         return { kind: 'UNAVAILABLE', decisionState }
@@ -412,7 +428,7 @@ export async function runFastPath(input: {
     if (!action)
       return { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
     const executeTool = input.webMcp.tools.find(tool => tool.name === executeToolName)
-    if (!executeTool)
+    if (!executeTool && !input.source)
       return { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
 
     // A barge-in can replace an active Main Agent turn. Let the Kiosk cancel
@@ -423,9 +439,11 @@ export async function runFastPath(input: {
       return { kind: 'DEFERRED', ...(decisionState ? { decisionState } : {}) }
 
     executionStarted = true
-    let result = await input.webMcp.execute(executeTool, { candidateId: action.id, ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}), ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}), ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}) })
+    let result = await (input.source?.execute ?? ((args: Record<string, unknown>) => input.webMcp.execute(executeTool!, args)))({ candidateId: action.id, ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}), ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}), ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}) })
     executionStarted = false
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, executionResult: result, transcript: input.transcript })
+    if (input.source && result && typeof result === 'object' && 'status' in result && result.status === 'clarification' && 'customerMessage' in result && typeof result.customerMessage === 'string')
+      return { kind: 'CLARIFICATION', prompt: result.customerMessage, decisionState }
     if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
       return { kind: 'EXECUTION_FAILED', uncertain: false, result, decisionState }
     decisionState = completedReadState(decisionState, result)
@@ -633,6 +651,7 @@ function decisionStateFrom(value: unknown) {
   const waitingFor = presentedQuestionFrom(state.waitingFor)
   return {
     phase: state.phase,
+    ...(state.requiresPlanner === true ? { requiresPlanner: true } : {}),
     ...(state.serviceClarification && typeof state.serviceClarification === 'object' ? { serviceClarification: state.serviceClarification as ServiceClarification } : {}),
     ...(state.requireMenuRead === true ? { requireMenuRead: true } : {}),
     ...(state.readOnly === true ? { readOnly: true } : {}),

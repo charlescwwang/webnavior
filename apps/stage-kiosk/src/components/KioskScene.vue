@@ -3,6 +3,8 @@ import type { DeviceSettingsValues, KioskVoiceVadSettings, PresenceCandidate } f
 import type { InteractionLifecycleMessage } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { KioskInteractionTurn } from '../composables/useKioskInteractionTurn'
+import type { PreparedWaitSpeech } from '../composables/useKioskWaitSpeech'
 import type { KioskConversationDecisionState, KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
 import type { ConversationRetry } from '../services/kioskConversationRetry'
 import type { KioskUtterance, KioskUtteranceReservation, KioskUtteranceTicket } from '../services/kioskUtteranceQueue'
@@ -14,6 +16,7 @@ import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&u
 
 import { createAssistanceReminderWindow, createInteractionWindow, createPresenceWindow, defaultDeviceSettingsValues, defaultPresenceSettings, observationSettings } from '@proj-airi/kiosk-proactive'
 import { conversationContextSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { serviceOperationSchema } from '@proj-airi/stage-shared/service-operation'
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
 import { WidgetStage } from '@proj-airi/stage-ui/components/scenes'
@@ -25,11 +28,12 @@ import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
 import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
 import { useMouse, useWindowSize } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { parse } from 'valibot'
-import { computed, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
+import { parse, safeParse } from 'valibot'
+import { computed, nextTick, onMounted, onUnmounted, shallowRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
+import BrowserCartHandoff from './browserCartHandoff.vue'
 import KioskAdminAccess from './KioskAdminAccess.vue'
 import KioskAdminPanel from './KioskAdminPanel.vue'
 import KioskAgentControl from './KioskAgentControl.vue'
@@ -59,14 +63,22 @@ import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
 import { useKioskWaitSpeech } from '../composables/useKioskWaitSpeech'
 import { setKioskLocale } from '../modules/i18n'
+import { isKioskAdminSessionActive } from '../services/admin-session'
+import { createBrowserCartSession } from '../services/browserCartSession'
+import { beginBrowserCartTask, executeBrowserCartTool } from '../services/browserCartTask'
+import { createBrowserDialogue } from '../services/browserDialogue'
+import { createBrowserFastPathSource } from '../services/browserFastPath'
+import { createBrowserPresentation } from '../services/browserPresentation'
 import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
-import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { admitBrowserPlan, decideBrowserAnswer, decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
-import { isKioskConversationRetrySafeTool, resumeConversationRetry } from '../services/kioskConversationRetry'
+import { createRetryContext, isKioskConversationRetrySafeTool, readConversationRetryContext, recoverConversationService, resumeConversationRetry } from '../services/kioskConversationRetry'
+import { createSpeechPlayer } from '../services/kioskSpeech'
+import { createUtteranceTiming } from '../services/kioskTiming'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
 import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
 import { scenarioRegistry } from '../services/scenario-registry'
@@ -117,6 +129,7 @@ const fastPathProgress = shallowRef<{ utteranceId: number, text: string }>()
 const route = useRoute()
 const router = useRouter()
 const adminPanelOpen = computed(() => route.query.admin === 'true')
+const desktopHost = Boolean(window.airiKioskDesktop)
 const deviceSettingsEndpoint = new URL('/api/kiosk/settings', import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').href
 
 const configuredOrientation = import.meta.env.VITE_KIOSK_ORIENTATION as KioskOrientation | undefined
@@ -159,7 +172,7 @@ const toolActivityManifest = shallowRef<Awaited<ReturnType<typeof loadWebnaviorK
 const interactionTurn = useKioskInteractionTurn()
 const waitSpeech = useKioskWaitSpeech({
   synthesize: synthesizeKioskSpeech,
-  play: (audio, turn, signal) => speakAssistantReply('', turn, audio, signal),
+  play: (audio, turn, signal) => speakAssistantReply('', turn, audio, signal, 'progress'),
 })
 // Decision progress is display-only, so an unverified utterance cannot own or
 // cancel an interaction turn. Agent progress takes precedence during handoff.
@@ -209,6 +222,15 @@ function currentAgentRequest() {
   return activeAgentRequest && interactionTurn.isCurrent(activeAgentRequest.turn) ? activeAgentRequest : undefined
 }
 const utteranceQueueState = shallowRef<{ active?: KioskUtterance, pending: readonly KioskUtterance[] }>({ pending: [] })
+// Maps are bounded with the inspector history and cleared at customer reset.
+// A turn points at the same clock across Jev, Main, native steps and speech.
+const utteranceTimings = new Map<number, ReturnType<typeof createUtteranceTiming>>()
+const turnTimings = new Map<number, ReturnType<typeof createUtteranceTiming>>()
+// A provisional service reply owns speech only. Promotion happens after the
+// ordinary decision/operation gate; queue cleanup retires unpromoted turns.
+const firstResponseTurns = new Map<number, KioskInteractionTurn>()
+const receiptPreparations = new Map<number, PreparedWaitSpeech>()
+
 const utteranceQueue = createKioskUtteranceQueue({
   onDrop: (utterance, reason) => {
     finishVoiceDiagnostic(utterance.id, 'failed')
@@ -231,6 +253,15 @@ const utteranceQueue = createKioskUtteranceQueue({
       await processKioskUtterance(utterance, ticket)
     }
     finally {
+      receiptPreparations.get(utterance.id)?.dispose()
+      receiptPreparations.delete(utterance.id)
+      const receipt = firstResponseTurns.get(utterance.id)
+      if (receipt) {
+        waitSpeech.finish(receipt.id)
+        interactionTurn.complete(receipt)
+        turnTimings.delete(receipt.id)
+        firstResponseTurns.delete(utterance.id)
+      }
       if (!ticket.isCurrent())
         decisionProgress.cancel(utterance.id)
       else
@@ -362,6 +393,18 @@ const conversationActivityStatus = computed(() => {
   return undefined
 })
 const interactionRecording = useKioskInteractionRecording()
+const productPresentation = createBrowserPresentation(interactiveServiceClient)
+const browserCartSession = createBrowserCartSession(window.localStorage)
+const browserDialogue = createBrowserDialogue({
+  owner: () => interactionRecording.visitorSessionId.value,
+  documentId: () => interactiveServiceClient.getDocumentId(),
+  answer: async (answer) => {
+    const owner = interactionRecording.visitorSessionId.value
+    if (!owner)
+      return { kind: 'UNCERTAIN', provider: 'unavailable' }
+    return decideBrowserAnswer(owner, answer, AbortSignal.timeout(serviceRecoveryLimits.turnMs))
+  },
+})
 const agentOrderOwner = shallowRef<string>()
 // BEGIN can succeed in Menu before its reply is lost. Retain the issued owner
 // separately from acknowledged control so recovery can end only our own task.
@@ -370,18 +413,39 @@ watch(interactiveServiceClient.availability, (availability) => {
   if (availability === 'unavailable' && (agentOrderOwner.value || pendingAgentOrderOwner.value))
     serviceRecoveryBlocked.value = true
 })
+const toolMetricOwners = new Map<string, { sessionId: string | undefined, utteranceId: number | undefined, started: number }>()
 const stopToolDiagnostics = interactiveServiceClient.onExecution((event) => {
+  if (event.phase === 'called') {
+    toolMetricOwners.set(event.operationId, { sessionId: interactionRecording.visitorSessionId.value, utteranceId: currentAgentRequest()?.decisionEntryId ?? fastPathProgress.value?.utteranceId, started: performance.now() })
+  }
+  const owner = toolMetricOwners.get(event.operationId)
+  if (event.phase !== 'called')
+    toolMetricOwners.delete(event.operationId)
+  if (!owner || owner.sessionId !== interactionRecording.visitorSessionId.value)
+    return
+  if (event.phase === 'resolved' && event.result && typeof event.result === 'object'
+    && 'source' in event.result && event.result.source === 'browser'
+    && 'status' in event.result && event.result.status === 'unknown') {
+    serviceRecoveryBlocked.value = true
+  }
+  const execution = safeParse(serviceOperationSchema, event.result && typeof event.result === 'object' && 'execution' in event.result ? event.result.execution : undefined)
   void interactionRecording.append('service_event', JSON.stringify({
     kind: 'browser_tool_metrics',
+    ...(execution.success ? { execution: execution.output } : {}),
     connectionId: event.connectionId,
     documentId: event.documentId,
     operationId: event.operationId,
-    taskId: agentOrderOwner.value,
+    utteranceId: owner.utteranceId,
+    durationMs: performance.now() - owner.started,
     toolName: event.tool.name,
     phase: event.phase,
-  }), { source: 'browser_tool_metrics' })
+  }), { source: 'browser_tool_metrics', utteranceId: owner.utteranceId })
 })
-onUnmounted(stopToolDiagnostics)
+
+onUnmounted(() => {
+  stopToolDiagnostics()
+  productPresentation.dispose()
+})
 const manualControlPending = shallowRef(false)
 function requestManualOrderControl() {
   manualControlPending.value = true
@@ -718,6 +782,15 @@ async function processVoiceCandidate(
 
 /** One final ASR utterance enters the same decision path in live and test mode. */
 async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtteranceTicket) {
+  const timing = createUtteranceTiming(utterance.id, utterance.capturedAt)
+  utteranceTimings.set(utterance.id, timing)
+  if (utteranceTimings.size > 20)
+    utteranceTimings.delete(utteranceTimings.keys().next().value!)
+  if (turnTimings.size > 40)
+    turnTimings.delete(turnTimings.keys().next().value!)
+  timing.mark('admitted')
+  // Background speech must not abort an accepted compound operation. Required
+  // browser work supersedes passive cues through the document's FIFO executor.
   // A captured utterance may have waited behind a tool round. Recheck before
   // Jev/Main, without cancelling already-issued commerce work or touch input.
   if (utterance.source === 'asr' && !allowsObservedVoice()) {
@@ -725,6 +798,17 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     return
   }
   const input: FastPathInput = { ...utterance, deadlineAt: Date.now() + serviceRecoveryLimits.turnMs, signal: AbortSignal.any([ticket.signal, AbortSignal.timeout(serviceRecoveryLimits.turnMs)]) }
+  // Only the fixed neutral phrase enters TTS here, never the unadmitted ASR
+  // text. Playback still requires service admission; queue cleanup discards it.
+  const preparedReceipt = currentAgentRequest() || agentOrderOwner.value || pendingAgentOrderOwner.value
+    ? undefined
+    : waitSpeech.prepare(t('stage.kiosk.wait.receipt'), language.value)
+  if (preparedReceipt) {
+    receiptPreparations.set(utterance.id, preparedReceipt)
+    timing.mark('receipt-synthesis-start')
+    void preparedReceipt.ready.then(ready => timing.mark(ready ? 'receipt-synthesis-ready' : 'receipt-synthesis-discarded'))
+  }
+
   const entry: KioskDecisionEntry = {
     id: utterance.id,
     route: 'deciding',
@@ -735,6 +819,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
   decisionEntries.value = [...decisionEntries.value, entry].slice(-20)
   let serviceRecoveryUsed = false
   let recordedFastPathInput = false
+  let admittedBrowserDemand = false
   let latestDecisionTrace: unknown
   // These totals belong to this utterance, across re-decisions/read review.
   // Repeated execution trace notifications must not count the same call twice.
@@ -746,17 +831,101 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
   let shownInput = false
   let earlyReplyIndex: number | undefined
   const earlyReadMessages: string[] = []
+  if (utterance.source === 'simulation') {
+    // Explicit test input needs evidence even when admission stays silent or
+    // fails. ASR diagnostics are not customer dialogue or write authorization.
+    await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+    if (!ticket.isCurrent())
+      return
+    await interactionRecording.append('asr_transcript', utterance.text, { source: utterance.source, utteranceId: utterance.id })
+    recordedFastPathInput = true
+  }
   for (let attempt = 0; attempt < 3 && ticket.isCurrent(); attempt++) {
     decisionProgress.start(utterance.id, utterance.source, input.deadlineAt! - serviceRecoveryLimits.turnMs)
+    if (utterance.source === 'simulation') {
+      void nextTick(() => {
+        if (ticket.isCurrent())
+          timing.markFirst('input-receipt-dom-ready')
+      })
+    }
     const active = currentAgentRequest()
     let selectedTurn: ReturnType<typeof interactionTurn.begin> | undefined
+    const acknowledgeService = () => {
+      timing.markFirst('service-admitted')
+      if (!ticket.isCurrent() || input.signal?.aborted || (utterance.source === 'asr' && !allowsObservedVoice()))
+        return
+      // Admission is not permission to interrupt accepted work. A neutral
+      // receipt may replace idle/proactive speech, never an existing order owner.
+      if (currentAgentRequest() || agentOrderOwner.value || pendingAgentOrderOwner.value || manualControlPending.value)
+        return
+      const previous = firstResponseTurns.get(utterance.id)
+      if (previous) {
+        if (interactionTurn.isCurrent(previous))
+          selectedTurn = previous
+        return
+      }
+      interruptAssistantOutput()
+      const turn = interactionTurn.begin('voice', 'thinking')
+      selectedTurn = turn
+      firstResponseTurns.set(utterance.id, turn)
+      turnTimings.set(turn.id, timing)
+      fastPathProgress.value = { utteranceId: utterance.id, text: t('stage.kiosk.wait.receipt') }
+      void nextTick(() => {
+        if (ticket.isCurrent() && interactionTurn.isCurrent(turn))
+          timing.markFirst('first-response-dom-ready', undefined, 'progress')
+      })
+      waitSpeech.start(turn, t('stage.kiosk.wait.receipt'), language.value, 'receipt', preparedReceipt)
+    }
     const result = await runFastPath({
       isEnabled: isKioskFastPathEnabled,
+      source: interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')
+        ? createBrowserFastPathSource({
+            tools: interactiveServiceClient.tools.value,
+            read: async (tool, args) => {
+              await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+              return interactiveServiceClient.execute(tool, args)
+            },
+            hasPendingQuestion: browserDialogue.hasPending,
+            execute: async (tool, args) => {
+              await interactionRecording.start(scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction')
+              const release = beginBrowserCartTask(utterance.text, {
+                informationUnavailable: () => t('stage.kiosk.information-unavailable'),
+                dialogue: browserDialogue,
+                cartSession: { gate: browserCartSession, owner: () => interactionRecording.visitorSessionId.value, serviceUrl: () => scenarioRegistry.activeScenario.value?.serviceUrl, message: t('stage.kiosk.cart-handoff.required') },
+                isCurrent: ticket.isCurrent,
+                decide: async (proposal, plan) => {
+                  const sessionId = interactionRecording.visitorSessionId.value
+                  if (!sessionId)
+                    throw new Error('Browser task requires the current visitor session.')
+                  // Main records user_text before tool IO. The finite PB path
+                  // must establish the same current-turn evidence before the
+                  // Server may authorize its effect; ASR diagnostics are not it.
+                  if (!admittedBrowserDemand) {
+                    const entry = await interactionRecording.append('user_text', utterance.text, { source: 'fast_path_browser', utteranceId: utterance.id })
+                    if (!entry)
+                      throw new Error('Current browser demand could not be recorded.')
+                    admittedBrowserDemand = true
+                  }
+                  timing.mark('plan-admission')
+                  return admitBrowserPlan(sessionId, { effect: proposal, source: 'system-one', ...plan, toolName: 'browser_cart_add' }, input.signal)
+                },
+              })
+              try {
+                timing.mark('browser-start', tool.name)
+                const result = await executeBrowserCartTool(interactiveServiceClient, tool, args)
+                timing.mark('browser-finished', tool.name)
+                return result
+              }
+              finally { release() }
+            },
+          })
+        : undefined,
       serviceClarification: state => serviceClarificationWindow.current(state),
       activeRequest: active ? { stage: active.stage, text: active.text.slice(0, 240) } : undefined,
       decide: async (request) => {
         await interactionRecording.flush()
         const startedAt = performance.now()
+        timing.mark('jev-start')
         let progressCalls = 0
         let progressDuration = 0
         // Each decision owns its checkpoints; retries cannot borrow admission.
@@ -768,6 +937,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
             firstResultDurationMs ??= requestDurationMs + performance.now() - startedAt
             if (stage.kind === 'SERVICE_RECOVERY_PROGRESS') {
               decisionProgress.recovery(utterance.id, stage)
+              if (stage.status === 'completed' && stage.admission === 'service')
+                acknowledgeService()
               updateDecisionEntry(utterance.id, { systemOneStep: stage.stage === 'adjudication' ? 'Main 有限裁決' : 'Main 完整理解' })
               return
             }
@@ -788,6 +959,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
             // accepted path or a real read receipt, so silent outcomes leave
             // no unanswered customer bubble behind.
             const admitted = admitFeedback(stage)
+            if (admitted)
+              acknowledgeService()
             decisionProgress.admit(utterance.id, admitted)
             if ((admitted || shownInput) && !currentAgentRequest())
               fastPathProgress.value = { utteranceId: utterance.id, text: t('stage.kiosk.wait.confirming') }
@@ -823,6 +996,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           throw error
         }
         finally {
+          timing.mark('jev-finished')
           requestDurationMs += performance.now() - startedAt
         }
       },
@@ -855,8 +1029,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'fast_path', source: utterance.source, utteranceId: utterance.id })
           recordedFastPathInput = true
         }
-        if (trace?.authorize?.kind === 'EXECUTE' && trace.operationPlan?.toolName) {
-          if (latestDecisionTrace)
+        if (trace?.operationPlan?.toolName) {
+          if (latestDecisionTrace && utterance.source !== 'simulation')
             await interactionRecording.append('service_event', JSON.stringify({ kind: 'system_one_decision', trace: latestDecisionTrace }), { decisionRoute: 'fast_path', source: utterance.source })
           await interactionRecording.append('tool_call', JSON.stringify(trace.operationPlan.input ?? {}), { decisionRoute: 'fast_path', name: trace.operationPlan.toolName })
           await interactionRecording.append('tool_result', JSON.stringify(payload), { decisionRoute: 'fast_path', name: trace.operationPlan.toolName })
@@ -864,6 +1038,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       },
       isCurrent: () => ticket.isCurrent() && (utterance.source !== 'asr' || allowsObservedVoice()),
       onActionSelected: async () => {
+        fastPathProgress.value = { utteranceId: utterance.id, text: t('stage.kiosk.wait.operating') }
+        timing.mark('feedback-visible')
         if (utterance.source === 'asr' && !allowsObservedVoice())
           return 'DEFER'
         const request = currentAgentRequest()
@@ -879,8 +1055,17 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         }
         if (!ticket.isCurrent() || (utterance.source === 'asr' && !allowsObservedVoice()))
           return 'DEFER'
-        interruptAssistantOutput()
-        selectedTurn = interactionTurn.begin('voice', 'thinking')
+        const receipt = firstResponseTurns.get(utterance.id)
+        if (!receipt || !interactionTurn.isCurrent(receipt))
+          interruptAssistantOutput()
+        selectedTurn = receipt && interactionTurn.isCurrent(receipt) ? receipt : interactionTurn.begin('voice', 'thinking')
+        turnTimings.set(selectedTurn.id, timing)
+        timing.markFirst('service-admitted')
+        void nextTick(() => {
+          if (ticket.isCurrent() && selectedTurn && interactionTurn.isCurrent(selectedTurn))
+            timing.markFirst('first-response-dom-ready', undefined, 'progress')
+        })
+        waitSpeech.start(selectedTurn, t('stage.kiosk.wait.receipt'), language.value, 'receipt', preparedReceipt)
       },
       onTrace: (trace) => {
         latestDecisionTrace = trace
@@ -918,6 +1103,9 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     })
     if (!ticket.isCurrent())
       return
+    if (utterance.source === 'simulation') {
+      await interactionRecording.append('service_event', JSON.stringify({ kind: 'system_one_decision', utteranceId: utterance.id, attempt: attempt + 1, result: result.kind, reason: result.reason, trace: latestDecisionTrace ?? null }), { source: utterance.source, utteranceId: utterance.id })
+    }
     if (result.kind !== 'DEFERRED') {
       decisionProgress.finish(utterance.id, result)
       if (result.kind !== 'SERVICE_CLARIFICATION')
@@ -978,13 +1166,13 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     }
     if (result.kind === 'IGNORE' || result.kind === 'INCOMPLETE' || result.kind === 'UNAVAILABLE') {
+      const retryMessage = result.browserContextError ? t('stage.kiosk.service-recovery.browser-unavailable') : t('stage.kiosk-agent.decision-uncertain')
       // A social response or unfinished fragment does not warrant a retry.
       if (shouldShowDecisionRetry(result) && !result.recovery && shownInput) {
-        const message = t('stage.kiosk-agent.decision-uncertain')
         conversationMessages.value = [
           ...conversationMessages.value,
           ...(!shownInput ? [{ role: 'user' as const, content: utterance.text }] : []),
-          { role: 'error', content: message },
+          { role: 'error', content: retryMessage },
         ]
         shownInput = true
         await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'unavailable', source: utterance.source, utteranceId: utterance.id })
@@ -993,13 +1181,16 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       finishVoiceDiagnostic(utterance.id, shouldShowDecisionRetry(result) ? 'failed' : 'decided')
       updateDecisionEntry(utterance.id, { route: result.kind === 'IGNORE' ? 'ignored' : result.kind === 'INCOMPLETE' ? 'incomplete' : 'unavailable' })
       if (shouldShowDecisionRetry(result) && utterance.source === 'asr' && shownInput)
-        pendingTranscript.value = t('stage.kiosk-agent.decision-uncertain')
+        pendingTranscript.value = retryMessage
       if (utterance.source === 'simulation') {
-        asrSimulationStatus.value = result.kind === 'IGNORE'
-          ? 'System One：背景或無關語句，未執行。'
-          : result.kind === 'INCOMPLETE'
-            ? 'System One：語句尚未完成，等待下一句。'
-            : 'System One 暫時無法判斷，未執行，也未送往 AI 助手。'
+        if (result.browserContextError)
+          asrSimulationStatus.value = retryMessage
+        else if (result.kind === 'IGNORE')
+          asrSimulationStatus.value = 'System One：背景或無關語句，未執行。'
+        else if (result.kind === 'INCOMPLETE')
+          asrSimulationStatus.value = 'System One：語句尚未完成，等待下一句。'
+        else
+          asrSimulationStatus.value = 'System One 暫時無法判斷，未執行，也未送往 AI 助手。'
       }
       return
     }
@@ -1024,6 +1215,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         return
       interruptAssistantOutput()
       const turn = interactionTurn.begin('conversation', 'thinking')
+      turnTimings.set(turn.id, timing)
       updateDecisionEntry(utterance.id, { route: 'main_agent' })
       if (utterance.source === 'simulation')
         asrSimulationStatus.value = 'System One：相關補充已中斷尚未操作工具的 AI 回合，正在重新處理。'
@@ -1034,6 +1226,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       return
     }
 
+    if (selectedTurn && !interactionTurn.isCurrent(selectedTurn))
+      selectedTurn = undefined
     const request = currentAgentRequest()
     if (request && !selectedTurn) {
       // An unrelated request cannot steal or race the existing Agent turn.
@@ -1044,6 +1238,10 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
     if (!selectedTurn)
       interruptAssistantOutput()
     const turn = selectedTurn ?? interactionTurn.begin('voice', 'thinking')
+    // The real decision path adopts the same turn so Main cannot repeat the
+    // receipt or cut off its in-flight audio. Failed/silent paths remain unclaimed.
+    firstResponseTurns.delete(utterance.id)
+    turnTimings.set(turn.id, timing)
     if (fastPathProgress.value?.utteranceId === utterance.id)
       fastPathProgress.value = undefined
     updateDecisionEntry(utterance.id, { route: result.kind === 'CUSTOMER_ENTRY_REQUIRED' ? 'customer_entry' : result.kind === 'GREET' ? 'greeting' : result.kind === 'FAST_ACTION' ? 'fast_path' : (result.kind === 'CLARIFICATION' || result.kind === 'SERVICE_CLARIFICATION') ? 'clarification' : 'main_agent' })
@@ -1058,9 +1256,11 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
               ? `System One：${result.prompt}`
               : result.reason === 'SYSTEM_ONE_DISABLED'
                 ? 'Fast Path 已停用，已交給 AI 助手處理。'
-                : result.reason === 'PROVIDER_FAILURE'
-                  ? 'System One 服務故障，已交給 AI 助手處理。'
-                  : 'System One：需要 AI 助手，已轉交處理。'
+                : result.reason === 'SERVICE_CAPABILITY_UNAVAILABLE'
+                  ? t('stage.kiosk.product-presentation.capability-unavailable')
+                  : result.reason === 'PROVIDER_FAILURE'
+                    ? 'System One 服務故障，已交給 AI 助手處理。'
+                    : 'System One：需要 AI 助手，已轉交處理。'
     }
     // Persist and show the completed browser action before dequeuing another
     // utterance. Only TTS/Agent streaming continues asynchronously afterward.
@@ -1073,6 +1273,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         interactionTurn.complete(turn)
       throw error
     }
+    if (result.kind !== 'NEEDS_ASSISTANT')
+      waitSpeech.finish(turn.id)
     if (spokenReply && interactionTurn.advance(turn, 'speaking')) {
       void speakAssistantReply(spokenReply, turn).finally(() => {
         if (interactionTurn.isCurrent(turn))
@@ -1140,6 +1342,7 @@ async function presentFastPathResult(
           ...(!shownInput ? [{ role: 'user' as const, content: input.text }] : []),
           { role: 'assistant', content: answer, slices: [], tool_results: [] },
         ]
+    turnTimings.get(turn.id)?.mark('reply-text-visible', undefined, 'reply')
     await interactionRecording.append('assistant_text', answer, { decisionRoute: 'fast_path' })
     if (result.kind === 'FAST_ACTION')
       await acknowledgePresentedReply(answer, question?.questionId)
@@ -1196,7 +1399,7 @@ async function presentFastPathResult(
     // A semantic handoff, disabled Fast Path or provider fault starts the same
     // guarded Agent flow. A fallback is not proof of intent or tool authority.
     void persistAssistantEscalation(input)
-    void sendConversationMessage(input.text, turn, { waitSpeech: result.reason !== 'PROVIDER_FAILURE' && result.reason !== 'SYSTEM_ONE_DISABLED', appendUserMessage: !shownInput, decisionEntryId: input.id, utteranceId: input.id, deadlineAt: input.deadlineAt, decisionState })
+    void sendConversationMessage(input.text, turn, { waitSpeech: result.reason !== 'PROVIDER_FAILURE' && result.reason !== 'SYSTEM_ONE_DISABLED', appendUserMessage: !shownInput, decisionEntryId: input.id, utteranceId: input.id, deadlineAt: input.deadlineAt, decisionState, clarifyOrder: result.reason === 'UNCERTAIN_OPERATION' })
       .catch(error => console.error('Failed to forward kiosk request to Main Agent:', error))
   }
 
@@ -1217,6 +1420,15 @@ async function validatedQuestionReceipt(result: unknown) {
   const question = questionReceiptFrom(result)
   if (!question)
     return undefined
+  if (['browser-product-choice', 'browser-confirm-add'].includes(question.purpose)) {
+    const read = interactiveServiceClient.tools.value.find(tool => tool.name === 'browser_cart_get')
+    if (!read)
+      return undefined
+    try {
+      return browserDialogue.validate(await interactiveServiceClient.execute(read, { includeCatalog: true }), question.questionId)
+    }
+    catch { return undefined }
+  }
   const tool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_question_validate')
   if (!tool)
     return undefined
@@ -1266,6 +1478,7 @@ function interruptAssistantOutput() {
 function interruptSpokenReply() {
   if (interactionTurn.phase.value !== 'speaking')
     return
+  void productPresentation.cancel()
 
   // Cancelling the active turn also aborts speech synthesis when the audio
   // has not started yet; the player's abort listener pauses active playback.
@@ -1274,12 +1487,21 @@ function interruptSpokenReply() {
 }
 
 function clearConversationPresentation() {
+  void productPresentation.cancel()
   invitationWindow.reset()
+  browserDialogue.reset()
+  browserCartSession.resetView()
   fastPathProgress.value = undefined
   utteranceQueue.reset()
   serviceClarificationWindow.reset()
   decisionProgress.cancel()
   incompleteAsrSession.discard()
+  utteranceTimings.clear()
+  turnTimings.clear()
+  firstResponseTurns.clear()
+  for (const prepared of receiptPreparations.values())
+    prepared.dispose()
+  receiptPreparations.clear()
   voiceDiagnosticByUtterance.clear()
   voiceDiagnosticEntries.value = []
   interactionTurn.cancel()
@@ -1295,54 +1517,64 @@ function clearConversationPresentation() {
   decisionEntries.value = []
 }
 
-async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal) {
-  if (signal.aborted || !interactionTurn.isCurrent(turn))
-    return
-  if (turn.kind === 'proactive' && !allowsObservedVoice())
+let activeSpeechTiming: { clock: ReturnType<typeof createUtteranceTiming>, channel: 'progress' | 'reply' } | undefined
+const speechPlayer = createSpeechPlayer({
+  synthesize: synthesizeKioskSpeech,
+  onSynthesis: index => activeSpeechTiming?.clock.mark('tts-request', index + 1, activeSpeechTiming.channel),
+  onReady: () => activeSpeechTiming?.clock.mark('tts-ready', undefined, activeSpeechTiming.channel),
+  onPlaying: (text, first) => {
+    void productPresentation.speak(text)
+    if (first && activeSpeechTiming) {
+      activeSpeechTiming.clock.mark('first-audio', undefined, activeSpeechTiming.channel)
+      activeSpeechTiming.clock.markFirst('first-response-audio', undefined, activeSpeechTiming.channel)
+      void interactionRecording.append('service_event', JSON.stringify(activeSpeechTiming.clock.snapshot('speech', 'running')), { source: 'utterance_timing', utteranceId: activeSpeechTiming.clock.utteranceId })
+    }
+  },
+  onSource: (player) => {
+    if (!player || !audioContext)
+      return
+    const source = audioContext.createMediaElementSource(player)
+    assistantAudioNode.value = source
+    source.connect(audioContext.destination)
+    return () => {
+      if (assistantAudioNode.value === source)
+        assistantAudioNode.value = undefined
+      source.disconnect()
+    }
+  },
+})
+
+async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal, channel: 'progress' | 'reply' = 'reply') {
+  if (signal.aborted || !interactionTurn.isCurrent(turn) || (turn.kind === 'proactive' && !allowsObservedVoice()))
     return
   interruptAssistantOutput()
+  const stop = () => speechPlayer.stop()
+  stopAssistantAudio = stop
+  const timing = turnTimings.get(turn.id)
+  const sessionId = interactionRecording.visitorSessionId.value
+  const owner = timing ? { clock: timing, channel } : undefined
+  activeSpeechTiming = owner
+  timing?.mark('tts-start', undefined, channel)
+  let outcome: 'completed' | 'cancelled' | 'failed' = 'failed'
   try {
-    const audio = preparedAudio ?? await synthesizeKioskSpeech({ locale: language.value, signal, text })
-    if (signal.aborted || !interactionTurn.isCurrent(turn))
-      return
-    if (turn.kind === 'proactive' && !allowsObservedVoice())
-      return
-
-    const player = new Audio(URL.createObjectURL(audio))
-    const source = audioContext ? audioContext.createMediaElementSource(player) : undefined
-    if (source) {
-      assistantAudioNode.value = source
-      source.connect(audioContext.destination)
-    }
-    await new Promise<void>((resolve) => {
-      let finished = false
-      function finish() {
-        if (finished)
-          return
-        finished = true
-        signal.removeEventListener('abort', stop)
-        if (stopAssistantAudio === stop)
-          stopAssistantAudio = undefined
-        if (assistantAudioNode.value === source)
-          assistantAudioNode.value = undefined
-        source?.disconnect()
-        URL.revokeObjectURL(player.src)
-        resolve()
-      }
-      function stop() {
-        player.pause()
-        finish()
-      }
-      player.onended = finish
-      player.onerror = finish
-      stopAssistantAudio = stop
-      signal.addEventListener('abort', stop, { once: true })
-      void player.play().catch(finish)
-    })
+    outcome = await speechPlayer.play({ text, locale: language.value, signal, preparedAudio })
   }
   catch (error) {
     if (!signal.aborted)
       console.error('Failed to synthesize kiosk reply:', error)
+    outcome = signal.aborted ? 'cancelled' : 'failed'
+  }
+  finally {
+    timing?.mark('speech-finished', signal.aborted ? 'cancelled' : outcome, channel)
+    if (timing && sessionId === interactionRecording.visitorSessionId.value)
+      void interactionRecording.append('service_event', JSON.stringify(timing.snapshot('speech', signal.aborted ? 'cancelled' : outcome)), { source: 'utterance_timing', utteranceId: timing.utteranceId })
+    if (activeSpeechTiming === owner)
+      activeSpeechTiming = undefined
+    // Progress playback must not discard the clock needed by the final reply.
+    if (channel === 'reply')
+      turnTimings.delete(turn.id)
+    if (stopAssistantAudio === stop)
+      stopAssistantAudio = undefined
   }
 }
 
@@ -1636,6 +1868,8 @@ async function startProactiveGreeting(onStarted?: () => void) {
 }
 
 async function recordCustomerActivity(source: 'asr_simulation' | 'manual' | 'scenario' | 'voice_input' | 'voice_transcript' | 'completed' = 'scenario') {
+  if (source === 'manual')
+    void productPresentation.cancel()
   // A real touch takes precedence over a welcome that is warming or playing.
   // Cancelling only the proactive turn preserves unrelated customer work.
   if (source === 'manual' || source === 'scenario' || source === 'completed')
@@ -1785,7 +2019,7 @@ function captureProactiveCameraFrame(video: HTMLVideoElement | null) {
 async function sendConversationMessage(
   text: string,
   existingTurn?: ReturnType<typeof interactionTurn.begin>,
-  options: { deadlineAt?: number, appendUserMessage?: boolean, decisionEntryId?: number, decisionState?: KioskConversationDecisionState, utteranceId?: number, waitSpeech?: boolean } = {},
+  options: { deadlineAt?: number, appendUserMessage?: boolean, decisionEntryId?: number, decisionState?: KioskConversationDecisionState, utteranceId?: number, waitSpeech?: boolean, clarifyOrder?: boolean } = {},
 ) {
   if (serviceRecoveryBlocked.value || interactiveServiceClient.availability.value !== 'ready') {
     serviceRecoveryBlocked.value = true
@@ -1798,6 +2032,10 @@ async function sendConversationMessage(
     interruptAssistantOutput()
 
   const turn = existingTurn ?? interactionTurn.begin('conversation', 'thinking')
+  const timing = options.utteranceId ? utteranceTimings.get(options.utteranceId) : turnTimings.get(turn.id)
+  if (timing)
+    turnTimings.set(turn.id, timing)
+  timing?.mark('main-start')
   if (!existingTurn && !interactionTurn.isCurrent(turn))
     return
   if (existingTurn && !interactionTurn.advance(turn, 'thinking'))
@@ -1817,6 +2055,10 @@ async function sendConversationMessage(
   }
   activeAgentRequest = request
   startConversationProgress(turn.id, t('stage.kiosk.wait.confirming'))
+  void nextTick(() => {
+    if (interactionTurn.isCurrent(turn))
+      timing?.markFirst('first-response-dom-ready', undefined, 'progress')
+  })
   if (options.waitSpeech ?? !existingTurn)
     waitSpeech.start(turn, t('stage.kiosk.wait.spoken'), language.value)
   const updateAgentStep = (step: string) => {
@@ -1835,6 +2077,7 @@ async function sendConversationMessage(
   let timingTimer: ReturnType<typeof setInterval> | undefined
   let longWaitTimer: ReturnType<typeof setTimeout> | undefined
   let browserEffectAttempted = false
+  let browserRequestComplete = false
   // Isolated to this Agent turn. Interrupted turns cannot publish another
   // turn's question; subsequent results replace an earlier operational offer.
   let questionReceipt: ReturnType<typeof questionReceiptFrom>
@@ -1878,7 +2121,11 @@ async function sendConversationMessage(
     conversationExecutionDurationMs.value = 0
     timingTimer = setInterval(updateExecutionDuration, 100)
   }
+  const retryContext = createRetryContext(interactiveServiceClient)
+  const taskSessionId = interactionRecording.visitorSessionId.value
+  let taskOutcome: 'completed' | 'failed' = 'failed'
   let retryContextKey: string | undefined
+  let releaseBrowserCartTask: (() => void) | undefined
   try {
     let decisionState = options.decisionState
     if (!decisionState || (taskTool && decisionState.menuRevision === undefined)) {
@@ -1919,6 +2166,23 @@ async function sendConversationMessage(
       if (!interactionTurn.isCurrent(turn))
         return
     }
+    if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')) {
+      releaseBrowserCartTask = beginBrowserCartTask(text, {
+        informationUnavailable: () => t('stage.kiosk.information-unavailable'),
+        onRequestComplete: () => { browserRequestComplete = true },
+        readOnly: decisionState?.readOnly === true || decisionState?.context?.readOnly === true,
+        clarifyOrder: options.clarifyOrder,
+        dialogue: browserDialogue,
+        cartSession: { gate: browserCartSession, owner: () => interactionRecording.visitorSessionId.value, serviceUrl: () => scenarioRegistry.activeScenario.value?.serviceUrl, message: t('stage.kiosk.cart-handoff.required') },
+        isCurrent: () => interactionTurn.isCurrent(turn) && !turn.signal.aborted && (!options.deadlineAt || Date.now() < options.deadlineAt),
+        decide: async (proposal, plan) => {
+          const sessionId = interactionRecording.visitorSessionId.value
+          if (!sessionId)
+            throw new Error('Browser task requires the current visitor session.')
+          return admitBrowserPlan(sessionId, { effect: proposal, source: 'main', ...plan }, turn.signal)
+        },
+      })
+    }
     const reply = await interactionRecording.send(
       scenarioRegistry.activeScenario.value?.id ?? 'kiosk-interaction',
       text,
@@ -1929,6 +2193,16 @@ async function sendConversationMessage(
         budgetMs: options.deadlineAt ? Math.max(1, options.deadlineAt - Date.now()) : undefined,
         ...(decisionState ? { decisionState } : {}),
         prepareRound: async () => {
+          // External browser tools observe their own document. They cannot supply
+          // the owned Menu's revision, task, POS, or finite-candidate contracts.
+          if (interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_observe')) {
+            if (!interactionTurn.isCurrent(turn) || interactiveServiceClient.availability.value !== 'ready')
+              throw new Error('External browser document is unavailable.')
+            retryContextKey = await retryContext.capture()
+            if (!interactionTurn.isCurrent(turn))
+              throw new Error('External browser request was superseded.')
+            return { tools: activeTools.value.filter(tool => tool.function.name.startsWith('browser_') && tool.function.name !== 'browser_recovery_context' && tool.function.name !== 'browser_customer_reset') }
+          }
           const contextTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_conversation_context')
           if (!contextTool || !interactionTurn.isCurrent(turn))
             throw new Error('Current Menu context is unavailable.')
@@ -1941,12 +2215,13 @@ async function sendConversationMessage(
           const allowed = new Set(context.allowedToolNames)
           return { decisionState, tools: activeTools.value.filter(tool => allowed.has(tool.function.name)) }
         },
+        isRequestComplete: () => browserRequestComplete && interactionTurn.isCurrent(turn),
         onToolResult: (name, content) => {
           if (interactionTurn.isCurrent(turn)) {
             questionReceipt = questionReceiptFrom(content)
             menuReply.record(name, content)
             if (!isKioskConversationRetrySafeTool(name) || questionReceipt)
-              operationReply = operationReplyFrom(content) ?? operationReply
+              operationReply = menuReply.browserOutcome() ?? operationReplyFrom(content) ?? operationReply
             if (questionReceipt || operationReply)
               streamingAssistantMessage.value = undefined
           }
@@ -1954,6 +2229,7 @@ async function sendConversationMessage(
         onTurnStarted: () => {
           if (!interactionTurn.isCurrent(turn))
             return
+          timing?.mark('main-round')
           // The SSE turn-started event also appears after browser tool results.
           // Once any tool was requested, keep the Agent non-interruptible until
           // its whole tool/result loop settles; otherwise a later ASR could
@@ -1984,11 +2260,14 @@ async function sendConversationMessage(
             console.info('[kiosk-tools]', { phase: 'llm-selected', toolName })
         },
         onToolActivity: (toolName, state) => {
+          timing?.mark(`browser-${state}`, toolName)
           if (!interactionTurn.isCurrent(turn))
             return
           interactionTurn.advance(turn, 'using-tool')
           if (state === 'executing' && !isKioskConversationRetrySafeTool(toolName)) {
             browserEffectAttempted = true
+            retryContext.invalidate()
+            retryContextKey = undefined
             request.stage = 'mutating'
           }
           updateAgentStep(`${toolName}：${state === 'executing' ? '網頁執行中' : state === 'done' ? '已完成' : '執行失敗'}`)
@@ -2027,6 +2306,7 @@ async function sendConversationMessage(
       return
     if (!reply)
       return
+    timing?.mark('main-finished')
     if (reply.reason === 'manual-control') {
       finishConversationProgress(turn.id)
       conversationWorkStatus.value = undefined
@@ -2065,6 +2345,7 @@ async function sendConversationMessage(
     if (entryPhase === 'customer_entry' && presented.content === entryPrompt)
       questionReceipt = undefined
     const answer = presented.role === 'assistant' ? presented.content : undefined
+    taskOutcome = answer ? 'completed' : 'failed'
     const replyKind = presented.clarification ? 'clarification' : reply.reply?.kind
     if (!interactionTurn.isCurrent(turn))
       return
@@ -2079,6 +2360,7 @@ async function sendConversationMessage(
         ? { role: 'assistant', content: answer, slices: [], tool_results: [] }
         : { role: 'error', content: presented.content },
     ]
+    timing?.mark('reply-text-visible', undefined, 'reply')
     if (!answer && !browserEffectAttempted)
       retryableConversationRequest.value = retryContextKey && interactionRecording.visitorSessionId.value ? { state: 'available', text, sessionId: interactionRecording.visitorSessionId.value, iframeRevision: scenarioRegistry.iframeRevision.value, originalUtteranceId: options.utteranceId, requestId: turn.id, contextKey: retryContextKey } : undefined
     updateAgentStep(reply.status === 'completed' && answer ? 'Main Agent 已完成' : presented.content)
@@ -2111,6 +2393,11 @@ async function sendConversationMessage(
     }
   }
   finally {
+    timing?.mark('task-finished')
+    if (timing && taskSessionId === interactionRecording.visitorSessionId.value)
+      void interactionRecording.append('service_event', JSON.stringify(timing.snapshot('task', turn.signal.aborted ? 'cancelled' : taskOutcome)), { source: 'utterance_timing', utteranceId: timing.utteranceId })
+    turnTimings.delete(turn.id)
+    releaseBrowserCartTask?.()
     if (taskBound && taskTool) {
       try {
         await releaseOrderControl()
@@ -2156,16 +2443,11 @@ async function retryConversationMessage() {
   const lastMessage = conversationMessages.value.at(-1)
   if (lastMessage?.role === 'error')
     conversationMessages.value = conversationMessages.value.slice(0, -1)
-  const stateTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
-  if (!stateTool)
-    return
   try {
     const resumed = await resumeConversationRetry(retry, {
       current: async () => {
-        const current = conversationDecisionStateFrom(await interactiveServiceClient.execute(stateTool, {}))
-        if (!current)
-          throw new Error('Current retry context is unavailable.')
-        return { sessionId: interactionRecording.visitorSessionId.value ?? '', iframeRevision: scenarioRegistry.iframeRevision.value, contextKey: serviceContextKey(current) }
+        const contextKey = await readConversationRetryContext(interactiveServiceClient)
+        return { sessionId: interactionRecording.visitorSessionId.value ?? '', iframeRevision: scenarioRegistry.iframeRevision.value, contextKey }
       },
       enqueue: text => utteranceQueue.submit({ source: 'simulation', text }),
       record: event => interactionRecording.append('service_event', JSON.stringify(event), { source: 'conversation_retry' }),
@@ -2186,19 +2468,7 @@ async function recoverOrderingService() {
   serviceRecovering.value = true
   serviceRecoveryBlocked.value = true
   try {
-    await interactiveServiceClient.recover()
-    const contextTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_conversation_context')
-    const taskTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_agent_task')
-    if (!contextTool || !taskTool)
-      throw new Error('Menu recovery tools are unavailable.')
-    const context = parse(conversationContextSchema, await interactiveServiceClient.execute(contextTool, { includeCatalog: false }))
-    if (context.taskId && context.taskId !== agentOrderOwner.value && context.taskId !== pendingAgentOrderOwner.value)
-      throw new Error('The prior task belongs to another owner; keep ordering paused.')
-    if (context.taskId) {
-      const released = await interactiveServiceClient.execute(taskTool, { action: 'END', taskId: context.taskId })
-      if (!released || typeof released !== 'object' || !('ok' in released) || released.ok !== true)
-        throw new Error('The settled task could not release order control.')
-    }
+    await recoverConversationService(interactiveServiceClient, [agentOrderOwner.value, pendingAgentOrderOwner.value])
     agentOrderOwner.value = undefined
     pendingAgentOrderOwner.value = undefined
     manualControlPending.value = false
@@ -2276,6 +2546,12 @@ async function startOrRestartCustomerSession() {
   await restartCustomerSession()
 }
 
+async function recordBrowserCartResume() {
+  browserDialogue.reset()
+  retryableConversationRequest.value = undefined
+  await interactionRecording.append('service_event', 'browser_cart_reviewed', { source: 'staff' })
+}
+
 function reloadKiosk() {
   // Entering the PIN-protected maintenance panel is an explicit operator
   // takeover. Camera presence cannot distinguish that operator from a
@@ -2309,7 +2585,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main :class="['kiosk-scene', `is-${orientation}`]">
+  <main :class="['kiosk-scene', `is-${orientation}`, { 'has-native-console': desktopHost && !props.voiceConversationOnly }]">
     <KioskAudioStatusOverlay
       v-if="showDevelopmentDiagnostics"
       v-bind="audioInputIndicator"
@@ -2338,6 +2614,17 @@ onUnmounted(() => {
         @reload="reloadKiosk"
       >
         <template #device-settings>
+          <BrowserCartHandoff
+            v-if="scenarioRegistry.activeScenario.value && interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')"
+            :bridge="interactiveServiceClient"
+            :gate="browserCartSession"
+            :owner="interactionRecording.visitorSessionId.value"
+            :service-url="scenarioRegistry.activeScenario.value.serviceUrl"
+            :authorized="isKioskAdminSessionActive"
+            :operation-pending="conversationSending"
+            @prepare="interactionRecording.start(scenarioRegistry.activeScenario.value.id)"
+            @resumed="recordBrowserCartResume"
+          />
           <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated')" />
         </template>
       </KioskAdminPanel>
@@ -2375,13 +2662,15 @@ onUnmounted(() => {
         :sending="conversationSending"
         :font-size="conversationFontSize"
         :voice-conversation-only="props.voiceConversationOnly"
+        :text-console-target="desktopHost && !props.voiceConversationOnly ? '#kiosk-text-console-dock' : undefined"
         @retry-message="retryConversationMessage"
         @recover-service="recoverOrderingService"
         @simulate-asr="simulateAsrTranscript"
       />
     </section>
 
-    <ScenarioSurface :listening="isAudioListening" class="menu-region" @activity="recordCustomerActivity('manual')" />
+    <div v-if="desktopHost && !props.voiceConversationOnly" id="kiosk-text-console-dock" :class="['native-text-console']" />
+    <ScenarioSurface :presentation="productPresentation.current.value" :listening="isAudioListening" :occluded="adminPanelOpen" class="menu-region" @activity="recordCustomerActivity('manual')" />
     <KioskAgentControl
       v-if="agentOrderOwner"
       :releasing="manualControlPending"
@@ -2391,7 +2680,7 @@ onUnmounted(() => {
     <button
       v-if="customerSessionState === 'active' || customerSessionState === 'standby'"
       type="button"
-      class="customer-restart"
+      :class="['customer-restart', { 'native-restart': desktopHost }]"
       :disabled="conversationSending"
       @click="startOrRestartCustomerSession"
     >
@@ -2447,9 +2736,13 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.kiosk-scene { display: grid; width: 100vw; height: 100dvh; grid-template-columns: minmax(0, 1fr); padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(59 79 63 / 24%), transparent 38%), linear-gradient(135deg, #111a17, #15211d); row-gap: 1rem; }
+.kiosk-scene { display: grid; box-sizing: border-box; width: 100vw; height: 100dvh; grid-template-columns: minmax(0, 1fr); padding: 1.25rem; overflow: hidden; background: radial-gradient(circle at 12% 0%, rgb(59 79 63 / 24%), transparent 38%), linear-gradient(135deg, #111a17, #15211d); row-gap: 1rem; }
 .kiosk-scene.is-landscape { grid-template-rows: minmax(0, .32fr) minmax(0, .68fr); }
 .kiosk-scene.is-portrait { grid-template-rows: minmax(0, .36fr) minmax(0, .64fr); }
+.kiosk-scene.has-native-console.is-landscape { grid-template-rows: minmax(120px, .32fr) auto minmax(180px, .68fr); }
+.kiosk-scene.has-native-console.is-portrait { grid-template-rows: minmax(120px, .36fr) auto minmax(180px, .64fr); }
+.native-text-console { position: relative; z-index: 60; min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
+.has-native-console .menu-region { grid-row: 3; }
 .service-hero { position: relative; display: grid; min-width: 0; min-height: 0; overflow: hidden; border: 1px solid rgb(230 255 250 / 10%); border-radius: 1.125rem; background: radial-gradient(ellipse at 24% 16%, rgb(238 205 148 / 10%), transparent 25%), linear-gradient(105deg, #24352d 0%, #1a2922 43%, #101a16 100%); grid-column: 1; grid-row: 1; }.service-hero.is-landscape { grid-template-columns: minmax(14rem, .37fr) minmax(0, .63fr); }.service-hero.is-portrait { grid-template-columns: minmax(10rem, .40fr) minmax(0, .60fr); }
 .stage-region { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: transparent; transition: box-shadow .2s ease; }.stage-region.is-hearing-speech, .stage-region.is-listening { box-shadow: inset 0 0 1.4rem rgb(50 201 181 / 7%); }.stage-region.is-processing, .stage-region.is-transcribing { box-shadow: inset 0 0 1.6rem rgb(255 180 76 / 8%); }.stage-region.is-speaking { box-shadow: inset 0 0 1.6rem rgb(117 157 255 / 8%); }
 /* Keep the upper-body gestures prominent in the narrow hero column. Scaling from
@@ -2464,6 +2757,8 @@ onUnmounted(() => {
 .menu-region { min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
 .customer-restart { position: fixed; z-index: 20; bottom: 1.15rem; left: 1.15rem; display: inline-flex; align-items: center; gap: .45rem; border: 1px solid rgb(207 250 254 / 48%); border-radius: .7rem; padding: .6rem .8rem; color: #ecfeff; background: rgb(8 47 73 / 90%); font-size: .8rem; font-weight: 700; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(14 116 144 / 94%); }.customer-restart:disabled { cursor: wait; opacity: .55; }
+/* Native website Views sit above DOM z-index, so keep this control in the host's upper region. */
+.customer-restart.native-restart { top: 1.75rem; right: 1.75rem; bottom: auto; left: auto; }
 
 @media (max-width: 700px) {
   .kiosk-scene { padding: .6rem; row-gap: .6rem; }

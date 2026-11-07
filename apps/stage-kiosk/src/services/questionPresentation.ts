@@ -16,6 +16,8 @@ export function createMenuReplyWindow() {
   const operations = new Set<string>()
   let reads = 0
   let cartReply: string | undefined
+  let browserOutcome: string | undefined
+  const browserEffects = new Set<string>()
   return {
     record(name: string, result: unknown) {
       if (typeof result === 'string') {
@@ -27,8 +29,33 @@ export function createMenuReplyWindow() {
       if (!result || typeof result !== 'object')
         return
       const payload = result as Record<string, unknown>
+      if (name.startsWith('browser_cart_') && payload.source === 'browser' && typeof payload.customerMessage === 'string') {
+        if (payload.status === 'verified' || payload.status === 'preserved') {
+          if (payload.status === 'verified' && typeof payload.effectMessage === 'string')
+            browserEffects.add(payload.effectMessage)
+          browserOutcome = payload.customerMessage
+        }
+        else if (['unknown', 'rejected', 'clarification'].includes(String(payload.status))) {
+          // A later refusal cannot erase an earlier verified effect. State
+          // only completed effects here, never reuse an older cart as current.
+          browserOutcome = [...browserEffects, payload.customerMessage].join(' ')
+        }
+      }
       if (payload.ok === false)
         return
+      // External services own their browser observations and deterministic
+      // customer receipts. Do not replace them with unverified model prose or
+      // pretend they are Menu/POS records. Retain comparisons across reads.
+      if (['browser_observe', 'browser_search', 'browser_present', 'browser_quote', 'browser_quote_selection', 'browser_clarify_product', 'browser_cart_get', 'browser_product_get'].includes(name) && payload.ok === true && payload.source === 'browser') {
+        if (payload.dataOnly === true)
+          return
+        const message = operationReplyFrom(payload)
+        if (message) {
+          reads++
+          messages.add(message)
+        }
+        return
+      }
       if (typeof payload.customerMessage === 'string')
         operations.add(name)
       if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get'].includes(name))
@@ -88,6 +115,7 @@ export function createMenuReplyWindow() {
       return tools[intent]?.some(name => operations.has(name)) === true
     },
     hasReceipts: () => reads > 0 || cartReply !== undefined,
+    browserOutcome: () => browserOutcome,
     reply() {
       // Without evidence, generated dish claims cannot become customer dialogue.
       if (!reads)

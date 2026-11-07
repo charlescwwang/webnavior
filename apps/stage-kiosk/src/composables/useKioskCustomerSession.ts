@@ -2,6 +2,8 @@ import type { KioskCustomerSessionOptions } from '@proj-airi/stage-ui/composable
 
 import { useKioskCustomerSession as useSharedKioskCustomerSession } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
+import { resetConversationService } from '../services/kioskConversationRetry'
 import { scenarioRegistry } from '../services/scenario-registry'
 
 export type { AnonymousKioskCustomer, KioskCustomerSessionState } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
@@ -20,8 +22,9 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
     resetPolicy: 'confirmed-completion',
     idleTimeoutMs: 180_000,
     resetInteractiveSurface: async () => {
+      if (await resetConversationService(interactiveServiceClient) === 'reload')
+        await scenarioRegistry.reloadActive()
       await options.endVisitorSession?.()
-      await scenarioRegistry.reloadActive()
       options.resetConversation?.()
     },
   })
