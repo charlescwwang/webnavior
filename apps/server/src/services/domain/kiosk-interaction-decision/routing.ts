@@ -34,8 +34,8 @@ const purposeQuestion = {
 } satisfies SystemOneQuestion
 
 const families: Record<string, { description: string, accepts: (id: string) => boolean }> = {
-  MENU: { description: '查餐點／分類／全菜單、推薦、重新展示或移動菜單位置；不改訂單。', accepts: id => /^intent:(?:search-(?:all-)?menu|recommend(?:-more)?|show-recommendations|return-menu|scroll-menu:)/u.test(id) },
-  ITEM: { description: '查看餐點、加點、改既有份數或規格、移除特定餐點。', accepts: id => /^intent:(?:select-item|add-item|set-quantity|set-option|remove-item)$/u.test(id) },
+  MENU: { description: '查餐點／分類／全菜單、推薦、重新展示；停止看目前推薦並返回全部菜單／主畫面，或移動菜單位置；不改訂單。', accepts: id => /^intent:(?:search-(?:all-)?menu|recommend(?:-more)?|show-recommendations|return-menu|scroll-menu:)/u.test(id) },
+  ITEM: { description: '查看或設定單一道餐點、加點、改既有份數或規格、移除有對象的已點餐點；停止看推薦不屬此項。', accepts: id => /^intent:(?:select-item|add-item|set-quantity|set-option|remove-item)$/u.test(id) },
   CART: { description: '查看購物車、清空整單或開始結帳。', accepts: id => /^intent:(?:view-cart|clear-cart|start-checkout)$/u.test(id) },
   SERVICE: { description: '選內用／外帶、用餐人數、選桌或略過自願電話登記。', accepts: id => /^intent:(?:set-fulfillment:|set-party-size$|reserve-tables:|skip-customer-entry$)/u.test(id) },
   CHECKOUT: { description: '目前結帳畫面的會員、發票、統編、付款方式或取消結帳。選方式不代表付款成功。', accepts: id => /^intent:(?:skip-membership|choose-invoice:|request-tax-id|set-tax-id|confirm-tax-id|confirm-invoice|select-payment:|cancel-checkout)/u.test(id) },
@@ -54,7 +54,7 @@ const descriptions: Record<string, string> = {
   'intent:recommend': '請本機挑選一批推薦餐點。',
   'intent:recommend-more': '換其他推薦，排除剛展示的一批。',
   'intent:show-recommendations': '重新顯示原本那批推薦。',
-  'intent:return-menu': '回菜單繼續看；保留訂單。',
+  'intent:return-menu': '返回全部菜單／主畫面；目前僅展示推薦時，不想繼續看推薦也是此項。保留訂單，不刪除已點餐點。',
   'intent:scroll-menu:up': '看目前菜單上方、較前段的內容。',
   'intent:scroll-menu:down': '看目前菜單下方、較後段的內容。',
   'intent:view-cart': '查看購物車，不修改。',
@@ -341,17 +341,25 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     const groups = Object.entries(families).filter(([, family]) => input.candidates.some(candidate => family.accepts(candidate.id)))
     if (!groups.length)
       return handoff('NEW_REQUEST')
-    const family = await choose('family', { type: 'choice', instructions: '只判斷明確單一需求屬於哪個操作類別，不選商品。不存在的操作、多項需求或無法確定選 HANDOFF。', criteria: { ...Object.fromEntries(groups.map(([id, family]) => [id, family.description])), HANDOFF: '沒有合適類別，或需要保留整句交給助手。' } })
+    const family = await choose('family', { type: 'choice', instructions: '只判斷明確單一需求屬於哪個操作類別，不選商品。當前只在瀏覽／展示推薦，沒有未完成餐點或既有訂單餐點作為取消對象時，不再看推薦是MENU的返回全部菜單，不是ITEM的刪餐；推薦清單不是已點餐點。ITEM的移除須有既有餐點對象，不能把結束推薦當成清空訂單。不存在的操作、多項需求或無法確定選 HANDOFF。', criteria: { ...Object.fromEntries(groups.map(([id, family]) => [id, family.description])), HANDOFF: '沒有合適類別，或需要保留整句交給助手。' } })
     if (!family || !groups.some(([id]) => id === family))
       return handoff()
     if (family === 'MENU' && (input.decisionState?.priceEvidence || input.decisionState?.ingredientReferences?.length || input.decisionState?.dietaryReferences?.length || input.decisionState?.unavailableConditionReferences?.length))
       return menuHandoff()
     let eligible = input.candidates.filter(candidate => families[family]!.accepts(candidate.id))
     if (family === 'MENU' && eligible.length > 5) {
-      const menu = await choose('menuPurpose', { type: 'choice', instructions: '只區分菜單需求。全部菜單不是其他推薦；換一批不是重顯舊推薦。', criteria: { LOOKUP: '查品名、分類或所有菜單。', RECOMMEND: '挑選推薦、換其他推薦或重顯推薦。', NAVIGATE: '回菜單或移動目前菜單位置。', HANDOFF: '不能確定或需要其他處理。' } })
+      const menu = await choose('menuPurpose', { type: 'choice', instructions: '只區分菜單需求。全部菜單不是其他推薦；換一批不是重顯舊推薦。', criteria: { LOOKUP: '查品名、分類或所有菜單。', RECOMMEND: '挑選推薦、換其他推薦或重顯推薦。', EXIT: '停止看本輪推薦或瀏覽，返回全部菜單／主畫面；不是取消已點餐點。', SCROLL: '繼續看目前菜單，但要移動畫面位置。', HANDOFF: '不能確定或需要其他處理。' } })
       if (!menu || menu === 'HANDOFF')
         return handoff()
-      eligible = eligible.filter(candidate => menu === 'LOOKUP' ? ['intent:search-menu', 'intent:search-all-menu'].includes(candidate.id) : menu === 'RECOMMEND' ? /recommend/u.test(candidate.id) : candidate.id === 'intent:return-menu' || candidate.id.startsWith('intent:scroll-menu:'))
+      // EXIT is already a complete read-only leaf. Reclassifying it as an
+      // operation makes a recommendation refusal compete with HANDOFF twice.
+      // The browser still checks the issued candidate and domain revisions.
+      if (menu === 'EXIT') {
+        return eligible.some(candidate => candidate.id === 'intent:return-menu')
+          ? finish({ kind: 'FAST_ACTION', actionId: 'intent:return-menu' })
+          : handoff()
+      }
+      eligible = eligible.filter(candidate => menu === 'LOOKUP' ? ['intent:search-menu', 'intent:search-all-menu'].includes(candidate.id) : menu === 'RECOMMEND' ? /recommend/u.test(candidate.id) : candidate.id.startsWith('intent:scroll-menu:'))
     }
     return await leaf(eligible)
   }

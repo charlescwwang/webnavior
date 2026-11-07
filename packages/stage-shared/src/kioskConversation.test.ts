@@ -182,3 +182,13 @@ it('requires separate current intent and staff consent before presenting a simul
   expect(render('accept', invited)?.content).toBe('已經呼叫工作人員，您可以繼續點餐。')
   expect(render('accept', invited)).not.toHaveProperty('operation')
 })
+
+// Report: this chat, Nov8 — acknowledgement must guide the next customer turn.
+it('ends acknowledgement variants with a useful question without an operation', () => {
+  for (const contextId of ['ack-a', 'ack-b', 'ack-c', 'ack-d', 'ack-e', 'ack-f']) {
+    const context = parse(conversationContextSchema, { contextId, capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
+    const reply = replyFromContext(JSON.stringify({ kind: 'acknowledgement' }), context)!
+    expect(reply.content).toMatch(/？$/)
+    expect(reply).not.toHaveProperty('action')
+  }
+})

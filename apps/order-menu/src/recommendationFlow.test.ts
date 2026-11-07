@@ -204,3 +204,19 @@ describe('order review presentation', () => {
     expect(onReviewRequested).toHaveBeenCalledOnce()
   })
 })
+
+// Report: this chat, Nov8 — leaving recommendations must restore the full menu.
+it('returns from a constrained recommendation to the catalog without changing the cart or dietary exclusions', async () => {
+  const present = vi.fn()
+  const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: present })
+  await runtime.invoke('order_add_item', { itemId: 'dish-1', quantity: 2 })
+  const before = await runtime.invoke('cart_get', { display: false })
+  await runtime.invoke('menu_recommend', { includeIngredients: ['chicken'], excludeIngredients: ['pork'], maxPrice: 500, limit: 1 })
+  const result = await runtime.invoke('menu_open')
+  expect(result).toHaveProperty('presentation.itemIds', dishes.slice(1).map(item => item.id))
+  expect(result).toHaveProperty('queryState.filters.includeIngredients', [])
+  expect(result).toHaveProperty('queryState.filters.excludeIngredients', ['pork'])
+  expect(result).toHaveProperty('queryState.prices', {})
+  expect(present.mock.calls.at(-1)?.[0].itemIds).toEqual(dishes.slice(1).map(item => item.id))
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: (before as { cart: unknown }).cart })
+})

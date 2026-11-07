@@ -68,6 +68,15 @@ operations or a replacement document keep admission revoked. Hosts must read
 current domain state and release only their own settled task before resuming;
 successful transport recovery does not establish payment success. Execution
 notifications include connection/document/operation IDs for bounded diagnostics.
+The real-iframe regression suite includes ingredient-task BEGIN/context/END calls;
+a direct Menu-runtime test cannot detect discovery-version mismatches.
+Generalization chains cover every declared ingredient alias, positive/exclusion
+wording, preparation and mixed/unknown requests in both task modes while reusing
+the original descriptor; read-only writes must still be refused. Run it
+with `pnpm -F @proj-airi/stage-ui exec vitest run --config vitest.interactiveService.config.ts src/services/interactiveServiceClient.browser.test.ts`.
+`VITEST_BROWSER_NAME=firefox` selects Firefox and
+`VITEST_BROWSER_EXECUTABLE` can select an installed browser binary; Chromium
+remains the default. These tests do not use models or a production cart.
 
 Run the focused real cross-origin Chrome tests from the workspace root:
 `VITEST_BROWSER_CHANNEL=chrome pnpm exec vitest run --config packages/stage-ui/vitest.interactiveService.config.ts`.

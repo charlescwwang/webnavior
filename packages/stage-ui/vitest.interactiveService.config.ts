@@ -14,8 +14,8 @@ export default defineConfig({
       api: { host: '127.0.0.1' },
       enabled: true,
       headless: true,
-      provider: playwright({ launchOptions: { channel: env.VITEST_BROWSER_CHANNEL } }),
-      instances: [{ browser: 'chromium' }],
+      provider: playwright({ launchOptions: { channel: env.VITEST_BROWSER_CHANNEL, executablePath: env.VITEST_BROWSER_EXECUTABLE } }),
+      instances: [{ browser: env.VITEST_BROWSER_NAME === 'firefox' ? 'firefox' : 'chromium' }],
     },
   },
 })

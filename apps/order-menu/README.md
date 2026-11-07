@@ -10,6 +10,12 @@ Origin-Trial or iframe `allow="tools"` permission is required. The parent origin
 source Window, document ID and connection challenge bind discovery and execution
 to the current approved iframe. Domain tool names, inputs and receipts retain
 their previous semantics, including combined add and recommendation actions.
+Tool discovery describes stable POS/service capabilities. Starting/ending a task
+or changing its transcript must not add/remove schema properties: task authority
+belongs to runtime validation and `kiosk_conversation_context.allowedToolNames`.
+`menu_confirm_item.originalRecipe` remains optional in discovery; invocation still
+rejects it without a current preparation request. This prevents BEGIN from
+changing `toolsRevision` and rejecting the following context read as STALE_TOOLS.
 
 `toolValidationPlugin.ts` compiles the owned schemas with Ajv during Vite/Vitest
 loading and bundles its helpers into one ESM module. Browsers do not compile
@@ -1134,3 +1140,12 @@ intent-first staff-assistance flow rather than expanding the catalog into
 unbounded add proposals. Existing per-item quantity limits, option validation,
 cart state and tool authorization remain authoritative. This does not limit
 ordinary explicitly named multi-item orders or alter touch ordering.
+
+
+Returning from recommendations (`menu_open`) now uses the existing full-catalog
+read: clears positive ingredient/category/query/price/ranking browsing scope,
+shows every matching item without the recommendation cap, and synchronizes the
+condition strip. Existing dietary/ingredient/item exclusions and cart lines stay
+intact. It neither cancels checkout nor clears an unadded meal or submitted order.
+A refusal of only the currently shown recommendation is a read-only browse exit;
+explicit cancellation of a draft/cart item retains its own question/authorization.

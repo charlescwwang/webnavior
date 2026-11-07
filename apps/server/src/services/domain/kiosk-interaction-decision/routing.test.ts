@@ -250,3 +250,21 @@ it('allows a Menu-issued unit clarification without granting an order write', as
   expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: id, answeredQuestionId: 'current' })
   expect(invoke).toHaveBeenCalledTimes(2)
 })
+
+// Report: this chat, Nov8 — classified recommendation exit was reclassified as unknown.
+it('finishes a read-only browse exit at its own leaf without interpreting order consent', async () => {
+  const invoke = provider(['SINGLE', 'MENU', 'EXIT'], true)
+  const menuCandidates = ['search-menu', 'search-all-menu', 'recommend', 'recommend-more', 'show-recommendations', 'return-menu'].map(name => ({ id: `intent:${name}`, description: name }))
+  const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: menuCandidates, transcript: '不要了', invoke })
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:return-menu' })
+  expect(invoke).toHaveBeenCalledTimes(3)
+  expect(result).not.toHaveProperty('answeredQuestionId')
+})
+
+it('does not authorize a browse exit without a browser-issued return candidate', async () => {
+  const invoke = provider(['SINGLE', 'MENU', 'EXIT'], true)
+  const menuCandidates = ['search-menu', 'search-all-menu', 'recommend', 'recommend-more', 'show-recommendations', 'scroll-menu:up'].map(name => ({ id: `intent:${name}`, description: name }))
+  const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: menuCandidates, transcript: '回主畫面', invoke })
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result).not.toHaveProperty('actionId')
+})

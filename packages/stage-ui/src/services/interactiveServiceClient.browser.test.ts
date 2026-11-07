@@ -7,6 +7,7 @@ import { discoverService, executeServiceTool, interactiveServiceChannel } from '
 import { afterEach, expect, it } from 'vitest'
 import { readonly } from 'vue'
 
+import { ingredientDefinitions } from '../../../../apps/order-menu-server/src/domain/composition'
 import { createInteractiveServiceClient } from './interactiveServiceClient'
 
 const cleanups: Array<() => void> = []
@@ -280,3 +281,45 @@ it('preserves checkout/payment restrictions, accepted completion and a fresh doc
   await client.waitUntilReady()
   expect(await execute('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
 })
+
+// Report: this chat Nov7/8 — food queries fail after BEGIN before Main/context projection.
+it.each(['我想吃豬肉', '我要吃魚', '有虱目魚嗎'])('reads the real iframe context after starting an ingredient task: %s', async (transcript) => {
+  const { execute, client } = await setup()
+  const state = await execute('kiosk_interaction_state') as { menuRevision: number }
+  await execute('kiosk_agent_task', { taskId: 'ingredient', action: 'BEGIN', transcript, expectedMenuRevision: state.menuRevision, readOnly: true, constraints: {} })
+  expect(await execute('kiosk_conversation_context', { includeCatalog: true })).toMatchObject({ taskId: 'ingredient', readOnly: true, catalog: { complete: true } })
+  expect(client.availability.value).toBe('ready')
+  await execute('kiosk_agent_task', { taskId: 'ingredient', action: 'END' })
+  expect(await execute('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+// Report: this chat, Nov8 — generalize the discovery invariant beyond three recorded utterances.
+it.each([true, false])('keeps one iframe binding valid across ingredient and preparation task transitions (readOnly=%s)', async (readOnly) => {
+  const { execute, client, tool } = await setup()
+  const contextTool = tool('kiosk_conversation_context')
+  const state = await execute('kiosk_interaction_state') as { menuRevision: number }
+  await execute('menu_recommend', { action: 'update', category: '便當', limit: 1 })
+  const utterances = [...new Set([
+    ...ingredientDefinitions.flatMap(ingredient => ingredient.aliases.flatMap(alias => [`我想吃${alias}`, `不要${alias}`])),
+    '不要雞肉，改推薦豬肉',
+    '飯不要了，改看麵',
+    '水餃兩份不要辣',
+    '不用換了，照原本',
+    '有沒有鴨肉',
+    '我想要打拋牛便當',
+    '我想先看看菜單',
+  ])]
+  for (const [index, transcript] of utterances.entries()) {
+    const taskId = `generalized-${index}`
+    await execute('kiosk_agent_task', { taskId, action: 'BEGIN', transcript, expectedMenuRevision: state.menuRevision, readOnly, constraints: {} })
+    // Reuse the descriptor from original discovery. Rediscovering on every turn
+    // would hide the exact revision mismatch under investigation.
+    expect(await client.execute(contextTool, { includeCatalog: true }), transcript).toMatchObject({ taskId, readOnly, catalog: { complete: true, itemCount: 6 } })
+    expect(client.availability.value, transcript).toBe('ready')
+    if (readOnly)
+      expect(await execute('order_add_item', { itemId: 'dish-0', quantity: 1 }), transcript).toMatchObject({ ok: false })
+    await execute('kiosk_agent_task', { taskId, action: 'END' })
+    expect(await client.execute(contextTool, { includeCatalog: true }), transcript).not.toHaveProperty('taskId')
+    expect(await execute('cart_get', { display: false }), transcript).toMatchObject({ cart: { itemCount: 0 } })
+  }
+}, 30_000)

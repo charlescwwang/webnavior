@@ -295,7 +295,7 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   }
   else if (!checkout) {
     if (input.menuReturnSupported)
-      candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到菜單繼續點餐，關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空訂單。'))
+      candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到全部菜單／主畫面繼續看；目前僅展示推薦而不想再看、不要推薦時也返回全部菜單。關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空或刪除餐點。'))
     // Target resolution is independent of intent selection: Jev receives one
     // candidate per operation, never one per product or cart line.
     candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。沒有既有瀏覽條件時，泛問販售內容可展示完整菜單；已有條件時沿用條件找其他，明確要全部則選查看完整菜單的獨立候選；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))

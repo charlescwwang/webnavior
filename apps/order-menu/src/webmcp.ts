@@ -598,10 +598,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         return []
       if (definition.name === 'menu_scroll' && !options.onMenuScroll)
         return []
-      if (definition.name === 'menu_confirm_item' && (!agentTask || !hasPreparationRequest(deriveDecisionContext({ ...currentFastPathContext(), transcript: agentTask.transcript })))) {
-        const { originalRecipe: _originalRecipe, ...properties } = definition.inputSchema.properties as Record<string, unknown>
-        return [{ ...definition, inputSchema: { ...definition.inputSchema, properties } }]
-      }
+      // Tool discovery describes stable capabilities, not one utterance's
+      // authorization. originalRecipe is still checked when invoked; changing
+      // this schema at BEGIN would invalidate the Host's next context read.
       if (definition.name === 'menu_get')
         return [{ ...definition, inputSchema: { ...definition.inputSchema, properties: { ...(definition.inputSchema.properties as Record<string, unknown>), category } } }]
       if (definition.name === 'menu_recommend') {
@@ -1017,7 +1016,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       if (recommendationBatch) {
         // Showing the catalog releases browsing scope, not dietary restrictions
         // or the record of dishes already recommended. All items remain visible.
-        recommendationBatch = { ...recommendationBatch, category: '', queries: [], needs: [], prices: {}, scope: undefined, exhausted: false }
+        recommendationBatch = { ...recommendationBatch, category: '', queries: [], needs: [], prices: {}, filters: ingredientFilters(input), strategy: undefined, scope: undefined, exhausted: false }
       }
     }
     if (name === 'menu_get' || name === 'menu_recommend') {
@@ -1172,8 +1171,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (!options.onMenuRequested || currentFastPathContext().phase !== 'ordering')
             throw new Error('Returning to the menu is unavailable in this phase.')
           await options.onMenuRequested()
-          await announce('回到菜單繼續點餐', undefined, {}, onAction)
-          return { customerMessage: '已回到菜單，購物車的餐點仍保留。', cart: machine.getCart() }
+          const catalog = await invoke('menu_get', { scope: 'catalog', display: true }, onAction, queryTask) as Record<string, unknown>
+          return { ...catalog, customerMessage: '已回到全部菜單，接下來想看哪一道餐點？', cart: machine.getCart() }
         }
         case 'menu_scroll': {
           if (input.direction !== 'UP' && input.direction !== 'DOWN')
@@ -1374,6 +1373,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             if (!queryTask || (queryTask === agentTask && queryTask.expiresAt > Date.now())) {
               presentationItemIds = presentation.itemIds
               recommendationRevision++
+              if (input.scope === 'catalog')
+                options.onQueryStateChange?.(getQueryState())
               await options.onRecommendationsChange?.(presentation)
             }
           }

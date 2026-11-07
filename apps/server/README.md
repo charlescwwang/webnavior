@@ -690,3 +690,10 @@ not a staff-call receipt or order confirmation. A subsequent current
 `staffAssistance` invitation requires separate consent for the simulated notice.
 Declining or requesting ordinary ordering can continue without screen locking.
 Quantity-refusal tools and existing cart authorization remain unchanged.
+
+
+Staged menu routing distinguishes a read-only browse exit from scrolling and
+order cancellation. Once the EXIT leaf is chosen, its browser-issued return
+candidate is sent directly to normal domain validation instead of reclassifying
+the same meaning. Confidence and revision checks are unchanged. General
+acknowledgement variants end with a next-step question, not a consent ticket.

@@ -183,6 +183,28 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     } }) })
   }
 
+  // Report: this chat, Nov8 — abandoning only the recommendation returns the catalog.
+  it('configured recommendation exit returns the full menu without changing the cart', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    for (const transcript of ['不要了', '回到主畫面', '先不要推薦了']) {
+      runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: () => {} })
+      const recommendation = await runtime.invoke('menu_recommend', { action: 'update', includeIngredients: ['fish'] }) as { customerMessage: string }
+      const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+      const checkpoints: unknown[] = []
+      const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, conversation: { messages: [{ role: 'user', content: '推薦魚的餐點' }, { role: 'assistant', content: recommendation.customerMessage }] }, routing: 'staged', backgroundSpeechMode: 'off', policy: configuredPolicy, invoke: async (state, questions) => {
+        const result = await systemOne.decide(state, questions)
+        checkpoints.push(result.answers)
+        return result
+      } }) })
+      process.stdout.write(`[recommendation-exit] ${JSON.stringify({ transcript, kind: decision.kind, checkpoints })}\n`)
+      expect(decision.kind).toBe('FAST_ACTION')
+      expect(decision).toHaveProperty('result.items', expect.arrayContaining(catalog.items.map(item => expect.objectContaining({ id: item.id }))))
+      expect(decision).toHaveProperty('result.queryState.filters.includeIngredients', [])
+      expect(await runtime.invoke('cart_get', {})).toHaveProperty('cart.itemCount', 0)
+    }
+  }, 60_000)
+
   // Report: this chat, Nov7 — operator identity and intent-first special ordering.
   it('configured order assistance confirms intent then requests separate staff consent without writes', async () => {
     ready = true

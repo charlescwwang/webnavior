@@ -64,9 +64,15 @@ it('regression K1107-FUZZY requires a later owned confirmation and retains the r
 it.each([
   { speech: '我要打拋牛便當兩份', allowed: false },
   { speech: '打拋豬便當一份不要辣', allowed: true },
-])('offers original-recipe arguments only for an actual preparation request: $speech', async ({ speech, allowed }) => {
+])('keeps discovery stable while authorizing original-recipe confirmation from the request: $speech', async ({ speech, allowed }) => {
   const runtime = createMenuToolRuntime({ menu: menus[0], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const before = runtime.toolDefinitions
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'schema', transcript: speech, expectedMenuRevision: 0, constraints: {} })
   const definition = runtime.toolDefinitions.find(tool => tool.name === 'menu_confirm_item')!
-  expect(Object.hasOwn(definition.inputSchema.properties as object, 'originalRecipe')).toBe(allowed)
+  expect(runtime.toolDefinitions).toEqual(before)
+  expect(Object.hasOwn(definition.inputSchema.properties as object, 'originalRecipe')).toBe(true)
+  if (allowed)
+    expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'pork', originalRecipe: true })).toHaveProperty('pendingCustomerChoice')
+  else
+    await expect(runtime.invokeForAgent('menu_confirm_item', { itemId: 'pork', originalRecipe: true })).rejects.toThrow('preparation')
 })
