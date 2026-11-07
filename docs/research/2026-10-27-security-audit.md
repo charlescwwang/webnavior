@@ -118,3 +118,36 @@ Email測試登入及六位數開發註冊恢復原本的明確旗標與非produc
 提交前依`.github/CONTRIBUTING.md`執行一次全專案typecheck，通過。Server相關31、Bridge44、Menu757個測試通過；受影響檔案的ESLint及shell語法檢查通過。全專案lint仍未通過：首次報2371個錯誤，其中本批唯一受影響檔案錯誤為pnpm-workspace.yaml的key排序，已修正並由scoped lint及正常pre-commit hook驗證。其他既有錯誤留待其所屬範圍處理，不能聲稱全專案lint已通過。
 
 整理差異時移除app.test.ts等檔案無關的換行格式噪音、兩處重複解構別名警示，並保留當時Windows實測Node24.13.0的歷史紀錄，另註明目前專案要求24.22.1。沒有再更動登入／註冊政策、更新套件、重部署或重啟服務；本次僅記錄已上板變更，未push。
+
+## 2026-10-28 本機 Electron 原型的安全前置檢查
+
+使用者要求在 ESGPB Electron 實驗前先處理近期 PHP／Node 安全事件。
+本機 shell 原為 Node22.12.0，與 `.tool-versions` 的24.22.1不同；已從官方
+下載 darwin-arm64 24.22.1、核對官方 SHA256，安裝至 nvm 並將 default
+改為24.22.1，保留舊版本。新版另安裝同版 pnpm10.33.0，停用安裝scripts。
+已開啟的終端與執行中服務不會自動換版，需明確 `nvm use default`；本次
+沒有重啟既有開發／正式服務。舊default備份在
+`/tmp/airi-node-default-before-electron-prototype`。
+
+Electron41.2.1實際內建Node24.14.1。官方穩定版45.0.0仍列24.22.0，不能只升
+外部Node就宣稱Electron已修補。原型使用獨立官方46.0.0-alpha.2，核對
+SHASUMS256與GitHub asset digest，並以實際執行檔讀到Node24.22.1、
+Chromium158.0.8120.0、Undici7.30.1。這是預覽版技術實驗，沒有更新
+workspace的Electron catalog／lockfile，也不代表桌面正式版已完成安全升級。
+原型在載入網站前檢查內外Node版本，遠端頁面保持sandbox與contextIsolation、
+不啟用Node、不關閉webSecurity。啟動器不把測試帳密傳入Electron環境。
+
+新取得的全workspace prod audit仍有critical10／high124／moderate153／low36，
+原始結果在`/tmp/airi-electron-preflight-audit-20261028.json`。其中包含其他
+app、Electron套件與Vitest peer鏈，不能當作本次原型的可利用漏洞數，也不能
+宣稱已清零。PHP／Composer來源仍未找到；ESGPB為第三方網站，沒有檢查或
+修改其伺服器PHP，不能推定其已修補。官方依據沿用本文開頭PHP與Node公告，
+另見[Electron版本清單](https://releases.electronjs.org/)及
+[46.0.0-alpha.2](https://releases.electronjs.org/release/v46.0.0-alpha.2)。
+
+原型驗收：以24.22.1執行`runEsgpbElectronPrototype.mjs --verify --cart`，
+登入／重載／原Cookie屬性／規格／實際加購讀回／只刪除UUID標記品項均通過。
+原購物車35→75→35，未送單或付款。舊Electron前置拒絕測試、新增程式
+ESLint與Node語法檢查通過；未執行全專案typecheck，也未建立commit或部署。
+初次Python ZIP解壓未還原macOS Framework符號連結，造成DYLD啟動失敗；
+已用`ditto -xk`重解，之後原生視窗與網頁實測成功，並非已確認的macOS不相容。

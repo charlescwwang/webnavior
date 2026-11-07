@@ -79,6 +79,17 @@ OIDC callback 錯誤停留錯誤頁；全新瀏覽器與既有 SW 瀏覽器的 `
 維持既有自有菜單測試直到第三方方案驗收完成，但第三方目標不以 WebMCP 為依賴。
 本文件尚未選定工具，也未宣稱第三方操作已可用。
 
+後續：2026-10-28使用者選擇先試Electron，原型已驗證ESGPB登入及可逆加購；
+Windows 11 Kiosk的分階段方案與進度改見
+[Electron實作計畫](2026-10-28-windows-kiosk-electron.md)。原型或原生顯示成功
+仍不代表通用Agent與送單能力已完成，本節保留10/18調查時的選型背景。
+
+10/28再更新：使用者提供Edge/CDP Cookie相容模式成功經驗後，改為優先驗證
+保留iframe的本機companion。獨立Chrome/CDP登入、重載、可逆購物車及Cookie
+屬性還原已通過；Windows Edge與實際Kiosk／Agent接合尚未驗收。後續主線見
+[Edge／iframe／本機Companion計畫](2026-10-28-windows-kiosk-browser-companion.md)
+與Kiosk README，暫停擴充Electron。
+
 官方依據：
 
 - [Chrome content scripts](https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts)：DOM 存取、isolated world 與 host permission。
