@@ -26,6 +26,31 @@ describe('device policy authorization and concurrency', () => {
     deviceId = (await service.createDevice({ siteId, label: 'A', registrationMethod: 'qr_code' })).id
   })
 
+  it('allows text-only mode on one device and enforces local delegation independently', async () => {
+    const other = await service.createDevice({ siteId, label: 'Voice kiosk', registrationMethod: 'qr_code' })
+    const initial = await service.getDeviceSettings(deviceId)
+    expect(initial.effective.textOnlyMode).toBe(false)
+    const changed = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { textOnlyMode: true }, localControls: [] } })
+    expect(changed.effective.textOnlyMode).toBe(true)
+    expect((await service.getDeviceSettings(other.id)).effective.textOnlyMode).toBe(false)
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: changed.settings.version, overrides: { textOnlyMode: false } } })).rejects.toThrow()
+    const delegated = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: changed.settings.version, overrides: { textOnlyMode: true }, localControls: ['textOnlyMode'] } })
+    const local = await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: delegated.settings.version, overrides: { textOnlyMode: false } } })
+    expect(local.effective.textOnlyMode).toBe(false)
+    expect((await service.getDeviceSettings(deviceId)).effective.textOnlyMode).toBe(false)
+  })
+
+  it('supports central service/background choices while rejecting invalid or undelegated changes', async () => {
+    const initial = await service.getDeviceSettings(deviceId)
+    expect(initial.effective.serviceMode).toBe('kiosk')
+    expect(initial.effective.backgroundSpeechMode).toBe('off')
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: initial.settings.version, overrides: { serviceMode: 'table-service' } } })).rejects.toThrow()
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { serviceMode: 'invalid' }, localControls: [] } })).rejects.toThrow()
+    const changed = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { serviceMode: 'table-service', backgroundSpeechMode: 'observe' }, localControls: [] } })
+    expect(changed.effective.serviceMode).toBe('table-service')
+    expect(changed.effective.backgroundSpeechMode).toBe('observe')
+  })
+
   // Report: this chat, 2026-10-28 — new machines must start with the field-test policy.
   it('creates independent overridden settings and permits local field adjustments', async () => {
     const initial = await service.getDeviceSettings(deviceId)

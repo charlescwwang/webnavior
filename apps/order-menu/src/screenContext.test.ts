@@ -7,7 +7,7 @@ describe('visible ordering screen context', () => {
     vi.useFakeTimers()
     try {
       const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-      await runtime.invoke('menu_get', { query: '周氏蝦捲', display: true })
+      await runtime.invoke('menu_get', { query: '蝦捲', display: true })
       const shown = await runtime.invoke('kiosk_fast_path_context', { transcript: '這個' }) as { references: Array<{ refId: string, label: string }> }
       expect(shown.references.length).toBeGreaterThan(0)
       vi.advanceTimersByTime(300_000)

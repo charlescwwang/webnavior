@@ -79,12 +79,14 @@ export function mentionedDietaryReferences(transcript: string): Array<{ id: 'veg
 /** Finds topics the current composition contract cannot verify; Jev decides whether they are requirements. */
 export function mentionedUnavailableConditions(transcript: string) {
   const definitions = [
+    { id: 'preparation', label: '製作調整（依各餐點實際客製選項）', aliases: ['蔥', '香菜', '蒜'] },
+    { id: 'spice', label: '辣度或製作調整（依餐點選項；沒有全面不辣保證）', aliases: ['辣'] },
     { id: 'sodium', label: '鈉含量（沒有營養數據）', aliases: ['鈉', '鹽分'] },
     { id: 'sugar', label: '糖含量（沒有營養數據）', aliases: ['糖'] },
     { id: 'energy', label: '熱量（沒有營養數據）', aliases: ['熱量', '卡路里'] },
     { id: 'fat', label: '脂肪含量（沒有營養數據）', aliases: ['脂肪', '低脂', '高脂'] },
     { id: 'protein', label: '蛋白質含量（沒有營養數據）', aliases: ['蛋白質', '高蛋白', '低蛋白'] },
-    { id: 'allergen-safety', label: '過敏／交叉污染安全保證（成分表不提供保證）', aliases: ['過敏', '交叉污染'] },
+    { id: 'allergen-safety', label: '過敏／交叉污染安全保證（成分表不提供保證）', aliases: ['過敏', '交叉污染', '保證'] },
     { id: 'strict-diet', label: '嚴格素別或飲食認證（只有一般素食標示）', aliases: ['純素', '全素', '奶蛋素', '清真'] },
   ]
   // Literal vocabulary lookup only, like ingredient references. 糖醋排骨 can

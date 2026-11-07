@@ -1,5 +1,7 @@
 import type { MenuItem } from './order-machine'
 
+import { ratio, WRatio } from 'fuzzball'
+
 /** Only known catalog names and merchant-provided aliases can identify items. */
 export function resolveMenuItems(menu: readonly MenuItem[], transcript: string) {
   const normalized = transcript.toLocaleLowerCase().replace(/\s/g, '')
@@ -65,4 +67,43 @@ export function itemMatchesQuery(item: MenuItem, query: string) {
   const normalized = query.toLocaleLowerCase().replace(/\s/g, '')
   return [item.id, item.name, ...(item.aliases ?? []), item.description, item.category]
     .some(value => value.toLocaleLowerCase().replace(/\s/g, '').includes(normalized))
+}
+
+/**
+ * Ranks a concrete unmatched Menu query. This is discovery evidence only;
+ * raw utterance routing and exact identity resolution never call this scorer.
+ */
+export function findMenuCandidates(menu: readonly MenuItem[], query: string) {
+  const normalized = query.normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
+  if (normalized.length < 3 || normalized.length > 120 || resolveMenuItems(menu, query).length)
+    return []
+  // NOTICE: fuzzball defaults to ASCII-stripping preprocessing. Disable it so
+  // Chinese names remain intact; normalize only the bounded query/name here.
+  // WRatio ranks proposals, not identity probability. Full ratio also prevents
+  // a shared short suffix (e.g. 便當) dominating a long unrelated query.
+  // Source: https://github.com/nol13/fuzzball.js#pre-processing
+  const options = { full_process: false, force_ascii: false }
+  const ranked = menu.filter(item => item.available !== false).map((item, index) => {
+    let score = 0
+    let full = 0
+    for (const name of [item.name, ...(item.aliases ?? [])]) {
+      const candidate = name.normalize('NFKC').toLocaleLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
+      const similarity = ratio(normalized, candidate, options)
+      const weighted = WRatio(normalized, candidate, options)
+      if (similarity >= 60 && weighted > score) {
+        score = weighted
+        full = similarity
+      }
+    }
+    return { item, score, full, index }
+  }).filter(value => value.score >= 70).sort((left, right) => right.score - left.score || right.full - left.full || left.index - right.index)
+  const best = ranked[0]?.score ?? 0
+  // These are conservative candidate cutoffs, not calibrated acceptance rates;
+  // every retained candidate still requires customer confirmation.
+  const scored = ranked.filter(value => value.score >= best - 12).map(value => value.item)
+  // Short existing fragments (e.g. 排骨飯 -> 炸排骨便當) can have a low
+  // whole-name score. Retain that bounded discovery policy after scored hits;
+  // long unrelated queries cannot qualify by a common suffix alone.
+  const fragments = normalized.length <= 3 ? possibleMenuItems(menu.filter(item => item.available !== false), query) : []
+  return [...new Map([...scored, ...fragments].map(item => [item.id, item])).values()].slice(0, 3)
 }

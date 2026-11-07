@@ -22,6 +22,7 @@ const providerProfileSchema = object({
   plaintextKey: optional(pipe(string(), maxLength(8192))),
   timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
   voice: optional(pipe(string(), maxLength(200))),
+  speed: optional(pipe(number(), minValue(0.25), maxValue(4))),
 })
 
 const updateProviderProfileSchema = object({

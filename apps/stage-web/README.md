@@ -59,6 +59,11 @@ post-admission demand interpretation; existing custom prompts remain saved.
   **裝置設定**. Camera evidence mode is configured per device there. The
   **保存天數** control appears with that device configuration, but applies to
   every device in the selected site because session retention is a site policy.
+- **AI 控制 → 語音回覆 TTS → OpenAI-compatible Provider** exposes synthesis
+  speed from 0.25 to 4x (default 1). Verify and save, then apply to Kiosk; the selected
+  multiplier is sent as the speech API's speed parameter. Reload existing Kiosk
+  pages to rebuild their prepared welcome-audio bank after a speed change.
+
 - **互動體驗 → 服務場景** can attach one PNG, JPEG, or WebP store background
   to the published Profile. Kiosk uses its built-in counter scene whenever the
   Profile has no uploaded image.

@@ -117,6 +117,7 @@ async function prepare(scenario: Scenario) {
       chooseInvoice: method => update(chooseInvoiceMethod(checkout!, method)),
       requestTaxId: () => update(requestTaxId(checkout!)),
       setTaxId: taxId => update(setTaxIdDraft(checkout!, taxId)),
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => update(confirmTaxId(checkout!)),
       cancel: () => { checkout = undefined },
       selectPayment: async () => { throw new Error('Synthetic replay cannot initiate payment') },
@@ -177,7 +178,7 @@ describe.skipIf(process.env.KIOSK_SLM_MENU !== '1')('staged SLM and real isolate
     const before = await runtime.invoke('cart_get', { display: false }) as { cart: { itemCount: number } }
     let requests = 0
     const started = Date.now()
-    const decision = await decideInteraction({ routing: 'staged', candidates: snapshot.candidates, decisionState: snapshot, transcript: scenario.transcript, conversation: { messages }, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true, invoke: async (state, questions) => {
+    const decision = await decideInteraction({ routing: 'staged' as const, backgroundSpeechMode: 'enforce' as const, candidates: snapshot.candidates, decisionState: snapshot, transcript: scenario.transcript, conversation: { messages }, policy: { decisionInstruction: '', storeInstruction: '' }, includeTrace: true, invoke: async (state, questions) => {
       const key = Object.keys(questions)[0]!
       const request = createChoiceRequest(process.env.KIOSK_SLM_MODEL ?? 'huggingface.co/unsloth/qwen3.5-4b-gguf:latest', state, questions[key]!)
       requests++

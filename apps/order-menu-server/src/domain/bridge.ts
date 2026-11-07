@@ -1,7 +1,7 @@
 import type { CatalogSnapshot, PaymentMethod, PosGateway, PosSubmission, SubmittedOrder } from './contracts'
 import type { TableAssignment } from './seatingContracts'
 
-import { randomUUID } from 'node:crypto'
+import { randomInt, randomUUID } from 'node:crypto'
 
 /**
  * Owns idempotency at the integration boundary, independent of a POS vendor's
@@ -70,7 +70,11 @@ export function createBridge(gateway: PosGateway, tableAssignment: TableAssignme
     const order: SubmittedOrder = {
       cart: submission.cart,
       id: `order-${randomUUID()}`,
-      receipt,
+      // Assign after the POS outcome is known, inside the existing idempotency
+      // boundary. Concurrent requests and later receipt replays reuse this number.
+      receipt: receipt.status === 'accepted'
+        ? { ...receipt, pickupNumber: String(randomInt(100, 1000)) }
+        : receipt,
     }
     submittedByKey.set(submission.idempotencyKey, order)
     return order
@@ -102,7 +106,8 @@ function paymentReceipt(status: 'authorized' | 'pending' | 'rejected' | 'uncerta
 }
 
 /** Final validation prevents a stale browser catalog from changing an order silently. */
-function validateCartAgainstCatalog(submission: PosSubmission, catalog: CatalogSnapshot) {
+/** Validates shared meal/price facts without granting payment or table-order authority. */
+export function validateCartAgainstCatalog(submission: Pick<PosSubmission, 'cart'> | { cart: Pick<PosSubmission['cart'], 'lines' | 'itemCount' | 'total'> }, catalog: CatalogSnapshot) {
   const itemById = new Map(catalog.items.map(item => [item.id, item]))
   let count = 0
   let total = 0

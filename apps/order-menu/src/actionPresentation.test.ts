@@ -113,7 +113,7 @@ describe('visible order actions', () => {
       throw new Error('Unavailable screen')
     } })
     const added = await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' }) as { line: { id: string } }
-    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'remove', transcript: '周氏蝦捲不要了', expectedMenuRevision: 0, constraints: {} })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'remove', transcript: '蝦捲不要了', expectedMenuRevision: 0, constraints: {} })
     expect(await runtime.invokeForAgent('cart_remove_item', { lineId: added.line.id })).toMatchObject({ outcome: { status: 'completed' } })
     expect(await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'remove' })).toMatchObject({ ok: true, presentationFailed: true })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })

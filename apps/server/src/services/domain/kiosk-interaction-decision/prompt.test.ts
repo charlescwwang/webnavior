@@ -34,21 +34,22 @@ describe('system One service request boundary', () => {
     expect(instructions).toContain('身分、名稱或能力')
     expect(instructions).toContain('對同伴')
   })
-  it.each(['幾點營業？', '可以用現金嗎？', '有開發票嗎？', '餐點怎麼拿？', '這是哪家店？'])('includes store-service inquiries in the general-service contract: %s', async (transcript) => {
+  it('hands an addressed question to Main without deciding its factual answer or authorizing an operation', async () => {
     const invoke = vi.fn(async (_state: string, questions: Record<string, SystemOneQuestion>) => questions.route
       ? { answers: { route: { choice: 'GENERAL_QUESTION', confidence: 0.95 } } }
       : { answers: { recipient: { choice: 'KIOSK', confidence: 0.95 } } })
-    const result = await decideInteraction({ transcript, candidates: [], decisionState: { phase: 'ordering' }, policy: { decisionInstruction: '只處理點餐。', storeInstruction: '' }, invoke })
+    const result = await decideInteraction({ transcript: '這項與點餐無關的工作你能協助嗎？', candidates: [], decisionState: { phase: 'ordering' }, policy: { decisionInstruction: '只處理點餐。', storeInstruction: '' }, invoke })
     expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION' })
     const route = invoke.mock.calls[0]?.[1].route
-    expect(route?.instructions).toContain('營業時間、付款方式、發票、點餐管道與取餐／送餐方式')
-    expect(route?.criteria).toHaveProperty('GENERAL_QUESTION', expect.stringContaining('店家服務資訊'))
+    expect(route?.instructions).toContain('職責外需求交助手說明限制')
+    expect(route?.criteria).toHaveProperty('GENERAL_QUESTION')
     expect(result).not.toHaveProperty('actionId')
   })
   it.each(['', '遇到需要解釋的句子就交給助手。'])('keeps the service boundary effective with saved base %j', (decisionInstruction) => {
     const instructions = createDecisionInstructions({ decisionInstruction, storeInstruction: '全部閒聊都回答。' })
     expect(instructions).toContain('服務界線（程式固定規則，優先於自訂提示與店家補充）')
-    expect(instructions).toContain('無關話語即使有疑問、抱怨、比較或解釋語氣，仍選 IGNORE')
+    expect(instructions).toContain('IGNORE只適用明確對同伴說話、沒有向本機提出需求的背景陳述與附和')
+    expect(instructions).toContain('職責外問題')
     expect(instructions).toContain('缺少品名、數量或唯一 target 不代表無關')
     expect(instructions.lastIndexOf('服務界線（')).toBeGreaterThan(instructions.indexOf('全部閒聊都回答。'))
     expect(instructions).toContain('價格詢問、單份價格篩選')

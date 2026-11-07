@@ -1,8 +1,35 @@
 import { describe, expect, it } from 'vitest'
 
-import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmTaxId, identifyMembership, requestTaxId, returnToPreviousStep, setTaxIdDraft, skipMembership } from './checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, identifyMembership, invoiceDraftReady, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './checkout-flow'
 
 describe('checkout flow', () => {
+  // Report: this chat,2026-11-05 — scanned/preloaded carrier must wait for confirmation.
+  it.each(['carrier', 'citizen'] as const)('does not treat choosing a prefilled %s as confirmation', (method) => {
+    const code = method === 'carrier' ? '/PTGRJP2' : 'AB12345678901234'
+    const checkout = { ...beginCheckout('collected'), ...(method === 'carrier' ? { carrierCode: code } : { citizenCode: code }) }
+    const selected = chooseInvoiceMethod(checkout, method)
+    expect(selected.stage).toBe('invoice')
+    expect(invoiceDraftReady(selected)).toBe(true)
+    expect(confirmInvoiceDraft(selected).stage).toBe('payment')
+    const returned = returnToPreviousStep(confirmInvoiceDraft(selected))!
+    expect(chooseInvoiceMethod(returned, method).stage).toBe('invoice')
+  })
+
+  // Report: this chat, Nov2; entered carrier + 確認／送出 did not advance.
+  it('keeps input as a draft until explicit confirmation and rejects partial input', () => {
+    const draft = setInvoiceDraft(beginCheckout('collected'), 'carrier', '/PTGRJP2')
+    expect(draft.stage).toBe('invoice')
+    expect(draft.carrierCode).toBeUndefined()
+    expect(invoiceDraftReady(draft)).toBe(true)
+    expect(confirmInvoiceDraft(draft)).toMatchObject({ stage: 'payment', carrierCode: '/PTGRJP2' })
+    const partial = setInvoiceDraft(draft, 'carrier', '/PT')
+    expect(invoiceDraftReady(partial)).toBe(false)
+    expect(() => confirmInvoiceDraft(partial)).toThrow('手機條碼')
+    expect(chooseInvoiceMethod(partial, 'carrier').stage).toBe('invoice')
+    expect(invoiceDraftReady(chooseInvoiceMethod(draft, 'citizen'))).toBe(false)
+    expect(invoiceDraftReady(chooseInvoiceMethod(draft, 'donation'))).toBe(false)
+  })
+
   it('moves a customer who skips membership from scanning to payment', () => {
     const checkout = skipMembership(beginCheckout())
 

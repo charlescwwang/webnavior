@@ -2,9 +2,12 @@ import type { Composition } from '../../../order-menu-server/src/domain/composit
 import type { RecommendationSignal } from '../../../order-menu-server/src/domain/recommendation'
 import type { MenuPageState } from './menuPageState'
 
+import { orderQuantityMaximum } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import cuttlefishBallImageUrl from '../assets/cuttlefish-ball.svg'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+import { QuantityLimitError } from './quantityPolicy'
 
 export { menuPageStates } from './menuPageState'
 export type { MenuPageState } from './menuPageState'
@@ -106,6 +109,8 @@ export type SubmissionStatus = 'accepted' | 'rejected' | 'uncertain'
 export interface SubmissionReceipt {
   customerMessage: string
   environment: SubmissionEnvironment
+  /** Application-issued three-digit collection number, assigned only to accepted orders. */
+  pickupNumber?: string
   posOrderId?: string
   retryable: boolean
   status: SubmissionStatus
@@ -113,6 +118,8 @@ export interface SubmissionReceipt {
 
 /** Combines the local order snapshot with the authoritative submission receipt. */
 export interface SubmittedOrder {
+  serviceMode?: 'table-service'
+  table?: { id: string, label: string }
   id: string
   cart: CartSnapshot
   receipt: SubmissionReceipt
@@ -125,25 +132,15 @@ export interface PosOrderGateway {
 /** Declares the provenance and ordering boundary of the demo catalog. */
 export const catalogInfo = {
   isSimulated: true,
-  sourceName: '周氏蝦捲公開產品資料',
-  sourceUrl: 'https://www.chous.com.tw/chous/products.html',
+  sourceName: '示範菜單',
 } as const
 
-/**
- * Simulated, dine-in-sized menu inspired by Chou's Shrimp Rolls' public product
- * catalogue. Names follow the published catalogue where available; portions and
- * prices are deliberately local demo data, not the restaurant's official pricing.
- *
- * Sources:
- * - https://www.chous.com.tw/chous/products.html
- * - https://www.chous.com.tw/shoppingcool/m_mall_list.php?ps_ctid=01000000
- * - https://www.ubereats.com/tw/store/%E5%91%A8%E6%B0%8F%E8%9D%A6%E6%8D%B2%E5%AE%89%E5%B9%B3%E7%B8%BD%E5%BA%97/DAYskMw4VRe-vPy29-EfNQ
- */
+/** Local demo dishes and prices; not an official restaurant catalog. */
 export const menu: MenuItem[] = [
   {
     id: 'fish-floss-minced-pork-rice-set',
     name: '魚鬆肉燥飯套餐',
-    description: '周氏蝦捲、魚鬆肉燥飯、燙青菜與綜合湯的單人組合',
+    description: '蝦捲、魚鬆肉燥飯、燙青菜與綜合湯的單人組合',
     category: '超值套餐',
     imageUrl: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=720&q=80',
     price: 380,
@@ -202,7 +199,7 @@ export const menu: MenuItem[] = [
   },
   {
     id: 'chous-shrimp-roll',
-    name: '周氏蝦捲',
+    name: '蝦捲',
     description: '現炸蝦捲搭配甜漬嫩薑片',
     category: '招牌小吃',
     imageUrl: 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=720&q=80',
@@ -262,7 +259,7 @@ export const menu: MenuItem[] = [
   },
   {
     id: 'danzai-noodles',
-    name: '周氏擔仔麵',
+    name: '擔仔麵',
     description: '獨家肉燥、蝦仁與香菜的台南擔仔麵',
     category: '麵飯主食',
     imageUrl: 'https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=720&q=80',
@@ -635,8 +632,10 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
 
   function setQuantity(quantity: number) {
     const current = selectedOrThrow()
-    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20)
-      throw new Error('Quantity must be an integer from 1 to 20.')
+    if (Number.isInteger(quantity) && quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(quantity)
+    if (!Number.isInteger(quantity) || quantity < 1)
+      throw new Error('Quantity must be a positive integer.')
     current.quantity = quantity
     revisions.selectedItem += 1
     return { ...current, options: { ...current.options } }
@@ -663,6 +662,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
       options: { ...current.options },
       unitPrice: resolveUnitPrice(item, current.options),
     }
+    if (line.quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(line.quantity)
     // All validation precedes this synchronous commit. No callback can observe
     // a missing original or an extra replacement, including a merge into an
     // already-present equivalent line. Failure leaves the original cart intact.
@@ -695,6 +696,8 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
   }
 
   function setCartLineQuantity(lineId: string, quantity: number) {
+    if (Number.isInteger(quantity) && quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(quantity)
     if (!Number.isInteger(quantity) || quantity < 1)
       throw new Error('Cart line quantity must be a positive integer.')
 
@@ -719,14 +722,17 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     if (!group?.values.some(value => value.id === valueId))
       throw new Error(`Invalid option ${groupId}:${valueId} for ${item.name}.`)
 
+    const nextOptions = { ...line.options, [groupId]: valueId }
+    const matchingLine = cart.find(candidate => candidate.id !== line.id && candidate.itemId === line.itemId && hasSameOptions(candidate.options, nextOptions))
+    if (matchingLine && matchingLine.quantity + line.quantity > orderQuantityMaximum)
+      throw new QuantityLimitError(matchingLine.quantity + line.quantity)
+    // Validate the resulting merged count before changing options or revisions.
     invalidatePayment()
-    line.options = { ...line.options, [groupId]: valueId }
-    line.unitPrice = resolveUnitPrice(item, line.options)
+    line.options = nextOptions
+    line.unitPrice = resolveUnitPrice(item, nextOptions)
     revisions.cart += 1
 
-    // Preserve the one-line-per-identical-choice invariant after an edit. The
-    // remaining line keeps its stable ID so a caller can continue editing it.
-    const matchingLine = cart.find(candidate => candidate.id !== line.id && candidate.itemId === line.itemId && hasSameOptions(candidate.options, line.options))
+    // Preserve the one-line-per-identical-choice invariant after an edit.
     if (matchingLine) {
       matchingLine.quantity += line.quantity
       cart.splice(lineIndex, 1)

@@ -129,6 +129,8 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     process.stdout.write(`[provider-replay] ${JSON.stringify({ chatAlias, model: chatAlias ? routerConfig.llm.models[chatAlias]?.upstreams.map(upstream => upstream.overrideModel ?? chatAlias) : [] })}\n`)
     app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), systemOne, runtimeModelPolicy, llmGateway: { complete: async (input) => {
       const response = await router.route(input)
+      if (process.env.KIOSK_RELEASE_TRACE === '1')
+        process.stdout.write(`[release-provider] ${JSON.stringify({ request: input.body, status: response.status, response: await response.clone().text() })}\n`)
       if ([400, 401, 403, 404, 429].includes(response.status))
         stopped = `Provider HTTP ${response.status}`
       return response
@@ -180,6 +182,134 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       return result
     } }) })
   }
+
+  // Report: this chat, Nov7 — operator identity and intent-first special ordering.
+  it('configured order assistance confirms intent then requests separate staff consent without writes', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+    const first = await agent('菜單上的通通來一份', state)
+    expect(first.answer).toContain('菜單上的通通來一份')
+    expect(first.answer).toContain('嗎')
+    expect(first.calls).toEqual([])
+    const base = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    const cue = { purpose: 'order-assistance' as const, questionId: 'intent', question: first.answer, sourceUtterance: '菜單上的通通來一份', contextKey: serviceContextKey(base), expiresAt: Date.now() + 30000 }
+    const second = await agent('對', { ...state, readOnly: true, serviceClarification: cue })
+    expect(second.answer).toContain('需要幫您通知服務人員嗎')
+    expect(second.answer).not.toContain('已經呼叫')
+    expect(second.calls).toEqual([])
+    const staff = { ...cue, purpose: 'staff-assistance' as const, questionId: 'staff', question: second.answer }
+    const third = await agent('好，麻煩通知', { ...state, readOnly: true, serviceClarification: staff })
+    expect(third.answer).toContain('已經呼叫工作人員')
+    expect(third.calls).toEqual([])
+    expect(await runtime.invoke('cart_get', {})).toHaveProperty('cart.itemCount', 0)
+  }, 60_000)
+
+  it('configured order assistance preserves ordinary multi-item ordering and the operator answer', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+    const operator = await agent('營運業者是誰？', { ...state, readOnly: true })
+    expect(operator.answer).toContain('周氏蝦捲')
+    expect(operator.calls).toEqual([])
+    const normal = await agent('我要水餃兩份，紅燒牛肉麵一份', state)
+    expect(normal.answer).not.toContain('服務人員')
+    expect(await runtime.invoke('cart_get', {})).toMatchObject({ cart: { itemCount: 3, lines: expect.arrayContaining([expect.objectContaining({ itemId: 'dumplings', quantity: 2 }), expect.objectContaining({ itemId: 'beef-noodle-soup', quantity: 1 })]) } })
+  }, 60_000)
+
+  // Report: this chat, Nov7 — reproduce the actual follow-up, not just Main's unit reply.
+  it('configured field units retain the draft after pieces and accept an explicit serving count', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我想點水餃30顆' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    for (const transcript of ['30顆', '三份']) {
+      const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+      const checkpoints: unknown[] = []
+      const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, routing: 'staged', backgroundSpeechMode: 'off', policy: configuredPolicy, invoke: async (state, questions) => {
+        const result = await systemOne.decide(state, questions)
+        checkpoints.push(result.answers)
+        return result
+      } }) })
+      process.stdout.write(`[field-units] ${JSON.stringify({ transcript, decision, checkpoints })}\n`)
+      expect(decision.kind).toBe('FAST_ACTION')
+      if (transcript === '30顆') {
+        expect(decision).toHaveProperty('action.id', expect.stringContaining(':unit-guidance'))
+        expect(decision).toHaveProperty('result.customerMessage', expect.stringContaining('不代為換算'))
+        expect(await runtime.invoke('cart_get', {})).toMatchObject({ cart: { itemCount: 0 } })
+        expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'configuration' })
+      }
+      else {
+        expect(await runtime.invoke('cart_get', {})).toMatchObject({ cart: { itemCount: 3 } })
+      }
+    }
+  }, 60_000)
+
+  // Report: this chat, Nov7 — greeting latency and ordering help misclassified as missing store data.
+  it('configured field guidance answers how to order without a store-information refusal', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+    const result = await agent('我要怎麼點餐？', { ...state, readOnly: true })
+    expect(result.answer).toContain('餐點名稱和份數')
+    expect(result.answer).not.toContain('無法確認')
+    expect(await runtime.invoke('cart_get', {})).toMatchObject({ cart: { lines: [] } })
+  }, 60_000)
+
+  it('configured field guidance keeps a pure greeting in Jev with filtering off', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+    const decision = await runFastPath({ transcript: '你好', isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, routing: 'staged', backgroundSpeechMode: 'off', policy: configuredPolicy, invoke: (state, questions) => systemOne.decide(state, questions) }) })
+    expect(decision.kind).toBe('GREET')
+    expect(await runtime.invoke('cart_get', {})).toMatchObject({ cart: { lines: [] } })
+  }, 60_000)
+
+  // Report: this chat Nov7 — use service responsibilities, not general model ability.
+  it('configured service boundary grounds units and redirects unrelated knowledge without changing the cart', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    for (const scenario of [
+      { transcript: '水餃每份十顆，三十顆要幾份？', subject: '水餃' },
+      { transcript: '牛肉麵四碗換成幾份？', subject: '牛肉麵' },
+      { transcript: '請幫我解一元二次方程式', subject: undefined },
+    ]) {
+      runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+      const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+      const result = await agent(scenario.transcript, { ...state, readOnly: true, requireMenuRead: Boolean(scenario.subject) })
+      process.stdout.write(`[service-boundary-main] ${JSON.stringify({ transcript: scenario.transcript, answer: result.answer, calls: result.calls })}\n`)
+      expect(result.answer).not.toMatch(/資訊不足|資料不足|三份|3份|四份|4份|公式|判別式/)
+      expect(result.calls.every(call => ['menu_get', 'menu_recommend'].includes(call.name))).toBe(true)
+      if (scenario.subject)
+        expect(result.answer).toContain(scenario.subject)
+      else
+        expect(result.answer).toContain('點餐助手')
+      expect(await runtime.invoke('cart_get', {})).toMatchObject({ cart: { lines: [] } })
+    }
+  }, 120_000)
+
+  // Report: this chat Nov7 — ordinary recommendation unexpectedly handed off to Main.
+  it('configured service boundary keeps ordinary recommendations in staged Jev', async () => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    for (const transcript of ['推薦什麼？', '你還推薦什麼？']) {
+      const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+      const checkpoints: unknown[] = []
+      const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, routing: 'staged', backgroundSpeechMode: 'off', policy: configuredPolicy, invoke: async (state, questions) => {
+        const answer = await systemOne.decide(state, questions)
+        checkpoints.push(answer.answers)
+        return answer
+      } }) })
+      process.stdout.write(`[service-boundary-jev] ${JSON.stringify({ transcript, kind: decision.kind, reason: decision.reason, checkpoints })}\n`)
+      expect(decision.kind).toBe('FAST_ACTION')
+    }
+  }, 120_000)
 
   // Report: this chat, 2026-10-19, visitor session hIHA3DAvjhrG8x0RjggBa.
   it('grounds an unmatched food refusal after a bento recommendation instead of inventing noodles', async () => {
@@ -462,6 +592,8 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       expect(finished).toBeDefined()
       answer = finished.answer
       selectedReply = finished.reply
+      if (decisionState.serviceClarification?.purpose)
+        process.stdout.write(`[assistance-step] ${JSON.stringify({ transcript, purpose: decisionState.serviceClarification.purpose, orderAssistance: decisionState.context?.orderAssistance, staffAssistance: decisionState.context?.staffAssistance, selectedReply })}\n`)
       if (!finished.toolCalls.length) {
         completed = true
         break
@@ -490,13 +622,89 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     }
     expect(completed, JSON.stringify({ message: 'Provider tool loop must finish within five rounds', calls, answer })).toBe(true)
     const livePhase = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))?.phase
-    const replyContext = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    // NOTICE: match Scene's final projection; raw Menu context cannot contain
+    // the host-owned, version-bound assistance invitation from this turn.
+    const replyContext = refreshConversationState(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')), decisionState).context!
     const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
     expect(presented.role).toBe('assistant')
     await recordReply(presented.content)
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId })
     return { answer: presented.content, calls, blockedTools, mainAgentRequests, toolMs: Math.round(toolMs) }
   }
+
+  // Report: this chat Nov7; acceptance must traverse the current staged HTTP
+  // route and recovery, rather than the frozen flat-router diagnostic helper.
+  it.each([
+    { id: 'first-menu', speech: '你有賣什麼東西？', seed: false, expected: [], shown: true },
+    { id: 'fuzzy-read', speech: '有打拋牛便當嗎？', seed: false, expected: [], shown: true },
+    { id: 'fuzzy-purchase', speech: '我要打拋牛便當兩份', seed: false, expected: [], shown: true },
+    { id: 'replacement', speech: '牛肉麵不要了，改水餃一份', seed: true, expected: [['dumplings', 1]], shown: false },
+    { id: 'mixed-query-add', speech: '牛肉麵一份幫我加，水餃一份多少錢？', seed: false, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'unrelated', speech: '昨天公司的會議開了很久，大家後來都回家休息，明天再討論工作進度。', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'clear-question-yes', speech: '對', seed: true, expected: [], shown: false },
+    { id: 'clear-question-send', speech: '可以送出去了', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'fish-withdrawal', speech: '我不想吃魚了，我還是吃便當好了', seed: false, expected: [], shown: true },
+  ])('configured release acceptance: $id', async (scenario) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let shown: string[] = []
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: value => shown = value.itemIds })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    if (scenario.seed) {
+      const seeded = await runtime.invoke('order_add_item', { itemId: 'beef-noodle-soup', quantity: 1 })
+      await recordReply(operationReplyFrom(seeded)!)
+      const question = questionReceiptFrom(seeded)
+      if (question)
+        await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    }
+    if (scenario.id.startsWith('clear-question')) {
+      const offered = await runtime.invokeForAgent('cart_clear', {})
+      const question = questionReceiptFrom(offered)!
+      expect(question.question).toContain('清空')
+      await recordReply(question.question)
+      await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    }
+    if (scenario.id === 'fish-withdrawal')
+      await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'] })
+    const saved = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'asr_transcript', content: scenario.speech, metadata: { source: 'asr_simulation' } }) })
+    expect(saved.status).toBe(201)
+    const decisions: unknown[] = []
+    const begin = performance.now()
+    const decision = await runFastPath({ transcript: scenario.speech, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
+      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, includeTrace: true, visitorSessionId: sessionId }) })
+      expect(response.status).toBe(200)
+      const result = await response.json() as KioskInteractionDecision
+      decisions.push(result)
+      return result
+    } })
+    let reply
+    try {
+      if (decision.kind === 'NEEDS_ASSISTANT')
+        reply = await agent(scenario.speech, conversationDecisionStateFrom(decision.decisionState, decision)!)
+      else if (decision.kind === 'FAST_ACTION')
+        reply = { answer: operationReplyFrom(decision.result), calls: [] }
+      else if (decision.kind === 'SERVICE_CLARIFICATION')
+        reply = { answer: decision.question.question, calls: [] }
+      else if (decision.kind === 'CLARIFICATION')
+        reply = { answer: decision.prompt, calls: [] }
+      expect(reply?.answer?.trim()).toBeTruthy()
+      if (scenario.id !== 'clear-question-send')
+        expect(reply?.answer).not.toMatch(/未接受這次操作|沒有理解清楚|查詢未完成|換價位|換餐點種類|看別類/)
+      const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context', { includeCatalog: true }))
+      expect(context.cart.lines.map(line => [line.itemId, line.quantity]).sort()).toEqual([...scenario.expected].sort())
+      if (scenario.shown)
+        expect(shown.length).toBeGreaterThan(0)
+      if (scenario.id === 'fuzzy-purchase')
+        expect(context.waitingFor?.purpose).toBe('confirm-meal')
+      if (scenario.id === 'fish-withdrawal') {
+        expect(runtime.getQueryState().conditions.some(condition => condition.group === 'includeIngredients' && condition.value === 'fish')).toBe(false)
+        expect(shown).not.toContain('thai-sour-spicy-fish-bento')
+      }
+    }
+    finally {
+      process.stdout.write(`[release-acceptance] ${JSON.stringify({ id: scenario.id, decisions, reply, shown, cart: await runtime.invoke('cart_get', { display: false }), durationMs: Math.round(performance.now() - begin), providerCalls, scope: 'current staged HTTP route/recovery + actual models + Menu runtime; scratch DB; no DOM/hardware/POS' })}\n`)
+    }
+  }, 120_000)
 
   // Plan: docs/plans/2026-10-28-kiosk-conversation-repair.md. Synthetic dialogue only.
   // A faultBeforeDecision is explicit transport injection, not a model result.

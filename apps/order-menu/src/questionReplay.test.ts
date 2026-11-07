@@ -24,7 +24,7 @@ describe.skipIf(!replayUrl)('live action-bound Jev replay with actual runtime ca
     { transcript: '好，結帳', question: '現在要開始結帳嗎？', expected: 'intent:start-checkout' },
     { transcript: '先不要', question: '要進入結帳流程嗎？', expected: 'intent:defer-question' },
     { transcript: '走走走 去那邊', question: '要進入結帳流程嗎？', expected: 'IGNORE' },
-    { transcript: '周氏蝦捲再兩份', question: '要進入結帳流程嗎？', expected: 'intent:add-item' },
+    { transcript: '蝦捲再兩份', question: '要進入結帳流程嗎？', expected: 'intent:add-item' },
     // Report: this chat, 2026-10-19; retained session zloUV_0YpdMnMhQlGEFvp entries 7/9.
     { transcript: '略過', questionPresented: false, question: '發票畫面尚未呈現語音問題', expected: 'intent:choose-invoice:donation', invoicePhase: true },
     { transcript: '略過', question: '請選擇發票方式。', expected: 'intent:choose-invoice:donation', invoicePhase: true },
@@ -63,6 +63,7 @@ describe.skipIf(!replayUrl)('live action-bound Jev replay with actual runtime ca
           chooseInvoice: method => update(chooseInvoiceMethod(checkout!, method)),
           requestTaxId: () => update(requestTaxId(checkout!)),
           setTaxId: taxId => update(setTaxIdDraft(checkout!, taxId)),
+          confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
           confirmTaxId: () => update(confirmTaxId(checkout!)),
           cancel: () => {
             checkout = undefined

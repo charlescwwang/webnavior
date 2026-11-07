@@ -37,3 +37,8 @@ export function normalizeAssistantMessageForTaiwanTraditional(message: Streaming
     }
   }
 }
+
+/** Customer ordering copy uses the restaurant term, including after OpenCC's phrase conversion. */
+export function toOrderingTraditionalChinese(text: string) {
+  return toTaiwanTraditionalChinese(text).replaceAll('選單', '菜單')
+}

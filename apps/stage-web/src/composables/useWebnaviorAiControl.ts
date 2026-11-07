@@ -22,6 +22,7 @@ export interface AiProviderProfile {
   timeoutMs: number
   verifiedAt: string | null
   voice: string | null
+  speed: number | null
 }
 
 export interface AiCapabilitySelection {
@@ -40,6 +41,7 @@ export interface AiProviderProfileInput {
   plaintextKey?: string
   timeoutMs: number
   voice?: string
+  speed?: number
 }
 
 /** Result of the optional Provider model-catalog probe. */

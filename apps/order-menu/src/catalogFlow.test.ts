@@ -46,7 +46,7 @@ describe('current POS menu without customization options', () => {
     const result = await runtime.invokeForAgent('menu_get', { queries: ['香菜肉絲乾麵', '韭菜盒', '甜不辣'], verifyClaim: true })
     expect(result).toMatchObject({ items: [], customerMessage: '您說得對，剛才的介紹有誤。目前菜單查不到「香菜肉絲乾麵、韭菜盒、甜不辣」。' })
     const actual = await runtime.invokeForAgent('menu_get', { query: '水餃', verifyClaim: true })
-    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。' })
+    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。每份10顆，80元，現點現煮。' })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
     await expect(runtime.invokeForAgent('menu_get', { verifyClaim: true })).rejects.toThrow('Specify the meal names')
   })
@@ -140,4 +140,13 @@ describe('current POS menu without customization options', () => {
     machine.addToCart()
     expect(machine.getCart()).toMatchObject({ itemCount: 3, total: 310, lines: [{ options: {}, quantity: 1 }, { options: {}, quantity: 2 }] })
   })
+})
+
+// Report: live112 C02-F1; successful price read was spoken as availability only.
+it('includes authoritative price in a single named-item lookup reply', async () => {
+  const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+  const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const receipt = await runtime.invokeForAgent('menu_get', { query: '水餃' })
+  expect(receipt).toMatchObject({ customerMessage: expect.stringContaining('80') })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
 })

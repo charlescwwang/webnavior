@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import type { InteractionLifecycleMessage, InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 import type { ComponentPublicInstance } from 'vue'
 
 import type { ContinuationAccess } from './continuation'
+import type { QueryCondition, QueryView } from './domain/browsing'
 import type { CheckoutSnapshot } from './domain/checkout-flow'
 import type { CartSnapshot, FulfillmentMode, MenuItem, Selection, SubmissionStatus, SubmittedOrder } from './domain/order-machine'
 import type { PaymentMethod, PaymentStatus } from './pos-bridge'
 import type { AgentAction, MenuPresentationToolName, MenuToolName, RecommendationPresentation } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch } from 'vue'
 
 import CheckoutInvoice from './components/CheckoutInvoice.vue'
@@ -19,20 +22,21 @@ import MenuItemCard from './components/menuItemCard.vue'
 import MenuItemDialog from './components/MenuItemDialog.vue'
 import MenuPresentationSkeleton from './components/MenuPresentationSkeleton.vue'
 import MenuPresentationSubjects from './components/MenuPresentationSubjects.vue'
+import MenuQueryConditions from './components/menuQueryConditions.vue'
 import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
-import OrderHandoff from './components/orderHandoff.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
+import { usePaymentSelectionCountdown } from './composables/usePaymentSelectionCountdown'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { continuationUrl } from './continuation'
-import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmTaxId, requestTaxId, returnToPreviousStep, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
 import { connectInteractiveService } from './interactiveService'
 import { scrollViewport } from './menuScroll'
-import { createPayment, createPosBridgeGateway, getPayment, paymentLabels, testPaymentMethods } from './pos-bridge'
+import { createPayment, createPosBridgeGateway, getPayment, loadOrderingContext, paymentLabels, testPaymentMethods } from './pos-bridge'
 import { createMenuToolRuntime } from './webmcp'
 
 // A deployment can lock the service to one approved host. Otherwise, a page
@@ -57,6 +61,8 @@ const completedOrder = shallowRef<SubmittedOrder>()
 const fulfillmentMode = shallowRef<FulfillmentMode>()
 const addingItemId = shallowRef<string>()
 const recommendations = shallowRef<RecommendationPresentation>()
+const queryView = shallowRef<QueryView>()
+const queryUpdating = shallowRef(false)
 const menuPresentationLoadingTools = shallowRef<MenuPresentationToolName[]>([])
 const selectedPresentationSubjectId = shallowRef<string>()
 const activeCategory = shallowRef<string>()
@@ -65,24 +71,22 @@ const selectedItemId = shallowRef<string>()
 const orderReviewOpen = shallowRef(false)
 const menuInteractionMessage = shallowRef<string>()
 const checkout = shallowRef<CheckoutSnapshot>()
+const orderingContext = shallowRef<OrderingContext>()
+const tableSubmitting = shallowRef(false)
 const paymentMethod = shallowRef<PaymentMethod>()
 const paymentStatus = shallowRef<PaymentStatus>()
 const paymentError = shallowRef<string>()
-const customerPhone = shallowRef<string>()
-// Phone entry is optional; an explicit skip is distinct from an untouched page.
-const customerEntryStatus = shallowRef<'unstarted' | 'pending' | 'provided' | 'skipped'>('unstarted')
-const continuationAccess = shallowRef<ContinuationAccess>()
-const handoffUrl = computed(() => continuationAccess.value ? continuationUrl(continuationAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
+const receiptAccess = shallowRef<ContinuationAccess>()
+const receiptUrl = computed(() => receiptAccess.value ? continuationUrl(receiptAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
 let checkoutRevision = 0
 // Synchronous observation preserves every checkout/payment write, including
 // a change that is undone before the next System One request arrives.
-watch([checkout, paymentMethod, paymentStatus, customerEntryStatus], () => {
+watch([checkout, paymentMethod, paymentStatus], () => {
   checkoutRevision += 1
 }, { flush: 'sync' })
 const cardElements = new Map<string, HTMLElement>()
 const controlElements = new Map<string, HTMLElement>()
 let cartUpdateTimer: ReturnType<typeof setTimeout> | undefined
-let checkoutTimeoutTimer: ReturnType<typeof setTimeout> | undefined
 let paymentPollTimer: ReturnType<typeof setTimeout> | undefined
 let paymentAttempt = 0
 let disconnectService: (() => void) | undefined
@@ -165,7 +169,7 @@ const cartSummaryLines = computed(() => cart.value.lines.map((line) => {
 const completedOrderLabel = '訂單已確認'
 
 function currency(amount: number) {
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(amount)
+  return formatOrderingPrice(amount)
 }
 
 function setCardElement(id: string, element: Element | ComponentPublicInstance | null) {
@@ -300,8 +304,6 @@ const runtime = createMenuToolRuntime({
   onAgentControlChange: locked => agentControlsOrder.value = locked,
   // Match template precedence: checkout hides review, which hides the item dialog.
   screen: () => {
-    if (customerEntryStatus.value === 'pending')
-      return 'customer_entry'
     if (checkout.value)
       return 'checkout'
     if (orderReviewOpen.value)
@@ -311,19 +313,11 @@ const runtime = createMenuToolRuntime({
   visibleItemId: () => selectedItem.value?.id,
   visibleItemIds: () => visibleMenuItems.value.map(item => item.id),
   fulfillmentModes: [],
-  orderingReady: () => customerEntryStatus.value !== 'pending',
-  onCustomerEntrySkipped: skipCustomerEntry,
-  onCustomerPhoneProvided: identifyCustomer,
-  onCustomerEntryRequested: () => {
-    // Only a fresh host order can offer phone entry. Rediscovery must never
-    // reopen it after a choice or after a standalone customer started ordering.
-    if (customerEntryStatus.value === 'unstarted' && cart.value.lines.length === 0 && !checkout.value && !completedOrderId.value)
-      customerEntryStatus.value = 'pending'
-  },
-  onSessionReset: () => {
-    customerPhone.value = undefined
-    customerEntryStatus.value = 'unstarted'
-    continuationAccess.value = undefined
+  serviceContext: () => orderingContext.value,
+  onSessionReset: async () => {
+    if (orderingContext.value)
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
+    receiptAccess.value = undefined
     completedOrderId.value = undefined
     completedOrder.value = undefined
     checkout.value = undefined
@@ -334,6 +328,12 @@ const runtime = createMenuToolRuntime({
     assertCanRestart,
     cancel: cancelCheckout,
     chooseInvoice,
+    confirmInvoice: () => {
+      if (!checkout.value)
+        throw new Error('尚未進入發票確認。')
+      checkout.value = confirmInvoiceDraft(checkout.value)
+      return checkout.value
+    },
     confirmTaxId: confirmTaxIdNumber,
     paymentMethods: testPaymentMethods,
     paymentStatus: () => paymentStatus.value === 'pending' || paymentStatus.value === 'uncertain' ? paymentStatus.value : undefined,
@@ -346,13 +346,17 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => customerPhone.value, onContinuation: access => continuationAccess.value = access }),
+  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => undefined, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
   menu: [],
   onAction: animateAction,
   onReviewRequested: async () => {
     // A cart read must not replace a live checkout/payment screen.
     if (checkout.value || completedOrderId.value)
       return
+    // Bridge restarts can retire its in-memory round. Refresh before showing
+    // the order, so the customer's new confirmation binds the current table.
+    if (orderingContext.value?.serviceMode === 'table-service')
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
     selectedItemId.value = undefined
     orderReviewOpen.value = true
     await nextTick()
@@ -386,6 +390,7 @@ const runtime = createMenuToolRuntime({
   onSelectionChange: syncSelection,
   onOrderConfirmed: handleOrderConfirmed,
   onOrderSubmission: handleOrderSubmission,
+  onQueryStateChange: state => queryView.value = state,
   onRecommendationsChange: async (presentation) => {
     returnToMenuForAdditionalItems()
     recommendations.value = presentation
@@ -415,6 +420,22 @@ async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, op
   return await runtime.invokeManual(name, args, options.animate === false ? () => {} : undefined)
 }
 
+async function removeQueryCondition(condition: QueryCondition, revision: number) {
+  if (queryUpdating.value)
+    return
+  queryUpdating.value = true
+  menuInteractionMessage.value = undefined
+  try {
+    await runtime.removeQueryCondition(condition, revision)
+  }
+  catch {
+    menuInteractionMessage.value = orderingMessages['zh-Hant'].queryConditions.failed
+  }
+  finally {
+    queryUpdating.value = false
+  }
+}
+
 function syncSelection(selection: Selection) {
   quantities[selection.itemId] = selection.quantity
   selectedOptionsByItem[selection.itemId] = { ...selection.options }
@@ -431,28 +452,46 @@ function handleOrderConfirmed(order: SubmittedOrder) {
 
   completedOrderId.value = order.id
   completedOrder.value = order
-  orderStatus.value = order.receipt.customerMessage
+  orderStatus.value = order.receipt.pickupNumber
+    ? `${order.receipt.customerMessage} 取餐號碼：${order.receipt.pickupNumber}`
+    : order.receipt.customerMessage
   checkout.value = undefined
   orderReviewOpen.value = true
   // Completion must reach the host immediately so its configured reward appears.
   // The host displays the carry-away QR alongside that reward until dismissal.
   notifyHost('completed', {
+    ...(order.serviceMode === 'table-service' ? { serviceMode: order.serviceMode, table: order.table, lines: order.cart.lines.map(line => ({ name: line.name, quantity: line.quantity, total: line.unitPrice * line.quantity })) } : {}),
     environment: order.receipt.environment,
     fulfillmentMode: order.cart.fulfillmentMode!,
     id: order.id,
     itemCount: order.cart.itemCount,
+    ...(order.receipt.pickupNumber ? { pickupNumber: order.receipt.pickupNumber } : {}),
     ...(order.receipt.posOrderId ? { posOrderId: order.receipt.posOrderId } : {}),
     status: 'accepted',
     total: order.cart.total,
-  }, handoffUrl.value)
+  }, receiptUrl.value)
 }
 
-function completeCustomerSession() {
+async function completeCustomerSession() {
   const order = completedOrder.value
   if (!order)
     return
-  customerPhone.value = undefined
-  customerEntryStatus.value = 'pending'
+  if (window.parent === window && orderingContext.value?.serviceMode === 'table-service') {
+    try {
+      await runtime.reset()
+    }
+    catch (error) { orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。' }
+    return
+  }
+  if (window.parent === window && orderingContext.value) {
+    try {
+      await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
+    }
+    catch (error) {
+      orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。'
+      return
+    }
+  }
   if (window.parent === window)
     window.location.reload()
 }
@@ -503,14 +542,23 @@ async function removeCartLine(lineId: string) {
   await invoke('cart_remove_item', { lineId }, { animate: false })
 }
 
-function skipCustomerEntry() {
-  customerPhone.value = undefined
-  customerEntryStatus.value = 'skipped'
-}
-
-function identifyCustomer(phone: string) {
-  customerPhone.value = phone
-  customerEntryStatus.value = 'provided'
+async function confirmVisibleOrder() {
+  if (orderingContext.value?.serviceMode !== 'table-service')
+    return startCheckout()
+  if (tableSubmitting.value)
+    return
+  tableSubmitting.value = true
+  try {
+    const reviewedContextId = orderingContext.value?.id
+    await invoke('cart_get', { display: true }, { animate: false })
+    if (orderingContext.value?.id !== reviewedContextId) {
+      orderStatus.value = '訂單資訊已更新，請重新確認後再送出。'
+      return
+    }
+    await runtime.confirmTableOrder()
+  }
+  catch (error) { orderStatus.value = errorMessageFrom(error) ?? '訂單未送出。' }
+  finally { tableSubmitting.value = false }
 }
 
 function startCheckout() {
@@ -520,8 +568,6 @@ function startCheckout() {
     throw new Error('Choose dine-in or self-pickup before starting checkout.')
   if (!posCatalog.value?.store.fulfillmentModes.some(mode => mode.id === fulfillmentMode.value))
     throw new Error('This fulfillment mode is not offered by the POS.')
-  if (customerEntryStatus.value === 'pending')
-    throw new Error('請先輸入手機或選擇略過。')
   if (completedOrderId.value)
     throw new Error('This order has already been completed.')
 
@@ -611,6 +657,8 @@ function returnToMenuForAdditionalItems() {
   checkout.value = undefined
   orderReviewOpen.value = false
   selectedItemId.value = undefined
+  activeCategory.value = undefined
+  selectedPresentationSubjectId.value = undefined
 }
 
 function resetPaymentAttempt() {
@@ -748,19 +796,10 @@ async function simulatePayment() {
   }
 }
 
-watch([checkout, agentControlsOrder], ([nextCheckout, locked]) => {
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
-  if (locked || !nextCheckout)
-    return
-
-  checkoutTimeoutTimer = setTimeout(() => {
-    if (checkout.value?.stage !== nextCheckout.stage)
-      return
-    if (!paymentMethod.value && nextCheckout.stage === 'payment')
-      void returnToOrderReview()
-  }, 30_000)
-})
+const paymentSelectionSeconds = usePaymentSelectionCountdown(
+  () => checkout.value?.stage === 'payment' && !paymentMethod.value && !paymentStatus.value && !agentControlsOrder.value,
+  () => { void returnToOrderReview() },
+)
 
 async function setFulfillmentMode(mode: FulfillmentMode) {
   await invoke('order_set_fulfillment', { mode }, { animate: false })
@@ -820,6 +859,15 @@ function optionLabel(line: CartSnapshot['lines'][number]) {
 }
 
 async function loadCatalog() {
+  try {
+    if (!orderingContext.value)
+      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
+  }
+  catch (error) {
+    catalogError.value = errorMessageFrom(error) ?? '無法取得服務模式。'
+    catalogState.value = 'error'
+    return
+  }
   const catalog = await loadPosCatalog()
   if (!catalog || menuUnmounted)
     return
@@ -846,8 +894,6 @@ onUnmounted(() => {
   disconnectService = undefined
   if (cartUpdateTimer)
     clearTimeout(cartUpdateTimer)
-  if (checkoutTimeoutTimer)
-    clearTimeout(checkoutTimeoutTimer)
   if (paymentPollTimer)
     clearTimeout(paymentPollTimer)
 })
@@ -860,17 +906,18 @@ onUnmounted(() => {
     :state="catalogState"
     @retry="loadCatalog"
   />
-  <main v-else :inert="agentControlsOrder || customerEntryStatus === 'pending'" class="menu-app" @pointerdown="handleMenuPointerDown">
+  <main v-else :inert="agentControlsOrder" class="menu-app" @pointerdown="handleMenuPointerDown">
     <p v-if="menuInteractionMessage" role="status" :class="['presentation-context']">
       {{ menuInteractionMessage }}
     </p>
     <CheckoutInvoice
       v-if="checkout?.stage === 'invoice'"
       :checkout="checkout"
-      :locked="agentControlsOrder || customerEntryStatus === 'pending'"
+      :locked="agentControlsOrder"
       :total="currency(cart.total)"
       @back="backCheckout"
       @choose="chooseInvoice"
+      @draft="(method, code) => { if (checkout) checkout = setInvoiceDraft(checkout, method, code) }"
       @details="(method, code) => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) }"
       @tax-id="openTaxId"
       @register-control="setControlElement"
@@ -878,7 +925,7 @@ onUnmounted(() => {
     <CheckoutTaxId
       v-else-if="checkout?.stage === 'tax-id'"
       :tax-id="checkout.taxId ?? ''"
-      :locked="agentControlsOrder || customerEntryStatus === 'pending'"
+      :locked="agentControlsOrder"
       @back="backCheckout"
       @confirm="confirmTaxIdNumber"
       @update-tax-id="updateTaxId"
@@ -891,6 +938,7 @@ onUnmounted(() => {
       :error="paymentError"
       :method="paymentMethod"
       :status="paymentStatus"
+      :selection-seconds="paymentSelectionSeconds"
       :total="currency(cart.total)"
       @back="backCheckout"
       @change-method="() => { assertCanRestart(); resetPaymentAttempt() }"
@@ -904,27 +952,23 @@ onUnmounted(() => {
       :completed="!!completedOrderId"
       :completed-label="completedOrderLabel"
       :fulfillment-mode="fulfillmentMode"
-      :fulfillment-modes="posCatalog?.store.fulfillmentModes ?? []"
+      :fulfillment-modes="orderingContext?.serviceMode === 'table-service' ? [] : posCatalog?.store.fulfillmentModes ?? []"
+      :service-context="orderingContext"
+      :submitting="tableSubmitting"
       :seating-ready="true"
       :lines="reviewLines"
       :order-status="orderStatus"
       :submission-status="submissionStatus"
       :total="currency(cart.total)"
       @back="orderReviewOpen = false"
-      @checkout="startCheckout"
+      @checkout="confirmVisibleOrder"
       @remove="removeCartLine"
       @register-control="setControlElement"
       @set-fulfillment="setFulfillmentMode"
       @update-quantity="updateCartLineQuantity"
     >
-      <template #seating>
-        <p v-if="fulfillmentMode === 'dine-in' && !completedOrderId" :class="['table-binding-note']">
-          完成點餐後，請先用手機掃訂單接續碼；入座後再掃桌碼綁定送餐位置。
-        </p>
-      </template>
       <template #continuation>
-        <OrderHandoff v-if="handoffUrl" :url="handoffUrl" @done="completeCustomerSession" />
-        <button v-else type="button" @click="completeCustomerSession">
+        <button type="button" @click="completeCustomerSession">
           完成，開始下一筆
         </button>
       </template>
@@ -949,6 +993,12 @@ onUnmounted(() => {
             <span class="i-solar:filter-bold-duotone" aria-hidden="true" />
             {{ presentationContext }}
           </p>
+          <MenuQueryConditions
+            v-if="activeCategory === recommendedCategoryId && (recommendations?.kind === 'recommendation' || recommendations?.proposedAlternatives)"
+            :state="queryView" :locked="agentControlsOrder || queryUpdating"
+            :proposed-alternatives="recommendations?.proposedAlternatives"
+            @remove="removeQueryCondition"
+          />
           <MenuPresentationSubjects
             v-if="!menuPresentationLoading && activeCategory === recommendedCategoryId && recommendations?.kind === 'query-results' && presentationSubjects.length > 1"
             :selected-id="selectedPresentationSubjectId"
@@ -988,7 +1038,7 @@ onUnmounted(() => {
       />
 
       <div :ref="element => setCardElement('cart', element)" :class="['order-summary-container', { 'is-updated': cartUpdated, 'is-targeted': cursorTargetId === 'cart' }]">
-        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="orderReviewOpen = true" @register-control="setControlElement" />
+        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="invoke('cart_get', { display: true }, { animate: false })" @register-control="setControlElement" />
       </div>
     </template>
 

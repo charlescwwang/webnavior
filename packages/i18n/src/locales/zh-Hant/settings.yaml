@@ -1700,3 +1700,7 @@ wip:
 kiosk-thinking:
   title: Main Agent 思考模式（Thinking）
   description: 控制支援此設定的模型（例如 vLLM 模型）是否進行思考，預設關閉。驗證並儲存後，按「套用到 Kiosk」生效。
+
+kiosk-tts-speed:
+  title: 合成語速（倍速）
+  description: 0.25～4 倍，1 為原速，數值越大越快。驗證並儲存後，按「套用到 Kiosk」生效；既有頁面的開場語音需重新整理。

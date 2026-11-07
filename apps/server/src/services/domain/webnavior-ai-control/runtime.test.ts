@@ -66,7 +66,7 @@ describe('webnavior AI runtime compiler', () => {
         name: `${capability} 主要 Provider`,
         plaintextKey: 'server-secret',
         timeoutMs: 7500,
-        ...(capability === 'tts' ? { voice: 'zh-TW-Test' } : {}),
+        ...(capability === 'tts' ? { voice: 'zh-TW-Test', speed: 1.25 } : {}),
       })
       await control.refreshProfileModels(capability, profile.id)
       await control.verifyProfile(capability, profile.id)
@@ -90,7 +90,7 @@ describe('webnavior AI runtime compiler', () => {
     })
     expect(store.get('WEBNAVIOR_AUDIO_CONFIG')).toMatchObject({
       asr: { modelName: 'webnavior:asr', upstreamModel: 'asr-model' },
-      tts: { modelName: 'webnavior:tts', upstreamModel: 'tts-model', voice: 'zh-TW-Test' },
+      tts: { modelName: 'webnavior:tts', upstreamModel: 'tts-model', voice: 'zh-TW-Test', speed: 1.25 },
     })
   })
 

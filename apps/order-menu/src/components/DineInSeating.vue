@@ -23,15 +23,15 @@ const emit = defineEmits<{ setPartySize: [value: number], reserve: [choiceId: st
     </label>
     <ul :class="['table-statuses']" aria-label="目前桌位">
       <li v-for="table in props.snapshot.tables" :key="table.id">
-        {{ table.label }}：{{ table.status === 'free' ? '空桌' : table.status === 'held' ? '暫留中' : '使用中' }}
+        {{ table.label.toUpperCase() }}：{{ table.status === 'free' ? '空桌' : table.status === 'held' ? '暫留中' : '使用中' }}
       </li>
     </ul>
     <p v-if="props.hold" role="status">
-      {{ props.hold.tableIds.join('、') }} — {{ props.hold.status === 'occupied' ? '已入座' : props.hold.status === 'locked' ? '付款處理中，桌位已鎖定' : `保留至 ${new Date(props.hold.expiresAt).toLocaleTimeString('zh-TW')}` }}
+      {{ props.hold.tableIds.map(id => props.snapshot.tables.find(table => table.id === id)?.label.toUpperCase() ?? id.toUpperCase()).join('、') }} — {{ props.hold.status === 'occupied' ? '已入座' : props.hold.status === 'locked' ? '付款處理中，桌位已鎖定' : `保留至 ${new Date(props.hold.expiresAt).toLocaleTimeString('zh-TW')}` }}
     </p>
     <div v-else :class="['table-choices']">
       <button v-for="choice in props.choices" :key="choice.id" type="button" :disabled="props.busy" @click="emit('reserve', choice.id, choice.splitRequired)">
-        {{ choice.splitRequired ? '同意分桌並選擇 ' : '選擇 ' }}{{ choice.label }}
+        {{ choice.splitRequired ? '同意分桌並選擇 ' : '選擇 ' }}{{ choice.label.toUpperCase() }}
       </button>
       <p v-if="props.partySize && props.choices.length === 0">
         目前沒有足夠空桌，請洽門市人員或改為自取。

@@ -20,7 +20,8 @@ describe('paid order continuation through the browser gateway', () => {
     const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://menu.test', gateway: pos, tableAssignment: 'after-order' })
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => app.request(String(input), init))
     const issued: ContinuationAccess[] = []
-    const browser = createPosBridgeGateway('http://bridge.test', () => undefined, { phone: () => undefined, onContinuation: access => issued.push(access) })
+    const receipts: ContinuationAccess[] = []
+    const browser = createPosBridgeGateway('http://bridge.test', () => undefined, { phone: () => undefined, onContinuation: access => issued.push(access), onReceipt: access => receipts.push(access) })
     const catalog = await pos.getCatalog()
     const item = catalog.items[0]!
     const { payment: firstPayment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: item.price, method: 'linepay' }) })).json()
@@ -34,6 +35,9 @@ describe('paid order continuation through the browser gateway', () => {
     }
     const first = await browser.submit(cart)
     expect(first.receipt.status).toBe('accepted')
+    expect(first.receipt.pickupNumber).toMatch(/^[1-9]\d{2}$/)
+    expect(receipts).toHaveLength(1)
+    expect(await (await app.request(`/v1/continuations/${receipts[0]!.token}`)).json()).toMatchObject({ readOnly: true, pickupNumber: first.receipt.pickupNumber })
     const before = issued.length
     vi.setSystemTime(Date.now() + 31 * 60_000)
     const { payment: nextPayment } = await (await app.request('/v1/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: item.price, method: 'jkopay' }) })).json()
@@ -45,6 +49,7 @@ describe('paid order continuation through the browser gateway', () => {
     expect(await (await app.request(`/v1/continuations/${issued.at(-1)!.token}`)).json()).toMatchObject({ orderId: next.id })
     expect((await browser.submit({ ...cart, fulfillmentMode: 'dine-in', paymentId: nextPayment.id })).id).toBe(next.id)
     expect((await browser.submit({ ...cart })).id).toBe(first.id)
+    expect((await browser.submit({ ...cart })).receipt.pickupNumber).toBe(first.receipt.pickupNumber)
   })
 
   it('recovers a lost accepted response using the same payment without creating another order', async () => {

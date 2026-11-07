@@ -227,7 +227,7 @@ export const KioskProfileSnapshotSchema = object({
 
 const developmentProfile: KioskProfileSnapshot = {
   version: 1,
-  assistanceReminderPrompt: '若顧客停留一段時間，請簡短詢問是否需要協助點餐；不要重複主動招呼。',
+  assistanceReminderPrompt: '依目前對話與頁面情境，簡短、自然地提供點餐協助。變換句型，避免重複上一則提醒；可依情境提及菜單查詢、餐點選擇或訂單調整。不捏造菜單、服務或促銷，不催促、不提店名，也不重複開場招呼。只寫一句簡短陳述，不提出問題。',
   characterName: '點餐助手',
   agentInstructions: '以親切、精簡的方式協助訪客完成點餐；不確定時先釐清需求。',
   greetingPrompt: '您好，今天想吃些什麼？我可以協助您挑選。',

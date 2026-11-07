@@ -23,7 +23,7 @@ describe('pOS security boundary', () => {
     const catalog = await gateway.getCatalog()
     const post = (path: string, body: unknown) => app.request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     const { payment } = await (await post('/v1/payments', { amount: 145, method: 'linepay' })).json()
-    const cart = { catalogRevision: catalog.revision, fulfillmentMode: 'takeout', itemCount: 2, lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', options: {}, quantity: 2, unitPrice: 145 }], paymentId: payment.id, total: 145 }
+    const cart = { catalogRevision: catalog.revision, fulfillmentMode: 'takeout', itemCount: 2, lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '蝦捲招牌便當', options: {}, quantity: 2, unitPrice: 145 }], paymentId: payment.id, total: 145 }
     const forged = await post('/v1/orders', { cart, idempotencyKey: 'forged-total-0001' })
     expect(await forged.json()).toMatchObject({ order: { receipt: { status: 'rejected' } } })
     expect(submissions).toBe(0)
@@ -47,7 +47,7 @@ describe('pOS isolation and replay', () => {
     expect((await app.request(`/v1/payments/${payment.id}`, { headers: { 'test-owner': 'site-B/device-B' } })).status).toBe(404)
     expect((await app.request(`/v1/payments/${payment.id}`, { headers: { 'test-owner': 'site-A/device-A' } })).status).toBe(200)
     const catalog = await gateway.getCatalog()
-    const cart = { catalogRevision: catalog.revision, fulfillmentMode: 'takeout', itemCount: 1, lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', options: {}, quantity: 1, unitPrice: 145 }], paymentId: payment.id, total: 145 }
+    const cart = { catalogRevision: catalog.revision, fulfillmentMode: 'takeout', itemCount: 1, lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '蝦捲招牌便當', options: {}, quantity: 1, unitPrice: 145 }], paymentId: payment.id, total: 145 }
     const send = (owner: string, key: string) => app.request('/v1/orders', { method: 'POST', headers: { 'test-owner': owner, 'Content-Type': 'application/json' }, body: JSON.stringify({ cart, idempotencyKey: key }) })
     expect((await send('site-B/device-B', 'foreign-order-0001')).status).toBe(404)
     const [first, second] = await Promise.all([send('site-A/device-A', 'owned-order-0001'), send('site-A/device-A', 'owned-order-0002')])

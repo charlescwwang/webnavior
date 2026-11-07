@@ -28,7 +28,8 @@
     "./interactive-service": "./src/interactiveService.ts",
     "./kiosk-conversation": "./src/kioskConversation.ts",
     "./kiosk-audio": "./src/kioskAudio.ts",
-    "./interaction-lifecycle": "./src/interactionLifecycle.ts"
+    "./interaction-lifecycle": "./src/interactionLifecycle.ts",
+    "./kiosk-service-mode": "./src/kioskServiceMode.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

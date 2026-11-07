@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+
 import type { FeedbackInvitationSettings } from '../feedback-invitation/settings'
 
 import QRCode from 'qrcode'
 
 import { errorMessageFrom } from '@moeru/std'
+import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed, onScopeDispose, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -11,6 +14,7 @@ import { canShowFeedbackInvitation, normalizeFeedbackInvitationDuration } from '
 
 const props = defineProps<{
   settings: FeedbackInvitationSettings
+  orderResult?: InteractiveServiceOrderResult
   /** Transient order capability, kept separate from the configured static survey URL. */
   orderContinuationUrl?: string
 }>()
@@ -105,6 +109,32 @@ onScopeDispose(clearCountdown)
           {{ t('stage.customer-session.completion.description') }}
         </p>
 
+        <section v-if="orderResult" :class="['completion-option']" aria-live="polite">
+          <template v-if="orderResult.serviceMode === 'table-service'">
+            <h3>{{ t('stage.customer-session.completion.table-number') }} <strong :class="['table-number']">{{ orderResult.table?.label.toUpperCase() }}</strong></h3>
+            <ul :class="['text-left']">
+              <li v-for="(line, index) in orderResult.lines" :key="index">
+                {{ line.name }} × {{ line.quantity }} · {{ formatOrderingPrice(line.total) }}
+              </li>
+            </ul>
+            <strong>{{ t('stage.customer-session.completion.total') }} {{ formatOrderingPrice(orderResult.total) }}</strong>
+          </template>
+          <template v-else-if="orderResult.pickupNumber">
+            <h3>{{ t('stage.customer-session.completion.pickup-number') }}</h3>
+            <strong :class="['text-6xl font-bold tabular-nums']">{{ orderResult.pickupNumber }}</strong>
+          </template>
+          <details v-if="orderResult.posOrderId" :class="['order-reference']">
+            <summary>{{ t('stage.customer-session.completion.order-number') }}</summary>
+            <span>{{ orderResult.posOrderId }}</span>
+          </details>
+          <p v-if="orderResult.serviceMode !== 'table-service' && !orderResult.pickupNumber" :class="['survey-description']">
+            {{ t('stage.customer-session.completion.pickup-unavailable') }}
+          </p>
+          <p v-if="orderResult.environment === 'test'" :class="['simulation-notice']">
+            {{ t('stage.customer-session.completion.simulated-notice') }}
+          </p>
+        </section>
+
         <div v-if="hasSurvey || orderContinuationUrl" :class="['completion-options']">
           <section v-if="hasSurvey" :class="['completion-option']">
             <h3>{{ settings.title }}</h3>
@@ -179,4 +209,5 @@ onScopeDispose(clearCountdown)
 .completion-card { display: grid; width: min(31rem, 100%); justify-items: center; gap: .85rem; border: 1px solid rgb(255 255 255 / 22%); border-radius: 1.75rem; padding: 2rem; color: #173032; background: #fffaf2; box-shadow: 0 2rem 6rem rgb(0 0 0 / 45%); text-align: center; }
 .completion-icon { color: #3d9e63; font-size: 3rem; }.completion-card h2, .completion-card h3 { margin: 0; }.completion-card h2 { font-size: 1.65rem; }.completion-card h3 { font-size: 1.15rem; }.completion-description, .survey-description { max-width: 26rem; margin: -.2rem 0 0; color: #5a6b69; line-height: 1.6; }.survey-divider { width: 100%; border-top: 1px solid rgb(23 48 50 / 12%); margin-top: .2rem; }.qr-code-frame { display: grid; width: min(15rem, 100%); min-height: 15rem; place-items: center; border-radius: 1rem; padding: .8rem; background: #fff; box-shadow: inset 0 0 0 1px rgb(23 48 50 / 8%); }.qr-code { display: block; width: 100%; height: auto; image-rendering: pixelated; }.qr-code-status { margin: 0; color: #8b3f25; line-height: 1.5; }.countdown { margin: 0; color: #6a7c79; font-size: .9rem; }.finish-button { width: min(20rem, 100%); border: 0; border-radius: .9rem; padding: .8rem 1rem; color: #fff; background: #df5529; box-shadow: 0 .45rem 1rem rgb(191 62 24 / 24%); cursor: pointer; font: inherit; font-weight: 700; }.finish-button:hover, .finish-button:focus-visible { background: #c9451e; }
 @media (max-width: 420px) { .completion-card { padding: 1.5rem; }.qr-code-frame { min-height: 13rem; } }
+.table-number { display: block; margin-top: .35rem; font-size: 2.5rem; font-variant-numeric: tabular-nums; }.order-reference { max-width: 100%; color: #6a7c79; font-size: .75rem; overflow-wrap: anywhere; }.order-reference summary { cursor: pointer; }.simulation-notice { max-width: 26rem; margin: 0; color: #6a7c79; font-size: .75rem; line-height: 1.5; }
 </style>

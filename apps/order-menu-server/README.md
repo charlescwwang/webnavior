@@ -5,6 +5,42 @@ customer-facing Order Menu and a POS provider. It owns normalized catalog and
 order-submission HTTP contracts; the customer UI and WebMCP never receive POS
 credentials or vendor response shapes.
 
+## Authenticated service modes and unpaid table orders
+
+`GET /v1/ordering-context` creates or reads the authenticated device's pinned
+round. The Bridge obtains `serviceMode` from the existing read-only Kiosk identity
+API, not a browser-supplied mode or table. `POST /v1/ordering-context` accepts
+`{ previousId }` to open the next round and apply current configuration. Pending
+or uncertain submissions block reset; unresolved payments block a mode change.
+
+`POST /v1/table-orders` requires `contextId`, `idempotencyKey`,
+`confirmedByUser: true`, and `cart` (catalogRevision, itemCount, lines, total).
+The server supplies the random test table `a01`–`a09`, validates the current
+catalog/prices/options, and calls an explicit unpaid gateway operation. Concurrent
+identical requests reuse the receipt; changed payloads with the same key fail.
+Unknown submission results stay locked to prevent a duplicate order. Accepted
+table orders return table, cart and receipt, and never a pickup number.
+
+The bundled simulator implements this contract. The HTTP gateway advertises it
+only for the locally started simulator; external POS adapters need an explicit
+implementation and capability. Existing paid `/v1/orders` still requires an
+authorized payment. Neither path fabricates payment identifiers. Pre-submission refusals use
+separate error codes for an invalid context,
+unsupported unpaid submission, an already submitted order, and a pending result;
+the customer message states the actual cause rather than listing alternatives.
+Mode contexts and idempotency receipts currently have the same process-local
+lifetime as the
+simulator; production vendor integration needs durable order reconciliation.
+
+## Pickup numbers
+
+After acceptance of a paid Kiosk order, the Bridge assigns a random three-digit pickup number (100–999)
+to the order receipt. It is separate from the POS order identifier. The existing
+idempotency cache returns the same number on concurrent requests and receipt
+replays; rejected or uncertain orders receive none. This follows the current
+simulator's process-local receipt lifetime, not durable POS storage. A live vendor
+integration must persist receipts and pickup numbers with its order records.
+
 ## Development
 
 ```bash
@@ -41,13 +77,19 @@ restriction on that test flow was withdrawn at the operator's request.
 ## Simulator catalog
 
 The development simulator normalizes the project-managed
-[`周氏蝦捲菜單_v2.json`](../../周氏蝦捲菜單_v2.json) fixture. It exposes only items marked
+[`周氏蝦捲菜單_v2.json`](../../周氏蝦捲菜單_v2.json) fixture. The fixture uses neutral demo store and dish labels; stable item IDs and prices are retained. It exposes only items marked
 available, keeps the source price and category, and uses each item's `symbol`
 when no image URL is supplied. To keep the local menu visually usable while
 the fixture has empty image fields, it adds clearly non-authoritative Unsplash
 presentation images by food type; a future POS-provided `image` always wins.
 It does not invent POS option groups, stock counts, or dietary claims that are
 absent from the source data.
+
+The demo description keeps portion and preparation facts (for example,
+`每份10顆，現點現煮`); its base price lives only in `price`. Menu receipts and
+snapshot replies already render that field. Repeating a price in `description`
+would speak it twice and could retain an old amount after a price change. This
+is a source-data rule, not automatic parsing of arbitrary merchant prose.
 
 Declared `optionGroups` are preserved through the catalog boundary, but the
 current seven-dish source deliberately declares no customization options.
@@ -103,6 +145,17 @@ The cart includes the catalog `revision` that priced it. Before forwarding an
 order, the Bridge compares that revision and each order-line price against the
 latest catalog. A stale or changed item returns a reviewable rejection instead
 of silently changing the customer's order.
+
+## Portable order receipt
+
+Accepted orders, for both dine-in and takeout, also receive `receiptAccess`.
+This separate bearer capability opens the same read endpoint with `readOnly: true`,
+the pickup number, meals, quantities, fulfillment choice and total. It omits the
+phone label. Table binding and takeout mutation return 409 for these tokens.
+Kiosk uses this capability for its completion QR even when the survey is disabled.
+It expires after 30 minutes or Bridge restart; replay does not renew expired links.
+Customers may screenshot the phone view. These tokens never enter chat/history
+or the durable order-result archive; only the non-personal receipt does.
 
 ## Test order continuation
 
@@ -225,3 +278,29 @@ must remain blocked for reconciliation after a restart. Persistent transaction
 ownership, provider-confirmed payment results, currency validation and durable
 idempotency are required before connecting live payments. This simulator's
 `authorized` response does not confirm a real charge.
+
+## Read-only menu price checks
+
+Run `pnpm -F @proj-airi/order-menu-server menu:check /absolute/path/menu.json`
+before publishing a supplier JSON file. Input requires `items` with string
+`id`, `name`, `description` and nonnegative finite numeric `price`.
+The command prints JSON without modifying the file. Exit codes: 0 for a valid
+report, 1 for warnings with `--strict`, 2 for invalid input/read/JSON/usage.
+Warnings alone leave the default command successful; strict mode requires review
+of contextual prices too, not just confirmed base-price conflicts.
+
+`GET /v1/catalog` retains the original `catalog` and adds
+`catalogPriceDiagnostics`: validity, checked item count, total warning count,
+up to100 warning details, and explicit truncation. Different standalone base
+prices are `conflicting-base-price`; options, bundles and promotions are separate
+review categories, and ambiguous clauses are `unclassified-price`. Matching
+standalone base prices and non-price quantities produce no warning. This is a
+finite explicit-currency checker, not semantic validation of arbitrary prose.
+No price or merchant description is rewritten, no order is blocked, and a
+warning does not by itself establish that contextual prices are wrong.
+
+The server runner logs changed warning reports once per process. Repeated
+identical reads are deduplicated; changed diagnostics are reported again.
+Operator callback failure cannot prevent catalog reads. This provides a CLI and
+POS-read diagnostic boundary; this repository has no menu import/publish editor
+or staff-notification service to attach it to. It is not a customer-facing alert.

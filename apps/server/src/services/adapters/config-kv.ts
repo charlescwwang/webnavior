@@ -2,7 +2,7 @@ import type Redis from 'ioredis'
 import type { InferOutput } from 'valibot'
 
 import { errorMessageFrom } from '@moeru/std'
-import { any, array, boolean, check, integer, minValue, nonEmpty, number, object, optional, parse, picklist, pipe, record, regex, string } from 'valibot'
+import { any, array, boolean, check, integer, maxValue, minValue, nonEmpty, number, object, optional, parse, picklist, pipe, record, regex, string } from 'valibot'
 
 import { createServiceUnavailableError } from '../../utils/error'
 import { configRedisKey } from '../../utils/redis-keys'
@@ -76,6 +76,7 @@ export const webnaviorAudioConfigSchema = optional(object({
     upstreamModel: pipe(string(), nonEmpty('tts.upstreamModel must not be empty')),
     baseURL: pipe(string(), nonEmpty('tts.baseURL must not be empty')),
     voice: optional(pipe(string(), nonEmpty('tts.voice must not be empty'))),
+    speed: optional(pipe(number(), minValue(0.25), maxValue(4))),
     keyCiphertext: optional(string()),
   })),
 }), {})

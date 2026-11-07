@@ -6,9 +6,11 @@ describe('kiosk customer entry and seating capabilities', () => {
   // Report: this chat, 2026-10-21; all menu operations require an explicit phone choice.
   it('blocks browsing, recommendations and ordering until the visitor explicitly skips', async () => {
     let ready = false
-    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onSessionReset: () => ready = false, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const runtime = createMenuToolRuntime({ orderingReady: () => ready, onCustomerEntrySkipped: () => ready = true, onSessionReset: () => {
+      ready = false
+    }, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await expect(runtime.invokeForAgent('menu_get', { display: false })).rejects.toThrow('略過')
-    await expect(runtime.invokeForAgent('menu_get', { query: '周氏蝦捲', display: true })).rejects.toThrow('略過')
+    await expect(runtime.invokeForAgent('menu_get', { query: '蝦捲', display: true })).rejects.toThrow('略過')
     await expect(runtime.invokeManual('menu_recommend', { action: 'update' })).rejects.toThrow('略過')
     await expect(runtime.invokeForAgent('menu_show_recommendations', { itemIds: ['chous-shrimp-roll'] })).rejects.toThrow('略過')
     await expect(runtime.invokeManual('order_add_item', { itemId: 'chous-shrimp-roll' })).rejects.toThrow('略過')
@@ -17,7 +19,7 @@ describe('kiosk customer entry and seating capabilities', () => {
     expect(ready).toBe(false)
     await runtime.invoke('customer_skip_phone', { confirmedByUser: true })
     expect(ready).toBe(true)
-    expect(await runtime.invokeForAgent('menu_get', { query: '周氏蝦捲', display: true })).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: 'chous-shrimp-roll' })]) })
+    expect(await runtime.invokeForAgent('menu_get', { query: '蝦捲', display: true })).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: 'chous-shrimp-roll' })]) })
     await runtime.reset()
     expect(ready).toBe(false)
     await expect(runtime.invokeForAgent('menu_get', { display: false })).rejects.toThrow('略過')
@@ -53,7 +55,7 @@ describe('kiosk customer entry and seating capabilities', () => {
     await expect(runtime.invokeForAgent('kiosk_customer_phone', { phone: '0900000000' })).rejects.toThrow('unavailable to the Agent')
     expect(await runtime.invoke('kiosk_customer_phone', { phone: '0900000000' })).toMatchObject({ customerMessage: expect.any(String) })
     expect(phone).toBe('0900000000')
-    expect(await runtime.invokeForAgent('menu_get', { query: '周氏蝦捲', display: true })).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: 'chous-shrimp-roll' })]) })
+    expect(await runtime.invokeForAgent('menu_get', { query: '蝦捲', display: true })).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ id: 'chous-shrimp-roll' })]) })
     const snapshot = await runtime.invoke('kiosk_interaction_state')
     expect(snapshot).toMatchObject({ phase: 'ordering' })
     expect(JSON.stringify(snapshot)).not.toContain('0900000000')
@@ -65,7 +67,9 @@ describe('kiosk customer entry and seating capabilities', () => {
     const runtime = createMenuToolRuntime({
       orderingReady: () => ready,
       onCustomerEntrySkipped: () => ready = true,
-      onSessionReset: () => ready = false,
+      onSessionReset: () => {
+        ready = false
+      },
       onAction: () => {},
       onCartChange: () => {},
       onMenuSelection: () => {},
@@ -100,7 +104,9 @@ describe('kiosk customer entry and seating capabilities', () => {
     let ready = false
     const runtime = createMenuToolRuntime({
       orderingReady: () => ready,
-      onSessionReset: () => ready = false,
+      onSessionReset: () => {
+        ready = false
+      },
       onAction: () => {},
       onCartChange: () => {},
       onMenuSelection: () => {},

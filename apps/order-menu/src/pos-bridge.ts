@@ -1,3 +1,5 @@
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
+
 import type { ContinuationAccess } from '../../order-menu-server/src/domain/continuationContracts'
 import type { PaymentIntent, PaymentMethod } from '../../order-menu-server/src/domain/contracts'
 import type { CartSnapshot, PosOrderGateway, SubmissionReceipt, SubmittedOrder } from './domain/order-machine'
@@ -69,6 +71,7 @@ function isReceipt(value: unknown): value is SubmissionReceipt {
     && (receipt.environment === 'test' || receipt.environment === 'live')
     && typeof receipt.retryable === 'boolean'
     && (receipt.status === 'accepted' || receipt.status === 'rejected' || receipt.status === 'uncertain')
+    && (receipt.pickupNumber === undefined || (typeof receipt.pickupNumber === 'string' && /^[1-9]\d{2}$/.test(receipt.pickupNumber)))
     && (receipt.posOrderId === undefined || typeof receipt.posOrderId === 'string')
 }
 
@@ -80,7 +83,7 @@ function isSubmittedOrder(value: unknown): value is SubmittedOrder {
 }
 
 /** Calls the configured POS Bridge and never substitutes a browser-local demo order. */
-export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined, customer?: { phone: () => string | undefined, onContinuation: (access: ContinuationAccess) => void }): PosOrderGateway {
+export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => string | undefined = () => undefined, customer?: { phone: () => string | undefined, onContinuation?: (access: ContinuationAccess) => void, onReceipt?: (access: ContinuationAccess) => void, orderingContext?: () => OrderingContext | undefined }): PosOrderGateway {
   // One page serves many customers. Deduplicate replays of the same payment,
   // not every order submitted during the gateway's lifetime. Keep earlier keys
   // for late retries so they cannot create another order after a newer checkout.
@@ -88,23 +91,30 @@ export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => strin
 
   return {
     submit: async (cart) => {
-      let idempotencyKey = idempotencyKeys.get(cart.paymentId)
+      const context = customer?.orderingContext?.()
+      const tableOrder = context?.serviceMode === 'table-service'
+      const submissionKey = tableOrder ? JSON.stringify([context.id, cart]) : cart.paymentId
+      let idempotencyKey = idempotencyKeys.get(submissionKey)
       if (!idempotencyKey) {
         idempotencyKey = `menu-${crypto.randomUUID()}`
-        idempotencyKeys.set(cart.paymentId, idempotencyKey)
+        idempotencyKeys.set(submissionKey, idempotencyKey)
       }
       try {
-        const response = await fetch(endpoint(baseUrl, 'v1/orders'), {
+        const response = await fetch(endpoint(baseUrl, tableOrder ? 'v1/table-orders' : 'v1/orders'), {
           credentials: 'include',
-          body: JSON.stringify({ cart: { ...cart, ...(cart.fulfillmentMode === 'dine-in' ? { tableHoldId: tableHoldId() } : {}) }, idempotencyKey, customerPhone: customer?.phone() }),
+          body: tableOrder ? JSON.stringify({ contextId: context.id, confirmedByUser: true, idempotencyKey, cart: { catalogRevision: cart.catalogRevision, itemCount: cart.itemCount, lines: cart.lines, total: cart.total } }) : JSON.stringify({ cart: { ...cart, ...(cart.fulfillmentMode === 'dine-in' ? { tableHoldId: tableHoldId() } : {}) }, idempotencyKey, customerPhone: customer?.phone() }),
           headers: { 'Content-Type': 'application/json' },
           method: 'POST',
         })
-        const payload = await response.json().catch(() => undefined) as { order?: unknown, continuation?: ContinuationAccess } | undefined
+        const payload = await response.json().catch(() => undefined) as { order?: unknown, continuation?: ContinuationAccess, receiptAccess?: ContinuationAccess, error?: string } | undefined
+        if (tableOrder && !response.ok && [400, 401, 403, 409].includes(response.status))
+          return { id: `rejected-${crypto.randomUUID()}`, cart, receipt: { customerMessage: payload?.error ?? '隨桌訂單未送出。', environment: 'test', retryable: false, status: 'rejected' } }
         if (!response.ok || !isSubmittedOrder(payload?.order))
           return uncertainOrder(cart)
         if (payload.order.receipt.status === 'accepted' && payload.continuation)
-          customer?.onContinuation(payload.continuation)
+          customer?.onContinuation?.(payload.continuation)
+        if (payload.order.receipt.status === 'accepted' && payload.receiptAccess)
+          customer?.onReceipt?.(payload.receiptAccess)
         return payload.order
       }
       catch {
@@ -112,4 +122,20 @@ export function createPosBridgeGateway(baseUrl: string, tableHoldId: () => strin
       }
     },
   }
+}
+
+/** Opens a server-owned order round; only an explicit reset may rotate an existing context. */
+export async function loadOrderingContext(baseUrl: string, previousId?: string): Promise<OrderingContext | undefined> {
+  const response = await fetch(endpoint(baseUrl, 'v1/ordering-context'), {
+    credentials: 'include',
+    cache: 'no-store',
+    ...(previousId ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ previousId }) } : {}),
+  })
+  // An unauthenticated standalone catalog remains browsable; it has no ordering grant.
+  if (response.status === 401 && !previousId)
+    return undefined
+  const body = await response.json() as { context?: OrderingContext }
+  if (!response.ok || !body.context || !['kiosk', 'table-service'].includes(body.context.serviceMode))
+    throw new Error('無法取得服務模式，請稍後再試。')
+  return body.context
 }

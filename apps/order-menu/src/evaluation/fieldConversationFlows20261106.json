@@ -1,0 +1,3980 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "timezone": "Asia/Taipei",
+  "status": "partially-bound-boundary-controls-not-full-acceptance",
+  "scope": {
+    "included": [
+      "format-contract",
+      "state-recovery",
+      "next-step-guidance",
+      "recommendation-history",
+      "greeting-and-idle-lifecycle",
+      "catalog-compatibility"
+    ],
+    "deferred": [
+      "microphone-device-selection",
+      "eight-channel-dsp",
+      "aec",
+      "vad-asr-tuning",
+      "speaker-loopback",
+      "audio-gain"
+    ],
+    "externalModelCalls": 0,
+    "customerOrderWrites": 0
+  },
+  "usage": {
+    "modelInputProjection": [
+      "steps.input.text",
+      "runtime.publicDecisionContext",
+      "runtime.issuedTools",
+      "runtime.currentReceipts"
+    ],
+    "oracleOnly": [
+      "steps.expected",
+      "provenance",
+      "variants"
+    ],
+    "variants": "Apply changes as explicit JSON Pointer replacements/upserts to a cloned base case. Do not infer changes from note. Run and report every base and every materialized variant separately.",
+    "execution": "Selected projections are bound to fieldRuntimeFlows.test.ts and fieldFormatContract.test.ts, with Host/Server lifecycle and HTTP controls. No complete event/model runner is bound for all cases/variants. Every case executionStatus remains not-run for full-flow acceptance; schema and boundary-control passes do not mean the complete corpus passed.",
+    "stateOracle": "same-as values are fixture paths; effects are observed receipts/presentation/playback requests, never model prose. Runtime adapters must map these semantic names to owning APIs.",
+    "speechOracle": "Verify the actual TTS scheduling/text separately from DOM rendering; this corpus does not prove physical speaker audibility.",
+    "liveReplay": "Manual/synthetic inputs only, explicit opt-in and frozen source/menu/model identities; do not upload private field extracts or gold expectations.",
+    "providerPayload": "Fault inputs may use an explicit rawBody/envelope or a normalized function/arguments projection. The owning adapter must build the real provider envelope and validate through the public boundary; never import a private validator solely to accept a fixture.",
+    "effectSemantics": "requiredEffects/forbiddenEffects apply only to the current step. Count assertions use the cumulative count within that isolated scenario. Domain adapters observe real accepted receipts, UI state and TTS requests."
+  },
+  "catalog": {
+    "revision": "fixture-v1",
+    "source": "synthetic-explicit-test-catalog",
+    "currency": "TWD",
+    "notice": "固定人工測試目錄，不宣稱是當前商家的菜單或優惠。",
+    "items": [
+      {
+        "id": "signature-shrimp-roll-bento",
+        "name": "蝦捲招牌便當",
+        "aliases": [
+          "招牌便當"
+        ],
+        "category": "便當",
+        "price": 145,
+        "available": true,
+        "optionGroups": []
+      },
+      {
+        "id": "spicy-chicken-bento",
+        "name": "椒麻雞便當",
+        "aliases": [],
+        "category": "便當",
+        "price": 135,
+        "available": true,
+        "optionGroups": []
+      },
+      {
+        "id": "thai-sour-spicy-fish-bento",
+        "name": "泰式酸辣魚便當",
+        "aliases": [
+          "魚便當"
+        ],
+        "category": "便當",
+        "price": 140,
+        "available": true,
+        "optionGroups": []
+      },
+      {
+        "id": "fried-pork-chop-bento",
+        "name": "炸排骨便當",
+        "aliases": [
+          "排骨便當"
+        ],
+        "category": "便當",
+        "price": 130,
+        "available": true,
+        "optionGroups": []
+      },
+      {
+        "id": "thai-basil-pork-bento",
+        "name": "打拋豬便當",
+        "aliases": [],
+        "category": "便當",
+        "price": 125,
+        "available": true,
+        "optionGroups": []
+      },
+      {
+        "id": "beef-noodle-soup",
+        "name": "紅燒牛肉麵",
+        "aliases": [
+          "牛肉麵"
+        ],
+        "category": "麵食",
+        "price": 150,
+        "available": true,
+        "optionGroups": []
+      },
+      {
+        "id": "dumplings",
+        "name": "水餃",
+        "aliases": [],
+        "category": "點心",
+        "price": 80,
+        "available": true,
+        "optionGroups": []
+      }
+    ],
+    "merchantFacts": {
+      "promotions": "unknown"
+    }
+  },
+  "cases": [
+    {
+      "id": "K1106-FMT-01",
+      "title": "assistant 回傳非空 question",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "observed-replay",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "今天授權的模型重播重現；原始兩次歷史回應未保留，不能宣稱逐位元一致。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": []
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "你有買一送一嗎？"
+          },
+          "expected": {
+            "outcome": "classification-pending",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "provider-result",
+            "payload": {
+              "function": "resolve_service_request",
+              "arguments": {
+                "admission": "service",
+                "disposition": "assistant",
+                "question": "目前沒有買一送一，但有優惠套餐。"
+              }
+            }
+          },
+          "expected": {
+            "outcome": "contract-rejected",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start",
+              "speech.unverifiedClaim"
+            ],
+            "assertions": [
+              {
+                "subject": "validation.category",
+                "operator": "eq",
+                "value": "unexpected-question"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "format-repair-unavailable"
+          },
+          "expected": {
+            "outcome": "service-paused",
+            "requiredEffects": [
+              "input.retain",
+              "staffNotice.show",
+              "speech.staffNotice"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start",
+              "notification.external"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "same-as",
+                "value": "setup.cart"
+              },
+              {
+                "subject": "speech.staffNotice.count",
+                "operator": "eq",
+                "value": 1
+              },
+              {
+                "subject": "notification.delivery",
+                "operator": "eq",
+                "value": "simulated"
+              },
+              {
+                "subject": "model.formatRepairCalls",
+                "operator": "at-most",
+                "value": 1
+              },
+              {
+                "subject": "dialogue.userText",
+                "operator": "contains",
+                "value": "你有買一送一嗎？"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-02",
+      "title": "無法解析或不完整的工具回應",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "我點了什麼？"
+          },
+          "expected": {
+            "outcome": "classification-pending",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "provider-result",
+            "payload": {
+              "rawBody": "{\"choices\":["
+            }
+          },
+          "expected": {
+            "outcome": "contract-rejected",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "validation.category",
+                "operator": "one-of",
+                "value": [
+                  "response-shape",
+                  "arguments-json",
+                  "tool-selection"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "format-repair-failed"
+          },
+          "expected": {
+            "outcome": "service-paused",
+            "requiredEffects": [
+              "input.retain",
+              "staffNotice.show",
+              "speech.staffNotice"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "same-as",
+                "value": "setup.cart"
+              },
+              {
+                "subject": "speech.staffNotice.count",
+                "operator": "eq",
+                "value": 1
+              },
+              {
+                "subject": "notification.delivery",
+                "operator": "eq",
+                "value": "simulated"
+              },
+              {
+                "subject": "model.formatRepairCalls",
+                "operator": "at-most",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "malformed-json",
+          "note": "provider rawBody is malformed JSON",
+          "changes": [
+            {
+              "path": "/steps/1/input/payload",
+              "value": {
+                "rawBody": "{\"choices\":["
+              }
+            }
+          ]
+        },
+        {
+          "id": "missing-tool-call",
+          "note": "HTTP200 choices[0].message has no tool_calls",
+          "changes": [
+            {
+              "path": "/steps/1/input/payload",
+              "value": {
+                "choices": [
+                  {
+                    "message": {
+                      "content": ""
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "wrong-tool",
+          "note": "one tool call with an unissued function name",
+          "changes": [
+            {
+              "path": "/steps/1/input/payload",
+              "value": {
+                "function": "unissued_classifier",
+                "arguments": {
+                  "admission": "service",
+                  "disposition": "assistant"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "multiple-calls",
+          "note": "classification emits two mutually exclusive tool calls",
+          "changes": [
+            {
+              "path": "/steps/1/input/payload",
+              "value": {
+                "calls": [
+                  {
+                    "function": "resolve_service_request",
+                    "arguments": {
+                      "admission": "service",
+                      "disposition": "assistant"
+                    }
+                  },
+                  {
+                    "function": "resolve_service_request",
+                    "arguments": {
+                      "admission": "service",
+                      "disposition": "clarify",
+                      "question": "要查什麼？"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-03",
+      "title": "clarify 缺少有效問題",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": []
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "provider-result",
+            "payload": {
+              "function": "resolve_service_request",
+              "arguments": {
+                "admission": "service",
+                "disposition": "clarify",
+                "question": "   "
+              }
+            }
+          },
+          "expected": {
+            "outcome": "contract-rejected",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "speech.clarification.count",
+                "operator": "eq",
+                "value": 0
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "format-repair-failed"
+          },
+          "expected": {
+            "outcome": "service-paused",
+            "requiredEffects": [
+              "staffNotice.show",
+              "speech.staffNotice"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "same-as",
+                "value": "setup.cart"
+              },
+              {
+                "subject": "speech.staffNotice.count",
+                "operator": "eq",
+                "value": 1
+              },
+              {
+                "subject": "notification.delivery",
+                "operator": "eq",
+                "value": "simulated"
+              },
+              {
+                "subject": "model.formatRepairCalls",
+                "operator": "at-most",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "missing",
+          "note": "question omitted",
+          "changes": [
+            {
+              "path": "/steps/0/input/payload/arguments",
+              "value": {
+                "admission": "service",
+                "disposition": "clarify"
+              }
+            }
+          ]
+        },
+        {
+          "id": "empty",
+          "note": "question is empty string",
+          "changes": [
+            {
+              "path": "/steps/0/input/payload/arguments/question",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "whitespace",
+          "note": "question contains whitespace only",
+          "changes": [
+            {
+              "path": "/steps/0/input/payload/arguments/question",
+              "value": "   "
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-04",
+      "title": "合法 assistant 不被誤判格式失敗",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": []
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "你有買一送一嗎？"
+          },
+          "expected": {
+            "outcome": "classification-pending",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "provider-result",
+            "payload": {
+              "function": "resolve_service_request",
+              "arguments": {
+                "admission": "service",
+                "disposition": "assistant"
+              }
+            }
+          },
+          "expected": {
+            "outcome": "assistant-handoff",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start",
+              "staffNotice.show"
+            ],
+            "assertions": [
+              {
+                "subject": "validation.accepted",
+                "operator": "eq",
+                "value": true
+              },
+              {
+                "subject": "model.formatRepairCalls",
+                "operator": "eq",
+                "value": 0
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "omitted",
+          "note": "question omitted",
+          "changes": [
+            {
+              "path": "/steps/1/input/payload/arguments",
+              "value": {
+                "admission": "service",
+                "disposition": "assistant"
+              }
+            }
+          ]
+        },
+        {
+          "id": "inactive-empty",
+          "note": "question is empty string; must match the supported provider/runtime contract",
+          "changes": [
+            {
+              "path": "/steps/1/input/payload/arguments/question",
+              "value": ""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-05",
+      "title": "合法釐清與新需求正常接續",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": []
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "幫我處理一下"
+          },
+          "expected": {
+            "outcome": "clarification-presented",
+            "requiredEffects": [
+              "question.present",
+              "speech.clarification"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start",
+              "staffNotice.show"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "我要水餃一份"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start",
+              "staffNotice.show"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-06",
+      "title": "格式修復與原請求共用期限",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "看看現在點了什麼"
+          },
+          "expected": {
+            "outcome": "classification-pending",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "invalid-output-near-turn-deadline"
+          },
+          "expected": {
+            "outcome": "bounded-format-repair",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "model.formatRepairCalls",
+                "operator": "at-most",
+                "value": 1
+              },
+              {
+                "subject": "request.deadline",
+                "operator": "same-as",
+                "value": "request.initialDeadline"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "repair-timeout"
+          },
+          "expected": {
+            "outcome": "service-paused",
+            "requiredEffects": [
+              "staffNotice.show",
+              "speech.staffNotice",
+              "input.retain"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "same-as",
+                "value": "setup.cart"
+              },
+              {
+                "subject": "speech.staffNotice.count",
+                "operator": "eq",
+                "value": 1
+              },
+              {
+                "subject": "notification.delivery",
+                "operator": "eq",
+                "value": "simulated"
+              },
+              {
+                "subject": "model.formatRepairCalls",
+                "operator": "at-most",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-07",
+      "title": "結構合法但捏造店家活動不放行",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "merchantFacts": {
+          "promotions": "unknown"
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "你們現在有優惠嗎？"
+          },
+          "expected": {
+            "outcome": "assistant-handoff",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "provider-result",
+            "payload": {
+              "replyKind": "service-information",
+              "claim": "現在有買一送一優惠"
+            }
+          },
+          "expected": {
+            "outcome": "unsupported-claim-rejected",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start",
+              "speech.unverifiedClaim"
+            ],
+            "assertions": [
+              {
+                "subject": "validation.dimension",
+                "operator": "eq",
+                "value": "grounding-not-json"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "reply-from-known-facts"
+          },
+          "expected": {
+            "outcome": "unknown-information-presented",
+            "requiredEffects": [
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start",
+              "speech.unverifiedClaim"
+            ],
+            "assertions": [
+              {
+                "subject": "reply.claimedPromotion",
+                "operator": "eq",
+                "value": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-FMT-08",
+      "title": "成功加購後回覆格式壞掉不可重做加購",
+      "batch": "A",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": []
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "我要水餃一份"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "effects.cartAdd.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "accepted-receipt-followed-by-invalid-reply"
+          },
+          "expected": {
+            "outcome": "presentation-failed",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "presentation-repair-failed"
+          },
+          "expected": {
+            "outcome": "service-paused",
+            "requiredEffects": [
+              "staffNotice.show",
+              "speech.staffNotice"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "effects.cartAdd.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-STATE-01",
+      "title": "錯誤工具被拒後下一句不沿用錯誤狀態",
+      "batch": "B",
+      "priority": "P1",
+      "provenance": {
+        "kind": "user-reported",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "使用者回報一次選錯後後續持續偏移；本鏈為明示前態的人工故障注入。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "水餃先不要了"
+          },
+          "expected": {
+            "outcome": "request-pending",
+            "requiredEffects": [],
+            "forbiddenEffects": [],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "inject-rejected-set-fulfillment-proposal"
+          },
+          "expected": {
+            "outcome": "proposal-rejected",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "fulfillmentMode",
+                "operator": "eq",
+                "value": "dine-in"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "utterance",
+            "text": "我是說取消水餃，內用不變"
+          },
+          "expected": {
+            "outcome": "item-removed",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": []
+              },
+              {
+                "subject": "fulfillmentMode",
+                "operator": "eq",
+                "value": "dine-in"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-STATE-02",
+      "title": "已成功但選錯的品項可更正",
+      "batch": "B",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "spicy-chicken-bento",
+            "quantity": 1
+          }
+        ],
+        "acceptedMistake": {
+          "itemId": "spicy-chicken-bento",
+          "quantity": 1
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "你點錯了，我要的是炸排骨便當，不是椒麻雞"
+          },
+          "expected": {
+            "outcome": "correction-applied",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "fried-pork-chop-bento",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "排骨再加一份"
+          },
+          "expected": {
+            "outcome": "quantity-updated",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "fried-pork-chop-bento",
+                    "quantity": 2
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-STATE-03",
+      "title": "切換話題不回答已失效的舊確認",
+      "batch": "B",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "question": {
+          "id": "q-old",
+          "purpose": "clear-cart",
+          "presented": true,
+          "bindings": {
+            "sessionGeneration": 1,
+            "documentId": "document-1",
+            "cartRevision": 1,
+            "catalogRevision": "fixture-v1",
+            "expiresAtMs": 130000
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "先不要清空，告訴我水餃多少錢"
+          },
+          "expected": {
+            "outcome": "price-answered",
+            "requiredEffects": [
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "question.q-old.active",
+                "operator": "eq",
+                "value": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "好"
+          },
+          "expected": {
+            "outcome": "no-unrelated-write",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "effects.clearCart.count",
+                "operator": "eq",
+                "value": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-STATE-04",
+      "title": "舊回應晚到不覆蓋新訂單",
+      "batch": "B",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "pendingTaskId": "task-old"
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "new-order-reset-completed"
+          },
+          "expected": {
+            "outcome": "new-session-ready",
+            "requiredEffects": [
+              "session.reset"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "sessionGeneration",
+                "operator": "eq",
+                "value": 2
+              },
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "old-task-response-arrives"
+          },
+          "expected": {
+            "outcome": "stale-result-ignored",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "cart.write",
+              "menu.present",
+              "speech.answer"
+            ],
+            "assertions": [
+              {
+                "subject": "sessionGeneration",
+                "operator": "eq",
+                "value": 2
+              },
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "utterance",
+            "text": "我要炸排骨便當一份"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "fried-pork-chop-bento",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-STATE-05",
+      "title": "送單結果未知不可當成沒成功重送",
+      "batch": "B",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "question": {
+          "id": "q-send",
+          "purpose": "checkout-entry",
+          "presented": true,
+          "bindings": {
+            "sessionGeneration": 1,
+            "documentId": "document-1",
+            "cartRevision": 1,
+            "catalogRevision": "fixture-v1",
+            "expiresAtMs": 130000
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "確認送出"
+          },
+          "expected": {
+            "outcome": "submission-issued",
+            "requiredEffects": [
+              "order.submit"
+            ],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "submission-receipt-lost"
+          },
+          "expected": {
+            "outcome": "submission-uncertain",
+            "requiredEffects": [
+              "staffNotice.show"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "cart.write"
+            ],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "utterance",
+            "text": "再試一次"
+          },
+          "expected": {
+            "outcome": "reconciliation-required",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "order.submit",
+              "cart.write",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 1
+              },
+              {
+                "subject": "order.status",
+                "operator": "eq",
+                "value": "uncertain"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-GUIDE-01",
+      "title": "點完後詢問內容接核對與送出邀請",
+      "batch": "C",
+      "priority": "P1",
+      "provenance": {
+        "kind": "observed",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "今天同句只報兩項餐點及280元；顧客另說我要結帳後才有送出問題。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "fried-pork-chop-bento",
+            "quantity": 1
+          },
+          {
+            "itemId": "beef-noodle-soup",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "這樣就好，我點了什麼"
+          },
+          "expected": {
+            "outcome": "review-and-invitation",
+            "requiredEffects": [
+              "order.review",
+              "question.present",
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "review.total",
+                "operator": "eq",
+                "value": 280
+              },
+              {
+                "subject": "question.purpose",
+                "operator": "eq",
+                "value": "checkout-entry"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "確認送出"
+          },
+          "expected": {
+            "outcome": "submission-issued",
+            "requiredEffects": [
+              "order.submit"
+            ],
+            "forbiddenEffects": [
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-GUIDE-02",
+      "title": "自然結帳語句走相同核對流程",
+      "batch": "C",
+      "priority": "P1",
+      "provenance": {
+        "kind": "observed",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "今天我要算帳／這樣就好幫我算帳曾只報總額；好趕快算帳也曾正確進入確認。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "fried-pork-chop-bento",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "這樣就好，幫我算帳"
+          },
+          "expected": {
+            "outcome": "review-and-invitation",
+            "requiredEffects": [
+              "order.review",
+              "question.present",
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "review.total",
+                "operator": "eq",
+                "value": 130
+              },
+              {
+                "subject": "question.purpose",
+                "operator": "eq",
+                "value": "checkout-entry"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "確認"
+          },
+          "expected": {
+            "outcome": "submission-issued",
+            "requiredEffects": [
+              "order.submit"
+            ],
+            "forbiddenEffects": [
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "calculate",
+          "note": "first utterance: 我要算帳",
+          "changes": [
+            {
+              "path": "/steps/0/input/text",
+              "value": "我要算帳"
+            }
+          ]
+        },
+        {
+          "id": "bill",
+          "note": "first utterance: 幫我買單",
+          "changes": [
+            {
+              "path": "/steps/0/input/text",
+              "value": "幫我買單"
+            }
+          ]
+        },
+        {
+          "id": "checkout",
+          "note": "first utterance: 我要結帳",
+          "changes": [
+            {
+              "path": "/steps/0/input/text",
+              "value": "我要結帳"
+            }
+          ]
+        },
+        {
+          "id": "pay",
+          "note": "first utterance: 我想付錢",
+          "changes": [
+            {
+              "path": "/steps/0/input/text",
+              "value": "我想付錢"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-GUIDE-03",
+      "title": "只查價錢不當作點完或送單同意",
+      "batch": "C",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "水餃一份多少錢？我還在看"
+          },
+          "expected": {
+            "outcome": "price-answered",
+            "requiredEffects": [
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start",
+              "question.force-submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "reply.price",
+                "operator": "eq",
+                "value": 80
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "再加一份炸排骨便當"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  },
+                  {
+                    "itemId": "fried-pork-chop-bento",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-GUIDE-04",
+      "title": "核對後改餐點使舊送單確認失效",
+      "batch": "C",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "幫我結帳"
+          },
+          "expected": {
+            "outcome": "review-and-invitation",
+            "requiredEffects": [
+              "order.review",
+              "question.present"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "先加一份排骨便當"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  },
+                  {
+                    "itemId": "fried-pork-chop-bento",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "answer-old-submit-question"
+          },
+          "expected": {
+            "outcome": "stale-confirmation-rejected",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 0
+              }
+            ]
+          }
+        },
+        {
+          "id": "S04",
+          "input": {
+            "kind": "utterance",
+            "text": "現在核對一下"
+          },
+          "expected": {
+            "outcome": "review-refreshed",
+            "requiredEffects": [
+              "order.review"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "review.total",
+                "operator": "eq",
+                "value": 210
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-GUIDE-05",
+      "title": "獨立 Kiosk 結帳保留會員發票付款步驟",
+      "batch": "C",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "takeout",
+        "table": null,
+        "directSubmissionSupported": false,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "kiosk",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "我要買單"
+          },
+          "expected": {
+            "outcome": "review-and-invitation",
+            "requiredEffects": [
+              "order.review",
+              "question.present"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "好，進入結帳"
+          },
+          "expected": {
+            "outcome": "checkout-started",
+            "requiredEffects": [
+              "checkout.advance"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "checkout.nextStep",
+                "operator": "eq",
+                "value": "policy-first-step"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "no-terminal-authorization"
+          },
+          "expected": {
+            "outcome": "payment-not-assumed",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "payment.authorized",
+                "operator": "eq",
+                "value": false
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-GUIDE-06",
+      "title": "缺少必要設定引導補齊而非死路或假送出",
+      "batch": "C",
+      "priority": "P1",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": null,
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "幫我算帳"
+          },
+          "expected": {
+            "outcome": "missing-table-guidance",
+            "requiredEffects": [
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "order.submit",
+              "payment.start",
+              "question.force-submit"
+            ],
+            "assertions": [
+              {
+                "subject": "guidance.kind",
+                "operator": "eq",
+                "value": "missing-bound-table-context"
+              },
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "no-table",
+          "note": "table-service has no bound table",
+          "changes": [
+            {
+              "path": "/setup/table",
+              "value": null
+            }
+          ]
+        },
+        {
+          "id": "no-fulfillment",
+          "note": "kiosk mode has no selected fulfillment mode",
+          "changes": [
+            {
+              "path": "/setup/serviceMode",
+              "value": "kiosk"
+            },
+            {
+              "path": "/setup/fulfillmentMode",
+              "value": null
+            },
+            {
+              "path": "/steps/0/expected/outcome",
+              "value": "missing-fulfillment-guidance"
+            },
+            {
+              "path": "/setup/directSubmissionSupported",
+              "value": false
+            },
+            {
+              "path": "/steps/0/expected/requiredEffects",
+              "value": [
+                "question.present",
+                "speech.answer"
+              ]
+            },
+            {
+              "path": "/steps/0/expected/assertions/0",
+              "value": {
+                "subject": "question.purpose",
+                "operator": "eq",
+                "value": "fulfillment"
+              }
+            }
+          ]
+        },
+        {
+          "id": "unsupported-submit",
+          "note": "table-service directSubmissionSupported is false; explain unsupported flow without offering a fake submit question",
+          "changes": [
+            {
+              "path": "/setup/table",
+              "value": "A08"
+            },
+            {
+              "path": "/setup/directSubmissionSupported",
+              "value": false
+            },
+            {
+              "path": "/steps/0/expected/outcome",
+              "value": "submission-unavailable-explained"
+            },
+            {
+              "path": "/steps/0/expected/requiredEffects",
+              "value": [
+                "speech.answer"
+              ]
+            },
+            {
+              "path": "/steps/0/expected/forbiddenEffects",
+              "value": [
+                "order.submit",
+                "payment.start",
+                "question.force-submit"
+              ]
+            },
+            {
+              "path": "/steps/0/expected/assertions",
+              "value": [
+                {
+                  "subject": "question.purpose",
+                  "operator": "not-eq",
+                  "value": "checkout-entry"
+                },
+                {
+                  "subject": "cart",
+                  "operator": "same-as",
+                  "value": "setup.cart"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-REC-01",
+      "title": "推薦後加入商品再換其他推薦",
+      "batch": "D",
+      "priority": "P2",
+      "provenance": {
+        "kind": "user-reported",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "使用者回報加購後再次要求其他推薦，會連續顯示相同商品；此完整前態尚待重現。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "recommendation": {
+          "shownIds": [
+            "signature-shrimp-roll-bento",
+            "spicy-chicken-bento",
+            "thai-sour-spicy-fish-bento"
+          ],
+          "scope": "CATALOG"
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "我要招牌便當一份"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "signature-shrimp-roll-bento",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "再推薦其他商品"
+          },
+          "expected": {
+            "outcome": "different-recommendations",
+            "requiredEffects": [
+              "menu.present"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "recommendation.ids",
+                "operator": "disjoint",
+                "value": [
+                  "signature-shrimp-roll-bento",
+                  "spicy-chicken-bento",
+                  "thai-sour-spicy-fish-bento"
+                ]
+              },
+              {
+                "subject": "recommendation.ids",
+                "operator": "not-contains",
+                "value": "signature-shrimp-roll-bento"
+              },
+              {
+                "subject": "recommendation.ids",
+                "operator": "length",
+                "value": 3
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-REC-02",
+      "title": "繼續與改條件是不同動作",
+      "batch": "D",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "recommendation": {
+          "shownIds": [
+            "signature-shrimp-roll-bento",
+            "spicy-chicken-bento",
+            "thai-sour-spicy-fish-bento"
+          ],
+          "scope": "CATALOG"
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "還有其他的嗎？"
+          },
+          "expected": {
+            "outcome": "different-recommendations",
+            "requiredEffects": [
+              "menu.present"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "recommendation.ids",
+                "operator": "disjoint",
+                "value": [
+                  "signature-shrimp-roll-bento",
+                  "spicy-chicken-bento",
+                  "thai-sour-spicy-fish-bento"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "重新看便當，價錢一百四以內"
+          },
+          "expected": {
+            "outcome": "conditions-updated",
+            "requiredEffects": [
+              "menu.present"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "recommendation.category",
+                "operator": "eq",
+                "value": "便當"
+              },
+              {
+                "subject": "recommendation.maxPrice",
+                "operator": "eq",
+                "value": 140
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-REC-03",
+      "title": "推薦耗盡明說沒有更多而不循環",
+      "batch": "D",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "recommendation": {
+          "shownIds": [
+            "signature-shrimp-roll-bento",
+            "spicy-chicken-bento",
+            "thai-sour-spicy-fish-bento",
+            "fried-pork-chop-bento",
+            "thai-basil-pork-bento",
+            "beef-noodle-soup",
+            "dumplings"
+          ],
+          "scope": "CATALOG"
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "還有別的嗎？"
+          },
+          "expected": {
+            "outcome": "recommendations-exhausted",
+            "requiredEffects": [
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "menu.repeat-exhausted-batch",
+              "cart.write",
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "recommendation.newIds",
+                "operator": "eq",
+                "value": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "那水餃再來一份"
+          },
+          "expected": {
+            "outcome": "item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 1
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-REC-04",
+      "title": "要其他推薦仍保留飲食限制",
+      "batch": "D",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "recommendation": {
+          "shownIds": [
+            "signature-shrimp-roll-bento"
+          ],
+          "scope": "CATALOG",
+          "excludeIngredients": [
+            "pork"
+          ]
+        },
+        "catalogOverrides": [
+          {
+            "itemId": "signature-shrimp-roll-bento",
+            "ingredients": [
+              "shrimp",
+              "pork"
+            ]
+          },
+          {
+            "itemId": "beef-noodle-soup",
+            "ingredients": [
+              "beef"
+            ]
+          },
+          {
+            "itemId": "dumplings",
+            "ingredients": [
+              "pork"
+            ]
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "其他的推薦呢"
+          },
+          "expected": {
+            "outcome": "constraint-preserved",
+            "requiredEffects": [
+              "menu.present"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit",
+              "payment.start"
+            ],
+            "assertions": [
+              {
+                "subject": "recommendation.excludeIngredients",
+                "operator": "contains",
+                "value": "pork"
+              },
+              {
+                "subject": "recommendation.ids",
+                "operator": "disjoint",
+                "value": [
+                  "signature-shrimp-roll-bento",
+                  "dumplings"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-REC-05",
+      "title": "明確要求再點相同商品不可被推薦排除擋住",
+      "batch": "D",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "recommendation": {
+          "shownIds": [
+            "dumplings"
+          ],
+          "scope": "CATALOG"
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "水餃再來一份"
+          },
+          "expected": {
+            "outcome": "quantity-updated",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "dumplings",
+                    "quantity": 2
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "現在推薦其他菜"
+          },
+          "expected": {
+            "outcome": "different-recommendations",
+            "requiredEffects": [
+              "menu.present"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "recommendation.ids",
+                "operator": "not-contains",
+                "value": "dumplings"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-01",
+      "title": "沒有偵測到人不誤記已招呼",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "user-reported",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "使用者回報偶爾未招呼，尚未區分沒有偵測到人與招呼被狀態阻擋。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "sessionState": "standby",
+        "camera": {
+          "status": "observing",
+          "detectedPeople": 0
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "camera-frame"
+          },
+          "expected": {
+            "outcome": "no-person",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "greeting.play"
+            ],
+            "assertions": [
+              {
+                "subject": "greeting.reason",
+                "operator": "eq",
+                "value": "no-person"
+              },
+              {
+                "subject": "greeting.claimed",
+                "operator": "eq",
+                "value": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "person-enters-and-valid-dwell-completes"
+          },
+          "expected": {
+            "outcome": "greeting-delivered",
+            "requiredEffects": [
+              "greeting.play"
+            ],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "greeting.count",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-02",
+      "title": "已招呼仍可持續偵測但不重複招呼",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "sessionState": "active",
+        "camera": {
+          "status": "observing",
+          "detectedPeople": 1
+        },
+        "greetingClaimed": true
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "person-remains-visible"
+          },
+          "expected": {
+            "outcome": "already-greeted",
+            "requiredEffects": [
+              "camera.observe"
+            ],
+            "forbiddenEffects": [
+              "greeting.play"
+            ],
+            "assertions": [
+              {
+                "subject": "camera.detectedPeople",
+                "operator": "eq",
+                "value": 1
+              },
+              {
+                "subject": "greeting.reason",
+                "operator": "eq",
+                "value": "already-greeted-or-active-session"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-03",
+      "title": "暫時漏偵測與離開後重啟招呼分開",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000,
+          "emptyResetMs": 10000,
+          "cooldownMs": 10000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "sessionState": "standby",
+        "greetingClaimed": true
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "elapsedMs": 1000
+            },
+            "event": "person-missing"
+          },
+          "expected": {
+            "outcome": "absence-pending",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "greeting.play"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "elapsedMs": 1000
+            },
+            "event": "person-returns"
+          },
+          "expected": {
+            "outcome": "still-same-visitor",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "greeting.play"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "elapsedMs": 12000
+            },
+            "event": "person-absent-beyond-policy"
+          },
+          "expected": {
+            "outcome": "greeting-rearmed",
+            "requiredEffects": [],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "greeting.claimed",
+                "operator": "eq",
+                "value": false
+              }
+            ]
+          }
+        },
+        {
+          "id": "S04",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "new-person-valid-dwell"
+          },
+          "expected": {
+            "outcome": "greeting-delivered",
+            "requiredEffects": [
+              "greeting.play"
+            ],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "greeting.newCount",
+                "operator": "eq",
+                "value": 1
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-04",
+      "title": "相機故障與已招呼不是同一狀態",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "sessionState": "standby",
+        "camera": {
+          "status": "failed",
+          "detectedPeople": 0
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "camera-track-ended"
+          },
+          "expected": {
+            "outcome": "camera-error-visible",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "greeting.play"
+            ],
+            "assertions": [
+              {
+                "subject": "diagnostics.cameraState",
+                "operator": "eq",
+                "value": "failed"
+              },
+              {
+                "subject": "diagnostics.greetingState",
+                "operator": "not-eq",
+                "value": "already-greeted"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "camera-recovered-with-person"
+          },
+          "expected": {
+            "outcome": "fresh-detection",
+            "requiredEffects": [
+              "camera.observe"
+            ],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "diagnostics.cameraState",
+                "operator": "eq",
+                "value": "observing"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-05",
+      "title": "手動新訂單重設兩套計時",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "user-reported",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音",
+        "observedSummary": "使用者懷疑手動新訂單不重設閒置；既有紀錄未證實，需本鏈重現。"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000,
+          "assistanceWaitMs": 40000,
+          "idleWaitMs": 180000,
+          "elapsedSinceActivityMs": 39000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "sessionState": "active"
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "manual-new-order-completed"
+          },
+          "expected": {
+            "outcome": "new-session-ready",
+            "requiredEffects": [
+              "session.reset"
+            ],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "sessionGeneration",
+                "operator": "eq",
+                "value": 2
+              },
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "elapsedMs": 2000
+            },
+            "event": "advance-clock"
+          },
+          "expected": {
+            "outcome": "no-early-reminder",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "reminder.play",
+              "session.idle-confirmation"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "elapsedMs": 38000
+            },
+            "event": "advance-clock"
+          },
+          "expected": {
+            "outcome": "reminder-eligible-if-present",
+            "requiredEffects": [],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "timers.assistanceAgeMs",
+                "operator": "eq",
+                "value": 40000
+              },
+              {
+                "subject": "timers.idleAgeMs",
+                "operator": "eq",
+                "value": 40000
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-06",
+      "title": "訂單完成後新顧客不沿用舊提醒",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "sessionState": "completing",
+        "pendingReminderTaskId": "reminder-old"
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "completion-dismissed-and-reset-completed"
+          },
+          "expected": {
+            "outcome": "standby",
+            "requiredEffects": [
+              "session.reset"
+            ],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": []
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "old-reminder-response-arrives"
+          },
+          "expected": {
+            "outcome": "stale-reminder-ignored",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "reminder.play",
+              "question.present"
+            ],
+            "assertions": [
+              {
+                "subject": "sessionGeneration",
+                "operator": "eq",
+                "value": 2
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "new-customer-starts"
+          },
+          "expected": {
+            "outcome": "new-timers-start",
+            "requiredEffects": [],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "timers.assistanceAgeMs",
+                "operator": "eq",
+                "value": 0
+              },
+              {
+                "subject": "timers.idleAgeMs",
+                "operator": "eq",
+                "value": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-LIFE-07",
+      "title": "主流程忙碌時不插入閒置輔助語句",
+      "batch": "E",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "sessionState": "active",
+        "pendingTaskId": "task-current"
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "assistance-deadline-during-active-task"
+          },
+          "expected": {
+            "outcome": "reminder-deferred",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "reminder.play",
+              "session.idle-confirmation"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "event",
+            "parameters": {},
+            "event": "task-presentation-and-speech-completed"
+          },
+          "expected": {
+            "outcome": "fresh-wait-started",
+            "requiredEffects": [],
+            "forbiddenEffects": [],
+            "assertions": [
+              {
+                "subject": "timers.assistanceAgeMs",
+                "operator": "eq",
+                "value": 0
+              }
+            ]
+          }
+        },
+        {
+          "id": "S03",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "elapsedMs": 1000
+            },
+            "event": "advance-clock"
+          },
+          "expected": {
+            "outcome": "no-premature-reminder",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "reminder.play"
+            ],
+            "assertions": []
+          }
+        }
+      ]
+    },
+    {
+      "id": "K1106-MENU-01",
+      "title": "新菜單名稱與別名重新解析",
+      "batch": "F",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v2",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "catalogOverrides": [
+          {
+            "itemId": "fried-pork-chop-bento",
+            "name": "香酥排骨飯",
+            "aliases": [
+              "排骨便當"
+            ]
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "我要排骨便當一份"
+          },
+          "expected": {
+            "outcome": "new-catalog-item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart",
+                "operator": "eq",
+                "value": [
+                  {
+                    "itemId": "fried-pork-chop-bento",
+                    "quantity": 1
+                  }
+                ]
+              },
+              {
+                "subject": "reply.itemName",
+                "operator": "eq",
+                "value": "香酥排骨飯"
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "same-alias-conflict",
+          "note": "two current dishes share 排骨便當; require item clarification before writing",
+          "changes": [
+            {
+              "path": "/setup/catalogOverrides",
+              "value": [
+                {
+                  "itemId": "fried-pork-chop-bento",
+                  "name": "香酥排骨飯",
+                  "aliases": [
+                    "排骨便當"
+                  ]
+                },
+                {
+                  "itemId": "spicy-chicken-bento",
+                  "aliases": [
+                    "排骨便當"
+                  ]
+                }
+              ]
+            },
+            {
+              "path": "/steps/0/expected",
+              "value": {
+                "outcome": "ambiguous-item-clarification",
+                "requiredEffects": [
+                  "question.present",
+                  "speech.clarification"
+                ],
+                "forbiddenEffects": [
+                  "cart.write",
+                  "order.submit"
+                ],
+                "assertions": [
+                  {
+                    "subject": "cart",
+                    "operator": "eq",
+                    "value": []
+                  },
+                  {
+                    "subject": "question.purpose",
+                    "operator": "eq",
+                    "value": "item-clarification"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-MENU-02",
+      "title": "改價或下架使舊核對確認失效",
+      "batch": "F",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v1",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [
+          {
+            "itemId": "dumplings",
+            "quantity": 1
+          }
+        ],
+        "question": {
+          "id": "q-old",
+          "purpose": "checkout-entry",
+          "presented": true,
+          "bindings": {
+            "sessionGeneration": 1,
+            "documentId": "document-1",
+            "cartRevision": 1,
+            "catalogRevision": "fixture-v1",
+            "expiresAtMs": 130000
+          }
+        }
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "event",
+            "parameters": {
+              "newCatalogRevision": "fixture-v2"
+            },
+            "event": "catalog-price-or-availability-changes"
+          },
+          "expected": {
+            "outcome": "catalog-stale",
+            "requiredEffects": [],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": []
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "確認送出"
+          },
+          "expected": {
+            "outcome": "new-review-required",
+            "requiredEffects": [
+              "order.review",
+              "speech.answer"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "effects.orderSubmit.count",
+                "operator": "eq",
+                "value": 0
+              },
+              {
+                "subject": "question.q-old.active",
+                "operator": "eq",
+                "value": false
+              }
+            ]
+          }
+        }
+      ],
+      "variants": [
+        {
+          "id": "price",
+          "note": "dumplings price changes from 80 to 90; current total must be reviewed",
+          "changes": [
+            {
+              "path": "/steps/0/input/parameters/catalogChanges",
+              "value": [
+                {
+                  "itemId": "dumplings",
+                  "price": 90
+                }
+              ]
+            },
+            {
+              "path": "/steps/1/expected/assertions/2",
+              "value": {
+                "subject": "review.total",
+                "operator": "eq",
+                "value": 90
+              }
+            }
+          ]
+        },
+        {
+          "id": "sold-out",
+          "note": "dumplings becomes unavailable; request adjustment, not fake successful submission",
+          "changes": [
+            {
+              "path": "/steps/0/input/parameters/catalogChanges",
+              "value": [
+                {
+                  "itemId": "dumplings",
+                  "available": false
+                }
+              ]
+            },
+            {
+              "path": "/steps/1/expected/outcome",
+              "value": "unavailable-item-adjustment-required"
+            },
+            {
+              "path": "/steps/1/expected/requiredEffects",
+              "value": [
+                "order.review",
+                "speech.answer",
+                "question.present"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "K1106-MENU-03",
+      "title": "新增必選規格後先補資料再加入",
+      "batch": "F",
+      "priority": "P2",
+      "provenance": {
+        "kind": "synthetic",
+        "report": "本次聊天 2026-11-06 Asia/Taipei",
+        "evidenceBoundary": "人工明示前態；不宣稱保留了完整現場輸入或原音"
+      },
+      "executionStatus": "not-run",
+      "setup": {
+        "orderingReady": true,
+        "fulfillmentMode": "dine-in",
+        "table": "A08",
+        "directSubmissionSupported": true,
+        "backgroundSpeechMode": "off",
+        "documentId": "document-1",
+        "cartRevision": 1,
+        "clock": {
+          "nowMs": 100000
+        },
+        "catalogRevision": "fixture-v2",
+        "serviceMode": "table-service",
+        "phase": "ordering",
+        "sessionGeneration": 1,
+        "cart": [],
+        "catalogOverrides": [
+          {
+            "itemId": "beef-noodle-soup",
+            "optionGroups": [
+              {
+                "id": "noodle",
+                "required": true,
+                "values": [
+                  "thin",
+                  "wide"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "steps": [
+        {
+          "id": "S01",
+          "input": {
+            "kind": "utterance",
+            "text": "我要牛肉麵一份"
+          },
+          "expected": {
+            "outcome": "required-option-question",
+            "requiredEffects": [
+              "question.present",
+              "speech.clarification"
+            ],
+            "forbiddenEffects": [
+              "cart.write",
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "question.purpose",
+                "operator": "eq",
+                "value": "item-configuration"
+              }
+            ]
+          }
+        },
+        {
+          "id": "S02",
+          "input": {
+            "kind": "utterance",
+            "text": "寬麵"
+          },
+          "expected": {
+            "outcome": "configured-item-added",
+            "requiredEffects": [
+              "cart.write"
+            ],
+            "forbiddenEffects": [
+              "order.submit"
+            ],
+            "assertions": [
+              {
+                "subject": "cart.0.itemId",
+                "operator": "eq",
+                "value": "beef-noodle-soup"
+              },
+              {
+                "subject": "cart.0.options.noodle",
+                "operator": "eq",
+                "value": "wide"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

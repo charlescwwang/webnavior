@@ -174,4 +174,16 @@ describe('webnavior AI capability Provider profiles', () => {
 
     await expect(service.deleteProfile('chat', profile.id)).rejects.toThrow('此 Provider 目前正在使用')
   })
+  it('persists admin TTS speed and uses the selected speed for verification and edits', async () => {
+    fetchImpl.mockImplementation(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'audio/mpeg' } }))
+    const input = { baseURL: 'https://tts.example/v1', kind: 'openai-compatible' as const, modelId: 'tts', name: 'Speed test', timeoutMs: 5000, speed: 1.25 }
+    const profile = await service.verifyAndCreateProfile('tts', input)
+    expect(profile.speed).toBe(1.25)
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)).speed).toBe(1.25)
+    const updated = await service.verifyAndUpdateProfile('tts', profile.id, { ...input, speed: 0.85 })
+    expect(updated.speed).toBe(0.85)
+    const saved = await service.listProfiles()
+    expect(saved.find(row => row.id === profile.id)?.speed).toBe(0.85)
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body)).speed).toBe(0.85)
+  })
 })

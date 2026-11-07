@@ -1,3 +1,5 @@
+import type { BackgroundSpeechMode } from '@proj-airi/stage-shared/kiosk-service-mode'
+
 /** Scope proposals never authorize cart or payment changes. */
 export type ScopeChoice = 'ASK' | 'SHOWN' | 'CATALOG' | 'NEW_REQUEST' | 'IGNORE'
 
@@ -12,3 +14,13 @@ export const scopeInstructions = [
 ].join('\n')
 
 export const scopeTool = { type: 'function' as const, function: { name: 'scope_decide', description: '依目前問句解析顧客選擇的範圍，包含可唯一指涉的省略回答；無法選出唯一範圍才ASK。這不是查詢或訂購授權。', parameters: { type: 'object', properties: { choice: { type: 'string', enum: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST', 'IGNORE'] } }, required: ['choice'], additionalProperties: false } } }
+
+/** Builds scope choices under the device's background policy; scope never grants an order write. */
+export function scopeDecisionPolicy(mode: BackgroundSpeechMode) {
+  if (mode === 'enforce')
+    return { instructions: scopeInstructions, tool: scopeTool }
+  return {
+    instructions: `${scopeInstructions.replace('先看對象，明確對同伴說話或背景聊天選 IGNORE。其次看是否', '不判斷背景或對象，先看是否')}\n本輪不提供IGNORE。不屬於目前範圍選擇的一般問題或新話題選NEW_REQUEST，交回原句，不擅自選範圍。`,
+    tool: { ...scopeTool, function: { ...scopeTool.function, parameters: { ...scopeTool.function.parameters, properties: { choice: { type: 'string', enum: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST'] } } } } },
+  }
+}

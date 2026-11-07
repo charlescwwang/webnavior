@@ -330,6 +330,13 @@
       "when": 1791849600000,
       "tag": "0046_webnavior_chat_thinking",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793909721557,
+      "tag": "0047_webnavior_tts_speed",
+      "breakpoints": true
     }
   ]
 }

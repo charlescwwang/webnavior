@@ -1,9 +1,11 @@
 import type { CheckoutToolController } from '../webmcp'
+import type { CheckoutSnapshot } from './checkout-flow'
 import type { CartSnapshot } from './order-machine'
 
 import { describe, expect, it, vi } from 'vitest'
 
 import { createMenuToolRuntime } from '../webmcp'
+import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from './checkout-flow'
 import { catalogInfo, createOrderMachine, defaultOptionsFor, menu } from './order-machine'
 
 describe('createOrderMachine', () => {
@@ -164,8 +166,8 @@ describe('createOrderMachine', () => {
       '甜品',
       '飲品',
     ]))
-    expect(menu.find(item => item.id === 'chous-shrimp-roll')).toMatchObject({ name: '周氏蝦捲', price: 75 })
-    expect(menu.find(item => item.id === 'danzai-noodles')).toMatchObject({ name: '周氏擔仔麵', price: 65 })
+    expect(menu.find(item => item.id === 'chous-shrimp-roll')).toMatchObject({ name: '蝦捲', price: 75 })
+    expect(menu.find(item => item.id === 'danzai-noodles')).toMatchObject({ name: '擔仔麵', price: 65 })
     expect(menu.find(item => item.id === 'almond-red-bean-tofu')).toMatchObject({ name: '杏仁紅豆豆腐', price: 55 })
     expect(menu.find(item => item.id === 'fish-floss-minced-pork-rice-set')).toMatchObject({
       name: '魚鬆肉燥飯套餐',
@@ -178,7 +180,7 @@ describe('createOrderMachine', () => {
     expect(defaultOptionsFor(menu.find(item => item.id === 'braised-pork-set')!)).toEqual({})
     expect(menu.find(item => item.id === 'cuttlefish-ball')?.imageUrl).toMatch(/^data:image\/svg\+xml/)
     expect(defaultOptionsFor(menu.find(item => item.id === 'chous-shrimp-roll')!)).toEqual({ ginger: 'with-ginger' })
-    expect(catalogInfo).toMatchObject({ isSimulated: true, sourceName: '周氏蝦捲公開產品資料' })
+    expect(catalogInfo).toMatchObject({ isSimulated: true, sourceName: '示範菜單' })
   })
 })
 
@@ -217,6 +219,7 @@ describe('createMenuToolRuntime', () => {
       assertCanRestart: () => {},
       cancel: () => {},
       chooseInvoice: method => ({ invoiceMethod: method, stage: 'payment' }),
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => ({ invoiceMethod: 'tax-id', stage: 'payment', taxId: '12345678' }),
       paymentStatus: () => undefined,
       revision: () => 0,
@@ -288,6 +291,7 @@ describe('createMenuToolRuntime', () => {
       'cart_set_line_quantity',
       'cart_set_line_option',
       'cart_clear',
+      'order_answer_confirmation',
       'cart_get',
       'order_set_fulfillment',
       'checkout_start',
@@ -295,6 +299,7 @@ describe('createMenuToolRuntime', () => {
       'checkout_choose_invoice',
       'checkout_request_tax_id',
       'checkout_set_tax_id',
+      'checkout_confirm_invoice',
       'checkout_confirm_tax_id',
       'checkout_select_payment',
       'checkout_cancel',
@@ -305,6 +310,7 @@ describe('createMenuToolRuntime', () => {
       'kiosk_fast_path_execute',
       'kiosk_fast_path_continue',
       'order_ask_question',
+      'order_cancel_request',
       'order_defer_question',
       'kiosk_dialogue_presented',
       'kiosk_question_validate',
@@ -325,7 +331,7 @@ describe('createMenuToolRuntime', () => {
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     const afterAdding = await runtime.invoke('kiosk_fast_path_context') as { candidates: Array<{ id: string }>, references: Array<{ refId: string }> }
     expect(afterAdding.references).toEqual([
-      { label: expect.stringContaining('周氏蝦捲'), refId: 'CART_LINE_1' },
+      { label: expect.stringContaining('蝦捲'), refId: 'CART_LINE_1' },
     ])
     expect(afterAdding).toMatchObject({
       candidates: expect.arrayContaining([
@@ -347,7 +353,7 @@ describe('createMenuToolRuntime', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
 
-    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲改成兩份' }) as { candidates: Array<{ id: string }> }
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '蝦捲改成兩份' }) as { candidates: Array<{ id: string }> }
     const clearId = context.candidates.find(candidate => candidate.id === 'intent:clear-cart')?.id
     expect(clearId).toBe('intent:clear-cart')
 
@@ -384,7 +390,7 @@ describe('createMenuToolRuntime', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', options: [{ groupId: 'ginger', valueId: 'with-ginger' }] })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', options: [{ groupId: 'ginger', valueId: 'without-ginger' }] })
-    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲不要了' }) as { candidates: Array<{ id: string }> }
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '蝦捲不要了' }) as { candidates: Array<{ id: string }> }
     expect(context.candidates.filter(candidate => candidate.id === 'intent:remove-item')).toHaveLength(1)
     await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:remove-item' })).resolves.toMatchObject({
       pendingClarification: { candidateRefs: [expect.stringContaining('cart:'), expect.stringContaining('cart:')], intent: 'REMOVE_ITEM' },
@@ -405,7 +411,7 @@ describe('createMenuToolRuntime', () => {
       onMenuSelection: () => {},
     })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
-    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲改成兩份' }) as { candidates: Array<{ id: string }> }
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '蝦捲改成兩份' }) as { candidates: Array<{ id: string }> }
     const quantityId = context.candidates.find(candidate => candidate.id === 'intent:set-quantity')?.id
     expect(quantityId).toBeDefined()
 
@@ -417,7 +423,7 @@ describe('createMenuToolRuntime', () => {
   it('rejects a stale plan even when a touch edit restores the original cart snapshot', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲改成兩份' })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '蝦捲改成兩份' })
     const cart = await runtime.invoke('cart_get') as { cart: { lines: Array<{ id: string }> } }
     const lineId = cart.cart.lines[0]!.id
 
@@ -433,7 +439,7 @@ describe('createMenuToolRuntime', () => {
 
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '再一份' }) as { candidates: Array<{ id: string }>, references: Array<{ label: string, refId: string }> }
     expect(context.candidates).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'intent:add-item' })]))
-    expect(context.references).toEqual(expect.arrayContaining([expect.objectContaining({ label: expect.stringContaining('周氏蝦捲') })]))
+    expect(context.references).toEqual(expect.arrayContaining([expect.objectContaining({ label: expect.stringContaining('蝦捲') })]))
 
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { itemCount: 2, lines: [expect.objectContaining({ itemId: 'chous-shrimp-roll', quantity: 2 })] } })
@@ -453,7 +459,7 @@ describe('createMenuToolRuntime', () => {
   it('keeps a cart plan valid across an unrelated selected-item change', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '周氏蝦捲不要了' })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '蝦捲不要了' })
     await runtime.invoke('menu_select_item', { itemId: 'braised-pork-set' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:remove-item' })
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { itemCount: 0 } })
@@ -462,7 +468,7 @@ describe('createMenuToolRuntime', () => {
   it('rejects an issued item plan after the POS catalog changes', async () => {
     const item = menu.find(candidate => candidate.id === 'chous-shrimp-roll')!
     const runtime = createMenuToolRuntime({ menu: [item], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要周氏蝦捲' })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要蝦捲' })
     runtime.setMenu([{ ...item, price: item.price + 5 }], 'new-catalog-revision')
     await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).rejects.toThrow('STALE_PLAN')
     await expect(runtime.invoke('cart_get')).resolves.toMatchObject({ cart: { itemCount: 0 } })
@@ -601,19 +607,22 @@ describe('createMenuToolRuntime', () => {
 
   it('routes Agent checkout actions through one controller without exposing physical scan or authorization tools', async () => {
     const calls: string[] = []
+    let checkout: CheckoutSnapshot | undefined
     const controller = checkoutController({
+      snapshot: () => checkout,
       cancel: () => calls.push('cancel'),
       chooseInvoice: (method) => {
         calls.push(`invoice:${method}`)
-        return { invoiceMethod: method, stage: 'payment' }
+        return checkout = chooseInvoiceMethod(checkout!, method)
       },
+      confirmInvoice: () => { throw new Error('Unexpected invoice confirmation in this fixture') },
       confirmTaxId: () => {
         calls.push('confirm-tax-id')
-        return { invoiceMethod: 'tax-id', stage: 'payment', taxId: '12345678' }
+        return checkout = confirmTaxId(checkout!)
       },
       requestTaxId: () => {
         calls.push('request-tax-id')
-        return { invoiceMethod: 'tax-id', stage: 'tax-id', taxId: '' }
+        return checkout = requestTaxId(checkout!)
       },
       selectPayment: async (method) => {
         calls.push(`payment:${method}`)
@@ -621,15 +630,15 @@ describe('createMenuToolRuntime', () => {
       },
       setTaxId: (taxId) => {
         calls.push(`tax-id:${taxId}`)
-        return { invoiceMethod: 'tax-id', stage: 'tax-id', taxId }
+        return checkout = setTaxIdDraft(checkout!, taxId)
       },
       skipMembership: () => {
         calls.push('skip-membership')
-        return { stage: 'invoice' }
+        return checkout = skipMembership(checkout!)
       },
       start: () => {
         calls.push('start')
-        return { stage: 'membership' }
+        return checkout = beginCheckout()
       },
     })
     const runtime = createMenuToolRuntime({ checkout: controller, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
@@ -704,7 +713,7 @@ describe('createMenuToolRuntime', () => {
     })
 
     expect(actions).toEqual([
-      { label: '正在選擇周氏蝦捲', targetId: 'chous-shrimp-roll' },
+      { label: '正在選擇蝦捲', targetId: 'chous-shrimp-roll' },
       {
         controlId: 'chous-shrimp-roll:option:ginger:without-ginger',
         expandCustomization: true,
@@ -745,7 +754,7 @@ describe('createMenuToolRuntime', () => {
 
   it('routes approved host context separately from Agent tools', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-    expect(await runtime.executeTool('kiosk_fast_path_context', { transcript: '周氏蝦捲' })).toMatchObject({ phase: 'ordering' })
+    expect(await runtime.executeTool('kiosk_fast_path_context', { transcript: '蝦捲' })).toMatchObject({ phase: 'ordering' })
     await expect(runtime.invokeForAgent('kiosk_fast_path_context', {})).rejects.toThrow('unavailable to the Agent')
     expect(await runtime.executeTool('menu_recommend', { action: 'update', needs: ['fried'] })).toMatchObject({ needs: ['fried'] })
   })
@@ -804,7 +813,7 @@ describe('createMenuToolRuntime', () => {
       cart: { fulfillmentMode: 'takeout', itemCount: 2, total: 150, lines: [{ itemId: 'chous-shrimp-roll', quantity: 2, options: { ginger: 'without-ginger' } }] },
     })
     expect(actions).toEqual([
-      { label: '正在選擇周氏蝦捲', targetId: 'chous-shrimp-roll' },
+      { label: '正在選擇蝦捲', targetId: 'chous-shrimp-roll' },
       {
         controlId: 'chous-shrimp-roll:option:ginger:without-ginger',
         expandCustomization: true,
@@ -1035,12 +1044,12 @@ describe('createMenuToolRuntime', () => {
     }
 
     expect(fullCatalog).toMatchObject({
-      catalog: { isSimulated: true, sourceName: '周氏蝦捲公開產品資料' },
+      catalog: { isSimulated: true, sourceName: '示範菜單' },
       categories: ['超值套餐', '招牌小吃', '麵飯主食', '湯品', '炸物小點', '甜品', '飲品'],
     })
     expect(fullCatalog.items).toHaveLength(menu.length)
     expect(fullCatalog.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'chous-shrimp-roll', name: '周氏蝦捲' }),
+      expect.objectContaining({ id: 'chous-shrimp-roll', name: '蝦捲' }),
       expect.objectContaining({ id: 'braised-pork-set', name: '東坡肉套餐' }),
       expect.objectContaining({ id: 'winter-melon-tea', name: '古早味冬瓜茶' }),
     ]))
@@ -1049,7 +1058,7 @@ describe('createMenuToolRuntime', () => {
     }
     expect(shrimpRollSearch.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }),
-      expect.objectContaining({ id: 'chous-shrimp-roll', name: '周氏蝦捲' }),
+      expect.objectContaining({ id: 'chous-shrimp-roll', name: '蝦捲' }),
       expect.objectContaining({ id: 'tofu-skin-shrimp-roll', name: '豆皮鮮蝦捲' }),
     ]))
 
@@ -1059,7 +1068,7 @@ describe('createMenuToolRuntime', () => {
     expect(multipleDishSearch.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'cabbage-dumplings', name: '高麗菜水餃' }),
       expect.objectContaining({ id: 'chive-dumplings', name: '韭菜水餃' }),
-      expect.objectContaining({ id: 'danzai-noodles', name: '周氏擔仔麵' }),
+      expect.objectContaining({ id: 'danzai-noodles', name: '擔仔麵' }),
     ]))
   })
 
@@ -1074,7 +1083,7 @@ describe('createMenuToolRuntime', () => {
 
     await expect(runtime.invoke('menu_recommend', { needs: ['fried'], excludeIngredients: ['pork'], limit: 2 })).resolves.toMatchObject({
       items: [
-        { id: 'chous-shrimp-roll', name: '周氏蝦捲' },
+        { id: 'chous-shrimp-roll', name: '蝦捲' },
         { id: 'tofu-skin-shrimp-roll', name: '豆皮鮮蝦捲' },
       ],
       needs: ['fried'],
@@ -1097,7 +1106,7 @@ describe('createMenuToolRuntime', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
 
     await expect(runtime.invoke('menu_recommend')).resolves.toMatchObject({
-      items: [{ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }, { id: 'braised-pork-set', name: '東坡肉套餐' }, { id: 'chous-shrimp-roll', name: '周氏蝦捲' }],
+      items: [{ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }, { id: 'braised-pork-set', name: '東坡肉套餐' }, { id: 'chous-shrimp-roll', name: '蝦捲' }],
       needs: [],
       presentation: {
         kind: 'recommendation',
@@ -1210,9 +1219,9 @@ describe('createMenuToolRuntime', () => {
       reason: '一碗主食配一杯飲料。',
       title: '今天想吃得剛剛好',
     })).resolves.toMatchObject({
-      customerMessage: '我推薦：周氏擔仔麵、古早味冬瓜茶。',
+      customerMessage: '我推薦：擔仔麵、古早味冬瓜茶。',
       items: [
-        { id: 'danzai-noodles', name: '周氏擔仔麵' },
+        { id: 'danzai-noodles', name: '擔仔麵' },
         { id: 'winter-melon-tea', name: '古早味冬瓜茶' },
       ],
     })

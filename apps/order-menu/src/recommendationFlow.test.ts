@@ -64,11 +64,19 @@ describe('recommendation batches', () => {
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 
-  it('retains recommendation conditions when a customer requests the whole menu', async () => {
+  // Report: this chat,Nov5 14:04 Taiwan — whole-menu request remained stuck on fish recommendations.
+  it('releases positive ingredient preferences when browsing the whole catalog', async () => {
+    const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('menu_recommend', { includeIngredients: ['pork'] })
+    const result = await runtime.invoke('menu_get', { scope: 'catalog', display: true })
+    expect(result).toMatchObject({ appliedFilters: { includeIngredients: [] }, items: dishes.map(item => ({ id: item.id })) })
+  })
+
+  it('retains dietary exclusions when a customer requests the whole menu', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'], maxPrice: 400 })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我要看全部' })
-    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })).toMatchObject({ items: dishes.slice(1).map(item => ({ id: item.id })), appliedFilters: { excludeIngredients: ['pork'] }, decisionTrace: { operationPlan: { input: { scope: 'catalog', display: true } } } })
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-all-menu' })).toMatchObject({ items: dishes.slice(1).map(item => ({ id: item.id })), appliedFilters: { excludeIngredients: ['pork'] }, decisionTrace: { operationPlan: { input: { scope: 'catalog', display: true } } } })
   })
 
   it('rejects a broad browse plan when its recommendation batch has changed', async () => {
@@ -155,7 +163,7 @@ describe('recommendation batches', () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'] })).toMatchObject({ items: [{ id: 'dish-1' }, { id: 'dish-2' }, { id: 'dish-3' }] })
     expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] }, items: [{ id: 'dish-4' }, { id: 'dish-5' }, { id: 'dish-6' }] })
-    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], customerMessage: expect.stringContaining('沒有其他') })
+    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], customerMessage: expect.stringContaining('都介紹過了') })
     await runtime.reset()
     expect(await runtime.invoke('menu_recommend')).toMatchObject({ items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }] })
   })

@@ -1,12 +1,12 @@
-import type { ConfigKVService } from '../../adapters/config-kv'
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
+import type { ConfigKVService } from '../../adapters/config-kv'
 
 import { Buffer as NodeBuffer } from 'node:buffer'
 
 import { useLogger } from '@guiiai/logg'
 
-import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../adapters/config-kv'
 import { createBadRequestError, createServiceUnavailableError } from '../../../utils/error'
+import { DEFAULT_WEBNAVIOR_TTS_VOICE } from '../../adapters/config-kv'
 
 type AudioCapability = 'asr' | 'tts'
 const UPSTREAM_BODY_SNIPPET_MAX = 256
@@ -43,6 +43,9 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
     const body = new FormData()
     body.set('file', input.audio, input.audio.name || 'recording.webm')
     body.set('model', config.upstreamModel)
+    // ASR vocabulary context, not an instruction to replace the spoken text.
+    // OpenAI-compatible prompt: https://developers.openai.com/api/docs/guides/speech-to-text
+    body.set('prompt', '餐廳點餐與結帳，付款方式包含 LINE Pay、街口支付。')
     const response = await forward(config, 'audio/transcriptions', { body, method: 'POST' })
     if (!response.ok) {
       const requestUrl = new URL(endpoint(config.baseURL, 'audio/transcriptions'))
@@ -75,13 +78,22 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
         model: config.upstreamModel,
         voice,
         response_format: 'mp3',
-        speed: 1.0,
+        speed: ('speed' in config ? config.speed : undefined) ?? 1,
       }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })
-    if (!response.ok)
+    if (!response.ok) {
+      const requestUrl = new URL(endpoint(config.baseURL, 'audio/speech'))
+      logger.withFields({
+        modelName: input.modelName,
+        status: response.status,
+        upstreamHost: requestUrl.host,
+        upstreamPath: requestUrl.pathname,
+        responseContentType: response.headers.get('Content-Type'),
+      }).warn('Kiosk TTS upstream returned an unsuccessful response')
       throw createServiceUnavailableError('Kiosk TTS provider did not return a successful response', 'KIOSK_TTS_UPSTREAM_ERROR')
+    }
     return new Response(response.body, {
       headers: { 'Content-Type': response.headers.get('Content-Type') ?? 'audio/mpeg' },
     })

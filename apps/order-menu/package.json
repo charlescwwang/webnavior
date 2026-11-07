@@ -15,6 +15,7 @@
     "@moeru/eventa": "catalog:",
     "@moeru/std": "catalog:",
     "@proj-airi/stage-shared": "workspace:^",
+    "fuzzball": "catalog:",
     "qrcode": "catalog:",
     "valibot": "catalog:",
     "vue": "catalog:"

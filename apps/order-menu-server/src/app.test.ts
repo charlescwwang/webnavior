@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createPosBridgeApp } from './app'
 import { createInMemorySimulatorGateway } from './simulator'
@@ -11,7 +11,7 @@ async function acceptedOrder(gateway: ReturnType<typeof createInMemorySimulatorG
       catalogRevision: catalog.revision,
       fulfillmentMode: 'takeout' as const,
       itemCount: 1,
-      lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', options: {}, quantity: 1, unitPrice: 145 }],
+      lines: [{ id: 'line-1', itemId: 'signature-shrimp-roll-bento', name: '蝦捲招牌便當', options: {}, quantity: 1, unitPrice: 145 }],
       paymentId: payment.id,
       total: 145,
     },
@@ -20,6 +20,24 @@ async function acceptedOrder(gateway: ReturnType<typeof createInMemorySimulatorG
 }
 
 describe('pOS Bridge contract', () => {
+  it('assigns a three-digit pickup number once after acceptance and retains it across concurrent replays', async () => {
+    const gateway = createInMemorySimulatorGateway()
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const submission = await acceptedOrder(gateway, app)
+    const send = async () => (await app.request('/v1/orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).json()
+    const [first, second] = await Promise.all([send(), send()])
+    expect(first.order.receipt.pickupNumber).toMatch(/^[1-9]\d{2}$/)
+    expect(second.order.receipt.pickupNumber).toBe(first.order.receipt.pickupNumber)
+    expect((await send()).order.receipt.pickupNumber).toBe(first.order.receipt.pickupNumber)
+  })
+  it.each(['rejected', 'uncertain'] as const)('does not allocate a pickup number to a %s order', async (mode) => {
+    const gateway = createInMemorySimulatorGateway(mode)
+    const app = createPosBridgeApp({ authenticate: async () => 'test-device', allowedOrigin: 'http://localhost:5166', gateway })
+    const submission = await acceptedOrder(gateway, app)
+    const result = await (await app.request('/v1/orders', { body: JSON.stringify(submission), headers: { 'Content-Type': 'application/json' }, method: 'POST' })).json()
+    expect(result.order.receipt.status).toBe(mode)
+    expect(result.order.receipt.pickupNumber).toBeUndefined()
+  })
   it('shares one POS submission and receipt when the same order arrives concurrently', async () => {
     const gateway = createInMemorySimulatorGateway()
     let submitted = 0
@@ -108,13 +126,13 @@ describe('pOS Bridge contract', () => {
     expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5166')
     const result = await response.json() as { catalog: { items: Array<{ category: string, id: string, price: number }>, revision: string, store: { name: string } } }
     expect(result.catalog.revision).toMatch(/^source-menu-v2-/)
-    expect(result.catalog.store.name).toBe('周氏蝦捲')
+    expect(result.catalog.store.name).toBe('示範餐館')
     expect(result.catalog.items).toHaveLength(7)
     expect(Object.fromEntries(result.catalog.items.reduce((counts, item) => {
       counts.set(item.category, (counts.get(item.category) ?? 0) + 1)
       return counts
     }, new Map<string, number>()))).toEqual({ 便當: 5, 點心: 1, 麵食: 1 })
-    expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', price: 145 }))
+    expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'signature-shrimp-roll-bento', name: '蝦捲招牌便當', price: 145 }))
     expect(result.catalog.items).toContainEqual(expect.objectContaining({ id: 'dumplings', name: '水餃', price: 80 }))
   })
 
@@ -214,4 +232,36 @@ describe('pOS Bridge contract', () => {
       order: { receipt: { retryable: paymentStatus !== 'uncertain', status: paymentStatus === 'uncertain' ? 'uncertain' : 'rejected' } },
     })
   })
+})
+
+// Report: this chat, 2026-11-07: merchant price conflicts need a read-only maintenance warning.
+it('reports conflicting and contextual description prices without changing the POS catalog', async () => {
+  const gateway = createInMemorySimulatorGateway()
+  const original = await gateway.getCatalog()
+  const catalog = { ...original, items: [{ ...original.items[0]!, price: 80, description: '售價95元，兩份150元，加購醬料10元，每份10顆' }] }
+  vi.spyOn(gateway, 'getCatalog').mockResolvedValue(catalog)
+  const app = createPosBridgeApp({ gateway, allowedOrigin: 'https://menu.test', authenticate: async () => 'operator' })
+  const response = await app.request('/v1/catalog')
+  const body = await response.json()
+  expect(response.status).toBe(200)
+  expect(body.catalog).toEqual(catalog)
+  expect(body.catalogPriceDiagnostics.warnings.map((warning: { kind: string }) => warning.kind)).toEqual(['conflicting-base-price', 'bundle-price', 'option-price'])
+  expect(body.catalogPriceDiagnostics.checkedItems).toBe(1)
+})
+
+it('deduplicates operator warnings, reports changes and isolates logging failure', async () => {
+  const gateway = createInMemorySimulatorGateway()
+  const catalog = await gateway.getCatalog()
+  catalog.items = [{ ...catalog.items[0]!, price: 80, description: '售價95元' }]
+  vi.spyOn(gateway, 'getCatalog').mockResolvedValue(catalog)
+  const notify = vi.fn(() => {
+    throw new Error('operator sink unavailable')
+  })
+  const app = createPosBridgeApp({ gateway, allowedOrigin: 'https://menu.test', authenticate: async () => 'operator', onCatalogPriceDiagnostics: notify })
+  expect((await app.request('/v1/catalog')).status).toBe(200)
+  expect((await app.request('/v1/catalog')).status).toBe(200)
+  expect(notify).toHaveBeenCalledTimes(1)
+  catalog.items[0]!.description = '售價90元'
+  expect((await app.request('/v1/catalog')).status).toBe(200)
+  expect(notify).toHaveBeenCalledTimes(2)
 })

@@ -147,7 +147,7 @@ function compiledAudioConfig(profile: WebnaviorAiProviderProfile, key: Buffer | 
     ...(key ? { keyCiphertext: envelopeCrypto.encryptKey(key.toString('utf8'), { keyEntryId: 'default', modelName: `webnavior-audio:${capability}` }) } : {}),
     modelName: RUNTIME_MODEL_NAMES[capability],
     upstreamModel: profile.modelId!,
-    ...(capability === 'tts' ? { voice: profile.voice ?? 'zh-TW-HsiaoChenNeural' } : {}),
+    ...(capability === 'tts' ? { voice: profile.voice ?? 'zh-TW-HsiaoChenNeural', ...(profile.kind === 'openai-compatible' ? { speed: profile.speed ?? 1 } : {}) } : {}),
   }
 }
 

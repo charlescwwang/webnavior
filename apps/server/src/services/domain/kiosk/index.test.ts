@@ -45,7 +45,7 @@ describe('kiosk service', () => {
   it('retains fixed welcome phrases through content edits and immutable publication', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const draft = await service.saveProfileDraft({ siteId: site.id, name: 'Welcome', snapshot: profileSnapshot })
-    const greetings = ['歡迎光臨周氏蝦捲！需要的話，我可以幫您介紹餐點。', '您好，歡迎來到周氏蝦捲！']
+    const greetings = ['歡迎光臨蝦捲！需要的話，我可以幫您介紹餐點。', '您好，歡迎來到蝦捲！']
     const updated = await service.saveContentProfileDraft({ siteId: site.id, snapshot: { ...draft.snapshot, greetingPhrases: greetings } })
     const release = await service.publishProfileDraft({ siteId: site.id, draftId: updated.id })
     expect(release.snapshot.greetingPhrases).toEqual(greetings)

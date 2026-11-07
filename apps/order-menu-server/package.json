@@ -8,6 +8,7 @@
     "dev": "pnpm run apply:env -- tsx --watch src/bin/run.ts",
     "start": "pnpm run apply:env -- tsx src/bin/run.ts",
     "test:run": "vitest run",
+    "menu:check": "tsx src/bin/check-menu-prices.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

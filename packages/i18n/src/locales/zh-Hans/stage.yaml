@@ -99,3 +99,13 @@ websocket-status:
   connected: 已连接
   disconnected: 无网络连接
   open-settings: 打开连接设置
+
+kiosk:
+  service-fault:
+    title: 服务暂停
+    spoken: 检测到特殊情况，已为您通知服务人员。
+    description: 当前餐点会保留。请由服务人员输入 PIN 后继续，或清除当前内容并开始新订单。
+    unlock: 服务人员 PIN 解锁
+    restart: 清除内容，开始新订单
+  processing-cue:
+    introduction: 接下来先播放提示音，再播放等待音乐。提示音表示我已收到您的话；等待音乐表示我正在处理，回复前就会停止。

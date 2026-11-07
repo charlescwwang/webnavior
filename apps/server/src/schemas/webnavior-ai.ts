@@ -1,7 +1,7 @@
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
-import { relations } from 'drizzle-orm'
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { relations, sql } from 'drizzle-orm'
+import { boolean, check, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { nanoid } from '../utils/id'
 
@@ -31,6 +31,8 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
   enableThinking: boolean('enable_thinking').notNull().default(false),
   /** TTS only; omitted for every other capability. */
   voice: text('voice'),
+  /** OpenAI-compatible TTS synthesis multiplier; null uses the standard1x speed. */
+  speed: doublePrecision('speed'),
   discoveredModels: jsonb('discovered_models').$type<WebnaviorAiDiscoveredModel[]>().notNull().default([]),
   discoveredAt: timestamp('discovered_at'),
   lastCheckedAt: timestamp('last_checked_at'),
@@ -40,6 +42,7 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 }, table => [
+  check('webnavior_ai_provider_profiles_speed_range', sql`${table.speed} IS NULL OR (${table.speed} >= 0.25 AND ${table.speed} <= 4)`),
   uniqueIndex('webnavior_ai_provider_profiles_capability_name_uidx').on(table.capability, table.name),
   index('webnavior_ai_provider_profiles_capability_idx').on(table.capability),
 ])

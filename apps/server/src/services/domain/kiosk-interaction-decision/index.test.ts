@@ -269,7 +269,7 @@ describe('kiosk System One interaction decision', () => {
       const route = questions.route as { criteria: Record<string, string> }
       return { answers: { route: { choice: route.criteria['intent:add-item'] ? 'intent:add-item' : 'intent:defer-question', confidence: 0.95 } } }
     })
-    const result = await decideInteraction({ transcript: '周氏蝦捲再兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增餐點', requiresHighConfidence: true }, { id: 'intent:defer-question', description: '暫緩結帳' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'q', purpose: 'checkout-entry', question: '要結帳嗎？', choices: [{ id: 'intent:defer-question', description: '暫緩結帳' }], expiresAt: Date.now() + 30_000 } } })
+    const result = await decideInteraction({ transcript: '蝦捲再兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增餐點', requiresHighConfidence: true }, { id: 'intent:defer-question', description: '暫緩結帳' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'q', purpose: 'checkout-entry', question: '要結帳嗎？', choices: [{ id: 'intent:defer-question', description: '暫緩結帳' }], expiresAt: Date.now() + 30_000 } } })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:add-item' })
   })
   it('does not execute a mistaken checkout answer when question relation is uncertain', async () => {
@@ -278,7 +278,7 @@ describe('kiosk System One interaction decision', () => {
         return { answers: { relation: { choice: 'intent:start-checkout', confidence: 0.18 } } }
       return { answers: { route: { choice: 'intent:start-checkout', confidence: 0.95 } } }
     })
-    const result = await decideInteraction({ transcript: '周氏蝦捲再兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增餐點' }, { id: 'intent:start-checkout', description: '開始結帳' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'q', purpose: 'checkout-entry', question: '要結帳嗎？', choices: [{ id: 'intent:start-checkout', description: '開始結帳' }], expiresAt: Date.now() + 30_000 } } })
+    const result = await decideInteraction({ transcript: '蝦捲再兩份', policy, invoke, candidates: [{ id: 'intent:add-item', description: '新增餐點' }, { id: 'intent:start-checkout', description: '開始結帳' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'q', purpose: 'checkout-entry', question: '要結帳嗎？', choices: [{ id: 'intent:start-checkout', description: '開始結帳' }], expiresAt: Date.now() + 30_000 } } })
     expect(result).toMatchObject({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST' })
     expect(invoke).toHaveBeenCalledTimes(3)
   })
@@ -560,7 +560,7 @@ describe('kiosk System One interaction decision', () => {
 
   it('never uses lexical sorting to rescue menu-times-intent candidate expansion', async () => {
     const candidates = [
-      { description: '查詢「周氏蝦捲招牌便當」分類。', id: 'intent:search-menu:shrimp' },
+      { description: '查詢「蝦捲招牌便當」分類。', id: 'intent:search-menu:shrimp' },
       { description: '查詢「椒麻雞便當」分類。', id: 'intent:search-menu:chicken' },
       { description: '查詢「牛肉麵」分類。', id: 'intent:search-menu:beef-noodles' },
     ]

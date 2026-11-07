@@ -12,6 +12,7 @@ export interface ProviderProfileVerificationInput {
   modelId: string
   plaintextKey?: string
   voice?: string
+  speed?: number
 }
 
 /**
@@ -44,7 +45,7 @@ export async function verifyProviderProfile(input: ProviderProfileVerificationIn
 
   if (input.capability === 'tts') {
     const response = await request(`${baseURL}/audio/speech`, {
-      body: JSON.stringify({ input: '連線測試。', model: input.modelId, response_format: 'mp3', voice: input.voice ?? 'zh-TW-HsiaoChenNeural' }),
+      body: JSON.stringify({ input: '連線測試。', model: input.modelId, response_format: 'mp3', voice: input.voice ?? 'zh-TW-HsiaoChenNeural', ...(input.speed !== undefined ? { speed: input.speed } : {}) }),
       headers,
       method: 'POST',
       signal: AbortSignal.timeout(15_000),

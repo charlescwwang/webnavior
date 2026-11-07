@@ -55,8 +55,8 @@ describe('dine-in WebMCP and semantic integration', () => {
       expect(repeated.candidates.some(candidate => candidate.id === 'intent:set-fulfillment:dine-in')).toBe(true)
       const sameMode = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:set-fulfillment:dine-in' }) as { pendingCustomerChoice: { questionId: string, question: string } }
       await runtime.invoke('kiosk_dialogue_presented', { content: sameMode.pendingCustomerChoice.question, questionId: sameMode.pendingCustomerChoice.questionId })
-      await runtime.invoke('menu_get', { query: '周氏蝦捲' })
-      await runtime.invoke('kiosk_dialogue_presented', { content: '我找到周氏蝦捲。' })
+      await runtime.invoke('menu_get', { query: '蝦捲' })
+      await runtime.invoke('kiosk_dialogue_presented', { content: '我找到蝦捲。' })
       await runtime.invoke('kiosk_fast_path_context', { transcript: '等一下' })
       await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:defer-question' })
       vi.advanceTimersByTime(55_000)

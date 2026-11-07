@@ -40,12 +40,12 @@ describe('pOS simulator', () => {
           aliases: ['招牌便當'],
           id: 'signature-shrimp-roll-bento',
           imageUrl: expect.stringContaining('images.unsplash.com'),
-          name: '周氏蝦捲招牌便當',
+          name: '蝦捲招牌便當',
           price: 145,
         }),
       ]),
       revision: expect.stringMatching(/^source-menu-v2-/),
-      store: { name: '周氏蝦捲' },
+      store: { name: '示範餐館' },
     })
   })
 
@@ -57,7 +57,7 @@ describe('pOS simulator', () => {
       method: 'POST',
     })
 
-    await expect((await submit('customer-session-0001')).json()).resolves.toMatchObject({ receipt: { status: 'accepted', customerMessage: '訂單已接受。', environment: 'test' } })
+    await expect((await submit('customer-session-0001')).json()).resolves.toMatchObject({ receipt: { status: 'accepted', customerMessage: '訂單已送出。', environment: 'test' } })
     const mode = await simulator.app.request('/__simulator/mode', {
       body: JSON.stringify({ mode: 'uncertain' }),
       headers: { 'Content-Type': 'application/json' },

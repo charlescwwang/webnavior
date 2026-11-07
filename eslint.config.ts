@@ -15,6 +15,9 @@ export default defineConfig({
     '**/.venv/**',
     '**/.cache/**',
     '**/.vitest-attachments/**',
+    // Frozen user-supplied numerical oracle; lint the runtime port, not this reference.
+    'apps/stage-kiosk/src/audio/fixtures/spatialMask/reference.js',
+    'apps/stage-kiosk/src/audio/fixtures/dynamicSpatial/reference.js',
     'test_prompt/turnClassifierPoc/models/**',
     'cspell.config.yaml',
     'cspell.config.yml',

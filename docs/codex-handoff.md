@@ -7,10 +7,1119 @@ accumulating history.
 
 ## Current State
 
+- Nov07 device text-mode synchronization LOCAL IMPLEMENTED, NOT DEPLOYED.
+  Source `/tmp/kiosk-text-mode-source-20261107`, based on deployed service-scope;
+  patch/manifest `/tmp/kiosk-text-mode.{patch,manifest.json}`. Server effective
+  device textOnly OR Profile text-only is authoritative. Browser text-only key is
+  retired/removed, never migrated into Server settings; helper is now readonly.
+  Admin duplicate local toggle replaced by actual-mode status; existing device
+  settings panel/permissions/version conflicts own edits. Scene forwards saved
+  snapshot to registration owner; acknowledgement applies immediately without
+  extra GET. Sync10s + window focus; abort/generation/version guards retire stale
+  responses, preserve same-version Site-default changes; failed reads retain mode,
+  401 unenrolls, disposal clears timer/listener/request. Existing Scene/audio/order
+  lifecycle retained, no cart reset. Backend localControls/localOverrides policy
+  is preserved; this removes only the independent browser override.
+  Validation: pre-fix2 regression failures; Firefox14 unique focused cases across
+  4files pass (stale preferences, update/save failure, focus/timer/stale response,
+  real browser capture stop/reacquire), Kiosk scoped types/lint/build pass.
+  YAML test translation access fixed using typed i18n.t; no runtime behavior change.
+  No models/full-project checks, deployment, API/settings writes or commit. Physical
+  Windows full Kiosk acceptance pending. Fish investigation untouched.
+
+- Nov07 service-boundary/Jev recommendation repair LOCAL IMPLEMENTED, NOT DEPLOYED.
+  Full source `/tmp/kiosk-service-scope-source-20261107`, cumulative base deployed
+  microphone-flow; patch/manifest `/tmp/kiosk-service-scope.{patch,manifest.json}`.
+  Observation OFF voice-only admission already exists in deployed runtime. New
+  failed-camera/stale-person toggle regressions plus customer-session/startup
+  controls30pass; no runtime fix or deployment needed for this existing policy.
+  Includes the pending TTS cue stop fix below. Staged purpose question distinguishes
+  unchanged recommendation/continue/redisplay from new preference/comparison queries.
+  Real Jev before: second ordinary recommendation SINGLE confidence0.515, safely
+  unavailable; after disjoint instructions both finite effects pass unchanged0.6
+  threshold. Historical final MENU_QUERY does not retain its intermediate choice;
+  do not call this byte-identical reproduction of those production requests.
+  Main ordering skill@7 shared policy limits knowledge/calculation to service work.
+  New typed service-information/ordering-units requires subjects and complete current
+  catalog, renders merchant description + ordering-unit guidance, performs no math
+  or order effects. Prompt-only attempts still selected unknown/clarification;
+  final typed contract passed actual Main. Unknown merchant facts remain distinct
+  from out-of-scope, avoid data-insufficiency copy. Existing confirmations, valid
+  quantities, totals, dietary staff flow retained. No keyword/case parser added.
+  Validation: domain145/shared26/Host94/focused HTTP5 pass, actual configured
+  Jev+Main2tests/5 synthetic utterances pass; Server/Kiosk/Menu scoped types,
+  changed lint, Kiosk/Menu builds pass. Full HTTP suite interrupted in sandbox;
+  no full-suite claim, production DB writes/orders, deploy or commit.
+  Fish audit `/tmp/kiosk-fish-investigation.json`, private transcripts/tool events
+  `/tmp/kiosk-fish-{recent,tool}-private.json`: newest12 fish sessions/14 fish ASR
+  segments (selected sample, not success denominator). Nov07 Taipei22:21 有賣魚嗎
+  and22:26 我真的想要吃魚耶: BEGIN resolved, kiosk_conversation_context FAILED,
+  main_task context-unavailable/modelRounds0. Not ASR or Main inference failure.
+  Tool exception/payload absent; exact field/state cause remains UNKNOWN. Local
+  fresh/post-recommendation fish/chicken contexts with composition metadata pass;
+  physical remote state not reproduced, no fish fix claimed. Older fish exclusion
+  interruption and alias failures are different, previously tracked defects.
+
+- Nov07 TTS/waiting cue correction LOCAL IMPLEMENTED, NOT DEPLOYED.
+  Source `/tmp/kiosk-tts-cue-source-20261107`, based on deployed microphone-flow;
+  patch `/tmp/kiosk-tts-cue.patch`, manifest `/tmp/kiosk-tts-cue.manifest.json`.
+  Previous music-through-TTS policy was intentional (ducked0.10); user now reports
+  this as unwanted. Native speech synchronously aborts receipt/waiting playback,
+  prevents processing flags from restarting it, retires stale receipt completion;
+  later captured/queued voice retains its own feedback window. Waiting stays0.30.
+  Test-only reproduction3fail/10pass; fixed Firefox15pass, scoped Kiosk types,
+  changed lint/build pass. Hardware pending; no deployment, Agent/JEV/API change.
+  Read-only recent evidence `/tmp/kiosk-recommendation-recent-private.json`:
+  Nov07 Taipei22:08/22:09 recommendations both NEEDS_ASSISTANT→Main→menu_recommend
+  →Main reply (2rounds). Task3575ms/2221ms; all operationReview/replyRepair counts0.
+  ASR text→presentation approx4.79s/3.35s, not measured audible onset. No matched
+  historical latency baseline; do not claim mic deployment changed model routing.
+
+- Nov07 microphone startup/apply flow LOCAL IMPLEMENTED, NOT DEPLOYED.
+  Authoritative source `/tmp/kiosk-microphone-flow-source-20261107`, based on the
+  deployed manual-microphone source; artifacts `/tmp/kiosk-microphone-flow.patch`
+  and `/tmp/kiosk-microphone-flow.manifest.json`. Voice entry auto-requests consent;
+  first use requires startup device confirmation, saved exact input acquires
+  directly, text-only never prompts. Admin edits a draft while capture continues;
+  Apply stops/reacquires/verifies track ID and rebuilds DSP/VAD from actual channels.
+  Successful capture alone commits the device preference. No default fallback.
+  Cross-Scene native requests serialize, retired late streams close before the
+  next request. Fresh consent discovery owns/closes a temporary stream, never ASR;
+  VueUse's cached permission flag is not trusted for browser reauthorization.
+  Channel probes require6144 stable render frames (128ms@48k startup only);
+  standard constraints get a final channel re-probe. No steady speech buffering,
+  VAD threshold/model/gain/DSP algorithm, Agent/JEV/API change; dynamic stays OFF.
+  Validation: unit52pass/1 retained BLOCKED expected failure; Linux Firefox48pass/
+  1 opt-in skip across8 files, scoped Kiosk typecheck, changed-file lint/build pass.
+  Fixed1/2/8 actual graph probes and controlled2↔8 generation routing are covered;
+  synthetic transient-layout fixture was not established, no hardware claim.
+  Windows first/revoked consent, real UMA-8 switch/reconnect and acoustic/VAD/ASR
+  acceptance remain pending. No deployment, API restart, full root typecheck or commit.
+
+- Nov07 dynamic spatial audio LOCAL IMPLEMENTED, NOT DEPLOYED. Source
+  `/tmp/kiosk-dynamic-audio-source-20261107`, based on deployed selection; patch
+  `/tmp/kiosk-dynamic-audio.patch`, manifest `/tmp/kiosk-dynamic-audio-manifest.json`.
+  Local operator opt-in `kiosk/audio/dynamic-spatial` defaults OFF. Eight actual
+  channels/same FIR+FFT use v4 Binary during native TTS and a320ms tentative tail,
+  then32ms blend to directional Raw Gate. Gate reuses existing lookahead (32ms
+  pre-open/3-frame direction agreement); it intentionally differs from v4's extra
+  waits. Ordered Worklet playback edges use source offsets, no graph/VAD reset.
+  Existing admitted Silero speech-start stops audio only, preserves voice candidate
+  and active Agent/tool work. No VAD parameter/model, ASR/Jev/Main or AEC3 change.
+  Dynamic gain fixed0dB (v4 unamplified reference), soft fixed65dB; standard/fallback
+  now0dB. Geometry stays configured. Native stop callback is synchronous.
+  Validation: unit49pass +1 explicit BLOCKED expected failure, existing VAD/gain12,
+  Linux Firefox47pass/1opt-in skip across5 files after fixing switch-role test;
+  scoped Kiosk types, changed-file lint/build pass.120s accelerated tones each
+  yielded1,920,000 samples/32 retained frames; first PCM128ms both modes, local
+  batch p95~0.93ms soft/~1.00ms dynamic. Not hardware/live Silero/ASR acceptance.
+  Frozen v4 Binary agrees<1e-7. Stronger coherent side source fully overlapping
+  front spectrum suppresses front in BOTH v4/new; retained BLOCKED, not solved.
+  No physical Windows UMA-8/USB, full Scene acoustic, normal-volume onset or
+  actual echo-tail acceptance. Default must stay off; no deployment/commit.
+  Separate server-backed device text-only bug remains unmodified: local browser
+  text-only override can conflict, actual incident localStorage not captured.
+
+- Nov07 selection + confirmation/conversation cumulative release DEPLOYED after
+  explicit user authorization. Source `/tmp/kiosk-selection-source-20261107`;
+  release/backups/scripts `/home/aimax/.local/share/webnavior/releases/selection-20261107-181146`.
+  Replaces fish-followup public Kiosk/Menu and six API/shared runtime files;
+  API restarted PID3831520, Bridge unchanged. Origin52 references, public8
+  entry/CSS/audio-config hashes and unregistered browser JS errors0 verified.
+  No database/settings/microphone/AEC changes or real order operations.
+  Historical LOCAL/NOT DEPLOYED bullets below are superseded for this release.
+
+- Current staged HTTP route + actual configured Jev/Main synthetic acceptance:
+  9pass (catalog, fuzzy read/purchase confirmation, replacement, mixed query/add
+  cart state, unrelated long speech, clear yes, send-after-clear question safety,
+  fish exclusion). Uses scratch visitors/Menu, not actual POS or DOM. The mixed
+  query/add control validates cart effects but omitted the dumpling price in its
+  final answer; send-after-clear safely cancels the old question but does not
+  establish completed checkout. These limitations are NOT resolved/accepted.
+  Older flat-router replay initially3fail/8pass retained as diagnostic, not the
+  production-route acceptance. All failed real-model runs retained privately.
+
+- Model findings fixed before publishing: discovery omits originalRecipe unless
+  the existing preparation-request gate permits it; execution gate stays strict.
+  Shared Menu/Host details preserve portions while avoiding duplicate base price.
+  Main skill's stale no-similar-candidate instruction now matches exact-first
+  fuzzy proposals; negative food preference is distinguished from no preference.
+  Clearing an old positive preference receives one bounded query review.
+  Operation review includes actual proposed item ID/name facts. A qualified
+  cart-removal proposal rejected as partial replacement may be regenerated once
+  per task, independently reviewed again; clear/submit assent proposals cannot
+  use this repair. requestScope survives the Host projection and API schema.
+  Added reviewer/repair calls add latency; no zero-hallucination claim.
+
+- Release validation: Menu967pass/202skip, Kiosk354pass/3skip, Server domain94,
+  Shared19, API+domain200, Linux Firefox6 actual component/Menu/iframe controls;
+  scoped Server/Menu/Kiosk types, lint/build pass. No root typecheck or commit.
+  Full KioskScene+iframe+actual-model browser chain, Windows hardware/ASR/TTS,
+  physical barge-in and complete53-flow acceptance remain OPEN. AEC stays off.
+  Frozen release/sources and release.json are authoritative; original incremental
+  `/tmp/kiosk-selection.patch` and manifest predate these model-driven fixes.
+
+- Selection/browsing follow-up is LOCAL IMPLEMENTED, NOT DEPLOYED. Complete
+  source `/tmp/kiosk-selection-source-20261107`, base confirmation; artifacts
+  `/tmp/kiosk-selection.patch`, `/tmp/kiosk-selection-manifest.json`.
+  User's FINAL decision retains matching in Menu frontend. Uses pinned fuzzball
+  2.2.6 WRatio, not RapidFuzz/Python or a new Server service. Exact lookup first;
+  unmatched bounded queries -> max3 proposals, ALWAYS ask before adding. Raw ASR
+  identity routing does not call fuzzy scorer. Existing short fragments retained
+  as unconfirmed discovery. Score70/full60/best-gap12 are candidate heuristics,
+  NOT calibrated accuracy. No new model/API request just to match candidates.
+  Read-only inquiry cannot become a purchase; later owned meal confirmation
+  preserves quantity and consumes one live answer. No arbitrary high-score add.
+
+- Recommendation UI shows real query conditions and explicit per-condition
+  removal, keyed by query/menu revision and blocked during Agent/touch operations.
+  Reset/catalog replacement invalidates old views. Clear only selected constraint,
+  preserve cart and unrelated restrictions. Removing vegetarian label does NOT
+  clear stored food exclusions. Existing update/clear/continue handles explicit
+  changes; Server instructions clarify positive-scope replacement versus retaining
+  exclusions/budget. OR and broad cooking/taste/portion support remain DEFERRED;
+  no perfect multi-turn understanding claim. Full actual-model change-of-mind
+  conversations still need validation.
+
+- Guidance now distinguishes unclear/no-match/exhausted and gives one/two actual
+  available, restriction-safe dish names + matching cards, never generic “換種類/
+  看別類/其他魚類” or unsolicited budget changes. No candidate -> actual touch
+  browsing. Proposals do not change saved positive preferences; UI labels this.
+  data-only reads stay off screen. typed menu-kind fallback also fixed centrally.
+  Host gives guidance its existing service-answer scope so bare yes cannot answer
+  an old order; a later real Menu question supersedes earlier fuzzy/browse prompts
+  without dropping independent factual receipts. No second question state machine.
+
+- Validation: Menu965pass/202skip; Kiosk history354pass/3skip; Server domain94,
+  HTTP104(JSON/SSE), Shared19 pass; Linux Firefox2 real component/runtime controls.
+  Scoped Server/Menu/Kiosk types, changed-file lint and both frontend builds pass;
+  no root typecheck. No real Jev/Main/ASR, full Scene/iframe, Windows/hardware/TTS,
+  deploy/restart/commit or production-order operation. Local Node benchmark with
+  200synthetic items,0/4/40aliases each: p95~0.83/4.92/44.33ms; not end-to-end or
+  Windows performance. Menu JS gzip~158.03->175.42kB including this UI/matcher.
+  Workspace artifact links retain baseline owners, stage-shared links use current
+  snapshot; pnpm incidental unrelated config/peer changes were restored.
+
+- Nov07 P1–P4 implementation LOCAL, NOT DEPLOYED: complete source
+  `/tmp/kiosk-confirmation-source-20261107`, base completion-voice. Review artifacts
+  `/tmp/kiosk-confirmation.patch`, `/tmp/kiosk-confirmation-manifest.json`.
+  Product source stays in isolated snapshot; root checkout is older/dirty.
+  Host replyOnly bounds uncertain service replies; Server rejects stray browser
+  effects and independently reviews Main live-question/cart-display/cart-clear
+  proposals against full utterance/current facts. Critical direct Jev answers
+  reuse Main intent + complete-answer review. Natural 好/對 remains valid for
+  actual combined「確認這份訂單並送出嗎？」; no extra review-only question.
+  Main semantic review is NOT a guarantee against hallucination/misclassification.
+  New order_cancel_request removes only retained unadded configuration by ID,
+  then fresh context permits another dish; accepted cart lines stay unchanged.
+  Four old Menu blockers are integrated: replacement count, uncertain submission
+  guard, catalog revision-bound checkout consent, ambiguous exact alias purchase.
+  Exact-alias lookup still returns all matches; fuzzy/general filtering deferred.
+
+- Staff assistance is typed offer/accept/decline with a live Host invitation
+  bound to context/expiry; changing request/context or resetting invalidates it.
+  Accepted help is ordinary assistant bubble + existing speakAssistantReply TTS,
+  NO serviceFault overlay/PIN, no restriction waiver, no actual notification.
+  presentation metric explicitly says notificationMode:simulated. Technical-fault
+  lock remains. Chromium and Linux Firefox harness each verifies one visible
+  notice and actual Menu addition; neither tests full Scene nor physical TTS.
+
+- Final checks: Menu949pass/202skip; Kiosk history352pass/3skip; Server domain94,
+  route104(JSON/SSE), Shared18 pass. Changed-file lint, scoped Server/Kiosk/Menu
+  types and both frontend builds pass. Root typecheck, actual-model replay,
+  Windows/hardware/physical TTS/complete53-flow acceptance NOT run; no production
+  orders, deploy, restart or commit. Additional review adds unmeasured real-model
+  latency; operationReviewRequests records count, generation bytes/tokens do not
+  sum reviewers.13 snapshot stage-shared workspace bindings use this source owner;
+  other artifact-backed links stay on their original paths. See manifest.
+
+- Evidence/oracles preserved: DINpPi6z3VWnvNruylFkH423 events Nov6 Taipei
+  12:19:58–12:23:31 in private0600 `/tmp/kiosk-submit-context-private.json`.
+  seq160 combined review+submit question. seq186「這樣就好，可以刪除了」->
+  clear question193/196 is plausible from ASR text (no audio). seq213
+  「可以送出去了」->order_answer_confirmation218 on CLEAR_CART ->empty221/
+  confirmed227 is proven mismatched assent. Later cart250 has manual activity;
+  do not invent automatic re-add source. seq308「所以幫我送出」->bad menu_open316
+  ->new clear question325/328, no successful submit. Review full context, not
+  send-keyword rules. Content-review assent/wrong alternative-item assent were
+  assistant hypotheses, not observed incidents. User accepts phase1 long phrase
+  「在這之前先點水餃，確定水餃點正常之後，我們再多加一個排骨」adding dumplings;
+  do not add a discussion blocker. Phone flow removed; do not revive it.
+  `/tmp/kiosk-unrelated-cart-{audit-all,windows}-private.json` retains261candidate
+  calls/86sessions (not261 errors), 5windows239events. Confirmed hA7...seq124/127
+  ->cart_get(display:true)133/136 and I_A7...75/78->82/88 from unrelated ASR;
+  no DOM capture or proven unrelated-long-speech successful clear/submit chain.
+  Root formal plan has current delivery/coverage table and deferred D/E scope.
+
+- Nov07 completion voice LOCAL, NOT DEPLOYED: source
+  `/tmp/kiosk-completion-voice-source-20261107` based on history-validation.
+  Product edits only Host customer-session wrapper and Scene, plus test/README.
+  Voice acceptsInput latch closes after completion through receipt dismissal;
+  explicit new-order action resumes. Scene closes admission synchronously on
+  completion receipt, stops VAD/array processing and continuous media capture,
+  resets queued/unfinished speech and checks late ASR/results. Existing submitting
+  Agent can finish receipt; no commerce undo or saved mic-setting change.
+  Initial lifecycle regression failed;11 lifecycle tests and history350+85+17
+  controls pass (3 skipped), scoped types/lint/build pass.
+  FullScene/Windows/hardware/success TTS not validated. Four Menu blockers are
+  now integrated by the newer confirmation source above; this is its baseline.
+  Logs `/tmp/kiosk-completion-voice-{before,unit,history,types,lint,build}.log`.
+
+- Nov07 user-approved planning only: exact catalog/alias match first, fuzzy
+  candidates only when exact identity is unavailable; sufficiently unambiguous
+  evidence plus explicit purchase/complete slots may add directly, otherwise
+  clarify. WRatio is an evaluation candidate, no dependency chosen/installed.
+  Phase1 itself requires cross-menu tests and missing-item alternatives:
+  「打拋牛便當」absent with「打拋豬便當」available is a disclosed substitution
+  requiring consent, not an assumed ASR typo or direct-add fuzzy hit. Respect
+  ingredient exclusions/availability, offer few actionable choices, reuse
+  confirmation/slot flow; evaluate unsafe substitutions and selection turns/time.
+  Later cross-menu category/ingredient generalization should evaluate faster
+  browsing for「想吃飯／魚」without treating it as purchase. Literal similarity
+  alone cannot infer food categories/ingredients. Plan and cross-menu safety/
+  latency metrics recorded in conversation-repair plan; no runtime changes.
+
+- Nov07 historical-test audit: newest review source is
+  `/tmp/kiosk-history-validation-source-20261107` (silent-feedback product code
+  unchanged; only test fixture corrected and existing field corpus/test restored).
+  Full history: Kiosk350 pass/3 skip, Server85 pass, Shared17 pass;
+  Menu81 pass/4 FAIL/1 skip after restoring fieldRuntimeFlows (8 controls).
+  OrderingSkill's original10 failures reproduced on pre-fix release baseline;
+  fixture sent forbidden recipient with filtering off and retained obsolete
+  modelCalls3/ordering@2 expectations; corrected to current strict schema,
+  calls2/ordering@6 without loosening runtime validation or outcome assertions.
+  Four real uncovered Menu controls fail: K1106-STATE-02 wrong-item correction,
+  STATE-05 lost-submit-result retry, MENU-02 stale confirmation after catalog
+  availability change, MENU-01 ambiguous merchant alias. All8 pass on the older
+  UNDEPLOYED field-repair source; those protections were not included in the
+  production-based release chain. Do not deploy that broad source wholesale.
+  Corpus34 base+19 variants=53 configurations remains partially bound, NOT53
+  completed dialogues. Counts are deterministic/mock controls, no real Jev/Main
+  replay or physical acceptance. Logs `/tmp/kiosk-history-validation-{host,menu,lint}.log`,
+  reference `/tmp/kiosk-history-field-repair-reference.log`. No deployment.
+
+- Nov07 background-setting correction VERIFIED READ-ONLY. Both silent sessions
+  ggUmSdBBOnjiRPKu06-uR and xtUBrNta4tzH0nlv24877 belong to DEV-478642.
+  Persisted admin override backgroundSpeechMode=off; delegated local override
+  absent, so effective mode is off (default also off). Device settings unchanged
+  since2026-11-06 03:16:51 Taipei. Do NOT explain these reports as normal background
+  filtering/IGNORE or suggest the setting was enabled. Camera presence is a
+  separate gate, but remains an unproven stop cause. The assistant's earlier
+  generic background-silence explanation did not apply to this configuration.
+  Silent-feedback is defensive UI/diagnostics only, not a root-cause fix, and
+  remains undeployed. Settings lookup `/tmp/kiosk-background-setting-read.py`.
+
+- Nov07 silent completion feedback LOCAL, NOT DEPLOYED. Latest cumulative
+  local source `/tmp/kiosk-silent-feedback-source-20261107`, based on the
+  recommendation-sync source below; patch/manifest `/tmp/kiosk-silent-feedback`.
+  Latest report ggUmSdBBOnjiRPKu06-uR seq14713:07:18「我們想到用這個方法去處理」:
+  user confirms no processing indicator, reply or notice. Raw Jev ANSWER then
+  HANDOFF, admitted but no later Main/tool/reply event; actual client stop cause
+  still UNKNOWN. Do not call this normal recorded IGNORE or confirmed presence
+  loss/cache. Three code gaps now covered: unexpected queue processing errors
+  retain original speech and publish an error through existing staff-fault flow;
+  admitted late presence rejection shows a silent visual explanation; exhausted
+  deferrals show a visual conclusion. Utterance IDs correlate shown input until
+  process finally; reset/stale tickets cannot publish into the next visitor.
+  Finite returned/failure/presence-stop/deferral events use the existing metrics
+  lane (no raw errors/stacks) so diagnostics do not delay transcript writes.
+  Normal IGNORE stays speech-silent; presence thresholds/gates and acoustic paths
+  unchanged.205 unit controls, Chromium3+LinuxFirefox3 browser fault controls pass;
+  scoped types/lint/build pass. Browser test injects a real queue failure then
+  checks DOM/original speech/lock, NOT full Scene or spoken notice/hardware.
+  Presence-loss and exhausted-deferral Scene branches lack end-to-end acceptance.
+  Root-cause capture, actual Main/background routing and physical acceptance open.
+  No deployment, model replay, DB mutation or real orders.
+
+- Nov07 recommendation screen/receipt mismatch LOCAL, NOT DEPLOYED. Source
+  `/tmp/kiosk-recommendation-sync-source-20261107`, based on deployed fish-followup;
+  patch/manifest `/tmp/kiosk-recommendation-sync{.patch,-manifest.json}`.
+  Session ggUmSdBBOnjiRPKu06-uR seq96–127: category update kept old include fish;
+  internal menu_get(display:false) found5 bentos, then display:true category calls
+  were twice refused with MENU_QUERY_ACTION_REQUIRED. Menu kept its fish view,
+  while Host operationReplyFrom let the internal customerMessage override the
+  visible receipt. Reproduced before changes; helper now rejects dataOnly copy.
+  Added explicit clear:[includeIngredients] to Menu query tool/runtime, retaining
+  allergy exclusions/dietary/budget/cart; tool description explains withdrawal.
+  This makes safe withdrawal expressible, not proof Main chooses it correctly.
+ 40 Menu+122 Host controls pass; real model, full Scene/iframe and Windows visual
+  acceptance remain open. No live order/model calls, deployment or mic/AEC edits.
+  Separate first-query no-reply report xtUBrNta4tzH0nlv24877 at13:00:56: Jev chose
+  search-menu, record stops after admission. No later browser tool/presentation
+  receipt; actual client abort/exception remains unproven. Do not label cache or
+  local-presence expiration as its confirmed cause. Screenshot issue is distinct.
+
+- Nov07 fish preference/follow-up fix DEPLOYED after explicit user request. Source
+  `/tmp/kiosk-fish-followup-source-20261107` based on the deployed menu-camera
+  release source; patch/manifest `/tmp/kiosk-fish-followup{.patch,-manifest.json}`.
+  Session yTDlWLScWAaHVqoxI1q9j12:10:40 rejected fish, but the turn was interrupted
+  before its exclude tool ran; next recommendation retained include fish. It
+  completed with the wrong fish receipt, not a proven process deadlock.
+  Replacement pre-tool follow-ups now carry both utterances into task text;
+  explicit new exclusion revokes only matching old include preferences. Existing
+  exclusions/allergies, other filters and cart remain protected. Original-code
+  failures reproduced with corrected fixtures;34 Menu+122 Host controls pass,
+  including real Menu receipt/presentation with a controlled model. FullScene,
+  real model and physical rapid speech not validated; no model replay calls.
+  Published Kiosk+Menu, no API/Bridge restart. Release/backups:
+  `/home/aimax/.local/share/webnavior/releases/fish-followup-20261107-125555`.
+  Origin52 referenced resources and public8 main/CSS/audio-config hashes pass;
+  isolated unregistered page JS errors0, not full customer-flow acceptance.
+  First publication lacked Menu --base=/menu/; both entries were immediately
+  restored before rebuilding/releasing. First rollback evidence retained at
+  `fish-followup-20261107-125319`; explicit prefix guards now precede publication.
+  Jev misclassification remains unvalidated; this release does not add its
+  suggested clarification/failure-injection protections. Reload after orders.
+  This source excludes the other unreleased cumulative changes below.
+
+- Nov07 menu/camera DEPLOYED after explicit user request. Production-specific
+  source `/tmp/kiosk-menu-camera-release-source-20261107` starts from the deployed
+  music-volume baseline; contains only camera lifecycle/deadline/frozen-frame
+  protection, its diagnostic UI, and read-only catalog price diagnostics/CLI.
+  Release/backups/rollback scripts `/home/aimax/.local/share/webnavior/releases/menu-camera-20261107-120458`.
+  Kiosk published; POS Bridge restarted healthy PID3299152. API PID1609716,
+  Menu/Web indexes, catalog contents, mic/AEC/VAD/ASR and Agent paths unchanged.
+  Release-source67 Bridge tests+6 Chromium camera controls, scoped Kiosk/Bridge
+  types, lint/build passed.588 origin resources hash-verified; public browser
+  verified6 entry/CSS/audio-config resources, no page JS errors. Full49-resource
+  batch timed out; direct Python HTTPS returned403, both retained as limitations.
+  Actual Windows camera acceptance remains open. Existing Kiosks must
+  reload after finishing current orders. Full integration source below includes
+  OTHER unreleased conversation/device changes; never deploy it wholesale or
+  interpret this release as their deployment.
+
+- Nov07 menu/camera follow-up LOCAL, NOT DEPLOYED. Latest complete source
+  `/tmp/kiosk-menu-camera-source-20261107`, based on device-recovery below;
+  incremental `/tmp/kiosk-menu-camera.patch`, manifest same prefix. Do not overlay
+  the default old/dirty checkout. Read-only `menu:check` CLI plus existing catalog
+  GET diagnostics distinguish base-price conflicts from contextual prices; runner
+  deduplicates warnings. No editor/publisher exists, no merchant rewriting.
+  Camera model30s/frozen-frame5s safety defaults now implemented, not measured
+  hardware settings or proof of past missed-greeting cause. Hung native loads
+  cannot abort: close late models and block timed-out pending restart; ordinary
+  stop/start caps unresolved loads at2. Frozen video clears observation, resumes
+  on new frames; hidden time excluded.67 Bridge tests,6 Chromium+6 LinuxFirefox
+  camera controls, CLI exit/read-only checks, scoped types/lint/Kiosk build pass.
+  No new model calls, orders, DB writes, commit or deployment. Mic/AEC unchanged;
+  unknown/multiple array probing deferred. Physical and full flow acceptance open.
+
+- Nov07 non-AEC device/recovery work LOCAL, NOT DEPLOYED. Latest complete
+  conversation/device source `/tmp/kiosk-device-recovery-source-20261107`, based on
+  conversation-guard, retaining earlier field/farewell/facts/dumpling fixes;
+  excludes separately archived AEC experiments. Patch `/tmp/kiosk-device-recovery.patch`,
+  manifest same prefix. Default checkout is still old/dirty; do not overlay wholesale.
+  Retry browser failure was an obsolete mock recipient field while background mode
+  OFF (strict schema correctly rejects it), not a proven runtime retry bug. Corrected
+  fixture now passes queue->recovery->clarify->next add; runtime schema unchanged.
+  Startup uses the existing stream owner to prefer one enumerated UMA-8 after
+  consent; stops before constraint change, clears failed exact pin once; manual,
+  multiple or unknown arrays retain operator/default policy. Worklet still decides
+  actual8CH Mask. Gain now tracks active Mask PCM,0dB on fallback even retained8CH.
+  Audio WARN bounded codes distinguish capture/Worker/VAD/lag/discontinuity/end/
+  restore failures; Server+frontend validation must be released together.
+  Camera starts observing only after successful inference; errors clear stale
+  presence, expose degraded and back off250ms–5s from actual failure time. Real
+  track-state checks plus ended handling retire capture. Late models close without
+  resurrecting old generation; thresholds/ROI/greeting policy unchanged.
+  Shared describeMenuItem removes only exact current standalone base-price clauses
+  from receipt/context presentation; raw menu text, bundles/options/different prices
+  untouched. Price source validation is now implemented in the follow-up above.
+  303 scoped unit/contract/HTTP controls pass; Chromium39+LinuxFirefox32 relevant
+  browser controls exercised (last camera/startup targeted reruns pass); each skips
+  existing opt-in130s. Parallel Firefox fake-media timeouts retained; single/serial
+  controls pass, not Windows hardware acceptance. Kiosk/Menu/Server scoped types,
+  changed lint and Kiosk/Menu builds recorded in manifest; no root typecheck, new
+  Jev/Main/ASR calls, real orders, DB changes, deploy/restart or commit.
+  Real missed-camera root cause unknown; model/frame deadlines and merchant
+  warnings are completed above. General unknown/multi-array probing is deferred.
+  See Nov07 sections of conversation repair and array microphone plans.
+
+- Nov06 AEC onset diagnosis LOCAL; NOT DEPLOYED, still BLOCKED/off. Latest
+  complete audio evaluation source `/tmp/kiosk-aec-onset-source-20261106`, based
+  on `/tmp/kiosk-aec-multichannel-source-20261106`; excludes later conversation
+  follow-up below. Do not overlay these sources wholesale. Incremental review
+  `/tmp/kiosk-aec-onset.patch`, hashes `/tmp/kiosk-aec-onset-manifest.json`.
+  Runtime remains8CH48k→eight independent mono AEC→seven mapped unchanged Mask
+  →gain/VAD/ASR.9 key runtime hashes unchanged, opt-in default OFF.
+  Original integrated wrapper2.1.0-2 still fails prefix35.84dB after Mask;
+  pre-Mask25.31dB. Its true linear tap is unavailable. Native0.3.0 diagnostic
+  rebuild exposes true linear16k tap (published pre is raw), normalized via
+  AudioBuffer; separate impulse delays: full143, linear71, interpolated87 at16k.
+  Native default: linear near projection roughly−0.11 to+1.51dB, full pre-Mask
+  energy loss32.59dB, Mask50.84dB. Read-only trace shows linear estimate unusable
+  during frozen synthetic overlap, nonlinear residual model overestimates echo;
+  near-end mode off. Does not prove the old wrapper has identical internal cause
+  or distinguish wrong auto delay from convergence/excitation without real data.
+  Four near-end tweaks alone fail. Known60ms external-delay+seven mapped mics+
+  richer protection(profile5) passes fixed signal guards: echo46.01dB,
+  prefix energy5.08dB loss/projection5.59dB loss, direction change0.54dB.
+  Stock+oracle and reduced protection fail; keep full experimental candidate.
+  BUT25s100ppm projection loses7.52dB despite energy passing: new BLOCKED test,
+  not a fix. Never hardcode fixture60ms as hardware latency. Linear→Mask alone
+  preserves prefix but TTS only10.61dB/tail5.27dB, rejected for VAD/pre-roll.
+ 47 checks exercised (45 normal+2 expected failures),8 browser Worker controls,
+  scoped Kiosk types/lint and isolated pinned Emscripten build pass; no root
+  typecheck, physical Windows/human/VAD/ASR acceptance, new external model calls,
+  production build/deploy/restart or commit.2 failures must stay explicit.
+  Repro patches/licenses/build/readme in audio/evaluation/aec3Diagnostics;
+  methodology in array microphone plan's onset section. JSON and8 synthetic
+  float32 WAVs `/tmp/kiosk-aec-onset-*`; not speech or ASR acceptance evidence.
+  Next needs paired physical8CH raw + actual render PCM, channel map/latency/
+  drift and five-scenario VAD→stop→ASR checks; user confirmed no paired physical
+  recordings are available. Keep physical acceptance pending, AEC off and undeployed.
+
+- Nov06 conversation guard LOCAL, NOT DEPLOYED. Latest complete conversation
+  source `/tmp/kiosk-conversation-guard-source-20261106`, based on conversation-followup
+  and retaining field repairs + dumpling data fix; excludes separate AEC experiments.
+  Incremental patch `/tmp/kiosk-conversation-guard.patch`, manifest same prefix.
+  Host serviceReply no longer accepts generated prose as facts: valid selectors
+  render current evidence; unsupported service prose says information unavailable.
+  Transport/attempted writes without receipts stay errors. Shared/provider farewell
+  selectors aligned; pure farewell greeting mistakes corrected. After normal
+  admission/queue, Host answers pure farewell once through existing TTS, suppresses
+  consecutive repeats within visitor identity; substantive accepted turn/reset/
+  new visitor re-arms. Whole-utterance guard never consumes mixed requests, pending
+  purchase questions, clears cart, submits orders or restarts greeting. Finite
+  guard does not prove all semantic routing correct or eliminate hallucination.
+  255 related unit/contract checks +2 new Chromium controls pass; Kiosk/Server
+  types, changed lint, Kiosk build pass. Historical browser retry->clarification
+  failure was subsequently traced to stale mock schema and corrected Nov07 above;
+  the earlier observation remains baseline evidence, not an open runtime defect. No root
+  typecheck, new external model/ASR calls, physical TTS/human acceptance, deployment,
+  restart or commit. Full53 Jev+Main settings remain unaccepted.
+  Dumpling duplicate demo description price removed in source JSON/historyData;
+  price80/95 controls retained. Other merchant description prices not auto-parsed.
+  Production remains unchanged; do not overlay the default old/dirty checkout or
+  lose separate AEC evaluation work. Formal conversation repair plan is current.
+
+- Nov06 field repair FIRST IMPLEMENTATION LOCAL; NOT DEPLOYED / full acceptance
+  incomplete. Complete source `/tmp/kiosk-field-repair-source-20261106`, based on
+  deployed `/tmp/kiosk-music-volume-source-20261106`; use the new source for further
+  implementation, the music source remains the production comparison baseline.
+  Review delta `/tmp/kiosk-field-repair.patch`, file/hash/test manifest
+  `/tmp/kiosk-field-repair-manifest.json`. Default checkout remains old/dirty;
+  do not overlay it wholesale or assume its runtime files contain this work.
+  Source of truth: Nov06 implementation section of
+  [conversation repair plan](plans/2026-10-28-kiosk-conversation-repair.md).
+  Local fixes: one same-deadline/no-commerce classification format repair;
+  provider/runtime reply schema parity; malformed closing repair is technical
+  failure; accepted receipts remain visible while Host faults latch. Rejected
+  payloads no longer pollute remembered cart/menu facts. Real-line replacement
+  preserves count instead of creating a count draft. Unknown thrown table send
+  locks repeat/direct send/reset; displayed cart reads are not retry-safe.
+  Menu-owned cart table/guidance survives Host presentation; checkout synonyms
+  clarified in candidates/Main instruction, retaining separate submission consent.
+  No-change recommendation update continues unseen items rather than restarting.
+  Reminder window/late completions bind customer generation, reset cancels old
+  proactive speech immediately; diagnostics distinguish failed camera/no detection/
+  already greeted. Checkout questions bind menu revision, shared aliases require
+  clarification; new names/options covered by deterministic controls.
+  553 selected checks pass (includes existing regressions and1 material check;
+  4 Chromium +2 HTTP), four scoped types, lint, both frontend builds. Full existing
+  Kiosk route suite has90 passes and2 ordering@5 prompt-version assertion failures,
+  reproduced identically on untouched production source; not repaired. No root
+  typecheck, external model calls, real orders, deployment, commit or audio edits.
+  Important acceptance gap: STATE-02's next-turn boundary control uses the full
+  canonical name; original shortened 排骨 still needs actual model/alias acceptance.
+  Corpus remains34 base/80 steps/42 inputs/19 variants (53 settings), partially
+  bound to tests, every executionStatus remains not-run for complete flow scoring.
+  Next: bind remaining events/variants to existing full replay, freeze source/gold,
+  run synthetic Jev+Main smoke before larger acceptance. Do not infer full53 pass
+  from schema/provider parity/unit counts; physical camera/voice remain unverified.
+  Earlier audio deferral is superseded only by the later AEC3 request above.
+  Existing staff popup/spoken reminder remains simulated, no external messages.
+
+- Nov06 operational audit (analysis only; no production changes): Taipei-day
+  00:00–12:46 evidence has184 sessions/16,126 entries across3 device labels;
+  includes tests/simulations, not a customer success-rate denominator. Private
+  extracts `/tmp/kiosk-today-{evidence,sessions}.jsonl`, audio warnings log.
+  Twenty assistant replies start with「目前訂單：」without questionId. Concrete
+  session `z8uL2UErVwrR96t-Rs1DN` seq79:「這樣就好，我點了什麼」gets only
+  lines/280元; seq109 asks for submission only after a separate checkout request.
+  `questionPresentation.ts` builds cart summaries from receipts; Menu's English
+  nextStep hint is not itself a bound question. Guided continuation needs a
+  domain-owned next step/question without treating a price read as submission consent.
+  At12:39:00 Taipei, DEV-311719 logged mask_runtime/outcome:standard/channels:8:
+  actual8CH was acquired, then DSP fell back. Warning omits the specific reason;
+  cannot conclude CPU lag vs disconnect/worker error. Also confirmed code risk:
+  KioskScene recognitionInputGainDb selects+65dB from retained channelCount8,
+  while useArrayMicrophone fallback sets mode:standard but retains channelCount;
+  ordinary capture may therefore retain array gain. No measured clipping proof.
+  Auto selection only requests ideal8CH, does not probe/select all devices;
+  consent prompt reuse is browser-controlled and separate from device selection.
+  Idle audit:46 reminder texts,122 explicit restarts, no reminder appended to
+  the same durable session after its restart. Recent reminder gaps41–79s fit
+  default40s; no reminder within30s of session creation. Session3min countdown
+  and assistance40s clock are separate; unified reset race remains unconfirmed.
+  Existing11 session+5 reminder tests pass, not physical-device or reported-race
+  reproduction. Menu changes use live names/aliases/categories/options and catalog
+  revisions; renames/alias conflicts/new business flows need targeted replay,
+  not assumed model retraining. All4 recorded invalid recoveries predate repair.
+  Main volume for this same snapshot:441 user_text ingress records (384 unique
+  text strings;438 with utteranceId and3 unnumbered);425 match ASR source,
+  10 simulation,6 cannot be attributed from matching ASR metadata.438 distinct
+  session/task terminal-metric records and663 main_round_metrics; these are
+  different counters, not441 guaranteed successful model executions or663 unique
+  utterances.229 separate understanding/recovery decisions:125 assistant,
+  99 clarify,1 ignore,4 invalid. These overlap Main ingress; never add them as
+  distinct customer utterances. Current audit made zero new external model calls.
+  Count artifact `/tmp/kiosk-today-main-counts.json`. The expanded Nov06 plan
+  and corpus now cover these findings; see the planning entry above.
+  Additional user reports merged into the audit: one wrong action appears to
+  bias subsequent turns (state-recovery hypothesis, not yet reproduced); after
+  adding from recommendations, later recommendations can repeat; occasional no
+  greeting may be detection failure or intentional already-greeted/cooldown state.
+  A detected8CH track is not proof Mask remains active or suppresses a same-front
+  speaker. Existing auto/DSP fallback and gain risk above remain relevant.
+  Recommendation audit finds16 identical consecutive presentation batches, not
+  all failures; explicit alternatives often correctly use continue. update allows
+  shown items by design, while continue/reset/excludeShown use seenIds. Wrong
+  choice of query action or retained scope is a concrete repetition path; the
+  user's add-then-recommend sequence still needs a focused replay.13 existing
+  queryActions tests pass. Greeting session/presence tests15 pass; once-only
+  greeting re-arms only after configured absence, and active sessions do not open
+  new welcomes. Do not conflate no welcome with no camera detection.
+  Checkout synonyms are inconsistent, not wholly unsupported: session
+  OarSAdCquCXylbYIuZYtQ「我要算帳」and GJ4HIZCGVqzsTdl3B-uXY
+  「這樣就好，幫我算帳」only read totals; DINpPi6z3VWnvNruylFkH
+  「好，趕快算帳」reaches a bound submit question. Treat natural checkout
+  intent as review/invitation, preserving separate final submission consent.
+
+- Nov06 waiting-music volume IMPLEMENTED/DEPLOYED. Latest full source
+  `/tmp/kiosk-music-volume-source-20261106`; release/backups/source/logs:
+  `/home/aimax/.local/share/webnavior/releases/music-volume-20261106-102709`.
+  Waiting music gain increased0.18->0.30, speech-ducked gain0.06->0.10;
+  receipt chime remains0.4. Existing voice ownership, one-player continuity,
+  stop conditions and staff-fault speech are unchanged.13 Chromium audio tests,
+  changed-file lint and Kiosk build pass; no typecheck needed for numeric-only
+  runtime change. Kiosk-only frontend deployment; API/Bridge/Menu/admin/PIN/DB/
+  WAV assets unchanged. Reload existing Kiosks after current orders.
+
+- Nov06 voice review contract and silent-failure repair IMPLEMENTED/DEPLOYED.
+  Latest independent full source `/tmp/kiosk-review-contract-source-20261106`;
+  release/backups/source/logs `/home/aimax/.local/share/webnavior/releases/review-contract-20261106-091709`;
+  review patch `/tmp/kiosk-review-contract.patch`. Continue from this source;
+  default workspace predates deployed modules and remains dirty.
+  Recorded session `3pvCMU13Z68uRlK7-1_Ho` utterances11/12 both said
+  「你有買一送一嗎？」. Authorized replay reproduced HTTP200 valid JSON/correct
+  tool but assistant disposition plus nonempty question, including unsupported
+  promotion claims. Runtime correctly rejected it; original raw historical
+  responses were not retained, so replay is not proof of historical byte identity.
+  Review provider schemas now constrain admission/disposition/question combinations
+  with anyOf, retaining runtime rejection. Unknown merchant facts go to assistant
+  verification rather than invented promotions or unnecessary clarification.
+  Recovery metrics include finite validationFailure categories without raw text.
+  Kiosk service-fault owner retains unadmitted failed speech plus an error and
+  latches the existing popup/spoken staff notification, blocking further operations.
+  Existing PIN recovery/new-round reset rules apply; background/semantic uncertainty
+  remains outside the technical-error path. User reconfirmed SIMULATED presentation
+  only: `delivery: simulated`, no actual external notification.
+  Test-only pre-fix failures reproduced;45 Server +75 Kiosk +4 Chromium tests pass,
+  7 actual JSON Schema cases pass, both scoped typechecks/lint/build pass.
+  Final real-model read-only replay returns assistant without question or invented
+  promotion. Four existing HTTP serviceRecovery tests fail identically on baseline
+  and patched sources; not repaired. No root typecheck or customer order writes.
+  User explicitly authorized production deployment/API restart after approval review
+  required it. API restarted healthy PID1609716; two backend source overlays plus
+  Kiosk frontend only. Shared runtime interface received only the diagnostic field,
+  preserving its other source differences. Bridge/Menu/admin/PIN/DB/audio unchanged.
+  Existing Kiosks need reload after their current order to receive new UI behavior.
+
+- Nov06 music-through-TTS timing IMPLEMENTED/DEPLOYED. Latest full source:
+  `/tmp/kiosk-audio-end-source-20261106`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/audio-through-tts-20261106-053314`.
+  Receipt playback is scheduled after admitted complete voice capture, before
+  ASR submission; recognition does not wait for the chime to finish. Waiting
+  music now keeps one player through TTS, ducked0.18->0.06 while native speech
+  plays, then stops at reply end (replaces the previous TTS-start stop policy).
+  Playback's setVolume adjusts the existing native player, ignores completed
+  players. Capture sequence plus queued/transcribing ASR preserves newer voice
+  work when an earlier reply ends/is interrupted; stale queue cleanup cannot
+  restart completed feedback. Idle/proactive TTS still cannot open feedback;
+  service faults and disposal stop it immediately. Original WAVs/manifest intact.
+  Regression first reproduced;18 Chromium tests pass incl real WAV playback,
+  whole-reply continuity/volume, newer captures/queued speech and idle/faults.
+  Kiosk scoped typecheck/lint/build pass; no root typecheck, live models/orders.
+  Kiosk-only deployment;49 public resource/hash checks pass, no JS errors.
+  Menu checkout-review release, API/Bridge/admin/PIN/DB unchanged, no restart or
+  commit/push. Existing Kiosks reload after the current order.
+
+- Nov06 table checkout review-first flow IMPLEMENTED/DEPLOYED. Latest full source:
+  `/tmp/kiosk-checkout-review-source-20261106`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/checkout-review-20261106-052327`.
+  Real session loPu8jFD7TKKnCLGBJPI- seq158/161:「我想付錢」sent immediately,
+  rejected with combined reasons, then appended another submit question.
+  Table checkout_start now reveals/reads table, cart lines and total first;
+  only a subsequent presented/unexpired question for the same cart+round can
+  submit. Repeated Main calls do not confer consent; edits/round changes force
+  review. Table questions are not auto-offered on add before actual review.
+  Voice and touch refresh live Bridge context before review/submission. A changed
+  context/table never silently retries submission. Touch uses the shared cart_get
+  review path. Submission consumes review/question authority before awaiting POS;
+  rejected/uncertain results cannot append or retain a send question. Unsupported
+  or pending table sends expose neither checkout tool nor intent candidate.
+  Bridge TableOrderError supplies distinct typed codes/customer messages for
+  invalid context, unsupported unpaid sending, already sent, pending and payload
+  conflict; removed the catch-all list. No unsupported payment/fulfillment path.
+  Both primary regressions reproduced before fixes.138 tests pass (107 Menu,
+  29 Bridge,2 Chromium actual App controls incl retired round), three scoped
+  types, lint and Menu build pass.3 public resource/hash checks pass, no JS
+  errors. Menu-only frontend plus2 Bridge source overlays; Bridge restarted
+  healthy PID1363285. API PID1312651/Kiosk/admin/PIN/audio/DB unchanged. No root
+  typecheck/live model calls/customer orders or commit/push. Existing pages need
+  reload after their current order. Kiosk remains portion-reply release below.
+  Bridge round/idempotency state remains process-local per existing README;
+  refresh + fresh confirmation handles known retired contexts, not durable POS
+  reconciliation or automatic replay of unknown outcomes.
+
+- Nov06 portion-size replies IMPLEMENTED/DEPLOYED. Latest full source:
+  `/tmp/kiosk-portion-reply-source-20261106`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/portion-reply-20261106-050442`.
+  Water dumplings already had「每份10顆，80元，現點現煮」in the live catalog/card.
+  Spoken menu_get receipts dropped description and retained availability/price.
+  Single-item receipts now preserve merchant description; snapshot-based shared
+  menu-information replies do too. No guessed portions or cart quantity changes.
+  Host regression covers displayed receipt and context-only answer; both failed
+  before fix.118 tests pass (73 Host,28 Menu,17 shared), both frontend scoped
+  types/lint/build pass. Kiosk/Menu deployed together;52 public files/hashes
+  verified. API/Bridge/PIN/DB/WAV unchanged; no root typecheck/live models/orders.
+  The subsequent checkout review-first repair is recorded above.
+
+- Nov06 submitted-order and bounded clarification wording IMPLEMENTED/DEPLOYED.
+  Latest full source `/tmp/kiosk-order-sent-source-20261106`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/order-sent-scope-20261106-045534`.
+  POS simulator accepted receipt now says「訂單已送出。」, retaining accepted
+  protocol state. SERVICE_CLARIFICATION now asks「請再說明您想查詢的餐點，
+  或要調整的訂單內容。」, without implying unrestricted assistance. The shared
+  generic recovery reply already limits requests to meals/order adjustments;
+  historical evaluation recordings were left intact. Both regressions failed
+  before fixes;68 tests pass (23 Bridge,45 service resolution), both package
+  typechecks and scoped lint pass. No root typecheck/frontend build/live model
+  requests/customer orders. Two runtime source files overlaid; API and Bridge
+  restarted healthy under existing systemd on-failure policy. PIDs:
+  API1312651,Bridge1312438.
+  Frontend/PIN/audio/DB/schema unchanged; no commit/push. New backend responses
+  take effect immediately. Public Kiosk remains the welcome-voice-feedback
+  release recorded below. Runtime/source hashes and rollback backups verified.
+
+- Nov06 operator-owned welcome and voice-only feedback IMPLEMENTED/DEPLOYED.
+  Latest full source `/tmp/kiosk-welcome-once-source-20261106`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/welcome-voice-feedback-20261106-044959`.
+  User owns any Taiwanese ordering mention in their configured opening. Removed
+  automatic language-hint concatenation from fixed greeting warmup/playback,
+  Fast Path greeting, generated proactive greeting and empty conversation hint.
+  Removed unused en/zh-Hant key; fixed greeting openings are complete text,
+  with only existing entry-navigation guidance appended in customer_entry.
+  Feedback windows now require acknowledge() from the existing admitted,
+  non-empty microphone capture path. Processing/queue/TTS flags alone cannot
+  create receipt or music; idle/proactive TTS and text input stay silent.
+  The TTS-start stop boundary was superseded by audio-through-tts above.
+  Additional captures and <=200ms gaps keep existing waiting music continuous.
+  Both duplication and internal-work audio failures reproduced before fixes.
+  34 tests pass (21 Chromium,13 unit), scoped Kiosk types/lint/build pass.
+  Kiosk-only publication;49 public resources/hash checks pass, no JS errors.
+  No root typecheck/live model/order creation; API/Bridge/Menu/admin/PIN/DB/
+  WAV/manifest unchanged. No commit/push; existing Kiosks reload after ordering.
+
+- Nov06 microphone recovery and concise welcome IMPLEMENTED/DEPLOYED.
+  Latest full source `/tmp/kiosk-mic-welcome-source-20261106`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/mic-welcome-20261106-044224`.
+  Removed sound teaching, greeting sound samples and introduction cache/API;
+  normal receipt/wait music and native TTS-playing mute boundary remain.
+  Microphone startup is independent of greeting playback. Found/reproduced two
+  defects: the startup helper skipped re-enabling an acquired stream when its
+  initial enabled snapshot was true but changed during permission acquisition;
+  operator restart was disabled solely by enabled+stream even with failed VAD.
+  Current non-aborted startup always enables its acquired stream. Automatic
+  startup now reports starting/error state under the shared startup generation;
+  operator restart remains available when routing/VAD is not ready and checks
+  live tracks. Physical device failure was not reproduced: browser virtual
+  capture covers persisted true/false reload and local text->voice transitions,
+  including stopped old tracks, real routing and automatic reacquisition.
+  41 tests pass (29 Chromium,12 unit); regressions failed before fixes. Scoped
+  Kiosk typecheck/lint/build pass; no root typecheck, live model calls or orders.
+  Kiosk-only publication;49 public resources/hash checks pass, no JS errors.
+  API/Bridge/Menu/admin/PIN/DB/WAV/manifest unchanged. No commit/push. Existing
+  Kiosks reload after the current order. Browser test runner uses Chromium fake
+  media/UI flags so capture tests never need physical microphones.
+
+- Nov06 administrator OpenAI-compatible TTS synthesis speed IMPLEMENTED/DEPLOYED.
+  Latest full source `/tmp/kiosk-tts-speed-source-20261106`; release/backups/logs:
+  `/home/aimax/.local/share/webnavior/releases/tts-speed-20261106-042743`.
+  Admin AI control TTS Provider editor exposes numeric synthesis speed0.25–4,
+  default1, step0.05, only for openai-compatible TTS. Edit restores saved speed;
+  invalid/empty values cannot save. Verify-and-save then Apply to Kiosk follows
+  existing activation flow. Verification speech and compiled active audio config
+  both carry selected speed; Kiosk gateway no longer hardcodes1.0. No client
+  playback-rate adjustment and no speed authority from Kiosk input. Other
+  capability/protocol profiles store null speed. Existing TTS stays1x by default.
+  Migration0047 adds nullable double-precision speed with range constraint;
+  rebuilt server-schema/dist is required for startup migration. API migrated and
+  restarted healthy PID1256527; DB/Redis ready, speed column/constraint verified.
+  Existing Provider values, selections/keys, Menu/Bridge/Kiosk/PIN/audio unchanged.
+  Web control frontend published;29 public resources/hash checks pass, no JS
+  errors.27 tests pass (26 Server incl real migration SQL/persistence/compile/
+  forwarding/invalid HTTP inputs,1 Chromium editor), Server/Web scoped types,
+  lint, schema build and Web build pass. No root typecheck/live provider calls/
+  customer orders. Verified private pg_dump backup and runtime/Web rollback
+  artifacts in release; no commit/push. Prepared welcome audio retains old rate
+  until Kiosk reload after applying a new speed.
+  Web production build requires VITE_SERVER_URL and VITE_API_SERVER_URL set to
+  https://webnavior.aikcitri.qzz.io. SDK download is avoided by existing local
+  apps/stage-web/.cache/assets/js/CubismSdkForWeb-5-r.3 plus shared asset caches;
+  no plugin/library workaround was added. Source copies must rebase workspace
+  links for stage-shared, kiosk-proactive AND server-schema to copied packages.
+  The existing scope-workspace-links.py handles stage-shared only; explicitly
+  repoint the latter two in materialized node_modules. Preserve schema/dist
+  build artifacts or rebuild them before tests/API startup after migrations.
+
+- Nov06 accepted table-order repeated checkout question FIXED and DEPLOYED.
+  Latest complete source `/tmp/kiosk-completed-order-source-20261106`; release:
+  `/home/aimax/.local/share/webnavior/releases/completed-order-20261106-040951`.
+  Real session TcKmszTQ38qIqaNJ0eGc9 seq281 accepted tool receipt, seq289 said
+  「訂單已接受。 確認這份訂單並送出嗎？」. Root: retained cart + no table-mode
+  checkout controller caused derived phase ordering after accepted submission;
+  generic post-tool question generation created another checkout-entry ticket.
+  Menu now projects its existing completedOrderId into orderAccepted, which takes
+  phase precedence as checkout_complete. No checkout question/candidate or
+  checkout_start in Main allowedToolNames after acceptance; reset reopens phase.
+  Accepted/rejected/uncertain and reset regressions covered.116 tests pass,32
+  env-guarded replay cases skipped; Menu typecheck/lint/build pass, no root
+  typecheck/live model/device/order creation. Menu-only publication; public HTML,
+  JS and CSS3 hashes verified, no JS errors. API PID1193976/Bridge/Kiosk/admin/DB/
+  audio unchanged. No commit/push; reload iframe/Kiosk to load corrected Menu.
+  Production build MUST use `pnpm -F @proj-airi/order-menu build --base=/menu/`;
+  default build emits /assets paths. Initial publication040857 was immediately
+  rolled back during public verification for missing base and superseded by
+  040951. Preparation now asserts /menu/assets prefix; do not reuse bad bundle.
+  Source-copy dependency rebasing rules remain as recorded below.
+
+- Nov06 continuous processing audio, integrated greeting and literal dish lookup
+  FIXED and DEPLOYED. Latest source `/tmp/kiosk-continuous-cue-source-20261106-0400`;
+  release/backups/source/logs at
+  `/home/aimax/.local/share/webnavior/releases/continuous-cue-final-20261106-040151`.
+  Initial API skill overlay at `continuous-cue-20261106-035824`; that initial
+  frontend was superseded by the final customer-greeting preparation correction.
+  Waiting feedback retains one player across ASR/Jev/Main/tools, extra captures,
+  and <=200ms handoff gaps. VAD does not stop ordinary waiting music or replay
+  receipts. Customer TTS preparation (including voice-triggered greetings) keeps
+  feedback alive; proactive speech creates no customer receipt window. Native
+  onPlaying fires once and mutes feedback only when speech really plays. Pending
+  preparation and audible speech have separate ownership/generation cleanup.
+  The welcome sound teaching/preview added in that release was removed by the
+  microphone-recovery release recorded above. Actual admitted interruption still
+  cancels the turn/TTS; missing feedback audio retains ordinary TTS.
+  Ordering skill v6 removes conflicting 'guess a possible alias' instruction:
+  query explicit names verbatim; only formal names/merchant aliases identify a
+  dish. Do not infer another meal from ingredients/cuts/flavor/name similarity or
+  lead with 'did you mean'. No match -> concise absence, optional menu/recommend.
+  Reproduced continuity failure before fix.109 tests pass (18 Chromium audio/
+  greeting,24 fixed-greeting/turn/queue,67 skill prompt/recovery), scoped Kiosk
+  typecheck/lint/build pass; no root typecheck/live model/device/order creation.
+  Final frontend scope also checked/built.49 public resources verified, no JS
+  errors. API single skill-file overlay/restart, healthy PID1193976; Bridge/Menu/
+  admin/PIN/DB/WAV/manifest unchanged. No commit/push. Reload after current order.
+  Prior brand/idle configuration remains:48 profiles and one draft cleaned of
+  周氏/瞎捲 with shrimp meals retained; all57 live device records have explicit
+  reminderWaitMs40000, shared defaults40s, varied context-based reminder prompts.
+  Their CAS backups/rollback SQL are in `welcome-idle-20261106-033738`.
+  When copying latest source, rebase stage-shared AND kiosk-proactive links to
+  copied packages: `/tmp/scope-workspace-links.py` handles stage-shared only;
+  explicitly repoint @proj-airi/kiosk-proactive in materialized node_modules.
+
+- Nov06 local text mode priority FIXED and DEPLOYED. Latest source is
+  `/tmp/kiosk-local-text-source-20261106`; release/backups/source/logs at
+  `/home/aimax/.local/share/webnavior/releases/local-text-priority-20261106-032444`.
+  Copy this source and rebase workspace links with `/tmp/scope-workspace-links.py`
+  before subsequent builds. Explicit browser-local true AND false now override
+  device textOnlyMode and Profile voiceConversationOnly. Missing browser value
+  follows central policy without writing a default; the PIN panel displays the
+  effective mode. Existing stored booleans are explicit choices. Both choices
+  survive reload; local off hides text console and uses the existing voice-mode
+  capture/permission lifecycle and submission guard. No new input pipeline.
+  Regression reproduced before fix;18 Chromium tests pass, including actual
+  conversation input visibility, local off over central text mode, reopen,
+  local on over central voice mode, and absent-setting central updates. Scoped
+  Kiosk typecheck/lint/build pass; no root typecheck/live model/device/orders.
+  Kiosk-only publish;49 origin resources verified. API/Bridge services, Menu,
+  database, admin/PIN, and supplied WAV/manifest unchanged. Existing Kiosks reload
+  after finishing their current order. No commit/push.
+
+- Nov06 two supplied WAV sounds ENABLED and DEPLOYED. Latest source is
+  `/tmp/kiosk-two-sounds-source-20261106-030445`; copy it and rebase workspace
+  links as described below before follow-up builds. Kiosk-only release/source
+  originals/backups/tests at
+  `/home/aimax/.local/share/webnavior/releases/two-sounds-20261106-030954`.
+  Audio files were found in `/home/aimax/Downloads` after RustDesk clipboard
+  paths initially disappeared; source/release/public files retain exact WAV bytes.
+  `/kiosk/audio/kiosk_acknowledged_chime.wav` is0.51s and
+  `/kiosk/audio/kiosk_hold_melodic_light_60s.wav` is60s; both mono48kHz16-bit.
+  `audio/processing.json` is now `{ "enabled": true }`; the old processing.mp3
+  reservation is superseded. Receipt plays once, then waiting music loops until
+  processing ends. New captured speech during ongoing work gets its own receipt;
+  pausing/resuming music does not repeat the old chime. No cue for proactive
+  greeting generation alone. Opening now explains and samples each sound in sequence, as recorded above. New speech cancels the demo, including while phase remains
+  speaking. Reply/cancellation/fault/unmount stop feedback; audio owns no order
+  cancellation. Missing either audio file keeps feedback unavailable.
+  Production serves WAV as application/octet-stream; the initial MIME-only
+  guard was caught in public verification and corrected before completion.
+  Loader validates RIFF/WAVE bytes (rejecting HTML rewrites) and supplies an
+  audio/wav Blob without altering the stored original. Regression first
+  reproduced; tests cover generic MIME playback and HTML rejection. Opening
+  waits for the shared preload; cancelling a welcome does not cancel that bank.
+  54 scoped tests pass (13 Chromium, including actual supplied WAV decoding and
+  playback,41 interaction/session/queue/greeting tests); Kiosk typecheck/lint/
+  production build pass. No root typecheck/live model/device/order creation.
+  Kiosk published;49 public files/hashes and audio MIME verified, no JS errors.
+  API PID1061054 and POS Bridge unchanged, DB/Redis readiness pass; no Menu,
+  admin/PIN/provider/configuration/DB changes besides the public audio manifest.
+  No commit/push. Existing Kiosks reload after finishing their current order.
+
+- Nov06 service-scope response policy DEPLOYED from
+  `/tmp/kiosk-service-scope-source-20261106-023518` (latest source; copy for
+  subsequent tasks). Release/backups/17 changed source files/verified DB dump:
+  `/home/aimax/.local/share/webnavior/releases/service-scope-20261106-024901`.
+  Eight API/shared source overlays in the existing meal-confirmation runtime;
+  API PID1061054 and DB/Redis readiness pass. Kiosk/Menu published;50 public
+  browser resource hashes pass, no JS errors. Bridge, admin frontend, provider/
+  PIN/settings/DB unchanged. Audio activation is recorded above. No commit/push.
+  User's exact general guideline is shared serviceResponseInstruction; ordering
+  skill v5. No domain-specific refusal lists. Generic service-information topic
+  out-of-scope renders 「我是點餐助手，無法協助這項需求。」; capabilities is
+  only an explicit capability question, other means missing ordering evidence.
+  Missing facts say 「提供的資料不足，無法確認這項資訊。」, without temporal
+  support hints or staff referral. Clear addressed out-of-scope questions are
+  handed to Main even with background enforcement; true companion/background
+  speech remains gated. Limitation selection survives read-required Server and
+  Host checks without a menu receipt, completion retry, operation or fault lock.
+  Unverified requirements ask whether to retain/change the requirement; no
+  staff referral or silent submission. Prior original-recipe confirmation and
+  issued-operation receipt guards remain.378 scoped tests pass (276 Server,
+  85 Host,17 shared);3 scoped typechecks, lint,2 builds pass. No root typecheck
+  or live model calls; schema/selection/Host regressions first reproduced.
+  Dependency boundary: this source now has materialized node_modules overlays,
+  mapping @proj-airi/stage-shared to ITS OWN packages/stage-shared; inherited
+  symlinks otherwise resolved the old formal worktree's schema. On copying it,
+  run the release's scope-workspace-links.py <new-source-root> to rebase these
+  workspace links before validating/building. Production already resolves the
+  same contract in its own runtime/packages/stage-shared; no tsconfig workarounds.
+
+- Nov06 customer audio/fault/completion UX DEPLOYED. Latest independent source
+  `/tmp/kiosk-experience-source-20261106-015536` (copy this for follow-up; default
+  checkout remains older/dirty). Release/26 changed source files/static backups/
+  checks at `/home/aimax/.local/share/webnavior/releases/kiosk-experience-20261106-021019`.
+  Kiosk and Menu only; API/Bridge processes, DB, providers, settings and PIN
+  unchanged.50 public browser asset/reference hashes verified.73 targeted tests
+  pass (20 Chromium,41 lifecycle/queue,12 Menu);2 scoped typechecks and builds,
+  changed-file lint pass. No root typecheck, live model calls, commit or push.
+  Its single-file audio preparation was superseded by the two-WAV release above.
+  Conversation role:error/uncaught utterance failures latch service pause in
+  per-tab sessionStorage. Voice/queue/touch/retry blocked; explicit new-order
+  reset or newly validated local PIN plus successful service recovery unlocks.
+  PIN recovery settles old work and retains iframe/cart. Cancelled old queue
+  failures no longer relock the next order (test-only repro first). User explicitly
+  requested SIMULATED staff notification, with speech
+  「偵測到特殊情況，已為您通知服務人員。」; event records delivery:simulated,
+  no external message sent. Table display uppercase without changing POS IDs;
+  table/pickup/items/total prioritized, long POS references expandable and
+  simulation notices secondary. Service-scope response policy is superseded by
+  the later Nov06 entry above.
+
+- Nov06 background-mode propagation repair DEPLOYED after attachment a6e7ea59
+  (王大陸你認識嗎？, backgroundObservation off but Main recovery ignored it).
+  Source `/tmp/kiosk-background-mode-source-20261106-012032`; durable7-file
+  source/backup/test receipts and verified PostgreSQL backup at
+  `/home/aimax/.local/share/webnavior/releases/background-mode-20261106-013119`.
+  API runtime still meal-confirmation-20261105-215112 with7 atomic source
+  overlays; PID926950, livez/readyz DB/Redis pass. No frontend/Bridge/model/
+  device-setting/DB changes, commit or push. off/observe now omit background
+  and recipient rejection choices from Main meaning recovery, service scope,
+  phone (staged+Main), early query-scope, ordering intent and answer coverage;
+  enforce retains those checks. Initial observe remains diagnostic only.
+  Empty transcript, explicit invitation refusal and customer idle/pause remain
+  intentional silence, independently of background filtering.670 scoped tests
+  pass in aggregate (including89 authenticated routes);80 live-provider cases
+  skipped. Server typecheck and changed-file lint pass; no root typecheck or
+  live model calls. The flat decision implementation is frozen replay-only;
+  the authenticated runtime always uses staged routing. Settings are read per
+  utterance, including before the formerly bypassing early query-scope route.
+
+- Nov06 branding removal: user confirmed removing the store brand while keeping
+  shrimp-roll dishes. Source labels now use 示範餐館 / 蝦捲招牌便當 / 蝦捲 /
+  擔仔麵; stable item IDs/prices retained. Production source is
+  `/tmp/kiosk-brand-removal-release-source-20261106-010715`; release/backups:
+  `/home/aimax/.local/share/webnavior/releases/brand-removal-20261106-010929`.
+  Runtime root menu JSON was atomically overlaid, POS Bridge restarted to
+  PID882269, Menu/Kiosk frontends published. API process unchanged. Live config
+  drafts and assigned profiles had no brand matches; no DB configuration edits.
+  Menu926 + Bridge58 + Kiosk88 tests pass (live replays skipped),3 scoped
+  typechecks/builds pass. Public browser shows7 dishes and蝦捲招牌便當 without
+  the brand or JS errors; see release.json for resource verification. Internal
+  fixture filename and historical research/transcripts retain their old names.
+  No commit/push. Existing Kiosks must reload after finishing a transaction.
+
+- Nov06 tool-policy deployment from this chat: preserve the Nov05 field baseline,
+  not this checkout's older HEAD. This chat's menu-miss presentation, shared
+  task/tool restriction policy and rejection diagnostics were ported into
+  `/tmp/kiosk-tool-policy-release-source-20261106-003823`. Release/rollback
+  backups, verified PostgreSQL dump, source files and build/check logs:
+  `/home/aimax/.local/share/webnavior/releases/tool-policy-20261106-004201`.
+  Menu/Kiosk published; API prompt file atomically overlaid in the existing
+  `meal-confirmation-20261105-215112/runtime` (WorkingDirectory unchanged),
+  systemd-managed API restarted to PID835789. API DB/Redis readiness and49
+  origin asset hashes pass. Admin, POS Bridge, providers, schema and PIN
+  unchanged.374 scoped tests and Menu/Kiosk typechecks/builds/lint pass. Public
+  browser loads enrollment without JS errors;49 public HTML references/assets
+  verified (Cloudflare injects a beacon into Kiosk HTML; nonbrowser probe403).
+  No device/order created; no commit/push. Do not replace newer field sources
+  with this checkout.
+
+- Nov05 Kiosk management frontend review is PAUSED in the default checkout
+  `/home/aimax/webnavior` on branch `no_mcp`, aligned with `origin/no_mcp`.
+  No commit, push, merge, or PR has been authorized. Base branch is `master`;
+  `HEAD = e8491ecd0960817a2e6fff136bbee981cb77580e`, merge base
+  `fcf3b523dc0f8bec2bf6c2484012228dc8e80404`. The user paused further
+  inspection because programs are being modified concurrently. Prior scoped
+  Stage Web and i18n typechecks and Stage Web browser tests passed, but those
+  results predate this pause and must be re-run before any completion claim.
+  A requested code review was attempted but did not produce actionable
+  findings, so the review is incomplete. Keep the Kiosk device manager/
+  composables/pages/i18n/browser-test work as the feature commit boundary;
+  split or exclude `packages/electron-screen-capture/package.json`,
+  `Kiosk_Order_Policy_Review.md`, and this handoff note. On resume, re-run the
+  scoped checks, then present exactly four integration choices: merge into local
+  `master`, push and open a PR, keep `no_mcp` as-is, or discard. Wait for the
+  user's choice before any Git mutation.
+
+- Oct30 SLM/JEV experiments are ISOLATED on `codex/slm-jev-experiments` at
+  `/home/aimax/.codex/worktrees/slm-jev-experiments/webnavior` (base e8491ec).
+  The SLM/JEV report/data paths in older entries below now refer to that checkout.
+  Read its `SLM_JEV_Worktree_Isolation.md` before running any experiment. This
+  chat's default cwd remains `/home/aimax/webnavior`; always specify the new
+  absolute workdir for experiment commands/edits/builds/outputs. V1 and formal
+  repair stay in their own worktrees. No commit/deploy/model/DB calls in isolation.
+
+- Oct30 production Main quantity recovery deployed from independent release
+  `/home/aimax/.local/share/webnavior/releases/main-recovery-20261030-191156`
+  (base e8491ec; scoped repair source in isolated kiosk-main-recovery worktree).
+  API WorkingDirectory points there since19:24, not this dirty checkout; V1
+  changes below are NOT deployed. Initial Kiosk/Menu build omitted production
+  Vite settings, causing localhost registration failure. Frontend-only origin
+  hotfix published19:32,47 origin checks pass; public Kiosk bootstrap now reaches
+  API. No device created for verification; user must retry enrollment. Release
+  contains backup/before-after hotfix files and URL-aware preflight. API model
+  repair evidence230 offline+2 live synthetic tests; no commit/provider change.
+
+- Oct30 V1 simplified ordering work is PAUSED and ISOLATED on branch
+  `codex/kiosk-order-policy-v1` in `/home/aimax/.codex/worktrees/kiosk-order-policy-v1/webnavior`.
+  Read that checkout's `Kiosk_Order_Policy_V1_Implementation.md` to resume.
+  V1 production edits/tests/report and all private replay evidence were moved
+  there, byte-verified before restoring this checkout. Shared historical E2E
+  runner here is restored to its original frozen source; prior SLM/admin work
+  stays here. No commit, deployment, dependency install or model rerun.
+
+- Oct30 full JEV/SLM ordering-flow comparison COMPLETED, isolated only. Report
+  `JEV_SLM_EndToEnd_Evaluation.md`; artifacts `test_prompt/endToEndEvaluation/`.
+  Inventory5435 paths/161 relevant;20 existing dialogue scripts + explicit Menu
+  setups/options/fragments/questions +1 separately frozen multi-meal source flow:
+  32 cases x3 arms,231 actual inputs,935 model calls/~23min;0 provider/parse
+  errors. D07/H05 lack prior phone-skip evidence; exclude from primary denominators
+  but retain raw results. State-supported30: whole-flow JEV4/SLM4/SLM12=9/7/9;
+  final item/count18/23/23, direct ignores0/5/5 of66 valid demands. SLM H01 both
+  actually add2 to existing1 instead of setting total2; no detected duplicates.
+  Only a06 adds real history (>4),still fails;2/249 identical SLM bodies drift,
+  so SLM12 score changes do not prove history benefit. Main completion is not
+  demand completion; raw receipts/oracles retained, post-run source audit and
+  original collector verdicts separate. Live DB SELECT-only; scratch PGlite,
+  real staged routes/Main/isolated Menu, no POS/payment/reservation, deployment
+  or model/profile edits. Development persona/direct provider bypass live Redis.
+  Test helper assistantFixture now supplies required task transcript; offline3,
+  historical/oracle9 and real replay/lint pass. Pilot excluded. Raw wire/policy
+  0600 Git-ignored; no commits. Do not switch model or adopt12 history on this
+  evidence; next integrate quantity/mode/reference outcomes as regression gates.
+
+- Oct30 SLM context round4 COMPLETED, isolated only; report
+  `SLM_Context_Optimization_Round4.md`, artifacts `test_prompt/slmContextRound4/`.
+  318 primary calls/12min plus6 exact-wire gain replays,0 provider/parse errors.
+  A uses original captured Session entries (40 aligned points,19 genuinely >4
+  messages +3 unchanged controls); A4/A8/A12 admission15/14/16 correct of19 gold,
+  FR3/4/2 of18 valid,FT1/1 background,Main candidates9/9/10 of22. One A12 gain
+  repeats consistently, but older history also stably changes ITEM to MENU.
+  C valid-answer descriptions: no gain,18/18 valid trials rejected each arm;
+  D question-description precedence:18/27->12/27 correct,2 stable regressions.
+  3/56 repeated primary bodies drift. Same model digest/core source; no JEV,
+  routing/profile/DB/Main/Menu-tool/order changes,commit or deployment. Keep
+  A4/C0/D0 baseline; no new variant accepted. Raw histories/wire0600 ignored;
+  frozen data lacks original Session links,never fabricate8/12 from4 messages.
+
+- Oct30 SLM round3 conditional BG review COMPLETED; report
+  `SLM_Optimization_Round3.md`, artifacts `test_prompt/slmRound3Review/`.
+  Fresh all1114 A0 +617 BG-only service calls,71 fixed repeat inputs/96 calls;
+  total1827 calls/45min,0 provider/parse errors. Same digest/core sources,
+  original A0 and exact round2 service prompt; no tuning/deploy/JEV/DB/actions.
+  On518 provisional gold: valid FR149->57 (56 NO+1 UNSURE), background strong
+  triggers6->16/111;92 valid requests preserved,10 added background candidates.
+  189 read-only candidates include87 unscored;617/1114 reviewed,15 UNSURE.
+  CPU mean1.575->2.290s,added0.715s/input,+55.4% calls/+45.4% model time;
+  no actual Main/Menu/order calls or end-to-end success/safety measurement.
+  71 repeat pairs:1 A0/policy change (p06),25 comparable review pairs stable;
+  2/138 repeated bodies diverge;24/1114 exact A0 pairs differ from round1.
+  Keep as isolated comparison candidate, not accepted default. DMR CPU/16
+  threads/auto4 slots;vLLM backend absent. Insufficient evidence to switch:
+  exact GGUF/tokenizer/template/hardware/cache conditions saved separately;
+  no vLLM install/run. Raw private State/wire/engine logs0600 retained.
+  Real collection+44 contract/guard tests,lint/provenance pass;no commit.
+
+- Oct30 SLM round2 bounded diagnosis COMPLETED, no production changes. Report
+  `SLM_Optimization_Round2.md`, artifacts `test_prompt/slmRound2Diagnosis/`.
+  181 serial calls/8min, no HTTP/parse errors; same digest/core sources. Of5
+  previous divergent checkpoints,3 drift again;3 normal controls stable.
+  cache_prompt=false has0/48 reported cache hits yet p03/p35 still drift, even
+  within same slot; raw candidate logprobs change. No-score p06 also drifts.
+  DMR logs confirm CPU backend/no usable GPU,16 threads/auto4 slots;53 truncate
+  memory-clear paths still return200, not53 crashes. Runtime cause unconfirmed.
+  Full-State7 cases x3 question types x3: original A0 correct3/7, answer4/7,
+  service6/7; p19/22/25 rescued by service predicate but p40 background still
+  triggers; p19/p21/p40 answer predicate fails. Not proof of full context use or
+  safe binary replacement. Conditional BACKGROUND service review evaluated
+  on complete corpus in round3 above; not implemented/deployed in production.
+  Raw private wire/engine logs0600 retained;181-call test +43 guard tests,
+  lint/provenance pass. No JEV/DB/Main/Menu/order/profile edits or commit.
+
+- Oct29 SLM optimization round1 COMPLETED, isolated only; report at
+  `SLM_Optimization_Round1.md`, replay artifacts `test_prompt/slmOptimizationRound1/`.
+  2529 local DMR completions, unchanged Qwen3.5-4B digest/core policy; no profile,
+  DB, Main/Menu/order tool writes or deployment. A0/A1 each all1114 records;
+  44 development,1070 acceptance,474 acceptance provisional admission gold.
+  A1 correct311->323/474, false rejects135->122, background triggers5->10/107.
+  C fixed logprob margin1: FR122->66 but FT10->29,188 proposed reviews/1070;
+  DO NOT adopt prompt/threshold as replacement acceptance. Same downstream wire
+  disagreed5/79 pairs; bounded follow-up completed in round2 above, runtime
+  cause still unconfirmed. No real execution/unsafe-action metric.
+  Exact runner snapshot + immutable private inputs/wire retained Git-ignored0600;
+  safe per-case outputs public. Real collection and43 guard tests pass; lint,
+  source/model/provenance audits pass; no root typecheck or commit.
+
+- Oct29 Kiosk device management now shows all authorized sites, filters by
+  site, and sorts creation time (newest default), natural device name, or site
+  name in either direction. Rows show site/time; selection survives sorting
+  and clears on site changes. Device settings use per-row Reka modal ownership,
+  reuse the existing settings panel, return focus on close/Escape, and label
+  retention as site-wide. Directory reads and writes keep per-site capabilities;
+  batch actions report partial results without retrying writes. Shared JSON/204
+  request handling moved to kioskManagementApi; other management pages retain
+  their existing site flow. New Stage Web browser test config is documented in
+  README. Three Chrome regressions, Stage Web typecheck, changed lint/build/diff
+  checks pass; no root typecheck. Field management frontend published and28
+  public HTML/assets match. Actual modal checked at1280x720 and390x844 with no
+  horizontal overflow; existing API PID503794 stays unchanged. No live device
+  settings/action writes, commit or push. Backup/source/build/check evidence:
+  /tmp/webnavior-device-admin-release-20261029-34n3ei3u.
+
 - Oct29 user explicitly authorized plain-language batch commits after field
   deployment. Commits:907db15 new-device defaults;9c702f6 staged routing, SLM
   transport and verified character replies/retry guards;efd8e82 admin SLM
-  selection;bd70eb3 historical fixtures/runners/results; documentation follows.
+  selection;bd70eb3 historical fixtures/runners/results;e8491ec documentation.
   Commit validation:Server213, Kiosk123, Menu26 and Chrome3 tests pass; Python
   coverage provenance checks7 pass. Initial full typecheck found a new browser
   test name-type mismatch; resolved by looking up the issued Menu definition,

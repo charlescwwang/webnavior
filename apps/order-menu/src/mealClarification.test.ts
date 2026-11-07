@@ -45,7 +45,7 @@ describe('simple meal confirmation', () => {
   })
   it.each([
     { transcript: '泰式酸辣魚便當', label: '泰式酸辣魚便當' },
-    { transcript: '招牌便當', label: '周氏蝦捲招牌便當' },
+    { transcript: '招牌便當', label: '蝦捲招牌便當' },
     { transcript: '炸排骨便當', label: '炸排骨便當' },
   ])('confirms $transcript using the real catalog rather than a dish-specific phrase rule', async ({ transcript, label }) => {
     const runtime = await pendingMeal()
@@ -139,4 +139,48 @@ describe('simple meal confirmation', () => {
     expect(repeated.pendingCustomerChoice.question).not.toContain('畫面')
     expect(await runtime.invoke('kiosk_fast_path_clarify', { questionId })).toMatchObject({ silent: true, pendingCustomerChoice: { choices: expect.arrayContaining([expect.objectContaining({ id: `confirm-meal:${questionId}:yes` })]) } })
   })
+})
+
+// Report: Nov1 field: 排骨便當 confirmation -> 對，一份 was lost to menu clarification.
+it('retains quantity supplied together with the affirmative meal confirmation', async () => {
+  const runtime = await pendingMeal()
+  const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '排骨便當' }) as Snapshot
+  await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer!.id })
+  const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '對，一份' }) as Snapshot
+  const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: answer.candidates.find(choice => choice.id.endsWith(':yes'))!.id })
+  expect(result).toMatchObject({ cart: { lines: [{ itemId: 'fried-pork-chop-bento', quantity: 1 }], itemCount: 1 } })
+})
+
+// Affirmative/negative interpretation must not convert a denied proposal into an order.
+it('does not carry a quantity from a declined confirmation into the resumed meal', async () => {
+  const runtime = await pendingMeal()
+  const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '排骨便當' }) as Snapshot
+  await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer!.id })
+  const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '不是，一份' }) as Snapshot
+  await runtime.invoke('kiosk_fast_path_execute', { candidateId: answer.candidates.find(choice => choice.id.endsWith(':no'))!.id })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'configuration', waitingFor: { question: '請問水餃要幾份？' } })
+})
+
+it('keeps the meal need after ticket expiry and gives a new answer its own lease', async () => {
+  vi.useFakeTimers()
+  try {
+    const runtime = await pendingMeal()
+    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '牛肉麵' }) as Snapshot
+    await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer!.id })
+    const first = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as Snapshot
+    const oldChoice = first.candidates.find(choice => choice.id.endsWith(':yes'))!.id
+    const progress = await runtime.invoke('kiosk_conversation_context') as { retainedRequests: Array<{ id: string, status: string }> }
+    const requestId = progress.retainedRequests.find(request => request.status === 'confirming')!.id
+    vi.advanceTimersByTime(31_000)
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: oldChoice })).rejects.toThrow('STALE')
+    expect(await runtime.invoke('kiosk_conversation_context')).toMatchObject({ retainedRequests: expect.arrayContaining([{ ...progress.retainedRequests.find(request => request.status === 'confirming') }]) })
+    const next = await runtime.invoke('kiosk_fast_path_context', { transcript: '對，兩份' }) as Snapshot
+    expect(next.waitingFor.questionId).not.toBe(first.waitingFor.questionId)
+    expect(next.waitingFor).toHaveProperty('requestId', requestId)
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: oldChoice })).rejects.toThrow('STALE')
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: next.candidates.find(choice => choice.id.endsWith(':yes'))!.id })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2, lines: [{ itemId: 'beef-noodle-soup', quantity: 2 }] } })
+  }
+  finally { vi.useRealTimers() }
 })

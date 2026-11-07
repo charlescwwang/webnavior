@@ -1772,3 +1772,7 @@ wip:
 kiosk-thinking:
   title: Main Agent Thinking
   description: Enable or disable thinking for models that support it (such as vLLM models). Off by default. Verify and save, then apply to Kiosk.
+
+kiosk-tts-speed:
+  title: Synthesis speed
+  description: 0.25–4x; 1 is normal and higher is faster. Verify and save, then apply to Kiosk. Reload existing Kiosk pages to refresh prepared greetings.
