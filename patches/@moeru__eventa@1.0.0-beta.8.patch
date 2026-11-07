@@ -1,0 +1,21 @@
+diff --git a/dist/adapters/electron/renderer.d.mts b/dist/adapters/electron/renderer.d.mts
+index 7c056f3467828d22811d55a42346a80c633a0eee..8ca5c92d73d0c64599f7628b119b1842df55f227 100644
+--- a/dist/adapters/electron/renderer.d.mts
++++ b/dist/adapters/electron/renderer.d.mts
+@@ -134,7 +134,15 @@ interface IpcRenderer {
+ }
+ //#endregion
+ //#region src/adapters/electron/renderer.d.ts
+-declare function createContext(ipcRenderer: IpcRenderer, options?: {
++// NOTICE: The adapter uses only send/on/removeListener (renderer.mjs). The bundled
++// toolkit interface also requires sendTo, removed by current Electron; listener
++// registration return values are ignored by this transport.
++type IpcRendererTransport = {
++  send: IpcRenderer['send'];
++  on: (...args: Parameters<IpcRenderer['on']>) => unknown;
++  removeListener: (...args: Parameters<IpcRenderer['removeListener']>) => unknown;
++};
++declare function createContext(ipcRenderer: IpcRendererTransport, options?: {
+   /**
+    * IPC channel name for bidirectional invoke/response communication.
+    * Renderer sends requests here; main replies here.
