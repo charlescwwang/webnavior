@@ -301,3 +301,53 @@ system-one:
   panel-description: 'Choose Dasein open-jev, lookski/openjev or SLM for Kiosk Fast Path. They share staged admission, demand and operation selection. SLM returns one choice. Readiness checks connectivity with a real decision; semantic quality requires separate testing.'
   policy-description: 'Jev and SLM first separate service, greeting, background and uncertainty, then select demand and operation groups. The application owns candidates, confirmation, payment and WebMCP authorization. Complex requests reach Main intact.'
   policy-hint: 'Custom instructions apply to demand interpretation after admission. They cannot expand service scope or operation authority. Existing custom text is preserved; restore and save the default to use the concise current policy.'
+kiosk-devices:
+  title: Kiosk devices
+  description: Browse devices across sites, sort by creation time, name or site, and open individual device settings.
+  site: Site
+  all-sites: All sites
+  sort: Sort by
+  sort-created: Creation time
+  sort-name: Device name
+  sort-site: Site name
+  newest-first: Newest first
+  oldest-first: Oldest first
+  ascending: Name ascending
+  descending: Name descending
+  refresh: Refresh
+  list: Kiosk device list
+  device-count: 'Devices ({count})'
+  select-visible: Select all visible devices
+  loading: Loading devices…
+  load-failed: Could not load devices. Refresh and try again.
+  save-failed: Could not save settings. Check your connection and permissions.
+  select-device: 'Select {name} at {site}'
+  created: Created
+  registration: 'Registration: {method}'
+  disabled: Disabled
+  disable: Disable
+  enable: Enable
+  delete: Delete
+  empty: No Kiosk devices are registered in this view.
+  selected-count: '{count} devices selected'
+  disable-count: 'Disable {count} selected devices'
+  delete-count: 'Delete {count} disabled devices'
+  selected-devices: selected devices
+  confirm-disable: 'Disable {count} Kiosk devices?'
+  confirm-enable: 'Enable {count} Kiosk devices?'
+  confirm-delete: 'Delete {count} Kiosk devices?'
+  describe-disable: 'Disable {name} and revoke browser credentials. Each device is handled separately; another failure will not undo completed actions.'
+  describe-enable: 'Restore the original browser credentials for {name}.'
+  describe-delete: 'Remove only disabled devices in {name}. Visitor records, transcripts and media are retained. Another failure will not undo completed actions.'
+  action-result: '{action}: {succeeded} completed, {failed} not completed.'
+  cancel: Cancel
+  confirm: Confirm
+  processing: Processing…
+  settings-title: 'Device settings: {name}'
+  settings-description: 'Site: {site}. Device settings affect this device only.'
+  close-settings: Close device settings
+  close: Close
+  retention-title: Site interaction link duration
+  retention-description: 'This duration applies to new sessions on every device at {site}. Expiry removes frontend links; transcripts and recorded media are retained.'
+  retention-days: Frontend link days
+  retention-saved: Site interaction link duration updated for new sessions.

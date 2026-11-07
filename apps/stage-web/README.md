@@ -55,10 +55,12 @@ post-admission demand interpretation; existing custom prompts remain saved.
   `metadata.jsonl` and its paired recordings. Opening one record also exposes
   a per-conversation delete action; it requires confirmation and permanently
   removes that session's transcript, events, and retained media.
-- **Kiosk 設備** is where an administrator opens one registered device's
-  **裝置設定**. Camera evidence mode is configured per device there. The
-  **保存天數** control appears with that device configuration, but applies to
-  every device in the selected site because session retention is a site policy.
+- **Kiosk 設備** lists devices across authorized sites, with a site filter and
+  reversible sorting by creation time, natural device name, or site name.
+  Selection survives sorting and clears on filter changes. Each batch action
+  retains the owning site and reports partial failures. Device settings open in
+  an accessible modal that returns focus to its opener; the retention setting
+  explicitly applies to the whole site. Existing API permissions remain in force.
 - **AI 控制 → 語音回覆 TTS → OpenAI-compatible Provider** exposes synthesis
   speed from 0.25 to 4x (default 1). Verify and save, then apply to Kiosk; the selected
   multiplier is sent as the speech API's speed parameter. Reload existing Kiosk
@@ -102,3 +104,11 @@ Deployment findings and the pending third-party browser-control options are in
 管理頁尾顯示載入版本（Git commit 與 UTC 建置時間），並提供後台快取修復入口。管理 PWA 不快取入口 HTML 或攔截導航；舊瀏覽器可透過 `/kiosk/admin-recover.html` 解除根作用域的管理 worker，保留登入與裝置偏好。
 
 管理 worker 使用每次建置唯一的 `webnavior-sw-<timestamp>.js` URL，避免固定 `/sw.js` 的邊緣快取阻擋新版。快取修復頁同時辨識舊 `/sw.js` 與這個命名的根作用域 worker。
+
+### Device directory regression checks
+
+Run `pnpm -F @proj-airi/stage-web typecheck` and
+`VITEST_BROWSER_CHANNEL=chrome pnpm -F @proj-airi/stage-web exec vitest run --config vitest.browser.config.ts src/components/Webnavior/kioskDeviceManager.browser.test.ts`.
+Browser tests use synthetic HTTP responses with real components and dialogs;
+they do not modify live devices. The loaded-version footer, account switching,
+and versioned management worker remain part of the integrated admin application.

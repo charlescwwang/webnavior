@@ -7,6 +7,18 @@ accumulating history.
 
 ## Current State
 
+- Nov08 Admin restoration/inventory: current release branch now integrates the
+  previously uncommitted root device directory UI:13 files; multi-site filter,
+  natural/time/site sorting, per-owner batch results, accessible settings modal.
+  Existing loaded-version footer/account controls/versioned PWA worker retained.
+  No API/JEV/model/DB changes. Web scoped types and3 Chrome browser cases pass;
+  synthetic HTTP only, no live settings actions. See existing repair plan's
+  Nov08 Git/function table. Main directory will be aligned only after complete
+  file backup + named stash of all remaining tracked/untracked work; preserve
+  demo-menu rename and older context changes there, do not blindly reapply them.
+  Remote master history reconciliation is separate; do not push/reset branches
+  or merge unfinished V1/SLM experiments as part of restoring this UI.
+
 - Public verification of 1a382f6 found Cloudflare serving Nov05 /sw.js, HIT,
   Cache-Control:max-age=14400, even with browser fetch no-cache. App entries,
   main JS and version metadata matched new release. Versioned management worker

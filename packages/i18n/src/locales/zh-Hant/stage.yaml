@@ -301,3 +301,53 @@ system-one:
   panel-description: '可選擇 Dasein open-jev、lookski/openjev 或 SLM 作為 Kiosk Fast Path。共用服務入場、需求與操作分層；SLM 只輸出單一選項。readiness 以真實決策確認部署可用，語意效果另需實測。'
   policy-description: 'Jev 與 SLM 共用分層判斷：先區分服務、招呼、背景與不確定，再判斷需求及小組操作。候選、確認、付款與 WebMCP 執行資格由程式控制；複雜需求保留整句轉交 Main Agent。'
   policy-hint: '自訂提示與店家補充套用在服務入場後的需求判斷，不會擴大第一層服務範圍或操作權限。舊自訂內容會保留；還原為系統預設後儲存，可使用目前較精簡的提示。'
+kiosk-devices:
+  title: Kiosk 設備
+  description: 查看各場域的設備，依建立時間、名稱或場域排序，並開啟個別裝置設定。
+  site: 場域
+  all-sites: 全部場域
+  sort: 排列方式
+  sort-created: 建立時間
+  sort-name: 裝置名稱
+  sort-site: 場域名稱
+  newest-first: 最新建立在前
+  oldest-first: 最早建立在前
+  ascending: 名稱正序
+  descending: 名稱倒序
+  refresh: 重新整理
+  list: Kiosk 設備清單
+  device-count: '設備清單（{count} 台）'
+  select-visible: 全選目前清單
+  loading: 正在載入設備…
+  load-failed: 無法載入設備清單，請重新整理後再試。
+  save-failed: 無法儲存設定，請確認連線與操作權限。
+  select-device: '選取 {site} 的 {name}'
+  created: 建立於
+  registration: '註冊方式：{method}'
+  disabled: 已停用
+  disable: 停用
+  enable: 啟用
+  delete: 刪除
+  empty: 此範圍尚未註冊 Kiosk 設備。
+  selected-count: '已選取 {count} 台設備'
+  disable-count: '停用已選取的 {count} 台'
+  delete-count: '刪除已停用的 {count} 台'
+  selected-devices: 選取的設備
+  confirm-disable: '停用 {count} 台 Kiosk 設備？'
+  confirm-enable: '啟用 {count} 台 Kiosk 設備？'
+  confirm-delete: '刪除 {count} 台 Kiosk 設備？'
+  describe-disable: '將停用「{name}」並撤銷瀏覽器憑證。各台分別處理，成功的操作不會因其他設備失敗而回復。'
+  describe-enable: '將恢復「{name}」原本的瀏覽器憑證。'
+  describe-delete: '只刪除已停用的「{name}」；既有訪客紀錄、逐字稿與媒體會保留。各台分別處理，成功的操作不會因其他設備失敗而回復。'
+  action-result: '{action}結果：成功 {succeeded} 台、未完成 {failed} 台。'
+  cancel: 取消
+  confirm: 確認
+  processing: 處理中…
+  settings-title: '裝置設定：{name}'
+  settings-description: '所屬場域：{site}。裝置設定只影響這台設備。'
+  close-settings: 關閉裝置設定
+  close: 關閉
+  retention-title: 場域的互動連結期限
+  retention-description: '此期限套用到「{site}」所有裝置的新會話。到期只解除前台連結，對話與已錄製的媒體仍會保留。'
+  retention-days: 前台連結天數
+  retention-saved: 場域互動連結期限已更新，新會話會套用此設定。

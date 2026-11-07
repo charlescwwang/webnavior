@@ -2,9 +2,9 @@ import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import { errorMessageFrom } from '@moeru/std'
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
-import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { computed, shallowRef } from 'vue'
 
+import { kioskManagementEndpoint as endpoint, requestKioskManagement as request } from './kioskManagementApi'
 import { useWebnaviorNotice } from './useWebnaviorNotice'
 
 const managedSites = shallowRef<KioskSite[]>([])
@@ -17,6 +17,8 @@ export interface KioskSite {
 }
 
 export interface KioskDevice {
+  createdAt: string
+  siteId: string
   disabledAt: string | null
   id: string
   label: string
@@ -199,26 +201,6 @@ export function useKioskManagement() {
   const visitorSessions = shallowRef<KioskVisitorSessionSummary[]>([])
   const selectedSite = computed(() => sites.value.find(site => site.id === selectedSiteId.value))
   const deviceCount = computed(() => devices.value.length)
-
-  function endpoint(path: string) {
-    return new URL(`/api/admin/kiosk${path}`, SERVER_URL).toString()
-  }
-
-  function request(path: string, init?: RequestInit): Promise<void>
-  function request<T>(path: string, init?: RequestInit): Promise<T>
-  async function request<T>(path: string, init?: RequestInit): Promise<T | undefined> {
-    const response = await authedFetch(endpoint(path), init)
-    if (!response.ok)
-      throw new Error(await response.text() || `Request failed: ${response.status}`)
-
-    // Successful mutation endpoints deliberately use 204 to avoid a body.
-    // Parsing that response as JSON makes a completed device action look like
-    // a client-side failure (`Unexpected end of JSON input`).
-    if (response.status === 204)
-      return undefined
-
-    return await response.json() as T
-  }
 
   async function loadSite() {
     if (!selectedSiteId.value) {
@@ -459,107 +441,6 @@ export function useKioskManagement() {
     }
   }
 
-  async function disableDevice(deviceId: string) {
-    if (!selectedSiteId.value)
-      return
-
-    saving.value = true
-    message.value = ''
-    try {
-      await request(`/sites/${selectedSiteId.value}/devices/${deviceId}/disable`, { method: 'POST' })
-      await loadSite()
-      notice.success('設備已停用，原本的瀏覽器憑證已撤銷。')
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法停用設備。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
-  async function disableDevices(deviceIds: string[]) {
-    if (!selectedSiteId.value || deviceIds.length === 0)
-      return
-
-    saving.value = true
-    message.value = ''
-    try {
-      const result = await request<KioskDeviceBatchResult>(`/sites/${selectedSiteId.value}/devices/batch-disable`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceIds }),
-      })
-      await loadSite()
-      if (result)
-        notice.success(`已停用 ${result.succeededDeviceIds.length} 台設備，原本的瀏覽器憑證已撤銷。`)
-      return result
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法批次停用設備。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
-  async function enableDevice(deviceId: string) {
-    if (!selectedSiteId.value)
-      return
-    saving.value = true
-    try {
-      await request(`/sites/${selectedSiteId.value}/devices/${deviceId}/enable`, { method: 'POST' })
-      await loadSite()
-      notice.success('設備已啟用，原本的瀏覽器憑證已恢復有效。')
-    }
-    catch (error) { notice.error(errorMessageFrom(error) ?? '無法啟用設備。') }
-    finally { saving.value = false }
-  }
-
-  async function deleteDevice(deviceId: string) {
-    if (!selectedSiteId.value)
-      return
-
-    saving.value = true
-    message.value = ''
-    try {
-      await request(`/sites/${selectedSiteId.value}/devices/${deviceId}`, { method: 'DELETE' })
-      await loadSite()
-      notice.success('設備已刪除；既有訪客紀錄會依保存政策保留。')
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法刪除設備。請先停用它。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
-  async function deleteDevices(deviceIds: string[]) {
-    if (!selectedSiteId.value || deviceIds.length === 0)
-      return
-
-    saving.value = true
-    message.value = ''
-    try {
-      const result = await request<KioskDeviceBatchResult>(`/sites/${selectedSiteId.value}/devices/batch-delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceIds }),
-      })
-      await loadSite()
-      if (result)
-        notice.success(`已刪除 ${result.succeededDeviceIds.length} 台設備；既有訪客紀錄會依保存政策保留。`)
-      return result
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法批次刪除設備。請確認設備已停用。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
   async function uploadCharacterAsset(file: File, kind: 'avatar' | 'role_card') {
     if (!selectedSiteId.value)
       throw new Error('請先選擇店別。')
@@ -687,28 +568,6 @@ export function useKioskManagement() {
     finally { saving.value = false }
   }
 
-  async function saveInteractionRetention(days: number) {
-    if (!selectedSiteId.value)
-      return
-    saving.value = true
-    try {
-      const site = await request<KioskSite>(`/sites/${selectedSiteId.value}/interaction-retention`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ days }),
-      })
-      if (site)
-        managedSites.value = managedSites.value.map(item => item.id === site.id ? site : item)
-      notice.success('使用歷程保存天數已更新。新接待會套用這項設定。')
-    }
-    catch (error) {
-      notice.error(errorMessageFrom(error) ?? '無法更新保存天數。')
-    }
-    finally {
-      saving.value = false
-    }
-  }
-
   function selectProfileDraft(draft: KioskProfileDraft) {
     profileDraft.value = draft
   }
@@ -719,13 +578,8 @@ export function useKioskManagement() {
 
   return {
     capabilities,
-    deleteDevice,
-    deleteDevices,
     deleteSelectedSite,
     deviceCount,
-    disableDevice,
-    disableDevices,
-    enableDevice,
     devices,
     deleteVisitorSessions,
     downloadTrainingDataset,
@@ -742,7 +596,6 @@ export function useKioskManagement() {
     loadOwnerExperienceTemplate,
     saveOwnerExperienceTemplate,
     save,
-    saveInteractionRetention,
     saveProactiveVlmEnabled,
     savePerformanceProfile,
     saveVoiceVadSettings,

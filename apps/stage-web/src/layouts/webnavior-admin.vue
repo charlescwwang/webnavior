@@ -48,7 +48,7 @@ async function signOutAndSwitchAccount() {
             Webnavior Control Center
           </p>
           <p :class="['m-0 text-xs text-slate-500 dark:text-slate-400']">
-            {{ selectedSite ? `管理店別：${selectedSite.name}` : '集中管理 Kiosk 與互動服務' }}
+            {{ selectedSite && $route.path !== '/admin/kiosk/devices' ? `管理店別：${selectedSite.name}` : '集中管理 Kiosk 與互動服務' }}
           </p>
         </div>
         <div :class="['flex items-center gap-3']">
