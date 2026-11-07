@@ -7,6 +7,29 @@ accumulating history.
 
 ## Current State
 
+- Nov08 canonical Git policy: use GitHub default `master`, tracking
+  `origin/master`, in `/home/aimax/webnavior`. Keep `no_mcp` at the same integrated
+  tip for existing references. Authenticated fetch confirmed remote tips
+  master=f616ca4/no_mcp=bdf4add, no open PRs. Mergef586bee reconnects master and
+  merge20b66a4 retains the two legacy no_mcp merge records; BOTH keep EXACTLY the
+  c602243 source tree(ff4a8c8f08349fe980a00453da58d4fb46588d65). Earlier shipped
+  source came from master descendant66b520c, but new snapshot commits omitted
+  that ancestry. Legacy no_mcp's tree equals common ancestor2ca87de exactly.
+  All prior histories remain reachable; no application/JEV/SLM/audio/settings
+  change, no new deployment needed. This follow-up commit is documentation only.
+  Final synchronization must verify live ls-remote plus HEAD/upstream0/0 rather
+  than assuming cached origin refs are current. Never force-push or reset away
+  experiment work to make the graph look synchronized.
+  Verified Git bundle including all stash refs before synchronization:
+  `/home/aimax/.local/share/webnavior/git-backups/pre-remote-sync-20261107T174506Z`;
+  source-chain/history audit saved there. Keep all4 stashes and isolated SLM/V1
+  worktrees; do not pop entire old patches onto the integrated source.
+  GitHub CLI is installed in ~/.local/bin; user authenticated through keyring.
+  Local pull policy is fast-forward-only; fetch prunes deleted remote refs.
+  Product Web116eccf/Kiosk+Menu81964ee/API216097 remain the deployment baseline;
+  newer merge/documentation Git HEAD is not a new frontend build version.
+  Earlier branch/state notes below are historical, superseded by this policy.
+
 - Nov08 Admin restoration COMPLETE/DEPLOYED. Product commit116eccf on
   `codex/kiosk-release-20261108`; main directory `no_mcp` was fast-forwarded to
   the same code, clean. This following documentation-only commit records state;
@@ -23,8 +46,8 @@ accumulating history.
   named stash `preserve-root-before-admin-integration-20261108`, immutable object
   `7b9a9fb7797864efaf190c4ea019c839addcbdb3`. Includes demo menu rename and earlier
   mixed docs/tests/context; do not blindly pop it onto current code. Preserve
-  original audio stash and isolated SLM/V1 worktrees. Remote master/no_mcp history
-  reconciliation and push remain NOT DONE; no reset or experiment adoption.
+  original audio stash and isolated SLM/V1 worktrees. Historical master/no_mcp reconciliation is recorded above;
+  no reset or experiment adoption.
   Existing repair plan Nov08 table records each feature/source/validation layer.
   Earlier bullets below are historical snapshots superseded by this release.
 

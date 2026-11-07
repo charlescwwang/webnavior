@@ -464,3 +464,29 @@ Vite 的內容雜湊 JS/CSS 隨入口更新，部署時保留舊資源讓既有�
 若仍異常，記錄實際 URL、頁面版本及瀏覽器錯誤再調查。
 
 管理 worker 使用每次建置唯一的 `webnavior-sw-<timestamp>.js` URL，避免固定 `/sw.js` 的邊緣快取阻擋新版。快取修復頁同時辨識舊 `/sw.js` 與這個命名的根作用域 worker。
+
+## Git 主分支與部署來源
+
+GitHub 預設分支為 `master`。主目錄 `/home/aimax/webnavior` 使用本機 `master`
+追蹤 `origin/master`；`no_mcp` 保留作既有引用，與整合 tip 同步，不再作日常預設。
+功能／實驗分支保留各自 worktree，不把未完成的 SLM／V1 工作或 stash 自動混入正式版。
+
+開始修改前，先確認工作區與遠端：
+
+```bash
+cd /home/aimax/webnavior
+git status --short --branch
+git fetch --prune origin
+git switch master
+git pull --ff-only
+git rev-list --left-right --count HEAD...@{upstream}
+```
+
+最後一行 `0 0` 代表本機與剛取得的上游一致；若有未提交工作或分岔，先保留並逐項
+整合，不以 reset／force push 或覆蓋整棵舊工作樹消除差異。Git 更新只更新來源，
+不等於發布；凍結的前端資產與 API runtime 不隨主目錄 HEAD 自動變動。
+文件或純歷史整合產生的新 HEAD，不需要為了讓畫面 commit 相同而重建已驗證程式。
+
+2026-11-08 歷史接合的 merge `f586bee`、`20b66a4` 保留 `c602243` 的完整來源樹，
+接回 master 與舊 no_mcp 歷史。Admin 整合、原未提交54檔備份與實驗位置記於既有
+對話修正計畫的 Git 功能表及 `docs/codex-handoff.md`。
