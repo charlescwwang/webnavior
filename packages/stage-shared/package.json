@@ -15,6 +15,10 @@
     "directory": "packages/stage-shared"
   },
   "exports": {
+    "./product-discovery": "./src/productDiscovery.ts",
+    "./service-operation": "./src/serviceOperation.ts",
+    "./product-presentation": "./src/productPresentation.ts",
+    "./ordering-slots": "./src/orderingSlots.ts",
     ".": "./src/index.ts",
     "./auth": "./src/auth/index.ts",
     "./beat-sync": "./src/beat-sync/index.ts",
@@ -28,6 +32,7 @@
     "./interactive-service": "./src/interactiveService.ts",
     "./kiosk-conversation": "./src/kioskConversation.ts",
     "./kiosk-audio": "./src/kioskAudio.ts",
+    "./kiosk-desktop": "./src/kioskDesktop.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts"
   },
   "scripts": {

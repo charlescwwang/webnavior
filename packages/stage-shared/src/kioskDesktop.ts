@@ -1,0 +1,64 @@
+import type { InferOutput } from 'valibot'
+
+import { defineEventa, defineInvokeEventa } from '@moeru/eventa'
+import { boolean, finite, integer, literal, maxLength, minLength, minValue, number, object, pick, picklist, pipe, strictObject, string, variant } from 'valibot'
+
+import { discoveryRequestSchema, executionRequestSchema, inspectionRequestSchema } from './interactiveService'
+
+/** CSS-pixel bounds in the trusted Kiosk renderer; the desktop host clips them to its window. */
+export const surfaceBoundsSchema = strictObject({
+  x: pipe(number(), finite()),
+  y: pipe(number(), finite()),
+  width: pipe(number(), finite(), minValue(0)),
+  height: pipe(number(), finite(), minValue(0)),
+})
+
+/** A host-approved service placement. sequence orders requests across component replacement. */
+export const desktopSurfaceRequestSchema = strictObject({
+  sequence: pipe(number(), integer(), minValue(1)),
+  serviceId: pipe(string(), minLength(1), maxLength(120)),
+  documentKey: pipe(string(), minLength(1), maxLength(200)),
+  url: pipe(string(), minLength(1), maxLength(2000)),
+  bounds: surfaceBoundsSchema,
+  visible: boolean(),
+})
+export const desktopSurfaceResultSchema = object({
+  sequence: number(),
+  state: picklist(['visible', 'hidden', 'failed', 'superseded']),
+})
+export type DesktopSurfaceRequest = InferOutput<typeof desktopSurfaceRequestSchema>
+export type DesktopSurfaceResult = InferOutput<typeof desktopSurfaceResultSchema>
+export type SurfaceBounds = InferOutput<typeof surfaceBoundsSchema>
+export const desktopSurfaceActivitySchema = pick(desktopSurfaceRequestSchema, ['serviceId', 'documentKey'])
+/** Activity identifies its service document without carrying typed keys or personal input. */
+export type DesktopSurfaceActivity = InferOutput<typeof desktopSurfaceActivitySchema>
+
+/** Narrow preload capability: only a registered host surface, never raw Electron or JavaScript. */
+export interface KioskDesktopBridge {
+  version: 1
+  updateSurface: (input: Omit<DesktopSurfaceRequest, 'sequence'>) => Promise<DesktopSurfaceResult>
+  invokeService: (input: DesktopServiceRequest) => Promise<unknown>
+  onActivity: (listener: (activity: DesktopSurfaceActivity) => void) => () => void
+}
+
+export const updateDesktopSurface = defineInvokeEventa<DesktopSurfaceResult, DesktopSurfaceRequest>('airi:kiosk:desktop:surface:v1')
+export const desktopSurfaceActivity = defineEventa<DesktopSurfaceActivity>('airi:kiosk:desktop:activity:v1')
+
+declare global {
+  interface Window {
+    airiKioskDesktop?: KioskDesktopBridge
+  }
+}
+
+/** A finite RPC envelope; renderer input never supplies JavaScript or browser selectors. */
+export const desktopServiceRequestSchema = strictObject({
+  serviceId: pipe(string(), minLength(1), maxLength(120)),
+  documentKey: pipe(string(), minLength(1), maxLength(200)),
+  command: variant('kind', [
+    strictObject({ kind: literal('discover'), request: discoveryRequestSchema }),
+    strictObject({ kind: literal('execute'), request: executionRequestSchema }),
+    strictObject({ kind: literal('inspect'), request: inspectionRequestSchema }),
+  ]),
+})
+export type DesktopServiceRequest = InferOutput<typeof desktopServiceRequestSchema>
+export const invokeDesktopService = defineInvokeEventa<unknown, DesktopServiceRequest>('airi:kiosk:desktop:service:v1')

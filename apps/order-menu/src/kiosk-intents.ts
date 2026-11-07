@@ -6,9 +6,12 @@ import type { IngredientFilters } from './domain/composition'
 import type { CartLine, CartSnapshot, MenuItem, Selection } from './domain/order-machine'
 import type { SeatingContext } from './domain/seating'
 
+import { normalizeSlotNumbers, quantityFromTranscript } from '@proj-airi/stage-shared/ordering-slots'
+import { productFragment } from '@proj-airi/stage-shared/product-discovery'
+
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { filterIngredients, mentionedDietaryReferences, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
-import { possibleMenuItems, productFragment, resolveCategories, resolveMenuItems } from './domain/menuIdentity'
+import { possibleMenuItems, resolveCategories, resolveMenuItems } from './domain/menuIdentity'
 import { priceEvidence } from './domain/pricing'
 import { partySizeSlot } from './domain/seating'
 import { paymentLabels } from './pos-bridge'
@@ -891,24 +894,9 @@ function extractTaxId(transcript: string) {
   return /^\d{8}$/.test(digits) ? digits : undefined
 }
 
-function quantityFromTranscript(transcript: string, allowBare = false) {
-  const normalized = normalizeSlotNumbers(transcript)
-  const matched = /(?:^|\D)(20|1\d|[1-9])\s*[份個碗杯]/.exec(normalized)
-    ?? (allowBare ? /^(?:要|改成|[改再])?\s*(20|1\d|[1-9])\s*$/.exec(normalized) : null)
-  return matched ? Number(matched[1]) : undefined
-}
-
 function optionSlotsFromTranscript(item: MenuItem, transcript: string) {
   const normalizedTranscript = normalizeSlotNumbers(transcript).replace(/要/g, '').replace(/\s/g, '')
   return item.optionGroups.flatMap(group => group.values
     .filter(value => normalizedTranscript.includes(value.label.replace(/要/g, '')))
     .map(value => ({ groupId: group.id, valueId: value.id })))
-}
-
-// Normalize only local numeric slots, never the ASR text used for item names.
-// A 顆 value is an option; it must not become the number of servings.
-function normalizeSlotNumbers(transcript: string) {
-  const digits: Record<string, number> = { 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
-  return transcript.replace(/[\uFF10-\uFF19]/g, digit => String.fromCharCode(digit.charCodeAt(0) - 0xFEE0))
-    .replace(/二十|十[一二三四五六七八九]?|[一二兩三四五六七八九]/g, token => String(token === '二十' ? 20 : token.startsWith('十') ? 10 + (digits[token.slice(1)] ?? 0) : digits[token]))
 }

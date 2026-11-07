@@ -9,6 +9,7 @@ import type { PaymentMethod, PaymentStatus } from './pos-bridge'
 import type { AgentAction, MenuPresentationToolName, MenuToolName, RecommendationPresentation } from './webmcp'
 
 import { errorMessageFrom } from '@moeru/std'
+import { agentCursorTiming } from '@proj-airi/stage-shared/product-presentation'
 import { computed, nextTick, onMounted, onUnmounted, reactive, shallowRef, watch } from 'vue'
 
 import CheckoutInvoice from './components/CheckoutInvoice.vue'
@@ -185,14 +186,6 @@ function setControlElement(id: string, element: Element | ComponentPublicInstanc
 // NOTICE: Agent movement is intentionally slower than ordinary UI animation.
 // Customers need enough time to see the target, understand the intended action,
 // and observe a press before state changes; otherwise automation feels erratic.
-const agentCursorTiming = {
-  dwellMs: 520,
-  maximumTravelMs: 1_150,
-  minimumTravelMs: 650,
-  pressMs: 180,
-  scrollSettleMs: 420,
-  speedPixelsPerSecond: 720,
-} as const
 
 function waitForAgentCursor(milliseconds: number) {
   return new Promise(resolve => setTimeout(resolve, milliseconds))

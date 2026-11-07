@@ -107,17 +107,9 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   if (!selection.success)
     return undefined
   const kind = selection.output.kind
-  if (selection.output.kind === 'greeting')
-    return { kind, content: '您好，請問需要什麼協助？' }
-  if (selection.output.kind === 'acknowledgement')
-    return { kind, content: '好的，請繼續告訴我您的需求。' }
-  if (selection.output.kind === 'hearing-check')
-    return { kind, content: '有收到您的這句話，請問需要什麼協助？' }
-  if (selection.output.kind === 'clarification') {
-    // Generic meaning uncertainty must not revive a pending purchase question.
-    const content = '剛才沒有理解清楚，請再說一次您想詢問或調整的內容。'
-    return { kind, content }
-  }
+  const conversational = replyToConversation(kind)
+  if (conversational)
+    return conversational
   if (selection.output.kind === 'payment-methods') {
     const methods = context.paymentMethods
     return { kind, content: methods?.length ? `目前支援${methods.map(method => method.label).join('、')}。` : '目前沒有可確認的付款方式，請查看付款畫面或詢問服務人員。' }
@@ -201,4 +193,19 @@ export interface ServiceRecoveryProgress {
 export function serviceContextKey(state: { phase: string, menuRevision?: number, revisions?: { menu?: number, cart: number, checkout: number, selectedItem: number }, waitingFor?: { questionId: string, expiresAt: number } }, now = Date.now()): string {
   const question = state.waitingFor && state.waitingFor.expiresAt > now ? state.waitingFor.questionId : null
   return JSON.stringify([state.phase, state.menuRevision ?? state.revisions?.menu ?? null, state.revisions?.cart ?? null, state.revisions?.checkout ?? null, state.revisions?.selectedItem ?? null, question])
+}
+
+/** Renders a bounded conversational reply without requiring Menu/POS facts or granting an operation. */
+export function replyToConversation(kind: ContextReply['kind']) {
+  if (kind === 'greeting')
+    return { kind, content: '您好，請問需要什麼協助？' }
+  if (kind === 'acknowledgement')
+    return { kind, content: '好的，請繼續告訴我您的需求。' }
+  if (kind === 'hearing-check')
+    return { kind, content: '有收到您的這句話，請問需要什麼協助？' }
+  if (kind === 'clarification') {
+    // Generic meaning uncertainty must not revive a pending purchase question.
+    const content = '剛才沒有理解清楚，請再說一次您想詢問或調整的內容。'
+    return { kind, content }
+  }
 }
