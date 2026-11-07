@@ -101,6 +101,9 @@ websocket-status:
   open-settings: 打开连接设置
 
 kiosk:
+  release:
+    loaded: 当前加载版本
+    recover: 修复后台缓存
   service-fault:
     title: 服务暂停
     spoken: 检测到特殊情况，已为您通知服务人员。

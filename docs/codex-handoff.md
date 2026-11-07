@@ -7,6 +7,26 @@ accumulating history.
 
 ## Current State
 
+- Nov08 release work is on branch `codex/kiosk-release-20261108` in
+  `/tmp/webnavior-release-worktree`, preserving unrelated dirty root work.
+  First commits:77fc634 audio/device controls;45b72d2 deployed ordering baseline;
+  bdefef4 stable discovery/recommendation exit/generalization. User explicitly
+  authorized batch commits and deployment, superseding earlier no-commit policy.
+  New UI shows actual loaded Git commit + UTC build time in Kiosk admin and Web
+  admin footer. Management PWA excludes entry HTML and navigation fallback;
+  skipWaiting/clientsClaim upgrades without forcing a Kiosk reload. Independent
+  `/kiosk/admin-recover.html` unregisters only root `/sw.js`, retaining tokens,
+  preferences and other scopes. Real browser local regression reproduced old
+  AIRI404, then fresh admin after recovery, token/device/other-worker preserved.
+  Nginx cache revalidation locations are in deploy script, but live host requires
+  root access (sudo requires password); do not claim live headers changed.
+  Root lint failed on pre-existing errors and old diagnostic scripts; scoped
+  commit hooks retained. Full types attempted once but missing dependency outputs
+  and incomplete unrelated workspace install prevented completion; restored local
+  generated outputs, Web/Kiosk scoped types then passed. No model reruns.
+  Check newest release manifest for actual publication status; previous bullets
+  below are historical pre-publication snapshots.
+
 - Nov07 device text-mode synchronization LOCAL IMPLEMENTED, NOT DEPLOYED.
   Source `/tmp/kiosk-text-mode-source-20261107`, based on deployed service-scope;
   patch/manifest `/tmp/kiosk-text-mode.{patch,manifest.json}`. Server effective

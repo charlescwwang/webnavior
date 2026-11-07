@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { KioskDevice } from '../services/kiosk-device'
 
+import { useBuildInfo } from '@proj-airi/stage-ui/composables/use-build-info'
 import { Checkbox, FieldRange } from '@proj-airi/ui'
 import { useI18n } from 'vue-i18n'
 
@@ -23,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const buildInfo = useBuildInfo()
 const development = import.meta.env.DEV
 const feedbackInvitationEnabled = useFeedbackInvitationEnabled()
 const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
@@ -48,6 +50,9 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
     </header>
 
     <div class="admin-content">
+      <p :class="['admin-note']" data-build-info>
+        {{ t('stage.kiosk.release.loaded') }}：{{ buildInfo.commit }} · {{ buildInfo.builtOn }}
+      </p>
       <section v-if="props.device" class="admin-section">
         <h3>此 Kiosk 裝置</h3>
         <dl class="device-details">

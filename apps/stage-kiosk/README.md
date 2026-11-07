@@ -1606,3 +1606,7 @@ uncertain execution and unrelated failures retain their existing error handling.
 Questions bind to current menu/cart/question versions and expire after 30 seconds;
 new ordinary requests retire the old cue. Notification speech uses existing TTS
 policy. Physical voice acceptance remains pending.
+
+### 版本辨識與更新
+
+現場管理設定顯示載入版本（Git commit 與 UTC 建置時間）。新版部署後請在無進行中訂單時使用既有重新載入功能；`/kiosk/admin-recover.html` 可復原被舊管理 PWA 攔截的後台入口，保留登入及裝置偏好。

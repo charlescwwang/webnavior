@@ -96,3 +96,7 @@ to an external AIRI application.
 
 Deployment findings and the pending third-party browser-control options are in
 [`docs/plans/2026-10-18-webnavior-routing-and-browser-control.md`](../../docs/plans/2026-10-18-webnavior-routing-and-browser-control.md).
+
+### 版本辨識與更新
+
+管理頁尾顯示載入版本（Git commit 與 UTC 建置時間），並提供後台快取修復入口。管理 PWA 不快取入口 HTML 或攔截導航；舊瀏覽器可透過 `/kiosk/admin-recover.html` 解除根作用域的管理 worker，保留登入與裝置偏好。

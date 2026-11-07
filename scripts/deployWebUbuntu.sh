@@ -118,10 +118,25 @@ VITE_SERVER_URL="$origin" VITE_ORDER_MENU_URL="$origin/menu/" corepack pnpm -F @
 VITE_API_SERVER_URL="$origin" VITE_ORDERING_SCENARIO_URL="$origin/menu/" corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
 VITE_ORDER_MENU_SERVER_URL="$origin/api/kiosk/pos" VITE_AIRI_ORIGIN="$origin" corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
+# Record immutable release identity beside each entry document. This deploys
+# frontends only; API runtime ownership is recorded by its separate publisher.
+release_commit="$(git rev-parse HEAD)"
+release_id="$(date -u +%Y%m%dT%H%M%SZ)-${release_commit:0:7}"
+node --input-type=module - "$release_commit" "$release_id" <<'JS'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
+const [commit, release] = process.argv.slice(2)
+for (const [app, directory] of [['web', 'stage-web'], ['kiosk', 'stage-kiosk'], ['menu', 'order-menu']]) {
+  const path = `apps/${directory}/dist`
+  const entrySha256 = createHash('sha256').update(readFileSync(`${path}/index.html`)).digest('hex')
+  writeFileSync(`${path}/version.json`, `${JSON.stringify({ app, release, commit, entrySha256, publishedAt: new Date().toISOString() }, null, 2)}\n`)
+}
+JS
+
 sudo install -d -m 0755 "$site_root/web" "$site_root/kiosk" "$site_root/menu"
-sudo rsync -a --delete apps/stage-web/dist/ "$site_root/web/"
-sudo rsync -a --delete apps/stage-kiosk/dist/ "$site_root/kiosk/"
-sudo rsync -a --delete apps/order-menu/dist/ "$site_root/menu/"
+sudo rsync -a apps/stage-web/dist/ "$site_root/web/"
+sudo rsync -a apps/stage-kiosk/dist/ "$site_root/kiosk/"
+sudo rsync -a apps/order-menu/dist/ "$site_root/menu/"
 
 sudo tee "$nginx_site" >/dev/null <<'EOF'
 server {
@@ -130,6 +145,17 @@ server {
     server_name _;
     root /var/www/airi;
     absolute_redirect off;
+
+    # Revalidate entry documents and release metadata. Content-hashed assets
+    # keep their independent cache policy; an existing login is never cleared.
+    location = /index.html { root /var/www/airi/web; expires -1; }
+    location = /kiosk/index.html { expires -1; }
+    location = /menu/index.html { expires -1; }
+    location = /sw.js { root /var/www/airi/web; expires -1; }
+    location = /version.json { root /var/www/airi/web; expires -1; }
+    location = /kiosk/version.json { expires -1; }
+    location = /menu/version.json { expires -1; }
+    location = /kiosk/admin-recover.html { expires -1; }
 
     # Resolve the public entry before the management SPA and its cached routes.
     location = / { return 302 /kiosk/; }

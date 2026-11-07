@@ -441,3 +441,24 @@ sudo docker compose --project-name webnavior-redis \
 # 查看 API 最近 log
 sudo journalctl -u webnavior-api -n 100 --no-pager
 ```
+
+## 發布版本與舊管理頁復原
+
+Kiosk 現場管理設定與管理後台頁尾顯示目前載入的 Git commit 及 UTC 建置時間。
+發布時三個前端應各自保存 `version.json`（`/kiosk/version.json`、
+`/menu/version.json`、`/version.json`），記錄同一個 release ID、Git commit、
+入口文件 SHA-256；API overlay 的檔案摘要另由 API 發布的 release manifest 記錄。
+不能只用套件的固定版號辨識場域版本。
+已開啟分頁顯示的是載入當下版本；新版發布後，須在無進行中訂單時重新載入。
+Vite 的內容雜湊 JS/CSS 隨入口更新，部署時保留舊資源讓既有分頁完成工作。
+
+管理 PWA 不再快取 `index.html` 或攔截導航；新版 worker 立即接管，但不強制
+重新載入 Kiosk。`scripts/deployWebUbuntu.sh` 的 Nginx 範本讓入口、worker 與
+版本摘要重新驗證。既有主機須由系統管理員套用相同 location 並執行 `nginx -t`
+及 reload，僅更新前端檔案不會變更 Nginx。另見
+[Workbox 更新行為](https://developer.chrome.com/docs/workbox/handling-service-worker-updates)。
+
+若舊瀏覽器仍停在 AIRI 404，可開啟 `/kiosk/admin-recover.html`，按「修復並開啟後台」。
+獨立復原頁只解除同網域 `/sw.js` 的根作用域 worker，再轉至 `/admin`；不清除
+登入 token、cookie、裝置偏好或其他 worker。這不保證修復無關的權限或路由錯誤；
+若仍異常，記錄實際 URL、頁面版本及瀏覽器錯誤再調查。

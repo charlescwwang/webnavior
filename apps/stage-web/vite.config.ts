@@ -212,6 +212,13 @@ export default defineConfig({
           },
           workbox: {
             maximumFileSizeToCacheInBytes: 64 * 1024 * 1024,
+            // Admin/auth navigation needs current routes even for previously signed-in
+            // browsers. Activate the new worker without forcing an in-progress
+            // Kiosk to reload; its separate SPA remains outside this worker's routing.
+            skipWaiting: true,
+            clientsClaim: true,
+            navigateFallback: null,
+            globIgnores: ['**/index.html'],
             navigateFallbackDenylist: [
               /^\/?$/,
               /^\/docs\//,

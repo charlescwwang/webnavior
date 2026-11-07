@@ -23,6 +23,9 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  release:
+    loaded: 目前載入版本
+    recover: 修復後台快取
   presence-diagnostics:
     camera: 相機
     session: 接待

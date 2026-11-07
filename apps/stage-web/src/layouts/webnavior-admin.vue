@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { useBuildInfo } from '@proj-airi/stage-ui/composables/use-build-info'
 import { signOut, triggerSignIn } from '@proj-airi/stage-ui/libs/auth'
 import { useAuthStore } from '@proj-airi/stage-ui/stores/auth'
 import { Button } from '@proj-airi/ui'
 import { storeToRefs } from 'pinia'
 import { shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { RouterView } from 'vue-router'
 
 import AdminSidebar from '../components/Webnavior/AdminSidebar.vue'
@@ -11,6 +13,8 @@ import WebnaviorNoticeCenter from '../components/Webnavior/WebnaviorNoticeCenter
 
 import { useKioskManagement } from '../composables/useKioskManagement'
 
+const { t } = useI18n()
+const buildInfo = useBuildInfo()
 const signingOut = shallowRef(false)
 const { user } = storeToRefs(useAuthStore())
 const { selectedSite } = useKioskManagement()
@@ -69,6 +73,10 @@ async function signOutAndSwitchAccount() {
       </header>
       <div :class="['mx-auto w-full max-w-7xl p-5 lg:p-8']">
         <RouterView />
+        <footer :class="['mt-8 text-xs text-slate-500 dark:text-slate-400']" data-build-info>
+          {{ t('stage.kiosk.release.loaded') }}：{{ buildInfo.commit }} · {{ buildInfo.builtOn }}
+          <a href="/kiosk/admin-recover.html" :class="['ml-3 underline']">{{ t('stage.kiosk.release.recover') }}</a>
+        </footer>
       </div>
     </main>
   </div>
