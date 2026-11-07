@@ -8,6 +8,8 @@ import { playwright } from '@vitest/browser-playwright'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { toolValidationPlugin } from '../../apps/order-menu/toolValidationPlugin'
+
 export default defineConfig(({ mode }) => {
   return {
     root: import.meta.dirname,
@@ -29,6 +31,7 @@ export default defineConfig(({ mode }) => {
           extends: true,
           plugins: [
             Vue(),
+            toolValidationPlugin(),
           ],
           test: {
             name: 'browser',
@@ -36,6 +39,9 @@ export default defineConfig(({ mode }) => {
             exclude: ['**/node_modules/**'],
             browser: {
               enabled: true,
+              // Cross-origin fixtures swap localhost and 127.0.0.1; avoid an
+              // IPv6-only localhost listener refusing their IPv4 requests.
+              api: { host: '127.0.0.1' },
               provider: playwright(),
               instances: [
                 { browser: 'chromium' },

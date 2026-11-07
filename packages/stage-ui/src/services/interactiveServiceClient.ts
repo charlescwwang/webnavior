@@ -1,11 +1,11 @@
-import type { ServiceTool, ToolExecution } from '@proj-airi/stage-shared/interactive-service'
+import type { ServiceConnection, ServiceTool, ToolExecution } from '@proj-airi/stage-shared/interactive-service'
 
-import { defineInvoke } from '@moeru/eventa'
-import { createContext } from '@moeru/eventa/adapters/window-message'
 import { errorMessageFrom } from '@moeru/std'
-import { discoverService, discoveryResultSchema, executeServiceTool, executionResultSchema, inspectionResultSchema, inspectService, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
+import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
 import { parse } from 'valibot'
 import { readonly, shallowRef, toRaw } from 'vue'
+
+import { connectWindow } from './interactiveServiceWindowConnection'
 
 export type ServiceAvailability = 'idle' | 'loading' | 'ready' | 'unavailable'
 
@@ -17,11 +17,11 @@ export function createInteractiveServiceClient() {
   const unavailableReason = shallowRef<'connection-failed'>()
   const completionRevision = shallowRef(0)
   const listeners = new Set<(event: ToolExecution) => void>()
-  let connection: ReturnType<typeof createContext> | undefined
+  let connection: ServiceConnection | undefined
   let binding: { connectionId: string, documentId: string, toolsRevision: number } | undefined
   let readiness: Promise<void> | undefined
   let activeUrl: string | undefined
-  let activeWindow: Window | undefined
+  let activeConnect: (() => ServiceConnection) | undefined
   let failedBinding: typeof binding
   let recovery: Promise<void> | undefined
   const unsettled = new Set<string>()
@@ -30,7 +30,7 @@ export function createInteractiveServiceClient() {
     listeners.forEach(listener => listener(event))
   }
 
-  function activate(serviceUrl?: string, frameWindow?: Window | null, resume?: NonNullable<typeof binding>) {
+  function activate(serviceUrl?: string, connect?: () => ServiceConnection, resume?: NonNullable<typeof binding>) {
     connection?.dispose(new Error('互動服務頁面已切換。'))
     connection = undefined
     binding = undefined
@@ -39,37 +39,27 @@ export function createInteractiveServiceClient() {
     error.value = undefined
     unavailableReason.value = undefined
     activeUrl = serviceUrl
-    activeWindow = frameWindow ?? undefined
+    activeConnect = connect
     availability.value = 'idle'
     if (!resume) {
       failedBinding = undefined
       unsettled.clear()
     }
-    if (!serviceUrl || !frameWindow)
+    if (!serviceUrl || !connect)
       return
     const origin = new URL(serviceUrl).origin
-    const current = createContext({
-      channel: interactiveServiceChannel,
-      currentWindow: window,
-      targetWindow: () => frameWindow,
-      expectedSource: () => frameWindow,
-      targetOrigin: origin,
-      expectedOrigin: origin,
-    })
+    const current = connect()
     connection = current
     availability.value = 'loading'
     const connectionId = resume?.connectionId ?? crypto.randomUUID()
     const challenge = crypto.randomUUID()
-    const discover = defineInvoke(current.context, discoverService)
     readiness = (async () => {
       const deadline = Date.now() + 5000
       // Only discovery may retry: the catalog/listener can become ready after iframe load.
-      while (!current.context.signal.aborted) {
+      while (!current.signal.aborted) {
         const attemptSignal = AbortSignal.timeout(Math.min(500, Math.max(1, deadline - Date.now())))
         try {
-          const response = parse(discoveryResultSchema, await discover({ version: 1, connectionId, challenge }, {
-            signal: attemptSignal,
-          }))
+          const response = parse(discoveryResultSchema, await current.discover({ version: 1, connectionId, challenge }, attemptSignal))
           if (connection !== current)
             throw new Error('互動服務頁面已切換。')
           if (response.connectionId !== connectionId || response.challenge !== challenge || response.tools.length === 0)
@@ -79,7 +69,7 @@ export function createInteractiveServiceClient() {
           if (resume) {
             if (response.documentId !== resume.documentId)
               throw new Error('菜單頁面已更換，不能沿用先前的訂單操作。')
-            const status = parse(inspectionResultSchema, await defineInvoke(current.context, inspectService)({ connectionId, documentId: resume.documentId, operationIds: [...unsettled] }, { signal: AbortSignal.timeout(1000) }))
+            const status = parse(inspectionResultSchema, await current.inspect({ connectionId, documentId: resume.documentId, operationIds: [...unsettled] }, AbortSignal.timeout(1000)))
             if (status.connectionId !== connectionId || status.documentId !== resume.documentId || status.pendingCount !== 0 || status.operations.length !== unsettled.size || status.operations.some(operation => !unsettled.has(operation.operationId) || operation.status !== 'settled'))
               throw new Error('先前操作仍未完成或結果無法確認，暫停恢復代操作。')
             unsettled.clear()
@@ -91,7 +81,7 @@ export function createInteractiveServiceClient() {
           return
         }
         catch (caught) {
-          if (current.context.signal.aborted || Date.now() >= deadline)
+          if (current.signal.aborted || Date.now() >= deadline)
             throw caught
           // A well-formed error indicates an incompatible service, not a missing listener.
           if (!attemptSignal.aborted)
@@ -130,12 +120,12 @@ export function createInteractiveServiceClient() {
       // Native execution serialized JSON before reaching the page. Preserve that
       // contract and remove Vue proxies before structured-clone based transport.
       const serializedInput = JSON.parse(JSON.stringify(input))
-      const response = parse(executionResultSchema, await defineInvoke(current.context, executeServiceTool)({
+      const response = parse(executionResultSchema, await current.execute({
         ...currentBinding,
         operationId,
         name: tool.name,
         input: serializedInput,
-      }, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000) }))
+      }, signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000)))
       if (connection !== current || response.connectionId !== currentBinding.connectionId || response.documentId !== currentBinding.documentId || response.operationId !== operationId)
         throw new Error('工具回應不屬於目前頁面。')
       const result = response.result
@@ -161,14 +151,18 @@ export function createInteractiveServiceClient() {
   }
 
   return {
-    activate: (serviceUrl?: string, frameWindow?: Window | null) => activate(serviceUrl, frameWindow),
+    /** Current document identity; undefined until discovery or after activation revokes it. */
+    getDocumentId: () => availability.value === 'ready' ? binding?.documentId : undefined,
+    activate: (serviceUrl?: string, frameWindow?: Window | null) => activate(serviceUrl, serviceUrl && frameWindow ? () => connectWindow(serviceUrl, frameWindow) : undefined),
+    /** Uses the same ownership/recovery coordinator with a trusted native transport. */
+    activateTransport: (serviceUrl: string, connect: () => ServiceConnection) => activate(serviceUrl, connect),
     availability: readonly(availability),
     completionRevision: readonly(completionRevision),
     error: readonly(error),
     unavailableReason: readonly(unavailableReason),
     tools: readonly(tools),
     execute,
-    refresh: () => activate(activeUrl, activeWindow),
+    refresh: () => activate(activeUrl, activeConnect),
     /** Rebinds the same document only after all accepted calls have settled. */
     recover: async () => {
       if (availability.value === 'ready')
@@ -179,7 +173,7 @@ export function createInteractiveServiceClient() {
       if (!resume)
         throw new Error('請先確認菜單頁面已載入。')
       recovery = (async () => {
-        activate(activeUrl, activeWindow, resume)
+        activate(activeUrl, activeConnect, resume)
         await readiness
       })()
       try {
