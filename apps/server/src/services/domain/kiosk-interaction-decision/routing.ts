@@ -4,7 +4,7 @@ import type { DecisionInput, KioskActionCandidate, KioskDecisionTrace } from './
 
 import { normalizeTranscript } from './context'
 import { decisionQuestionBudget } from './contracts'
-import { defaultDecisionInstruction } from './prompt'
+import { defaultDecisionInstruction, recipientQuestion } from './prompt'
 
 /** First gate concerns service admission only, never a tool or item selection. */
 export const admissionQuestion: SystemOneQuestion = {
@@ -106,15 +106,15 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
   })
   const handoff = (reason: KioskInteractionDecision['reason'] = 'UNCERTAIN_OPERATION') => finish({ kind: 'NEEDS_ASSISTANT', reason })
   const menuHandoff = () => handoff(input.decisionState?.priceEvidence ? 'UNCERTAIN_FILTER' : 'MENU_QUERY')
-  async function choose(key: string, choice: SystemOneQuestion) {
+  async function choose(key: string, choice: SystemOneQuestion, evidence = state) {
     weakChoice = false
     if (calls >= Math.min(input.maxQuestions ?? decisionQuestionBudget, decisionQuestionBudget))
       throw new Error('Decision question budget exhausted')
     const startedAt = performance.now()
     calls++
     try {
-      const response = await input.invoke(state, { [key]: choice })
-      exchanges.push({ index: calls, state, questions: { [key]: choice }, answers: response.answers, durationMs: performance.now() - startedAt, status: 'answered' })
+      const response = await input.invoke(evidence, { [key]: choice })
+      exchanges.push({ index: calls, state: evidence, questions: { [key]: choice }, answers: response.answers, durationMs: performance.now() - startedAt, status: 'answered' })
       const answer = response.answers?.[key] as { choice?: unknown, confidence?: unknown } | undefined
       if (!answer || typeof answer.choice !== 'string' || !Object.hasOwn(choice.criteria ?? {}, answer.choice))
         return undefined
@@ -136,7 +136,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       return answer.choice
     }
     catch (error) {
-      exchanges.push({ index: calls, state, questions: { [key]: choice }, durationMs: performance.now() - startedAt, status: 'failed' })
+      exchanges.push({ index: calls, state: evidence, questions: { [key]: choice }, durationMs: performance.now() - startedAt, status: 'failed' })
       throw error
     }
   }
@@ -182,6 +182,17 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       const review = await choose('review', { type: 'choice', instructions: '只核對原句與本次真實結果是否一致；模型草稿不是成功證據。漏掉條件或答錯對象選 DEVIATED，無法驗證選 UNCERTAIN。', criteria: { SATISFIED: '結果完整回答同一需求，且準備的回覆有真實結果支持。', DEVIATED: '答錯對象、改變條件或漏掉部分需求。', UNCERTAIN: '資料不足以證明完整完成。' } })
       return review === 'SATISFIED' ? finish({ kind: 'COMPLETE' }) : handoff(review === 'DEVIATED' ? 'DEVIATED' : 'UNCERTAIN_REVIEW')
     }
+    // Planner-only browser requests have no finite action to disambiguate the
+    // recipient later. Food vocabulary alone made the combined admission gate
+    // accept companion questions. Reuse the independent recipient policy before
+    // service admission; catalog/history cannot establish who is being addressed.
+    if (input.decisionState?.requiresPlanner) {
+      const recipient = await choose('recipient', recipientQuestion, JSON.stringify({ customerUtterance: transcript.normalized, waitingFor: question ? { purpose: question.purpose, question: question.question } : null }))
+      if (recipient === 'OTHER')
+        return finish({ kind: 'IGNORE' })
+      if (recipient !== 'KIOSK')
+        return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_RECIPIENT' })
+    }
     const scope = await choose('admission', admissionQuestion)
     if (scope === 'BACKGROUND')
       return finish({ kind: 'IGNORE' })
@@ -215,6 +226,12 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
         return finish({ kind: 'FAST_ACTION', actionId: skip.id, ...(question?.purpose === 'customer-entry' ? { answeredQuestionId: question.questionId } : {}) })
       return handoff()
     }
+    // Domain compilation already established that no finite action covers
+    // this complete request. Jev still owns service/background admission;
+    // Main owns the full meaning and issues a validated plan, not a guessed
+    // fragment. This does not authorize a browser effect or relax readOnly.
+    if (input.decisionState?.requiresPlanner && !question)
+      return input.decisionState.readOnly ? menuHandoff() : handoff('NEW_REQUEST')
     // Custom policy affects semantic interpretation only after service
     // admission. The program-owned question and candidate contract remain last.
     const policy = [input.policy.decisionInstruction.trim() || defaultDecisionInstruction, input.policy.storeInstruction.trim()].filter(Boolean).join('\n')
@@ -256,6 +273,11 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     if (!groups.length)
       return handoff('NEW_REQUEST')
     const family = await choose('family', { type: 'choice', instructions: '只判斷明確單一需求屬於哪個操作類別，不選商品。不存在的操作、多項需求或無法確定選 HANDOFF。', criteria: { ...Object.fromEntries(groups.map(([id, family]) => [id, family.description])), HANDOFF: '沒有合適類別，或需要保留整句交給助手。' } })
+    // A deliberate handoff says this finite family set cannot cover the
+    // request. Main must plan the whole demand; it is not uncertainty about
+    // whether the customer asked to order. Weak/invalid choices still abstain.
+    if (family === 'HANDOFF')
+      return handoff('NEW_REQUEST')
     if (!family || !groups.some(([id]) => id === family))
       return handoff()
     if (family === 'MENU' && (input.decisionState?.priceEvidence || input.decisionState?.ingredientReferences?.length || input.decisionState?.dietaryReferences?.length || input.decisionState?.unavailableConditionReferences?.length))

@@ -1,7 +1,10 @@
 import type { ConversationContext, ConversationHandoff, ServiceClarification, ServiceRecovery, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { InferOutput } from 'valibot'
 
 import type { PriceConditions, PriceEvidence } from './priceContracts'
 import type { ScopeChoice } from './queryScopeContracts'
+
+import { array, maxLength, minLength, number, object, pipe, string } from 'valibot'
 
 /** Hard per-utterance question ceiling; normal routes do not consume this allowance. */
 export const decisionQuestionBudget = 24
@@ -14,6 +17,8 @@ export interface CatalogMentionEvidence {
 
 /** Safe application-owned interaction facts shared by Jev and Agent requests. */
 export interface KioskDecisionState {
+  /** Domain compiler lacks a complete finite operation; Main must plan after service admission. */
+  requiresPlanner?: boolean
   /** Host response guard for a semantically admitted food query, never order authority. */
   requireMenuRead?: boolean
   /** This Agent task may read menu information, never change the order or pending question. */
@@ -67,7 +72,7 @@ export type KioskInteractionDecision = {
   /** Questions actually evaluated; one HTTP exchange can contain several forwards. */
   modelQuestions?: number
   /** Mechanical refusal cause; never a second interpretation of the utterance. */
-  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'UNCERTAIN_GREETING' | 'UNCERTAIN_SERVICE_REQUEST' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
+  reason?: 'GENERAL_QUESTION' | 'MENU_QUERY' | 'PROVIDER_FAILURE' | 'SYSTEM_ONE_DISABLED' | 'SERVICE_CAPABILITY_UNAVAILABLE' | 'SERVICE_DIALOGUE_PENDING' | 'CANDIDATE_BUDGET' | 'UNSUPPORTED_PRICE' | 'UNSUPPORTED_FILTER' | 'UNCERTAIN_FILTER' | 'UNRESOLVED_FILTER' | 'INVALID_CHOICE' | 'UNCERTAIN_OPERATION' | 'UNCERTAIN_RECIPIENT' | 'UNCERTAIN_GREETING' | 'UNCERTAIN_SERVICE_REQUEST' | 'NEW_REQUEST' | 'DEVIATED' | 'UNCERTAIN_REVIEW'
 } & (
   | { kind: 'SCOPE_CHOICE', choice: ScopeChoice }
   | { kind: 'COMPLETE', confidence?: number }
@@ -115,14 +120,15 @@ export interface InteractionState {
 export type KioskScreen = 'customer_entry' | 'menu' | 'cart_review' | 'item_configuration' | 'request_confirmation' | 'checkout'
 
 /** Presented application-owned question; choices describe effects, never tool arguments. */
-export interface PresentedQuestion {
-  questionId: string
-  purpose: string
-  question: string
-  expiresAt: number
-  /** Legal effects for this turn, including values parsed after the question was presented. */
-  choices: Array<{ id: string, description: string }>
-}
+export const presentedQuestionSchema = object({
+  questionId: pipe(string(), minLength(1), maxLength(120)),
+  purpose: pipe(string(), minLength(1), maxLength(60)),
+  question: pipe(string(), minLength(1), maxLength(500)),
+  expiresAt: number(),
+  choices: pipe(array(object({ id: pipe(string(), minLength(1), maxLength(120)), description: pipe(string(), maxLength(500)) })), maxLength(20)),
+})
+
+export type PresentedQuestion = InferOutput<typeof presentedQuestionSchema>
 
 /** A bounded host invitation; accepting can recommend, never add or pay. */
 export function createRecommendationInvitation(questionId: string, now: number): PresentedQuestion {

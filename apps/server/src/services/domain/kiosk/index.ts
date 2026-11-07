@@ -2,6 +2,7 @@ import type { DeviceSettingKey, DeviceSettings, DeviceSettingsSnapshot, KioskVoi
 
 import type { Database } from '../../../libs/db'
 import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
+import type { BrowserPlan, EffectDecision } from '../browser-ordering/contracts'
 import type { KioskAgentInteractionState } from '../kiosk-agent-interaction'
 
 import { createHash, randomBytes } from 'node:crypto'
@@ -11,6 +12,7 @@ import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzl
 import { array, boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
 import { createConflictError, createForbiddenError, createNotFoundError } from '../../../utils/error'
+import { resolvePlan } from '../browser-ordering/plan'
 import { defaultKioskAgentInteractionState } from '../kiosk-agent-interaction'
 import { assertDetectionZone, parseSettingsChange } from './deviceSettings'
 import { greetingPhraseLimits } from './interactionContracts'
@@ -19,6 +21,8 @@ import * as schema from '../../../schemas'
 
 /** Inputs that create persistent kiosk configuration and interaction records. */
 export interface KioskService {
+  /** Atomically consumes a server-issued semantic plan for this device and current demand. */
+  claimBrowserPlan: (input: { deviceId: string, visitorSessionId: string, plan: BrowserPlan }) => Promise<EffectDecision>
   /** Internal verifier boundary. A device transcript or LLM must never call this operation. */
   recordVerifiedAssociation: (input: VerifiedSessionAssociation) => Promise<void>
   /** Device identity must already be authenticated by the transport. */
@@ -422,6 +426,24 @@ export function createKioskService(db: Database): KioskService {
       expiresAt: retentionExpiry(site.interactionRetentionDays),
     }).returning()
     return visitorSession
+  }
+
+  async function claimBrowserPlan(input: { deviceId: string, visitorSessionId: string, plan: BrowserPlan }): Promise<EffectDecision> {
+    return db.transaction(async (tx) => {
+      // The same visitor row serializes claims and transcript sequence writes,
+      // across requests and Server processes. A lost response remains consumed.
+      const [session] = await tx.select().from(schema.kioskVisitorSessions).where(and(eq(schema.kioskVisitorSessions.id, input.visitorSessionId), eq(schema.kioskVisitorSessions.deviceId, input.deviceId))).for('update')
+      const denied: EffectDecision = { choice: 'CLARIFY', provider: 'unavailable' }
+      if (!session || session.state !== 'active' || session.accessReleasedAt)
+        return denied
+      const entries = await tx.select().from(schema.kioskInteractionEntries).where(eq(schema.kioskInteractionEntries.visitorSessionId, session.id)).orderBy(asc(schema.kioskInteractionEntries.sequence))
+      const admitted = resolvePlan(entries, input.plan)
+      if (!admitted || entries.some(entry => entry.metadata.browserPlanClaim === admitted.key))
+        return denied
+      await tx.update(schema.kioskVisitorSessions).set({ lastSequence: session.lastSequence + 1 }).where(eq(schema.kioskVisitorSessions.id, session.id))
+      await tx.insert(schema.kioskInteractionEntries).values({ visitorSessionId: session.id, sequence: session.lastSequence + 1, kind: 'service_event', content: 'Browser plan admitted once; vendor effect remains unverified.', metadata: { browserPlanClaim: admitted.key, userEntryId: admitted.userEntryId } })
+      return { choice: 'ALLOW', provider: admitted.provider, checks: [{ stage: 'effect', choice: 'ALLOW', provider: admitted.provider, reason: 'Current server-issued plan matched and consumed; fresh document/cart validation still required.' }] }
+    })
   }
 
   async function appendDeviceInteraction(input: {
@@ -962,22 +984,17 @@ export function createKioskService(db: Database): KioskService {
   }
 
   async function ensureDevelopmentProfile(siteId: string) {
-    const currentProfile = await getDeviceProfileForSite(siteId)
+    // Enrollment follows the Site's latest publication. A deleted device can
+    // retain an older assignment for history and must not choose a new device's UI.
+    const currentProfile = await db.query.kioskProfileReleases.findFirst({
+      where: eq(schema.kioskProfileReleases.siteId, siteId),
+      orderBy: [desc(schema.kioskProfileReleases.revision)],
+    })
     if (currentProfile)
       return currentProfile
 
     const draft = await saveProfileDraft({ siteId, name: '開發 POC 點餐助手', snapshot: developmentProfile })
     return await publishProfileDraft({ siteId, draftId: draft.id })
-  }
-
-  async function getDeviceProfileForSite(siteId: string) {
-    const devices = await db.query.kioskDevices.findMany({ where: eq(schema.kioskDevices.siteId, siteId) })
-    for (const device of devices) {
-      const profile = await getDeviceProfile(device.id)
-      if (profile)
-        return profile
-    }
-    return undefined
   }
 
   async function appendInteractionEntry(input: {
@@ -1134,6 +1151,7 @@ export function createKioskService(db: Database): KioskService {
     assertCanManageSite,
     appendInteractionEntry,
     appendDeviceInteraction,
+    claimBrowserPlan,
     createDevice,
     deleteDevice,
     deleteVisitorSessions,

@@ -10,6 +10,21 @@ const context = { transcript: '對', state: { phase: 'ordering' }, conversation:
 const response = (args: unknown) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: JSON.stringify(args) } }] } }] })
 afterEach(() => vi.useRealTimers())
 
+// Report: output/playwright/pb-electron/restored-S04-partial-compact-admission.json.
+it.each([
+  { admission: 'service', disposition: 'assistant', question: '', kind: 'NEEDS_ASSISTANT' },
+  { admission: 'background', disposition: 'ignore', question: '', kind: 'IGNORE' },
+  { admission: 'service', disposition: 'clarify', question: '', kind: 'UNAVAILABLE' },
+  { admission: 'service', disposition: 'assistant', question: '要改餐嗎？', kind: 'UNAVAILABLE' },
+])('validates the question according to the review disposition (%j)', async ({ kind, ...review }) => {
+  const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'UNCERTAIN' })).mockResolvedValueOnce(response(review))
+  const result = await recoverServiceRequest(eligible, { ...context, complete })
+  expect(result.kind).toBe(kind)
+  expect(result).not.toHaveProperty('actionId')
+  if (kind === 'UNAVAILABLE')
+    expect(result.recovery).toMatchObject({ status: 'failed', failure: 'invalid' })
+})
+
 it('recovers admitted service without replaying an operation or inventing Jev confidence', async () => {
   const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'REQUEST' })).mockResolvedValueOnce(response({ admission: 'service', disposition: 'assistant' }))
   const result = await recoverServiceRequest(eligible, { ...context, complete })

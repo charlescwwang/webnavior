@@ -1,4 +1,12 @@
-import type { SystemOnePolicyInput } from '../kiosk-system-one'
+import type { SystemOnePolicyInput, SystemOneQuestion } from '../kiosk-system-one'
+
+// Scope is separate from task content: a perfectly valid menu query can still
+// be addressed to a companion. Only literal customer speech enters this check.
+export const recipientQuestion: SystemOneQuestion = {
+  type: 'choice',
+  instructions: '只看 customerUtterance 的說話對象，不區分詢問或指令，不判斷操作能否執行。直接向本機／店員問好、提問、點餐、要求修改、提出條件或簡短回答，都選 KIOSK。明確叫同伴名字向那個人說話或提問，選 OTHER；「你」指向前面被叫名字的人，不是本機。真的無法判斷對象才選 UNCERTAIN。',
+  criteria: { KIOSK: '向點餐機／店員問好、提出需求或回答，包含操作、更換、價格條件或省略短句，沒有指名向同伴說話。', OTHER: '叫同伴名字向他說話、提問或要求操作；即使談菜單也不是對點餐機。背景聊天也選此項。', UNCERTAIN: '無法確認在對誰說話。' },
+}
 
 /** Application-owned speech scope, shared by ordinary and active-question routes. */
 export const serviceRequestInstruction = [

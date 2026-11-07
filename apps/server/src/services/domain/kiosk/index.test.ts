@@ -42,6 +42,19 @@ describe('kiosk service', () => {
     ])
   })
 
+  // Report: this chat, 2026-10-29; a fresh Kiosk loaded localhost:5166 after PB publication.
+  it('enrolls a new development kiosk with the latest release after an old device is deleted', async () => {
+    const first = await service.registerDevelopmentDevice({ registrationCode: '123456' })
+    await service.disableDevice({ deviceId: first.device.id, siteId: first.device.siteId, userId: 'system-admin' })
+    await service.deleteDevice({ deviceId: first.device.id, siteId: first.device.siteId, userId: 'system-admin' })
+    const draft = await service.saveProfileDraft({ siteId: first.device.siteId, name: 'PB integration', snapshot: profileSnapshot })
+    const published = await service.publishProfileDraft({ siteId: first.device.siteId, draftId: draft.id })
+    const next = await service.registerDevelopmentDevice({ registrationCode: '234567' })
+    const assigned = await service.getDeviceProfile(next.device.id)
+    expect(assigned?.id).toBe(published.id)
+    expect(assigned?.snapshot.interactiveService.url).toBe(profileSnapshot.interactiveService.url)
+  })
+
   it('retains fixed welcome phrases through content edits and immutable publication', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const draft = await service.saveProfileDraft({ siteId: site.id, name: 'Welcome', snapshot: profileSnapshot })

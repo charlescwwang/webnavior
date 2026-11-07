@@ -179,3 +179,32 @@ describe('staged Fast Path routing', () => {
     expect(result).not.toHaveProperty('actionId')
   })
 })
+
+// Report: this chat, Nov1 v2 live PB add-on request. Jev correctly selected
+// family HANDOFF because only MENU was available, but it was mislabeled as
+// uncertain meaning and the complete Main order was made read-only.
+it('hands a positively selected unsupported family to Main without claiming semantic uncertainty', async () => {
+  const invoke = provider(['SERVICE', 'SINGLE', 'HANDOFF'])
+  const result = await decideInteraction({ routing: 'staged', policy, transcript: '請加兩份排骨便當，每份加一份白飯', candidates: [{ id: 'intent:search-menu', description: 'Read actual menu only' }], decisionState: { phase: 'ordering' }, invoke })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
+  expect(invoke).toHaveBeenCalledTimes(3)
+})
+
+it.each(['SERVICE', 'BACKGROUND', 'UNCERTAIN'])('admits service before handing an uncovered browser request to the full planner (%s)', async (admission) => {
+  const invoke = provider(['KIOSK', admission])
+  const result = await decideInteraction({ routing: 'staged', policy, transcript: '把雞腿便當換成控肉便當兩份，備註不要辣', candidates: [{ id: 'intent:search-menu', description: 'Read actual menu only' }], decisionState: { phase: 'ordering', requiresPlanner: true }, invoke })
+  expect(result.kind).toBe(admission === 'SERVICE' ? 'NEEDS_ASSISTANT' : admission === 'BACKGROUND' ? 'IGNORE' : 'UNAVAILABLE')
+  if (admission === 'SERVICE')
+    expect(result.reason).toBe('NEW_REQUEST')
+  expect(invoke).toHaveBeenCalledTimes(2)
+})
+
+// Report: output/playwright/pb-electron/restored-S06-nov4-r1.json.
+it.each(['OTHER', 'UNCERTAIN'])('checks planner-only recipient before service meaning (%s)', async (recipient) => {
+  const invoke = provider([recipient])
+  const result = await decideInteraction({ routing: 'staged', policy, transcript: '同伴，你要兩份還是三份？', candidates, decisionState: { phase: 'ordering', requiresPlanner: true, references: [{ refId: 'test-product', label: '測試餐點' }] }, conversation: { messages: [{ role: 'user', content: '先前正在點餐' }] }, invoke, includeTrace: true })
+  expect(result.kind).toBe(recipient === 'OTHER' ? 'IGNORE' : 'UNAVAILABLE')
+  expect(invoke).toHaveBeenCalledOnce()
+  expect(Object.keys(invoke.mock.calls[0][1])).toEqual(['recipient'])
+  expect(JSON.parse(invoke.mock.calls[0][0])).toEqual({ customerUtterance: '同伴，你要兩份還是三份？', waitingFor: null })
+})

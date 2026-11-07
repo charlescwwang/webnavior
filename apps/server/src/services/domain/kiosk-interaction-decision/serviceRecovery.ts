@@ -4,14 +4,17 @@ import type { DecisionConversation } from './context'
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
 import { serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
-import { array, check, maxLength, minLength, object, optional, picklist, pipe, safeParse, strictObject, string } from 'valibot'
+import { array, check, maxLength, object, optional, picklist, pipe, safeParse, strictObject, string } from 'valibot'
 
 export type RecoveryProgress = Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>
 const choiceSchema = strictObject({ choice: picklist(['REQUEST', 'BACKGROUND', 'UNCERTAIN']) })
 const reviewSchema = pipe(strictObject({
   admission: picklist(['service', 'background', 'uncertain']),
   disposition: picklist(['assistant', 'clarify', 'ignore', 'abstain']),
-  question: optional(pipe(string(), minLength(1), maxLength(200))),
+  // The provider schema permits an empty unused question. The disposition
+  // invariant below still requires a nonblank question for clarification and
+  // rejects any actual question accompanying an assistant/ignore decision.
+  question: optional(pipe(string(), maxLength(200))),
   requestKind: optional(picklist(['new-request', 'clarification-answer'])),
 }), check(value => (value.admission === 'service' && ['assistant', 'clarify'].includes(value.disposition) && (value.disposition === 'clarify' ? Boolean(value.question?.trim()) : !value.question)) || (value.admission === 'background' && value.disposition === 'ignore' && !value.question) || (value.admission === 'uncertain' && value.disposition === 'abstain' && !value.question)))
 const responseSchema = object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: string(), arguments: string() }) })) }) })) })

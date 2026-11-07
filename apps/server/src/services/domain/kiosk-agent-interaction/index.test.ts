@@ -2,6 +2,35 @@ import { describe, expect, it } from 'vitest'
 
 import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, hasMenuReply, queryClarification, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
 
+// Report: this chat, 2026-10-30; daily catalog growth must not prune PB configuration versions or cart references.
+it('preserves complete Host question context when a large PB catalog is compacted', () => {
+  const confirmedAddition = { productRef: 'new', productName: '每日新品', quantity: 1, unitPrice: 20, note: '', selection: { version: 'configuration', variantRef: '', choices: [] } }
+  const payload = { source: 'browser', dataOnly: true, cart: { version: 'cart', lines: [] }, confirmedAddition, selectedProduct: { productRef: 'new', name: '每日新品' }, explanation: '只允許確認的完整設定', products: Array.from({ length: 30 }, (_, index) => ({ ref: `p-${index}`, name: `每日品項${index}`, price: index, configurations: [{ description: '規格'.repeat(1000) }] })) }
+  const result = JSON.parse(compactToolResultForModel('browser_cart_get', JSON.stringify(payload), undefined))
+  expect(result.confirmedAddition).toEqual(confirmedAddition)
+  expect(result.selectedProduct).toEqual(payload.selectedProduct)
+  expect(result.explanation).toBe(payload.explanation)
+  expect(result.configurationLookupRequired).toBe(true)
+})
+
+it('preserves PB cart identities and the whole product index when the current catalog requires configuration lookup', () => {
+  const products = Array.from({ length: 30 }, (_, index) => ({ ref: `p-${index}`, name: `每日餐點${index}`, price: 20 + index, priceType: 1, configurations: [{ version: `configuration-${index}`, variantRef: '', groups: Array.from({ length: 4 }, (_, group) => ({ name: `選項群組${group}`, choices: Array.from({ length: 8 }, (_, choice) => ({ ref: `a-${group}-${choice}`, name: `可選配餐${choice}`, unitPrice: 5, maximum: 1 })) })) }] }))
+  const cart = { version: 'observed-cart', subtotal: 30, lines: [{ ref: 'first-line', productRef: 'existing', name: '同名餐', description: '小份', quantity: 1, unitPrice: 10 }, { ref: 'second-line', productRef: 'existing', name: '同名餐', description: '大份', quantity: 2, unitPrice: 10 }] }
+  const result = JSON.parse(compactToolResultForModel('browser_cart_get', JSON.stringify({ source: 'browser', ok: true, dataOnly: true, cart, products })))
+  expect(result.cart.version).toBe('observed-cart')
+  expect(result.cart.lines.map((line: { ref: string }) => line.ref)).toEqual(['first-line', 'second-line'])
+  expect(result.products.map((product: { ref: string }) => product.ref)).toEqual(products.map(product => product.ref))
+  expect(result.configurationLookupRequired).toBe(true)
+  expect(result.products[0]).not.toHaveProperty('configurations')
+  expect(JSON.stringify(result).length).toBeLessThanOrEqual(8_000)
+})
+
+it('never applies owned Menu cart compaction to a browser receipt with leftover Menu catalog context', () => {
+  const result = JSON.parse(compactToolResultForModel('browser_cart_get', JSON.stringify({ ok: true, source: 'browser', cart: { version: 'pb-cart', lines: [{ ref: 'pb-line' }] } }), new Set(['owned-menu-item'])))
+  expect(result.cart.version).toBe('pb-cart')
+  expect(result.cart.lines).toEqual([{ ref: 'pb-line' }])
+})
+
 it('keeps read presentation while removing repeated complete catalog details', () => {
   const original = JSON.stringify({ catalog: { items: [{ id: 'dish', name: '水餃' }] }, categories: ['主食'], ingredientDefinitions: [{ id: 'pork' }], items: [{ id: 'dish', name: '水餃', description: '長介紹' }], possibleItems: [{ id: 'dish', name: '水餃' }], presentation: { itemIds: ['dish'] }, matchKind: 'possible' })
   const compacted = JSON.parse(compactToolResultForModel('menu_get', original, new Set(['dish'])))

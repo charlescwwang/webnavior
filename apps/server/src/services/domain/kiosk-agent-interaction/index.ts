@@ -148,7 +148,8 @@ export function compactToolResultForModel(name: string, content: string, catalog
   // Persisted receipts retain environment/provenance. The model only needs
   // actual ingredients and operation status, not deployment labels to narrate.
   let parsed = parseToolPayload(content)
-  if (parsed && catalogItemIds) {
+  const browser = name.startsWith('browser_') && parsed?.source === 'browser'
+  if (parsed && catalogItemIds && !browser) {
     // The latest context already owns full cart/selection state. Retain this
     // receipt's changed line/outcome, rather than replaying older snapshots.
     const { cart: _cart, selection: _selection, ...receipt } = parsed
@@ -177,6 +178,9 @@ export function compactToolResultForModel(name: string, content: string, catalog
   const payload = parseToolPayload(content)
   if (!payload)
     return boundedToolPreview(name, content.length, content)
+
+  if (name.startsWith('browser_') && payload.source === 'browser')
+    return compactBrowserResult(payload, content.length)
 
   const compacted = {
     ...compactTopLevelPayload(payload),
@@ -342,6 +346,29 @@ function compactTopLevelPayload(payload: Record<string, unknown>) {
     compacted[key] = compactJsonValue(value)
   }
   return compacted
+}
+
+/** Preserve PB identity/version contracts; generic depth pruning destroys choice schemas. */
+function compactBrowserResult(payload: Record<string, unknown>, originalCharacterCount: number) {
+  const cart = isRecord(payload.cart)
+    ? { version: payload.cart.version, subtotal: payload.cart.subtotal, pickup: payload.cart.pickup, lines: Array.isArray(payload.cart.lines) ? payload.cart.lines.map(line => isRecord(line) ? { ref: line.ref, productRef: line.productRef, name: line.name, description: line.description, quantity: line.quantity, unitPrice: line.unitPrice } : line) : undefined }
+    : undefined
+  const products = Array.isArray(payload.products)
+    ? payload.products.map(product => isRecord(product) ? { ref: product.ref, name: product.name, kind: product.kind, price: product.price, priceType: product.priceType, configurations: product.configurations } : product)
+    : undefined
+  const receipt = { ok: payload.ok, source: 'browser', status: payload.status, dataOnly: payload.dataOnly, customerMessage: payload.customerMessage, effectMessage: payload.effectMessage, pendingCustomerChoice: payload.pendingCustomerChoice, selectedProduct: payload.selectedProduct, originalRequest: payload.originalRequest, previousProposal: payload.previousProposal, confirmedAddition: payload.confirmedAddition, explanation: payload.explanation, customerBoundary: payload.customerBoundary, requiredAction: payload.requiredAction, effect: payload.effect, cart, products, product: payload.product, modelContextCompacted: true, originalCharacterCount }
+  let serialized = JSON.stringify(receipt)
+  if (serialized.length <= maximumModelToolResultCharacters)
+    return serialized
+  // The whole index remains available, but none of its configuration trees is
+  // partially truncated. Ask for one exact current product's full configuration.
+  const index = products?.map(product => isRecord(product) ? { ref: product.ref, name: product.name, kind: product.kind, price: product.price, priceType: product.priceType } : product)
+  serialized = JSON.stringify({ ...receipt, products: index, configurationLookupRequired: true, nextStep: 'Use browser_product_get with a names array of exact requested product names for their complete current configurations. Do not invent option references or configuration versions.' })
+  if (serialized.length <= maximumModelToolResultCharacters)
+    return serialized
+  // No partial configuration or partial cart may be mistaken for a complete
+  // observation. A single-product lookup can still resolve a large index.
+  return JSON.stringify({ ok: false, source: 'browser', dataOnly: true, modelContextCompacted: true, originalCharacterCount, error: 'The complete observation exceeds model capacity. Use browser_product_get for one exact product; use the visible cart for a cart too large to represent completely.' })
 }
 
 function compactMenuItem(value: unknown, includeDescription: boolean) {

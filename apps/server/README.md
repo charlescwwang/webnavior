@@ -10,6 +10,11 @@ HTTP and WebSocket backend for Webnavior. This app owns auth, kiosk management, 
 - Forwards GenAI requests to the configured upstream gateway and records billing from usage.
 - Exports traces, metrics, and logs through OpenTelemetry.
 
+Development Kiosk enrollment uses a 30-day HttpOnly, SameSite=Lax device cookie
+(Secure on HTTPS). The development route remains disabled in production, and
+every authenticated request still checks server-side device/credential revocation.
+Visitor/admin sessions and vendor login expiry are separate policies.
+
 ## How To Use It
 
 Install dependencies from the repo root and run scoped commands:
@@ -191,6 +196,23 @@ Jev still inspects `/health.model` or `/health.model_id` and calls `/v1/systemon
 
 All authenticated runtime decisions use the same staged policy:
 
+Planner-only browser requests first reuse the independent `recipient` question
+(KIOSK / OTHER / UNCERTAIN) with only the current utterance and active question.
+OTHER is ignored before any service task; uncertainty does not become permission.
+KIOSK then continues to ordinary admission. This prevents catalog vocabulary or
+prior ordering history from treating a companion question as an order. It uses
+the existing question budget; it does not authorize an action or add a Main call.
+
+The opt-in recipient contrast probe reads the configured Jev profile into an
+isolated local test database and makes six bounded requests without browser
+actions or configuration writes:
+
+```sh
+KIOSK_PB_ADMISSION_PROBE=1 KIOSK_PB_ADMISSION_VARIANT=recipient-only pnpm -F @proj-airi/server run apply:env -- vitest run tests/experiments/pbAdmissionProbe.test.ts
+```
+
+Its fixed controls are a diagnostic, not full reception acceptance.
+
 1. `admission` has exactly SERVICE / GREET / BACKGROUND / UNCERTAIN. It checks
    service relevance and recipient together, without exposing operations.
 2. `purpose` distinguishes a single operation, a live-question answer, a rich
@@ -316,6 +338,46 @@ authority. Identity/phone information remains available.
 Menu verification targets the disputed names using `menu_get.verifyClaim`, not
 an unrelated recommendation batch. Current-meal cancellation and corrective
 availability inquiries use finite choices tied to the browser's live question.
+
+PB cart-plan admission uses device-authenticated
+`POST /api/kiosk/visitor-sessions/:id/browser-plan`. A proposal must match a
+Server-issued Main tool call (complete arguments/current user entry/read-only
+policy), or a Server-recorded bounded Jev add intent plus its closed literal slot
+compiler. A transaction locks the visitor row, verifies the latest demand, and
+persists one-use consumption before the browser acts. Client interaction metadata
+cannot create Server authority; its schema discards those reserved fields.
+Exact additions compiled by the finite literal path and ordinary explicit single-row
+edits retain plan-only admission. Main-authored additions (including blank notes),
+contextual row references, multi-row totals/groups and existing-configuration replacements also
+receive bounded read-only semantic verification after the one-use claim. It
+receives the fresh read-only cart snapshot (including an explicitly empty cart)
+and this same utterance’s verified completed effects,
+checks the selected configuration and independently extracts the requested count
+scope. Missing cart evidence remains unknown; a proposed action cannot invent
+existing meals. Existing-cart checks use Main to classify the complete request rather than
+letting preservation compete with real additions or replacements. Only a proposed
+quantity set equal to the observed selected count, with current cart evidence and
+no earlier completed effect in that demand, can independently resolve to
+`PRESERVE`. This result authorizes no write: Host obtains a fresh owned cart
+review instead. Other changes retain ordinary purpose/configuration/count checks.
+Existing-cart checks also avoid
+letting a confident finite quantity label redirect a configuration replacement; code subtracts retained rows when the count refers to an entire product or
+configuration. Quantity-only extraction separates selected-row, matching-configuration
+and whole-product scope, using observed scope totals without proposed quantities.
+It does not request editable-note or diagnostic prose fields; configuration consent
+and unique structured counts remain mandatory. An impossible single-row total
+returns the complete grouped-tool argument requirements before any write.
+A new user entry or customer boundary invalidates a delayed
+verification result. Semantic checks have a 30-second per-request cap, bounded
+output, and independent replacement incoming/outgoing meal counts. Option totals for additions and replacements
+follow the separately validated per-serving configuration. Addition extraction
+returns the original complete groups; code subtracts only verified additions with
+the exact Host serving identity and note from this same turn. Opaque serving keys
+and completion counters are excluded from model input; unknown completion cannot
+authorize replay. failures remain non-authorizing.
+`browser_semantic_decision` events record bounded outcomes and duration to distinguish
+model failures from browser execution. A rejected or lost claim cannot authorize replay. Fresh
+browser/cart identity and full-effect readback remain separate requirements.
 
 Main Agent continuations retain the completed tool exchanges of the current
 customer request, paired by `toolCallId` within that latest user turn. Each result

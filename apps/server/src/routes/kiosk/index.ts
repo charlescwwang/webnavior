@@ -18,11 +18,13 @@ import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
+import { browserOrderingLimits, decideAnswer, decideEffect, findPresentedQuestion } from '../../services/domain/browser-ordering'
+import { browserAnswerSchema, browserEffectSchema, browserPlanSchema } from '../../services/domain/browser-ordering/contracts'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { clarificationTool, currentContextInstructions, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
 import { buildConversationContext, conversationEntries } from '../../services/domain/kiosk-interaction-decision/context'
-import { createRecommendationInvitation } from '../../services/domain/kiosk-interaction-decision/contracts'
+import { createRecommendationInvitation, presentedQuestionSchema } from '../../services/domain/kiosk-interaction-decision/contracts'
 import { resolvePhoneChoice } from '../../services/domain/kiosk-interaction-decision/phoneResolution'
 import { resolvePriceHandoff } from '../../services/domain/kiosk-interaction-decision/priceResolution'
 import { scopeInstructions, scopeTool } from '../../services/domain/kiosk-interaction-decision/queryScopeContracts'
@@ -35,6 +37,9 @@ import { isLoopbackOrigin } from '../../utils/origin'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
 export const kioskDeviceCookieName = 'airi_kiosk_device'
+// Device enrollment survives app restarts; this is separate from visitor/admin sessions.
+// The server still checks the credential's revocation on every authenticated request.
+const developmentDeviceCookieMaxAge = 30 * 24 * 60 * 60
 
 const developmentRegistrationSchema = object({
   registrationCode: pipe(string(), regex(/^\d{6}$/, 'registrationCode must contain exactly six digits')),
@@ -83,14 +88,6 @@ const interactionStateSchema = object({
   pendingIntent: optional(pipe(string(), maxLength(80))),
   selectedItemName: optional(pipe(string(), maxLength(120))),
   seating: optional(object({ partySize: optional(pipe(number(), integer(), minValue(1), maxValue(20))), ready: boolean(), question: pipe(string(), maxLength(500)) })),
-})
-
-const presentedQuestionSchema = object({
-  questionId: pipe(string(), minLength(1), maxLength(120)),
-  purpose: pipe(string(), minLength(1), maxLength(60)),
-  question: pipe(string(), minLength(1), maxLength(500)),
-  expiresAt: number(),
-  choices: pipe(array(object({ id: pipe(string(), minLength(1), maxLength(120)), description: pipe(string(), maxLength(500)) })), maxLength(20)),
 })
 
 // HTTP carries browser-issued price choices; execution still compares their ID
@@ -167,6 +164,8 @@ const interactionDecisionSchema = object({
   review: optional(object({ answer: pipe(string(), maxLength(2_000)), observation: pipe(string(), maxLength(4_000)) })),
   candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
   decisionState: optional(object({
+    requiresPlanner: optional(boolean()),
+    readOnly: optional(boolean()),
     clarificationOffer: optional(object({ id: pipe(string(), maxLength(120)), label: pipe(string(), maxLength(120)) })),
     priceEvidence: optional(priceEvidenceSchema),
     incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: optional(boolean()) })),
@@ -269,6 +268,100 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     return c.json({ device: { id: device.id, siteId: device.siteId } })
   })
 
+  routes.post('/visitor-sessions/:visitorSessionId/browser-answer', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const parsed = safeParse(browserAnswerSchema, await c.req.json().catch(() => null))
+    if (!parsed.success)
+      throw createBadRequestError('Invalid browser question answer', 'INVALID_REQUEST')
+    const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
+    const current = transcript.entries.findLast(entry => entry.kind === 'user_text')
+    const pending = findPresentedQuestion(transcript.entries, parsed.output.questionId)
+    if (transcript.session.state !== 'active' || !current || current.content.trim() !== parsed.output.transcript.trim() || !pending)
+      return c.json({ kind: 'UNCERTAIN', provider: 'unavailable' })
+    const modelName = await options.runtimeModelPolicy.modelFor('chat')
+    const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
+    const result = await decideAnswer(parsed.output, pending, { finite, complete: async (body) => {
+      if (!modelName)
+        throw new Error('Main model is unavailable.')
+      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(12000)]) })
+    } })
+    // Model IO can outlive this utterance. Neither an old answer nor a new
+    // customer's speech may consume the question from this session turn.
+    const latest = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: transcript.session.id })
+    if (latest.session.state !== 'active' || latest.entries.findLast(entry => entry.kind === 'user_text')?.id !== current.id)
+      return c.json({ kind: 'UNCERTAIN', provider: 'unavailable' })
+    return c.json(result)
+  })
+
+  routes.post('/visitor-sessions/:visitorSessionId/browser-plan', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const parsed = safeParse(browserPlanSchema, await c.req.json().catch(() => null))
+    if (!parsed.success)
+      throw createBadRequestError('Invalid browser plan', 'INVALID_REQUEST')
+    const visitorSessionId = c.req.param('visitorSessionId')
+    const admitted = await options.kioskService.claimBrowserPlan({ deviceId: device.id, visitorSessionId, plan: parsed.output })
+    if (admitted.choice !== 'ALLOW')
+      return c.json(admitted)
+    const effect = parsed.output.effect
+    // Ordinary exact single-row operations retain plan-only admission. Relaxing
+    // literal targeting for configurations or multi-row totals needs the richer
+    // read-only check before any browser dispatch. Claim first so unissued or
+    // repeated calls cannot trigger model work; a rejected claim is not replayed.
+    const target = effect.cartTarget
+    // Empty planner notes are not proof that the customer requested none.
+    // Main omitted both preferences in a split order; validate its complete
+    // serving even when the proposed note is blank. The finite literal compiler
+    // retains its separate exact-slot admission for simple complete additions.
+    const resolveTarget = (target && ((target.groupSize ?? 1) > 1 || target.others.length > 0 || effect.action === 'replace' || !effect.transcript.replaceAll(/\s/g, '').includes(target.selected.name.replaceAll(/\s/g, '')))) || (effect.serving && (effect.note.trim().length > 0 || (parsed.output.source === 'main' && effect.action === 'add')))
+    if (!resolveTarget)
+      return c.json(admitted)
+    const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId })
+    const current = transcript.entries.findLast(entry => entry.kind === 'user_text')
+    if (transcript.session.state !== 'active' || !current || current.content.trim() !== effect.transcript.trim())
+      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
+    const modelName = await options.runtimeModelPolicy.modelFor('chat')
+    const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
+    const semanticStartedAt = Date.now()
+    const result = await decideEffect(effect, { finite, complete: async (body) => {
+      if (!modelName)
+        throw new Error('Main model is unavailable.')
+      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(browserOrderingLimits.effectModelRequestMs)]) })
+    } })
+    // Preserve the independent check even when a Host target guard later stops
+    // the plan. This is diagnostic evidence, never a second execution claim.
+    await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId, kind: 'service_event', content: JSON.stringify({ userEntryId: current.id, toolName: parsed.output.toolName, decision: result, durationMs: Date.now() - semanticStartedAt }), metadata: { source: 'browser_semantic_decision' } })
+    // A newer demand or customer boundary revokes this read-only adjudication,
+    // even though the old executable plan has already been consumed once.
+    const latest = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId })
+    if (latest.session.state !== 'active' || latest.entries.findLast(entry => entry.kind === 'user_text')?.id !== current.id)
+      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
+    return c.json({ ...result, checks: [...(admitted.checks ?? []), ...(result.checks ?? [])] })
+  })
+
+  routes.post('/visitor-sessions/:visitorSessionId/browser-effect', async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const parsed = safeParse(browserEffectSchema, await c.req.json().catch(() => null))
+    if (!parsed.success)
+      throw createBadRequestError('Invalid browser effect proposal', 'INVALID_REQUEST')
+    const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
+    const current = transcript.entries.findLast(entry => entry.kind === 'user_text')
+    // A delayed tool proposal cannot borrow another customer's or newer turn's
+    // speech. This check is repeated after the read-only semantic IO below.
+    if (transcript.session.state !== 'active' || !current || current.content.trim() !== parsed.output.transcript.trim())
+      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
+    const modelName = await options.runtimeModelPolicy.modelFor('chat')
+    const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
+    const result = await decideEffect(parsed.output, { finite, complete: async (body) => {
+      if (!modelName)
+        throw new Error('Main model is unavailable.')
+      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(browserOrderingLimits.effectModelRequestMs)]) })
+    } })
+    const latest = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: transcript.session.id })
+    if (latest.session.state !== 'active' || latest.entries.findLast(entry => entry.kind === 'user_text')?.id !== current.id)
+      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
+    return c.json(result)
+  })
+
   routes.get('/bootstrap', async (c) => {
     const credential = getCookie(c, kioskDeviceCookieName)
     if (!credential)
@@ -284,6 +377,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       // configured Webnavior test Site without touching production devices.
       const replacement = await options.kioskService.registerDevelopmentDevice({ registrationCode: createDevelopmentRegistrationCode() })
       setCookie(c, kioskDeviceCookieName, replacement.credential, {
+        maxAge: developmentDeviceCookieMaxAge,
         httpOnly: true,
         path: '/api/kiosk',
         sameSite: 'Lax',
@@ -400,7 +494,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       presenceState: result.output.presenceState,
       transcript: result.output.transcript,
     }
-    const decide = async (invoke: typeof decisionInput.invoke, progress?: (event: Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>) => Promise<void>, signal: AbortSignal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(result.output.budgetMs ?? serviceRecoveryLimits.turnMs)])) => {
+    const runDecision = async (invoke: typeof decisionInput.invoke, progress?: (event: Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>) => Promise<void>, signal: AbortSignal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(result.output.budgetMs ?? serviceRecoveryLimits.turnMs)])) => {
       const completeResolution = async (body: Record<string, unknown>) => {
         const modelName = await options.runtimeModelPolicy.modelFor('chat')
         if (!modelName)
@@ -447,6 +541,13 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       if (result.output.visitorSessionId && recovered.recovery?.rounds?.length)
         await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: JSON.stringify({ kind: 'service_recovery_metrics', ...recovered.recovery }), metadata: { source: 'service_recovery_metrics', utteranceId: result.output.utteranceId } })
       return recovered
+    }
+    const decide: typeof runDecision = async (...args) => {
+      const decision = await runDecision(...args)
+      if (decision.kind === 'FAST_ACTION' && decision.actionId === 'intent:add-item' && result.output.visitorSessionId) {
+        await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: 'Bounded PB intent selected; no cart effect yet.', metadata: { browserAuthority: { source: 'system-one', actionId: decision.actionId, transcript: result.output.transcript, utteranceId: result.output.utteranceId } } })
+      }
+      return decision
     }
     return c.json(result.output.segmented
       ? await decisionStages.start({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId }, (checkpoint, progress, signal) => decide(checkpoint(options.systemOne!.decide), progress, signal), { signal: c.req.raw.signal, timeoutMs: result.output.budgetMs })
@@ -645,13 +746,14 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     }
 
     if (content) {
-      await options.kioskService.appendDeviceInteraction({
+      const entry = await options.kioskService.appendDeviceInteraction({
         content,
         kind: 'user_text',
-        metadata: result.output.utteranceId ? { utteranceId: result.output.utteranceId } : {},
+        metadata: { ...(result.output.utteranceId ? { utteranceId: result.output.utteranceId } : {}), browserReadOnly: result.output.decisionState?.readOnly === true || result.output.decisionState?.context?.readOnly === true },
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
+      transcript.entries.push(entry)
     }
     for (const toolResult of result.output.toolResults) {
       await options.kioskService.appendDeviceInteraction({
@@ -722,7 +824,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       await options.kioskService.appendDeviceInteraction({
         content: JSON.stringify(answer.toolCalls),
         kind: 'tool_call',
-        metadata: { toolCalls: answer.toolCalls },
+        metadata: { toolCalls: answer.toolCalls, browserAuthority: { source: 'main', userEntryId: transcript.entries.findLast(entry => entry.kind === 'user_text')?.id, readOnly: transcript.entries.findLast(entry => entry.kind === 'user_text')?.metadata.browserReadOnly === true || result.output.decisionState?.readOnly === true || result.output.decisionState?.context?.readOnly === true } },
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -839,6 +941,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
 
     const { credential, device } = await options.kioskService.registerDevelopmentDevice(result.output)
     setCookie(c, kioskDeviceCookieName, credential, {
+      maxAge: developmentDeviceCookieMaxAge,
       httpOnly: true,
       path: '/api/kiosk',
       sameSite: 'Lax',
@@ -1091,7 +1194,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
           await input.kioskService.appendDeviceInteraction({
             content: JSON.stringify(answer.toolCalls),
             kind: 'tool_call',
-            metadata: { toolCalls: answer.toolCalls },
+            metadata: { toolCalls: answer.toolCalls, browserAuthority: { source: 'main', userEntryId: input.transcript.entries.findLast(entry => entry.kind === 'user_text')?.id, readOnly: input.transcript.entries.findLast(entry => entry.kind === 'user_text')?.metadata.browserReadOnly === true || input.decisionState?.readOnly === true || input.decisionState?.context?.readOnly === true } },
             deviceId: input.deviceId,
             visitorSessionId: input.transcript.session.id,
           })
@@ -1188,6 +1291,38 @@ async function finishConversationReply(
 // A semantic food handoff must obtain a fresh read before any generated
 // final answer or order change. Internal catalog reads do not finish presentation.
 function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
+  if (input.tools?.some(tool => tool.function.name === 'browser_observe')) {
+    // External pages have no owned conversation-context snapshot. Every new
+    // turn needs fresh browser evidence; history alone cannot provide a receipt.
+    const cart = input.tools.some(tool => tool.function.name === 'browser_cart_get')
+    const conversation = input.tools.some(tool => tool.function.name === 'browser_respond')
+    for (const result of input.toolResults ?? []) {
+      if (!result.name.startsWith('browser_cart_'))
+        continue
+      try {
+        const payload = JSON.parse(result.content)
+        const operations: Record<string, string> = { add: 'browser_cart_add', quantity: 'browser_cart_quantity', remove: 'browser_cart_remove', replace: 'browser_cart_replace' }
+        const selectedAddition = payload?.source === 'browser' && payload?.dataOnly === true && (payload.selectedProduct || payload.confirmedAddition)
+        const required = selectedAddition ? 'browser_cart_add' : payload?.source === 'browser' && payload?.status === 'proposal_rejected' && operations[payload.requiredAction]
+        if (required && input.tools.some(tool => tool.function.name === required))
+          return { tools: input.tools, temperature: 0, tool_choice: { type: 'function' as const, function: { name: required } } }
+      }
+      catch { /* Invalid receipt data cannot constrain or authorize a write. */ }
+    }
+    const onlyPreparation = input.toolResults?.length && input.toolResults.every((result) => {
+      if (!result.name.startsWith('browser_'))
+        return false
+      try {
+        return JSON.parse(result.content)?.dataOnly === true
+      }
+      catch { return false }
+    })
+    // Internal cart/catalog preparation cannot finish either a customer query
+    // or a mutation request. Obtain a presented read, clarification, or effect.
+    if (onlyPreparation)
+      return { tools: input.tools, temperature: 0, tool_choice: 'required' as const }
+    return { tools: input.tools, temperature: 0, ...(input.toolResults?.length ? {} : { tool_choice: cart && !conversation ? { type: 'function' as const, function: { name: 'browser_cart_get' } } : 'required' as const }) }
+  }
   // Read-only tool selection favors repeatable semantic decisions over prose variation.
   const generation = input.decisionState?.readOnly ? { temperature: 0 } : {}
   // Phone entry allows service explanations, not menu reads or commerce.
@@ -1309,7 +1444,31 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
  * Keep instructions in their original precedence order, but serialize them
  * into one leading message so the same request shape works across providers.
  */
-function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile'>) {
+function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile' | 'tools'>) {
+  // Browser services publish their own capabilities. Owned Menu/POS prompts
+  // refer to a different state machine and must not govern this external page.
+  if (input.tools?.some(tool => tool.function.name === 'browser_observe')) {
+    return [
+      createCharacterInstructions(input.profile.snapshot),
+      '目前服務為外站點餐網頁。僅使用本輪提供的 browser 工具與最新回執；不要呼叫或假設 Menu/POS 工具。品名、價格、選項、購物車狀態以最新網頁工具結果為準，不以常識補價格。',
+      '顧客同時問多道餐點，逐一查證或清空搜尋讀取全部目前商品。顧客問幾份多少錢時，用 browser_quote 計算指定數量；這是查價，不是加購授權。',
+      '「我要一份便當」等未指定具體餐點時，先清空搜尋取得目前選項，再用 browser_clarify_product 詢問。不可自行挑第一道。短答承接上一個實際問題，指涉仍不明就釐清。',
+      '每次查詢回執中的 customerMessage 是程式依實際網頁產生的顧客資訊。不要更改其中的售價或把查價說成已加入。未提供加購、修改或付款工具時，明確說明尚不能代為完成，不聲稱成功。',
+      'browser_observe purpose=information 只是完整菜單資料，dataOnly:true 不代表已依顧客偏好、排除或條件完成篩選。保留近期已表達的條件，依完整需求選出當前 productRefs，再呼叫 browser_present 呈現；不要直接重列全部商品。原頁資料不足以確認過敏原、熱量等條件時，使用 browser_respond kind=information-unavailable 明確說無法確認，不猜符合項目或排序。',
+      '本輪有 browser_cart 工具時，明確加購／改數量／移除才可操作。先 browser_cart_get 取得最新 version、productRef、lineRef 與價格，再呼叫對應工具；每次寫入使用最新回執版本，不用歷史猜參數。同名多行先核對 productRef、configuration 與加購／備註。不同商品或無法辨識配置時才問；同商品同配置僅分列時，不要反覆請顧客選內部行。要求品項總數時，用總數減去本次保留的同品項行數量，作為指定行的最後數量；不要將品項總數直接填入單行。同商品、同配置、同單價的分列，可使用 browser_cart_quantity 的 lineRefs 指定這些行（包含 lineRef），quantity 填這組最後合計，由程式逐步調整與核對，不用顧客選內部行。總數較小時優先使用這種整組調整，不先自行刪行。整組取消則 browser_cart_remove 提供相同 lineRefs；不同加購／備註／單價不可合組，需按完整需求分別處理或澄清。查價不加車。未要求的規格／加購不自行選。selection 已完成的加購不要再重複寫進 note；note 只放顧客另外提出的自由備註／偏好，沒有就空字串，除非顧客明確要求也寫進備註。替換需先驗證新餐加入，再移除明確的原行；部分完成或 unknown 如實說明，不能重送未知操作。任何情況都不得送出訂單或付款。',
+      '初始資料若 configurationLookupRequired:true，代表目前只有完整商品索引；先用 browser_product_get 的 names 陣列一次查本句需要的具體商品，取得完整規格與版本，不能把未回傳的規格當作沒有選項。',
+      '商品 configurations 是當次規格。加購／替換必須傳 selection:{version:所選規格的version,variantRef:所選規格的variantRef,choices:[{ref,quantity}]}；基本商品也要帶該規格版本與空 choices。unitPrice 是基本單價加每份所選付費選項，不能把白飯等付費項目寫成免費 note。必選組必須明確問顧客，不能採用預設第一項；顧客未要求的可選加購保持空白。規格無法完整滿足整句時先詢問，不先加入缺少加購的基本餐。',
+      '購物車寫入回執 status:verified 表示該項操作已完成，不可再次送出相同操作或重用舊版本；只有原句還有未完成的其他明確需求才選下一筆工具，否則結束。repeated:true 也是已完成的原回執，不是要重試。',
+      'customerBoundary:review-required 表示原購物車未完成交接，沒有提供其內容；不能說購物車是空的或猜舊餐點。仍可用商品工具回答菜單查詢；顧客要求操作時，使用 browser_respond kind=clarification 呈現 Host 的現場交接提示，不自行清空、接手或要求顧客提供帳密。',
+      '一般招呼、了解、語音收件確認與意思不明的非操作對話，使用 browser_respond，不需要呼叫商品查詢；這個工具不能回答商品／店家事實或宣稱操作完成。目前有效點餐問題的回答仍先 browser_cart_get，不可把「對」當成泛泛的了解而跳過問題。',
+      '顧客要點餐但未指明商品時，呼叫 browser_clarify_product 或 browser_observe purpose=choose_product 建立實際品項問題；不得自行選第一項，也不能只列菜單後結束。查有沒有或價格仍只查資訊，不建立加購確認。',
+      'browser_cart_get 回傳 selectedProduct 表示短答只選了這項，還沒加購：依 originalRequest 提出完整 browser_cart_add，Host 會先問完整確認。confirmedAddition 是顧客剛確認的唯一完整設定，只能依該設定與 cart.version 呼叫一次 browser_cart_add，不能改份數／選項／備註。previousProposal 只供新更正需求理解，舊確認已取消；未提完整品名的更正必須再問完整確認。pendingCustomerChoice 由畫面呈現，不自行改寫問題或繼續猜商品。',
+      '每次只呼叫一個購物車寫入工具；等成功回執取得新 cart.version 才執行下一筆，不可並列兩筆沿用相同版本。browser_cart_add 會依最新商品與規格資料加入，不需要先 browser_open_product；成功回執已含最新購物車，不必在每筆成功後額外重讀。',
+      '餐點查詢、選餐與購物車操作的每輪開始，browser_cart_get 使用 includeCatalog:true，取得操作所需的最新商品參照、價格與購物車版本。這是內部資料準備，並未完成顧客需求；顧客明確說某餐各一份就要依完整原句完成加購，不能只介紹菜單後結束。顧客只問價格或有沒有則只查詢，不加購。',
+      '替換餐點或修改既有餐點配置一律使用 browser_cart_replace，由程式保障先加新配置、核對後才減少或移除原行，不自行拆成刪除再加購。同商品換加飯等不同配置也可以替換。quantity 是新配置份數；retainQuantity 是原行要保留的份數（省略代表整行替換）。例如原本三份中一份加飯，quantity=1、retainQuantity=2，並使用含加飯的 selection。初次點三份其中一份加飯，直接拆成兩份原配置與一份加飯配置新增，不能先加三份再額外加一份。顧客說「某餐不要了」且目前購物車有唯一對應行時，使用 browser_cart_remove 移除此行，不以口頭答應代替；若有多行才釐清。必須理解整句，「不要換排骨」是保留原選擇，不是移除排骨。',
+      '顧客只要求核對、維持或保留目前訂單時，使用 browser_cart_review，以 {} 呼叫取得最新購物車顧客回執；這是狀態確認，不能呼叫 browser_cart_quantity 設成原數量，更不能移除後重加。轉述同伴不要餐點，不代表授權取消本人的餐點；先分清說話者、受詞與整句最後要求。同句若還有新增、換餐、改量或刪除，則仍按完整修改需求執行，不可只因保留部分或拒絕加購就忽略其他需求。這種純核對不適用每輪必先讀商品索引的規則，也不能用 browser_present 的菜單單價代替訂單份數與小計。',
+    ].join('\n\n')
+  }
   const interaction = input.agentInteraction && input.decisionState?.context
     ? { ...input.agentInteraction, cartSummary: undefined, recentMenuSubjects: [], recentAgentAction: undefined }
     : input.agentInteraction
