@@ -9,7 +9,10 @@ document.getElementById('recover').addEventListener('click', async (event) => {
       const registrations = await navigator.serviceWorker.getRegistrations()
       for (const registration of registrations) {
         const script = registration.active?.scriptURL ?? registration.waiting?.scriptURL ?? registration.installing?.scriptURL
-        if (registration.scope === `${location.origin}/` && script && new URL(script).pathname === '/sw.js')
+        if (registration.scope !== `${location.origin}/` || !script)
+          continue
+        const path = new URL(script).pathname
+        if (path === '/sw.js' || /^\/webnavior-sw-\d+\.js$/.test(path))
           await registration.unregister()
       }
     }

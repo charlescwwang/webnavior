@@ -7,6 +7,14 @@ accumulating history.
 
 ## Current State
 
+- Public verification of 1a382f6 found Cloudflare serving Nov05 /sw.js, HIT,
+  Cache-Control:max-age=14400, even with browser fetch no-cache. App entries,
+  main JS and version metadata matched new release. Versioned management worker
+  URL `webnavior-sw-<build timestamp>.js` now avoids this edge key; recovery page
+  recognizes both old /sw.js and versioned worker names only at root scope.
+  Rebuild Web and publish changed recovery script. Do not claim old user's browser
+  verified or Nginx headers changed. Original release has API216097, origin87pass.
+
 - Nov08 release work is on branch `codex/kiosk-release-20261108` in
   `/tmp/webnavior-release-worktree`, preserving unrelated dirty root work.
   First commits:77fc634 audio/device controls;45b72d2 deployed ordering baseline;

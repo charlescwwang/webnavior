@@ -462,3 +462,5 @@ Vite 的內容雜湊 JS/CSS 隨入口更新，部署時保留舊資源讓既有�
 獨立復原頁只解除同網域 `/sw.js` 的根作用域 worker，再轉至 `/admin`；不清除
 登入 token、cookie、裝置偏好或其他 worker。這不保證修復無關的權限或路由錯誤；
 若仍異常，記錄實際 URL、頁面版本及瀏覽器錯誤再調查。
+
+管理 worker 使用每次建置唯一的 `webnavior-sw-<timestamp>.js` URL，避免固定 `/sw.js` 的邊緣快取阻擋新版。快取修復頁同時辨識舊 `/sw.js` 與這個命名的根作用域 worker。

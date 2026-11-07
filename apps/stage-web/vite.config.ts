@@ -181,6 +181,10 @@ export default defineConfig({
       ? []
       : [VitePWA({
           registerType: 'prompt',
+          // The edge may cache /sw.js for hours even when a browser requests
+          // revalidation. A new URL per build also upgrades existing registrations
+          // at the same root scope without relying on an edge-cache purge.
+          filename: `webnavior-sw-${Date.now()}.js`,
           includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
           manifest: {
             name: 'Webnavior',
