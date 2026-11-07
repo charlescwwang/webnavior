@@ -1,0 +1,168 @@
+import type { MaybeRefOrGetter } from 'vue'
+
+import { onMounted, onScopeDispose, readonly, shallowRef, toValue, watch } from 'vue'
+
+import { playKioskAudio } from '../services/kioskPlayback'
+
+/** Owns receipt-then-waiting feedback; cancelling audio never cancels order work. */
+export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blocked: MaybeRefOrGetter<boolean>, speaking: MaybeRefOrGetter<boolean>, pendingVoice: MaybeRefOrGetter<boolean>) {
+  const ready = shallowRef(false)
+  const lifetime = new AbortController()
+  let chime: Blob | undefined
+  let music: Blob | undefined
+  let playback: AbortController | undefined
+  let received = 0
+  let replyReceived = 0
+  // ASR, Jev, Main and TTS preparation share one feedback window. A short
+  // handoff gap is not a new customer request and must not recreate its player.
+  let processingWindow = false
+  let acknowledgementPending = false
+  let playingKind: 'receipt' | 'waiting' | undefined
+  let closeTimer: ReturnType<typeof setTimeout> | undefined
+
+  function stop() {
+    playback?.abort()
+    playback = undefined
+    playingKind = undefined
+  }
+
+  function finishWindow() {
+    clearTimeout(closeTimer)
+    closeTimer = undefined
+    processingWindow = false
+    acknowledgementPending = false
+    stop()
+  }
+
+  function update() {
+    const active = toValue(processing) || toValue(speaking)
+    if (!active) {
+      closeTimer ??= setTimeout(() => {
+        closeTimer = undefined
+        if (toValue(processing) || toValue(speaking))
+          return
+        finishWindow()
+      }, 200)
+      if (toValue(blocked))
+        stop()
+      return
+    }
+    clearTimeout(closeTimer)
+    closeTimer = undefined
+    // Work flags describe progress, not evidence that a visitor spoke.
+    // Only acknowledge() can open a voice-owned feedback window.
+    if (!processingWindow) {
+      stop()
+      return
+    }
+    if (!ready.value || !chime || !music || toValue(blocked)) {
+      stop()
+      return
+    }
+    // Native speech owns audible output. Work can remain active while TTS
+    // plays, so processing alone must not restart waiting music underneath it.
+    if (toValue(speaking)) {
+      stop()
+      return
+    }
+    const kind = acknowledgementPending ? 'receipt' : 'waiting'
+    const volume = kind === 'receipt' ? 0.4 : 0.30
+    if (playback && playingKind === kind)
+      return
+    stop()
+    const controller = new AbortController()
+    playback = controller
+    playingKind = kind
+    const audioPlayback = playKioskAudio(kind === 'receipt' ? chime : music, controller.signal, undefined, {
+      loop: kind === 'waiting',
+      volume,
+    })
+    void audioPlayback.finished.then(() => {
+      if (playback !== controller || controller.signal.aborted)
+        return
+      playback = undefined
+      playingKind = undefined
+      if (kind === 'receipt') {
+        acknowledgementPending = false
+        update()
+      }
+      // Failed music waits for a real state change; do not retry in a loop.
+    })
+  }
+
+  async function readAudio(file: string) {
+    const response = await fetch(`${import.meta.env.BASE_URL}audio/${file}`, { signal: lifetime.signal, cache: 'no-cache' })
+    if (!response.ok)
+      return undefined
+    const audio = await response.blob()
+    // These assets are WAV, but production serves them as octet-stream.
+    // Check their RIFF/WAVE bytes before assigning the playback MIME; this also
+    // rejects index.html returned by a missing-file rewrite without trusting headers.
+    const header = new Uint8Array(await audio.slice(0, 12).arrayBuffer())
+    const text = new TextDecoder()
+    if (text.decode(header.slice(0, 4)) !== 'RIFF' || text.decode(header.slice(8, 12)) !== 'WAVE')
+      return undefined
+    return audio.slice(0, audio.size, 'audio/wav')
+  }
+
+  // Only real captured speech opens feedback. Audible TTS stops its player
+  // synchronously; reply completion closes the voice-owned window.
+  // A later capture or queued ASR belongs to the next reply and must survive
+  // completion/cancellation of the earlier TTS.
+  watch(() => toValue(speaking), (active, previous) => {
+    if (active) {
+      replyReceived = received
+      // A reply supersedes its acknowledgement, even if the short receipt
+      // has not finished. Never replay that stale receipt after an interruption.
+      acknowledgementPending = false
+      stop()
+    }
+    else if (previous && received === replyReceived && !toValue(pendingVoice)) {
+      finishWindow()
+    }
+  }, { flush: 'sync' })
+  watch(() => toValue(blocked), (active) => {
+    if (active)
+      finishWindow()
+  }, { flush: 'sync' })
+
+  watch([() => toValue(processing), () => toValue(blocked), () => toValue(speaking), ready], update, { flush: 'sync' })
+  onMounted(async () => {
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}audio/processing.json`, { signal: lifetime.signal, cache: 'no-cache' })
+      if (!response.ok || (await response.json()).enabled !== true)
+        return
+      const [receipt, waiting] = await Promise.all([
+        readAudio('kiosk_acknowledged_chime.wav'),
+        readAudio('kiosk_hold_melodic_light_60s.wav'),
+      ])
+      if (!lifetime.signal.aborted && receipt && waiting) {
+        chime = receipt
+        music = waiting
+        ready.value = true
+      }
+    }
+    catch {
+      // Optional feedback cannot disable ordering or ordinary reply synthesis.
+    }
+  })
+  onScopeDispose(() => {
+    lifetime.abort()
+    finishWindow()
+  })
+
+  return {
+    ready: readonly(ready),
+    stop,
+    acknowledge() {
+      received += 1
+      // Called only after a non-empty admitted microphone segment is captured.
+      // Additional captures during existing work keep the same music player.
+      if (!processingWindow) {
+        processingWindow = true
+        acknowledgementPending = true
+      }
+      update()
+    },
+  }
+}

@@ -1,13 +1,14 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
-import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
+import type { AudioWarning, KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 
-import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { normalizeOrderingPrices, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
@@ -131,9 +132,24 @@ async function requestAudio(path: string, init: RequestInit): Promise<Response> 
   return response
 }
 
+/** Advances the authenticated POS round before the host clears or reloads its Menu. */
+export async function resetKioskOrderingContext() {
+  const { context } = await request<{ context: OrderingContext }>('/api/kiosk/pos/v1/ordering-context', { cache: 'no-store', signal: AbortSignal.timeout(5_000) })
+  return await request<{ context: OrderingContext }>('/api/kiosk/pos/v1/ordering-context', { method: 'POST', body: JSON.stringify({ previousId: context.id }), signal: AbortSignal.timeout(5_000) })
+}
+
 /** Retrieves the device authenticated by the browser's HttpOnly kiosk cookie. */
 export async function fetchKioskBootstrap() {
   return await request<{ device: KioskDevice, deviceSettings: DeviceSettingsSnapshot, mediaCapturePolicy: { mode: KioskMediaCaptureMode }, performanceProfile: KioskPerformanceProfile, proactiveVlmEnabled: boolean, profile?: KioskProfile, voiceVadSettings: KioskVoiceVadSettings }>('/api/kiosk/bootstrap')
+}
+
+/** Best-effort device diagnostics, independent of visitor sessions and model dialogue. */
+export function reportKioskAudioWarning(warning: AudioWarning) {
+  return request<{ accepted: true }>('/api/kiosk/audio/warnings', {
+    method: 'POST',
+    body: JSON.stringify(warning),
+    signal: AbortSignal.timeout(5000),
+  })
 }
 
 /** Reads the current policy only for the device identified by its HttpOnly cookie. */
@@ -385,7 +401,7 @@ export async function uploadKioskVisitorMedia(input: {
 /** Requests speech with Taiwan Traditional text, using the Site's private model/voice policy. */
 export async function synthesizeKioskSpeech(input: { locale: string, text: string, signal?: AbortSignal }) {
   const response = await requestAudio('/api/kiosk/audio/speech', {
-    body: JSON.stringify({ locale: input.locale, text: toTaiwanTraditionalChinese(input.text) }),
+    body: JSON.stringify({ locale: input.locale, text: toOrderingTraditionalChinese(normalizeOrderingPrices(input.text)) }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
     signal: input.signal,

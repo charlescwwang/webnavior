@@ -3,7 +3,7 @@ import type { AttentionObservation, KioskAssistanceReminderCandidate, KioskAssis
 /** Conservative defaults for the deterministic, local kiosk assistance reminder policy. */
 export const defaultKioskAssistanceReminderSettings: KioskAssistanceReminderSettings = {
   enabled: true,
-  waitMs: 20_000,
+  waitMs: 40_000,
   maxRemindersPerSession: 2,
   reminderText: '現場參考：訪客仍停留在 kiosk 前，但暫時沒有操作。可視目前對話與頁面情境，低打擾地提供協助。',
 }

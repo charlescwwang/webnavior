@@ -36,7 +36,7 @@ it('turns an unverified no-operation completion into an owned clarification inst
   expect(result.role).toBe('assistant')
   expect(result.content).not.toContain('已移除')
   expect(result.content).not.toContain('再試一次')
-  expect(result.content).toContain('詢問或調整')
+  expect(result.content).toContain('查詢的餐點或訂單調整')
   expect(result).toHaveProperty('clarification', true)
   expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(context.cart)
 })
@@ -77,7 +77,7 @@ it('answers structured information and clarification from the current context wi
   const before = context.cart
   const present = (value: unknown) => replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: JSON.stringify(value) }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' })
   expect(present({ kind: 'payment-methods' })).toEqual({ role: 'assistant', content: '目前支援LINE Pay、街口支付。' })
-  expect(present({ kind: 'menu-information', subjects: ['湯包'] })).toEqual({ role: 'assistant', content: '目前菜單沒有標示「湯包」，請問你指的是哪一道餐點？' })
+  expect(present({ kind: 'menu-information', subjects: ['湯包'] })).toEqual({ role: 'assistant', content: '目前沒有提供「湯包」。' })
   expect(present({ kind: 'clarification' }).role).toBe('assistant')
   expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['kiosk_session_history'], answer: '{"kind":"clarification"}' }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' }).role).toBe('assistant')
   expect(present({ kind: 'payment-methods', answer: '已完成付款。' })).toHaveProperty('clarification', true)
@@ -152,7 +152,7 @@ it('presents the application-owned query question without a choice panel or dish
   const window = createMenuReplyWindow()
   window.record('menu_recommend', receipt)
   expect(window.hasReceipts()).toBe(true)
-  expect(window.reply()).toBe('你想調整價位，還是換餐點種類？')
+  expect(window.reply()).toBe('請告訴我想看的餐點名稱，也可以直接在畫面選餐。')
   expect(receipt).not.toHaveProperty('pendingCustomerChoice')
   expect(receipt).not.toHaveProperty('presentation')
 })
@@ -182,6 +182,13 @@ describe('question presentation receipts', () => {
     expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: '請提供牛肉麵名稱，例如紅燒或清燉牛肉麵。' }, { menu: createMenuReplyWindow(), requireMenuRead: state?.requireMenuRead, serviceReply: state?.serviceReply, failureMessage: '查詢未完成。' })).toEqual({ role: 'error', content: '查詢未完成。' })
   })
 
+  // Report: Nov1 C09-A2/C12-F3 whole-turn replacement replay.
+  it.each([undefined, 'INFORMATION'])('preserves whole-request operation scope with price choice %s', (priceChoiceId) => {
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } }, { reason: 'NEW_REQUEST', resolvedBy: 'main-service', requestScope: 'order-operation', priceChoiceId })
+    expect(state).not.toHaveProperty('requireMenuRead')
+    expect(state).not.toHaveProperty('readOnly')
+  })
+
   it('does not reinterpret a phone-stage provider fallback as an admitted factual menu query', () => {
     const state = conversationDecisionStateFrom({ phase: 'customer_entry', catalogEvidence: { products: [{ label: '紅燒牛肉麵', matchedText: '牛肉麵', source: 'alias' }], categories: [] } }, { reason: 'PROVIDER_FAILURE' })
     expect(state).not.toHaveProperty('requireMenuRead')
@@ -189,7 +196,7 @@ describe('question presentation receipts', () => {
 
   // Report: this chat, 2026-10-19, visitor session hIHA3DAvjhrG8x0RjggBa.
   it('rejects invented noodles after an unmatched food refusal and retains its evidence requirement across continuations', () => {
-    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] }, productResolution: { status: 'none', count: 0, references: [] }, references: [{ label: '剛展示的周氏蝦捲招牌便當', refId: 'ITEM_1' }] }, {})
+    const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [], categories: [] }, productResolution: { status: 'none', count: 0, references: [] }, references: [{ label: '剛展示的蝦捲招牌便當', refId: 'ITEM_1' }] }, {})
     expect(state).toMatchObject({ requireMenuRead: true })
     const continued = conversationDecisionStateFrom(state)
     expect(continued).toMatchObject({ requireMenuRead: true })
@@ -259,7 +266,7 @@ describe('question presentation receipts', () => {
     window.record('menu_get', { customerMessage: '我找到：牛肉麵。', items: [{ id: 'n', name: '牛肉麵', price: 150 }] })
     window.record('menu_get', { customerMessage: '我找到：水餃。', items: [{ id: 'd', name: '水餃', price: 80 }] })
     window.record('cart_get', { customerMessage: '購物車是空的。' })
-    expect(window.reply()).toBe('我找到：牛肉麵。 我找到：水餃。 單份基本售價：牛肉麵 NT$150、水餃 NT$80。')
+    expect(window.reply()).toBe('我找到：牛肉麵。 我找到：水餃。 單份基本售價：牛肉麵 150元、水餃 80元。')
     expect(replyFromOperation('沒有經過查詢的推薦。', createMenuReplyWindow().reply(), undefined)).toBe('目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。')
   })
   it('keeps a cart-only summary grounded without requiring a new menu query', async () => {
@@ -267,7 +274,7 @@ describe('question presentation receipts', () => {
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', quantity: 2 })
     const window = createMenuReplyWindow()
     window.record('cart_get', await runtime.invokeForAgent('cart_get', { display: false }))
-    expect(window.reply()).toBe('目前訂單：周氏蝦捲 2 份。合計 NT$150。')
+    expect(window.reply()).toBe('目前訂單：蝦捲 2 份。合計 150元。')
   })
   const question = { questionId: 'Q1', purpose: 'checkout-entry', question: '要進入結帳流程嗎？', expiresAt: 100, choices: [{ id: 'intent:start-checkout', description: '開始結帳，進入會員與發票步驟。' }] }
   it('retains superseded invitation records without letting stale decisions consume the current one', () => {
@@ -338,7 +345,7 @@ describe('question presentation receipts', () => {
     const offered = questionReceiptFrom(result)!
     const validated = questionReceiptFrom(await runtime.invoke('kiosk_question_validate', { questionId: offered.questionId }))!
     const answer = replyFromOperation('已加入餐點。要內用還是外帶？', operationReplyFrom(result), validated)
-    expect(answer).toBe('已將周氏蝦捲加入購物車，共 1 份。 請問要櫃台自取？')
+    expect(answer).toBe('已將蝦捲加入購物車，共 1 份。 請問要櫃台自取？')
     await runtime.invoke('kiosk_dialogue_presented', { content: answer, questionId: validated.questionId })
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '自取' }) as { waitingFor: { question: string }, candidates: Array<{ id: string }> }
     expect(context.waitingFor.question).toBe('請問要櫃台自取？')
@@ -383,4 +390,156 @@ it('renders a typed hearing check without inventing fulfillment or payment facts
   expect(reply.content).toContain('有收到您的這句話')
   expect(reply.content).not.toContain('內用')
   expect(reply.content).not.toContain('刷卡')
+})
+
+// Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct30.
+it('presents a reviewed clarification after reads instead of replacing it with menu availability', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { items: [], customerMessage: '沒有查到。' })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], reply: { kind: 'clarification' } }, { menu, context, failureMessage: '失敗。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('查詢的餐點或訂單調整')
+  expect(reply.content).not.toContain('沒有查到')
+})
+
+it('presents an owned waiting question without claiming completion or reporting an error', () => {
+  const question = { questionId: 'quantity', requestId: 'draft', purpose: 'item-configuration', question: '水餃要幾份？', expiresAt: Date.now() + 30000, choices: [] }
+  const receipts = createMenuReplyWindow()
+  receipts.record('order_add_item', { customerMessage: question.question, pendingCustomerChoice: question })
+  const result = replyFromConversation({ status: 'waiting', agentMode: 'active', requestedTools: ['order_add_item'], question }, { menu: receipts, question, outcome: question.question, handoff: { intent: 'ADD_ITEM' }, failureMessage: '系統失敗，請重試。' })
+  expect(result).toEqual({ role: 'assistant', content: question.question })
+})
+
+it('retains every confirmed operation receipt when a later operation fails', () => {
+  const receipts = createMenuReplyWindow()
+  receipts.record('order_add_item', { customerMessage: '水餃兩份已加入。' })
+  receipts.record('order_add_item', { customerMessage: '牛肉麵一份已加入。' })
+  receipts.record('cart_remove_item', { ok: false, customerMessage: '全部移除了。' })
+  const result = replyFromConversation({ status: 'incomplete', agentMode: 'active', requestedTools: ['order_add_item', 'order_add_item', 'cart_remove_item'], reason: 'tool-rejected' }, { menu: receipts, outcome: '牛肉麵一份已加入。', failureMessage: '移除未完成。' })
+  expect(result.content).toContain('水餃兩份已加入。')
+  expect(result.content).toContain('牛肉麵一份已加入。')
+  expect(result.content).toContain('移除未完成。')
+  expect(result.content).not.toContain('全部移除了')
+})
+
+it('cannot revive a question rejected by final Menu validation from the raw loop result', () => {
+  const question = { questionId: 'stale', purpose: 'item-configuration', question: '舊水餃要幾份？', expiresAt: Date.now() - 1, choices: [] }
+  const result = replyFromConversation({ status: 'waiting', agentMode: 'active', requestedTools: ['order_add_item'], question }, { menu: createMenuReplyWindow(), question: undefined, failureMessage: '問題已變更，請確認畫面。' })
+  expect(result).toEqual({ role: 'error', content: '問題已變更，請確認畫面。' })
+})
+
+it('reports accepted effects as partial progress when the requested effect is still missing', () => {
+  const receipts = createMenuReplyWindow()
+  receipts.record('order_add_item', { customerMessage: '水餃一份已加入。' })
+  const result = replyFromConversation({ status: 'incomplete', agentMode: 'active', requestedTools: ['order_add_item', 'cart_remove_item'], reason: 'tool-rejected' }, { menu: receipts, handoff: { intent: 'REMOVE_ITEM' }, failureMessage: '移除尚未完成。' })
+  expect(result.content).toBe('水餃一份已加入。 移除尚未完成。')
+})
+
+// Report: live112 C09-F3, price inquiry interrupted the retained sauce answer.
+it.each(['MENU_QUERY', 'NEW_REQUEST'] as const)('keeps a qualified factual price selector read-only after %s', (reason) => {
+  const state = conversationDecisionStateFrom({ phase: 'ordering', catalogEvidence: { products: [{ label: '水餃', matchedText: '水餃', source: 'name' }], categories: [] } }, { reason, priceChoiceId: 'INFORMATION' })
+  expect(state).toHaveProperty('readOnly', true)
+  expect(state).not.toHaveProperty('requireMenuRead')
+})
+
+// Report: N05-UX-RANKING,Nov5 — Main selected missing information correctly but Host erased it.
+it('preserves missing-data information through the display-required Host boundary', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const result = { status: 'completed' as const, agentMode: 'active' as const, requestedTools: [], reply: { kind: 'service-information' as const, topic: 'other' as const } }
+  const shown = replyFromConversation(result, { menu: createMenuReplyWindow(), context, requireMenuRead: true, failureMessage: '未展示。' })
+  expect(shown.role).toBe('assistant')
+  expect(shown.content).toContain('無法確認')
+  expect(shown.content).not.toContain('理解')
+  expect(shown).not.toHaveProperty('clarification')
+})
+
+// Report: attachment 6dfae2fd, 「大腸臭臭鍋一碗」 must finish as a verified menu miss.
+it.each(['completed', 'incomplete'] as const)('handles a verified unmatched add without hiding a %s tool outcome', (status) => {
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { items: [], matchKind: 'none', requestedQueries: ['大腸臭臭鍋'], customerMessage: '目前菜單查不到「大腸臭臭鍋」。' })
+  const reply = replyFromConversation({ status, agentMode: 'active', requestedTools: ['menu_get'] }, { menu, handoff: { intent: 'ADD_ITEM', status: 'unmatched' }, sourceUtterance: '大腸臭臭鍋一碗', failureMessage: '操作失敗。' })
+  expect(reply).toEqual(status === 'completed' ? { role: 'assistant', content: '目前菜單查不到「大腸臭臭鍋」。' } : { role: 'error', content: '操作失敗。' })
+})
+
+// Report: attachment 6dfae2fd; a different meal, possible alias or partial lookup cannot settle an add.
+it.each([
+  { query: '牛肉火鍋', matchKind: 'none', status: 'unmatched' as const },
+  { query: '大腸臭臭鍋', matchKind: 'possible', status: 'unmatched' as const },
+  { query: '大腸臭臭鍋', matchKind: 'none', status: 'unrepresentable' as const },
+])('keeps unresolved add guards for $query / $matchKind / $status', ({ query, matchKind, status }) => {
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { items: [], matchKind, requestedQueries: [query], customerMessage: '查詢結果。' })
+  expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'] }, { menu, handoff: { intent: 'ADD_ITEM', status }, sourceUtterance: '大腸臭臭鍋一碗', failureMessage: '未加入。' })).toEqual({ role: 'error', content: '未加入。' })
+})
+
+// Report: this chat, 2026-11-06 — a normal out-of-scope answer must not become a purple technical error.
+it('presents a structured scope refusal as normal assistant speech without a menu receipt', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const presented = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], reply: { kind: 'service-information', topic: 'out-of-scope' } }, { menu: createMenuReplyWindow(), requireMenuRead: true, context, failureMessage: 'Failed' })
+  expect(presented).toMatchObject({ role: 'assistant', content: '我是點餐助手，可以幫您看菜單、選餐和確認訂單。您想吃什麼？' })
+})
+
+// Report: this chat,2026-11-06 — asking how many dumplings only returned availability/price.
+it.each(['displayed', 'context'])('retains the portion description through the %s customer reply', async (path) => {
+  const runtime = createMenuToolRuntime({ menu: [{ id: 'dumplings', name: '水餃', category: '點心', description: '每份10顆，80元，現點現煮', price: 80, imageUrl: '', recommendationTags: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const receipt = await runtime.invokeForAgent('menu_get', { query: '水餃', display: path === 'displayed' })
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', receipt)
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: path === 'displayed' ? ['menu_get'] : [], reply: { kind: 'menu-information', subjects: ['水餃'] } }, { menu, context, failureMessage: '無法確認。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('每份10顆')
+  expect(reply.content).toContain('80元')
+  expect(reply.content.match(/80元/g)).toHaveLength(1)
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+// Report: this chat, 2026-11-07, session ggUmSdBBOnjiRPKu06-uR seq102–127.
+it('does not replace a displayed recommendation outcome with an internal lookup after display rejection', () => {
+  const menu = createMenuReplyWindow()
+  const displayed = { presentation: { kind: 'recommendation', itemIds: ['fish'] }, items: [{ id: 'fish', name: '魚便當', price: 140 }], customerMessage: '含魚：推薦一項：魚便當。' }
+  const internal = { dataOnly: true, items: [{ id: 'chicken', name: '雞便當', price: 135 }], customerMessage: '我找到：雞便當、排骨便當。' }
+  menu.record('menu_recommend', displayed)
+  let outcome = operationReplyFrom(displayed)
+  menu.record('menu_get', internal)
+  outcome = operationReplyFrom(internal) ?? outcome
+  const reply = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', agentMode: 'active', requestedTools: ['menu_recommend', 'menu_get'] }, { menu, outcome, failureMessage: '點餐系統未接受這次操作，請確認畫面後再繼續。' })
+  expect(reply.content).toContain('魚便當')
+  expect(reply.content).not.toContain('雞便當')
+  expect(reply.content).not.toContain('我找到')
+  expect(operationReplyFrom(JSON.stringify(internal))).toBeUndefined()
+})
+
+// Report: Nov6 I_A7 utterance108: recovery clarification unexpectedly displayed the cart.
+it('regression K1107-SCOPE keeps unresolved speech reply-only', () => {
+  const state = conversationDecisionStateFrom({ phase: 'ordering', menuRevision: 1 }, { reason: 'UNCERTAIN_OPERATION', recovery: { status: 'completed', admission: 'service', disposition: 'clarify' } })
+  expect(state?.readOnly).toBe(true)
+  expect(state?.replyOnly).toBe(true)
+  expect(state?.serviceReply).not.toBe(true)
+  expect(state?.requireMenuRead).not.toBe(true)
+})
+
+// Report: this chat Nov7; a browsing prompt must not leave old order consent in foreground.
+it('regression K1107-GUIDE marks a Menu guidance receipt as a clarification for the Host reply window', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('menu_recommend', { queryAction: 'clarify', items: [], guidance: { reason: 'exhausted', itemIds: ['chicken'] }, customerMessage: '可以看看香烤雞腿飯，請說想看的餐點名稱。' })
+  const reply = replyFromConversation({ status: 'completed', requestedTools: ['menu_recommend'], agentMode: 'active' }, { menu, failureMessage: '未完成。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.clarification).toBe(true)
+  expect(reply.content).toContain('香烤雞腿飯')
+})
+
+// Report: this chat Nov7; an earlier fuzzy lookup cannot hide the real purchase confirmation.
+it('regression K1107-FUZZY keeps the later Menu-owned confirmation in foreground', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { matchKind: 'possible', items: [], guidance: { reason: 'possible', itemIds: ['pork'] }, customerMessage: '您想找的是打拋豬便當嗎？' })
+  const question = { questionId: 'owned-confirmation', purpose: 'confirm-meal' as const, question: '您是要新增打拋豬便當嗎？', choices: [{ id: 'yes', description: '同意新增' }, { id: 'no', description: '拒絕新增' }], expiresAt: Date.now() + 30000 }
+  menu.record('menu_confirm_item', { pendingCustomerChoice: question })
+  const reply = replyFromConversation({ status: 'completed', requestedTools: ['menu_get', 'menu_confirm_item'], agentMode: 'active' }, { menu, question, failureMessage: '未完成。' })
+  expect(reply.content).toBe(question.question)
+  expect(reply.clarification).toBeUndefined()
 })

@@ -24,25 +24,45 @@ export function createKioskStartupPermissionGate() {
 }
 
 /**
- * Re-checks browser microphone consent whenever a voice-only kiosk starts.
+ * Voice startup requests consent immediately. With no saved input, consent
+ * discovery leaves capture disabled until startup UI confirms a device. A saved
+ * input acquires its actual stream without a separate permission-only request.
  * The persisted audio toggle only records the operator's preference; it must
- * not be used as evidence of browser consent.
+ * not be used as evidence of browser consent or a live stream after reload.
  */
 export async function prepareKioskMicrophonePermission(input: {
-  audioInputEnabled: boolean
-  requestPermission: () => Promise<void>
+  hasSelectedMicrophone: boolean
+  requestDevices: () => Promise<void>
+  startStream: () => Promise<void>
+  signal: AbortSignal
   setAudioInputEnabled: (enabled: boolean) => void
   voiceConversationOnly: boolean
 }) {
   if (!input.voiceConversationOnly)
     return
 
-  // Browsers do not display another prompt for an existing grant, but asking
-  // again detects a permission reset or revocation between kiosk sessions.
-  await input.requestPermission()
+  input.signal.throwIfAborted()
+
+  if (!input.hasSelectedMicrophone) {
+    input.setAudioInputEnabled(false)
+    await input.requestDevices()
+    input.signal.throwIfAborted()
+    return 'selection-required' as const
+  }
+
+  // getUserMedia for the saved stream owns browser consent. Do not first open
+  // a temporary permission-only stream: Firefox can prompt again when that
+  // temporary stream is stopped and the real selected microphone starts.
+  // The persisted toggle can already be true on reload, so setting it again
+  // would not fire the device store watcher. Explicitly acquire capture through
+  // the existing deduplicated store request before declaring startup complete.
+  await input.startStream()
+  input.signal.throwIfAborted()
 
   // Keep the audio pipeline running after a previously granted permission,
   // including when its local preference was reset between kiosk sessions.
-  if (!input.audioInputEnabled)
-    input.setAudioInputEnabled(true)
+  // Permission/device watchers may reset the toggle while acquisition is pending.
+  // The current, non-aborted voice owner enables the stream after it succeeds.
+  input.setAudioInputEnabled(true)
+  return 'capturing' as const
 }

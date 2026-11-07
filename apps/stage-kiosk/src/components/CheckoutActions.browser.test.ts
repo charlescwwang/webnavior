@@ -12,12 +12,12 @@ import CheckoutPayment from '../../../order-menu/src/components/CheckoutPayment.
 import CheckoutTaxId from '../../../order-menu/src/components/CheckoutTaxId.vue'
 import OrderReview from '../../../order-menu/src/components/OrderReview.vue'
 
-import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, setInvoiceDraft, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 
 describe('visible checkout actions', () => {
   // Report: this chat, 2026-10-19 — checkout voice actions change state without visible button animation.
-  it.each(['donation', 'tax-id', 'tax-id-skip'] as const)('targets connected controls before committing the %s flow once', async (flow) => {
+  it.each(['carrier', 'citizen', 'donation', 'tax-id', 'tax-id-skip'] as const)('targets connected controls before committing the %s flow once', async (flow) => {
     const checkout = shallowRef<CheckoutSnapshot>()
     const review = shallowRef(false)
     const paymentMethod = shallowRef<PaymentMethod>()
@@ -77,6 +77,7 @@ describe('visible checkout actions', () => {
         chooseInvoice: method => update(chooseInvoiceMethod(checkout.value!, method)),
         requestTaxId: () => update(requestTaxId(checkout.value!)),
         setTaxId: taxId => update(setTaxIdDraft(checkout.value!, taxId)),
+        confirmInvoice: () => update(confirmInvoiceDraft(checkout.value!)),
         confirmTaxId: () => update(confirmTaxId(checkout.value!)),
         selectPayment: async (method: PaymentMethod) => {
           // Exercise the local QR surface without a payment gateway.
@@ -93,9 +94,9 @@ describe('visible checkout actions', () => {
     const view = render(defineComponent({ setup: () => () => {
       const shared = { onRegisterControl: register }
       if (checkout.value?.stage === 'invoice')
-        return h(CheckoutInvoice, { ...shared, checkout: checkout.value, total: '$130' })
+        return h(CheckoutInvoice, { ...shared, checkout: checkout.value, total: '$130', onDraft: (method, code) => update(setInvoiceDraft(checkout.value!, method, code)), onDetails: (method, code) => update(confirmInvoiceDetails(checkout.value!, method, code)) })
       if (checkout.value?.stage === 'tax-id')
-        return h(CheckoutTaxId, { ...shared, taxId: checkout.value.taxId ?? '' })
+        return h(CheckoutTaxId, { ...shared, taxId: checkout.value.taxId ?? '', onUpdateTaxId: value => update(setTaxIdDraft(checkout.value!, value)) })
       if (checkout.value?.stage === 'payment')
         return h(CheckoutPayment, { ...shared, method: paymentMethod.value, total: '$130' })
       if (review.value)
@@ -112,7 +113,21 @@ describe('visible checkout actions', () => {
     await nextTick()
     expect(events).toEqual(['order:view', 'review', 'checkout:start'])
     expect(writes).toBe(1)
-    if (flow === 'donation') {
+    if (flow === 'carrier' || flow === 'citizen') {
+      if (flow === 'citizen') {
+        await runtime.invoke('checkout_choose_invoice', { method: 'citizen' })
+        await nextTick()
+      }
+      const code = flow === 'carrier' ? '/PTGRJP2' : 'AB12345678901234'
+      await view.getByRole('textbox', { name: flow === 'carrier' ? '手機條碼' : '自然人憑證條碼' }).fill(code)
+      expect(checkout.value?.stage).toBe('invoice')
+      await runtime.invoke('kiosk_fast_path_context', { transcript: '資料沒問題' })
+      await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:confirm-invoice' })
+      expect(flow === 'carrier' ? checkout.value?.carrierCode : checkout.value?.citizenCode).toBe(code)
+      expect(checkout.value?.stage).toBe('payment')
+      expect(writes).toBe(flow === 'carrier' ? 3 : 4)
+    }
+    else if (flow === 'donation') {
       await runtime.invoke('checkout_choose_invoice', { method: 'carrier' })
       await nextTick()
       await runtime.invoke('checkout_choose_invoice', { method: 'citizen' })
@@ -123,13 +138,16 @@ describe('visible checkout actions', () => {
     else {
       await runtime.invoke('checkout_request_tax_id')
       await nextTick()
-      await runtime.invoke('checkout_set_tax_id', { taxId: '12345678' })
+      await view.getByRole('textbox', { name: '統一編號' }).fill('12345678')
       await nextTick()
       expect((controls.get('checkout:tax-id:value') as HTMLInputElement).value).toBe('12345678')
-      if (flow === 'tax-id-skip')
+      if (flow === 'tax-id-skip') {
         await runtime.invoke('checkout_choose_invoice', { method: 'donation' })
-      else
-        await runtime.invoke('checkout_confirm_tax_id', { confirmedByUser: true })
+      }
+      else {
+        await runtime.invoke('kiosk_fast_path_context', { transcript: '送出' })
+        await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:confirm-tax-id' })
+      }
       expect(writes).toBe(4)
     }
     await nextTick()
@@ -138,10 +156,10 @@ describe('visible checkout actions', () => {
     await runtime.invoke('checkout_select_payment', { method: 'jkopay' })
     await nextTick()
     expect(paymentMethod.value).toBe('jkopay')
-    expect(writes).toBe(6)
+    expect(writes).toBe(flow === 'carrier' ? 5 : 6)
     await runtime.invoke('checkout_cancel', { confirmedByUser: true })
     await nextTick()
-    expect(writes).toBe(7)
+    expect(writes).toBe(flow === 'carrier' ? 6 : 7)
     expect(nativeClicks).toBe(0)
     expect(checkout.value).toBeUndefined()
     expect(controls.has('checkout:payment:linepay')).toBe(false)

@@ -12,6 +12,167 @@ unchanged for decisions and troubleshooting. Text typed into the simulation
 input is also submitted unchanged. This normalizes Chinese writing; it does
 not translate other languages or verify the truth of a model reply.
 
+## Per-device text input
+
+Device settings expose **純文字模式** (`textOnlyMode`, default false). Enabling it
+shows text input and disables automatic microphone/VAD capture on that device,
+even when the shared Profile enables voice-only conversation. Turning it off or
+clearing the override restores the Profile's behavior. Reply synthesis retains
+its existing policy; this is the current text-input experience, not a mute switch.
+The PIN-protected Admin panel displays **對話顯示 → 實際對話模式**;
+changes use the existing Server-backed **裝置設定 → 純文字模式** control.
+There is no separate browser mode switch. The retired
+`kiosk/conversation/text-only` preference is removed on initialization and never
+copied into Server settings; an old tab writing that key cannot override the
+current mode. Effective text mode combines the Server-resolved device policy
+with the assigned Profile: a Profile that is text-only remains text-only even
+when the device's text-only flag is off. Existing administrator/delegated local
+permissions and version-conflict handling still apply.
+
+Successful local saves immediately adopt the Server response rather than waiting
+for another read. Failed saves retain the acknowledged active mode and show the
+existing error message; unsaved editor values are drafts. Registered devices
+poll effective settings about every ten seconds (plus request/network time) and
+refresh on window focus. New reads, acknowledged saves and disposal retire older
+responses; older device versions cannot undo an acknowledged update. Same-version
+Site-default changes are still applied. Offline reads retain the last acknowledged
+mode and retry; invalid enrollment returns to enrollment instead of guessing.
+Switching modes keeps the existing Scene and order/cart, stops capture/VAD in
+text mode, and reacquires the saved microphone when voice mode resumes. Profile,
+order-completion and service-fault restrictions remain authoritative. Reply
+synthesis keeps its existing policy.
+
+## Central service and background settings
+
+Device settings expose `serviceMode: kiosk | table-service` and independent
+`backgroundSpeechMode: off | observe | enforce`. Defaults are `kiosk` and `off`. The device mode applies to every live
+checkpoint, including Main meaning recovery, service qualification, phone entry,
+query-scope answers, ordering intent and answer completeness. `off` never offers
+background/recipient filtering choices. `observe` records the initial classifier
+without letting it or later checkpoints discard speech. Only `enforce` permits
+background rejection. Independent operation authorization, empty-input handling,
+explicit recommendation refusal and customer idle/pause behavior remain intact.
+
+The existing Admin device-settings editor controls both; normal device delegation
+rules apply. Mode changes apply on the next explicit order round, preserving
+ongoing carts and unresolved submissions. Table service currently uses a random
+test table `a01`–`a09`, confirms orders without payment, and shows table/items/total
+without a pickup number. Kiosk retains its paid flow and receipt behavior.
+
+`off` skips the dedicated background classifier. `observe` records its result
+without using it to reject speech or increase operation confidence. `enforce`
+allows that classifier to withhold background speech. All three still require
+semantic tool authorization; disabling background classification is not consent
+to arbitrary cart or payment operations.
+
+ASR text appears immediately as a provisional conversation row. After Jev
+accepts a complete utterance, Host promotes it once into formal conversation
+history before Agent/tool execution finishes. Incomplete or ignored candidates
+are not promoted; session reset clears pending rows. Existing ASR/VAD/TTS
+capture and provider configuration are reused.
+
+## Service limits and unfinished requests
+
+The assistant serves menu lookup, meal selection, ordering and order changes.
+A request clearly addressed to the Kiosk still receives a brief scope response
+when it is outside those responsibilities, including with background enforcement
+on. Recipient/background detection must not silently discard it solely because
+of its subject. No domain-by-domain refusal lists are maintained.
+
+Main execution and bounded reply repair share the customer-response policy in
+`@proj-airi/stage-shared/kiosk-conversation`. The generic `service-information`
+reply topic `out-of-scope` explains the limit; `capabilities` answers an explicit
+capability question, while `other` reports insufficient ordering information.
+Scope-refusal wording does not imply future support or staff referral.
+A scope refusal is a normal assistant reply, never a technical fault or an order
+receipt. It requires no unrelated menu lookup and grants no operation authority.
+
+Unmet meal requirements are retained and explained before asking whether the
+customer wants to adjust the request. The assistant cannot silently substitute,
+omit a requirement, or submit the order without confirmation. Preparation
+changes continue to use Menu's original-recipe confirmation; uncertain dietary
+safety must never be represented as verified.
+
+For a dietary requirement that cannot be verified from supplied composition
+facts, the typed `staff-assistance` reply can offer help. A current, unexpired
+Host invitation is required for acceptance; changing the order context or making
+a new request invalidates that invitation. With consent the ordinary assistant
+bubble says and uses the normal TTS path for 「已經呼叫工作人員，您可以繼續點餐。」.
+This is a **simulated presentation**, with `notificationMode: simulated` in the
+presentation event; it sends no external notification. It does not activate the
+technical service pause, open an overlay, clear dietary constraints or disable
+manual ordering. A declined or expired invitation grants no order authority.
+
+Uncertain service admission uses `replyOnly` when it has no qualified menu-read
+scope. This permits a reply without giving Main permission to open the cart,
+clear it or write an order. Natural answers such as 「好／對」 remain supported;
+they apply to the actual live question, not a fixed phrase list. In particular,
+「確認這份訂單並送出嗎？」 accepts assent directly, while an answer requesting a
+different effect must be clarified or processed as a new request.
+
+Menu candidate/browsing prompts use the same verified-receipt conversation and
+TTS path as other ordering replies. A live browsing clarification takes foreground
+service-answer scope, preventing a bare assent from answering an older order
+question. A later real Menu-owned meal confirmation supersedes earlier candidate
+prompts without dropping independent factual receipts. This does not create a
+second order-confirmation state machine. Candidate matching itself lives in the
+independent Menu web app; Server retains semantic interpretation and review.
+
+## Processing feedback and technical faults
+
+Optional audio uses `public/audio/kiosk_acknowledged_chime.wav` for the receipt
+and `public/audio/kiosk_hold_melodic_light_60s.wav` for waiting music. Install both
+original WAV files, then enable `audio/processing.json` and reload after the
+current order. The deployed URL prefix is `/kiosk/audio/`; replacing these
+public files needs no frontend rebuild. Until both real files arrive the
+manifest stays disabled; no replacement audio is generated.
+
+Only an admitted non-empty microphone segment opens an audio-feedback window.
+Idle/proactive TTS, text operations and internal work flags never open one.
+Each voice window starts with one receipt chime, then loops waiting music
+on one player through ASR, Jev/Main, tools and TTS preparation. Additional VAD
+or capture events do not stop or restart ordinary waiting music. Brief handoff
+gaps (up to200ms) retain that player; real completion, cancellation or faults
+stop it. The receipt starts before submitting the complete voice segment to
+ASR; recognition does not wait for the chime to finish. Waiting music (volume0.30) stops synchronously when native TTS starts, even
+if processing flags remain active. A pending receipt is also retired by reply
+playback, so its late completion cannot restart music. No waiting feedback plays
+during TTS. Reply completion closes its window; newer voice work may resume its
+own waiting feedback afterward. New captures/queued recognition retain their own work
+through an earlier reply's completion. Late queue cleanup cannot restart a
+completed window without another captured utterance.
+
+Greetings retain the configured opening verbatim and append only the entry
+navigation hint when applicable. Operators can include a Taiwanese ordering
+hint in their own opening; the system never adds one. There is no sound
+explanation or sample playback. Missing files
+leave ordinary ordering and TTS available.
+
+Voice mode automatically requests microphone consent on entry. With no saved
+Kiosk device, a temporary consent stream is closed after device discovery and the
+startup picker requires an explicit input choice before VAD/ASR starts. A saved
+concrete input is reacquired directly after reload or leaving device text mode;
+there is no separate consent stream for that path. Text mode stops capture and
+never requests microphone permission. Permission completion alone does not mean
+that DSP/VAD is ready; the operator can retry capture from Kiosk Admin.
+
+A customer conversation error (`role: error`, including unverified Main replies)
+or an uncaught utterance failure latches a service pause. Voice admission,
+queued work, touch input and customer retry controls are blocked. The latch is
+kept in per-tab session storage through reloads. Existing items stay in the menu.
+Only a new order with a successful order-round reset or a newly validated local
+administrator PIN with successful service recovery clears it. PIN recovery
+waits for issued Agent work to settle and never resets/reloads the menu.
+The existing uncertainty and duplicate-submission guards still apply. Technical ASR
+understanding failures, including an invalid recovery tool response before speech
+admission, use this same pause, staff-notification popup and spoken reminder.
+The recognized sentence is retained in conversation with the failure; background
+speech and ordinary semantic uncertainty remain outside this failure path.
+Technical details remain in diagnostics. At the owner’s request, staff
+notification is currently simulated: customer speech says staff were notified,
+and the service event explicitly records `delivery: simulated`. No remote
+notification is sent.
+
 ## Run
 
 Start the menu service, then the kiosk:
@@ -22,6 +183,21 @@ pnpm --filter @proj-airi/stage-kiosk dev
 ```
 
 The layout follows the display orientation by default. Set `VITE_KIOSK_ORIENTATION=landscape` or `portrait` to lock a deployment to one orientation.
+
+## Local conversation storage and cloud services
+
+The Kiosk Vite configuration fixes `VITE_AIRI_CLOUD_ENABLED` to `false`.
+Restoring a shared AIRI login therefore does not query AIRI cloud credits,
+open the generic chat WebSocket, reconcile remote chats, or queue cloud sends
+and deletes. Existing local sessions remain readable and writable; queued cloud
+records are left intact. Other stage applications retain their existing cloud
+behavior unless their build explicitly disables it.
+
+Webnavior device enrollment and visitor interaction recording still use
+`VITE_API_SERVER_URL`. Microphone, VAD, ASR, TTS and ordering tool connections
+are independent of this switch. This setting does not disable shared OIDC login.
+`VITE_SERVER_URL` configures the separate shared AIRI API, not the Kiosk recording
+API; pointing it at Webnavior is not required to suppress cloud credits/chat sync.
 
 ## Development kiosk enrollment
 
@@ -35,14 +211,37 @@ KIOSK_DEVELOPMENT_REGISTRATION_ENABLED=true pnpm --filter @proj-airi/server dev
 VITE_API_SERVER_URL=http://localhost:5168 pnpm --filter @proj-airi/stage-kiosk dev
 ```
 
+For a public deployment, build with `VITE_API_SERVER_URL` set to the public
+Webnavior API origin, and
+`VITE_ORDERING_SCENARIO_URL` set to the public Menu URL. These values are
+compiled into the browser bundle; changing Server environment variables after
+building does not update them. An isolated worktree does not inherit ignored
+`.env.production.local` files. Verify the compiled registration destination,
+not only static asset hashes, before publishing. Build the embedded Menu with
+its matching `VITE_AIRI_ORIGIN`, `VITE_ORDER_MENU_SERVER_URL`, and
+`VITE_ORDER_MENU_PUBLIC_URL`, plus the deployment's `/menu/` base path.
+
+
 The Server omits this endpoint unless the flag is exactly `true`, and always
 omits it when `NODE_ENV=production`. A production kiosk will replace this
 screen with the QR-code enrollment flow.
 
+## Voice after order completion
+
+An accepted order-completion event closes voice admission before asynchronous
+recording work. The host pauses VAD/array processing, invalidates queued speech
+and rejects late ASR results. The submitting Agent can still finish its accepted
+receipt. Dismissing the completion screen keeps voice closed; the customer must
+press the new-conversation/new-order button to resume. Resetting also blocks
+voice. This does not change the saved microphone setting, capture algorithms,
+AEC, or browser permission. Lifecycle unit controls cover closure and explicit
+resumption; full Scene, Windows Firefox and physical playback remain to be tested.
+
 ## Meal clarification
 
 `pnpm -F @proj-airi/stage-kiosk test:history` replays sanitized historical
-quantity and fulfillment claims through the current reply-grounding boundary.
+quantity and fulfillment claims plus the current ordering regressions described
+under Main ordering skill handoff. It aliases `test:ordering-regressions`.
 Shared evidence is checked in under Order Menu's test-only `src/evaluation`;
 reply tests stay in Kiosk so Menu does not import the Kiosk recording lifecycle.
 These offline tests do not call Jev/Main, and partial historical evidence is not
@@ -63,9 +262,23 @@ purchase question again. This read has an additional recipient check; ordinary
 Yes/No answers still take one Jev call. Companion speech and uncertain recipients
 remain silent. Named alternatives, categories and filters use normal routing.
 
+Service clarification is a bounded context cue, not automatic admission for the
+next microphone segment. Silent background/uncertain segments neither renew nor
+consume its original expiry; an accepted handoff settles it, and Menu revisions
+or expiry invalidate it. Only admitted clarification turns add chat messages and
+paired transcript metadata. Existing short answers still require their current
+question and its issued operation authority. Background long-chain regressions
+are retained in Order Menu's incident scripts alongside the frozen112 suite.
+Silence describes presentation, not intent: background, uncertain recipient and a
+valid read-only pause are assessed separately. Recovery timeout/invalid/provider
+failures remain technical failures even if the outer decision still has an
+uncertainty reason. Model replay records `serviceObservation` from actual scope,
+recovery or finite decision evidence, and checks accepted dialogue/cue/tool effects
+before accepting an unadopted turn. A completed sentence is not service evidence.
+
 ## Fresh Main rounds
 
-After phone entry, Main receives the complete compact catalog and current Menu
+When ordering opens, Main receives the complete compact catalog and current Menu
 state through the host-only `kiosk_conversation_context` tool. The host refreshes
 it before each model request, verifies task ownership, replaces old questions and
 intersects tools with current phase capabilities. It preserves the immutable
@@ -119,7 +332,9 @@ This is separate from a real Main Agent task: it admits service meaning, never
 an operation. A review can ignore, abstain, hand off the original request, or
 create a read-only service question. Its answer cannot consume an older Menu
 purchase/payment question. Independent new requests leave that clarification
-without inheriting its authority.
+without inheriting its authority. After the customer answers a service
+question, an admitted review that still requests clarification hands the context
+to read-only Main rather than renewing the recovery question indefinitely.
 
 `SERVICE_RECOVERY_PROGRESS` reaches the host before the provider starts. Explicit
 text shows receipt immediately, elapsed time, and a longer-wait message after
@@ -156,31 +371,14 @@ inventory counts; they do not implement control of a third-party ordering page.
 
 ## Owned-menu checkout test
 
-When the owned menu exposes its phone-entry capability, the Kiosk renders the
-optional phone form as a local overlay in the host ordering region, above the
-iframe. A 25% dark mask leaves the menu visible; its scrollable dialog stays
-inside that region. Upper avatar and conversation controls remain interactive. It does not use document-wide modal
-blocking.
-The entry screen leads with saying “略過” to start voice ordering; the phone
-form and touch skip are secondary. Its listening label follows the host VAD
-readiness, and an inactive microphone points to the touch fallback.
-Touch submit uses host-only `kiosk_customer_phone`; voice and touch skip share
-`customer_skip_phone`. The modal closes only after reading the ordering phase;
-errors retain its controls. Discovery replacement/unmount drops the local draft
-and ignores old reads. Phone input is not an Agent tool or model context. The
-old full-page Menu entry is removed. Standalone Menu opens the catalog directly;
-`kiosk_customer_entry_start` offers phone entry once for a fresh Kiosk order,
-without reopening after a choice or cart activity. The menu remains inert while
-entry is pending. Deploy Menu and Kiosk together.
+The owned ordering App opens directly on the catalog without phone registration
+and does not advertise phone-entry tools, including after order reset. Invoice,
+fulfillment and payment keep their existing flows. The generic Host phone overlay
+and entry hooks remain available only for another interactive service that
+explicitly advertises the complete capability. Such integrations still bind entry
+reads/writes to their current discovery generation and keep phone data out of
+Agent context; they are not the default ordering startup.
 
-The customer must enter a valid phone or explicitly skip before any menu query,
-recommendation, selection, cart edit or checkout. Menu questions return the fixed
-localized `CUSTOMER_ENTRY_REQUIRED` prompt without Main generation or menu reads.
-Phone entry remains voluntary: choosing skip is sufficient. Store facts and
-identity/phone-use explanations remain available without commerce tools.
-The host rechecks entry before presenting a tool result: if a new session has
-restored the phone screen, an older receipt cannot bypass it. The menu runtime
-also rejects both Agent and manual menu reads/writes until entry is complete.
 
 Food requests admitted as `MENU_QUERY`, and other ordering handoffs with current
 product/category matches, carry a host-owned `requireMenuRead` guard. An ordinary
@@ -378,15 +576,42 @@ Kiosk. Preserve the full-page manual-input check when evaluating any CSS fix.
 ## Anonymous customer sessions
 
 Main Agent accepts both direct requests with Fast Path disabled and Jev handoffs
-through the same conversation loop. A completed turn without commerce tools can
-present natural model dialogue (for example, a greeting). Offering menu tools
-alone does not require a menu receipt or discard the answer. History-only reads
-also retain conversational replies. Once commerce tools are attempted, the host
-presents accepted current-turn menu/cart/operation/question receipts rather than
-model success prose. Rejected tools are not automatically replayed. No-tool
-prose relies on the model instructions to avoid unsupported commerce claims;
-this path does not perform a second semantic classification or guarantee that
-all model-written factual claims are grounded.
+through the same conversation loop. With current Menu context, customer text is
+rendered from validated reply selectors or actual tool receipts; draft success
+claims are not displayed as completed operations.
+
+An unknown tool name causes a preflight rejection of its entire proposed batch,
+before any sibling tool executes. The Host returns correlated `UNKNOWN_TOOL` /
+`BATCH_NOT_EXECUTED` results and allows one corrected proposal using refreshed
+facts and the current tool list. It never maps an unknown name or invents missing
+arguments. A second invalid proposal ends the task. Actual execution rejection,
+timeout or uncertain writes retain their existing stop/result-unknown behavior.
+
+An ordering task that ends without an operation may receive one completion
+review, preserving its original utterance, related dialogue, current facts and
+exact scoped tools. `main_completion_review` records this reservation by visitor
+session and task ID. Existing read-only authority, customer entry, checkout and
+payment boundaries are unchanged; a previous operation attempt suppresses review.
+The review can propose the missing operation or return a validated information /
+clarification selector. It shares the existing turn deadline and tool budgets;
+it is not an additional Jev classifier or permission grant. After the single
+review, malformed prose falls back to clarification without another provider
+repair. Once effects occur, displayed results still require actual receipts.
+
+Offline regressions for this flow run with:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/fieldQuantityRecovery.test.ts src/composables/useKioskInteractionRecording.test.ts src/services/questionPresentation.test.ts
+```
+
+`mainQuantityReplay.test.ts` is disabled by default. Its
+`KIOSK_MAIN_QUANTITY_REPLAY=1` opt-in uses the selected provider metadata in the
+existing local `/tmp/webnavior-main-scope-profile.json` fixture and a locally
+provided `LLM_ROUTER_MASTER_KEY`. It sends two synthetic scenarios, application
+instructions and a scratch menu/cart to that provider, consuming model quota.
+Provider credential use and external egress require explicit authorization.
+The Host, HTTP API and database are isolated; it never calls production Kiosk,
+POS or payment endpoints. Never commit the private profile or decryption key.
 
 Internal `menu_get(display:false)` results carry `dataOnly:true`. They provide
 catalog evidence to Main Agent and are excluded from customer reply receipts,
@@ -412,8 +637,9 @@ existing profiles receive Off when settings are next applied.
 Each customer starts an anonymous Kiosk session when they touch the screen, type a message, speak, or operate the menu. The session owns only that customer's conversation and cart:
 
 - After three minutes without activity, it asks whether to continue and starts a 15-second countdown. Showing the dialog does not clear anything. **繼續點餐** cancels that countdown and keeps the same session, conversation, cart and unfinished ordering requirement (including the selected meal, known quantity/options and pending question); it does not reload the menu or repeat the question. Only unanswered countdown expiry, confirmed order completion or explicitly starting a new order/reception clears that context and ends its durable visitor session. Pending AI/tool work and high-confidence engaged presence retain their existing idle-timer protection. Lookups and deferral do not reset context. Internal answer tickets remain short-lived and are renewed on the next decision turn; financial/destructive confirmation authority is not extended by continuing.
+- The on-device administrator panel has a **顯示完成後問卷** switch. This browser-local preference survives reload and profile refresh; it only suppresses the survey, never the accepted-order screen. The completion screen prominently displays the application-issued random three-digit pickup number from the accepted receipt. The Bridge assigns it once within its existing idempotency boundary, so concurrent submissions and receipt replays share it. Rejected/uncertain orders receive none. The POS identifier remains separate; local UUIDs are never presented as pickup numbers.
 - After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and menu/order state are reset to clean standby. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
-- The owned menu reports completion immediately after payment and accepted submission. Its transient order-continuation URL is displayed as a separate QR and desktop link alongside the configured reward/survey; the customer need not acknowledge the order QR before the reward appears. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
+- The owned menu reports completion immediately after payment and accepted submission. Its transient read-only receipt URL is displayed as a separate QR and link, even when the survey is disabled. Both dine-in and takeout customers can scan to keep their pickup number, meals, quantities and total; the link lasts 30 minutes and offers no table, fulfillment or payment actions. The earlier test-only table-binding continuation stays separate. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
 
 This is intentionally separate from AIRI's general chat history. Reception reset
@@ -524,8 +750,10 @@ remaining budget under 24 questions across the entire utterance. Verified read
 receipts are visible before optional review, which may perform at most one extra
 read and then choose only completion or Agent handoff. Rejected tool envelopes
 are not success; a lost execution result is shown as unknown, without automatic
-mutation retries. Main Agent tools run serially, with four rounds, 16 calls and a
-60-second model deadline; exhaustion/rejection retains actual receipts and reports
+mutation retries. Main Agent tools run serially. A task starts with four tool
+batches; each additional verified target in its initial Menu handoff reserves one
+evidence read and one effect batch, up to eight batches. The total16-call limit
+and60-second model deadline remain; exhaustion/rejection retains actual receipts and reports
 unfinished work. Accepted external payment effects are not cancelled by that
 deadline. A complete new request during a pending
 confirmation revokes that exact confirmation before handing off; it never
@@ -760,11 +988,113 @@ as an upload-size refusal, separately from incomplete recognition/provider failu
 
 ### Local access
 
-The visitor experience does not display settings. Long-press the `AIRI 餐飲服務員` label for 1.2 seconds, then enter the PIN configured before starting the kiosk:
+The visitor experience does not display settings. Tap the `AIRI 餐飲服務員` label five times within two seconds, then enter the configured PIN with the onscreen number pad. It provides digits0–9, clear and backspace; the password remains masked. Four taps or an expired sequence does not open maintenance. PIN entry appears above camera/diagnostic overlays and supports touch-only use. Physical keyboard input remains available. Configure the PIN before starting the kiosk:
 
 ```bash
 VITE_KIOSK_ADMIN_PIN='choose-a-private-pin' pnpm --filter @proj-airi/stage-kiosk run dev
 ```
+
+Public builds with a non-loopback `VITE_API_SERVER_URL` require a nonempty
+`VITE_KIOSK_ADMIN_PIN`. Isolated release builds must explicitly inherit the existing
+private PIN configuration; never substitute a new PIN or print its value in logs.
+A missing PIN fails the build before publishing. Local development can omit it.
+
+The startup picker and Kiosk Admin share the same concrete device selector.
+Editing the selection is a draft: the current microphone keeps running until
+**套用並重新啟動**. Apply stops the old stream, acquires the exact chosen device,
+verifies its actual track identity, observes its channels and rebuilds processing
+and VAD. Only a successfully acquired input is saved in
+`kiosk/audio/input-device`; unavailable or mismatched devices never silently use
+the browser default. An actual eight-channel input selects the existing array
+path; other channel layouts retain standard capture. The dynamic spatial trial
+flag remains independent and defaults off.
+
+Capture state, actual captured device, observed channels, processing mode and VAD
+readiness are separate. A listed input or loaded VAD model does not establish
+active speech detection. Startup selection stays visible until its VAD input is
+attached, with permission/capture errors and retry controls. Admin also allows
+fresh permission discovery and explicit stop. Discovery briefly owns a native
+consent stream, closes it on success, failure or retired completion, and never
+feeds it to VAD/ASR or saves it as a choice. The browser may reuse a site grant;
+requesting permission cannot force a prompt when the browser already permits it.
+
+Native requests are serialized across Scene owners. Stop, Scene disposal and
+profile changes retire pending work; late streams are closed before the next
+request starts. A browser permission dialog must still finish before a queued
+request can acquire another input. Browser audio activation waits resume on a
+trusted page interaction; permission denial is not bypassed.
+
+Channel selection waits for 6,144 consecutive render frames with the same layout
+(128ms at48kHz), instead of accepting the first Worklet quantum. Standard capture
+rechecks after browser echo/noise constraints, since they can change channel
+count. This adds startup/probe time (two probes on the standard path), with no
+additional steady-state PCM, VAD or ASR buffering. Linux Firefox synthetic graph
+tests cover actual1/2/8-channel observation, draft/apply lifecycle, retired
+requests and controlled2↔8 routing/fallback. Windows UMA-8 transient driver
+layouts, reconnect, physical channel switching and acoustic acceptance still need
+hardware validation. These controls do not change gain, VAD thresholds or Spatial
+Mask arithmetic.
+
+Active eight-channel **Soft Mask** uses the operator-requested fixed **+65 dB**
+gain (about1778.28×), after spatial processing and before both VAD inference and
+ASR buffering. Opt-in dynamic Binary/Raw Gate processing uses fixed **0 dB** for
+the entire graph, following the supplied unamplified offline reference; it never
+changes gain at a TTS edge. Applying65dB to normal-level gated Raw would clip
+speech and amplify leakage. Standard capture, including a failed Mask generation,
+uses0dB. At nonzero gain the existing streaming limiter retains its0.98 ceiling,
+immediate attack and50ms release. There is no new AGC or normalization. Raw and
+processed comparison recordings stay unamplified. Neither gain choice establishes
+physical speech/VAD quality; normal-volume acceptance remains required.
+
+The operator audio panel measures reference/Mask RMS and peak before gain,
+recognition RMS/peak after gain/limiting, processed VAD sample counts, current and
+maximum speech probability, speech starts/completed segments, presence rejection,
+queue saturation and actual ASR upload attempts. Values are digital dBFS relative
+to full scale, not acoustic dB SPL; exact digital silence is shown as−∞. Counters
+reset with input generation. DSP/VAD metadata does not retain waveforms, and the
+panel polls snapshots at4Hz while open. Raw comparison recordings remain
+unamplified; speaker audition volume is not an input-level measurement. A ready
+model alone does not establish live samples or a completed ASR utterance.
+The same panel also shows the current voice-admission reason and the immutable
+snapshot of the last blocked speech start: camera inference state, quality,
+in-zone result and age of valid evidence. `ENGAGED` presentation can be retained
+through partial tracking or manual activity; it is not proof of fresh admission.
+A rejection is a program decision, not evidence that nobody is physically present.
+Voice admission consumes the same frame's canonical `greetingRoiHit` OR
+`interactionRoiHit` used by presence. Greeting-only admission is preserved and a
+customer in the interaction-only area is accepted; the old greeting-only recheck
+could reject an ENGAGED customer whose torso centre was below the greeting box.
+Camera inference, quality>=0.5 and1500ms valid-evidence freshness remain required;
+ENGAGED by itself is never a bypass. The preview cyan box is the configured
+greeting/detection zone; its interaction ROI can extend beyond that box.
+
+The voice diagnostic overlay starts a row at VAD speech start, before admission.
+The same ID follows capture, final segment, ASR and decision processing. Rejected
+starts/ends, queue saturation and pre-upload rejection remain visible with the
+stage and reason; they no longer disappear before the overlay starts. ASR results
+rejected after response are shown separately. Retiring capture closes a pending
+row; an already blocked row keeps its original reason. The overlay still requires
+voice diagnostics to be enabled and retains only its existing eight-row window.
+
+
+
+
+Firefox autoplay blocking is an activation wait, not a channel-probe/DSP
+failure. Probe and Mask startup wait for trusted pointer/keyboard interaction
+before starting their five-second processing deadlines; VAD resumes through the
+same abortable activation helper. Retiring capture removes pending interaction
+listeners. Array status reports `awaiting-interaction`; VAD remains starting
+until graph startup completes. The shared playback context is created only after
+trusted page interaction. This does not bypass browser autoplay permission:
+an operator must interact with the Kiosk page or allow autoplay for this site.
+Activation handling does not change VAD thresholds; the separately selected array gain is described above.
+
+The operator audio panel shows VAD readiness/errors and the current presence state
+separately from microphone preprocessing status. Standard input alone does not
+establish that VAD or presence admission is ready. Playback uses native media
+output when the shared AudioContext is suspended; a running shared context keeps
+its existing graph. Playback and VAD failures emit bounded device warnings without
+a customer notification. Presence admission rules remain unchanged.
 
 Administrator mode can choose the microphone, adjust the locally stored customer conversation text size, enable or disable voice input, and pause the avatar for calibration. Published Site policy resolves the chat and audio models on the Server; provider credentials and API keys never enter the kiosk bundle or settings surface.
 
@@ -806,6 +1136,20 @@ pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 # To use an installed Chrome instead of Playwright's downloaded Chromium:
 VITEST_BROWSER_CHANNEL=chrome pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts
 ```
+
+Invoice regressions cover both the actual `App.vue` parent wiring
+(`InvoiceApp.browser.test.ts`) and the real iframe-to-Host connection
+(`InvoiceHostBridge.browser.test.ts`). The latter reads the existing loopback POS
+simulator catalog and stops at payment-method selection. Start the same Bridge
+below with `ORDER_MENU_ALLOWED_ORIGIN='*'` on loopback only, then run:
+
+```sh
+VITEST_BROWSER_CHANNEL=chrome VITE_ORDER_MENU_INVOICE_BRIDGE_TEST=true VITE_ORDER_MENU_SERVER_URL=http://localhost:5182 pnpm -F @proj-airi/stage-kiosk exec vitest run --config vitest.browser.config.ts src/components/InvoiceHostBridge.browser.test.ts
+```
+
+Incident scripts with `channel: 'main-direct'` bypass finite Jev selection to test
+the typed-input Main route. Passing Jev/Main candidate recovery is not evidence
+that this separate route passed; guarded provider runs keep their own ledger.
 
 The paid-order reward regression is opt-in and uses an isolated loopback Bridge.
 Start it with `ORDER_MENU_SERVER_PORT=5182 ORDER_MENU_POS_SIMULATOR_PORT=5183
@@ -857,3 +1201,408 @@ question presentation or speech playback. A disconnected browser cannot prove
 release; restart the session to replace that document rather than unlocking on
 a timer. This control currently applies to Main Agent tasks; Fast Path retains
 its existing execution flow.
+
+
+### Main ordering skill handoff
+
+An admitted weak JEV operation may be independently selected by Main's built-in
+`ordering@6` skill. The decision marks `resolvedBy:main-skill`; Host traces use
+`decisionSource:main-skill` rather than attributing the selection to JEV. The Host
+still executes only a currently issued Menu candidate. Menu owns the resulting
+quantity/configuration question and later answer; skill loading never sets a
+blanket mutable flag or changes payment/confirmation authority. Menu now issues
+`intentRecovery` with current effect IDs and question/request correlation; Server
+intersects those IDs rather than reclassifying phase/purpose eligibility.
+
+Menu supplies one draft projection to all three context readers. Host validates
+and forwards its `retainedRequests` to both Jev and Main, then replaces it with
+the fresh Menu projection on continuation rather than keeping stale task data.
+It preserves original requests, known quantity/options and explicit missing
+slots; `confirming` and `suspended` describe unfinished work, never cart effects.
+Read-only task restrictions still apply even when their draft progress survives. Recovery revalidation reads `kiosk_interaction_state`, never the decision producer; checking freshness must not replace the current utterance's answer ticket. Revision/question changes still reject the recovered result.
+
+The Main tool loop distinguishes `waiting` from completed/failed. A Menu-owned
+scope/identity/configuration or new membership/invoice/tax/payment question
+pauses the batch before later sibling calls execute, records those siblings as unexecuted, and returns the question
+without another model continuation. Deferred calls are not automatically replayed.
+Final Host/Menu validation still decides which question may be shown. Operation
+presentation retains every accepted receipt in this turn, with only the current
+validated question; a later failure reports partial progress rather than losing
+earlier successes or claiming the entire request completed.
+
+Run the retained offline field regressions after changing Jev routing, Main
+instructions/skills, Host authority/receipts, or Menu ordering state:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk test:ordering-regressions
+```
+
+`test:history` aliases this command. Root `vitest.config.ts` registers the
+`kiosk-field-regressions` project, so the existing CI `pnpm run test:run` also runs
+these Kiosk/Menu cases; the Server skill tests already belong to its Server
+project. The focused command runs those suites plus the shared draft-schema tests without the full repository suite.
+It uses test model responses and isolated databases, makes no provider requests,
+and never writes a production order. These assertions inspect domain state and
+tool effects rather than accepting plausible assistant prose.
+
+| Retained failure | Stable test coverage | Required result |
+| --- | --- | --- |
+| Shown meal → omitted-name purchase | `orderingSkill.test.ts`, `agentTargetRecovery.test.ts` | Correct item/quantity in cart; later reads cannot change the target |
+| Meal identity confirmation → 對，一份 | `orderingSkill.test.ts`, Menu `mealClarification.test.ts` | Current proposal accepted once; answer quantity retained; refusal/replay cannot add |
+| Same answer through Jev / Main / Main abstention | `orderingSkill.test.ts` | Both successful paths have the same cart effect; abstention keeps the same draft and empty cart |
+| Missing slots followed by another proposed tool | `useKioskInteractionRecording.test.ts`, `questionPresentation.test.ts` | Wait for customer; no later checkout effect or extra model round; partial receipts survive failure |
+| Catalog identity/price/options changes | Menu `conversationMenus.test.ts` | Four catalogs complete lookup → omitted-name order → required options; old answers reject after catalog changes; new order uses current price |
+| Shared draft progress and options | Menu `conversationProgress.test.ts`, shared `kioskConversation.test.ts` | All readers agree; unknown quantity stays absent; confirmation keeps original request and selected options; reads do not mutate drafts/cart |
+| Missing quantity → quantity answer | `orderingSkill.test.ts` | No early cart write; exact requested quantity after answer |
+| Dine-in/pickup answer became recommendation | `orderingSkill.test.ts`, Server `kiosk-conversation-skills/index.test.ts` | Actual fulfillment change; no added dish |
+| Checkout invitation → 好 did nothing | Same integration/Server suites | Checkout opens once; no payment call; 先不要 keeps ordering |
+| Question expires during inference | Menu `questions.test.ts`, `seatingRuntime.test.ts` | New answer gets its lease; stale/revision-invalid executions remain rejected |
+| Price/query changes lose their scope | `priceHandoff.test.ts`, Menu `queryActions.test.ts` | Browser price/query contract and empty cart for inquiries |
+| Text claims completion without tool effect | `historicalReplies.test.ts`, `fieldRegression.test.ts`, `questionPresentation.test.ts` | Unverified completion is rejected |
+
+`apps/order-menu/src/evaluation/orderingIncidents.ts` retains sanitized reported
+utterances and observed wrong replies, separately from expected cart/phase. The
+integration tests consume these records; they are not only prose in a task log.
+
+Real-provider behavior is separately opt-in in `budgetOrderReplay.test.ts`; offline
+passing does not establish model/prompt accuracy. It requires the existing server
+`DATABASE_URL` and `LLM_ROUTER_MASTER_KEY` in the process environment, explicit
+`KIOSK_BUDGET_ORDER_REPLAY=1`, a new private `KIOSK_BUDGET_REPLAY_OUTPUT` path, and
+explicit aggregate call/time limits across all runs. It only reads live profiles,
+policy and persona; sessions/cart/profile copies are isolated. Do not commit raw
+provider artifacts or credentials. The default suite skips this test.
+
+| `KIOSK_BUDGET_REPLAY_FLOW` | Real-provider scenario |
+| --- | --- |
+| unset | Six fresh turns: 100元 → 其他 → 200元 → 其他 → 水餃 → 兩份 |
+| `core` | Four live budget/order turns |
+| `meal-skill` | One live meal request after a reconstructed query prefix |
+| `checkout-entry` | 好 after a seeded checkout invitation; invoice once, no payment |
+| `configuration-order` | 水餃兩份 → synthetic required sauce → pickup → invoice; no early cart effect or payment |
+| `query-continuation` | Seed 100元 browsing; live 其他 → 明確看全部; preserve budget until explicit catalog request |
+| `confirmation-order` | 一份排骨飯 → 排骨便當 → 對，一份 → 內用 → 好; fresh five-turn incident replay |
+| `context-order` | 想吃排骨便當 → 那我要一份 → 內用 → 好 |
+
+For `context-order`, also run with `KIOSK_CONTEXT_ORDER_LOOKUP_PREFIX=1` to retain
+the observed read-first branch: seed the verified one-dish lookup, then run the
+remaining three turns live. A natural run that instead asks quantity first does
+not cover this branch. `KIOSK_CHECKOUT_MAIN_PROBE=1` in `checkout-entry` explicitly
+injects the observed Jev admission abstention to exercise real Main recovery; it
+must be reported separately from natural Jev routing. Record seeded prefixes,
+actual cart/phase, model-call totals, and failures; a single probe is not full-flow
+or production acceptance. No payment is executed in these entry probes.
+
+
+### Frozen conversation matrix
+
+`apps/order-menu/src/evaluation/conversationMatrix.ts` owns112 script positions:
+20 original conversation chains, eight expanded existing provider probes, four
+reconstructed previously planned sessions, and80 new flows across16 families.
+The earlier plan called the baseline32 complete flows; that was inaccurate.
+D07/H05 retain insufficient-entry-state diagnostic labels and cannot pass as
+completed historical replays. `conversationMatrix.test.ts` verifies provenance
+links and tests that the oracle rejects wrong items/quantities, recommendation
+without purchase, and over-budget results. It is part of the fixed regression gate.
+
+To replay one reconstructable script using the same real Host/Hono/Menu harness,
+provide the existing environment and explicit limits described above, plus
+`KIOSK_CONVERSATION_SCRIPT=C14-F2`, then run:
+
+```sh
+pnpm -F @proj-airi/stage-kiosk exec vitest run src/services/budgetOrderReplay.test.ts
+```
+
+The harness applies the explicitly versioned outcome policy from
+`conversationAcceptance.ts` without modifying the frozen matrix. Artifacts include
+both `historicalScript` and the current script plus `acceptancePolicy`; optional
+replies never waive state preservation or hide failed model recovery. Keep
+superseded/deferred positions separate from current functional results.
+
+Use a new0600 output path each time. The JSONL includes frozen script metadata,
+turn snapshots, raw provider wire without credentials, receipts, assessments and
+actual call totals. Keep a single aggregate budget across processes and failed
+runs. Preselected smoke12 and high-risk24 IDs are exported with the manifest;
+high-risk acceptance requires three complete passing replays on the accepted
+implementation. Gold never enters provider input. Do not silently edit gold after
+observing a failure or count a seeded/synthetic control as an original incident.
+
+For D07/H05 only, `KIOSK_CONVERSATION_DIAGNOSTIC=seeded-entry` explicitly supplies
+the missing entry-ready precondition. Their output records the evidence gap,
+`seededEntry` and `historicalReplay:false`; report them separately from the110
+reconstructable scripts, even when every diagnostic assertion passes.
+
+`orderingIncidents.ts` also retains screenshot wording (including100員), review
+invalid, repeated questions and100-portions reports, with explicit missing-state
+notes and links to synthetic scripts. Raw historical audio/session gaps remain
+unresolved; synthetic success cannot upgrade those incidents to full historical
+replay. Future provider changes must rerun the linked scripts, preserve previous
+failures, and report the actual final customer text as well as cart effects.
+
+
+電話登記關閉回歸以 `KIOSK_CONVERSATION_SCRIPT=P01-F1` 使用既有隔離 replay；
+`P01-A1`／`P01-A2` 分別驗證否定關閉與同伴／其他視窗，與原112固定gold分開。
+互動內容／工具回執維持順序儲存；`service_event` 的 `*_metrics` 使用獨立背景佇列，
+其網路往返不阻塞回覆。兩條佇列各自維持順序並捕捉原visitor ID；跨佇列的sequence
+代表伺服器儲存順序，不代表嚴格的事件發生順序。
+
+## Spatial Mask input (Firefox)
+
+Capture automatically selects its preprocessing on each start or device change.
+The device store requests ideal8CH/48k with browser echo/noise/gain processing
+disabled so Firefox can expose the raw array. A silent capture Worklet observes
+actual channels without upmixing. Eight actual channels start the configured
+seven-microphone spatial processor, independent of device name. Mapping/radius
+remain operator settings; channel count does not establish physical geometry.
+Other channel counts retain ordinary browser capture and stream VAD.
+
+The operator panel offers **TTS-aware directional processing**, a local opt-in
+(`kiosk/audio/dynamic-spatial`, default false), editable only while capture is
+stopped. Disabled uses the deployed Soft Mask and semantic interruption. Enabled
+uses the same48→16k FIR, Hann512/hop256 STFT, direction competition and Gaussian
+smoothing in a single bounded Worker. During native audible TTS it selects Binary
+Mask (front coherence wins per frequency bin). Otherwise it selects gated Raw
+from mapped microphone5, not a second capture or detector. The spatial Gate uses
+v4's speech-band weighted coherence/mask criteria, requires three directional
+frames, and reuses existing four-frame lookahead for32ms pre-open; its320ms
+hangover/32ms release does not buffer audio. This shortened Gate differs from the
+v4 offline centred smoothing/96ms pre-open and must be separately field-validated.
+
+Native `playing` and synchronous playback termination drive switching, not the
+Agent's speaking phase or pending synthesis. The Worklet flushes partial capture
+blocks before each edge and stamps absolute source-frame offsets. The Worker
+selects output on that clock without resetting FIR, FFT, gain, VAD or utterance
+history. Stop retains Binary for an initial **320ms echo-tail guard**, then blends
+to Gate over32ms. This guard holds the processing choice, never the samples; it
+is not a measured USB acoustic delay or clock-drift compensation. Generation
+isolation discards retired playback/capture work. Pending control events and PCM
+history remain bounded. Failure restores standard capture with the existing
+operator warning; restart retries detection. Stop capture before changing policy,
+mapping or radius. No customer popup or TTS is generated for a processor fallback.
+
+With dynamic processing active, an admitted existing Silero `speech-start` stops
+only audible TTS immediately. It does not cancel the Agent/tool turn, authorize
+commerce, discard the voice candidate or wait for completed ASR/Jev. Standard
+capture and feature-off keep the previous semantic interruption policy. Camera
+admission is unchanged. There is no Raw VAD branch, new energy detector, lowered
+threshold, second microphone or AEC3 activation. Silero settings and its existing
+processed-audio pre-roll remain unchanged; raw playback audio is never spliced
+back into ASR to restore onset.
+
+The DSP adds no fixed lookahead or output batching: the existing64ms Gaussian
+lookahead,2048@48k capture blocks and512@16k delivery remain. A local accelerated
+120-second tone control emitted first PCM at128ms for both policies; Linux batch
+p95 was about0.93ms soft/1.00ms dynamic. These are scheduling/CPU controls, **not
+Windows end-to-end barge-in latency or real speech acceptance**. Operator
+telemetry includes current output mode (soft/binary/tail/gate), transition count,
+capture-to-consumer lag and maximum DSP work, plus existing levels/VAD facts.
+
+Mask feeds the existing VAD through serialized blocks of at most512samples. A final
+partial frame is padded only for inference, keeping real samples/durations intact.
+Normal microphones retain their stream input. Existing VAD settings, WAV/HTTP ASR,
+utterance ordering/cancellation and Jev/Main remain in place. Processor failure or
+more than one second of Worker/VAD backlog retires the generation and restores
+standard capture with a visible suppression-off warning. Disabling voice mode
+also releases the Mask graph. Track ownership stays with the audio device store.
+
+Failures also produce a bounded device warning at `/api/kiosk/audio/warnings`,
+authenticated with the existing device cookie and independent of visitor sessions.
+The Server writes structured WARN fields (device/site, generation, failure stage,
+observed channels and standard/unavailable outcome). Normal microphone selection
+is not a warning. Reporting has a five-second deadline, never blocks VAD, and does
+not append conversation entries. Delivery failure stays in the developer console;
+there is no customer notification or indefinite retry queue.
+
+The standalone microphone page now selects LCMV or Mask. Mask comparisons contain
+raw48k eight-channel float32 and16k mono reference/processed PCM16 from the same
+15-second source interval. JSON identifies both clocks, mapping, radius and Mask
+algorithm; no loudness normalization, network upload, Session or Admin migration
+is involved. Admin comparison uploads and migration0047 are excluded from this release;
+Mask comparison recordings stay local. Reference geometry defaults to
+45mm in the core; the device's configured radius/mapping is used when integrated
+and is still subject to physical verification.
+
+Synthetic acceptance and frozen oracles live in `src/audio/spatialMask*` and
+`src/audio/dynamicSpatial*`. The supplied v4 Binary output matches within1e-7;
+the new streaming Gate intentionally has its own onset/direction controls. Both
+oracles are excluded from formatting. Existing long-duration soft test:
+`MASK_STRESS_SECONDS=1800 pnpm -F @proj-airi/stage-kiosk exec vitest run src/audio/spatialMaskStress.test.ts`.
+An opt-in130-second browser test uses `VITE_MASK_BROWSER_STRESS=true`. These
+establish transport/numerical continuity, not real speech or hardware direction.
+The independent comparison page retains its own Soft Mask policy; it does not
+implicitly enable or validate the Scene's dynamic policy. `SpatialInput`'s
+comparison API records the actual active policy's contiguous unamplified output.
+
+**Acceptance remains open; do not enable by default or deploy as a proven fix.**
+The user's v4 offline ASR results (TTS-only/front-only/overlap) are supplied
+reference evidence, not results rerun on the integrated implementation. Linux
+Firefox tests cover real Worklet/Worker/player lifecycle with synthetic audio;
+Silero segmentation controls use a mocked inference boundary. No Windows UMA-8,
+USB speaker, live Silero false-start rate, real ASR or full Scene acoustic test
+has been accepted. One explicit `BLOCKED` expected-failure control retains the
+known loss of a weaker front source when a stronger coherent side source fully
+occupies the same spectral bins; the original v4 Binary oracle has the same loss.
+A spatial mask cannot guarantee separation for co-directional TTS/customer audio.
+Do not weaken these controls or raise customer volume to claim acceptance.
+
+On Windows Firefox validate at normal customer volume: TTS-only (zero VAD starts
+and zero TTS transcripts), front-only including quiet initial syllables, front
+barge-in at early/middle/late TTS positions (prompt stop and complete transcript),
+side-only speech during TTS (no interruption), and post-stop echo tails/repeated
+playback. Repeat with the actual fixed gain, geometry, speaker volumes and waiting
+music. Confirm mono/stereo compatibility, feature-off behavior and processor-fault
+fallback. Compare to the existing array microphone plan's hardware acceptance.
+
+## LCMV comparison reference
+
+LCMV is retained on the standalone local verification page for comparison; it is
+not selected for live Kiosk input. Its existing fixed geometric weights and
+48kHz eight-channel Worklet remain available for controlled recordings. The
+pending Admin LCMV comparison schema is separate from local Mask recordings;
+it does not add an automatic upload or require migration0047 for Mask capture.
+
+## Standalone local microphone verification
+
+Open <https://webnavior.aikcitri.qzz.io/ui/mic-check/> in Firefox on the computer
+that has the UMA-8 attached. Allow microphone access, select its raw eight-channel
+input, open capture, choose front/left/right/background, then record15seconds.
+The page keeps only the latest group: two mono players, three WAV downloads and
+one metadata JSON download. Download each group before recording the next.
+Leaving/reloading clears browser-memory recordings. There is no live speaker
+monitoring, Session, enrollment, model, upload, database or POS connection.
+
+Build only this entry with `pnpm -F @proj-airi/stage-kiosk build:audio-check`;
+output is `dist-audio-check/`, with relative URLs for independent HTTPS hosting.
+The standalone page does not require Server migration0047. Its CSP blocks
+network connections and it registers no service worker. The published `/ui/`
+prefix is excluded by the existing Admin service-worker navigation fallback.
+Publish only this directory's static files; do not deploy the pending Kiosk/API
+array integration as part of this standalone page.
+
+Array radius/mapping can be changed while capture is stopped. Mapping starts
+with the prototype's zero-based0..6 assumption; physical mapping and direction
+suppression must be checked separately on the actual machine. The page does
+not claim automatic calibration or that LCMV is superior to GSC.
+
+A future full Admin static-root replacement must preserve or republish `/ui/mic-check/`
+from its dedicated build output. It is separate from the normal Kiosk build.
+
+### Ordering presentation and service replies
+
+The initial conversation panel and every welcome path (fixed/custom phrases,
+VLM welcome and a direct greeting) mention Taiwanese ordering. The fixed bank
+warms and caches the complete sentence including this hint; it does not add
+another synthesis call per visitor. Currency tokens are normalized only in the
+presentation/TTS copy; original ASR, model history and numeric prices are intact.
+
+A clear question with unavailable sales-ranking/promotion facts is a
+`service-information` reply with `topic:other`, not meaning clarification.
+Server and Host both permit that bounded missing-data answer without claiming a
+menu presentation or commerce success. Unclear names/quantities still use the
+existing clarification flow. Finite phone skips are independently checked by
+Main; the existing answer-coverage check can also classify background speech.
+
+Microphone selection is **explicit and manual**, persisted separately in
+`kiosk/audio/input-device`. Old automatic/default/shared-store selections are not
+inherited: their actual identity was never confirmed. The selector lists concrete
+audio inputs, excluding default/communications aliases, and provides an operator
+permission button to reveal devices/labels. Select UMA-8, then start capture. The
+chosen device is reused after restart/reload; an absent device is never silently
+replaced by the conference speakerphone. Raw8CH capture is an ideal capability of
+that selected device, not a device-selection heuristic. Actual Worklet channels
+still choose Mask versus ordinary processing, so non-array microphones remain
+supported. There is no device-name guessing or new microphone driver dependency.
+
+`useKioskMicrophoneSelection` owns exact capture identity/constraints; the shared
+device store owns tracks and `useArrayMicrophone` owns observed-channel DSP only.
+The exact ID overrides shared default/missing-device retries, and returned live
+track identity is checked before enabling VAD/ASR. No selection pins an unavailable
+sentinel instead of requesting an arbitrary input. App model initialization no
+longer starts the shared audio store before Scene/profile/device policy is known.
+Disposal stops capture before releasing constraints. Browser permission grants may
+be reused without a prompt; device selection remains in the Kiosk operator panel.
+
+Linux Firefox synthetic-media controls cover initial unselected state, legacy
+automatic preferences, exact-device capture/restart/recreated owner, shared-default
+changes, missing-device retries and rejection/stop of an unexpected returned
+track. Run storage/media browser suites with `--no-file-parallelism`: test iframes
+share localStorage, so parallel owner tests can change each other's input/enabled
+preferences. Windows device enumeration/USB reconnect still needs field testing.
+
+The same opt-in isolated replay also loads
+`apps/order-menu/src/evaluation/customizationCases.ts` (original-recipe consent,
+cancellation, missing quantity and delayed preparation, both Jev/Main and direct
+Main) and `discoveryCases.ts` (open recommendation, category preference and an
+unlisted exact product). Use their case IDs with `KIOSK_CONVERSATION_SCRIPT`.
+Actual reported failures stay in the private acceptance archive as well as the
+synthetic regressions; do not count an earlier failed attempt as passed or demand
+one exact wording when the verified effect and meaning are equivalent.
+
+### Camera model deadlines and stalled frames
+
+Local camera observation uses a30-second model-loading deadline and a5-second
+unchanged-video-time deadline. These are conservative safety defaults, not
+Windows camera timing measurements. Model creation includes lazy SDK/WASM/model
+initialization; a timeout stops observation, clears old presence and attention,
+and exposes a maintenance diagnostic requesting connection checks/reload.
+MediaPipe initialization cannot be aborted: a late model is closed, and restart
+is blocked while a timed-out load remains pending. Normal stop/start permits at
+most two unresolved native model loads, bounding repeated toggles. Timers cannot
+interrupt synchronous code that blocks the browser main thread.
+
+Repeated frames no longer refresh presence. A live track with frozen frames
+becomes `degraded`, clears stale evidence and waits for fresh frames; inference
+then resumes with the same model. Hidden-page time is excluded from the stall
+clock, and resume waits for a changed frame. Existing ROI, confidence and greeting
+rules are unchanged. Chromium and Linux Firefox fake-camera controls exercise
+these transitions; physical Windows device stalls and actual model network
+loading remain untested. These protections do not establish the cause of any
+previous missed greeting. Microphone, AEC, VAD and ASR paths are unaffected.
+
+### Follow-ups before Agent tools
+
+A related follow-up may replace an Agent task only before any browser tool was
+requested. Its task transcript retains the unfinished original request and the
+new speech in order; conversation history alone is not task ownership. Once a
+tool is requested, the existing wait/re-decision boundary still applies. No tool
+effect is replayed, and this does not change audio barge-in or microphone policy.
+
+Internal Menu reads marked `dataOnly` may contain a customerMessage for model
+evidence, but cannot replace a displayed recommendation's spoken/text receipt.
+This rule applies to both the Menu reply window and the operation-outcome path.
+A rejected later display must not cause internally queried items to be narrated
+as though that view was successfully presented.
+
+### Visible outcomes for interrupted utterances
+
+Unexpected utterance-processing exceptions preserve the spoken text and publish
+an error into the existing staff-assistance lifecycle. Admission is correlated
+by utterance ID until settlement, so equal earlier text cannot hide a failed turn.
+A stale/reset queue ticket cannot publish an error into the replacement visitor.
+
+If local presence no longer permits a decision, already-admitted speech gets a
+visual unfinished-request notice; operations remain blocked and no speech plays
+to the absent visitor. Exhausted deferrals similarly leave a visual outcome.
+Actual background IGNORE remains silent. These notices do not relax presence or
+change microphone/AEC policy. Finite decision/failure/presence/deferral events use
+the metrics lane, without exception text/stack or raw audio. They distinguish
+future failures; they do not establish the cause of past missing responses.
+
+
+For a failed `kiosk_conversation_context` call, `browser_tool_metrics` retains
+`failureCode: CONTEXT_EXECUTION_FAILED` and, when emitted by Menu validation,
+bounded `validationPaths`. These contain schema locations rather than customer
+values or arbitrary RPC exception messages. Existing task, document and operation
+IDs correlate the failure; absence of validation paths leaves the cause unknown.
+
+
+Special/bulk ordering uses two separate, expiring read-only questions. First the
+customer confirms their ordering intent (`order-assistance`); agreement then
+leads to an explanation of supported quantities/options and a `staff-assistance`
+offer. Only agreement to that second offer displays and speaks the existing
+simulated staff notice. Neither agreement adds items, sends an order, locks the
+screen or contacts an external service. Ordinary multi-item orders remain normal.
+A proven no-effect quantity rejection can start the first question directly;
+uncertain execution and unrelated failures retain their existing error handling.
+Questions bind to current menu/cart/question versions and expire after 30 seconds;
+new ordinary requests retire the old cue. Notification speech uses existing TTS
+policy. Physical voice acceptance remains pending.

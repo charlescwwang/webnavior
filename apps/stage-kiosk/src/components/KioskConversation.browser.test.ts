@@ -34,7 +34,7 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
   await expect.element(screen.getByText('我要一碗牛肉麵', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('請確認這份訂單。', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('暫時無法連線，請稍後再試。', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢選單。', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單。', { exact: true })).toBeVisible()
   expect(messages[0]?.content).toBe('我要一碗牛肉面')
   expect(messages[1]?.content).toBe('请确认这份订单。')
   expect(streaming.content).toBe('正在查询菜单。')
@@ -47,7 +47,7 @@ it('presents pending recognition and processing text in Traditional Chinese', as
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   await expect.element(screen.getByText('請幫我推薦', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢選單', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
 })
 
@@ -59,7 +59,7 @@ it('keeps only the simulated ASR input in text mode and forwards its transcript'
   })
   expect(document.querySelectorAll('textarea')).toHaveLength(1)
   expect(screen.container.querySelector('[aria-label="送出訊息"]')).toBeNull()
-  await expect.element(screen.getByText('正在查詢選單', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await screen.getByRole('textbox').fill('我想吃面，一碗')
   await screen.getByRole('button', { name: '模擬辨識並執行' }).click()
   expect(onSimulateAsr).toHaveBeenCalledOnce()
@@ -127,4 +127,34 @@ it('describes missing assistant control without presenting the service as broken
   const message = 'Assistant controls unavailable. Use the service screen directly.'
   await expect.element(screen.getByText(message)).toBeVisible()
   expect(screen.container.querySelector('.service-status')?.textContent).not.toContain('WebMCP')
+})
+
+// Report: this chat,Nov5 — source text stays intact while assistant display omits NT/$.
+it('normalizes prices in final and streaming assistant content without changing original evidence', async () => {
+  const messages: ChatHistoryItem[] = [
+    { role: 'user', content: '預算NT$100' },
+    { role: 'assistant', content: '便當 NT$80。', slices: [{ type: 'text', text: '便當 NT$80。' }], tool_results: [] },
+  ]
+  const screen = render(KioskConversation, {
+    props: { ...props, messages, voiceConversationOnly: true },
+    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
+  })
+  await expect.element(screen.getByText('便當 80元。', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('預算100元', { exact: true })).toBeVisible()
+  expect(messages[0].content).toBe('預算NT$100')
+  expect(messages[1].content).toBe('便當 NT$80。')
+})
+
+it('shows recognized speech provisionally before it becomes a formal chat message', async () => {
+  const messages: ChatHistoryItem[] = []
+  const screen = render(KioskConversation, {
+    props: { ...props, messages, voiceConversationOnly: true, recognizedTranscripts: [{ id: 11, text: '水餃兩份' }] },
+    global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
+  })
+  try {
+    await expect.element(screen.getByText('水餃兩份', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('stage.kiosk.asr-awaiting-decision', { exact: true })).toBeVisible()
+    expect(messages).toHaveLength(0)
+  }
+  finally { screen.unmount() }
 })

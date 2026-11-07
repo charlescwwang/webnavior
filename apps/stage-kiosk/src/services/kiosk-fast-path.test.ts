@@ -1,5 +1,6 @@
 import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 
+import { createPresenceWindow, defaultPresenceSettings, defaultProactiveInteractionSettings } from '@proj-airi/kiosk-proactive'
 import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { parse } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
@@ -106,7 +107,8 @@ describe('kiosk System One fast path', () => {
   // Report: this chat, 2026-10-20; a visitor can leave while Jev is deciding.
   it('rejects a late voice action after local presence expires before execution', async () => {
     const gate = createVoicePresenceGate()
-    gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
+    const presence = createPresenceWindow(defaultPresenceSettings, defaultProactiveInteractionSettings)
+    gate.observe(0, presence.decide(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }).candidate)
     let now = 100
     const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
     const result = await runFastPath({ transcript: '一份水餃', isEnabled: async () => true, isCurrent: () => gate.allows({ enabled: true, observing: true, nowMs: now }), decide: async () => {
@@ -119,7 +121,8 @@ describe('kiosk System One fast path', () => {
 
   it('retains an accepted receipt when presence expires during an issued mutation', async () => {
     const gate = createVoicePresenceGate()
-    gate.observe(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }, { x: 0, y: 0, width: 1, height: 1 })
+    const presence = createPresenceWindow(defaultPresenceSettings, defaultProactiveInteractionSettings)
+    gate.observe(0, presence.decide(0, { centre: { x: 0.5, y: 0.5 }, poseQuality: 1, bodyScale: 0.2, attention: 'unknown' }).candidate)
     let now = 100
     const onExecuted = vi.fn()
     const execute = vi.fn(async (tool: ServiceTool) => {
@@ -611,11 +614,12 @@ describe('kiosk System One fast path', () => {
     expect(execute).not.toHaveBeenCalled()
   })
 
-  it('can classify an active Agent follow-up without a legal menu action', async () => {
+  // Report: this chat, 2026-11-07, session yTDlWLScWAaHVqoxI1q9j.
+  it.each([['我要招牌便當', '不要辣'], ['我不想吃魚了', '你還有推薦什麼？']])('retains unfinished demand %s when the customer follows up with %s', async (previous, followUp) => {
     const decide = vi.fn(async () => ({ kind: 'FOLLOW_UP_ACTIVE' as const }))
     const execute = vi.fn(async () => ({ candidates: [], phase: 'ordering' }))
-    await expect(runFastPath({ isEnabled: async () => true, activeRequest: { stage: 'thinking', text: '我要招牌便當' }, decide, transcript: '不要辣', webMcp: { execute, tools: [candidateTool, executeTool] } })).resolves.toMatchObject({ kind: 'FOLLOW_UP_ACTIVE' })
-    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ activeRequest: { stage: 'thinking', text: '我要招牌便當' } }) }))
+    await expect(runFastPath({ isEnabled: async () => true, activeRequest: { stage: 'thinking', text: previous }, decide, transcript: followUp, webMcp: { execute, tools: [candidateTool, executeTool] } })).resolves.toMatchObject({ kind: 'FOLLOW_UP_ACTIVE', requestText: `${previous}\n${followUp}` })
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ decisionState: expect.objectContaining({ activeRequest: { stage: 'thinking', text: previous } }) }))
     expect(execute).toHaveBeenCalledTimes(1)
   })
 
@@ -640,4 +644,48 @@ describe('kiosk System One fast path', () => {
     })).resolves.toMatchObject({ kind: 'DEFERRED' })
     expect(execute).toHaveBeenCalledTimes(1)
   })
+})
+
+// Report: Nov4 acceptance audit; recovery timeouts cannot count as semantic silence.
+it.each(['timeout', 'provider-error', 'invalid'] as const)('distinguishes failed recovery %s from recipient uncertainty', (failure) => {
+  expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'failed', failure } })).toBe(true)
+  expect(shouldShowDecisionRetry({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'completed', admission: 'uncertain' } })).toBe(false)
+})
+
+it('commits a JEV-complete utterance before an asynchronous tool starts or finishes', async () => {
+  const events: string[] = []
+  let release: () => void = () => {}
+  const accepted = new Promise<void>(resolve => release = resolve)
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === candidateTool.name)
+      return { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }
+    events.push('tool')
+    return { customerMessage: '已加入。' }
+  })
+  const running = runFastPath({ transcript: '水餃一份', isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item' }), onUtteranceAccepted: async () => {
+    events.push('history')
+    await accepted
+  }, webMcp: { tools: [candidateTool, executeTool], execute } })
+  await vi.waitFor(() => expect(events).toEqual(['history']))
+  expect(execute.mock.calls.filter(([tool]) => tool.name === executeTool.name)).toHaveLength(0)
+  release()
+  expect((await running).kind).toBe('FAST_ACTION')
+  expect(events).toEqual(['history', 'tool'])
+})
+
+it.each(['IGNORE', 'INCOMPLETE'] as const)('does not commit a %s speech candidate to conversation history', async (kind) => {
+  const onUtteranceAccepted = vi.fn()
+  const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
+  await runFastPath({ transcript: '那個', isEnabled: async () => true, decide: async () => ({ kind }), onUtteranceAccepted, webMcp: { tools: [candidateTool, executeTool], execute } })
+  expect(onUtteranceAccepted).not.toHaveBeenCalled()
+})
+
+it('does not turn a failed Host history write into a provider fallback or execute a tool', async () => {
+  const execute = vi.fn(async () => ({ phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '新增餐點' }] }))
+  const result = await runFastPath({ transcript: '水餃一份', isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item' }), onUtteranceAccepted: async () => {
+    throw new Error('History unavailable')
+  }, webMcp: { tools: [candidateTool, executeTool], execute } })
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(result.reason).not.toBe('PROVIDER_FAILURE')
+  expect(execute.mock.calls).toHaveLength(1)
 })

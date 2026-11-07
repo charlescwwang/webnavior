@@ -6,6 +6,8 @@ import type { KioskProactiveVisionStatus } from '../composables/useKioskProactiv
 import { Checkbox, FieldInput, FieldTextArea, SelectTab } from '@proj-airi/ui'
 import { computed } from 'vue'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+
 const props = defineProps<{
   status: KioskProactiveVisionStatus
   error?: string
@@ -24,6 +26,7 @@ const statusLabel = computed(() => ({
   capturing: '相機已啟動，觀測目前未啟用。',
   observing: '正在本機觀測；畫面不會上傳或保存。',
   unsupported: '此瀏覽器不支援相機觀測。',
+  degraded: props.error ?? orderingMessages['zh-Hant'].cameraDiagnostics.inferenceFailed,
   failed: props.error ?? '無法啟動本機相機觀測。',
 }[props.status]))
 
@@ -102,7 +105,7 @@ function updateGreetingPrompt(key: 'attentionGreetingPrompt' | 'presenceGreeting
       </div>
     </template>
 
-    <p class="vision-status" :class="{ 'is-error': props.status === 'failed' || props.status === 'unsupported' }">
+    <p :class="['vision-status', { 'is-error': ['failed', 'unsupported', 'degraded'].includes(props.status) }]">
       {{ statusLabel }}
     </p>
   </section>

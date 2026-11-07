@@ -91,7 +91,10 @@ export function createKioskUtteranceQueue(options: {
           await options.process(utterance, { isCurrent: () => currentGeneration === generation && !controller.signal.aborted, signal: controller.signal })
         }
         catch (error) {
-          options.onError?.(utterance, error)
+          // Reset revokes this visitor’s error ownership as well as their work.
+          // A late abort/rejection must never pause the next order.
+          if (currentGeneration === generation)
+            options.onError?.(utterance, error)
         }
         finally {
           activeController = undefined

@@ -203,3 +203,18 @@ it('aborts the active decision transport when the queue is reset', async () => {
   finish()
   await queue.idle()
 })
+
+// Report: this chat, 2026-11-06 — a cancelled old request must not relock a new order.
+it('does not report an old handler rejection as a fault after a queue reset', async () => {
+  const onError = vi.fn()
+  let reject!: (error: Error) => void
+  const queue = createKioskUtteranceQueue({ onError, process: async () => {
+    await new Promise<void>((_resolve, fail) => reject = fail)
+  } })
+  queue.submit({ source: 'simulation', text: '舊訂單' })
+  await vi.waitFor(() => expect(reject).toBeDefined())
+  queue.reset()
+  reject(new Error('late cancellation'))
+  await queue.idle()
+  expect(onError).not.toHaveBeenCalled()
+})

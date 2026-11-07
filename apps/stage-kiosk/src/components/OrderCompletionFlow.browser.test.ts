@@ -1,3 +1,5 @@
+import type { InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
 import { defineComponent, h, shallowRef } from 'vue'
@@ -13,9 +15,10 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
   it.each([
     { invoice: 'carrier' },
     { invoice: 'donation' },
-  ] as const)('shows both reward and table-binding QR after automatic payment with invoice $invoice', async ({ invoice }) => {
+  ] as const)('shows reward and a read-only receipt QR after automatic payment with invoice $invoice', async ({ invoice }) => {
     const completed = shallowRef(false)
     const orderContinuationUrl = shallowRef<string>()
+    const orderResult = shallowRef<InteractiveServiceOrderResult>()
     const registry = createScenarioRegistry()
     registry.setServices([{
       id: 'restaurant-ordering',
@@ -27,13 +30,14 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
     const stop = registry.on('completed', (message) => {
       completed.value = true
       orderContinuationUrl.value = message.orderContinuationUrl
+      orderResult.value = message.orderResult
     })
     const entryUrl = new URL('../../../order-menu/src/main.ts', import.meta.url).href
     const screen = render(defineComponent({
       setup: () => () => h('div', [
         h('iframe', { title: 'Test menu', srcdoc: `<div id="app"></div><script type="module" src="${entryUrl}"></script>` }),
         completed.value
-          ? h(CustomerSessionCompletion, { orderContinuationUrl: orderContinuationUrl.value, settings: {
+          ? h(CustomerSessionCompletion, { orderContinuationUrl: orderContinuationUrl.value, orderResult: orderResult.value, settings: {
               enabled: true,
               surveyUrl: 'https://reward.example/test',
               displayDurationSeconds: 300,
@@ -63,7 +67,7 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
     }
     try {
       // Standalone Menu has no entry page; Kiosk owns optional phone UI.
-      await click('查看周氏蝦捲招牌便當')
+      await click('查看蝦捲招牌便當')
       await click('加入購物車')
       await click('查看訂單')
       await click('內用')
@@ -86,7 +90,7 @@ describe.runIf(import.meta.env.VITE_ORDER_MENU_COMPLETION_TEST === 'true')('paid
       await expect.element(screen.getByRole('heading', { name: '測試獎勵頁' })).toBeVisible()
       await expect.element(screen.getByRole('img', { name: 'stage.customer-session.completion.order-qr-alt' })).toBeVisible()
       expect(orderContinuationUrl.value).toContain('http://localhost:5166/?continuation=')
-      await expect.element(screen.getByRole('link')).toHaveAttribute('href', orderContinuationUrl.value!)
+      await expect.element(screen.getByRole('link', { name: 'stage.customer-session.completion.order-link' })).toBeVisible()
     }
     finally {
       stop()

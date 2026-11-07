@@ -44,3 +44,13 @@ it('never offers an automatic retry for a possibly accepted browser operation', 
   expect(progress.state.value).toBeUndefined()
   scope.stop()
 })
+
+// Report: this chat, 2026-11-06; a rejected review before admission vanished without feedback.
+it('shows technical review failure before voice admission without accepting an operation', () => {
+  const scope = effectScope()
+  const progress = scope.run(useKioskDecisionProgress)!
+  progress.start(11, 'asr')
+  progress.finish(11, { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION', recovery: { status: 'failed', failure: 'invalid' } })
+  expect(progress.state.value).toMatchObject({ utteranceId: 11, pending: false, messageKey: 'failed', retryable: true })
+  scope.stop()
+})

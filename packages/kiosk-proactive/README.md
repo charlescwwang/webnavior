@@ -21,7 +21,9 @@ independent decisions:
 
 - `observation`: whether a local camera may derive anonymous presence signals;
 - `proactiveGreeting`: when an unattended visitor may receive one greeting;
-- `assistanceReminder`: when an active customer session may receive help;
+- `assistanceReminder`: when an active customer session may receive help; the
+  default wait is 40 seconds of inactivity, restarted after customer activity
+  and after the host finishes pending work;
 - `visualAssistance`: whether an eligible event may request one transient
   Vision analysis; and
 - `mediaRetention`: the future deployment-controlled retention mode.

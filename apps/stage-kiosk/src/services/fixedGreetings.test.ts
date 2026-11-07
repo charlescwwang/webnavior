@@ -6,15 +6,16 @@ describe('fixed welcome playback', () => {
   it('prepares speech once, rotates openings, and reuses audio across visitors', async () => {
     const synthesize = vi.fn(async ({ text }: { text: string }) => new Blob([text]))
     const greetings = createFixedGreetings(synthesize)
-    await greetings.prepare({ locale: 'zh-TW', openings: ['歡迎光臨周氏蝦捲！', '您好，歡迎來到周氏蝦捲！'], entryHint: '手機可選填或略過。' })
+    await greetings.prepare({ locale: 'zh-TW', openings: ['歡迎光臨蝦捲！', '您好，歡迎來到蝦捲！'], entryHint: '手機可選填或略過。' })
 
     const first = await greetings.next('customer_entry')
     const second = await greetings.next('customer_entry')
     const third = await greetings.next('customer_entry')
-    expect(first.text).toBe('歡迎光臨周氏蝦捲！手機可選填或略過。')
-    expect(second.text).toBe('您好，歡迎來到周氏蝦捲！手機可選填或略過。')
+    expect(first.text).toBe('歡迎光臨蝦捲！手機可選填或略過。')
+    expect(second.text).toBe('您好，歡迎來到蝦捲！手機可選填或略過。')
     expect(third.audio).toBe(first.audio)
     expect(synthesize).toHaveBeenCalledTimes(4)
+    expect((await greetings.next('ordering')).text).toBe('您好，歡迎來到蝦捲！')
     greetings.dispose()
   })
 
@@ -73,4 +74,29 @@ describe('fixed welcome playback', () => {
     expect(greetingPhase({ phase: 'payment_locked' })).toBeUndefined()
     expect(greetingPhase(undefined)).toBeUndefined()
   })
+})
+
+// Report: this chat,2026-11-06 — visitors should hear a concise welcome without audio training.
+it('warms and plays only the welcome and ordering invitation', async () => {
+  const synthesize = vi.fn(async () => new Blob(['welcome']))
+  const greetings = createFixedGreetings(synthesize)
+  await greetings.prepare({ locale: 'zh-TW', openings: ['歡迎光臨！'], entryHint: '手機可略過。' })
+  const welcome = await greetings.next('customer_entry')
+  expect(welcome.text).toBe('歡迎光臨！手機可略過。')
+  expect(synthesize).toHaveBeenCalledTimes(2)
+  greetings.dispose()
+})
+
+// Report: this chat,2026-11-06 — the operator owns the Taiwanese ordering hint.
+it('preserves configured welcome text in both warmup and playback without appending a language hint', async () => {
+  const synthesize = vi.fn(async ({ text }: { text: string }) => new Blob([text]))
+  const greetings = createFixedGreetings(synthesize)
+  const opening = '歡迎光臨！這裡也可以用臺語點餐，今天想吃什麼？'
+  await greetings.prepare({ locale: 'zh-TW', openings: [opening], entryHint: '手機可略過。' })
+  const ordering = await greetings.next('ordering')
+  expect(ordering.text).toBe(opening)
+  const entry = await greetings.next('customer_entry')
+  expect(entry.text).toBe(`${opening}手機可略過。`)
+  expect(synthesize.mock.calls.map(([input]) => input.text)).toEqual([`${opening}手機可略過。`, opening])
+  greetings.dispose()
 })

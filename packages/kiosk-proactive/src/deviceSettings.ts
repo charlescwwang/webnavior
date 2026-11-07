@@ -1,3 +1,4 @@
+import type { BackgroundSpeechMode, ServiceMode } from '../../stage-shared/src/kioskServiceMode'
 import type { KioskInteractionSettings } from './types'
 
 import { defaultKioskInteractionSettings } from './interaction-settings'
@@ -24,6 +25,10 @@ export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
 
 /** Operational policy shared by Server, management UI, and the device runtime. */
 export interface DeviceSettingsValues {
+  serviceMode: ServiceMode
+  backgroundSpeechMode: BackgroundSpeechMode
+  /** Allows this device to use text input regardless of its shared voice-only Profile. */
+  textOnlyMode: boolean
   observationEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean
@@ -53,6 +58,9 @@ export interface DeviceSettingsValues {
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
 export const deviceSettingKeys = [
+  'serviceMode',
+  'backgroundSpeechMode',
+  'textOnlyMode',
   'observationEnabled',
   'greetingEnabled',
   'reminderEnabled',
@@ -110,6 +118,9 @@ export const newDeviceSettings: DeviceSettings = {
 }
 
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
+  serviceMode: 'kiosk',
+  backgroundSpeechMode: 'off',
+  textOnlyMode: false,
   observationEnabled: false,
   greetingEnabled: false,
   reminderEnabled: false,
@@ -117,7 +128,7 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   dwellMs: defaultKioskInteractionSettings.proactiveGreeting.dwellMs,
   emptyResetMs: 1500,
   minAttendingPeople: 1,
-  reminderWaitMs: 20000,
+  reminderWaitMs: 40000,
   maxReminders: 2,
   zoneX: 0.2,
   zoneY: 0.15,

@@ -4,6 +4,10 @@ import { defaultDeviceSettings, defaultDeviceSettingsValues, observationSettings
 import { needsKioskObservation } from './interaction-settings'
 
 describe('server device policy projection', () => {
+  it('defaults to paid Kiosk with background classification off', () => {
+    expect(defaultDeviceSettingsValues.serviceMode).toBe('kiosk')
+    expect(defaultDeviceSettingsValues.backgroundSpeechMode).toBe('off')
+  })
   it('discards undelegated local values and projects camera decisions from the resolved policy', () => {
     const effective = resolveDeviceSettings(defaultDeviceSettingsValues, {
       ...defaultDeviceSettings,

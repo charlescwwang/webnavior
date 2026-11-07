@@ -4,11 +4,14 @@ import type { CheckoutSnapshot } from '../../../order-menu/src/domain/checkout-f
 import type { MenuItem } from '../../../order-menu/src/domain/order-machine'
 import type { SeatingContext } from '../../../order-menu/src/domain/seating'
 
+import { conversationContextSchema } from '@proj-airi/stage-shared/kiosk-conversation'
+import { parse } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
 
 import sourceMenu from '../../../../周氏蝦捲菜單_v2.json'
 
-import { beginCheckout, chooseInvoiceMethod, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
+import { parseComposition } from '../../../order-menu-server/src/domain/composition'
+import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDraft, confirmTaxId, requestTaxId, setTaxIdDraft, skipMembership } from '../../../order-menu/src/domain/checkout-flow'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { decideInteraction } from '../../../server/src/services/domain/kiosk-interaction-decision'
 import { createRecommendationInvitation } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -198,6 +201,7 @@ describe('staged decision through the actual ordering runtime', () => {
       chooseInvoice: method => update(chooseInvoiceMethod(snapshot!, method)),
       requestTaxId: () => update(requestTaxId(snapshot!)),
       setTaxId: value => update(setTaxIdDraft(snapshot!, value)),
+      confirmInvoice: () => update(confirmInvoiceDraft(snapshot!)),
       confirmTaxId: () => update(confirmTaxId(snapshot!)),
       selectPayment,
       cancel: () => {
@@ -403,7 +407,7 @@ describe('staged decision through the actual ordering runtime', () => {
         result = await stages.next(owner, result.continuationId)
       return result
     } })
-    const added = await run('我要兩份周氏蝦捲', 'intent:add-item')
+    const added = await run('我要兩份蝦捲', 'intent:add-item')
     expect(added.kind, JSON.stringify(traces)).toBe('FAST_ACTION')
     const before = await runtime.invoke('cart_get', { display: false }) as { cart: { lines: Array<{ quantity: number }>, itemCount: number } }
     expect(before.cart.lines).toHaveLength(1)
@@ -414,4 +418,44 @@ describe('staged decision through the actual ordering runtime', () => {
     expect(after.cart).toEqual(before.cart)
     expect(traces).toContainEqual(expect.objectContaining({ executionResult: expect.objectContaining({ decisionTrace: expect.objectContaining({ authorize: { kind: 'EXECUTE' } }) }) }))
   })
+})
+
+// Report: attachment 6dfae2fd, original 大腸臭臭鍋一碗; verified absence is a normal add-request outcome.
+it('answers an unmatched add from the real menu receipt and preserves an existing cart', async () => {
+  const runtime = createMenuToolRuntime({ menu: merchantMenu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const existing = merchantMenu.find(item => item.available && item.optionGroups.length === 0)!
+  await runtime.invoke('order_add_item', { itemId: existing.id, quantity: 1 })
+  const before = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart
+  const handoff = { intent: 'ADD_ITEM', status: 'unmatched' as const, itemIds: [], lineIds: [] }
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'missing-add', transcript: '大腸臭臭鍋一碗', expectedMenuRevision: 0, handoff, constraints: {} })
+  const receipt = await runtime.invokeForAgent('menu_get', { query: '大腸臭臭鍋' })
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', receipt)
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'] }, { menu, handoff, sourceUtterance: '大腸臭臭鍋一碗', failureMessage: '操作失敗。' })
+  expect(reply).toEqual({ role: 'assistant', content: '目前菜單查不到「大腸臭臭鍋」。' })
+  expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(before)
+})
+
+// Report: this chat Nov7 — fish requests fail before the first Main model round.
+it.each(['有賣魚嗎？', '我真的想要吃魚耶', '想吃雞肉'])('preserves a valid Menu context when handing off an ingredient inquiry: %s', async (transcript) => {
+  const runtime = createMenuToolRuntime({ menu: merchantMenu.map(item => item.name.includes('魚') ? { ...item, composition: { ingredients: ['fish'], complete: true, source: 'simulation', revision: 'test', removals: [] } } : item), screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('menu_recommend', { action: 'update' })
+  const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+  const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async () => ({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY' }) })
+  const state = conversationDecisionStateFrom(decision.decisionState, decision)!
+  const taskId = 'ingredient-context'
+  expect(await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId, transcript, expectedMenuRevision: state.menuRevision, readOnly: state.readOnly === true, constraints: { excludeIngredients: state.constraints?.exclude ?? [], includeIngredients: state.constraints?.include ?? [], ...state.constraints?.price } })).toMatchObject({ ok: true })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context', { includeCatalog: true }))
+  expect(context.taskId).toBe(taskId)
+})
+
+// Report: Nov7 field sessions; ingredient and unmatched fish reads fail at Menu context.
+it.each(['我想吃豬肉', '我要吃魚', '有虱目魚嗎', '我想吃牛'])('projects the actual POS catalog context for %s', async (transcript) => {
+  const menu: MenuItem[] = sourceMenu.items.map(item => ({ id: item.id, name: item.name, aliases: 'aliases' in item ? item.aliases : [], category: sourceMenu.categories.find(category => category.id === item.categoryId)!.name, price: item.price, imageUrl: item.image, description: item.description, available: item.available, optionGroups: item.optionGroups, composition: parseComposition(item.composition), recommendationTags: [] }))
+  const runtime = createMenuToolRuntime({ menu, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
+  const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async () => ({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY' }) })
+  const state = conversationDecisionStateFrom(decision.decisionState, decision)!
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'field-query', transcript, expectedMenuRevision: state.menuRevision, readOnly: state.readOnly === true, constraints: { excludeIngredients: state.constraints?.exclude ?? [], includeIngredients: state.constraints?.include ?? [], ...state.constraints?.price } })
+  expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context', { includeCatalog: true })).taskId).toBe('field-query')
 })

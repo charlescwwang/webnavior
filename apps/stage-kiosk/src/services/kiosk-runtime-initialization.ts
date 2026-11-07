@@ -2,7 +2,7 @@ import { useCharacterOrchestratorStore } from '@proj-airi/stage-ui/stores/charac
 import { useChatSessionStore } from '@proj-airi/stage-ui/stores/chat/session-store'
 import { useDisplayModelsStore } from '@proj-airi/stage-ui/stores/display-models'
 import { useAiriCardStore } from '@proj-airi/stage-ui/stores/modules/airi-card'
-import { useSettings, useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings'
+import { useSettings } from '@proj-airi/stage-ui/stores/settings'
 
 let initialization: Promise<void> | undefined
 
@@ -18,7 +18,6 @@ export function initializeKioskRuntime() {
     const characterOrchestratorStore = useCharacterOrchestratorStore()
     const chatSessionStore = useChatSessionStore()
     const displayModelsStore = useDisplayModelsStore()
-    const settingsAudioDeviceStore = useSettingsAudioDevice()
     const settingsStore = useSettings()
 
     await displayModelsStore.initialize()
@@ -27,7 +26,8 @@ export function initializeKioskRuntime() {
     characterOrchestratorStore.initialize()
     await displayModelsStore.loadDisplayModelsFromIndexedDB()
     await settingsStore.initializeStageModel()
-    await settingsAudioDeviceStore.initialize()
+    // Capture starts only in the Scene after an explicit persisted microphone
+    // choice. Shared initialization can silently acquire a browser-default input.
   })()
 
   return initialization

@@ -4,6 +4,8 @@ import type { FastPathResult } from '../services/kiosk-fast-path'
 
 import { onScopeDispose, readonly, shallowRef } from 'vue'
 
+import { shouldShowDecisionRetry } from '../services/kiosk-fast-path'
+
 interface Progress {
   utteranceId: number
   messageKey: 'confirming' | 'still-confirming' | 'processing' | 'ignored' | 'uncertain' | 'failed'
@@ -68,8 +70,10 @@ export function useKioskDecisionProgress() {
         return
       stop()
       recovering.value = undefined
-      if (['IGNORE', 'UNAVAILABLE', 'INCOMPLETE'].includes(result.kind) && (active.source === 'simulation' || active.admitted)) {
-        const failed = result.kind === 'UNAVAILABLE' && (Boolean(result.recovery?.failure) || ['PROVIDER_FAILURE', 'INVALID_CHOICE', 'CANDIDATE_BUDGET'].includes(result.reason ?? ''))
+      // Transport/contract failure is not a background-speech decision. Show
+      // the failure even when the provider never established admission.
+      const failed = shouldShowDecisionRetry(result)
+      if (['IGNORE', 'UNAVAILABLE', 'INCOMPLETE'].includes(result.kind) && (failed || active.source === 'simulation' || active.admitted)) {
         state.value = { utteranceId: id, pending: false, elapsedMs: Date.now() - active.startedAt, messageKey: failed ? 'failed' : result.kind === 'IGNORE' ? 'ignored' : 'uncertain', retryable: failed }
       }
       else {

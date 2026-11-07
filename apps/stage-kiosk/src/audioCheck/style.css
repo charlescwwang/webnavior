@@ -1,0 +1,5 @@
+:root { font-family: system-ui, sans-serif; color-scheme: light; background: #f1f5f5; }
+body { margin: 0; min-width: 320px; }
+progress { accent-color: #0f766e; }
+summary { cursor: pointer; }
+a:focus-visible, summary:focus-visible { outline: 3px solid #0f766e; outline-offset: 4px; }

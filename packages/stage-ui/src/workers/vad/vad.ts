@@ -188,7 +188,12 @@ export class VAD implements BaseVAD {
    * Detect speech in an audio buffer
    */
   private async detectSpeech(buffer: Float32Array): Promise<boolean> {
-    const input = new Tensor('float32', buffer, [1, buffer.length])
+    // Mask drain can end with a partial frame. Pad only model input, retaining
+    // the original sample count in speech buffers and duration accounting.
+    const modelBuffer = buffer.length < this.config.newBufferSize ? new Float32Array(this.config.newBufferSize) : buffer
+    if (modelBuffer !== buffer)
+      modelBuffer.set(buffer)
+    const input = new Tensor('float32', modelBuffer, [1, modelBuffer.length])
 
     const { stateN, output } = await (this.inferenceChain = this.inferenceChain.then(() =>
       this.model?.({

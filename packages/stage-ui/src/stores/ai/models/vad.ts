@@ -1,14 +1,29 @@
 import type { MaybeRefOrGetter } from 'vue'
 
+import type { PcmLevel } from '../../../libs/audio/inputGain'
 import type { BaseVADConfig } from '../../../libs/audio/vad'
 
 import { merge } from '@moeru/std'
 import { errorMessageFromValue } from '@proj-airi/stage-shared'
 import { ref, toRef, watch } from 'vue'
 
+import { InputGain, measurePcmLevel } from '../../../libs/audio/inputGain'
 import { createVAD, createVADStates } from '../../../workers/vad'
 
+/** Current capture generation metadata only; no PCM or transcript is retained. */
+export interface VadInputDiagnostics {
+  processedSamples: number
+  inputLevel?: PcmLevel
+  outputLevel?: PcmLevel
+  probability: number
+  maximumProbability: number
+  speechStarts: number
+  speechSegments: number
+}
+
 interface UseVADOptions {
+  /** Fixed input gain before inference and ASR buffering; ordinary inputs default to 0 dB. */
+  inputGainDb?: MaybeRefOrGetter<number>
   threshold?: MaybeRefOrGetter<number>
   minSilenceDurationMs?: MaybeRefOrGetter<number>
   speechPadMs?: MaybeRefOrGetter<number>
@@ -68,16 +83,37 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
   const loaded = ref(false)
   const loading = ref(false)
 
+  let generation = 0
+  const inputGainDb = toRef(options.inputGainDb)
+  const inputClippedSamples = ref(0)
+  const inputGain = new InputGain()
+  const diagnostics: VadInputDiagnostics = { processedSamples: 0, probability: 0, maximumProbability: 0, speechStarts: 0, speechSegments: 0 }
+  async function processInput(samples: Float32Array) {
+    if (!vad.value)
+      throw new Error('VAD input is not initialized.')
+    const result = inputGain.process(samples, inputGainDb.value ?? 0)
+    inputClippedSamples.value += result.clippedSamples
+    diagnostics.inputLevel = measurePcmLevel(samples)
+    diagnostics.outputLevel = measurePcmLevel(result.samples)
+    const ticket = generation
+    await vad.value.processAudio(result.samples)
+    if (ticket === generation)
+      diagnostics.processedSamples += samples.length
+  }
+
   const threshold = toRef(options.threshold)
   const minSilenceDurationMs = toRef(options.minSilenceDurationMs)
   const speechPadMs = toRef(options.speechPadMs)
   const minSpeechDurationMs = toRef(options.minSpeechDurationMs)
   const maxSpeechDurationS = toRef(options.maxSpeechDurationS)
 
-  async function init() {
+  let inputMode: 'stream' | 'pcm' = 'stream'
+  async function init(mode: 'stream' | 'pcm' = 'stream') {
     if (loaded.value || loading.value || manager.value)
       return
 
+    inputMode = mode
+    const ticket = ++generation
     loading.value = true
     inferenceError.value = ''
 
@@ -90,28 +126,43 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
         maxSpeechDurationS.value,
       )
 
-      vad.value = await createVAD({
+      const created = await createVAD({
         sampleRate: 16000,
         ...vadConfig,
       })
 
+      if (ticket !== generation)
+        return
       // Set up event handlers
+      vad.value = created
       vad.value.on('speech-start', () => {
+        if (ticket !== generation)
+          return
+        diagnostics.speechStarts += 1
         isSpeech.value = true
         options?.onSpeechStart?.()
       })
 
       vad.value.on('speech-end', () => {
+        if (ticket !== generation)
+          return
         isSpeech.value = false
         options?.onSpeechEnd?.()
       })
 
       vad.value.on('speech-ready', (event) => {
+        if (ticket !== generation)
+          return
+        diagnostics.speechSegments += 1
         options?.onSpeechReady?.(event)
       })
 
       vad.value.on('debug', ({ data }) => {
+        if (ticket !== generation)
+          return
         if (data?.probability !== undefined) {
+          diagnostics.probability = data.probability
+          diagnostics.maximumProbability = Math.max(diagnostics.maximumProbability, data.probability)
           isSpeechProb.value = data.probability
 
           // Update VAD history for visualization
@@ -123,31 +174,49 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       })
 
       vad.value.on('status', ({ type, message }) => {
+        if (ticket !== generation)
+          return
         if (type === 'error') {
           inferenceError.value = message
         }
       })
 
-      // Create and initialize audio manager
-      const m = createVADStates(vad.value, workerUrl, {
-        minChunkSize: 512,
-        // NOTICE: VAD will have it's own audio context since
-        // it needs special sample rate and latency settings
-        audioContextOptions: {
-          sampleRate: 16000,
-          latencyHint: 'interactive',
-        },
-      })
+      if (inputMode === 'stream') {
+        // Create and initialize audio manager
+        const m = createVADStates({
+          async processAudio(samples) {
+            // A queued message from a retired graph cannot feed the new VAD or
+            // inherit its selected microphone's gain.
+            if (ticket !== generation)
+              return
+            await processInput(samples)
+          },
+        }, workerUrl, {
+          minChunkSize: 512,
+          // NOTICE: VAD will have it's own audio context since
+          // it needs special sample rate and latency settings
+          audioContextOptions: {
+            sampleRate: 16000,
+            latencyHint: 'interactive',
+          },
+        })
 
-      await m.initialize()
-      manager.value = m
+        await m.initialize()
+        if (ticket !== generation) {
+          m.dispose()
+          return
+        }
+        manager.value = m
+      }
       loaded.value = true
     }
     catch (error) {
-      inferenceError.value = errorMessageFromValue(error)
+      if (ticket === generation)
+        inferenceError.value = errorMessageFromValue(error)
     }
     finally {
-      loading.value = false
+      if (ticket === generation)
+        loading.value = false
     }
   }
 
@@ -156,7 +225,17 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
       await manager.value.start(stream)
   }
 
+  /** Already-resampled PCM, delivered serially by its owning input generation. */
+  async function processPcm(samples: Float32Array) {
+    if (inputMode !== 'pcm' || !loaded.value || !vad.value)
+      throw new Error('PCM VAD input is not initialized.')
+    if (!samples.length || samples.length > 512 || samples.some(value => !Number.isFinite(value)))
+      throw new Error('Expected at most 512 finite 16kHz PCM samples.')
+    await processInput(samples)
+  }
+
   function dispose() {
+    generation += 1
     manager.value?.stop()
     manager.value?.dispose()
     manager.value = undefined
@@ -165,6 +244,15 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
     isSpeechProb.value = 0
     isSpeechHistory.value = []
 
+    diagnostics.processedSamples = 0
+    diagnostics.inputLevel = undefined
+    diagnostics.outputLevel = undefined
+    diagnostics.probability = 0
+    diagnostics.maximumProbability = 0
+    diagnostics.speechStarts = 0
+    diagnostics.speechSegments = 0
+    inputGain.reset()
+    inputClippedSamples.value = 0
     loaded.value = false
     loading.value = false
   }
@@ -205,6 +293,8 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
     loaded,
     loading,
     inferenceError,
+    inputClippedSamples,
+    getInputDiagnostics: (): VadInputDiagnostics => ({ ...diagnostics }),
     threshold,
     minSilenceDurationMs,
     speechPadMs,
@@ -213,6 +303,7 @@ export function useVAD(workerUrl: string, options?: UseVADOptions) {
 
     init,
     start,
+    processPcm,
     dispose,
   }
 }

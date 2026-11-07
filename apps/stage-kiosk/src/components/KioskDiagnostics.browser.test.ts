@@ -1,13 +1,15 @@
 import { afterEach, expect, it } from 'vitest'
 import { render } from 'vitest-browser-vue'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 
 import KioskAdminPanel from './KioskAdminPanel.vue'
+import KioskConversation from './KioskConversation.vue'
 
 import { useKioskDiagnostics } from '../composables/useKioskDiagnostics'
+import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
 
-const preferenceKeys = ['kiosk/diagnostics/idle-enabled', 'kiosk/diagnostics/presence-enabled', 'kiosk/diagnostics/decision-enabled']
+const preferenceKeys = ['kiosk/diagnostics/idle-enabled', 'kiosk/diagnostics/presence-enabled', 'kiosk/diagnostics/decision-enabled', 'kiosk/conversation/text-only']
 
 afterEach(() => {
   for (const key of preferenceKeys)
@@ -61,4 +63,28 @@ it('independently toggles diagnostic overlays and restores browser preferences o
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.idle', exact: true })).toHaveAttribute('aria-checked', 'false')
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.presence', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.decision', exact: true })).toHaveAttribute('aria-checked', 'true')
+})
+
+// Report: this chat Nov7 — stale browser mode overrides saved device settings.
+it.each([true, false])('follows device text mode despite a stored browser override=%s', async (stored) => {
+  localStorage.setItem('kiosk/conversation/text-only', String(stored))
+  const centralTextMode = ref(!stored)
+  const panel = defineComponent({ setup() {
+    const textOnlyMode = useKioskTextOnlyMode(centralTextMode)
+    return () => h('section', [
+      h(KioskAdminPanel, { sessionEnding: false, paused: false, cameraPreviewEnabled: false, conversationFontSize: 20, idleDiagnosticsEnabled: false, presenceDiagnosticsEnabled: false, decisionDiagnosticsEnabled: false, textOnlyMode: textOnlyMode.value }),
+      h(KioskConversation, { assistantPresence: { mode: 'listening', title: '點餐', description: '請點餐' }, fontSize: 20, messages: [], sending: false, voiceConversationOnly: !textOnlyMode.value }),
+    ])
+  } })
+  const i18n = createI18n({ legacy: false, locale: 'en', messages: { en: {} }, missingWarn: false, fallbackWarn: false })
+  const view = render(panel, { global: { plugins: [i18n] } })
+  try {
+    await expect.poll(() => Boolean(document.querySelector('.text-console textarea'))).toBe(!stored)
+    expect(localStorage.getItem('kiosk/conversation/text-only')).toBeNull()
+    expect(view.container.querySelector('[aria-label="deviceSettings.localTextMode.label"]')).toBeNull()
+    centralTextMode.value = stored
+    await expect.poll(() => Boolean(document.querySelector('.text-console textarea'))).toBe(stored)
+    expect(localStorage.getItem('kiosk/conversation/text-only')).toBeNull()
+  }
+  finally { view.unmount() }
 })

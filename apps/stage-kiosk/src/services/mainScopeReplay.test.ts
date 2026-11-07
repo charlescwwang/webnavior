@@ -168,7 +168,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
 
   // Report: this chat, 2026-10-20; session pNjTf7VrgOG7-0Gxp7lRZ, entries 19–26.
   it('presents 有什麼便當 after a read-only handoff without a rejected tool or retry', async () => {
-    const runtime = createMenuToolRuntime({ menu: ['周氏蝦捲招牌便當', '椒麻雞便當', '泰式酸辣魚便當', '炸排骨便當', '打拋豬便當'].map((name, index) => ({ ...menu[0]!, id: `bento-${index}`, name, description: name, category: '便當', aliases: [], optionGroups: [], recommendationTags: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const runtime = createMenuToolRuntime({ menu: ['蝦捲招牌便當', '椒麻雞便當', '泰式酸辣魚便當', '炸排骨便當', '打拋豬便當'].map((name, index) => ({ ...menu[0]!, id: `bento-${index}`, name, description: name, category: '便當', aliases: [], optionGroups: [], recommendationTags: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'category-inquiry', transcript: '有什麼便當', expectedMenuRevision: 0, readOnly: true, constraints: {} })
     const started = await app.request('/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
     const { session } = await started.json() as { session: { id: string } }
@@ -207,7 +207,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       const { transcript, namedQuery } = scenario
       const requestedAction = 'action' in scenario ? scenario.action : 'clarify'
       const runtime = createMenuToolRuntime({ menu: [
-        { id: 'shrimp', name: '周氏蝦捲招牌便當', price: 145, category: '便當' },
+        { id: 'shrimp', name: '蝦捲招牌便當', price: 145, category: '便當' },
         { id: 'chicken', name: '椒麻雞便當', price: 135, category: '便當' },
         { id: 'fish', name: '泰式酸辣魚便當', price: 140, category: '便當' },
         { id: 'pork', name: '炸排骨便當', price: 130, category: '便當' },
@@ -220,7 +220,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       const { session } = await started.json() as { session: { id: string } }
       for (const [kind, content] of [
         ['user_text', '有推薦什麼嗎？'],
-        ['assistant_text', '推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。'],
+        ['assistant_text', '推薦3 項：蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。'],
         ['user_text', '有一百三到一百四的便當嗎'],
         ['assistant_text', '推薦3 項：椒麻雞便當、泰式酸辣魚便當、炸排骨便當。'],
         ['user_text', '還有賣其他的嗎？'],
@@ -299,7 +299,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       { transcript: '一百三以下呢？', shownFirst: true },
     ])('updates a previous budget through real Jev, Main and Menu: $transcript/shownFirst=$shownFirst', async ({ transcript, shownFirst }) => {
       const runtime = createMenuToolRuntime({ menu: [
-        { id: 'shrimp', name: '周氏蝦捲招牌便當', price: 145 },
+        { id: 'shrimp', name: '蝦捲招牌便當', price: 145 },
         { id: 'chicken', name: '椒麻雞便當', price: 135 },
         { id: 'fish', name: '泰式酸辣魚便當', price: 140 },
         { id: 'pork', name: '炸排骨便當', price: 130 },
@@ -315,7 +315,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       for (const [kind, content] of [
         ...(!shownFirst ? [['user_text', '掠過'], ['assistant_text', '已略過手機登記，現在可以直接點餐。']] : []),
         ['user_text', shownFirst ? '有推薦什麼嗎' : '推薦什麼？'],
-        ['assistant_text', '推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。'],
+        ['assistant_text', '推薦3 項：蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。'],
         ['user_text', shownFirst ? '有一百二以下的嗎' : '有一百二以下的嗎？'],
         ['assistant_text', '你想看剛才推薦的，還是整份菜單符合的餐點？'],
         ...(shownFirst
@@ -430,7 +430,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
     it('reaches the scope question from a price query after the reported bento conversation', async () => {
       const transcript = '120以下有什麼？'
       const runtime = createMenuToolRuntime({ menu: [
-        { id: 'signature-shrimp-roll-bento', name: '周氏蝦捲招牌便當', price: 145, category: '便當' },
+        { id: 'signature-shrimp-roll-bento', name: '蝦捲招牌便當', price: 145, category: '便當' },
         { id: 'spicy-chicken-bento', name: '椒麻雞便當', price: 135, category: '便當' },
         { id: 'thai-sour-spicy-fish-bento', name: '泰式酸辣魚便當', price: 140, category: '便當' },
         { id: 'fried-pork-chop-bento', name: '炸排骨便當', price: 130, category: '便當' },
@@ -442,11 +442,11 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       await runtime.invoke('menu_recommend', { limit: 3, more: true })
       const conversation = { messages: [
         { role: 'user' as const, content: '有推薦的便當嗎？' },
-        { role: 'assistant' as const, content: '推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 我推薦：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 單份基本售價：周氏蝦捲招牌便當 NT$145、椒麻雞便當 NT$135、泰式酸辣魚便當 NT$140。' },
+        { role: 'assistant' as const, content: '推薦3 項：蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 我推薦：蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 單份基本售價：蝦捲招牌便當 NT$145、椒麻雞便當 NT$135、泰式酸辣魚便當 NT$140。' },
         { role: 'user' as const, content: '120員以下的' },
         { role: 'assistant' as const, content: '120 元以下目前没有符合的便當。需要查看其他類別的餐點或調整預算嗎？' },
         { role: 'user' as const, content: '推薦幾個餐點' },
-        { role: 'assistant' as const, content: '推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 推薦3 項：炸排骨便當、打拋豬便當、紅燒牛肉麵。 單份基本售價：周氏蝦捲招牌便當 NT$145、椒麻雞便當 NT$135、泰式酸辣魚便當 NT$140、炸排骨便當 NT$130、打拋豬便當 NT$125、紅燒牛肉麵 NT$150。' },
+        { role: 'assistant' as const, content: '推薦3 項：蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 推薦3 項：炸排骨便當、打拋豬便當、紅燒牛肉麵。 單份基本售價：蝦捲招牌便當 NT$145、椒麻雞便當 NT$135、泰式酸辣魚便當 NT$140、炸排骨便當 NT$130、打拋豬便當 NT$125、紅燒牛肉麵 NT$150。' },
       ] }
       const tools: ServiceTool[] = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'http://localhost:5166' }))
       const result = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, args) => runtime.invoke(tool.name as MenuToolName, args) }, decide: request => decideInteraction({ ...request, conversation, policy: { decisionInstruction: '', storeInstruction: '' }, invoke: async (state, questions) => {

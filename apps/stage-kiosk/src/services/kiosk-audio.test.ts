@@ -1,5 +1,6 @@
 import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 
+import { InputGain, measurePcmLevel } from '@proj-airi/stage-ui/libs/audio/inputGain'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createKioskVadRecording, transcribeKioskUtterance } from './kiosk-audio'
@@ -149,4 +150,27 @@ describe('createKioskVadRecording', () => {
     expect(recording.type).toBe('audio/wav')
     expect(samples).toEqual(new Int16Array([-32768, -16384, 0, 16384, 32767]))
   })
+})
+
+// Report: this chat,2026-11-05 — compare live recognition gain with uploaded WAV levels.
+it('preserves gain and limiter levels through the exact ASR upload WAV encoder', async () => {
+  const raw = Float32Array.from({ length: 16000 }, (_, i) => 0.0001 * Math.sin(2 * Math.PI * 300 * i / 16000))
+  const recognition = new InputGain().process(raw, 65).samples
+  let uploaded: Blob | undefined
+  await transcribeKioskUtterance(recognition, { transcribe: async (recording) => {
+    uploaded = recording
+    return { text: 'synthetic boundary check' }
+  } })
+  expect(uploaded).toBeDefined()
+  const bytes = new DataView(await uploaded!.arrayBuffer())
+  expect(bytes.getUint32(24, true)).toBe(16000)
+  expect(bytes.getUint16(22, true)).toBe(1)
+  expect(bytes.getUint32(40, true) / 2).toBe(recognition.length)
+  const decoded = Float32Array.from({ length: recognition.length }, (_, i) => {
+    const value = bytes.getInt16(44 + 2 * i, true)
+    return value / (value < 0 ? 32768 : 32767)
+  })
+  expect(measurePcmLevel(decoded).rmsDbfs!).toBeCloseTo(measurePcmLevel(recognition).rmsDbfs!, 2)
+  expect(measurePcmLevel(decoded).rmsDbfs! - measurePcmLevel(raw).rmsDbfs!).toBeCloseTo(65, 2)
+  expect(decoded.every((value, index) => Math.abs(value - recognition[index]) < 1 / 32767)).toBe(true)
 })

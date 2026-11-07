@@ -60,7 +60,7 @@ describe('createScenarioRegistry', () => {
       data: {
         source: 'airi-interaction-lifecycle',
         type: 'completed',
-        orderResult: { environment: 'test', fulfillmentMode: 'takeout', id: 'demo-1', itemCount: 2, status: 'accepted', total: 180 },
+        orderResult: { environment: 'test', fulfillmentMode: 'takeout', id: 'demo-1', itemCount: 2, pickupNumber: '368', status: 'accepted', total: 180 },
       },
       origin: 'https://menu.example',
       source: activeFrame,
@@ -71,6 +71,7 @@ describe('createScenarioRegistry', () => {
       type: 'completed',
       orderResult: {
         id: 'demo-1',
+        pickupNumber: '368',
         fulfillmentMode: 'takeout',
         itemCount: 2,
         environment: 'test',

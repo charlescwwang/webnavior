@@ -48,3 +48,13 @@ describe('createAssistanceReminderWindow', () => {
     expect(window.decide({ observedAtMs: 2_500, attendingPeople: 0, presencePeople: 1 })).toMatchObject({ reminderNumber: 2 })
   })
 })
+
+// Report: this chat,2026-11-06 — reminders interrupted browsing too soon.
+it('waits forty idle seconds by default and restarts after customer activity', () => {
+  const window = createAssistanceReminderWindow(defaultKioskAssistanceReminderSettings)
+  window.start(0)
+  expect(window.decide({ observedAtMs: 39_999, attendingPeople: 0, presencePeople: 1 })).toBeUndefined()
+  window.recordActivity(40_000)
+  expect(window.decide({ observedAtMs: 79_999, attendingPeople: 0, presencePeople: 1 })).toBeUndefined()
+  expect(window.decide({ observedAtMs: 80_000, attendingPeople: 0, presencePeople: 1 })).toMatchObject({ reminderNumber: 1 })
+})
