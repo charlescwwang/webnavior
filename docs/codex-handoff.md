@@ -18,9 +18,9 @@ accumulating history.
   New URL: https://webnavior.aikcitri.qzz.io/menu/supplier.html.
   Existing Profile publications and selected merchants were intentionally preserved:
   register this URL as a distinct binding in the central Profile, publish, then select.
-  Optional explicit HTML no-cache rule needs operator sudo (password unavailable).
-  Prepared /tmp/apply-merchant-html-cache.py, asked operator to run sudo python3 on it;
-  existing route serves200/Cloudflare DYNAMIC, but expires -1 is not yet applied.
+  Operator applied supplier HTML expires -1 at17:13 Taipei; Nginx syntax/reload passed.
+  Origin AND public HTTPS verified200 with Cache-Control:no-cache/expired Expires;
+  Cloudflare DYNAMIC. Backup: /etc/nginx/sites-available/airi-web.before-merchant-html-20261108T171354.
   No new dependency, DB migration, mic/AEC, live model, payment or merchant-order call. User corrections: 排骨130, 椒香牛肉麵230,
   A套餐130, B套餐145; 水餃 base8pieces/64元, extra0–100 at8元/piece, servings separate.
   Source observation + corrections: docs/research/2026-11-08-esgpb-menu-observation.json.
@@ -37,7 +37,7 @@ accumulating history.
   cross that barrier. Removed selection fails visibly, never silently substitutes.
   Keep API AND Menu Bridge plus all frontends together for rollback/deployment.
   Static old hashed assets are retained; overwritten files and runtime files backed up.
-  No PIN/device selection changes or DB migration; the optional Nginx step is pending.
+  No PIN/device selection changes or DB migration; supplier HTML cache rule is complete.
   Shared merchant facts now drive payment/operator responses; simulator method enums
   cannot claim merchant support. Display customerReply separates facts/guide/priced IDs;
   Host combines independent facts/accepted effects, replaces same-scope reads, appends

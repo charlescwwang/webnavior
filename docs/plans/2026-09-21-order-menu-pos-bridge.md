@@ -159,9 +159,10 @@ B套餐145元；周氏水餃每份基本8顆64元，另有每份加量0～100顆
 補上既有 BFF 對 `supplier/` 的限定白名單，沿用原驗證，未登入訂單讀取仍401。
 原 Profile／選店設定保留；管理員可把此新網址作為獨立 binding新增並發布，
 再於共用裝置設定選用。本次沒有替所有現場裝置改選新店家。
-Nginx既有靜態路由可正常提供新頁，Cloudflare回應DYNAMIC。強制 `expires -1`
-尚待操作員執行 `sudo python3 /tmp/apply-merchant-html-cache.py`（sudo需要密碼）；
-腳本只補新頁規則，先備份／nginx -t，再reload，失敗還原。其他入口規則未動。
+操作員已於Nov08 17:13執行快取腳本，Nginx語法檢查／reload通過。
+來源與公開HTTPS均確認新頁200、`Cache-Control: no-cache`及已過期Expires，
+Cloudflare回應DYNAMIC。只補新頁規則，其他入口規則未動；備份為
+`/etc/nginx/sites-available/airi-web.before-merchant-html-20261108T171354`。
 不需要資料庫 migration，不能直接沿用前一次僅前端的發布指令。
 
 驗證：Menu993通過／202跳過（非通過）；新增資料／加量邊界與續接43個

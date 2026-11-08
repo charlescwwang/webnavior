@@ -47,7 +47,7 @@ Server scoped typecheck通過。
 `docs/plans/2026-09-21-order-menu-pos-bridge.md` 的 Nov08 追加節與
 `docs/research/2026-11-08-esgpb-menu-observation.json`。這次程式已發布；既有
 Profile／選店設定保留，新網址仍須由管理員加入Profile清單並發布後才能選用。
-新頁強制HTML重新驗證規則待操作員sudo執行，詳見POS Bridge計畫。
+新頁HTML重新驗證規則已由操作員套用；來源與公開HTTPS確認no-cache，詳見POS Bridge計畫。
 
 - 目前已知事實來自使用者：這個業者採無現金支付；實際支付工具尚未確認。
   這是店家／服務設定，不寫成所有未來菜單共用的固定事實。未知店家不能
