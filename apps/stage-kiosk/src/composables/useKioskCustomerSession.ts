@@ -4,6 +4,7 @@ import { useKioskCustomerSession as useSharedKioskCustomerSession } from '@proj-
 import { computed, shallowRef } from 'vue'
 
 import { scenarioRegistry } from '../services/scenario-registry'
+import { applyPendingOrderingSite } from './useKioskInteractiveServices'
 
 export type { AnonymousKioskCustomer, KioskCustomerSessionState } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 
@@ -25,6 +26,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
     resetInteractiveSurface: async () => {
       await options.resetOrderRound?.()
       await options.endVisitorSession?.()
+      applyPendingOrderingSite()
       await scenarioRegistry.reloadActive()
       options.resetConversation?.()
     },

@@ -1,4 +1,5 @@
 import type { BackgroundSpeechMode, ServiceMode } from '../../stage-shared/src/kioskServiceMode'
+import type { OrderingSite } from '../../stage-shared/src/orderingSites'
 import type { KioskInteractionSettings } from './types'
 
 import { defaultKioskInteractionSettings } from './interaction-settings'
@@ -25,6 +26,8 @@ export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
 
 /** Operational policy shared by Server, management UI, and the device runtime. */
 export interface DeviceSettingsValues {
+  /** Published merchant ID; an empty value selects the Profile default on the next round. */
+  orderingServiceId?: string
   serviceMode: ServiceMode
   backgroundSpeechMode: BackgroundSpeechMode
   /** Allows this device to use text input regardless of its shared voice-only Profile. */
@@ -58,6 +61,7 @@ export interface DeviceSettingsValues {
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
 export const deviceSettingKeys = [
+  'orderingServiceId',
   'serviceMode',
   'backgroundSpeechMode',
   'textOnlyMode',
@@ -94,6 +98,8 @@ export interface DeviceSettings {
 
 /** Snapshot read at a revision; writes compare the revision and never silently merge. */
 export interface DeviceSettingsSnapshot {
+  /** Server-approved choices; browsers cannot save an arbitrary page URL. */
+  orderingSites?: OrderingSite[]
   deviceId: string
   settings: DeviceSettings
   defaults: DeviceSettingsValues
@@ -112,6 +118,7 @@ export const newDeviceSettings: DeviceSettings = {
 }
 
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
+  orderingServiceId: '',
   serviceMode: 'kiosk',
   backgroundSpeechMode: 'off',
   textOnlyMode: false,

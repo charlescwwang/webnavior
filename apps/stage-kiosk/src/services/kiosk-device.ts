@@ -2,6 +2,7 @@ import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } fro
 import type { AudioWarning, KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
+import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
 
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -63,6 +64,7 @@ export interface KioskProfile {
     }
     greetingPrompt: string
     greetingPhrases?: readonly string[]
+    orderingSites?: readonly OrderingSite[]
     interactiveService: { description: string, id: string, title: string, url: string }
     surveyUrl: string
     version: 1

@@ -26,6 +26,7 @@
     "./webgpu": "./src/webgpu/index.ts",
     "./webmcp": "./src/webmcp.ts",
     "./interactive-service": "./src/interactiveService.ts",
+    "./ordering-sites": "./src/orderingSites.ts",
     "./kiosk-conversation": "./src/kioskConversation.ts",
     "./kiosk-audio": "./src/kioskAudio.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts",

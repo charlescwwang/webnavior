@@ -1,4 +1,5 @@
 import type { KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
 
 import { errorMessageFrom } from '@moeru/std'
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
@@ -90,6 +91,7 @@ export interface KioskSiteTechnicalSettings {
 
 /** The versioned settings that a Webnavior kiosk receives when a Profile is published. */
 export interface KioskProfileSnapshot {
+  orderingSites?: OrderingSite[]
   assistanceReminderPrompt: string
   agentInstructions: string
   characterName: string

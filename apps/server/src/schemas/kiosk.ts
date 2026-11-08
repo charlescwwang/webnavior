@@ -1,4 +1,5 @@
 import type { DeviceSettings, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
 import type { KioskAgentInteractionState } from '../services/domain/kiosk-agent-interaction'
@@ -90,12 +91,9 @@ export interface KioskProfileSnapshot {
   greetingPrompt: string
   /** Fixed spoken openings; omitted selects the host's localized welcome bank. */
   greetingPhrases?: string[]
-  interactiveService: {
-    description: string
-    id: string
-    title: string
-    url: string
-  }
+  interactiveService: OrderingSite
+  /** Additional published merchants. The primary service remains the device default. */
+  orderingSites?: OrderingSite[]
   surveyUrl: string
   version: 1
   /** Prevents keyboard chat when this released Profile is operated by voice. */

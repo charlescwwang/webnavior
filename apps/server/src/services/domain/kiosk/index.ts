@@ -8,10 +8,11 @@ import type { DeviceSettingsUpdate } from './deviceSettings'
 import { createHash, randomBytes } from 'node:crypto'
 
 import { defaultDeviceSettingsValues, newDeviceSettings, resolveDeviceSettings } from '@proj-airi/kiosk-proactive'
+import { orderingSites, orderingSiteSchema } from '@proj-airi/stage-shared/ordering-sites'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { array, boolean, literal, maxLength, minLength, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
-import { createConflictError, createForbiddenError, createNotFoundError } from '../../../utils/error'
+import { createBadRequestError, createConflictError, createForbiddenError, createNotFoundError } from '../../../utils/error'
 import { defaultKioskAgentInteractionState } from '../kiosk-agent-interaction'
 import { assertDetectionZone, parseSettingsChange } from './deviceSettings'
 import { greetingPhraseLimits } from './interactionContracts'
@@ -215,12 +216,8 @@ export const KioskProfileSnapshotSchema = object({
   })),
   greetingPrompt: pipe(string(), minLength(1), maxLength(2_000)),
   greetingPhrases: optional(pipe(array(pipe(string(), minLength(1), maxLength(greetingPhraseLimits.characters))), minLength(1), maxLength(greetingPhraseLimits.count))),
-  interactiveService: object({
-    description: pipe(string(), maxLength(500)),
-    id: pipe(string(), minLength(1), maxLength(120)),
-    title: pipe(string(), minLength(1), maxLength(120)),
-    url: pipe(string(), url(), maxLength(2_000)),
-  }),
+  interactiveService: orderingSiteSchema,
+  orderingSites: optional(pipe(array(orderingSiteSchema), maxLength(30))),
   surveyUrl: pipe(string(), url(), maxLength(2_000)),
   version: literal(1),
   voiceConversationOnly: boolean(),
@@ -407,7 +404,7 @@ export function createKioskService(db: Database): KioskService {
     // having to reason about cross-Site configuration provenance.
     if (device.siteId !== release.siteId)
       throw createForbiddenError('A kiosk device cannot use a Profile release from another Site')
-    if (input.serviceId !== release.snapshot.interactiveService.id)
+    if (!orderingSites(release.snapshot).some(service => service.id === input.serviceId))
       throw createForbiddenError('The requested interactive service is not published for this kiosk Profile')
 
     const site = await db.query.kioskSites.findFirst({ where: eq(schema.kioskSites.id, device.siteId) })
@@ -831,7 +828,8 @@ export function createKioskService(db: Database): KioskService {
       proactiveVlmEnabled: site.proactiveVlmEnabled === 1,
       voiceVadSettings: site.voiceVadSettings,
     }
-    return { deviceId, settings: device.settings, defaults, effective: resolveDeviceSettings(defaults, device.settings) }
+    const profile = await getDeviceProfile(deviceId)
+    return { deviceId, settings: device.settings, defaults, effective: resolveDeviceSettings(defaults, device.settings), ...(profile ? { orderingSites: orderingSites(profile.snapshot) } : {}) }
   }
 
   async function updateDeviceSettings(input: DeviceSettingsUpdate) {
@@ -849,6 +847,9 @@ export function createKioskService(db: Database): KioskService {
         throw createForbiddenError()
     }
     const snapshot = await getDeviceSettings(input.deviceId)
+    const selection = change.overrides.orderingServiceId
+    if (selection && !snapshot.orderingSites?.some(site => site.id === selection))
+      throw createBadRequestError('The ordering site is not published for this device', 'INVALID_REQUEST')
     await db.transaction(async (tx) => {
       // The row lock serializes settings writes with disable/delete. The revision
       // check rejects a stale editor instead of overwriting another operator.
@@ -1208,6 +1209,12 @@ function parseProfileSnapshot(snapshot: KioskProfileSnapshot) {
   const result = safeParse(KioskProfileSnapshotSchema, snapshot)
   if (!result.success)
     throw new Error('Kiosk Profile snapshot is invalid')
+  try {
+    orderingSites(result.output)
+  }
+  catch {
+    throw createBadRequestError('Ordering site IDs must be unique', 'INVALID_REQUEST')
+  }
   return result.output
 }
 

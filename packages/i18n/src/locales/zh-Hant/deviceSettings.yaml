@@ -1,3 +1,15 @@
+activeOrderingSite: '目前使用：{name}'
+pendingOrderingSite: 新店家設定已儲存，待目前訂單結束或重新開始後套用。
+orderingSiteApplyFailed: 無法套用店家設定，請確認連線與發佈清單後重試新訂單。
+orderingSiteRegistryHint: 新增已支援操作的店家網頁，發布後可在裝置設定選擇。僅填入網址不會自動建立操作支援。
+orderingSiteId: 店家識別碼（小寫英文、數字與連字號，建立後請勿變更）
+orderingSiteUrl: 點餐網頁網址
+orderingSiteDescription: 說明
+removeOrderingSite: 移除此店家選項
+addOrderingSite: 新增店家／點餐網站
+orderingSite: 店家／點餐網站
+defaultOrderingSite: 使用發佈設定的預設店家
+orderingSiteHint: 儲存後於下一筆新交談／新訂單套用，不會切換進行中的訂單。
 localAccess: 輸入現場管理員 PIN 後，即可儲存這台裝置的設定，無需登入後台帳號。
 verifyPin: 重新驗證 PIN
 savePinRequired: 尚未儲存：現場管理授權已失效，請重新輸入 PIN 後再按儲存。目前修改仍保留在此畫面。

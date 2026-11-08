@@ -8,6 +8,15 @@
 
 ## Interactive service completion survey
 
+## Published merchant pages
+
+The Kiosk Profile editor lets technical administrators add supported merchant/page
+bindings with stable lowercase IDs and HTTP(S) URLs. Publish the Profile before
+selecting a merchant in central or on-site device settings. Both editors save the
+same device choice. Adding a URL alone does not create an operation adapter or
+transfer an active cart. The primary service remains the default; additional
+merchants have distinct catalog, ordering and merchant-information ownership.
+
 Stage Web can mirror the customer-facing Kiosk completion flow while testing an embedded interactive service. Configure **設定 → 系統 → 完成後問卷** with a fixed HTTP(S) survey URL, then an embedded service's validated `completed` lifecycle event opens a locally generated QR Code invitation. Skipping it or reaching the countdown resets the current interaction chat session and reloads the iframe.
 
 The owned menu emits completion immediately after a paid order is accepted.

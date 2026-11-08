@@ -42,6 +42,24 @@ describe('kiosk service', () => {
     ])
   })
 
+  it('publishes distinct merchant bindings and shares the device selection between editors', async () => {
+    const site = await service.createSite({ name: 'Multiple merchants' })
+    await service.addMember({ siteId: site.id, userId: 'site-admin', role: 'site_admin' })
+    const device = await service.createDevice({ siteId: site.id, label: 'Front', registrationMethod: 'qr_code' })
+    const second = { id: 'shalun-simulation', title: '新店家模擬', description: '', url: 'https://example.com/menu/supplier.html' }
+    const draft = await service.saveProfileDraft({ siteId: site.id, name: 'Merchants', snapshot: { ...profileSnapshot, orderingSites: [second] } })
+    const release = await service.publishProfileDraft({ siteId: site.id, draftId: draft.id })
+    const initial = await service.getDeviceSettings(device.id)
+    expect(initial.orderingSites?.map(site => site.id)).toEqual(['restaurant-ordering', second.id])
+    const local = await service.updateDeviceSettings({ siteId: site.id, deviceId: device.id, source: 'local', userId: 'site-admin', body: { version: initial.settings.version, overrides: { orderingServiceId: second.id } } })
+    expect((await service.getDeviceSettings(device.id)).effective.orderingServiceId).toBe(second.id)
+    expect((await service.startVisitorSession({ deviceId: device.id, profileReleaseId: release.id, serviceId: second.id })).serviceId).toBe(second.id)
+    await expect(service.updateDeviceSettings({ siteId: site.id, deviceId: device.id, source: 'admin', userId: 'system-admin', body: { version: local.settings.version, overrides: { orderingServiceId: 'arbitrary-url' } } })).rejects.toMatchObject({ statusCode: 400 })
+    const central = await service.updateDeviceSettings({ siteId: site.id, deviceId: device.id, source: 'admin', userId: 'system-admin', body: { version: local.settings.version, overrides: { orderingServiceId: '' } } })
+    expect(central.effective.orderingServiceId).toBe('')
+    await expect(service.createProfileRelease({ siteId: site.id, name: 'Duplicate IDs', snapshot: { ...profileSnapshot, orderingSites: [profileSnapshot.interactiveService] } })).rejects.toThrow('unique')
+  })
+
   it('retains fixed welcome phrases through content edits and immutable publication', async () => {
     const site = await service.createSite({ name: 'POC Store' })
     const draft = await service.saveProfileDraft({ siteId: site.id, name: 'Welcome', snapshot: profileSnapshot })

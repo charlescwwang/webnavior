@@ -63,7 +63,7 @@ import { useKioskDecisionProgress } from '../composables/useKioskDecisionProgres
 import { useKioskDiagnostics } from '../composables/useKioskDiagnostics'
 import { useKioskInteractionRecording } from '../composables/useKioskInteractionRecording'
 import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
-import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
+import { hasPendingOrderingSite, useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
 import { useKioskMicrophoneSelection } from '../composables/useKioskMicrophoneSelection'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
@@ -505,6 +505,20 @@ const {
   state: customerSessionState,
 } = customerSession
 const sessionNotice = computed(() => customerResetError.value ?? notice.value)
+// An idle merchant change still crosses the reset barrier. Never switch a page
+// while a customer, tool operation or queued fast-path decision owns the round.
+watch([() => props.deviceSettings?.orderingServiceId, customerSessionState], async () => {
+  if (customerSessionState.value !== 'standby' || !hasPendingOrderingSite() || hasPendingWork.value || conversationSending.value || fastPathProgress.value)
+    return
+  try {
+    await customerSession.end('staff')
+  }
+  catch (error) {
+    customerResetError.value = t('deviceSettings.orderingSiteApplyFailed')
+    console.error('[stage-kiosk] failed to apply the saved ordering site:', error)
+  }
+})
+
 const customerSessionButtonLabel = computed(() => (
   customerSessionState.value === 'standby' ? '開始新交談／新訂單' : '重新開始／新訂單'
 ))
@@ -2881,7 +2895,7 @@ onUnmounted(() => {
             @start="startOperatorMicrophone"
             @stop="stopMicrophone"
           />
-          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated', $event)">
+          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" :active-ordering-site-id="scenarioRegistry.activeScenario.value?.id" @updated="emit('deviceSettingsUpdated', $event)">
             <template #reauthorize>
               <KioskAdminAccess single-tap>
                 {{ t('deviceSettings.verifyPin') }}

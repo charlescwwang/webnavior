@@ -1,3 +1,15 @@
+activeOrderingSite: 'Currently active: {name}'
+pendingOrderingSite: Merchant selection saved; waiting for the current round to finish or restart.
+orderingSiteApplyFailed: Could not apply the merchant selection. Check the connection and published sites before starting a new order.
+orderingSiteRegistryHint: Add supported merchant pages and publish them before selecting them on a device. A URL alone does not provide an operation adapter.
+orderingSiteId: Stable merchant ID
+orderingSiteUrl: Ordering page URL
+orderingSiteDescription: Description
+removeOrderingSite: Remove merchant option
+addOrderingSite: Add merchant / ordering website
+orderingSite: Merchant / ordering website
+defaultOrderingSite: Use the published default merchant
+orderingSiteHint: Applied at the next conversation or order; an active order stays on its current merchant.
 localAccess: Enter the local administrator PIN to save this device’s settings. No management account is required.
 verifyPin: Verify PIN again
 savePinRequired: 'Not saved: local access has expired. Enter the PIN again, then save. Your changes remain in this view.'

@@ -9,7 +9,7 @@ import KioskStandby from '../components/kioskStandby.vue'
 
 import { useKioskCharacterAsset } from '../composables/useKioskCharacterAsset'
 import { useKioskDeviceRegistration } from '../composables/useKioskDeviceRegistration'
-import { applyKioskProfile } from '../composables/useKioskInteractiveServices'
+import { applyKioskProfile, queueOrderingSite } from '../composables/useKioskInteractiveServices'
 import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
 import { waitForKioskRuntime } from '../services/kiosk-runtime-initialization'
 
@@ -62,6 +62,14 @@ onMounted(async () => {
   await bootstrap()
 })
 
+watch(deviceSettings, (snapshot) => {
+  if (!snapshot || !profile.value)
+    return
+  const id = snapshot.effective.orderingServiceId
+  const site = id ? snapshot.orderingSites?.find(site => site.id === id) : snapshot.orderingSites?.[0]
+  queueOrderingSite(site)
+})
+
 watch(profile, async (assignedProfile) => {
   profileReady.value = false
   profileSyncError.value = undefined
@@ -69,7 +77,7 @@ watch(profile, async (assignedProfile) => {
     return
 
   try {
-    applyKioskProfile(assignedProfile)
+    applyKioskProfile(assignedProfile, deviceSettings.value?.effective.orderingServiceId)
     await kioskCharacterAsset.apply(assignedProfile)
     profileReady.value = true
   }

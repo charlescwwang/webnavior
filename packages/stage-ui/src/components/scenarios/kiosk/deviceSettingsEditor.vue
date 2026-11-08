@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import DeviceSettingsVoiceVadEditor from './deviceSettingsVoiceVadEditor.vue'
 
-const props = defineProps<{ snapshot: DeviceSettingsSnapshot, mode: 'admin' | 'local', saving: boolean }>()
+const props = defineProps<{ snapshot: DeviceSettingsSnapshot, mode: 'admin' | 'local', saving: boolean, activeOrderingSiteId?: string }>()
 const emit = defineEmits<{
   save: [change: { version: number, overrides: Partial<DeviceSettingsValues> }]
   dirty: [changed: boolean]
@@ -24,7 +24,9 @@ const options: Partial<Record<DeviceSettingKey, string[]>> = {
   performanceProfile: ['constrained', 'balanced', 'high'],
   presenceVisionMode: ['face_only', 'pose_only', 'pose_plus_conditional_face'],
 }
-const genericSettingKeys = deviceSettingKeys.filter(key => key !== 'voiceVadSettings')
+const savedOrderingSiteId = computed(() => props.snapshot.effective.orderingServiceId || props.snapshot.orderingSites?.[0]?.id)
+const activeOrderingSiteTitle = computed(() => props.snapshot.orderingSites?.find(site => site.id === props.activeOrderingSiteId)?.title ?? props.activeOrderingSiteId)
+const genericSettingKeys = deviceSettingKeys.filter(key => key !== 'voiceVadSettings' && key !== 'orderingServiceId')
 // Store only edited fields plus existing device choices. Saving an unrelated
 // field must not freeze every inherited Site default into a device override.
 const overrides = computed<Partial<DeviceSettingsValues>>(() => ({
@@ -53,6 +55,16 @@ function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
 <template>
   <form :class="['flex flex-col gap-4']" @submit.prevent="emit('save', { version: snapshot.settings.version, overrides })">
     <p>{{ t('deviceSettings.description') }}</p>
+    <label :class="['flex flex-col gap-2 rounded-lg border p-3']">
+      {{ t('deviceSettings.orderingSite') }}
+      <select :aria-label="t('deviceSettings.orderingSite')" :value="values.orderingServiceId ?? ''" :disabled="saving" :class="['rounded border bg-transparent p-2']" @change="setValue('orderingServiceId', ($event.target as HTMLSelectElement).value)">
+        <option value="">{{ t('deviceSettings.defaultOrderingSite') }}</option>
+        <option v-for="site in snapshot.orderingSites ?? []" :key="site.id" :value="site.id">{{ site.title }}</option>
+      </select>
+      <small>{{ t('deviceSettings.orderingSiteHint') }}</small>
+      <small v-if="activeOrderingSiteId">{{ t('deviceSettings.activeOrderingSite', { name: activeOrderingSiteTitle }) }}</small>
+      <small v-if="activeOrderingSiteId && savedOrderingSiteId !== activeOrderingSiteId" role="status">{{ t('deviceSettings.pendingOrderingSite') }}</small>
+    </label>
     <div v-for="key in genericSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
       <p v-if="key === 'textOnlyMode' || key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled' || key === 'conversationDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">

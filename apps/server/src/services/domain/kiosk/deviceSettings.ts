@@ -1,6 +1,6 @@
 import type { DeviceSettingsValues } from '@proj-airi/kiosk-proactive'
 
-import { boolean, integer, maxValue, minValue, number, partial, picklist, pipe, safeParse, strictObject } from 'valibot'
+import { boolean, integer, maxLength, maxValue, minValue, number, partial, picklist, pipe, safeParse, strictObject, string } from 'valibot'
 
 import { createBadRequestError } from '../../../utils/error'
 
@@ -13,6 +13,7 @@ export type DeviceSettingsUpdate = { deviceId: string, siteId: string, body: unk
 const duration = pipe(number(), integer(), minValue(0), maxValue(600000))
 const fraction = pipe(number(), minValue(0), maxValue(1))
 const overrides = partial(strictObject({
+  orderingServiceId: pipe(string(), maxLength(120)),
   serviceMode: picklist(['kiosk', 'table-service']),
   backgroundSpeechMode: picklist(['off', 'observe', 'enforce']),
   textOnlyMode: boolean(),

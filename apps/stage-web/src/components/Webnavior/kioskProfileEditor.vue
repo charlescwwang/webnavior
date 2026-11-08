@@ -6,6 +6,7 @@ import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import ExperienceEditorSection from './experienceEditorSection.vue'
+import OrderingSitesEditor from './orderingSitesEditor.vue'
 
 import { greetingPhraseLimits } from '../../../../server/src/services/domain/kiosk/interactionContracts'
 
@@ -52,6 +53,7 @@ function cloneDraft(draft: KioskProfileDraft): KioskProfileDraft {
       ...(draft.snapshot.characterCard ? { characterCard: { ...draft.snapshot.characterCard } } : {}),
       ...(draft.snapshot.greetingPhrases ? { greetingPhrases: [...draft.snapshot.greetingPhrases] } : {}),
       interactiveService: { ...draft.snapshot.interactiveService },
+      orderingSites: (draft.snapshot.orderingSites ?? []).map(site => ({ ...site })),
     },
   }
 }
@@ -273,6 +275,10 @@ function selectMotion(slot: MotionSlot, event: Event) {
         說明
         <Textarea v-model="form.snapshot.interactiveService.description" :disabled="busy || !props.capabilities?.canEditExperience" :rows="2" />
       </label>
+    </ExperienceEditorSection>
+
+    <ExperienceEditorSection v-if="props.capabilities?.canEditTechnicalSettings" :title="t('deviceSettings.orderingSite')" :description="t('deviceSettings.orderingSiteRegistryHint')">
+      <OrderingSitesEditor v-model="form.snapshot.orderingSites" :disabled="busy" />
     </ExperienceEditorSection>
 
     <ExperienceEditorSection v-if="props.capabilities?.canEditTechnicalSettings" title="回饋" description="互動結束後提供給顧客的回饋連結。">

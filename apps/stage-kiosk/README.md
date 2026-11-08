@@ -1,5 +1,16 @@
 # AIRI Kiosk
 
+## Merchant selection
+
+Central Profiles can publish additional supported merchant pages. The on-site
+PIN-protected device settings and central device settings share the Server-saved
+`orderingServiceId` dropdown. The editor shows the active merchant and a saved
+choice waiting for the next round. Active orders retain their merchant; changes
+cross the existing order/visitor reset barrier, including when the Kiosk is idle.
+A missing published choice fails visibly instead of silently opening another
+merchant. Only the active page is exposed to dialogue tools. PIN/account rules,
+Kiosk/table service mode and microphone behavior remain independent.
+
 `@proj-airi/stage-kiosk` is the full-screen AIRI surface for a restaurant kiosk with voice-led ordering and existing touch controls. It shares AIRI's local hardware UI, LLM tools, and independent `@proj-airi/order-menu` service; the Server owns all ASR/TTS provider, model, voice, endpoint, and credential policy.
 
 Use it for customer-facing horizontal or vertical kiosk displays. Do not use it as a replacement for the normal settings-oriented `stage-web` application.

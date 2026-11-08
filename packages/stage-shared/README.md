@@ -101,3 +101,16 @@ other successful operations. Hosts retain successful sibling receipts and show
 them together with the refusal. Do not retry, reduce or split the rejected count.
 A model may select `quantity-limit` for a factual policy reply; customer-facing
 wording comes from the current Menu projection rather than model success prose.
+
+## Ordering merchants and reply presentation
+
+`@proj-airi/stage-shared/ordering-sites` owns the published page-binding schema and
+strict default/selected-merchant resolution. An unknown saved ID must not silently
+fall back to another merchant. The Host exposes only the active binding and applies
+changes after the previous customer round settles.
+
+`@proj-airi/stage-shared/kiosk-conversation` separates verified merchant facts from
+executable checkout controls. Payment brand answers use merchant-confirmed data,
+not a simulator's payment-method enum. `customerReplySchema` separates factual read
+receipts, their priced item IDs and display-only next questions; a validated Menu
+question has priority. Display guidance grants no purchase or operation authority.

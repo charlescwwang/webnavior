@@ -9,7 +9,7 @@ import DeviceSettingsEditor from './deviceSettingsEditor.vue'
 
 import { getAuthToken, triggerSignIn } from '../../../libs/auth'
 
-const props = defineProps<{ endpoint: string, mode: 'admin' | 'local' }>()
+const props = defineProps<{ endpoint: string, mode: 'admin' | 'local', activeOrderingSiteId?: string }>()
 const emit = defineEmits<{ updated: [snapshot: DeviceSettingsSnapshot] }>()
 const { t } = useI18n()
 const snapshot = shallowRef<DeviceSettingsSnapshot>()
@@ -103,7 +103,7 @@ onUnmounted(() => activeRequest?.abort())
     <p v-if="message && !snapshot" role="status">
       {{ message }}
     </p>
-    <DeviceSettingsEditor v-if="snapshot" :snapshot="snapshot" :mode="mode" :saving="saving" @save="request" @reload="request()" @dirty="dirty = $event">
+    <DeviceSettingsEditor v-if="snapshot" :snapshot="snapshot" :mode="mode" :active-ordering-site-id="activeOrderingSiteId" :saving="saving" @save="request" @reload="request()" @dirty="dirty = $event">
       <template #status>
         <p v-if="message" role="status" aria-live="polite" :class="[failureStatus !== undefined ? 'font-semibold text-red-700 dark:text-red-300' : 'text-green-700 dark:text-green-300']">
           {{ message }}
