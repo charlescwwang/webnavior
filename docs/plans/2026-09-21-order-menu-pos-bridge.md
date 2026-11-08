@@ -131,3 +131,180 @@ Acceptance: the same contract suite used by the simulator passes against the ven
 5. Vendor rules for order modification, cancellation, tax, service fees, and dine-in/takeout mapping.
 
 Until these choices are known, phases 1–3 provide the complete integration harness without guessing a vendor protocol.
+
+## 2026-11-08 proposed supplier-menu simulation and safe page selection
+
+Status: committed in42a7029/a67aec6/ad98734 and deployed at17:03 Taipei Nov08. The new owned HTML entry,
+independent test Bridge/catalog and shared central/on-site selection are implemented.
+The implementation does not operate the supplier's original site. Payment wording
+is implemented through verified merchant facts; simulator controls are not support
+claims. The analysis below records the original design; current overrides and
+validation are listed here and in the conversation-repair plan.
+
+User-confirmed source overrides: 炸排骨便當130元、椒香麻辣牛肉麵230元、A套餐130元、
+B套餐145元；周氏水餃每份基本8顆64元，另有每份加量0～100顆、每顆8元，
+與訂購份數分開。保留原始公開觀察，實作資料使用確認後數值。助手自由文字
+備註功能本輪未新增，沿用既有菜單選項政策。三張實際來源圖片已保存；其餘
+13道不冒用圖片。新入口建置為 `supplier.html`，API 使用既有 Bridge 下的
+`/supplier`；新舊店家各有獨立 Bridge 狀態。續接網址、API 與瀏覽器憑證儲存
+亦分開，不把新店家訂單帶到舊入口。兩者營運業者均為周氏蝦捲。
+
+後台 Profile 可新增／發布支援的點餐網站，前後台裝置設定透過同一 Server
+欄位 `orderingServiceId` 選擇。保留既有 PIN／帳號權限。進行中訂單先保留，
+經原 round／visitor reset barrier 後套用；閒置切換同樣先安全 reset。頁面
+只向對話公開一個 active binding，未發布或已移除的選擇不能默默回到別店。
+已發布三個前端、API 與 Menu Bridge；release為
+`merchant-revision-20261108T090314Z-ad98734`，origin92／public92檢查通過。
+新頁為 `https://webnavior.aikcitri.qzz.io/menu/supplier.html`；新舊 catalog各16／7項。
+補上既有 BFF 對 `supplier/` 的限定白名單，沿用原驗證，未登入訂單讀取仍401。
+原 Profile／選店設定保留；管理員可把此新網址作為獨立 binding新增並發布，
+再於共用裝置設定選用。本次沒有替所有現場裝置改選新店家。
+Nginx既有靜態路由可正常提供新頁，Cloudflare回應DYNAMIC。強制 `expires -1`
+尚待操作員執行 `sudo python3 /tmp/apply-merchant-html-cache.py`（sudo需要密碼）；
+腳本只補新頁規則，先備份／nginx -t，再reload，失敗還原。其他入口規則未動。
+不需要資料庫 migration，不能直接沿用前一次僅前端的發布指令。
+
+驗證：Menu993通過／202跳過（非通過）；新增資料／加量邊界與續接43個
+相關案例通過；Server發佈／選擇／設定32通過；新 Bridge prefix1通過；
+Host／快速路徑／生命週期171通過。Firefox設定與既有操作5通過，新店家
+Kiosk／隨桌2通過；本機實際頁面確認16品項、3張來源圖片、加2顆80元、
+份數加減及移除，原頁仍是原7品項。三個前端建置通過，相關 package
+型別與修改檔 lint 通過；提交門檻 root typecheck一次通過。root lint有2364項既有、非本次修改檔錯誤，未擴大清理；分批commit hooks通過。瀏覽器依賴預掃描有
+`vue-router/auto-routes` 訊息／reload，但新店家2測試通過；未聲稱真模型、
+完整 Scene／Windows語音、正式付款或任意第三方網站相容性已驗收。
+
+
+### Confirmed product direction (Nov08 follow-up)
+
+- Treat the current and supplier-inspired menus as different merchants, with
+  separate merchant identities, catalogs, price/unit/option data and merchant
+  facts, including payment policy. Do not inherit old merchant answers simply
+  because both pages share our runtime. The new merchant remains a simulation.
+  User clarified that its operator is also 周氏蝦捲; a separate merchant record
+  does not imply a different operator. Start with a fresh merchant/catalog
+  configuration, not a replacement catalog for the old merchant. Existing
+  cross-target cart isolation is retained, not described as a newly missing feature.
+- Give the new page its own deployed HTML entry URL, selected inside the existing
+  Kiosk iframe. It may share a build/domain with the current page; a separate
+  domain or duplicated backend is not required. Exact path is an implementation
+  detail; supplier.html is now built locally but not published.
+- The central admin can add merchant/site records and their supported page
+  bindings over time. A dropdown in central device settings and PIN-protected
+  on-site settings selects the configured merchant/site; both persist the same
+  Server-owned selection. Adding a record does not automatically supply a UI
+  adapter for arbitrary sites. Each selectable target needs a working binding.
+- This iteration builds and controls our own simulation page. Do not embed or
+  operate the supplier's original webpage, or make that external site's framing/
+  integration assessment a prerequisite for the mock. External-site adapters
+  remain a future, separately scoped concern. Keep real UI click/input execution.
+- This confirmation authorized implementation later in the chat; production deployment has not been performed.
+  Merchant switching and Kiosk/table service remain independent settings; the
+  active-order safety and next-empty-order switching rules below still apply.
+
+### Public source and data preparation
+
+Source: [ESGPB 沙崙AI創新應用大樓店](https://app.esgpb.com/order/store/1kgJeql/pick_up/menu).
+Inspected all16 public product dialogs on Nov08; factual snapshot:
+`docs/research/2026-11-08-esgpb-menu-observation.json`. Public observation is not
+an authenticated vendor export or production POS integration.
+
+- Two categories, 飯區/麵區, sixteen items. Page explicitly says not officially
+  operating. Preserve observed category/item text, display order, prices and
+  provenance. Bind real source IDs only if exposed by a verified source;
+  snapshot row keys are not vendor product IDs.
+- Three product image URLs were observed and loaded; thirteen items had no
+  product image in the inspected cards/details. URLs are recorded; images have
+  now been copied into the simulation assets; absent images use an honest no-photo presentation,
+  never another dish's picture. Record source URL and capture date.
+- All inspected dialogs show quantity plus a free-text note field. No structured
+  option groups were observed. Notes are a separate capability, not permission
+  to promise arbitrary cooking adjustments. Whether the assistant may enter
+  customer-authored notes is outside this implementation; if notes are supported,
+  UI/cart/receipt must retain them consistently, not merely render a fake field.
+  Keep existing no-menu-option/no-customization policy until that decision.
+- The public source displayed 排骨10元 and A/B0元. These observations remain
+  recorded, but the simulation uses user-confirmed 排骨130元、椒香牛肉麵230元、
+  A130元、B145元; it never labels the original zeros as free promotions.
+- The source alone did not establish the dumpling sales unit. The user has now
+  confirmed8pieces/64元 per serving and0–100 extra pieces at8元 each. This is a
+  declared add-on option, not an invented recipe adjustment or the old10-piece unit.
+- Unknown ingredients, nutrition, removals and dietary guarantees stay unknown.
+  Do not copy the old menu's composition/recommendation facts onto new products.
+
+### Independent simulation page
+
+Build a separate entry/page inspired by the supplier's category list, product
+cards and item dialog. Keep the current Menu entry unchanged. The simulation
+must have its own UI/control mapping so this exercises different markup, rather
+than just relabelling the current page. Reuse the existing order domain,
+admission checks, real click/input execution boundary and host protocol where
+appropriate; avoid duplicating the entire agent/cart engine.
+
+Display a persistent, visible and accessible label such as
+「模擬示意｜不會送出真實訂單或付款」. Mock checkout/submission receipts must
+remain environment:test and cannot claim delivery to the merchant. Do not copy
+the supplier's login gate, reintroduce phone collection, or connect its real
+submit/payment endpoints. Unobserved checkout screens are our simulated flow,
+not claimed replicas verified against the supplier.
+
+### Page selection and future sites
+
+Keep iframe presentation. The missing part is coordinated service selection,
+not another iframe element:
+
+1. Reuse approved-service registry/Profile boundaries. A deployment-approved
+   target bundles a stable service ID, display name, page URL, catalog identity
+   and revision, operation adapter/protocol, test/live environment and declared
+   capabilities. Page/catalog/executor must belong to the same target.
+2. Add a 「店家／點餐網站」 selector to the PIN-protected Kiosk admin view and the
+   corresponding central device settings. Central admin maintains merchant/site
+   records and supported bindings; the selector lists configured targets such
+   as 現有示範 and 業者菜單模擬, not arbitrary URLs. Save once to the Server and
+   show saved selection, active selection and pending next-round selection.
+   Existing PIN/account authorization rules remain unchanged.
+3. Current frontend registry supports multiple services, but Server Profile
+   snapshots currently deliver one `interactiveService`, and content managers
+   cannot freely edit its URL. Implement the approved list/device choice at the
+   owning Server/Profile boundary; do not rely on browser-local changes that
+   bootstrap will overwrite. Choose the smallest schema change after inspecting
+   that boundary; no new library/dependency is selected by this plan.
+4. Default switching applies to the next empty order. An active cart/draft needs
+   an explicit finish-or-cancel/reset path; payment/submission in flight or with
+   unknown result must settle before switching. Never carry a cart, product ID,
+   meal/checkout question or submission consent into another target.
+5. On actual switch retire the old model turn, queue/answer leases and tool
+   binding, renew the visitor/ordering round, load the selected iframe, discover
+   its current capabilities, then use its own menu data. Already-admitted effects
+   settle/reconcile; disposing RPC does not prove a transaction was cancelled.
+   Failed connection is visible and offers recovery; it does not silently select
+   another merchant or create a fake success receipt.
+6. Service mode is independent: Kiosk vs table service remains a separate
+   setting. Test both modes on both mock targets. The source URL is a pickup page;
+   that alone does not prove the vendor supports dine-in, unpaid table submission
+   or any production payment method.
+7. A future external site is usable only after verifying framing, available
+   protocol/capabilities and operation access. An arbitrary cross-origin iframe
+   does not grant its parent DOM control or our challenge/tool handshake. A site
+   without a compatible interface needs a separately assessed, authorized page
+   operation adapter. Simulated human clicks remain the operation path; do not
+   fall back to hidden state writes or claim cross-site generality from the mock.
+
+### Implementation order and acceptance
+
+1. Confirm data anomalies, units and note policy; version the captured catalog
+   and available image assets without replacing the current catalog.
+2. Build the separate simulation with real controls and test-only submission;
+   exercise its own UI using the current host/domain contract.
+3. Add approved target selection and coordinated next-round switching, sharing
+   Server persistence between the central and on-site editors.
+4. Validate both targets × both service modes, followed by actual model and
+   hardware acceptance separately. Include precise/fuzzy lookup, chicken/pork/
+   fish/category exploration, absent items, relative quantity changes, note vs
+   unsupported customization, zero/suspicious prices, changed IDs/prices/options,
+   missing images, returning from recommendation, real X/add/minus/remove clicks,
+   stale responses, active cart, pending payment/submission, connection failure,
+   refresh persistence and immediate return to the previous approved target.
+
+The simulation validates this catalog, this distinct UI mapping and the switch
+lifecycle. It does not prove that the live ESGPB site can be embedded, automated
+or submitted to. No production replacement is authorized by this planning step.

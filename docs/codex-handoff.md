@@ -7,6 +7,56 @@ accumulating history.
 
 ## Current State
 
+- Nov08 NEW MERCHANT / REPLY REVISION COMMITTED AND DEPLOYED on explicit user request.
+  Functional batches:42a7029 replies, a67aec6 shared merchant selection, ad98734 simulation.
+  Release merchant-revision-20261108T090314Z-ad98734; all3 frontends +14 runtime files.
+  Manifest/rollback: /home/aimax/.local/share/webnavior/releases/merchant-revision-20261108T090314Z-ad98734/release.json.
+  Origin92/public92 checks pass, including two separate catalogs (old7/new16),3 photos
+  and HTML references/JS/CSS/version hashes. API1162719→1326181 and Bridge3299152→1326468
+  ready. Added supplier to the existing BFF POS allowlist after a failing regression;
+  same device-auth policy retained. Public GET orders401 for BOTH merchants.
+  New URL: https://webnavior.aikcitri.qzz.io/menu/supplier.html.
+  Existing Profile publications and selected merchants were intentionally preserved:
+  register this URL as a distinct binding in the central Profile, publish, then select.
+  Optional explicit HTML no-cache rule needs operator sudo (password unavailable).
+  Prepared /tmp/apply-merchant-html-cache.py, asked operator to run sudo python3 on it;
+  existing route serves200/Cloudflare DYNAMIC, but expires -1 is not yet applied.
+  No new dependency, DB migration, mic/AEC, live model, payment or merchant-order call. User corrections: 排骨130, 椒香牛肉麵230,
+  A套餐130, B套餐145; 水餃 base8pieces/64元, extra0–100 at8元/piece, servings separate.
+  Source observation + corrections: docs/research/2026-11-08-esgpb-menu-observation.json.
+  Three actual source images now copied to apps/order-menu/public/supplier;13 no-photo.
+  Own supplier.html builds with existing Menu, distinct cards plus shared real-click
+  controls; always simulation-marked, uses API base+/supplier, independent simulator
+  catalog/state in order-menu-server. Supplier receipt links/API/storage are isolated.
+  Existing entry/catalog remain. Operator is 周氏蝦捲 for BOTH merchants; neither
+  catalog/composition/payment facts may be inherited just because operator matches.
+  Published Profile orderingSites adds supported page bindings (primary remains default);
+  central Profile editor maintains rows, central/local device dropdowns share Server
+  orderingServiceId. PIN/account rules unchanged. Only active binding reaches tools.
+  Saved binding applies through settled old-round/visitor reset; idle changes also
+  cross that barrier. Removed selection fails visibly, never silently substitutes.
+  Keep API AND Menu Bridge plus all frontends together for rollback/deployment.
+  Static old hashed assets are retained; overwritten files and runtime files backed up.
+  No PIN/device selection changes or DB migration; the optional Nginx step is pending.
+  Shared merchant facts now drive payment/operator responses; simulator method enums
+  cannot claim merchant support. Display customerReply separates facts/guide/priced IDs;
+  Host combines independent facts/accepted effects, replaces same-scope reads, appends
+  one validated question, no duplicate lookup prices/quantity prompts. Inquiry correction
+  retires the draft without asking its quantity again. Natural exhausted guidance uses
+  real candidates and preserves constraints. No added model polish/review calls; Main
+  remains under existing handoff policy. Selective model wording assistance is allowed
+  only if future examples justify reliable bounded validation; no blanket promise of
+  perfect wording or measured live latency. Formal plans contain investigation evidence.
+  Validation: Menu993passed/202skipped, later43+25 focused pass; Host fast-path/
+  lifecycle171pass (including final question file81); shared36; Server32; mounted Bridge1.
+  Firefox old controls/settings5 + supplier modes2 pass. Supplier browser run had
+  dependency pre-scan auto-routes/optimizer reload warnings; actual tests and all3
+  production frontend builds pass. Scoped types and changed-file lint/hooks pass.
+  Commit gate root types passed once. Root lint found2364 pre-existing errors outside
+  changed files (plus12 oxlint warnings); not expanded into unrelated cleanup. Supplier
+  BFF policy/regression2 pass, Server scoped types pass after that fix. No repeated root
+  checks. Real full Scene/live models/Windows voice acceptance NOT claimed. 202 intentionally skipped Menu cases are not passes.
+
 - Nov08 approved conversation/UI revision COMMITTED AND DEPLOYED. Product code
   commit a9a8d84; preceding functional batches f727a30 (settings/PIN),53c12bb
   (shared replies/Main),4fc2bea (Menu actual controls). Authoritative scope:
@@ -51,12 +101,9 @@ accumulating history.
   Service-mode/navigation20 and Main-context28 focused tests pass; now deployed.
   User clarification: unify ONLY self-introduction as 點餐助手; keep Kiosk/AI
   隨桌服務員 admin modes and mode-aware answers to mid-conversation questions.
-  Payment vendors are not confirmed; only cashless policy is known. Proposed
-  cashless-only factual reply is recorded in the plan, not implemented yet;
-  current payment-methods renderer still lists context.paymentMethods, whose
-  test labels must not be mistaken for production support. No new tests/models
-  or payment-renderer change for this clarification. Existing admin mode choices
-  remain distinct; only the shared introduction uses 點餐助手.
+  Payment-brand uncertainty was addressed by the newer merchant-facts revision
+  above; the former context.paymentMethods renderer is superseded. Admin mode
+  choices remain distinct; only shared introduction uses 點餐助手.
 
 - Nov08 input visibility follow-up: Menu context returned ok:false / confirmed
   meal constraint error on 「不要了」,0models. Naked UNAVAILABLE omitted recovery,
