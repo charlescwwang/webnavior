@@ -7,6 +7,58 @@ accumulating history.
 
 ## Current State
 
+- Nov08 CONTINUATION implemented/validated; user authorized batched commits/deployment.
+  Source of truth: top of docs/plans/2026-10-28-kiosk-conversation-repair.md;
+  detailed evidence: docs/research/2026-11-08-kiosk-continuation-release.json.
+  Deployment status: inspect /tmp/continuation-release-path -> release.json and
+  public /kiosk/version.json; do not infer it from a source commit alone.
+  Done-order/clear-confirmation -> checkout uses independent read-only cart review,
+  real summary and new owned next question. Old clear consent is retired. No auto
+  submit; Kiosk retains fulfillment, table reviews then confirms once. Natural
+  assent binds only to the new question. Main clarification cannot erase a real
+  displayed cart receipt; other incomplete/clarification reads retain old policy.
+  New named lookups reset positive taste/budget and synchronize conditions/results;
+  preserve exclusions/dietary safety. Unknown finite searches require original
+  named lookup. Recommendations/price reads get one guide question; internal
+  display:false cannot settle an independently requested visible price answer.
+  search-all-menu is read-only (fixed mistaken mutation gate). Menu proposals,
+  originalRecipe, atomic replacement and full-turn answerAction proofs stay strict.
+  One-click restart waits in-flight work, invokes Host-only kiosk_ordering_reset
+  on the ACTIVE page/merchant namespace, ends visitor, applies saved merchant,
+  awaits new document/tools, starts active; coalesces clicks and blocks admission.
+  No forced reset of unresolved payment/submission; errors visible. Saved settings
+  and mic untouched. Ordinary JEV recommendation paths preserved; no new library
+  or model-polish call. Unrelated speech returns a typed ordering-scope guide.
+  Current-route model cases30 finally passed across runs (main21, generalized8,
+  ordinary rec1); raw earlier failures retained. Flat helper is diagnostic only;
+  generalized acceptance now uses staged HTTP/recovery. Ambiguous assent never
+  picks an arbitrary dish; explicit named follow-up adds only that requested item.
+  Menu1016/202skip, decision+interaction652/81skip, final routing37, Host382/3skip,
+  lifecycle114, Firefox components3. Earlier full route115 + final guards9;
+  root types/changed lint/three builds pass. Root lint2364 pre-existing errors,
+  outside changed files. Latest text max4750ms; original fish1998/supplier2468ms;
+  table TWO-turn totals3631/3646ms. No full Scene/actual mouse or Windows voice
+  acceptance; old202 opt-in not all run; mic/AEC remains deferred.
+
+- Nov08 LIVE CONFIGURATION follow-up: user reported merchant switching on DEV-810280
+  and requested all machines selectable. Found all61 nondeleted devices in Webnavior
+  test Site still had old-only published bindings; not a demonstrated iframe defect.
+  Added supplier-simulation (title 周氏蝦捲新菜單（模擬示意）, URL /menu/supplier.html)
+  to each currently assigned snapshot, preserving all other content/device choices.
+  Immutable releases35/36 replace the two assignment groups2/59; existing draft also
+  receives just the added binding. All61 verified through LIVE runtime service reads;
+  810280 still selects original merchant. Reload Kiosk to bootstrap the new release
+  BEFORE selecting/saving new merchant; active order must cross existing new-round
+  reset barrier. Latest release36 supplies new devices at this Site. No other Site
+  or owner template touched. No actual field browser-switch acceptance claimed.
+  Private backup/manifest directory:
+  /home/aimax/.local/share/webnavior/operations/merchant-bindings-2026-11-08T10-33-45-000Z/.
+  Local admin PIN rotated on explicit user request; NEVER record its value here.
+  API1326181→1436779 ready DB/Redisok; private file0600 and prior file retained.
+  Manifest: /home/aimax/.local/share/webnavior/operations/pin-rotation-20261108T103057Z/operation.json.
+  This configuration-only operation did not publish source; its PIN and device
+  bindings must remain unchanged by the subsequent continuation code release.
+
 - Nov08 NEW MERCHANT / REPLY REVISION COMMITTED AND DEPLOYED on explicit user request.
   Functional batches:42a7029 replies, a67aec6 shared merchant selection, ad98734 simulation.
   Release merchant-revision-20261108T090314Z-ad98734; all3 frontends +14 runtime files.

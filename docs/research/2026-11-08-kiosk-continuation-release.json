@@ -1,0 +1,337 @@
+{
+  "capturedAt": "2026-11-08T11:39:38.298674+00:00",
+  "status": "implementation-and-validation-complete; deployment recorded separately in release manifest",
+  "baseCommit": "728e8fd121b3e741a8a3fde731038646039018f1",
+  "authorization": "User explicitly authorized configured real JEV/Main replay, batched commits, deployment and API restart. Correctness first; investigate first text roundtrips >=5000ms.",
+  "isolation": "Configured production model settings read; synthetic dialogue, scratch visitor database and Menu runtimes only. Fake order gateway for table tests. No real order/payment/device configuration mutation.",
+  "models": {
+    "jev": "lookski / Qwen/Qwen3.5-4B",
+    "main": "webnavior/chat / qwen36"
+  },
+  "validation": {
+    "menu": {
+      "passed": 1016,
+      "optInSkipped": 202
+    },
+    "serverDecisionAndInteraction": {
+      "passed": 652,
+      "optInSkipped": 81
+    },
+    "routingAfterReadFix": {
+      "passed": 37
+    },
+    "serverFullRouteSuiteBeforeFinalGuards": {
+      "passed": 115
+    },
+    "serverFinalRouteGuards": {
+      "passed": 9,
+      "unselected": 110
+    },
+    "hostFieldRegressions": {
+      "passed": 382,
+      "optInSkipped": 3
+    },
+    "hostLifecycle": {
+      "passed": 114
+    },
+    "firefoxBrowser": {
+      "passed": 3,
+      "scope": "ScenarioSurface lifecycle and OrderingSiteSettings; not full KioskScene or Windows hardware"
+    },
+    "rootTypecheck": "passed; run once again only after fixing task-caused Menu error",
+    "changedFileLint": "passed",
+    "rootLint": "2364 pre-existing errors outside changed files; not expanded into unrelated cleanup",
+    "frontendBuilds": [
+      "menu",
+      "kiosk",
+      "web"
+    ],
+    "realModels": {
+      "releaseAndQueryAndTableAndExit": 21,
+      "generalizedCurrentRoute": 8,
+      "ordinaryRecommendation": 1,
+      "uniqueSelectedCases": 30,
+      "allCurrentCasesFinallyPassed": true,
+      "scope": "Results collected across the recorded runs; not a single clean all-case invocation. Original 202 opt-in Menu cases not all executed."
+    }
+  },
+  "releaseCases": [
+    {
+      "id": "first-menu",
+      "durationMs": 2535,
+      "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。 您想先看哪一道餐點？",
+      "shown": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "thai-sour-spicy-fish-bento",
+        "fried-pork-chop-bento",
+        "thai-basil-pork-bento",
+        "beef-noodle-soup",
+        "dumplings"
+      ]
+    },
+    {
+      "id": "preference-fish",
+      "durationMs": 1998,
+      "answer": "含魚：推薦一項：泰式酸辣魚便當。 想點這道的話，您要幾份？",
+      "shown": [
+        "thai-sour-spicy-fish-bento"
+      ]
+    },
+    {
+      "id": "preference-chicken",
+      "durationMs": 2224,
+      "answer": "含雞肉：推薦一項：椒麻雞便當。 想點這道的話，您要幾份？",
+      "shown": [
+        "spicy-chicken-bento"
+      ]
+    },
+    {
+      "id": "preference-beef",
+      "durationMs": 2040,
+      "answer": "含牛肉：推薦一項：紅燒牛肉麵。 想點這道的話，您要幾份？",
+      "shown": [
+        "beef-noodle-soup"
+      ]
+    },
+    {
+      "id": "fuzzy-read",
+      "durationMs": 2264,
+      "answer": "菜單沒有完全相符的名稱，您想找的是打拋豬便當嗎？",
+      "shown": [
+        "thai-basil-pork-bento"
+      ]
+    },
+    {
+      "id": "fuzzy-purchase",
+      "durationMs": 3265,
+      "answer": "您是要新增打拋豬便當嗎？",
+      "shown": [
+        "thai-basil-pork-bento"
+      ]
+    },
+    {
+      "id": "replacement",
+      "durationMs": 3863,
+      "answer": "已將紅燒牛肉麵更換為水餃，共 1 份。 請問要內用還是自取？",
+      "shown": []
+    },
+    {
+      "id": "mixed-query-add",
+      "durationMs": 3136,
+      "answer": "已將紅燒牛肉麵加入購物車，共 1 份。 水餃目前可以點。每份10顆，80元，現點現煮。 請問要內用還是自取？",
+      "shown": [
+        "dumplings"
+      ]
+    },
+    {
+      "id": "done-order",
+      "durationMs": 2367,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？",
+      "shown": []
+    },
+    {
+      "id": "done-order-variant",
+      "durationMs": 2490,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？",
+      "shown": []
+    },
+    {
+      "id": "unrelated",
+      "durationMs": 1972,
+      "answer": "我是點餐助手，可以幫您看菜單、選餐和確認訂單。您想吃什麼？",
+      "shown": []
+    },
+    {
+      "id": "clear-question-yes",
+      "durationMs": 1387,
+      "answer": "已清空購物車。",
+      "shown": []
+    },
+    {
+      "id": "clear-question-send",
+      "durationMs": 2892,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？",
+      "shown": []
+    },
+    {
+      "id": "clear-question-send-checkout",
+      "durationMs": 2184,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？",
+      "shown": []
+    },
+    {
+      "id": "clear-question-send-submit",
+      "durationMs": 2027,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？",
+      "shown": []
+    },
+    {
+      "id": "fish-withdrawal",
+      "durationMs": 3186,
+      "answer": "排除魚：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、炸排骨便當。 您想點哪一道？",
+      "shown": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "fried-pork-chop-bento"
+      ]
+    }
+  ],
+  "queryTransitions": [
+    {
+      "merchant": "original",
+      "speech": "我想吃魚",
+      "durationMs": 1881,
+      "answer": "含魚：推薦一項：泰式酸辣魚便當。 想點這道的話，您要幾份？"
+    },
+    {
+      "merchant": "original",
+      "speech": "你有賣全家餐嗎？",
+      "durationMs": 1927,
+      "answer": "目前菜單查不到「全家餐」。 您想先看哪一道餐點？"
+    },
+    {
+      "merchant": "supplier",
+      "speech": "我想吃魚",
+      "durationMs": 2468,
+      "answer": "含魚：目前成分或飲食標示資料不足，無法確認是否有符合條件的餐點。 接下來想點哪道餐點？"
+    },
+    {
+      "merchant": "supplier",
+      "speech": "你有賣全家餐嗎？",
+      "durationMs": 2271,
+      "answer": "目前菜單查不到「全家餐」。 您想先看哪一道餐點？"
+    }
+  ],
+  "tableCompletion": [
+    {
+      "merchant": "original",
+      "answer": "目前訂單：周氏蝦捲招牌便當 1 份。合計 145元。 確認這份訂單並送出嗎？",
+      "submitted": 1,
+      "durationMs": 3631
+    },
+    {
+      "merchant": "supplier",
+      "answer": "目前訂單：炸雞腿便當 1 份。合計 130元。 確認這份訂單並送出嗎？",
+      "submitted": 1,
+      "durationMs": 3646
+    }
+  ],
+  "generalizedCurrentRoute": [
+    {
+      "id": "multi-add",
+      "durationMs": 3726,
+      "answer": "已將紅燒牛肉麵加入購物車，共 1 份。 已將水餃加入購物車，共 1 份。 請問要內用還是自取？"
+    },
+    {
+      "id": "single-ambiguous",
+      "durationMs": 4323,
+      "answer": "推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 您想點哪一道？"
+    },
+    {
+      "id": "alternative-inquiry",
+      "durationMs": 3537,
+      "answer": "紅燒牛肉麵目前可以點。牛肉與麵條搭配濃郁湯頭。單份基本售價 150元。 水餃目前可以點。每份10顆，80元，現點現煮。 我推薦：紅燒牛肉麵、水餃。 您想先看哪一道餐點？"
+    },
+    {
+      "id": "replacement",
+      "durationMs": 4750,
+      "answer": "已將紅燒牛肉麵更換為水餃，共 1 份。 請問要內用還是自取？"
+    },
+    {
+      "id": "mixed-query-add",
+      "durationMs": 3143,
+      "answer": "已將紅燒牛肉麵加入購物車，共 1 份。 水餃目前可以點。每份10顆，80元，現點現煮。 請問要內用還是自取？"
+    },
+    {
+      "id": "quantity-correction",
+      "durationMs": 718,
+      "answer": null
+    },
+    {
+      "id": "fulfillment-correction",
+      "durationMs": 870,
+      "answer": null
+    },
+    {
+      "id": "whole-menu",
+      "durationMs": 1006,
+      "answer": null
+    }
+  ],
+  "timing": {
+    "fishOriginalMs": 1998,
+    "fishSupplierMs": 2468,
+    "maximumLatestSingleScenarioMs": 4750,
+    "tableTwoTurnMs": [
+      3631,
+      3646
+    ],
+    "limits": "Text decisions/model calls/Menu callbacks; excludes ASR/TTS, real mouse timing, Windows Firefox and USB hardware. Not a latency SLA."
+  },
+  "failedRunsRetained": {
+    "initialFullReplay": "/tmp/revision-final-live.json: 22pass/5fail",
+    "firstRepairs": "/tmp/revision-final-repair.json: 6pass/3fail",
+    "scopeRepair": "/tmp/revision-scope-repair.json: 3pass/1fail",
+    "mixedReceiptAndQualification": "/tmp/revision-acceptance-final.json: 20pass/1fail",
+    "legacyComparison": "/tmp/revision-release-model.json:29pass/1fail; remaining failure used frozen flat helper, not staged route. Preserve result, do not call this whole run successful.",
+    "currentGeneralization": "/tmp/revision-multi-current.json:6pass/2fail; full-menu classified as mutation and obsolete enum-specific assertion.",
+    "currentFinalFollowups": "/tmp/revision-multi-followup.json:2pass/0fail; full-menu lookup fixed; ambiguous assent must not add, explicit named follow-up must add exactly requested item."
+  },
+  "rawLogs": {
+    "revision-release-model": "/tmp/revision-release-model.log",
+    "revision-multi-current": "/tmp/revision-multi-current.log",
+    "revision-multi-followup": "/tmp/revision-multi-followup.log"
+  },
+  "unverified": [
+    "Full KioskScene with actual DOM click/animation and live merchant API",
+    "Actual Windows Firefox voice/TTS/microphone acceptance",
+    "AEC3/barge-in protections remain deferred and unchanged"
+  ],
+  "sourceHashes": {
+    "apps/order-menu/src/agentTargetRecovery.test.ts": "50d0d86f3234a428fda252abb9404a005a444b4580185d88714e9748a53fe3b8",
+    "apps/order-menu/src/checkoutNavigation.test.ts": "c93c7b49a544bbcd01fbdb0b2a10f2985fcd21437b3cb70e43df152593fa1ea8",
+    "apps/order-menu/src/composition.test.ts": "b8f76d713ec78877800ba22437279d1e7c06224c723abdf51fdd20ac52469c71",
+    "apps/order-menu/src/conversationContext.test.ts": "e3562c47cf7a63fed891c3b90e755357b7c250fca1f3820c566c8d3741c62efb",
+    "apps/order-menu/src/domain/order-machine.test.ts": "e416fa08bb47a98b3752996cf8de666a74db2efe877d24b43277202770cf0896",
+    "apps/order-menu/src/fuzzyMenu.test.ts": "64741af5f04236368df9b1dc9c35091d884965d3e927f02a1291e3c07a7958bf",
+    "apps/order-menu/src/hostTools.ts": "aa43ac6a6104ade120df7e2f86fa3e826b6bcc2b2a69cd2b574fe7679bb46d8f",
+    "apps/order-menu/src/kiosk-intents.ts": "4acce9edb62a1c6bd5b93f16881df86a1ba6b7b132ab095d3679fdd39469d901",
+    "apps/order-menu/src/queryActions.test.ts": "50d64fe985795ebb49934b2a2a6824d5abfda41738458be09318cb95460c653c",
+    "apps/order-menu/src/recommendationFlow.test.ts": "234918ec7c13422f9b461c7633d13eb63e629e4653a69feb2c6f3870177b23bb",
+    "apps/order-menu/src/serviceModes.test.ts": "20af7f9218bad6666fa97e93bcc4b9df8d411d4a8d9f5b7f55577d9428c04039",
+    "apps/order-menu/src/toolDefinitions.ts": "b47733be860f7449440b01a3d7439d572351fe2cd07a9eed8bfe8896ffa0d35d",
+    "apps/order-menu/src/unsupportedCustomization.test.ts": "003a84a94a4b26f87dfdce9c06c1628aa0fd633c08af1792b2ce934a4182bea9",
+    "apps/order-menu/src/webmcp.ts": "901a34c25c51b0738ca8dfb1ff7c797493a7929b67835c53c6aae2e847ecbde7",
+    "apps/server/src/routes/kiosk/index.test.ts": "f1f776b15c9c7b35bc13c989631991be8cfec6e157383775f1bd6c45cbaad892",
+    "apps/server/src/routes/kiosk/index.ts": "9c4d72625efb032dd40d70695adfeb1b4d49aa5753086c282f98095cfc783058",
+    "apps/server/src/services/domain/kiosk-agent-interaction/conversationContext.test.ts": "6f26ff9f23782a23e5d6c3919da0dba0a2bf91ba6f3246a8b74bc38bb26f25a7",
+    "apps/server/src/services/domain/kiosk-agent-interaction/conversationContext.ts": "2b2f3e1ea9895b553ec120f107a901ee3b9679180cedd70a0cd8d45857a7566f",
+    "apps/server/src/services/domain/kiosk-conversation-skills/index.test.ts": "cafde12375704a73d6459319963d054e354db6a649eaf724881532b041b3710c",
+    "apps/server/src/services/domain/kiosk-conversation-skills/index.ts": "cfc8970374e2a762f0d4f95bebaabcdf264268dd1390cbffce2c8a0fc8616e98",
+    "apps/server/src/services/domain/kiosk-interaction-decision/contracts.ts": "cb4eae3e2b0cbe4a13327bbaab3129fa13a62808385dbeb501713e2943bbfc24",
+    "apps/server/src/services/domain/kiosk-interaction-decision/invalidReviewProbe.test.ts": "2cb5ecf41e50ea704fae4666fb530d1f04d3ee266a70eba8f2cd3ed3e02a9891",
+    "apps/server/src/services/domain/kiosk-interaction-decision/routing.test.ts": "23dfaa86efbf2409b188123a14e95bab7bfd976ce36ca1afc5c59f494c32fa92",
+    "apps/server/src/services/domain/kiosk-interaction-decision/routing.ts": "c1164481714c3aeb9d89778b715e7f7f42569cf8bf34b14de2e071826089fc35",
+    "apps/server/src/services/domain/kiosk-interaction-decision/serviceResolution.test.ts": "90fd94161e83a471bc8d799bf6f020764cc4f29358802da5bc0c0e2f1e519eb3",
+    "apps/server/src/services/domain/kiosk-interaction-decision/serviceResolution.ts": "71a43e68bb48486b0cdc0b3551788537db9f592d885823d0d273ffba7a094db5",
+    "apps/server/tests/experiments/kioskProviderReplay.test.ts": "2206d2f3c89e5f0a6b05a839b57c19ea94d2eb62ea3f682f634453bb198962ce",
+    "apps/stage-kiosk/src/components/KioskScene.vue": "be4a25aa66e857a368257dee76949d53d937cfaa167e34621e936574d0423e1c",
+    "apps/stage-kiosk/src/components/ScenarioSurface.browser.test.ts": "5f9ff2a82c7a89f2c326ccb120ae3d69839db6f61c5804604aee2fad095bfd7b",
+    "apps/stage-kiosk/src/components/ScenarioSurface.vue": "eecd8b68212b48b9bbd448b8ce92ef7b8f54729648c792737227d931dbb72a6e",
+    "apps/stage-kiosk/src/composables/useKioskCustomerSession.test.ts": "f5263bf577e3bb9c9263d9634ac39ac326bb071546a85c4aeacf3b6cd0ba624a",
+    "apps/stage-kiosk/src/composables/useKioskCustomerSession.ts": "9b371ede34486843528c7232434888bd85589c75c904ad374beebb99e6653c67",
+    "apps/stage-kiosk/src/services/kiosk-device.test.ts": "ebcde96e6ef0377aa245f5bb8682b17896f82f4b5c2b0d2231d9ff712f9d5ca5",
+    "apps/stage-kiosk/src/services/kiosk-device.ts": "9ff54a299deff24ede288033a6fab3fe8769f4ee4f5946761c163a3d9809a018",
+    "apps/stage-kiosk/src/services/kiosk-fast-path.ts": "8597c1d58efc3a21329e0b19ccc2ab9d9cca9317b66f8abbe163204ba16461d4",
+    "apps/stage-kiosk/src/services/orderingSkill.test.ts": "aaffc8b25a4673abf2277f01d1f8e4806119f6f816e138c21223a4d675326c57",
+    "apps/stage-kiosk/src/services/questionPresentation.test.ts": "12ee59daf32241430e27feefb066f564bd2d8e422899ffe7416460e99b9f3f26",
+    "apps/stage-kiosk/src/services/questionPresentation.ts": "8b9e426fe64fc6b12515641bd8ce87c8e0fd588b541ddd4cfa7d92f79568a55a",
+    "apps/stage-kiosk/src/services/scenario-registry.test.ts": "28944a3fa52616c10fb0b945b77a8df1914216128a969c525df8f02522e7f623",
+    "apps/stage-kiosk/src/services/scenario-registry.ts": "208c2cce5b92770ad7fc7067b1733210e2b0a404b4bd6bd8251832cdeb617623",
+    "packages/i18n/src/locales/en/stage.yaml": "44408b68c9790b9d3706c94c129210a30602795bdddfaebabf43652201399e7e",
+    "packages/i18n/src/locales/zh-Hant/stage.yaml": "7aa5ba011150416f6b57c43ac69619fd1adfb9e5e94e42e0e02327a417864846",
+    "packages/i18n/src/orderingMessages.ts": "7000ee4518c8fa045447c3ad2f478c78ce75e9bbb917d47eea7d2ff2490e8a96",
+    "packages/stage-ui/src/composables/use-kiosk-customer-session.ts": "4aa1d096cc1c70efc2f2d67e2b8262a09387758b6ef63b807931a190fe05d600"
+  }
+}

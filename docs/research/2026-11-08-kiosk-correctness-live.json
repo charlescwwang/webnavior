@@ -1,0 +1,586 @@
+{
+  "capturedAt": "2026-11-08T10:27:18.201436+00:00",
+  "status": "local-uncommitted-undeployed",
+  "authorization": "User explicitly authorized configured real JEV/Main dialogue replay for this round; correctness first, investigate text round trips >=5000ms.",
+  "models": {
+    "jev": "configured lookski / Qwen/Qwen3.5-4B",
+    "main": "webnavior/chat / qwen36"
+  },
+  "isolation": "Synthetic text only; provider configuration read from production, visitors/dialogue/health in scratch database and Menu runtime. No production order, payment or device settings changed.",
+  "baseCommit": "728e8fd121b3e741a8a3fde731038646039018f1",
+  "sourceHashes": {
+    "apps/order-menu/src/agentTargetRecovery.test.ts": "50d0d86f3234a428fda252abb9404a005a444b4580185d88714e9748a53fe3b8",
+    "apps/order-menu/src/composition.test.ts": "b8f76d713ec78877800ba22437279d1e7c06224c723abdf51fdd20ac52469c71",
+    "apps/order-menu/src/conversationContext.test.ts": "e3562c47cf7a63fed891c3b90e755357b7c250fca1f3820c566c8d3741c62efb",
+    "apps/order-menu/src/domain/order-machine.test.ts": "68a3f124e5b9a8e21e9c9753d05c06cd5d7c4cf06b4f4d7d04e54a30a21857f9",
+    "apps/order-menu/src/fuzzyMenu.test.ts": "64741af5f04236368df9b1dc9c35091d884965d3e927f02a1291e3c07a7958bf",
+    "apps/order-menu/src/queryActions.test.ts": "45f5b9b0a5db83a3b97e698d0eceda8f587376c291f80954c3b4f4537ca91956",
+    "apps/order-menu/src/recommendationFlow.test.ts": "cb09a4f7c434bf2ec5028a77e894ba9352b14317924e9f0a6ad67d60a8646507",
+    "apps/order-menu/src/unsupportedCustomization.test.ts": "003a84a94a4b26f87dfdce9c06c1628aa0fd633c08af1792b2ce934a4182bea9",
+    "apps/order-menu/src/webmcp.ts": "daa399288505b51622492e1fcaa3a5057dd290be5c8cd5f5d646216dfe615bda",
+    "apps/server/src/routes/kiosk/index.test.ts": "17405d9ffaa691a79792001ee8297f2c1700eeae1b9497a17e9932c61089f6e8",
+    "apps/server/src/routes/kiosk/index.ts": "ad563de2d778153d528beff79b35925b0eb693f35c76e095d6719475c3cb4692",
+    "apps/server/src/services/domain/kiosk-agent-interaction/conversationContext.test.ts": "6f26ff9f23782a23e5d6c3919da0dba0a2bf91ba6f3246a8b74bc38bb26f25a7",
+    "apps/server/src/services/domain/kiosk-agent-interaction/conversationContext.ts": "3560c810571e33bd43d20304adc194ccacdd2de6a6391af4e1016936e8fea05f",
+    "apps/server/src/services/domain/kiosk-conversation-skills/index.test.ts": "cafde12375704a73d6459319963d054e354db6a649eaf724881532b041b3710c",
+    "apps/server/src/services/domain/kiosk-conversation-skills/index.ts": "e6c6cfac965e809714506788c2071439ae4fd39d1d49b249542f97b518906a91",
+    "apps/server/src/services/domain/kiosk-interaction-decision/contracts.ts": "cb4eae3e2b0cbe4a13327bbaab3129fa13a62808385dbeb501713e2943bbfc24",
+    "apps/server/tests/experiments/kioskProviderReplay.test.ts": "8f40c4c756c10c39cbcaf236cc5cdd954fbe673045a7f3871af5d376678bec7f",
+    "apps/stage-kiosk/src/services/kiosk-fast-path.ts": "e31da138a09648bfc912eb9c0d5cfc77395c4171c76ba441f6e518171b549fad",
+    "apps/stage-kiosk/src/services/questionPresentation.test.ts": "41c26182f8decbee575872e5c43daf9d37a9e5166adbc2376dfcad44bb899050",
+    "packages/i18n/src/orderingMessages.ts": "a8fceae2dce08dfe7de53b4922d9e00c09072908cf1dc810dfd5e598dd08e1f5"
+  },
+  "selection": "configured release acceptance|configured explanation recovery|configured field guidance|configured service boundary|configured recommendation exit",
+  "final": {
+    "passed": 21,
+    "failed": 0,
+    "unselected": 47,
+    "providerCalls": 111,
+    "elapsedMs": 49228
+  },
+  "releaseCases": [
+    {
+      "id": "first-menu",
+      "durationMs": 815,
+      "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。 您想先看哪一道餐點？",
+      "shown": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "thai-sour-spicy-fish-bento",
+        "fried-pork-chop-bento",
+        "thai-basil-pork-bento",
+        "beef-noodle-soup",
+        "dumplings"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "preference-fish",
+      "durationMs": 2178,
+      "answer": "含魚：推薦一項：泰式酸辣魚便當。 想點這道的話，您要幾份？",
+      "shown": [
+        "thai-sour-spicy-fish-bento"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "preference-chicken",
+      "durationMs": 2154,
+      "answer": "含雞肉：推薦一項：椒麻雞便當。 想點這道的話，您要幾份？",
+      "shown": [
+        "spicy-chicken-bento"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "preference-beef",
+      "durationMs": 2051,
+      "answer": "含牛肉：推薦一項：紅燒牛肉麵。 想點這道的話，您要幾份？",
+      "shown": [
+        "beef-noodle-soup"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "fuzzy-read",
+      "durationMs": 2010,
+      "answer": "菜單沒有完全相符的名稱，您想找的是打拋豬便當嗎？",
+      "shown": [
+        "thai-basil-pork-bento"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "fuzzy-purchase",
+      "durationMs": 2752,
+      "answer": "您是要新增打拋豬便當嗎？",
+      "shown": [
+        "thai-basil-pork-bento"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "replacement",
+      "durationMs": 4881,
+      "answer": "已將紅燒牛肉麵更換為水餃，共 1 份。 請問要內用還是自取？",
+      "shown": [],
+      "cart": {
+        "cart": {
+          "lines": [
+            {
+              "id": "line-3517e8e0-1dde-441e-9723-ebb47953cd67",
+              "itemId": "dumplings",
+              "name": "水餃",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 80
+            }
+          ],
+          "total": 80,
+          "itemCount": 1
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "214d83df-727a-46c5-a476-de620bf0eaba",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 2,
+            "checkout": 0
+          },
+          "expiresAt": 1794133552543
+        }
+      }
+    },
+    {
+      "id": "mixed-query-add",
+      "durationMs": 4344,
+      "answer": "已將紅燒牛肉麵加入購物車，共 1 份。 水餃目前可以點。每份10顆，80元，現點現煮。 請問要內用還是自取？",
+      "shown": [
+        "dumplings"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [
+            {
+              "id": "line-4766eeef-3eed-44b4-9fa3-21ab88185292",
+              "itemId": "beef-noodle-soup",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 150
+            }
+          ],
+          "total": 150,
+          "itemCount": 1
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "6ee27212-db01-4404-be4f-758043af228b",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 1,
+            "checkout": 0
+          },
+          "expiresAt": 1794133556894
+        }
+      }
+    },
+    {
+      "id": "unrelated",
+      "durationMs": 1804,
+      "answer": "好的。請問要內用還是自取？",
+      "shown": [],
+      "cart": {
+        "cart": {
+          "lines": [
+            {
+              "id": "line-2d538813-868c-40f4-b11f-3c3cc2d03905",
+              "itemId": "beef-noodle-soup",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 150
+            }
+          ],
+          "total": 150,
+          "itemCount": 1
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "c78f8d0f-89c2-4cd0-972f-30a86fb85e81",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 1,
+            "checkout": 0
+          },
+          "expiresAt": 1794133558707
+        }
+      }
+    },
+    {
+      "id": "clear-question-yes",
+      "durationMs": 1439,
+      "answer": "已清空購物車。",
+      "shown": [],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    },
+    {
+      "id": "clear-question-send",
+      "durationMs": 3090,
+      "answer": "您想查詢哪道餐點，或調整哪項訂單內容？",
+      "shown": [],
+      "cart": {
+        "cart": {
+          "lines": [
+            {
+              "id": "line-e63976b0-603e-4890-a0a2-803db9e0b41e",
+              "itemId": "beef-noodle-soup",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 150
+            }
+          ],
+          "total": 150,
+          "itemCount": 1
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "0cb26fbd-4956-4ac4-a15a-07f5f75ec192",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 1,
+            "checkout": 0
+          },
+          "expiresAt": 1794133563264
+        }
+      }
+    },
+    {
+      "id": "clear-question-send-checkout",
+      "durationMs": 2405,
+      "answer": "您想查詢哪道餐點，或調整哪項訂單內容？",
+      "shown": [],
+      "cart": {
+        "cart": {
+          "lines": [
+            {
+              "id": "line-df1b707b-cf5e-4928-8d2a-d7586e7cc3c7",
+              "itemId": "beef-noodle-soup",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 150
+            }
+          ],
+          "total": 150,
+          "itemCount": 1
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "736719e6-6e06-49ff-a673-3ae57a3ae889",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 1,
+            "checkout": 0
+          },
+          "expiresAt": 1794133565682
+        }
+      }
+    },
+    {
+      "id": "clear-question-send-submit",
+      "durationMs": 3306,
+      "answer": "已取消剛才的確認，結帳進度保留；繼續操作前請重新確認。 接下來想點哪道餐點？",
+      "shown": [],
+      "cart": {
+        "cart": {
+          "lines": [
+            {
+              "id": "line-eb22ee23-e9de-4cb9-8828-b3a297f907ed",
+              "itemId": "beef-noodle-soup",
+              "name": "紅燒牛肉麵",
+              "quantity": 1,
+              "options": {},
+              "unitPrice": 150
+            }
+          ],
+          "total": 150,
+          "itemCount": 1
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first.",
+        "pendingCustomerChoice": {
+          "questionId": "7d167c64-c4c3-4c79-9e3e-9d176a1d9899",
+          "purpose": "fulfillment",
+          "phase": "ordering",
+          "question": "請問要內用還是自取？",
+          "choices": [
+            {
+              "description": "這筆訂單設為內用，接著詢問用餐人數與選桌。",
+              "id": "intent:set-fulfillment:dine-in",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "dine-in"
+              }
+            },
+            {
+              "description": "這筆訂單設為自取，釋放尚未付款的暫留桌位。",
+              "id": "intent:set-fulfillment:takeout",
+              "intent": "SET_FULFILLMENT",
+              "slots": {
+                "mode": "takeout"
+              }
+            }
+          ],
+          "expectedRevisions": {
+            "cart": 1,
+            "checkout": 0
+          },
+          "expiresAt": 1794133569001
+        }
+      }
+    },
+    {
+      "id": "fish-withdrawal",
+      "durationMs": 3005,
+      "answer": "排除魚：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、炸排骨便當。 您想點哪一道？",
+      "shown": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "fried-pork-chop-bento"
+      ],
+      "cart": {
+        "cart": {
+          "lines": [],
+          "total": 0,
+          "itemCount": 0
+        },
+        "nextStep": "The customer still needs to choose dine-in or self-pickup before order confirmation. Ask when appropriate, but continue adding requested items first."
+      }
+    }
+  ],
+  "recommendationTurns": [
+    {
+      "transcript": "推薦什麼？",
+      "kind": "NEEDS_ASSISTANT",
+      "durationMs": 2064,
+      "overFiveSeconds": false,
+      "shown": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "thai-sour-spicy-fish-bento"
+      ]
+    },
+    {
+      "transcript": "你還推薦什麼？",
+      "kind": "FAST_ACTION",
+      "durationMs": 814,
+      "overFiveSeconds": false,
+      "shown": [
+        "fried-pork-chop-bento",
+        "thai-basil-pork-bento",
+        "beef-noodle-soup"
+      ]
+    }
+  ],
+  "latency": {
+    "scope": "Text staged HTTP decision/recovery, Main and scratch Menu callbacks; excludes ASR, TTS, real DOM click/animation and Windows hardware.",
+    "releaseCaseMaximumMs": 4881,
+    "thresholdMs": 5000,
+    "note": "One successful selected replay, not a field SLA or repeated-run reliability claim. Earlier diagnostic replacement was 5017ms before the restricted repair."
+  },
+  "retainedFailures": [
+    {
+      "report": "/tmp/merchant-configured-live-result.json",
+      "passed": 13,
+      "failed": 3,
+      "note": "Initial selected16; recommendation Main handoff later allowed by user, fuzzy originalRecipe misuse, replacement not completed. Stronger later assertions exposed omitted price and wrong candidate."
+    },
+    {
+      "report": "/tmp/merchant-configured-live-after-result.json",
+      "passed": 13,
+      "failed": 3,
+      "note": "Included erroneous clear after a new send request; safety assertion now checks cart preservation."
+    },
+    {
+      "report": "/tmp/merchant-configured-live-final-result.json",
+      "passed": 16,
+      "failed": 2,
+      "note": "Earlier18-case set, not this final21 set."
+    },
+    {
+      "report": "/tmp/merchant-configured-current-result.json",
+      "passed": 20,
+      "failed": 1,
+      "note": "Same-batch price read advanced recommendation revision and caused STALE_PLAN before the following valid add."
+    }
+  ],
+  "validation": {
+    "menu": {
+      "passed": 1010,
+      "skippedOptIn": 202,
+      "log": "/tmp/merchant-final-menu.log"
+    },
+    "verifiedIdentityFollowup": {
+      "passed": 12,
+      "log": "/tmp/merchant-final-identity-check.log"
+    },
+    "serverPolicy": {
+      "passed": 104,
+      "log": "/tmp/merchant-current-policy-tests.log"
+    },
+    "serverRoutesSelected": {
+      "passed": 13,
+      "unselected": 102,
+      "log": "/tmp/merchant-current-route-tests.log"
+    },
+    "host": {
+      "passed": 159,
+      "log": "/tmp/merchant-current-host-tests.log"
+    },
+    "types": "Server/Menu/Kiosk scoped passed; root not run",
+    "lint": "Changed TypeScript files passed",
+    "build": "Menu and Kiosk passed; existing bundle/import-meta warnings retained"
+  },
+  "knownLimitations": [
+    "Clear-confirmation -> new checkout/send only verifies no erroneous clear; some responses still generic clarification and do not complete checkout continuation.",
+    "Long unrelated speech is checked for no cart mutation, not universal response naturalness.",
+    "A broader Server run has one unchanged proactive greeting wording assertion failure in the strict OpenAI-template test; not hidden or expanded into unrelated changes.",
+    "The original202 opt-in Menu cases were not all executed.47 other tests in the real-provider file were deliberately unselected.",
+    "No full Scene browser/real click chain, Windows microphone, ASR/TTS or field acceptance in this follow-up. No deployment or commits."
+  ],
+  "privateRawArtifacts": [
+    "/tmp/merchant-configured-final-result.json",
+    "/tmp/merchant-configured-final.log",
+    "/tmp/merchant-final-live-source.json"
+  ]
+}
