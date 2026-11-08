@@ -44,9 +44,9 @@ describe('current POS menu without customization options', () => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const result = await runtime.invokeForAgent('menu_get', { queries: ['香菜肉絲乾麵', '韭菜盒', '甜不辣'], verifyClaim: true })
-    expect(result).toMatchObject({ items: [], customerMessage: '您說得對，剛才的介紹有誤。目前菜單查不到「香菜肉絲乾麵、韭菜盒、甜不辣」。' })
+    expect(result).toMatchObject({ items: [], customerMessage: '您說得對，剛才的介紹有誤。目前菜單查不到「香菜肉絲乾麵、韭菜盒、甜不辣」。 您想先看哪一道餐點？' })
     const actual = await runtime.invokeForAgent('menu_get', { query: '水餃', verifyClaim: true })
-    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。每份10顆，80元，現點現煮。這道餐點要點幾份？' })
+    expect(actual).toMatchObject({ items: [{ id: 'dumplings' }], customerMessage: '已核對目前菜單：水餃目前可以點。每份10顆，80元，現點現煮。 這道餐點要點幾份？' })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
     await expect(runtime.invokeForAgent('menu_get', { verifyClaim: true })).rejects.toThrow('Specify the meal names')
   })

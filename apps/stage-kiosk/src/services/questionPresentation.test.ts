@@ -7,6 +7,33 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
 
+// Report: this chat, Nov08 — independent lookup prompts were concatenated, then prices repeated.
+it('presents two real meal lookups with each price once and one browsing question', async () => {
+  const runtime = createMenuToolRuntime({ menu: [
+    { id: 'rice', name: '雞肉飯', category: '飯', description: '雞肉搭配白飯', price: 95, imageUrl: '', recommendationTags: [], optionGroups: [] },
+    { id: 'noodles', name: '牛肉麵', category: '麵', description: '牛肉湯麵', price: 150, imageUrl: '', recommendationTags: [], optionGroups: [] },
+  ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const window = createMenuReplyWindow()
+  window.record('menu_get', await runtime.invoke('menu_get', { query: '雞肉飯', display: true }))
+  window.record('menu_get', await runtime.invoke('menu_get', { query: '牛肉麵', display: true }))
+  const reply = replyWithQuestion(window.reply(), undefined, 'ordering')
+  expect(reply.match(/95元/g)).toHaveLength(1)
+  expect(reply.match(/150元/g)).toHaveLength(1)
+  expect(reply.match(/[?？]/g)).toHaveLength(1)
+  expect(reply).not.toContain('這道餐點要點幾份')
+  expect(reply).toContain('哪一道')
+})
+
+// Report: this chat, Nov08 — a factual detour must resume the real option question only.
+it('uses the current validated question instead of a lookup quantity invitation', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ id: 'meal', name: '雞肉飯', category: '飯', description: '', price: 95, imageUrl: '', recommendationTags: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const receipt = await runtime.invoke('menu_get', { query: '雞肉飯', display: true })
+  const question = { questionId: 'size', purpose: 'item-configuration', question: '請問要小份還是大份？', choices: [], expiresAt: Date.now() + 30000 }
+  expect(replyFromReceipt(receipt, question)).not.toContain('要點幾份')
+  expect(replyFromReceipt(receipt, question)?.match(/[?？]/g)).toHaveLength(1)
+  expect(replyFromReceipt(receipt, question)).toContain(question.question)
+})
+
 // Report: this chat, Nov08; unclear input needs a finite path, not a repeated question loop.
 it('asks once, offers assistance once, then stops asking until real progress or a reset', () => {
   const window = createServiceClarificationWindow()
@@ -96,7 +123,7 @@ it('answers structured information and clarification from the current context wi
   context.allowedPaymentMethods = ['linepay', 'jkopay']
   const before = context.cart
   const present = (value: unknown) => replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: JSON.stringify(value) }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' })
-  expect(present({ kind: 'payment-methods' })).toEqual({ role: 'assistant', content: '目前支援LINE Pay、街口支付。接下來想點哪道餐點？' })
+  expect(present({ kind: 'payment-methods' })).toEqual({ role: 'assistant', content: '付款方式請依店家結帳指示。接下來想點哪道餐點？' })
   expect(present({ kind: 'menu-information', subjects: ['湯包'] })).toEqual({ role: 'assistant', content: '目前沒有提供「湯包」。您想查詢哪道餐點？' })
   expect(present({ kind: 'clarification' }).role).toBe('assistant')
   expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['kiosk_session_history'], answer: '{"kind":"clarification"}' }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' }).role).toBe('assistant')
@@ -172,7 +199,7 @@ it('presents the application-owned query question without a choice panel or dish
   const window = createMenuReplyWindow()
   window.record('menu_recommend', receipt)
   expect(window.hasReceipts()).toBe(true)
-  expect(window.reply()).toBe('請告訴我想看的餐點名稱，也可以直接在畫面選餐。')
+  expect(window.reply()).toBe('您想找哪一道餐點？')
   expect(receipt).not.toHaveProperty('pendingCustomerChoice')
   expect(receipt).not.toHaveProperty('presentation')
 })
@@ -562,4 +589,29 @@ it('regression K1107-FUZZY keeps the later Menu-owned confirmation in foreground
   const reply = replyFromConversation({ status: 'completed', requestedTools: ['menu_get', 'menu_confirm_item'], agentMode: 'active' }, { menu, question, failureMessage: '未完成。' })
   expect(reply.content).toBe(question.question)
   expect(reply.clarification).toBeUndefined()
+})
+
+// Report: this chat, Nov08 — read results must remain available alongside accepted order effects.
+it('keeps factual lookup results and accepted effects with one owned next question', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ id: 'meal', name: '雞肉飯', category: '飯', description: '', price: 95, imageUrl: '', recommendationTags: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const menu = createMenuReplyWindow()
+  menu.record('order_add_item', { customerMessage: '水餃兩份已加入。' })
+  menu.record('menu_get', await runtime.invoke('menu_get', { query: '雞肉飯', display: true }))
+  const question = { questionId: 'fulfillment', purpose: 'fulfillment', question: '請問要內用還是自取？', choices: [], expiresAt: Date.now() + 30000 }
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['order_add_item', 'menu_get'] }, { menu, question, failureMessage: '未完成。' })
+  expect(reply.content).toContain('水餃兩份已加入')
+  expect(reply.content).toContain('雞肉飯')
+  expect(reply.content.match(/95元/g)).toHaveLength(1)
+  expect(reply.content.match(/？/g)).toHaveLength(1)
+  expect(reply.content).toContain(question.question)
+})
+
+// Report: this chat, Nov08 — recommendation guidance and a later lookup must not each ask a question.
+it('keeps one display question when guidance is followed by a factual meal read', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ id: 'rice', name: '雞肉飯', category: '飯', description: '', price: 95, imageUrl: '', recommendationTags: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const window = createMenuReplyWindow()
+  window.record('menu_recommend', await runtime.invokeForAgent('menu_recommend', { action: 'clarify' }))
+  window.record('menu_get', await runtime.invoke('menu_get', { query: '雞肉飯', display: true }))
+  expect(window.reply().match(/？/g)).toHaveLength(1)
+  expect(window.reply()).toContain('95元')
 })

@@ -163,7 +163,7 @@ describe('recommendation batches', () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'] })).toMatchObject({ items: [{ id: 'dish-1' }, { id: 'dish-2' }, { id: 'dish-3' }] })
     expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] }, items: [{ id: 'dish-4' }, { id: 'dish-5' }, { id: 'dish-6' }] })
-    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], customerMessage: expect.stringContaining('都介紹過了') })
+    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], customerMessage: expect.stringContaining('符合您需求的就這幾道') })
     await runtime.reset()
     expect(await runtime.invoke('menu_recommend')).toMatchObject({ items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }] })
   })

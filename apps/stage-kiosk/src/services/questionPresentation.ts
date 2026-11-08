@@ -3,7 +3,7 @@ import type { ConversationContext, ConversationHandoff, ConversationQuestion as 
 import type { KioskDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-import { isServiceLimitationReply, orderAssistanceQuestion, quantityLimitRejectionSchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { customerReplySchema, isServiceLimitationReply, orderAssistanceQuestion, quantityLimitRejectionSchema, renderCustomerReply, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { safeParse } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
@@ -14,7 +14,7 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
  * replacement recommendation. The Agent still selects queries and operations.
  */
 export function createMenuReplyWindow() {
-  const messages = new Map<string, boolean>()
+  const messages = new Map<string, { facts: string, guidance: boolean, nextQuestion?: string, itemIds: string[], pricedItemIds: string[] }>()
   const items = new Map<string, { name: string, price: number }>()
   const operations = new Set<string>()
   const outcomes: string[] = []
@@ -82,6 +82,7 @@ export function createMenuReplyWindow() {
         }
       }
       const names: string[] = []
+      const itemIds: string[] = []
       for (const raw of payload.items) {
         if (!raw || typeof raw !== 'object')
           continue
@@ -89,14 +90,19 @@ export function createMenuReplyWindow() {
         if (typeof item.id !== 'string' || typeof item.name !== 'string' || item.available === false)
           continue
         names.push(item.name)
+        itemIds.push(item.id)
         if (typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0)
           items.set(item.id, { name: item.name, price: item.price })
       }
-      const message = operationReplyFrom(payload)
-      if (message)
-        messages.set(message, Boolean(payload.guidance))
-      else
-        messages.set(names.length ? `我查到：${names.slice(0, 3).join('、')}。` : '目前沒有查到符合條件的餐點。', false)
+      const structured = safeParse(customerReplySchema, payload.customerReply)
+      if (structured.success) {
+        const reply = structured.output
+        messages.set(reply.queryKey ?? reply.facts, { facts: reply.facts, guidance: Boolean(payload.guidance), nextQuestion: reply.nextQuestion, itemIds, pricedItemIds: reply.pricedItemIds ?? [] })
+      }
+      else {
+        const message = operationReplyFrom(payload) ?? (names.length ? `我查到：${names.slice(0, 3).join('、')}。` : '目前沒有查到符合條件的餐點。')
+        messages.set(message, { facts: message, guidance: Boolean(payload.guidance), itemIds, pricedItemIds: [] })
+      }
     },
     hasUnmatchedQuery(sourceUtterance: string) {
       // This exception is for a single original meal, not an unrelated lookup
@@ -128,10 +134,18 @@ export function createMenuReplyWindow() {
       // Without evidence, generated dish claims cannot become customer dialogue.
       if (!reads)
         return cartReply ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。'
-      const prices = reads > 1 && items.size > 1
-        ? ` 單份基本售價：${[...items.values()].slice(0, 6).map(item => `${item.name} ${item.price}元`).join('、')}。`
+      const scopedReplies = [...messages.values()].filter(reply => !options.omitGuidance || !reply.guidance)
+      const replies = [...new Map(scopedReplies.map(reply => [reply.facts || reply.nextQuestion, reply])).values()]
+      const currentItems = new Set(replies.flatMap(reply => reply.itemIds))
+      const pricedItems = new Set(replies.flatMap(reply => reply.pricedItemIds))
+      const missingPrices = [...items].filter(([id]) => currentItems.has(id) && !pricedItems.has(id))
+      const prices = replies.length > 1 && currentItems.size > 1 && missingPrices.length
+        ? ` 單份基本售價：${missingPrices.slice(0, 6).map(([_id, item]) => `${item.name} ${item.price}元`).join('、')}。`
         : ''
-      return `${[...messages].filter(([_message, guidance]) => !options.omitGuidance || !guidance).map(([message]) => message).join(' ')}${prices}`
+      const nextQuestion = !options.omitGuidance && replies.some(reply => reply.nextQuestion)
+        ? replies.length > 1 ? orderingMessages['zh-Hant'].browseQuestion : replies[0]?.nextQuestion
+        : undefined
+      return renderCustomerReply({ facts: `${replies.map(reply => reply.facts).filter(Boolean).join(' ')}${prices}`.trim(), nextQuestion })
     },
   }
 }
@@ -209,7 +223,10 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   }
   // A later owned question supersedes earlier browse/fuzzy prompts, while
   // independent factual read receipts remain available for compound requests.
-  const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply({ omitGuidance: Boolean(question) }) : '', options.menu.operationReply(options.outcome), question)
+  const readReply = options.menu.hasReceipts() ? options.menu.reply({ omitGuidance: Boolean(question) }) : ''
+  const acceptedOperations = options.menu.operationReply()
+  const outcome = acceptedOperations && readReply ? `${acceptedOperations} ${readReply}` : options.menu.operationReply(options.outcome)
+  const receiptReply = replyFromOperation(readReply, outcome, question)
   if (result.status === 'waiting')
     return question && receiptReply ? { role: 'assistant', content: receiptReply } : { role: 'error', content: options.failureMessage }
   if (result.status !== 'completed') {
@@ -363,6 +380,9 @@ export function replyFromReceipt(result: unknown, question?: PresentedQuestion) 
   if (!result || typeof result !== 'object')
     return undefined
   const payload = result as Record<string, unknown>
+  const structured = safeParse(customerReplySchema, payload.customerReply)
+  if (structured.success)
+    return renderCustomerReply(structured.output, question)
   const message = operationReplyFrom(payload)
   // Quantity/option receipts often use the question itself as customerMessage.
   // Compose through the same question policy as Main, instead of appending the

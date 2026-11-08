@@ -16,7 +16,7 @@ describe('explicit conversational query actions', () => {
   it('clarifies without consuming a batch, presenting dishes or changing the cart', async () => {
     const context = await runtime.invoke('kiosk_fast_path_context')
     const result = await runtime.invokeForAgent('menu_recommend', { action: 'clarify' })
-    expect(result).toMatchObject({ queryAction: 'clarify', customerMessage: expect.stringContaining('餐點名稱'), items: [] })
+    expect(result).toMatchObject({ queryAction: 'clarify', customerMessage: expect.stringContaining('哪一道餐點？'), items: [] })
     expect(result).not.toHaveProperty('pendingCustomerChoice')
     expect(await runtime.invoke('kiosk_fast_path_context')).toMatchObject({ revisions: (context as { revisions: unknown }).revisions })
     expect(present).toHaveBeenCalledTimes(1)

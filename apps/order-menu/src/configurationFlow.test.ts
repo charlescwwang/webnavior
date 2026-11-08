@@ -90,6 +90,7 @@ describe('required order configuration', () => {
     const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: inquiry!.id })
     expect(result).toMatchObject({ customerMessage: expect.stringContaining('您是在詢問'), itemStatuses: [{ name: '水餃', status: 'available' }] })
     expect(result).not.toHaveProperty('pendingCustomerChoice')
+    expect(result).toMatchObject({ customerMessage: expect.not.stringContaining('要點幾份') })
     const after = await runtime.invoke('kiosk_interaction_state')
     expect(after).toMatchObject({ phase: 'ordering' })
     expect(after).not.toHaveProperty('waitingFor')

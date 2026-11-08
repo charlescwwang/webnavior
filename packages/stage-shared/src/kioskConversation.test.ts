@@ -164,7 +164,7 @@ it.each(['available', 'sold-out', 'unknown'] as const)('offers quantity guidance
 
 // Report: this chat, Nov7 — operator identity and confirmed special-order assistance.
 it('answers the operator separately from the assistant identity', () => {
-  const context = parse(conversationContextSchema, { contextId: 'operator', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
+  const context = parse(conversationContextSchema, { merchant: { id: 'operator-store', operatorName: '周氏蝦捲', paymentPolicy: 'unknown' }, contextId: 'operator', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
   expect(replyFromContext(JSON.stringify({ kind: 'service-information', topic: 'operator' }), context)?.content).toBe('本機點餐服務的營運業者是周氏蝦捲。您想查詢哪道餐點？')
   expect(replyFromContext(JSON.stringify({ kind: 'service-information', topic: 'identity' }), context)?.content).toContain('點餐助手')
 })
@@ -212,4 +212,19 @@ it('does not treat refusing nutritional assistance as dropping the nutritional r
   expect(reply.kind).toBe('clarification')
   expect(reply.content).toBe('好的，目前仍無法依營養條件推薦。您想改用餐點名稱來選餐嗎？')
   expect(reply).not.toHaveProperty('operation')
+})
+
+// Report: this chat, Nov08 — simulated checkout methods were announced as merchant payment support.
+it('uses verified merchant payment facts while retaining the current question', () => {
+  const context = parse(conversationContextSchema, { contextId: 'payment', capturedAt: Date.now(), entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], paymentMethods: [{ id: 'linepay', label: 'LINE Pay' }], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], merchant: { id: 'new-merchant', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' }, waitingFor: { questionId: 'quantity', purpose: 'item-configuration', question: '這道餐點要點幾份？', choices: [], expiresAt: Date.now() + 30000 } })
+  const reply = replyFromContext('{"kind":"payment-methods"}', context)!
+  expect(reply.content).toContain('本店採無現金支付')
+  expect(reply.content).not.toContain('LINE Pay')
+  expect(reply.content.match(/？/g)).toHaveLength(1)
+  expect(reply.content.endsWith(context.waitingFor!.question)).toBe(true)
+  const unknown = replyFromContext('{"kind":"payment-methods"}', { ...context, merchant: { id: 'another', paymentPolicy: 'unknown' } })!
+  expect(unknown.content).not.toContain('無現金')
+  const verified = replyFromContext('{"kind":"payment-methods"}', { ...context, merchant: { id: 'another', paymentPolicy: 'cashless', paymentMethods: [{ id: 'confirmed-card', label: '信用卡' }] } })!
+  expect(verified.content).toContain('目前支援信用卡')
+  expect(verified.content).not.toContain('LINE Pay')
 })

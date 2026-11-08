@@ -1,3 +1,5 @@
+import type { CustomerReply } from '@proj-airi/stage-shared/kiosk-conversation'
+
 import type { RecommendationStrategy } from '../../../order-menu-server/src/domain/recommendation'
 import type { PriceConditions } from '../../../server/src/services/domain/kiosk-interaction-decision/priceContracts'
 import type { IngredientFilters } from './composition'
@@ -97,9 +99,9 @@ export function removeCondition(query: QueryConditions, target: QueryCondition):
 }
 
 /** Uses actual available candidates; it never claims another food category exists. */
-export function describeGuidance(reason: 'unclear' | 'empty' | 'exhausted', candidates: readonly MenuItem[]) {
+export function describeGuidance(reason: 'unclear' | 'empty' | 'exhausted', candidates: readonly MenuItem[]): CustomerReply {
   const copy = orderingMessages['zh-Hant'].queryActions
   const prefix = reason === 'exhausted' ? copy.exhausted : reason === 'empty' ? copy.empty : ''
   const names = candidates.slice(0, 2).map(item => `「${item.name}」`).join('或')
-  return `${prefix}${names ? copy.choose.replace('{items}', names) : copy.clarify}`
+  return { facts: prefix, nextQuestion: names ? (candidates.length === 1 ? copy.chooseSingle : copy.choose).replace('{items}', names) : copy.clarify }
 }

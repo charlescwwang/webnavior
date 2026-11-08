@@ -30,7 +30,7 @@ it('regression K1107-GUIDE names actual alternatives and synchronizes the cards 
 it('regression K1107-GUIDE asks for a concrete meal and never introduces money when the request is unclear', async () => {
   const runtime = createMenuToolRuntime({ menu: catalog, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {} })
   const result = await runtime.invokeForAgent('menu_recommend', { action: 'clarify' }) as { customerMessage: string }
-  expect(result.customerMessage).toContain('餐點名稱')
+  expect(result.customerMessage).toContain('哪一道餐點？')
   expect(result.customerMessage).not.toMatch(/價位|預算|元|種類|別類/)
 })
 
@@ -39,7 +39,7 @@ it('regression K1107-GUIDE does not invent a second fish or repeat sold-out or u
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['pork'] })
   const result = await runtime.invokeForAgent('menu_recommend', { action: 'continue' }) as { customerMessage: string }
   expect(result.customerMessage).not.toMatch(/香烤雞腿飯|薑汁燒肉飯|其他魚|價位|預算/)
-  expect(result.customerMessage).toContain('畫面')
+  expect(result.customerMessage).toContain('哪一道餐點？')
 })
 
 // The public touch boundary must share Menu's actual condition state, not reconstruct prose.

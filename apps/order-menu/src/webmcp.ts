@@ -1,4 +1,4 @@
-import type { ConversationContext, ConversationHandoff, ConversationQuestion as PresentedQuestion } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ConversationContext, ConversationHandoff, MerchantFacts, ConversationQuestion as PresentedQuestion } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 
 import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
@@ -18,7 +18,7 @@ import type { ScrollDirection, ScrollResult } from './menuScroll'
 import type { MenuToolDefinition, MenuToolName } from './toolDefinitions'
 
 import { errorMessageFrom } from '@moeru/std'
-import { conversationContextSchema, describeOrderingDetails, handoffSchema, isTargetAcknowledgement, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, customerReplySchema, describeOrderingDetails, handoffSchema, isTargetAcknowledgement, renderCustomerReply, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { servicePolicy } from '@proj-airi/stage-shared/kiosk-service-mode'
 import { parse, safeParse } from 'valibot'
 
@@ -231,6 +231,8 @@ export interface CheckoutToolController {
 }
 
 interface MenuToolRuntimeOptions {
+  /** Merchant claims are configured independently from test checkout controls. */
+  merchant?: MerchantFacts
   serviceContext?: () => OrderingContext | undefined
   /** Development-only page scenarios; never enabled for the production service. */
   testing?: boolean
@@ -593,7 +595,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       presentationItemIds = [...presentation.itemIds]
       await options.onRecommendationsChange?.(presentation)
     }
-    return { queryAction: 'clarify', items: [], dataOnly: !display, customerMessage: describeGuidance(reason, candidates), guidance: { reason, itemIds: candidates.map(item => item.id) }, ...(presentation ? { presentation } : {}) }
+    const customerReply = describeGuidance(reason, candidates)
+    return { queryAction: 'clarify', items: [], dataOnly: !display, customerReply, customerMessage: renderCustomerReply(customerReply), guidance: { reason, itemIds: candidates.map(item => item.id) }, ...(presentation ? { presentation } : {}) }
   }
 
   // A fuzzy name is not a preparation waiver. Discovery and execution share
@@ -1451,15 +1454,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (input.verifyClaim === true && !queries.length)
             throw new Error('Specify the meal names being verified with query or queries.')
           let queryMessage = itemStatuses.map(item => item.customerMessage).join('')
+          let nextQuestion: string | undefined
+          const pricedItemIds: string[] = []
           // Host speaks this receipt rather than generated Main prose. Retain
           // the item's own description too, so portion/content questions do not
           // lose their answer when reduced to availability and price.
           if (scope.length === 1) {
             const item = scope[0]!
-            queryMessage += describeOrderingDetails(item.price, item.description)
+            queryMessage += describeOrderingDetails(item.price, item.description === item.name ? '' : item.description)
+            pricedItemIds.push(item.id)
             // Guidance is not consent and creates no order or confirmation.
             if (queries.length && itemAvailability(item).status === 'available')
-              queryMessage += orderingMessages['zh-Hant'].singleItemGuide
+              nextQuestion = orderingMessages['zh-Hant'].singleItemGuide
           }
           if (queries.length && !scope.length) {
             queryMessage = possibleItems.length
@@ -1529,6 +1535,22 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               await options.onRecommendationsChange?.(presentation)
             }
           }
+          const literalDetails = queries.length > 0 && !hasIngredientFilters && !appliedFilters.dietary && !Object.keys(prices).length
+          let facts = queryMessage
+          if (verificationMessage !== undefined)
+            facts = verificationMessage
+          else if (!literalDetails)
+            facts = `${hasIngredientFilters ? `${filterDescription}：` : ''}${items.length ? `我找到：${items.map(item => item.name).join('、')}。` : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`
+          const displayReply = category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false)
+          // Display invitations are separate from factual evidence and never grant consent.
+          const customerReply = displayReply
+            ? {
+                facts: possibleItems.length ? '' : facts,
+                nextQuestion: possibleItems.length ? facts : nextQuestion ?? orderingMessages['zh-Hant'].browseQuestion,
+                pricedItemIds: literalDetails || verificationMessage ? pricedItemIds : [],
+                queryKey: JSON.stringify({ category, queries, prices, appliedFilters, excludedItemIds }),
+              }
+            : undefined
           return {
             // Host replies must not narrate this internal catalog as a second
             // recommendation before the Agent has applied the customer's scope.
@@ -1549,9 +1571,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             availability: filterAvailability(filtered, items.length),
             customizable: filtered.customizable.map(({ item, requiredOptions }) => ({ item: menuItemForAgent(item), requiredOptions })),
             unknownCompositionItems: filtered.unknown.map(menuItemForAgent),
-            ...(category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false)
-              ? { customerMessage: verificationMessage ?? (queries.length && !hasIngredientFilters && !appliedFilters.dietary && !Object.keys(prices).length ? queryMessage : `${hasIngredientFilters ? `${filterDescription}：` : ''}${items.length ? `我找到：${items.map(item => item.name).join('、')}。` : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`) }
-              : {}),
+            ...(customerReply ? { customerReply, customerMessage: renderCustomerReply(customerReply) } : {}),
             ...(presentation && input.display !== false ? { presentation } : {}),
           }
         }
@@ -2361,6 +2381,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             ...(selection?.itemId ? { selection: { itemId: selection.itemId, quantity: selection.quantity, options: optionsFor(selection.options) } } : {}),
             paymentState: options.checkout?.paymentStatus() ?? 'idle',
             allowedPaymentMethods: context.allowedPaymentMethods,
+            ...(options.merchant ? { merchant: options.merchant } : {}),
             paymentMethods: (options.checkout?.paymentMethods ?? []).map(id => ({ id, label: paymentLabels[id] })),
             fulfillmentModes: [...fulfillmentModes],
             ...(checkout ? { checkout: { stage: checkout.stage, invoiceMethod: checkout.invoiceMethod, ...(context.phase === 'checkout_tax_id' ? { taxId: checkout.taxId } : {}), invoiceDraftReady: invoiceDraftReady(checkout), carrierRegistered: Boolean(checkout.carrierCode), citizenRegistered: Boolean(checkout.citizenCode) } } : {}),
@@ -2619,7 +2640,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               // No guessed serving count and no draft cancellation. Rotate the
               // answer ticket while retaining this same request and chosen options.
               const question = configurationSnapshot(currentContext, '', true)!.waitingFor
-              return { customerMessage: `${item.name}，${describeOrderingDetails(item.price, item.description)}${orderingMessages['zh-Hant'].orderingUnitsGuide}${question.question}`, pendingCustomerChoice: question }
+              return { customerMessage: `${item.name}，${describeOrderingDetails(item.price, item.description === item.name ? '' : item.description)}${orderingMessages['zh-Hant'].orderingUnitsGuide}${question.question}`, pendingCustomerChoice: question }
             }
             if (candidateId === `configure:${issued.id}:inquiry`) {
               const item = machine.getMenu().find(item => item.id === pending.plan.slots.itemId)!
@@ -2630,7 +2651,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               mealClarification.clear()
               options.onClarificationChange?.(undefined)
               const result = await invoke('menu_get', { query: item.name, display: true }, onAction) as Record<string, unknown>
-              return { ...result, customerMessage: `${mealMessages.inquiryCorrection}${result.customerMessage ?? ''}` }
+              const readReply = parse(customerReplySchema, result.customerReply)
+              const reply = { facts: `${mealMessages.inquiryCorrection}${readReply.facts}`, nextQuestion: orderingMessages['zh-Hant'].browseQuestion }
+              return { ...result, customerReply: reply, customerMessage: `${reply.facts} ${reply.nextQuestion}` }
             }
             if (candidateId === `configure:${issued.id}:cancel`) {
               pendingConfiguration = undefined

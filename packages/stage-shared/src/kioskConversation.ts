@@ -55,6 +55,30 @@ export const toolInputRejectionSchema = strictObject({
   customerMessage: optional(pipe(string(), minLength(1), maxLength(2000))),
 })
 
+/** Verified merchant information; executable checkout options are not merchant promises. */
+export const merchantFactsSchema = object({
+  id,
+  operatorName: optional(label),
+  paymentPolicy: picklist(['cashless', 'unknown']),
+  paymentMethods: optional(pipe(array(object({ id, label })), maxLength(20))),
+})
+export type MerchantFacts = InferOutput<typeof merchantFactsSchema>
+
+/** Display guidance never creates an answer ticket or authorizes an operation. */
+export const customerReplySchema = object({
+  facts: pipe(string(), maxLength(8000)),
+  nextQuestion: optional(pipe(string(), maxLength(2000))),
+  pricedItemIds: optional(pipe(array(id), maxLength(200))),
+  /** Same query and constraints replace earlier reads; different queries remain independent. */
+  queryKey: optional(pipe(string(), maxLength(8000))),
+})
+export type CustomerReply = InferOutput<typeof customerReplySchema>
+
+/** Joins receipt-owned facts with exactly one display question; the validated question wins. */
+export function renderCustomerReply(reply: CustomerReply, question?: ConversationQuestion): string {
+  return [reply.facts, question?.question ?? reply.nextQuestion].filter(Boolean).join(' ')
+}
+
 /** One catalog-owned option selection shared by drafts and cart snapshots. */
 export const conversationOptionSchema = object({ groupId: id, valueId: id })
 
@@ -103,6 +127,7 @@ export type ConversationRequest = InferOutput<typeof conversationRequestSchema>
 
 /** Complete product coverage with explicit fields; images and vendor metadata are excluded. */
 export const conversationContextSchema = pipe(object({
+  merchant: optional(merchantFactsSchema),
   serviceMode: optional(picklist(['kiosk', 'table-service'])),
   serviceTable: optional(object({ id, label })),
   contextId: id,
@@ -137,7 +162,7 @@ export const conversationContextSchema = pipe(object({
       price: pipe(number(), minValue(0)),
       description: optional(pipe(string(), maxLength(120))),
       availability: picklist(['available', 'sold-out', 'selection-failure', 'unknown']),
-      optionGroups: pipe(array(object({ id, label, required: boolean(), values: pipe(array(object({ id, label, priceDelta: number() })), maxLength(100)) })), maxLength(40)),
+      optionGroups: pipe(array(object({ id, label, required: boolean(), values: pipe(array(object({ id, label, priceDelta: number() })), maxLength(200)) })), maxLength(40)),
       composition: optional(object({ ingredients: pipe(array(id), maxLength(100)), complete: boolean(), dietary: optional(pipe(array(label), maxLength(20))) })),
     })), maxLength(200)),
   })),
@@ -240,8 +265,12 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     return { kind, content }
   }
   if (selection.output.kind === 'payment-methods') {
-    const methods = context.paymentMethods
-    return { kind, content: guide(methods?.length ? `目前支援${methods.map(method => method.label).join('、')}。` : '付款方式需要服務人員確認。') }
+    const merchant = context.merchant
+    const methods = merchant?.paymentMethods
+    const facts = methods?.length
+      ? `目前支援${methods.map(method => method.label).join('、')}。`
+      : merchant?.paymentPolicy === 'cashless' ? orderingMessages['zh-Hant'].cashlessPayment : orderingMessages['zh-Hant'].paymentInformationUnknown
+    return { kind, content: guide(facts) }
   }
   if (selection.output.kind === 'fulfillment-modes')
     return { kind, content: guide(context.fulfillmentModes.length ? `目前提供${context.fulfillmentModes.map(mode => mode.label).join('、')}。` : '取餐方式需要服務人員確認。') }
@@ -272,8 +301,11 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     // Menu owns commerce facts, not store location/hours. Without a published
     // source those facts are explicitly unavailable, never inferred from persona.
     const topic = selection.output.topic
-    if (topic === 'operator')
-      return { kind, content: guide(`本機點餐服務的營運業者是${orderingMessages['zh-Hant'].operatorName}。`, '您想查詢哪道餐點？') }
+    if (topic === 'operator') {
+      return context.merchant?.operatorName
+        ? { kind, content: guide(`本機點餐服務的營運業者是${context.merchant.operatorName}。`, '您想查詢哪道餐點？') }
+        : { kind: 'staff-assistance', action: 'offer', content: orderingMessages['zh-Hant'].operatorInformationUnknown }
+    }
     if (topic === 'identity')
       return { kind, content: guide('我是這台機台的點餐助手，可以幫您查菜單和點餐。', '您想吃什麼？') }
     if (topic === 'capabilities')
@@ -296,7 +328,7 @@ export function replyFromContext(answer: string | undefined, context: Conversati
       return `目前沒有提供「${subject}」。`
     return items.map((item) => {
       const availability = item.availability === 'sold-out' ? '目前售完。' : item.availability === 'available' ? '' : '可供狀態需確認。'
-      return `${item.name}，${unitInformation ? item.description || '份量請依菜單標示。' : describeOrderingDetails(item.price, item.description)}${availability}`
+      return `${item.name}，${unitInformation ? item.description || '份量請依菜單標示。' : describeOrderingDetails(item.price, item.description === item.name ? '' : item.description)}${availability}`
     }).join(' ')
   }).join(' ')
   const subjects = selection.output.subjects
