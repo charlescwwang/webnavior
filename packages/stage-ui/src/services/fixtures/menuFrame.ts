@@ -44,7 +44,9 @@ const runtime = createMenuToolRuntime({
   onCartChange: () => {},
   onMenuSelection: () => {},
   onRecommendationsChange: () => {},
-  onSessionReset: () => ready = true,
+  onSessionReset: () => {
+    ready = true
+  },
   checkout: {
     assertCanRestart,
     cancel: () => {

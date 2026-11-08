@@ -23,6 +23,27 @@ async function reviewAndSubmit(runtime: ReturnType<typeof createMenuToolRuntime>
 }
 
 describe('shared Menu service modes', () => {
+  // Report: this chat, Nov08 — a table-bound assistant cannot offer a takeaway switch.
+  it.each(['table-service', 'kiosk'] as const)('rejects unavailable fulfillment before creating a draft-navigation question: %s', async (serviceMode) => {
+    const context: OrderingContext = { id: 'mode-check', serviceMode, ...(serviceMode === 'table-service' ? { table: { id: 'a03', label: 'A03' } } : {}), directSubmissionSupported: true }
+    let visibleItemId: string | undefined
+    const runtime = createMenuToolRuntime({ menu: [{ id: 'dumplings', name: '水餃', category: '點心', description: '每份10顆', price: 80, imageUrl: '', optionGroups: [], recommendationTags: [] }], serviceContext: () => context, fulfillmentModes: [{ id: 'takeout', label: '外帶' }], visibleItemId: () => visibleItemId, onAction: () => {}, onMenuSelection: (id) => {
+      visibleItemId = id
+    }, onCartChange: () => {} })
+    await runtime.invoke('menu_select_item', { itemId: 'dumplings' })
+    const before = await runtime.invoke('cart_get', { display: false })
+    await expect(runtime.invoke('order_set_fulfillment', { mode: serviceMode === 'table-service' ? 'takeout' : 'dine-in' })).rejects.toThrow(/not offered|unavailable for table service/)
+    expect(visibleItemId).toBe('dumplings')
+    expect(await runtime.invoke('cart_get', { display: false })).toEqual(before)
+    const state = await runtime.invoke('kiosk_interaction_state') as { waitingFor?: { purpose: string } }
+    expect(state.waitingFor?.purpose).not.toBe('draft-navigation')
+    if (serviceMode === 'table-service') {
+      const decision = await runtime.invoke('kiosk_fast_path_context', { transcript: '改成外帶' }) as { candidates: Array<{ id: string }> }
+      expect(decision.candidates.some(candidate => candidate.id.startsWith('intent:set-fulfillment:'))).toBe(false)
+      expect(await runtime.invoke('kiosk_conversation_context')).toMatchObject({ serviceMode: 'table-service', serviceTable: { id: 'a03', label: 'A03' }, fulfillmentModes: [{ id: 'dine-in', label: '隨桌供餐' }] })
+    }
+  })
+
   it('retains cart tools, removes payment/fulfillment choices and submits only after explicit consent', async () => {
     const { runtime, submit, completed } = tableRuntime()
     expect(runtime.toolDefinitions.some(tool => tool.name === 'order_add_item')).toBe(true)

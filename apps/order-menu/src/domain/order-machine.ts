@@ -870,6 +870,13 @@ export function createOrderMachine(options: { menu?: MenuItem[], gateway?: PosOr
     assertItemSelectable,
     addToCart,
     clearCart,
+    /** Closing an unadded meal retires selection authority without editing cart lines. */
+    clearSelection(itemId: string) {
+      if (selection?.itemId === itemId) {
+        selection = undefined
+        revisions.selectedItem += 1
+      }
+    },
     confirmOrder,
     getCart: () => cloneCart(cart, fulfillmentMode, catalogRevision, paymentId),
     /** The last successfully added line, if it still exists in this cart. */

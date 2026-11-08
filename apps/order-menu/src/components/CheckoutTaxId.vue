@@ -20,6 +20,8 @@ const emit = defineEmits<{
 }>()
 
 const taxIdInput = useTemplateRef<HTMLInputElement>('taxIdInput')
+// App's inert boundary blocks human edits while Agent owns the task. Keep this
+// field enabled so authorized dictation can use its real input event as well.
 watch(taxIdInput, field => emit('registerControl', 'checkout:tax-id:value', field), { flush: 'post' })
 // Template-ref watchers stop during unmount; explicitly release the registered
 // target so the cursor cannot retain an input from a previous checkout page.
@@ -67,7 +69,6 @@ function append(digit: string) {
         :aria-label="orderingMessages['zh-Hant'].checkout.taxIdLabel"
         :placeholder="orderingMessages['zh-Hant'].checkout.taxIdPlaceholder"
         :value="taxId"
-        :disabled="props.locked"
         type="text"
         inputmode="numeric"
         autocomplete="off"

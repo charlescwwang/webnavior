@@ -1,9 +1,9 @@
 import type { ConversationRequest, ConversationQuestion as PresentedQuestion } from '@proj-airi/stage-shared/kiosk-conversation'
 
-import type { DecisionContext } from './kiosk-intents'
+import type { DecisionContext, DomainPlan } from './kiosk-intents'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
-import { filterIngredients, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
+import { filterIngredients, mentionedIngredients, mentionedUnavailableConditions, unsupportedPreparation } from './domain/composition'
 import { filterPrices } from './domain/pricing'
 import { describeRequest, resolveIntent } from './kiosk-intents'
 
@@ -22,13 +22,17 @@ interface Proposal {
   originalRecipe?: boolean
   ownerTaskId?: string
   presented?: boolean
+  plan?: DomainPlan
+  unsupportedAdjustments?: string[]
+  /** Identity assent cannot waive preparation; a separate question owns that choice. */
+  deferredPreparation?: boolean
 }
 
 // Reading progress and accepting a confirmation must derive the same slots.
 // This compiles a proposal only; it never consumes a ticket or writes a cart.
 function resolveMealPlan(proposal: Proposal, context: DecisionContext, answer?: string) {
   const reference = { refId: `item:${proposal.itemId}`, label: proposal.label }
-  const candidate = { id: 'intent:add-item', intent: 'ADD_ITEM' as const, description: '新增顧客剛確認的餐點。' }
+  const candidate = { id: 'intent:add-item', intent: 'ADD_ITEM' as const, description: '新增顧客剛確認的餐點。', ...(proposal.plan ? { slots: proposal.plan.slots } : {}) }
   const source = proposal.context
   const resolution = resolveIntent(candidate, {
     ...source,
@@ -43,7 +47,7 @@ function resolveMealPlan(proposal: Proposal, context: DecisionContext, answer?: 
     throw new Error('The confirmed meal does not satisfy the current ordering constraints.')
   // The answer supplies slots; it must not replace the request that created
   // this draft when the next model receives the unfinished meal.
-  const plan = { ...resolution.plan, requestId: proposal.id, sourceUtterance: source.transcript }
+  const plan = { ...resolution.plan, requestId: proposal.id, sourceUtterance: proposal.plan?.sourceUtterance ?? source.transcript }
   if (proposal.replaceLineId) {
     const original = context.cart.lines.find(line => line.id === proposal.replaceLineId)
     if (!original)
@@ -77,8 +81,9 @@ export function createMealClarification() {
     const questionId = issuedAnswer?.requestId === pending.id ? issuedAnswer.questionId : pending.id
     let prompt: string
     if (pending.originalRecipe) {
-      const quantity = resolveMealPlan(pending, context).slots.quantity
-      prompt = mealMessages.confirmOriginalRecipe.replace('{item}', pending.label).replace('{quantity}', typeof quantity === 'number' ? `${quantity}份` : '')
+      prompt = pending.unsupportedAdjustments?.length
+        ? mealMessages.confirmUnsupportedAdjustments.replace('{adjustments}', pending.unsupportedAdjustments.join('、'))
+        : mealMessages.confirmOriginalRecipe
     }
     else if (pending.replacementName) {
       prompt = mealMessages.confirmReplacement.replace('{original}', pending.replacementName).replace('{item}', pending.label)
@@ -122,10 +127,15 @@ export function createMealClarification() {
       const original = replaceLineId ? context.cart.lines.find(line => line.id === replaceLineId) : undefined
       if (context.phase !== 'ordering' || !item || (replaceLineId && (!original || context.cart.lines.filter(line => line.itemId === original.itemId).length > 1)))
         throw new Error('The proposed meal or replacement target is not current and unique.')
-      if (originalRecipe) {
+      const speech = context.catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), context.transcript ?? '')
+      const unsupported = unsupportedPreparation(item, speech)
+      const deferredPreparation = !originalRecipe && unsupported.length > 0
+      if (originalRecipe || deferredPreparation) {
+        if (item.optionGroups.length && !unsupported.length)
+          throw new Error('Requested preparation must use the available menu options.')
         // This is a proposal to waive an unsupported preparation request, never
         // a claim about allergy safety, nutrition or dietary certification.
-        if (item.optionGroups.length || context.dietaryReferences.length || context.constraints.dietary || context.unavailableConditionReferences.some(reference => !['spice', 'preparation'].includes(reference.id)))
+        if (context.dietaryReferences.length || context.constraints.dietary || context.unavailableConditionReferences.some(reference => !['spice', 'preparation'].includes(reference.id)))
           throw new Error('Only unsupported preparation requests can propose the original recipe.')
         context = { ...context, ingredientReferences: [], unavailableConditionReferences: [], constraints: { ...context.constraints, exclude: [], include: [] } }
       }
@@ -133,7 +143,10 @@ export function createMealClarification() {
       if (!eligible.length || context.constraints.unresolvedPrice || context.unavailableConditionReferences.length)
         throw new Error('The proposed meal does not satisfy the current verified request conditions.')
       issuedAnswer = undefined
-      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, originalRecipe, ownerTaskId, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
+      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, originalRecipe, deferredPreparation, unsupportedAdjustments: item.optionGroups.length ? unsupported : undefined, ownerTaskId, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
+      // Resolve when proposing, never while reading context or processing a
+      // refusal. A passive snapshot cannot make a purchase validation throw.
+      pending.plan = resolveMealPlan(pending, context)
       offer = undefined
       return question(context)!
     },
@@ -190,6 +203,7 @@ export function createMealClarification() {
         }
         issuedAnswer = undefined
         pending = { ...offer, attempts: 1 }
+        pending.plan = resolveMealPlan(pending, context)
         offer = undefined
       }
       return { repeatCurrent: false as const, question: question(context)!, speak: pending!.attempts <= 2 }
@@ -198,7 +212,7 @@ export function createMealClarification() {
     progress(context: DecisionContext): ConversationRequest | undefined {
       if (!question(context) || !pending)
         return undefined
-      return describeRequest(pending.id, 'confirming', resolveMealPlan(pending, context), context.menu)
+      return pending.plan ? describeRequest(pending.id, 'confirming', pending.plan, context.menu) : undefined
     },
     /** Binds the next finite confirmation choice to this browser-observed utterance. */
     issueAnswer(context: DecisionContext) {
@@ -216,6 +230,14 @@ export function createMealClarification() {
       offer = undefined
       if (candidateId.endsWith(':no'))
         return undefined
+      if (accepted.deferredPreparation) {
+        const plan = resolveMealPlan(accepted, context, answer)
+        // The first yes establishes only identity. Keep its explicit slots,
+        // then issue a distinct one-use choice for the unsupported adjustment.
+        pending = { ...accepted, id: crypto.randomUUID(), originalRecipe: true, deferredPreparation: false, presented: false, plan, context: { ...accepted.context, transcript: answer, previousTranscript: undefined }, expiresAt: Date.now() + 30_000, attempts: 1 }
+        pending.plan = { ...plan, requestId: pending.id }
+        return { kind: 'confirmation' as const, question: question(context)! }
+      }
       // The affirmative answer establishes the proposed target. Its browser-
       // captured quantity/options override the proposal; the proposal remains
       // the previous fragment so a bare yes retains already stated slots.

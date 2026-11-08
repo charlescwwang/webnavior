@@ -57,7 +57,7 @@ registration, including after session reset. The generic runtime retains optiona
 entry hooks for independently configured service integrations.
 
 For a requested meal without customization options, unsupported preparation
-requests ask 「這道目前沒辦法調整做法，請問您要加入{份數}{餐點}嗎？」
+requests ask 「這道餐點不提供客製化，還要點嗎？」
 and use `menu_confirm_item(originalRecipe:true)` and the existing yes/no
 meal confirmation. The original quantity is retained and the cart stays unchanged
 until consent. Declining closes only this proposal; allergy/nutrition/dietary safety
@@ -120,7 +120,7 @@ Voice/Agent checkout operations register their actual controls with the shared
 cursor: review confirmation, invoice choices, membership skip, tax-ID entry and
 confirmation, payment methods and cancellation. Starting checkout reveals the
 review before targeting its confirmation button. Cursor movement/press completes
-before the owning transition runs once; no synthetic DOM click is dispatched.
+before the real DOM click executes the owning transition once.
 Tax-ID dictation highlights the visible draft instead of submitting it. Unpaid
 QR screens retain method buttons so changing payment also has a visible target.
 
@@ -128,8 +128,9 @@ Invoice entry focuses the active carrier/citizen field on arrival, selection
 (including reselecting the same option), and after Agent control is released.
 Tax-ID entry is a labelled keyboard/scanner text field with the existing touch
 keypad retained; it accepts up to eight digits and still requires confirmation.
-Fields release focus and are disabled during Agent control, then regain focus
-after the owning DOM unlock without replacing the current draft. This supports
+Fields release focus during Agent control, then regain focus after the owning
+DOM unlock without replacing the current draft. App's inert boundary blocks
+human edits; the tax-ID field remains enabled for authorized input events. This supports
 keyboard-wedge scanner input without a preliminary tap, not a device-specific
 scanner SDK. Invoice's existing valid-form Enter submission remains unchanged;
 tax-ID scan suffix Enter does not confirm the number. Physical scanner testing
@@ -244,6 +245,12 @@ immediately makes the round `checkout_complete`, even without a payment checkout
 controller. Retained cart lines are receipt data; they must not offer another
 checkout question or submission candidate. An explicit new-session reset starts
 a new ordering round.
+
+Both customer-facing roles are the ordering assistant. Kiosk offers only the
+POS-provided dine-in/takeaway choices; table service stays bound to its table
+and never offers that choice. Capability validation precedes any unfinished-meal
+navigation question, so an unavailable fulfillment mode cannot create a pending
+switch or discard the draft. Main receives the same service-mode boundary.
 
 For the current test environment, the Bridge assigns a random `a01`–`a09` once
 per round. This is not physical table verification or reservation. Unpaid order
@@ -810,10 +817,10 @@ actual question or introduces another request. A new request gets one host-only
 reroute even when a different catalog dish/category is spoken without an ordering
 verb. A different name alone is not cancellation. Each reroute remains
 correlated to that question ID and the identical utterance, within the
-existing question budget. Lookups retain the unadded meal; a new foreground meal suspends the old one
-without inheriting its quantity/options. After completion or cancellation, the
-previous meal resumes with its own saved slots and a fresh answer ticket. A query's own clarification is
-answered before resuming the retained meal. Expired/replayed topic-change tickets
+existing question budget. Informational lookups can retain the current unadded
+meal. A superseding order cancels the old draft without inheriting its slots;
+completing or cancelling another meal does not automatically resume old questions.
+A query's own clarification takes foreground priority. Expired/replayed topic-change tickets
 reject without cancelling a valid draft. Bare exact choices/ordinals may resolve
 directly; their appearance inside a query or other demand cannot select a target.
 When the POS declares required options, they remain unselected in the touch
@@ -1010,6 +1017,53 @@ the customer supplied none. Broader OR/cooking/taste/portion inference is outsid
 this feature; explicit changes reuse the current update/clear/continue policy.
 
 ## Current Main context and confirmed names
+
+The browser App supplies `onControl` to the Menu runtime. Authorized actions
+move the visible cursor and then dispatch the actual registered button's click;
+the matching UI handler executes the authorized domain operation exactly once.
+The tool does not also mutate the cart after the animation. Plus/minus changes
+use individual clicks in both the item dialog and cart, including decreases.
+Removal, clear-cart, available cart options and checkout controls use the same
+boundary. Necessary tax-ID entry dispatches the input event on the actual field.
+Missing, detached or disabled controls fail rather than falling back to a direct
+browser-state write. Headless domain tests omit the browser adapter explicitly;
+that supported domain mode is not a fallback for a failed UI click.
+
+Agent ownership still blocks customer input while its tools settle; programmatic
+control dispatch remains usable under that lock. The normal task releases
+control before TTS. Repeated presses on the same control omit another cursor
+journey; quantity changes are checked after each click. The original waiting
+audio/TTS ordering is retained, without per-click narration. Browser receipts
+include `executionTiming.uiDurationMs`; it measures the UI path, not model time.
+Different ordering websites still need their own control mapping and acceptance.
+
+Cancellation clicks the visible close button when the cancelled draft is active.
+Manual close retires that draft/selection and its answer ticket without removing
+cart lines. Adding a different dish no longer automatically resumes a previous
+suspended quantity/options question. Informational detours can retain the
+current draft; explicit changes must cancel the superseded one.
+
+If an unadded item dialog blocks a requested cart display or fulfillment change,
+ask whether to finish the dish first or cancel it and switch. A bare assent
+cannot decide that two-way choice. Cancel dispatches the real X before switching;
+finish retains the actual missing slots and switches only after the matching add
+succeeds. Manual close, replacement or reset revokes that deferred switch.
+Empty-cart review remains available through its real summary control.
+
+Named dishes are looked up before checking unsupported preparation. No matching
+dish follows exact-then-fuzzy lookup; an alternative needs customer confirmation.
+An actual dish without the requested option does not offer that customization.
+An alternative identity with an unsupported preparation request uses two distinct
+questions: identity first, preparation second. The first assent never waives
+the adjustment or adds the dish. Known servings survive both confirmations.
+The concise meal question asks whether the customer still wants it, preserving
+known quantity and supported options; it does not guess one serving. Missing
+nutrition evidence is a separate nonblocking staff-assistance invitation, never
+permission to claim low-fat/high-protein suitability. Proposed draft plans are
+resolved at proposal time; passive question/progress reads no longer compile a
+purchase plan. Affirmative execution still validates current state, while a
+refusal does not need to compile an addition. This removes a known read-time
+failure path, without claiming to have reproduced the original field incident.
 
 The host-only `kiosk_conversation_context` returns one detached, schema-validated
 snapshot bound to the active `kiosk_agent_task`. It includes all products after

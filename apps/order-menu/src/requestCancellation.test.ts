@@ -4,6 +4,25 @@ import { expect, it } from 'vitest'
 
 import { createMenuToolRuntime } from './webmcp'
 
+// Report: this chat, 2026-11-08; cancelling a draft left its quantity dialog open.
+it('closes the active draft and never restores it after a different dish is added', async () => {
+  let visible: string | undefined
+  const runtime = createMenuToolRuntime({ menu: [
+    { id: 'a', name: '雞肉飯', category: '飯', description: '', imageUrl: '', price: 80, optionGroups: [], recommendationTags: [] },
+    { id: 'b', name: '蔬菜麵', category: '麵', description: '', imageUrl: '', price: 90, optionGroups: [], recommendationTags: [] },
+  ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: id => visible = id, screen: () => visible ? 'item_configuration' : 'menu', visibleItemId: () => visible })
+  await runtime.invoke('kiosk_fast_path_context', { transcript: '雞肉飯' })
+  await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+  const before = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  expect(visible).toBe('a')
+  await runtime.invoke('order_cancel_request', { requestId: before.retainedRequests[0]!.id })
+  expect(visible).toBeUndefined()
+  await runtime.invoke('order_add_item', { itemId: 'b', quantity: 2 })
+  const after = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  expect(after.retainedRequests).toEqual([])
+  expect(after.cart.lines).toMatchObject([{ itemId: 'b', quantity: 2 }])
+})
+
 // Report: docs/plans/2026-10-28-kiosk-conversation-repair.md, P2 change-of-mind control.
 it('regression K1107-SWITCH withdraws only the unadded draft before ordering another dish', async () => {
   const runtime = createMenuToolRuntime({ menu: [

@@ -6,7 +6,7 @@ import type { MenuItem } from '../domain/order-machine'
 import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed } from 'vue'
 
-import { addItemControlId, optionControlId, quantityControlId } from '../webmcp'
+import { addItemControlId, closeItemControlId, optionControlId, quantityControlId, quantityStepControlId } from '../webmcp'
 
 const props = defineProps<{ locked?: boolean, item?: MenuItem, quantity: number, selectedOptions: Record<string, string> }>()
 const emit = defineEmits<{
@@ -33,6 +33,14 @@ function quantityControlRef(itemId: string) {
   return (element: Element | ComponentPublicInstance | null) => registerControl(controlId, element)
 }
 
+function closeControlRef(itemId: string) {
+  return (element: Element | ComponentPublicInstance | null) => registerControl(closeItemControlId(itemId), element)
+}
+
+function stepControlRef(itemId: string, direction: 'increase' | 'decrease') {
+  return (element: Element | ComponentPublicInstance | null) => registerControl(quantityStepControlId(itemId, direction), element)
+}
+
 function addItemControlRef(itemId: string) {
   const controlId = addItemControlId(itemId)
   return (element: Element | ComponentPublicInstance | null) => registerControl(controlId, element)
@@ -48,7 +56,7 @@ function currency(amount: number) {
     <section v-if="props.item" :inert="props.locked" class="item-dialog-backdrop" role="presentation" @click.self="emit('close')">
       <article class="item-dialog" role="dialog" aria-modal="true" :aria-label="`選擇${props.item.name}`">
         <header>
-          <div><p>選擇餐點</p><h2>{{ props.item.name }}</h2><strong>{{ currency(props.item.price) }}</strong></div><button type="button" aria-label="關閉" @click="emit('close')">
+          <div><p>選擇餐點</p><h2>{{ props.item.name }}</h2><strong>{{ currency(props.item.price) }}</strong></div><button :ref="closeControlRef(props.item.id)" type="button" aria-label="關閉" @click="emit('close')">
             ×
           </button>
         </header><section v-for="group in props.item.optionGroups" :key="group.id" class="option-group">
@@ -59,9 +67,9 @@ function currency(amount: number) {
           </div>
         </section><div class="dialog-actions">
           <div :ref="quantityControlRef(props.item.id)" class="quantity-control">
-            <button type="button" :disabled="props.quantity === 1" @click="emit('updateQuantity', props.quantity - 1)">
+            <button :ref="stepControlRef(props.item.id, 'decrease')" type="button" :disabled="props.quantity === 1" aria-label="減少一份" @click="emit('updateQuantity', props.quantity - 1)">
               −
-            </button><output>{{ props.quantity }}</output><button type="button" @click="emit('updateQuantity', props.quantity + 1)">
+            </button><output>{{ props.quantity }}</output><button :ref="stepControlRef(props.item.id, 'increase')" type="button" :disabled="props.quantity >= 20" aria-label="增加一份" @click="emit('updateQuantity', props.quantity + 1)">
               ＋
             </button>
           </div><button :ref="addItemControlRef(props.item.id)" type="button" class="confirm-add" :disabled="missingRequiredOptions.length > 0" @click="emit('add', props.item.id)">

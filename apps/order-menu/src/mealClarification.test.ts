@@ -45,7 +45,7 @@ describe('simple meal confirmation', () => {
   })
   it.each([
     { transcript: '泰式酸辣魚便當', label: '泰式酸辣魚便當' },
-    { transcript: '招牌便當', label: '蝦捲招牌便當' },
+    { transcript: '招牌便當', label: '周氏蝦捲招牌便當' },
     { transcript: '炸排骨便當', label: '炸排骨便當' },
   ])('confirms $transcript using the real catalog rather than a dish-specific phrase rule', async ({ transcript, label }) => {
     const runtime = await pendingMeal()
@@ -59,7 +59,7 @@ describe('simple meal confirmation', () => {
     const runtime = await pendingMeal()
     expect(await runtime.invoke('kiosk_fast_path_context', { transcript })).not.toHaveProperty('clarificationOffer')
   })
-  it('confirms one dish, adds its requested quantity, then resumes the previous unadded meal', async () => {
+  it('confirms one dish and never automatically resumes a superseded meal', async () => {
     const runtime = await pendingMeal()
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '牛肉麵' }) as Snapshot
     expect(context.clarificationOffer).toMatchObject({ label: '紅燒牛肉麵' })
@@ -71,10 +71,10 @@ describe('simple meal confirmation', () => {
     expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: yes.candidates.find(choice => choice.id.endsWith(':yes'))!.id })).toMatchObject({ customerMessage: '請問紅燒牛肉麵要幾份？' })
     const quantity = await runtime.invoke('kiosk_fast_path_context', { transcript: '一份' }) as Snapshot
     const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: quantity.candidates.find(choice => choice.description.includes('1 份'))!.id })
-    expect(result).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'beef-noodle-soup', quantity: 1 }] }, pendingCustomerChoice: { question: '請問水餃要幾份？' } })
-    const resumed = await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' }) as Snapshot
-    await runtime.invoke('kiosk_fast_path_execute', { candidateId: resumed.candidates.find(choice => choice.description.includes('2 份'))!.id })
-    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 3, lines: [{ itemId: 'beef-noodle-soup' }, { itemId: 'dumplings', quantity: 2 }] } })
+    expect(result).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'beef-noodle-soup', quantity: 1 }] }, pendingCustomerChoice: { purpose: 'fulfillment' } })
+    const next = await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' }) as Snapshot
+    expect(next.candidates.some(choice => choice.id.startsWith('configure:'))).toBe(false)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'beef-noodle-soup' }] } })
   })
 
   it('declines a proposed dish without cancelling the original meal or replaying the answer', async () => {
@@ -183,4 +183,23 @@ it('keeps the meal need after ticket expiry and gives a new answer its own lease
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2, lines: [{ itemId: 'beef-noodle-soup', quantity: 2 }] } })
   }
   finally { vi.useRealTimers() }
+})
+
+// Report: this chat Nov8 — 「不要了」 after an alternative must preserve the cart.
+it.each([
+  { original: '魚便當', replacement: '豬肉便當' },
+  { original: '雞肉便當', replacement: '牛肉便當' },
+])('declines $replacement as a replacement for $original without changing the cart', async ({ original, replacement }) => {
+  const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+  const template = catalog.items[0]!
+  const runtime = createMenuToolRuntime({ menu: [{ ...template, id: 'original', name: original, aliases: [], optionGroups: [] }, { ...template, id: 'replacement', name: replacement, aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId: 'original', quantity: 1 })
+  const before = await runtime.invoke('cart_get', { display: false }) as { cart: { lines: Array<{ id: string }> } }
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'replacement-task', transcript: `${original}換成${replacement}`, expectedMenuRevision: 0, constraints: {} })
+  await runtime.invokeForAgent('menu_confirm_item', { itemId: 'replacement', replaceLineId: before.cart.lines[0]!.id })
+  await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'replacement-task' })
+  const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '不要了' }) as Snapshot
+  const decline = answer.candidates.find(choice => choice.id.endsWith(':no'))!
+  await runtime.invoke('kiosk_fast_path_execute', { candidateId: decline.id })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'original', quantity: 1 }] } })
 })

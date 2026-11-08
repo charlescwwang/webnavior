@@ -705,7 +705,26 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
     const quantity = quantityFromTranscript(transcript) ?? quantityFromTranscript(context.previousTranscript ?? '') ?? (typeof slots.quantity === 'number' ? slots.quantity : undefined)
     if (!quantity)
       return { kind: 'NEEDS_ASSISTANT' }
-    slots.quantity = quantity
+    // The intent/target is already qualified. Only resolve its numeric slot:
+    // 少一份 is a delta; 改成一份 is absolute. Never interpret reaching zero
+    // as removal, because the screen exposes a separate remove control.
+    const normalized = normalizeSlotNumbers(transcript)
+    const decrease = /(?:減少|減掉|減|少)\s*\d+\s*份/.test(normalized)
+    const increase = /(?:增加|加|多)\s*\d+\s*份/.test(normalized)
+    if (decrease || increase) {
+      const current = targetRef?.startsWith('cart:')
+        ? context.cart.lines.find(line => lineRef(line) === targetRef)?.quantity
+        : context.selectedItem?.quantity
+      if (current === undefined || decrease === increase)
+        return { kind: 'NEEDS_ASSISTANT' }
+      const next = current + (decrease ? -quantity : quantity)
+      if (next < 1 || next > 20)
+        return { kind: 'NEEDS_ASSISTANT' }
+      slots.quantity = next
+    }
+    else {
+      slots.quantity = quantity
+    }
   }
   if (resolved.intent === 'SET_OPTION') {
     const itemId = targetRef?.startsWith('selected:') ? targetRef.slice(9) : context.cart.lines.find(line => lineRef(line) === targetRef)?.itemId

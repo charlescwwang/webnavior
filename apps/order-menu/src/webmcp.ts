@@ -27,7 +27,7 @@ import { ingredientDefinitions, vegetarianIngredients } from '../../order-menu-s
 import { currentRecommendationSignal } from '../../order-menu-server/src/domain/recommendation'
 import { describeConditions, describeGuidance, removeCondition } from './domain/browsing'
 import { invoiceDraftReady } from './domain/checkout-flow'
-import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters, mentionedIngredients, mentionedUnavailableConditions } from './domain/composition'
+import { emptyFilterMessage, filterAvailability, filterIngredients, ingredientFilters, mentionedIngredients, mentionedUnavailableConditions, unsupportedPreparation } from './domain/composition'
 import { findMenuCandidates, itemMatchesQuery } from './domain/menuIdentity'
 import { catalogInfo, createOrderMachine, itemAvailability, ItemSelectionError, menuPageState, menuPageStates } from './domain/order-machine'
 import { filterPrices, intersectPrices, priceClarification, priceConditions, priceDescription } from './domain/pricing'
@@ -76,6 +76,7 @@ export interface MenuPresentationActivity {
 
 export interface AgentAction {
   controlId?: string
+  inputValue?: string
   expandCustomization?: boolean
   label: string
   targetId?: string
@@ -116,6 +117,19 @@ interface PendingConfiguration {
   clarificationAttempts?: number
   /** Only choices issued by the latest snapshot may complete this session. */
   issued?: { id: string, expiresAt: number, transcript: string, choices: Map<string, IntentCandidate>, unitGuidanceId?: string }
+}
+
+/** A surface switch waits for the visible, unadded meal; it never owns a cart write. */
+interface PendingNavigation {
+  id: string
+  itemId: string
+  name: 'cart_get' | 'order_set_fulfillment'
+  input: Record<string, unknown>
+  revisions: FastPathRevisions
+  state: 'choice' | 'completing'
+  taskId?: string
+  presented?: boolean
+  issued?: { id: string, expiresAt: number }
 }
 
 /** One customer-mentioned subject retained by a query-result presentation. */
@@ -167,6 +181,19 @@ export function optionControlId(itemId: string, groupId: string, valueId: string
 /** Returns the DOM control identifier used to visually follow an AI quantity change. */
 export function quantityControlId(itemId: string) {
   return `${itemId}:quantity`
+}
+
+/** Distinguishes individual plus/minus buttons from their quantity container. */
+export function quantityStepControlId(ownerId: string, direction: 'increase' | 'decrease', cart = false) {
+  return `${cart ? 'cart' : 'item'}:quantity:${encodeURIComponent(ownerId)}:${direction}`
+}
+
+export function closeItemControlId(itemId: string) {
+  return `item:close:${encodeURIComponent(itemId)}`
+}
+
+export function cartOptionControlId(lineId: string, groupId: string, valueId: string) {
+  return `cart:option:${encodeURIComponent(lineId)}:${encodeURIComponent(groupId)}:${encodeURIComponent(valueId)}`
 }
 
 /** Returns the DOM control identifier used to visually follow a service-mode change. */
@@ -243,6 +270,8 @@ interface MenuToolRuntimeOptions {
   /** Locks customer writes until the matching host task has settled. */
   onAgentControlChange?: (locked: boolean) => void
   onAction: (action: AgentAction) => Promise<void> | void
+  /** Browser UI executes through actual control handlers; headless runtimes apply domain actions directly. */
+  onControl?: <T>(action: AgentAction, apply: () => T | Promise<T>) => Promise<T>
   onCartChange: (cart: CartSnapshot) => void
   /** Reveals review controls and waits for their DOM registration before cursor animation. */
   onReviewRequested?: () => Promise<void> | void
@@ -494,6 +523,7 @@ function invocationFailure(name: MenuToolName, error: unknown) {
  * mutation announces itself before updating state.
  */
 export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
+  let uiExecutionDurationMs = 0
   const policy = () => servicePolicy(options.serviceContext?.()?.serviceMode ?? 'kiosk')
   // A voice/Main checkout request opens a cart-bound review first. Only a
   // subsequently presented question can authorize the next submission call.
@@ -507,8 +537,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   let pendingFastPathConfirmation: PendingFastPathConfirmation | undefined
   let pendingFastPathClarification: PendingFastPathClarification | undefined
   let pendingConfiguration: PendingConfiguration | undefined
-  // Only the foreground meal is sent to Jev. Suspended drafts belong to this
-  // order and resume after the foreground meal completes; no cart line is implied.
+  let pendingNavigation: PendingNavigation | undefined
+  // Only the foreground meal is sent to Jev. Retained drafts do not resume
+  // automatically after a different meal completes; no cart line is implied.
   const suspendedConfigurations: PendingConfiguration[] = []
   const mealClarification = createMealClarification()
   let queryScope: ReturnType<typeof createQueryScope> | undefined
@@ -780,6 +811,48 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     return { menuRevision: context.revisions.menu, revisions: context.revisions, ...(context.priceEvidence ? { priceEvidence: context.priceEvidence } : {}), constraints: context.constraints, ingredientReferences: context.ingredientReferences, dietaryReferences: context.dietaryReferences, unavailableConditionReferences: context.unavailableConditionReferences, phase: 'configuration', retainedRequests: retainedRequests(context), intentRecovery: intentRecovery(context, waitingFor), paymentState: 'idle', candidates: choices, catalogEvidence: context.catalogEvidence, interactionState: { ...context.interactionState, pendingIntent: 'ADD_ITEM' }, references: [{ refId: 'CONFIGURING_ITEM', label: item.name }], waitingFor }
   }
 
+  function navigationSnapshot(context: DecisionContext, issueAnswer = false) {
+    const pending = pendingNavigation
+    if (!pending || pending.state !== 'choice')
+      return undefined
+    if (context.phase !== 'ordering' || options.visibleItemId?.() !== pending.itemId || !revisionsMatch(pending.revisions, context.revisions)) {
+      pendingNavigation = undefined
+      return undefined
+    }
+    if (issueAnswer)
+      pending.issued = { id: crypto.randomUUID(), expiresAt: Date.now() + 30_000 }
+    const questionId = pending.issued?.id ?? pending.id
+    const destination = pending.name === 'cart_get' ? mealMessages.viewCart : fulfillmentModes.find(mode => mode.id === pending.input.mode)!.label
+    const question: PresentedQuestion = {
+      questionId,
+      requestId: pending.id,
+      purpose: 'draft-navigation',
+      question: mealMessages.finishOrCancel.replace('{destination}', destination),
+      expiresAt: pending.issued?.expiresAt ?? Date.now() + 30_000,
+      choices: [
+        { id: `navigate:${questionId}:complete`, description: '明確選擇先完成目前餐點，加入後再切換；不授權猜份數或加入。單說好／對無法決定二選一，不能選此項。' },
+        { id: `navigate:${questionId}:cancel`, description: '明確選擇取消目前尚未加入的餐點，再執行剛才要求的切換；保留既有購物車。單說好／對無法決定二選一，不能選此項。' },
+      ],
+    }
+    return { phase: 'clarification', waitingFor: question, candidates: question.choices.map(choice => ({ ...choice, requiresHighConfidence: true })), menuRevision: context.revisions.menu, revisions: context.revisions, retainedRequests: retainedRequests(context), interactionState: context.interactionState, paymentState: 'idle', intentRecovery: { kind: 'answer' as const, questionId, requestId: pending.id, candidateIds: question.choices.map(choice => choice.id) } }
+  }
+
+  async function answerNavigation(candidateId: string, onAction = options.onAction) {
+    const pending = pendingNavigation
+    const snapshot = navigationSnapshot(currentFastPathContext())
+    if (!pending || !snapshot || !pending.issued || pending.issued.expiresAt <= Date.now() || !snapshot.candidates.some(choice => choice.id === candidateId))
+      throw new Error('STALE_PLAN: The draft navigation choice expired or changed.')
+    pending.issued = undefined
+    if (candidateId.endsWith(':complete')) {
+      pending.state = 'completing'
+      const question = configurationSnapshot(currentFastPathContext(), '', true)?.waitingFor
+      return { customerMessage: question?.question ?? mealMessages.finishCurrentMeal, ...(question ? { pendingCustomerChoice: question } : {}) }
+    }
+    pendingNavigation = undefined
+    await closeMeal(pending.itemId, onAction)
+    return await invoke(pending.name, pending.input, onAction)
+  }
+
   function mealConfirmationSnapshot(context: DecisionContext, issueAnswer = false) {
     const question = issueAnswer ? mealClarification.issueAnswer(context) : mealClarification.question(context)
     options.onClarificationChange?.(question)
@@ -831,30 +904,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   }
 
   function clearMealProgress() {
+    pendingNavigation = undefined
     pendingConfiguration = undefined
     suspendedConfigurations.length = 0
     mealClarification.clear()
     options.onClarificationChange?.(undefined)
-  }
-
-  async function resumeMeal(onAction: MenuToolRuntimeOptions['onAction'], reveal = true) {
-    if (pendingConfiguration)
-      return undefined
-    const revisions = currentFastPathRevisions()
-    while (suspendedConfigurations.length) {
-      const draft = suspendedConfigurations.pop()!
-      // Cart/selection changes are expected while another meal is completed.
-      // A catalog change cannot safely reprice or reinterpret a saved draft.
-      if (draft.plan.expectedRevisions.menu !== revisions.menu)
-        continue
-      pendingConfiguration = { ...draft, issued: undefined, plan: { ...draft.plan, expectedRevisions: { ...draft.plan.expectedRevisions, cart: revisions.cart, selectedItem: revisions.selectedItem } } }
-      // Completing another dish returns to browsing. Keep the saved question
-      // answerable without immediately opening a second configuration dialog.
-      if (reveal)
-        await revealItem(String(draft.plan.slots.itemId), onAction)
-      return configurationSnapshot(currentFastPathContext(), '', true)?.waitingFor
-    }
-    return undefined
   }
 
   async function beginMeal(plan: DomainPlan, onAction: MenuToolRuntimeOptions['onAction']) {
@@ -862,6 +916,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     const question = configurationQuestion(active.plan, machine.getMenu(), active.id)
     if (question) {
       await revealItem(String(plan.slots.itemId), onAction)
+      // Bind our own selection effect without refreshing cart/menu authority.
+      active.plan.expectedRevisions.selectedItem = machine.getRevisions().selectedItem
       return { customerMessage: question.prompt, pendingConfiguration: { id: active.id }, pendingCustomerChoice: configurationSnapshot(currentFastPathContext(), '', true)!.waitingFor }
     }
     const operation = compileOperationPlan(active.plan)
@@ -964,14 +1020,79 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     // it would replay the item click; a separate lookup may have hidden it, though.
     if (options.screen?.() === 'item_configuration' && options.visibleItemId?.() === itemId)
       return
+    const previousItemId = options.visibleItemId?.()
+    if (previousItemId && previousItemId !== itemId)
+      await closeMeal(previousItemId, onAction)
+    if (options.screen?.() === 'cart_review')
+      await leaveReview(onAction)
     const item = machine.getMenu().find(candidate => candidate.id === itemId)
     // Selection owns the dialog, not the browsing query. Replacing the grid
     // here loses the customer's category/filter when the dialog closes.
     machine.assertItemSelectable(itemId)
-    await announce(`正在選擇${item?.name ?? '餐點'}`, itemId, {}, onAction)
-    // Availability may change while awaiting the cursor animation.
-    machine.assertItemSelectable(itemId)
-    options.onMenuSelection(itemId)
+    await applyControl(`正在選擇${item?.name ?? '餐點'}`, itemId, {}, () => {
+      machine.assertItemSelectable(itemId)
+      // Opening the actual dialog establishes selection in its click handler.
+      // Later quantity answers reuse this state rather than mutating outside a control.
+      const selection = machine.selectMenuItem(itemId)
+      options.onSelectionChange?.(selection)
+      options.onMenuSelection(itemId)
+    }, onAction)
+  }
+
+  async function applyControl<T>(label: string, targetId: string | undefined, action: Pick<AgentAction, 'controlId' | 'expandCustomization' | 'inputValue'>, apply: () => T | Promise<T>, onAction = options.onAction): Promise<T> {
+    if (options.onControl && manualOperations === 0) {
+      const startedAt = performance.now()
+      try {
+        return await options.onControl({ label, targetId, ...action }, apply)
+      }
+      finally {
+        uiExecutionDurationMs += performance.now() - startedAt
+      }
+    }
+    await announce(label, targetId, action, onAction)
+    return await apply()
+  }
+
+  async function closeMeal(itemId: string, onAction = options.onAction) {
+    if (options.visibleItemId?.() && options.visibleItemId() !== itemId)
+      throw new Error('STALE_REQUEST: A different meal is now visible.')
+    await applyControl('關閉餐點設定', itemId, { controlId: closeItemControlId(itemId) }, () => {
+      if (pendingNavigation?.itemId === itemId)
+        pendingNavigation = undefined
+      if (pendingConfiguration?.plan.slots.itemId === itemId)
+        pendingConfiguration = undefined
+      const proposal = mealClarification.progress(currentFastPathContext())
+      if (proposal?.itemId === itemId)
+        mealClarification.clear()
+      issuedFastPathContext = undefined
+      machine.clearSelection(itemId)
+      options.onMenuSelection(undefined)
+    }, onAction)
+  }
+
+  async function leaveReview(onAction = options.onAction) {
+    if (options.onControl && options.screen?.() === 'cart_review')
+      await applyControl('繼續點餐', 'cart', { controlId: 'order:back' }, () => options.onMenuRequested?.(), onAction)
+    else
+      await options.onMenuRequested?.()
+  }
+
+  async function setSelectionQuantity(quantity: number, onAction = options.onAction) {
+    let selection = machine.getSelection()
+    if (!selection || !Number.isInteger(quantity) || quantity < 1 || quantity > 20)
+      throw new Error('A selected meal and a quantity from 1 to 20 are required.')
+    while (selection.quantity !== quantity) {
+      const previous = selection
+      const delta: 1 | -1 = quantity > selection.quantity ? 1 : -1
+      selection = await applyControl(`設定數量為 ${selection.quantity + delta}`, selection.itemId, { controlId: quantityStepControlId(selection.itemId, delta > 0 ? 'increase' : 'decrease') }, () => {
+        if (machine.getSelection()?.itemId !== previous.itemId || machine.getSelection()?.quantity !== previous.quantity)
+          throw new Error('STALE_PLAN: The selected quantity changed before the click.')
+        const next = machine.setQuantity(previous.quantity + delta)
+        options.onSelectionChange?.(next)
+        return next
+      }, onAction)
+    }
+    return selection
   }
 
   async function revealReview(onAction: MenuToolRuntimeOptions['onAction']) {
@@ -980,8 +1101,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     if (screen === 'checkout')
       return
     if (screen !== 'cart_review')
-      await announce('查看訂單', 'cart', { controlId: 'order:view' }, onAction)
-    await options.onReviewRequested?.()
+      await applyControl('查看訂單', 'cart', { controlId: 'order:view' }, () => options.onReviewRequested?.(), onAction)
     const context = options.serviceContext?.()
     if (context?.serviceMode === 'table-service' && context.table && context.directSubmissionSupported) {
       const cart = cartFingerprint(machine.getCart())
@@ -991,6 +1111,23 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   }
 
   async function invoke(name: MenuToolName, input: Record<string, unknown> = {}, onAction = options.onAction, queryTask?: typeof agentTask): Promise<unknown> {
+    const uiDurationBefore = uiExecutionDurationMs
+    if (name === 'order_set_fulfillment') {
+      // Validate capabilities before opening a draft-navigation question. A
+      // table-bound round cannot acquire a takeaway choice through that detour.
+      if (!policy().choosesFulfillment)
+        throw new Error('Fulfillment changes are unavailable for table service.')
+      const mode = requiredFulfillmentMode(input)
+      if (!fulfillmentModes.some(choice => choice.id === mode))
+        throw new Error('This fulfillment mode is not offered by the POS.')
+    }
+    const visibleItemId = options.visibleItemId?.()
+    if (manualOperations === 0 && visibleItemId && ((name === 'cart_get' && input.display !== false) || (name === 'order_set_fulfillment' && machine.getCart().fulfillmentMode !== input.mode))) {
+      if (!navigationSnapshot(currentFastPathContext()))
+        pendingNavigation = { id: crypto.randomUUID(), itemId: visibleItemId, name, input: { ...input }, revisions: currentFastPathRevisions(), state: 'choice', taskId: agentTask?.taskId }
+      const snapshot = navigationSnapshot(currentFastPathContext())!
+      return { cart: machine.getCart(), customerMessage: snapshot.waitingFor.question, pendingCustomerChoice: snapshot.waitingFor }
+    }
     if ((tableSubmissionPending || tableSubmissionUncertain) && !isKioskHostOnlyToolName(name) && toolDefinitions.find(tool => tool.name === name)?.readOnly !== true)
       throw new Error('隨桌訂單尚待確認，請勿修改或重送。')
     if (name === 'menu_recommend' && input.more === true && recommendationBatch?.queries.length)
@@ -1070,6 +1207,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         options.onMenuChanged?.(machine.getMenu())
       throw error
     }
+    if (pendingNavigation?.state === 'completing' && ['order_add_item', 'cart_add_item'].includes(name) && result && typeof result === 'object' && 'line' in result) {
+      const line = result.line as { itemId: string }
+      if (line.itemId === pendingNavigation.itemId) {
+        // Consume before awaiting the switch. Failure cannot replay the accepted add.
+        const navigation = pendingNavigation
+        pendingNavigation = undefined
+        const next = await invoke(navigation.name, navigation.input, onAction)
+        return { ...result, ...(next && typeof next === 'object' ? next : {}), customerMessage: [Reflect.get(result, 'customerMessage'), next && typeof next === 'object' ? Reflect.get(next, 'customerMessage') : undefined].filter(Boolean).join('') }
+      }
+    }
     if (queryScope && !isKioskHostOnlyToolName(name) && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get'].includes(name))
       clearQueryScope()
     if (name === 'kiosk_fast_path_context' && result && typeof result === 'object') {
@@ -1084,6 +1231,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     }
     if (!isKioskHostOnlyToolName(name) && result && typeof result === 'object') {
       const payload = result as Record<string, unknown>
+      if (options.onControl && uiExecutionDurationMs > uiDurationBefore)
+        payload.executionTiming = { uiDurationMs: Math.round(uiExecutionDurationMs - uiDurationBefore) }
       const order = payload.order as SubmittedOrder | undefined
       if (name === 'checkout_start' && (payload.ok === false || (order && order.receipt.status !== 'accepted'))) {
         tableOrderReview = undefined
@@ -1099,15 +1248,6 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         return result
       const asksNext = ['order_add_item', 'cart_add_item', 'cart_get', 'cart_remove_item', 'cart_set_line_quantity', 'cart_set_line_option', 'order_set_fulfillment', 'order_set_party_size', 'seating_reserve', 'checkout_start', 'checkout_skip_membership', 'checkout_choose_invoice', 'checkout_request_tax_id', 'checkout_set_tax_id', 'checkout_confirm_tax_id', 'checkout_confirm_invoice', 'checkout_cancel'].includes(name)
       if (asksNext) {
-        if (name === 'order_add_item' || name === 'cart_add_item') {
-          const resumed = await resumeMeal(onAction, false)
-          if (resumed) {
-            const payload = result as Record<string, unknown>
-            payload.customerMessage = `${payload.customerMessage ?? ''}${mealMessages.resumed}${resumed.question}`
-            payload.pendingCustomerChoice = resumed
-            return result
-          }
-        }
         const reviewCurrent = tableOrderReview?.contextId === options.serviceContext?.()?.id && tableOrderReview?.cart === cartFingerprint(machine.getCart())
         // Adding food does not mean the cart has been reviewed. Table checkout
         // questions become available only on the actual review surface.
@@ -1170,8 +1310,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'menu_open': {
           if (!options.onMenuRequested || currentFastPathContext().phase !== 'ordering')
             throw new Error('Returning to the menu is unavailable in this phase.')
-          await options.onMenuRequested()
-          const catalog = await invoke('menu_get', { scope: 'catalog', display: true }, onAction, queryTask) as Record<string, unknown>
+          const itemId = options.visibleItemId?.()
+          if (itemId)
+            await closeMeal(itemId, onAction)
+          await leaveReview(onAction)
+          const catalog = await applyControl('查看全部菜單', undefined, { controlId: 'menu:all' }, () => invoke('menu_get', { scope: 'catalog', display: true }, onAction, queryTask), onAction) as Record<string, unknown>
           return { ...catalog, customerMessage: '已回到全部菜單，接下來想看哪一道餐點？', cart: machine.getCart() }
         }
         case 'menu_scroll': {
@@ -1197,6 +1340,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
           if (typeof input.questionId === 'string')
             mealClarification.markPresented(input.questionId, currentFastPathContext())
+          if (pendingNavigation && navigationSnapshot(currentFastPathContext())?.waitingFor.questionId === input.questionId)
+            pendingNavigation.presented = true
           if (pendingFastPathConfirmation && input.questionId === pendingFastPathConfirmation.record.confirmationId && confirmationIsValid(pendingFastPathConfirmation, currentFastPathContext()))
             pendingFastPathConfirmation.presented = true
           if (offeredQuestion && offeredQuestion.phase === currentFastPathContext().phase && questionIsCurrent(offeredQuestion, currentFastPathRevisions(), Date.now()) && input.questionId === offeredQuestion.questionId) {
@@ -1215,6 +1360,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
 
           const current = currentFastPathContext()
+          const navigation = navigationSnapshot(current)
+          if (navigation && navigation.waitingFor.questionId === input.questionId)
+            return { pendingCustomerChoice: navigation.waitingFor }
           const confirmation = confirmationSnapshot(current)
           if (confirmation && confirmation.waitingFor.questionId === input.questionId && confirmation.waitingFor.expiresAt > Date.now() && pendingFastPathConfirmation && confirmationIsValid(pendingFastPathConfirmation, current))
             return { pendingCustomerChoice: confirmation.waitingFor }
@@ -1259,10 +1407,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const suspended = suspendedConfigurations.findIndex(request => request.id === requestId)
           if (!active && suspended < 0)
             return { ok: false, executed: false, error: 'STALE_REQUEST', customerMessage: '這項未完成需求已不存在，購物車仍保留。' }
-          if (active)
+          if (active) {
+            await closeMeal(String(pendingConfiguration!.plan.slots.itemId), onAction)
             pendingConfiguration = undefined
-          else
+          }
+          else {
             suspendedConfigurations.splice(suspended, 1)
+          }
           // Revoke this draft's issued speech ticket without touching cart lines
           // or resurrecting a different suspended meal as the current question.
           issuedFastPathContext = undefined
@@ -1545,8 +1696,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const itemId = requiredString(input, 'itemId')
           const item = machine.getMenu().find(candidate => candidate.id === itemId) as MenuItem | undefined
           await revealItem(itemId, onAction)
-          const selection = machine.selectMenuItem(itemId)
-          options.onSelectionChange?.(selection)
+          const selection = machine.getSelection()
+          if (!selection || selection.itemId !== itemId)
+            throw new Error('The visible meal did not establish its selection.')
           return {
             item: item ? menuItemForAgent(item) : undefined,
             selection,
@@ -1560,22 +1712,19 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const selection = machine.getSelection()
           const item = selection && machine.getMenu().find(candidate => candidate.id === selection.itemId)
           const value = item?.optionGroups.find(group => group.id === groupId)?.values.find(candidate => candidate.id === valueId)
-          await announce(`設定為${value?.label ?? '指定選項'}`, item?.id, {
+          const nextSelection = await applyControl(`設定為${value?.label ?? '指定選項'}`, item?.id, {
             controlId: item ? optionControlId(item.id, groupId, valueId) : undefined,
             expandCustomization: true,
+          }, () => {
+            const next = machine.setItemOption(groupId, valueId)
+            options.onSelectionChange?.(next)
+            return next
           }, onAction)
-          const nextSelection = machine.setItemOption(groupId, valueId)
-          options.onSelectionChange?.(nextSelection)
           return { customerMessage: `已設定為${value?.label ?? '指定選項'}。`, selection: nextSelection }
         }
         case 'menu_set_quantity': {
           const quantity = requiredNumber(input, 'quantity')
-          const itemId = machine.getSelection()?.itemId
-          await announce(`設定數量為 ${quantity}`, itemId, {
-            controlId: itemId ? quantityControlId(itemId) : undefined,
-          }, onAction)
-          const nextSelection = machine.setQuantity(quantity)
-          options.onSelectionChange?.(nextSelection)
+          const nextSelection = await setSelectionQuantity(quantity, onAction)
           return { customerMessage: `已設定為 ${quantity} 份。`, selection: nextSelection }
         }
         case 'order_add_item': {
@@ -1608,46 +1757,46 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             throw new Error('quantity must be an integer from 1 to 20.')
 
           await revealItem(item.id, onAction)
-          let selection = machine.selectMenuItem(item.id)
-          options.onSelectionChange?.(selection)
+          let selection = machine.getSelection()
+          if (!selection || selection.itemId !== item.id)
+            throw new Error('The visible meal did not establish its selection.')
 
           for (const option of itemOptions) {
             const value = item.optionGroups.find(group => group.id === option.groupId)?.values.find(candidate => candidate.id === option.valueId)
-            await announce(`設定為${value?.label ?? '指定選項'}`, item.id, {
+            selection = await applyControl(`設定為${value?.label ?? '指定選項'}`, item.id, {
               controlId: optionControlId(item.id, option.groupId, option.valueId),
               expandCustomization: true,
+            }, () => {
+              const next = machine.setItemOption(option.groupId, option.valueId)
+              options.onSelectionChange?.(next)
+              return next
             }, onAction)
-            selection = machine.setItemOption(option.groupId, option.valueId)
-            options.onSelectionChange?.(selection)
           }
 
-          if (quantity !== undefined) {
-            await announce(`設定數量為 ${quantity}`, item.id, {
-              controlId: quantityControlId(item.id),
-            }, onAction)
-            selection = machine.setQuantity(quantity)
-            options.onSelectionChange?.(selection)
-          }
+          if (quantity !== undefined)
+            selection = await setSelectionQuantity(quantity, onAction)
 
-          await announce('加入購物車', item.id, { controlId: addItemControlId(item.id) }, onAction)
-          if (replaceLineId !== undefined) {
+          const { cart, line, replacedLine } = await applyControl('加入購物車', item.id, { controlId: addItemControlId(item.id) }, () => {
+            if (replaceLineId !== undefined) {
             // Cursor/customization awaits can overlap touch or checkout. Only
             // this selection may change before commit; revalidate both cart
             // targets, catalog and payment/phase against the original revision.
-            const authorization = authorize({
-              intent: 'ADD_ITEM',
-              expectedRevisions: { cart: originalRevisions.cart, menu: originalRevisions.menu, checkout: originalRevisions.checkout },
-              input,
-              slots: { itemId, quantity: quantity ?? 1 },
-              targetRef: `item:${itemId}`,
-              toolName: 'order_add_item',
-            }, currentFastPathContext())
-            if (authorization.kind !== 'EXECUTE')
-              throw new Error('STALE_PLAN: Replacement state changed before commit.')
-          }
-          const { cart, line, replacedLine } = machine.addToCart(replaceLineId)
-          options.onCartChange(cart)
-          options.onMenuSelection(undefined)
+              const authorization = authorize({
+                intent: 'ADD_ITEM',
+                expectedRevisions: { cart: originalRevisions.cart, menu: originalRevisions.menu, checkout: originalRevisions.checkout },
+                input,
+                slots: { itemId, quantity: quantity ?? 1 },
+                targetRef: `item:${itemId}`,
+                toolName: 'order_add_item',
+              }, currentFastPathContext())
+              if (authorization.kind !== 'EXECUTE')
+                throw new Error('STALE_PLAN: Replacement state changed before commit.')
+            }
+            const result = machine.addToCart(replaceLineId)
+            options.onCartChange(result.cart)
+            options.onMenuSelection(undefined)
+            return result
+          }, onAction)
           return {
             item: menuItemForAgent(item),
             line,
@@ -1659,10 +1808,12 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         }
         case 'cart_add_item': {
           const itemId = machine.getSelection()?.itemId
-          await announce('加入購物車', itemId, { controlId: itemId ? addItemControlId(itemId) : undefined }, onAction)
-          const result = machine.addToCart()
-          options.onCartChange(result.cart)
-          options.onMenuSelection(undefined)
+          const result = await applyControl('加入購物車', itemId, { controlId: itemId ? addItemControlId(itemId) : undefined }, () => {
+            const added = machine.addToCart()
+            options.onCartChange(added.cart)
+            options.onMenuSelection(undefined)
+            return added
+          }, onAction)
           return {
             ...result,
             customerMessage: `已將${result.line.name}加入購物車，共 ${result.line.quantity} 份。`,
@@ -1676,15 +1827,17 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             throw new Error('TARGET_MISSING: The cart line no longer exists.')
           const cartRevision = machine.getRevisions().cart
           // Touch removal stays in review. Agent/voice operations first reveal
-          // the real line; cursor animation never performs another DOM click.
+          // the real line, then commit through that line’s actual remove control.
           const present = manualOperations === 0
           if (present)
             await revealReview(onAction)
-          await announce('從購物車移除餐點', 'cart', { controlId: cartRemovalControlId(lineId) }, onAction)
-          if (machine.getRevisions().cart !== cartRevision)
-            throw new Error('STALE_PLAN: The cart changed while presenting removal.')
-          const cart = machine.removeFromCart(lineId)
-          options.onCartChange(cart)
+          const cart = await applyControl('從購物車移除餐點', 'cart', { controlId: cartRemovalControlId(lineId) }, () => {
+            if (machine.getRevisions().cart !== cartRevision)
+              throw new Error('STALE_PLAN: The cart changed while presenting removal.')
+            const next = machine.removeFromCart(lineId)
+            options.onCartChange(next)
+            return next
+          }, onAction)
           let presentationFailed = false
           if (present && currentFastPathContext().phase === 'ordering') {
             if (agentTask) {
@@ -1692,7 +1845,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             }
             else {
               try {
-                await options.onMenuRequested?.()
+                await leaveReview(onAction)
               }
               catch {
                 presentationFailed = true
@@ -1711,9 +1864,23 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const lineId = requiredString(input, 'lineId')
           const quantity = requiredNumber(input, 'quantity')
           const line = machine.getCart().lines.find(candidate => candidate.id === lineId)
-          await announce(`設定購物車數量為 ${quantity}`, 'cart', {}, onAction)
-          const cart = machine.setCartLineQuantity(lineId, quantity)
-          options.onCartChange(cart)
+          if (!line || !Number.isInteger(quantity) || quantity < 1 || quantity > 20)
+            throw new Error('A current cart line and quantity from 1 to 20 are required.')
+          if (manualOperations === 0)
+            await revealReview(onAction)
+          let cart = machine.getCart()
+          while (cart.lines.find(current => current.id === lineId)!.quantity !== quantity) {
+            const before = cart.lines.find(current => current.id === lineId)!
+            const delta = quantity > before.quantity ? 1 : -1
+            const revision = machine.getRevisions().cart
+            cart = await applyControl(`調整${line.name}份數`, 'cart', { controlId: quantityStepControlId(lineId, delta > 0 ? 'increase' : 'decrease', true) }, () => {
+              if (revision !== machine.getRevisions().cart)
+                throw new Error('STALE_PLAN: The cart changed before the quantity click.')
+              const next = machine.setCartLineQuantity(lineId, before.quantity + delta)
+              options.onCartChange(next)
+              return next
+            }, onAction)
+          }
           return {
             cart,
             customerMessage: line ? `已將${line.name}調整為 ${quantity} 份。` : '已更新餐點數量。',
@@ -1727,9 +1894,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const line = machine.getCart().lines.find(candidate => candidate.id === lineId)
           const item = line && machine.getMenu().find(candidate => candidate.id === line.itemId)
           const value = item?.optionGroups.find(group => group.id === groupId)?.values.find(candidate => candidate.id === valueId)
-          await announce(`設定購物車餐點為${value?.label ?? '指定選項'}`, 'cart', {}, onAction)
-          const result = machine.setCartLineOption(lineId, groupId, valueId)
-          options.onCartChange(result.cart)
+          if (manualOperations === 0)
+            await revealReview(onAction)
+          const result = await applyControl(`設定購物車餐點為${value?.label ?? '指定選項'}`, 'cart', { controlId: cartOptionControlId(lineId, groupId, valueId) }, () => {
+            const next = machine.setCartLineOption(lineId, groupId, valueId)
+            options.onCartChange(next.cart)
+            return next
+          }, onAction)
           return {
             cart: result.cart,
             line: result.line,
@@ -1741,14 +1912,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (input.confirmedByUser !== true)
             throw new Error('Clearing the cart requires confirmedByUser: true.')
           options.checkout?.assertCanRestart()
-          await options.seating?.reset()
-          await announce('清空購物車', 'cart', {}, onAction)
-          const cart = machine.clearCart()
-          clearMealProgress()
-          options.checkout?.restart()
-          options.onCartChange(cart)
-          options.onMenuSelection(undefined)
-          options.onFulfillmentChange?.(undefined)
+          if (manualOperations === 0)
+            await revealReview(onAction)
+          const cart = await applyControl('清空購物車', 'cart', { controlId: 'cart:clear' }, async () => {
+            await options.seating?.reset()
+            const next = machine.clearCart()
+            clearMealProgress()
+            options.checkout?.restart()
+            options.onCartChange(next)
+            options.onMenuSelection(undefined)
+            options.onFulfillmentChange?.(undefined)
+            return next
+          }, onAction)
           return {
             cart,
             customerMessage: '已清空購物車。',
@@ -1777,19 +1952,18 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const revisions = currentFastPathRevisions()
           const label = fulfillmentModes.find(choice => choice.id === mode)!.label
           await revealReview(onAction)
-          await announce(`設定為${label}`, 'cart', {
-            controlId: fulfillmentControlId(mode),
+          const cart = await applyControl(`設定為${label}`, 'cart', { controlId: fulfillmentControlId(mode) }, async () => {
+            if (!revisionsMatch(revisions, currentFastPathRevisions()))
+              throw new Error('STALE_PLAN: The order changed during fulfillment presentation.')
+            if (mode === 'takeout')
+              await options.seating?.reset()
+            else
+              await options.seating?.refresh()
+            const next = machine.setFulfillmentMode(mode)
+            options.onFulfillmentChange?.(mode)
+            options.onCartChange(next)
+            return next
           }, onAction)
-          if (!revisionsMatch(revisions, currentFastPathRevisions()))
-            throw new Error('STALE_PLAN: The order changed during fulfillment presentation.')
-          // Do not release seats before the requested control is actually shown.
-          if (mode === 'takeout')
-            await options.seating?.reset()
-          else
-            await options.seating?.refresh()
-          const cart = machine.setFulfillmentMode(mode)
-          options.onFulfillmentChange?.(mode)
-          options.onCartChange(cart)
           return {
             cart,
             customerMessage: `已設為${label}。`,
@@ -1841,7 +2015,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const confirmed = context?.directSubmissionSupported && reviewed && reviewed.contextId === context.id && reviewed.cart === cartFingerprint(machine.getCart())
               && reviewed.questionId === waitingFor?.questionId && waitingFor && questionIsCurrent(waitingFor, currentFastPathRevisions(), Date.now())
             if (confirmed)
-              return await confirmTableOrder()
+              return await applyControl('送出訂單', undefined, { controlId: 'checkout:start' }, () => confirmTableOrder(), onAction)
             const fresh = options.serviceContext?.()
             if (!fresh?.table || !fresh.directSubmissionSupported)
               return { ok: false, customerMessage: '這份訂單無法直接送出。' }
@@ -1852,8 +2026,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             return { cart, customerMessage: `桌號 ${fresh.table.label.toUpperCase()}。目前訂單：${cart.lines.map(line => `${line.name} ${line.quantity} 份`).join('、')}。合計 ${cart.total}元。` }
           }
           await revealReview(onAction)
-          await announce('進入結帳', undefined, { controlId: 'checkout:start' }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).start()
+          const checkout = await applyControl('進入結帳', undefined, { controlId: 'checkout:start' }, () => checkoutControllerOrThrow(options.checkout).start(), onAction)
           const mode = fulfillmentModes.find(mode => mode.id === machine.getCart().fulfillmentMode)?.label
           const modeMessage = mode ? orderingMessages['zh-Hant'].checkout.retainedFulfillment.replace('{mode}', mode) : ''
           clearMealProgress()
@@ -1866,15 +2039,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_skip_membership': {
           if (input.confirmedByUser !== true)
             throw new Error('Skipping membership requires confirmedByUser: true.')
-          await announce('略過會員', undefined, { controlId: 'checkout:membership:skip' }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).skipMembership()
+          const checkout = await applyControl('略過會員', undefined, { controlId: 'checkout:membership:skip' }, () => checkoutControllerOrThrow(options.checkout).skipMembership(), onAction)
           return { checkout, customerMessage: '已略過會員，請選擇發票方式。' }
         }
         case 'checkout_choose_invoice': {
           const method = requiredInvoiceMethod(input)
           const label = { carrier: '手機載具', citizen: '自然人憑證', donation: '捐贈發票' }[method]
-          await announce(`選擇${label}`, undefined, { controlId: `checkout:invoice:${method}` }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).chooseInvoice(method)
+          const checkout = await applyControl(`選擇${label}`, undefined, { controlId: `checkout:invoice:${method}` }, () => checkoutControllerOrThrow(options.checkout).chooseInvoice(method), onAction)
           let customerMessage: string
           if (method === 'donation')
             customerMessage = '已選擇捐贈發票，請選擇付款方式。'
@@ -1888,16 +2059,14 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
         }
         case 'checkout_request_tax_id': {
-          await announce('輸入統編', undefined, { controlId: 'checkout:tax-id:request' }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).requestTaxId()
+          const checkout = await applyControl('輸入統編', undefined, { controlId: 'checkout:tax-id:request' }, () => checkoutControllerOrThrow(options.checkout).requestTaxId(), onAction)
           return { checkout, customerMessage: '已開啟統編輸入畫面。' }
         }
         case 'checkout_set_tax_id': {
           const taxId = requiredString(input, 'taxId')
           if (!/^\d{8}$/.test(taxId))
             throw new Error('taxId must contain exactly eight digits.')
-          await announce('帶入統編', undefined, { controlId: 'checkout:tax-id:value' }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).setTaxId(taxId)
+          const checkout = await applyControl('帶入統編', undefined, { controlId: 'checkout:tax-id:value', inputValue: taxId }, () => checkoutControllerOrThrow(options.checkout).setTaxId(taxId), onAction)
           return {
             checkout,
             customerMessage: `已帶入統編 ${taxId.split('').join(' ')}，請顧客確認畫面。`,
@@ -1907,8 +2076,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_confirm_invoice': {
           if (input.confirmedByUser !== true || options.checkout?.snapshot()?.stage !== 'invoice' || !invoiceDraftReady(options.checkout?.snapshot()))
             throw new Error(orderingMessages['zh-Hant'].checkout.invoiceDraftRequired)
-          await announce('確認發票資料', undefined, { controlId: 'checkout:invoice:confirm' }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).confirmInvoice()
+          const checkout = await applyControl('確認發票資料', undefined, { controlId: 'checkout:invoice:confirm' }, () => checkoutControllerOrThrow(options.checkout).confirmInvoice(), onAction)
           return { checkout, customerMessage: orderingMessages['zh-Hant'].checkout.invoiceConfirmed }
         }
         case 'checkout_confirm_tax_id': {
@@ -1916,14 +2084,12 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             throw new Error('Confirming a tax ID requires confirmedByUser: true.')
           if (options.checkout?.snapshot()?.stage !== 'tax-id' || !invoiceDraftReady(options.checkout.snapshot()))
             throw new Error(orderingMessages['zh-Hant'].checkout.invoiceDraftRequired)
-          await announce('確認統編', undefined, { controlId: 'checkout:tax-id:confirm' }, onAction)
-          const checkout = checkoutControllerOrThrow(options.checkout).confirmTaxId()
+          const checkout = await applyControl('確認統編', undefined, { controlId: 'checkout:tax-id:confirm' }, () => checkoutControllerOrThrow(options.checkout).confirmTaxId(), onAction)
           return { checkout, customerMessage: '已確認統編，請選擇付款方式。' }
         }
         case 'checkout_select_payment': {
           const method = requiredPaymentMethod(input)
-          await announce(`選擇${paymentLabels[method]}`, undefined, { controlId: `checkout:payment:${method}` }, onAction)
-          const payment = await checkoutControllerOrThrow(options.checkout).selectPayment(method)
+          const payment = await applyControl(`選擇${paymentLabels[method]}`, undefined, { controlId: `checkout:payment:${method}` }, () => checkoutControllerOrThrow(options.checkout).selectPayment(method), onAction)
           // Selection answers the method question and opens the scan step.
           // Actual authorization still requires customer payment completion.
           if (waitingFor?.purpose === 'payment-method')
@@ -1939,8 +2105,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         case 'checkout_cancel': {
           if (input.confirmedByUser !== true)
             throw new Error('Cancelling checkout requires confirmedByUser: true.')
-          await announce('取消結帳', undefined, { controlId: 'checkout:cancel' }, onAction)
-          await checkoutControllerOrThrow(options.checkout).cancel()
+          await applyControl('取消結帳', undefined, { controlId: 'checkout:cancel' }, () => checkoutControllerOrThrow(options.checkout).cancel(), onAction)
           return {
             cart: machine.getCart(),
             customerMessage: '已返回訂單內容，購物車仍保留。',
@@ -1984,7 +2149,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               options.onAgentControlChange?.(false)
               if (returnToMenu) {
                 try {
-                  await options.onMenuRequested?.()
+                  await leaveReview(onAction)
                 }
                 catch {
                   // Release succeeded and the cart receipt remains authoritative.
@@ -2054,7 +2219,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const context = currentFastPathContext()
           const checkout = options.checkout?.snapshot()
           const confirmation = confirmationSnapshot(context)
-          const active = confirmation ?? mealConfirmationSnapshot(context) ?? configurationSnapshot(context)
+          const navigation = navigationSnapshot(context)
+          const active = navigation ?? confirmation ?? mealConfirmationSnapshot(context) ?? configurationSnapshot(context)
           const phase = active?.phase ?? context.phase
           const question = active?.waitingFor ?? (context.waitingFor ? describeQuestion(context.waitingFor) : undefined)
           // A known target needs its original operation, not a second alias
@@ -2062,7 +2228,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const names = availableToolDefinitions().map(tool => tool.name).filter(name => !isKioskHostOnlyToolName(name) && name !== 'customer_skip_phone')
           const reads = ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'menu_open', 'menu_scroll', 'order_ask_question']
           let allowedToolNames = names
-          if (phase === 'customer_entry') {
+          if (navigation && !agentTask?.readOnly) {
+            allowedToolNames = names.filter(name => reads.includes(name) || ['order_answer_confirmation', 'order_cancel_request', 'order_add_item', 'menu_confirm_item'].includes(name))
+          }
+          else if (phase === 'customer_entry') {
             allowedToolNames = []
           }
           else if (confirmation && !agentTask?.readOnly) {
@@ -2137,7 +2306,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             // independently qualified browsing scope.
             allowedToolNames = allowedToolNames.filter(name => !['menu_recommend', 'menu_show_recommendations'].includes(name))
           }
-          if (!confirmation)
+          const canAnswerNavigation = navigation && pendingNavigation?.presented && pendingNavigation.taskId !== agentTask?.taskId
+          if (!confirmation && !canAnswerNavigation)
             allowedToolNames = allowedToolNames.filter(name => name !== 'order_answer_confirmation')
           if (!agentTask?.readOnly && mealClarification.canAnswer(context, agentTask?.taskId))
             allowedToolNames.push('order_answer_confirmation')
@@ -2229,6 +2399,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
 
           const context = currentFastPathContext()
+          const navigation = navigationSnapshot(context)
+          if (navigation)
+            return navigation
           const operationConfirmation = confirmationSnapshot(context)
           if (operationConfirmation)
             return operationConfirmation
@@ -2286,6 +2459,16 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const transcript = typeof input.transcript === 'string' ? input.transcript : ''
           let context = currentFastPathContext(transcript, typeof input.previousTranscript === 'string' ? input.previousTranscript : undefined, true)
           issuedFastPathContext = undefined
+          const navigation = navigationSnapshot(context)
+          if (navigation) {
+            const foreignMeal = context.productResolution.status === 'exact' && context.productResolution.count === 1 && !context.targetConstraints.itemIds.includes(pendingNavigation!.itemId)
+            if (!foreignMeal && input.newRequestQuestionId !== navigation.waitingFor.questionId)
+              return navigationSnapshot(context, true)!
+            pendingNavigation = undefined
+            // A new request has no authority to execute the deferred switch.
+            if (input.newRequestQuestionId === navigation.waitingFor.questionId)
+              input = { ...input, newRequestQuestionId: undefined }
+          }
           let interruptedQuestion: IssuedFastPathContext['interruptedQuestion']
           const confirmation = mealConfirmationSnapshot(context, input.newRequestQuestionId === undefined)
           const confirmedMeal = confirmation?.retainedRequests.find(request => request.status === 'confirming')
@@ -2391,6 +2574,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             await options.seating?.refresh()
           const candidateId = requiredString(input, 'candidateId')
           const currentContext = currentFastPathContext()
+          if (candidateId.startsWith('navigate:'))
+            return await answerNavigation(candidateId, onAction)
           if (candidateId.startsWith('inquire-meal:')) {
             const item = mealClarification.inquire(candidateId.slice('inquire-meal:'.length), currentContext)
             options.onClarificationChange?.(undefined)
@@ -2400,6 +2585,10 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const proposedItemId = mealClarification.progress(currentContext)?.itemId
             const plan = mealClarification.consume(candidateId, currentContext)
             options.onClarificationChange?.(undefined)
+            if (plan && 'kind' in plan) {
+              options.onClarificationChange?.(plan.question)
+              return { customerMessage: plan.question.question, pendingCustomerChoice: plan.question }
+            }
             if (plan)
               return await beginMeal(plan, onAction)
             // Rejecting the original recipe also retires that same unadded
@@ -2447,11 +2636,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
               pendingConfiguration = undefined
               mealClarification.clear()
               options.onClarificationChange?.(undefined)
-              // Retire the visible cancelled meal as well as its question.
-              // Earlier suspended meals stay answerable without opening another dialog.
-              options.onMenuSelection(undefined)
-              const resumed = await resumeMeal(onAction, false)
-              return { customerMessage: `已取消這筆尚未加入的餐點需求，購物車仍保留。${resumed?.question ?? ''}`, ...(resumed ? { pendingCustomerChoice: resumed } : {}) }
+              await closeMeal(String(pending.plan.slots.itemId), onAction)
+              return { customerMessage: '已取消這筆尚未加入的餐點需求，還想點什麼？' }
             }
             const choice = issued.choices.get(candidateId)
             if (!choice?.slots)
@@ -2464,6 +2650,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             const question = configurationQuestion(pending.plan, currentContext.menu, pending.id)
             if (question) {
               await revealItem(String(pending.plan.slots.itemId), onAction)
+              pending.plan.expectedRevisions.selectedItem = machine.getRevisions().selectedItem
               return { customerMessage: question.prompt, pendingConfiguration: { id: pending.id }, decisionTrace: { resolveIntent: { kind: 'CONFIGURATION', plan: pending.plan }, operationPlan: null, authorize: null } }
             }
             const operation = compileOperationPlan(pending.plan)
@@ -2767,6 +2954,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       throw new Error('This task only authorizes menu reads; order changes require a new customer request.')
     if (name === 'order_answer_confirmation') {
       const context = currentFastPathContext()
+      const navigation = navigationSnapshot(context)
+      if (navigation && pendingNavigation?.presented && pendingNavigation.taskId !== agentTask?.taskId && navigation.waitingFor.questionId === input.confirmationId && typeof input.confirmedByUser === 'boolean') {
+        const answer = navigationSnapshot(context, true)!
+        return await answerNavigation(answer.candidates[input.confirmedByUser ? 0 : 1]!.id)
+      }
       const meal = mealClarification.question(context)
       if (mealClarification.canAnswer(context, agentTask?.taskId) && meal?.questionId === input.confirmationId && typeof input.confirmedByUser === 'boolean') {
         const answerContext = deriveDecisionContext({ ...context, transcript: agentTask!.transcript })
@@ -2833,7 +3025,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           throw new Error('Replacement without a new serving count must retain the original quantity.')
       }
       const remaining = source.catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), agentTask.transcript)
-      if (item && !item.optionGroups.length && (mentionedIngredients(remaining).length || mentionedUnavailableConditions(remaining).length))
+      if (item && (unsupportedPreparation(item, remaining).length || (!item.optionGroups.length && (mentionedIngredients(remaining).length || mentionedUnavailableConditions(remaining).length))))
         return await invoke('menu_confirm_item', { itemId: item.id, originalRecipe: true, ...(input.replaceLineId ? { replaceLineId: input.replaceLineId } : {}) })
     }
     if (menuBrowsingToolNames.has(name) && agentTask && (agentTask.expiresAt <= Date.now() || agentTask.menuRevision !== machine.getRevisions().menu))
@@ -3283,6 +3475,23 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     confirmPaidOrder,
     confirmTableOrder,
     getQueryState,
+    /** Manual close revokes the rendered draft, never a later meal or a cart line. */
+    closeSelection(itemId: string) {
+      if (options.visibleItemId?.() !== itemId || agentTask)
+        return false
+      if (pendingConfiguration?.plan.slots.itemId === itemId)
+        pendingConfiguration = undefined
+      if (pendingNavigation?.itemId === itemId)
+        pendingNavigation = undefined
+      const proposal = mealClarification.progress(currentFastPathContext())
+      if (proposal?.itemId === itemId)
+        mealClarification.clear()
+      machine.clearSelection(itemId)
+      issuedFastPathContext = undefined
+      options.onClarificationChange?.(undefined)
+      options.onMenuSelection(undefined)
+      return true
+    },
     /** Touch-only removal binds to the rendered query revision, never model prose. */
     removeQueryCondition: async (condition: QueryCondition, revision: number) => {
       if (manualOperations)
@@ -3330,6 +3539,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     },
     reset,
     setMenu: (items: MenuItem[], revision?: string) => {
+      if (!machine.getCart().itemCount && pendingConfiguration && machine.getSelection()?.itemId === pendingConfiguration.plan.slots.itemId) {
+        // A catalog replacement invalidates an unadded draft, not a committed
+        // order. Retire its old option/price authority before loading the catalog.
+        machine.clearSelection(String(pendingConfiguration.plan.slots.itemId))
+        clearMealProgress()
+        options.onMenuSelection(undefined)
+      }
       machine.setMenu(items, revision)
       options.onQueryStateChange?.(getQueryState())
     },
@@ -3358,9 +3574,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
 
 function confirmationMessage(operation: OperationPlan, modes: readonly { id: FulfillmentMode, label: string }[]) {
   switch (operation.intent) {
-    case 'CLEAR_CART': return '要清空目前購物車嗎？請回答確認或取消。'
-    case 'CANCEL_CHECKOUT': return '要取消目前結帳並回到訂單嗎？請回答確認或取消。'
-    case 'SET_FULFILLMENT': return `需要先返回訂單才能改為${modes.find(mode => mode.id === operation.slots.mode)!.label}，要返回並更改嗎？請回答確認或取消。`
+    case 'CLEAR_CART': return '要清空目前購物車嗎？'
+    case 'CANCEL_CHECKOUT': return '要取消目前結帳並回到訂單嗎？'
+    case 'SET_FULFILLMENT': return `需要先返回訂單才能改為${modes.find(mode => mode.id === operation.slots.mode)!.label}，要返回並更改嗎？`
     default: return '請確認這項操作。'
   }
 }

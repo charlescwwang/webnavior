@@ -107,7 +107,7 @@ describe('fulfillment controls before Agent animation', () => {
     await expect.element(screen.getByText('購物車畫面')).toBeVisible()
     const result = await runtime.invoke('menu_open', {})
     await expect.element(screen.getByText('菜單畫面')).toBeVisible()
-    expect(result).toMatchObject({ customerMessage: '已回到菜單，購物車的餐點仍保留。' })
+    expect(result).toMatchObject({ customerMessage: '已回到全部菜單，接下來想看哪一道餐點？' })
     const after = await runtime.invoke('cart_get', { display: false }) as { cart: CartSnapshot }
     expect(after.cart).toEqual(before.cart)
   })

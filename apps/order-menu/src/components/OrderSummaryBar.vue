@@ -26,8 +26,7 @@ const emit = defineEmits<{
       class="order-summary-trigger"
       type="button"
       aria-label="查看訂單"
-      :disabled="itemCount === 0"
-      @click="itemCount > 0 && emit('open')"
+      @click="emit('open')"
     >
       <span class="order-summary-copy">
         <strong>購物車</strong>

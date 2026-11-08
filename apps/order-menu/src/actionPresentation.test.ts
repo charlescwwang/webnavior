@@ -87,7 +87,7 @@ describe('visible order actions', () => {
       onCartChange: () => {},
     })
     await runtime.invoke('order_set_fulfillment', { mode: 'dine-in' })
-    expect(events).toEqual(['review', 'cursor:order:fulfillment:dine-in'])
+    expect(events).toEqual(['cursor:order:fulfillment:dine-in'])
   })
 
   it('keeps the cart intact if the exact removal presentation fails', async () => {

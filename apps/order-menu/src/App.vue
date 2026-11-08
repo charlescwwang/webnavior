@@ -31,13 +31,14 @@ import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { usePaymentSelectionCountdown } from './composables/usePaymentSelectionCountdown'
 import { usePosCatalog } from './composables/usePosCatalog'
 import { continuationUrl } from './continuation'
+import { createControlExecution } from './controlExecution'
 import { beginCheckout, chooseInvoiceMethod, confirmInvoiceDetails, confirmInvoiceDraft, confirmTaxId, requestTaxId, returnToPreviousStep, setInvoiceDraft, setTaxIdDraft, skipMembership } from './domain/checkout-flow'
 import { defaultOptionsFor, ItemSelectionError } from './domain/order-machine'
 import { resolveExpectedHostOrigin } from './embedding-origin'
 import { connectInteractiveService } from './interactiveService'
 import { scrollViewport } from './menuScroll'
 import { createPayment, createPosBridgeGateway, getPayment, loadOrderingContext, paymentLabels, testPaymentMethods } from './pos-bridge'
-import { createMenuToolRuntime } from './webmcp'
+import { addItemControlId, cartOptionControlId, cartRemovalControlId, closeItemControlId, createMenuToolRuntime, optionControlId, quantityStepControlId } from './webmcp'
 
 // A deployment can lock the service to one approved host. Otherwise, a page
 // embedded by AIRI reads the browser-provided parent referrer origin, so local
@@ -154,6 +155,8 @@ const reviewLines = computed(() => cart.value.lines.map(line => ({
   name: line.name,
   options: optionLabel(line),
   quantity: line.quantity,
+  optionGroups: menuItems.value.find(item => item.id === line.itemId)?.optionGroups,
+  selectedOptions: line.options,
   total: currency(line.unitPrice * line.quantity),
 })))
 const cartSummaryLines = computed(() => cart.value.lines.map((line) => {
@@ -189,11 +192,12 @@ function setControlElement(id: string, element: Element | ComponentPublicInstanc
 // NOTICE: Agent movement is intentionally slower than ordinary UI animation.
 // Customers need enough time to see the target, understand the intended action,
 // and observe a press before state changes; otherwise automation feels erratic.
+let previousCursorControl: string | undefined
 const agentCursorTiming = {
-  dwellMs: 520,
-  maximumTravelMs: 1_150,
-  minimumTravelMs: 650,
-  pressMs: 180,
+  dwellMs: 180,
+  maximumTravelMs: 800,
+  minimumTravelMs: 360,
+  pressMs: 120,
   scrollSettleMs: 420,
   speedPixelsPerSecond: 720,
 } as const
@@ -262,15 +266,17 @@ async function animateAction(nextAction: AgentAction) {
   // Use the actual control center. The old top-biased offset pointed at the
   // image area of tall cards and missed compact dialog buttons.
   const targetPosition = { x: rect.left + rect.width * 0.5, y: rect.top + rect.height * 0.5 }
-  cursorTravelMs.value = travelDuration(cursorPosition.value, targetPosition)
+  const repeated = Boolean(nextAction.controlId && nextAction.controlId === previousCursorControl)
+  cursorTravelMs.value = repeated ? 0 : travelDuration(cursorPosition.value, targetPosition)
   cursorPhase.value = 'moving'
   cursorPosition.value = targetPosition
   await waitForAgentCursor(cursorTravelMs.value)
   cursorPhase.value = 'resting'
-  await waitForAgentCursor(agentCursorTiming.dwellMs)
+  await waitForAgentCursor(repeated ? 100 : agentCursorTiming.dwellMs)
+  previousCursorControl = nextAction.controlId
   cursorPhase.value = 'pressing'
-  // Show a press without dispatching a browser click. The owning tool applies
-  // the state change once this animation completes, avoiding duplicate writes.
+  // The control executor dispatches the real click after this visible press.
+  // Only its matching UI handler can apply the authorized action once.
   target.classList.remove('is-agent-target')
   void target.offsetWidth
   target.classList.add('is-agent-target')
@@ -295,6 +301,20 @@ watch(selectedItemId, async (itemId, previousId) => {
   if (!selectedItemId.value && !orderReviewOpen.value && !checkout.value)
     window.scrollTo({ left: position.x, top: position.y, behavior: 'instant' })
 })
+function resolveControl(id: string) {
+  const item = selectedItem.value
+  if (item && !orderReviewOpen.value && !checkout.value) {
+    // The menu remains mounted behind the teleported dialog. Its controls
+    // have rectangles but cannot be treated as visible click targets.
+    const dialogControls = [closeItemControlId(item.id), addItemControlId(item.id), quantityStepControlId(item.id, 'increase'), quantityStepControlId(item.id, 'decrease'), ...item.optionGroups.flatMap(group => group.values.map(value => optionControlId(item.id, group.id, value.id)))]
+    if (!dialogControls.includes(id))
+      return undefined
+  }
+  return controlElements.get(id) ?? (id.startsWith('item:') ? cardElements.get(id.slice(5))?.querySelector<HTMLButtonElement>('button') ?? undefined : undefined)
+}
+
+const controlExecution = createControlExecution({ animate: animateAction, resolve: resolveControl })
+
 const runtime = createMenuToolRuntime({
   testing: import.meta.env.DEV,
   onMenuChanged: (items) => {
@@ -349,6 +369,7 @@ const runtime = createMenuToolRuntime({
   gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => undefined, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
   menu: [],
   onAction: animateAction,
+  onControl: (action, apply) => controlExecution.execute(action, apply),
   onReviewRequested: async () => {
     // A cart read must not replace a live checkout/payment screen.
     if (checkout.value || completedOrderId.value)
@@ -415,6 +436,16 @@ const runtime = createMenuToolRuntime({
     await waitForAgentCursor(16)
   },
 })
+
+function closeSelectedItem() {
+  const itemId = selectedItemId.value
+  if (itemId)
+    return controlExecution.handle(closeItemControlId(itemId), () => runtime.closeSelection(itemId))
+}
+
+function openOrderReview() {
+  return controlExecution.handle('order:view', () => invoke('cart_get', { display: true }, { animate: false }))
+}
 
 async function invoke(name: MenuToolName, args: Record<string, unknown> = {}, options: { animate?: boolean } = {}) {
   return await runtime.invokeManual(name, args, options.animate === false ? () => {} : undefined)
@@ -524,22 +555,34 @@ function handleMenuPointerDown() {
 }
 
 function updateQuantity(itemId: string, quantity: number) {
-  quantities[itemId] = quantity
+  const direction = quantity > (quantities[itemId] ?? 1) ? 'increase' : 'decrease'
+  return controlExecution.handle(quantityStepControlId(itemId, direction), () => {
+    quantities[itemId] = quantity
+  })
 }
 
 function updateOption(itemId: string, groupId: string, valueId: string) {
-  selectedOptionsByItem[itemId] = {
-    ...selectedOptionsByItem[itemId],
-    [groupId]: valueId,
-  }
+  return controlExecution.handle(optionControlId(itemId, groupId, valueId), () => {
+    selectedOptionsByItem[itemId] = { ...selectedOptionsByItem[itemId], [groupId]: valueId }
+  })
 }
 
 async function updateCartLineQuantity(lineId: string, quantity: number) {
-  await invoke('cart_set_line_quantity', { lineId, quantity }, { animate: false })
+  const line = cart.value.lines.find(line => line.id === lineId)
+  const direction = quantity > (line?.quantity ?? 1) ? 'increase' : 'decrease'
+  return controlExecution.handle(quantityStepControlId(lineId, direction, true), () => invoke('cart_set_line_quantity', { lineId, quantity }, { animate: false }))
 }
 
 async function removeCartLine(lineId: string) {
-  await invoke('cart_remove_item', { lineId }, { animate: false })
+  return controlExecution.handle(cartRemovalControlId(lineId), () => invoke('cart_remove_item', { lineId }, { animate: false }))
+}
+
+function clearVisibleCart() {
+  return controlExecution.handle('cart:clear', () => invoke('cart_clear', { confirmedByUser: true }, { animate: false }))
+}
+
+function updateCartOption(lineId: string, groupId: string, valueId: string) {
+  return controlExecution.handle(cartOptionControlId(lineId, groupId, valueId), () => invoke('cart_set_line_option', { lineId, groupId, valueId }, { animate: false }))
 }
 
 async function confirmVisibleOrder() {
@@ -834,20 +877,24 @@ async function addItem(itemId: string) {
 }
 
 async function openItem(itemId: string) {
-  try {
-    menuInteractionMessage.value = undefined
-    await invoke('menu_select_item', { itemId }, { animate: false })
-  }
-  catch (error) {
-    if (!(error instanceof ItemSelectionError))
-      throw error
-    menuInteractionMessage.value = error.message
-  }
+  return controlExecution.handle(`item:${itemId}`, async () => {
+    try {
+      menuInteractionMessage.value = undefined
+      await invoke('menu_select_item', { itemId }, { animate: false })
+    }
+    catch (error) {
+      if (!(error instanceof ItemSelectionError))
+        throw error
+      menuInteractionMessage.value = error.message
+    }
+  })
 }
 
 async function addSelectedItem(itemId: string) {
-  await addItem(itemId)
-  selectedItemId.value = undefined
+  return controlExecution.handle(addItemControlId(itemId), async () => {
+    await addItem(itemId)
+    selectedItemId.value = undefined
+  })
 }
 
 function optionLabel(line: CartSnapshot['lines'][number]) {
@@ -890,6 +937,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   menuUnmounted = true
+  controlExecution.dispose()
   disconnectService?.()
   disconnectService = undefined
   if (cartUpdateTimer)
@@ -915,23 +963,23 @@ onUnmounted(() => {
       :checkout="checkout"
       :locked="agentControlsOrder"
       :total="currency(cart.total)"
-      @back="backCheckout"
-      @choose="chooseInvoice"
+      @back="controlExecution.handle('checkout:cancel', backCheckout)"
+      @choose="method => controlExecution.handle(`checkout:invoice:${method}`, () => chooseInvoice(method))"
       @draft="(method, code) => { if (checkout) checkout = setInvoiceDraft(checkout, method, code) }"
-      @details="(method, code) => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) }"
-      @tax-id="openTaxId"
+      @details="(method, code) => controlExecution.handle('checkout:invoice:confirm', () => { if (checkout) checkout = confirmInvoiceDetails(checkout, method, code) })"
+      @tax-id="controlExecution.handle('checkout:tax-id:request', openTaxId)"
       @register-control="setControlElement"
     />
     <CheckoutTaxId
       v-else-if="checkout?.stage === 'tax-id'"
       :tax-id="checkout.taxId ?? ''"
       :locked="agentControlsOrder"
-      @back="backCheckout"
-      @confirm="confirmTaxIdNumber"
-      @update-tax-id="updateTaxId"
+      @back="controlExecution.handle('checkout:cancel', backCheckout)"
+      @confirm="controlExecution.handle('checkout:tax-id:confirm', confirmTaxIdNumber)"
+      @update-tax-id="value => controlExecution.handle('checkout:tax-id:value', () => updateTaxId(value))"
       @register-control="setControlElement"
-      @cancel="cancelCheckout"
-      @donation="chooseInvoice('donation')"
+      @cancel="controlExecution.handle('checkout:cancel', cancelCheckout)"
+      @donation="controlExecution.handle('checkout:invoice:donation', () => chooseInvoice('donation'))"
     />
     <CheckoutPayment
       v-else-if="checkout?.stage === 'payment'"
@@ -940,12 +988,12 @@ onUnmounted(() => {
       :status="paymentStatus"
       :selection-seconds="paymentSelectionSeconds"
       :total="currency(cart.total)"
-      @back="backCheckout"
+      @back="controlExecution.handle('checkout:cancel', backCheckout)"
       @change-method="() => { assertCanRestart(); resetPaymentAttempt() }"
-      @select="selectPayment"
+      @select="method => controlExecution.handle(`checkout:payment:${method}`, () => selectPayment(method))"
       @simulate="simulatePayment"
       @register-control="setControlElement"
-      @cancel="cancelCheckout"
+      @cancel="controlExecution.handle('checkout:cancel', cancelCheckout)"
     />
     <OrderReview
       v-else-if="orderReviewOpen"
@@ -960,11 +1008,13 @@ onUnmounted(() => {
       :order-status="orderStatus"
       :submission-status="submissionStatus"
       :total="currency(cart.total)"
-      @back="orderReviewOpen = false"
-      @checkout="confirmVisibleOrder"
+      @back="controlExecution.handle('order:back', () => { orderReviewOpen = false })"
+      @checkout="controlExecution.handle('checkout:start', confirmVisibleOrder)"
       @remove="removeCartLine"
+      @clear="clearVisibleCart"
+      @update-option="updateCartOption"
       @register-control="setControlElement"
-      @set-fulfillment="setFulfillmentMode"
+      @set-fulfillment="mode => controlExecution.handle(`order:fulfillment:${mode}`, () => setFulfillmentMode(mode))"
       @update-quantity="updateCartLineQuantity"
     >
       <template #continuation>
@@ -980,7 +1030,7 @@ onUnmounted(() => {
           <button :class="['category-button', { 'is-selected': activeCategory === recommendedCategoryId }]" type="button" :disabled="recommendedItems.length === 0" @click="selectPresentationSubject(undefined)">
             {{ presentationNavigationLabel }} <span>{{ presentationItemCount }}</span>
           </button>
-          <button :class="['category-button', { 'is-selected': !activeCategory }]" type="button" @click="activeCategory = undefined">
+          <button :ref="element => setControlElement('menu:all', element)" :class="['category-button', { 'is-selected': !activeCategory }]" type="button" @click="controlExecution.handle('menu:all', () => { activeCategory = undefined })">
             全部 <span>{{ menuItems.length }}</span>
           </button>
           <button v-for="category in categories" :key="category" :class="['category-button', { 'is-selected': activeCategory === category }]" type="button" @click="activeCategory = category">
@@ -1031,14 +1081,14 @@ onUnmounted(() => {
         :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1"
         :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}"
         @add="addSelectedItem"
-        @close="selectedItemId = undefined"
+        @close="closeSelectedItem"
         @register-control="setControlElement"
         @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)"
         @update-quantity="quantity => selectedItem && updateQuantity(selectedItem.id, quantity)"
       />
 
       <div :ref="element => setCardElement('cart', element)" :class="['order-summary-container', { 'is-updated': cartUpdated, 'is-targeted': cursorTargetId === 'cart' }]">
-        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="invoke('cart_get', { display: true }, { animate: false })" @register-control="setControlElement" />
+        <OrderSummaryBar :item-count="cart.itemCount" :lines="cartSummaryLines" :total="currency(cart.total)" @open="openOrderReview" @register-control="setControlElement" />
       </div>
     </template>
 

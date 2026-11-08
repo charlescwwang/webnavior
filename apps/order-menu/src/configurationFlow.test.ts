@@ -62,26 +62,20 @@ describe('required order configuration', () => {
   })
 
   // Report: this chat, 2026-10-21 — close the completed dialog and keep browsing.
-  it('retains a suspended meal question without reopening its dialog after another meal is added', async () => {
+  it('does not restore an old quantity question after another meal is added', async () => {
     const catalog = await configuredCatalog()
     let visibleItemId: string | undefined
-    const runtime = createMenuToolRuntime({
-      menu: catalog.items.map(item => ({ ...item, optionGroups: [] })),
-      onAction: () => {},
-      onCartChange: () => {},
-      onMenuSelection: (id) => { visibleItemId = id },
-    })
+    const runtime = createMenuToolRuntime({ menu: catalog.items.map(item => ({ ...item, optionGroups: [] })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: id => visibleItemId = id })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
     await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
     const interrupted = await runtime.invoke('kiosk_fast_path_context', { transcript: '我要一份水餃' })
     expect(interrupted).toMatchObject({ phase: 'ordering' })
     const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
-    expect(result).toMatchObject({ cart: { itemCount: 1 }, pendingCustomerChoice: { question: '請問紅燒牛肉麵要幾份？' } })
+    expect(result).toMatchObject({ cart: { itemCount: 1 }, pendingCustomerChoice: { purpose: 'fulfillment' } })
     expect(visibleItemId).toBeUndefined()
     const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' }) as { candidates: Array<{ id: string, description: string }> }
-    const choice = answer.candidates.find(candidate => candidate.description.includes('2 份'))!
-    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: choice.id })).toMatchObject({ cart: { itemCount: 3 } })
-    expect(visibleItemId).toBeUndefined()
+    expect(answer.candidates.some(candidate => candidate.id.startsWith('configure:'))).toBe(false)
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
   })
 
   it('corrects an unadded meal into an availability inquiry without reviving its quantity question', async () => {
@@ -249,7 +243,7 @@ describe('required order configuration', () => {
     expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '有蝦蝦捲嗎？' })).toMatchObject({ productResolution: { status: 'possible', count: 1 } })
     expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', searchInterpretation: 'product', ingredientFilters: { includeIngredients: [], excludeIngredients: [] } })).toMatchObject({
       items: [{ id: 'signature-shrimp-roll-bento' }],
-      decisionTrace: { operationPlan: { input: { query: '蝦捲招牌便當' } } },
+      decisionTrace: { operationPlan: { input: { query: '周氏蝦捲招牌便當' } } },
     })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })

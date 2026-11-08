@@ -12,6 +12,20 @@ const dishes = [
   { ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [] },
 ]
 
+// Report: this chat, Nov08; generalization must distinguish a decrement from an absolute count.
+it.each([
+  { item: { ...dishes[0]!, id: 'rice', name: '雞肉飯', category: '飯', price: 95 }, speech: '少一份', expected: 3 },
+  { item: { ...dishes[1]!, id: 'noodles', name: '蔬菜麵', category: '麵', price: 120 }, speech: '減兩份', expected: 2 },
+  { item: { ...dishes[0]!, id: 'rice', name: '雞肉飯', category: '飯', price: 95 }, speech: '改成一份', expected: 1 },
+  { item: { ...dishes[1]!, id: 'noodles', name: '蔬菜麵', category: '麵', price: 120 }, speech: '多一份', expected: 5 },
+])('resolves $speech against the current quantity of $item.name', async ({ item, speech, expected }) => {
+  const runtime = createMenuToolRuntime({ menu: [item], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId: item.id, quantity: 4 })
+  await runtime.invoke('kiosk_fast_path_context', { transcript: `${item.name}${speech}` })
+  await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:set-quantity' })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: expected, lines: [{ itemId: item.id, quantity: expected }] } })
+})
+
 describe('cart meal-change diagnosis', () => {
   it('keeps a host-bound menu inquiry read-only until the next customer task', async () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })

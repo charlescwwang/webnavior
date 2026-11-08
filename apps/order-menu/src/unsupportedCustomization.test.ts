@@ -3,16 +3,45 @@ import { expect, it } from 'vitest'
 import { menu } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
+// Report: this chat, Nov08; unrelated size options do not authorize spice/ingredient edits.
+it.each(['蒜', '香菜'])('does not let Main overlook an unavailable adjustment when another option exists: %s', async (adjustment) => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'meal', name: '菇菇飯', aliases: [], optionGroups: [{ id: 'size', label: '份量', required: true, values: [{ id: 'small', label: '小份', priceDelta: 0 }] }] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'partial', transcript: `菇菇飯兩份不要${adjustment}`, expectedMenuRevision: 0, constraints: {} })
+  const result = await runtime.invokeForAgent('order_add_item', { itemId: 'meal', quantity: 2, options: [{ groupId: 'size', valueId: 'small' }] })
+  expect(result).toMatchObject({ pendingCustomerChoice: { question: `這道餐點不提供${adjustment}調整，還要點嗎？` } })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
 interface Snapshot {
   waitingFor: { question: string, choices: Array<{ id: string }> }
 }
+
+// Report: this chat, Nov08 — a missing dish must be resolved before preparation requests.
+it.each([
+  { id: 'noodles', name: '鱔魚炒麵', request: '鱔魚意麵兩份不要辣不要香菜' },
+  { id: 'rice', name: '香菇雞飯', request: '香菇雞便當兩份不要蒜' },
+])('confirms the alternative identity before its unsupported preparation: $name', async ({ id, name, request }) => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id, name, aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'identity-first', transcript: request, expectedMenuRevision: 0, constraints: {} })
+  const identity = await runtime.invokeForAgent('menu_confirm_item', { itemId: id }) as { pendingCustomerChoice: Snapshot['waitingFor'] }
+  expect(identity.pendingCustomerChoice.question).toContain(name)
+  expect(identity.pendingCustomerChoice.question).not.toContain('客製')
+  await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'identity-first' })
+  const yes = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as Snapshot
+  const preparation = await runtime.invoke('kiosk_fast_path_execute', { candidateId: yes.waitingFor.choices[0]!.id })
+  expect(preparation).toMatchObject({ pendingCustomerChoice: { question: '這道餐點不提供客製化，還要點嗎？' } })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+  const accepted = await runtime.invoke('kiosk_fast_path_context', { transcript: '好' }) as Snapshot
+  await runtime.invoke('kiosk_fast_path_execute', { candidateId: accepted.waitingFor.choices[0]!.id })
+  expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2, lines: [{ itemId: id, quantity: 2 }] } })
+})
 
 // Report: this chat, Nov5; unsupported removals require consent to the original dish.
 it.each(['不要辣', '不要蔥'])('confirms the original dish before adding: %s', async (request) => {
   const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'bento', name: '排骨便當', aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'custom', transcript: `排骨便當兩份，${request}`, expectedMenuRevision: 0, constraints: {} })
   const proposed = await runtime.invokeForAgent('menu_confirm_item', { itemId: 'bento', originalRecipe: true }) as { pendingCustomerChoice: Snapshot['waitingFor'] }
-  expect(proposed.pendingCustomerChoice.question).toBe('這道目前沒辦法調整做法，請問您要加入2份排骨便當嗎？')
+  expect(proposed.pendingCustomerChoice.question).toBe('這道餐點不提供客製化，還要點嗎？')
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'custom' })
   const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '好' }) as Snapshot
@@ -48,7 +77,7 @@ it('cancels the original-recipe proposal without removing existing cart items', 
 it('asks the missing quantity after accepting an original recipe, without guessing one', async () => {
   const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'bento', name: '排骨便當', aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'custom', transcript: '我要排骨便當，不要辣', expectedMenuRevision: 0, constraints: {} })
-  expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'bento', originalRecipe: true })).toMatchObject({ pendingCustomerChoice: { question: '這道目前沒辦法調整做法，請問您要加入排骨便當嗎？' } })
+  expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'bento', originalRecipe: true })).toMatchObject({ pendingCustomerChoice: { question: '這道餐點不提供客製化，還要點嗎？' } })
   await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'custom' })
   const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '好' }) as Snapshot
   await runtime.invoke('kiosk_fast_path_execute', { candidateId: answer.waitingFor.choices[0]!.id })
@@ -86,7 +115,7 @@ it.each([true, false])('handles a preparation request while answering a missing 
   expect(context.allowedToolNames).toContain('menu_confirm_item')
   expect(context.allowedToolNames).not.toContain('menu_recommend')
   const proposal = await runtime.invokeForAgent('menu_confirm_item', { itemId: 'bento', originalRecipe: true }) as { pendingCustomerChoice: { questionId: string, question: string } }
-  expect(proposal.pendingCustomerChoice.question).toContain('2份排骨便當')
+  expect(proposal.pendingCustomerChoice.question).toBe('這道餐點不提供客製化，還要點嗎？')
   await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'custom' })
   const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: accept ? '好' : '不要了' }) as Snapshot
   await runtime.invoke('kiosk_fast_path_execute', { candidateId: answer.waitingFor.choices[accept ? 0 : 1]!.id })
@@ -117,6 +146,6 @@ it.each(['紅燒牛肉麵', '排骨便當', '水餃'])('asks about adding the na
   const selected = await runtime.invoke('menu_select_item', { itemId: 'dish' })
   expect(selected).not.toHaveProperty('customerMessage')
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'custom', transcript: `我要${name}，不要蔥`, expectedMenuRevision: 0, constraints: {} })
-  expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'dish', originalRecipe: true })).toMatchObject({ pendingCustomerChoice: { question: `這道目前沒辦法調整做法，請問您要加入${name}嗎？` } })
+  expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'dish', originalRecipe: true })).toMatchObject({ pendingCustomerChoice: { question: '這道餐點不提供客製化，還要點嗎？' } })
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
 })

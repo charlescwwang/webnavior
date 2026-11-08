@@ -155,8 +155,8 @@ it('guides quantity entry only for one available exact meal without adding it', 
     { ...menu[0]!, id: 'available', name: '可點餐點', available: true, aliases: [] },
     { ...menu[0]!, id: 'sold-out', name: '售完餐點', available: false, aliases: [] },
   ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-  expect(await runtime.invoke('menu_get', { query: '可點餐點', display: false })).toHaveProperty('customerMessage', expect.stringContaining('請告訴我要幾份'))
-  expect(await runtime.invoke('menu_get', { query: '售完餐點', display: false })).toHaveProperty('customerMessage', expect.not.stringContaining('請告訴我要幾份'))
-  expect(await runtime.invoke('menu_get', { queries: ['可點餐點', '售完餐點'], display: false })).toHaveProperty('customerMessage', expect.not.stringContaining('請告訴我要幾份'))
+  expect(await runtime.invoke('menu_get', { query: '可點餐點', display: false })).toHaveProperty('customerMessage', expect.stringContaining('要點幾份'))
+  expect(await runtime.invoke('menu_get', { query: '售完餐點', display: false })).toHaveProperty('customerMessage', expect.not.stringContaining('要點幾份'))
+  expect(await runtime.invoke('menu_get', { queries: ['可點餐點', '售完餐點'], display: false })).toHaveProperty('customerMessage', expect.not.stringContaining('要點幾份'))
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })

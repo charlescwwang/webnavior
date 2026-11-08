@@ -720,7 +720,7 @@ describe('createMenuToolRuntime', () => {
         label: '設定為不附嫩薑',
         targetId: 'chous-shrimp-roll',
       },
-      { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
+      { controlId: 'item:quantity:chous-shrimp-roll:increase', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
       { controlId: 'chous-shrimp-roll:add', label: '加入購物車', targetId: 'chous-shrimp-roll' },
     ])
     expect(menuSelections).toEqual(['chous-shrimp-roll', undefined])
@@ -820,7 +820,7 @@ describe('createMenuToolRuntime', () => {
         label: '設定為不附嫩薑',
         targetId: 'chous-shrimp-roll',
       },
-      { controlId: 'chous-shrimp-roll:quantity', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
+      { controlId: 'item:quantity:chous-shrimp-roll:increase', label: '設定數量為 2', targetId: 'chous-shrimp-roll' },
       { controlId: 'chous-shrimp-roll:add', label: '加入購物車', targetId: 'chous-shrimp-roll' },
       { controlId: 'order:view', label: '查看訂單', targetId: 'cart' },
       { controlId: 'order:fulfillment:takeout', label: '設定為自取', targetId: 'cart' },
