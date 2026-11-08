@@ -82,6 +82,7 @@ import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
 import { createKioskRoutes } from './routes/kiosk'
 import { createKioskCharacterAssetRoutes } from './routes/kiosk/character-assets'
+import { loadLocalAdminPin } from './routes/kiosk/localAdmin'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -154,6 +155,7 @@ interface AppDeps {
 
 export async function buildApp(deps: AppDeps) {
   const logger = useLogger('app').useGlobalConfig()
+  const localAdminPin = await loadLocalAdminPin(deps.env.KIOSK_ADMIN_PIN, deps.env.KIOSK_ADMIN_PIN_FILE)
   const kioskMediaService = createKioskMediaService(deps.db, join(deps.env.WEBNAVIOR_KIOSK_ASSET_DIR, 'visitor-media'))
   const trustedCors = cors({
     origin: origin => getTrustedOrigin(origin, deps.env.ADDITIONAL_TRUSTED_ORIGINS),
@@ -435,6 +437,7 @@ export async function buildApp(deps: AppDeps) {
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
       apiOrigin: new URL(deps.env.API_SERVER_URL).origin,
+      localAdmin: { pin: localAdminPin, secret: deps.env.BETTER_AUTH_SECRET },
       posGateway: createKioskPosGateway(deps.env.KIOSK_POS_BRIDGE_URL ?? 'http://127.0.0.1:5170/'),
       toolTraceObserver: process.env.NODE_ENV !== 'production'
         ? { record: input => console.info('[kiosk-tools]', input) }

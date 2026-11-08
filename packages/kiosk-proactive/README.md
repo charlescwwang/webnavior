@@ -45,6 +45,6 @@ qualify a greeting; it does not infer a group count from a single pose.
 
 The shared initial greeting dwell is 300 ms, measured from the first qualifying
 observation. Device defaults derive it from the same interaction policy. Existing
-administrator or delegated local dwell overrides retain precedence. This does
+device dwell overrides shared by both editors retain precedence. This does
 not change observation cadence or enable greetings, and it is not a guarantee
 that audio begins 300 ms after a person enters the camera view.

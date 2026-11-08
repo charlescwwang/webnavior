@@ -1,17 +1,19 @@
+localAccess: 輸入現場管理員 PIN 後，即可儲存這台裝置的設定，無需登入後台帳號。
+verifyPin: 重新驗證 PIN
+savePinRequired: 尚未儲存：現場管理授權已失效，請重新輸入 PIN 後再按儲存。目前修改仍保留在此畫面。
+saveLocalForbidden: 尚未儲存：無法取得這台裝置的設定權限，請確認裝置連線與配對狀態。
 title: 裝置設定
-description: 設定儲存在 Server，僅影響這台設備。取消覆寫即可繼承後台或店別值。設備在線時，遠端變更會在 15 秒內同步。
-override: 覆寫
+description: 直接修改後按「儲存設定」，即可更新這台設備的前後台共用設定；未儲存的修改不會被遠端更新覆蓋。
 effective: 目前生效值
-delegate: 允許現場調整
-revoke: 清除現場覆寫
-locked: 後台已鎖定
 save: 儲存設定
 reload: 重新載入設定
 saved: 設定已儲存。
+saveLoginRequired: 尚未儲存：請先登入管理員帳號，再回來儲存設定。目前修改仍保留在此畫面。
+saveForbidden: 尚未儲存：目前帳號沒有這台裝置的管理權限，請使用有權限的管理員帳號。
 failed: 無法載入或儲存設定，請確認連線與操作權限。
 conflict: 其他操作人已更新設定；已保留您的草稿，請重新載入後再儲存。
 login: 登入店別管理者帳號
-loginRequired: 請先透過管理頁登入，再回到此處儲存。僅能修改這台設備已被授權的欄位。
+loginRequired: 儲存需要登入店別管理者帳號，所有裝置設定均可在此調整，無需後台逐項授權。
 fields:
   textOnlyMode: 純文字模式
   serviceMode: 服務模式
@@ -48,9 +50,7 @@ fieldDescriptions:
 vad:
   title: Silero 語音偵測
   description: 控制何時開始錄音、何時結束一段語句，以及送往語音辨識前保留的前後音訊。
-  override: 覆寫店別預設設定
   effective: 目前生效設定：
-  delegate: 允許現場調整整組語音偵測設定
   summary: 門檻 {threshold}、最短語音 {minSpeechDurationMs} ms、最長語音 {maxSpeechDurationS} 秒、靜音結束 {minSilenceDurationMs} ms、前後保留 {speechPadMs} ms
   fields:
     threshold: 語音門檻（VAD）

@@ -13,7 +13,7 @@ const device: KioskDevice = { id: 'text-device', label: 'Text Kiosk', registrati
 const profile: KioskProfile = { name: 'ordering', releaseId: 'release', snapshot: { assistanceReminderPrompt: '', agentInstructions: '', characterName: 'helper', greetingPrompt: '', interactiveService: { id: 'menu', title: 'Menu', description: '', url: 'https://ordering.test' }, surveyUrl: '', version: 1, voiceConversationOnly: true } }
 
 function snapshot(textOnlyMode: boolean, version = 1): DeviceSettingsSnapshot {
-  return { deviceId: device.id, defaults: { ...defaultDeviceSettingsValues }, effective: { ...defaultDeviceSettingsValues, textOnlyMode }, settings: { ...defaultDeviceSettings, version, overrides: { textOnlyMode }, localControls: [], localOverrides: {} } }
+  return { deviceId: device.id, defaults: { ...defaultDeviceSettingsValues }, effective: { ...defaultDeviceSettingsValues, textOnlyMode }, settings: { ...defaultDeviceSettings, version, overrides: { textOnlyMode } } }
 }
 
 function setup(read: () => Promise<Response>) {

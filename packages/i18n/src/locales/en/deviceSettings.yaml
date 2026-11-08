@@ -1,17 +1,19 @@
+localAccess: Enter the local administrator PIN to save this device’s settings. No management account is required.
+verifyPin: Verify PIN again
+savePinRequired: 'Not saved: local access has expired. Enter the PIN again, then save. Your changes remain in this view.'
+saveLocalForbidden: 'Not saved: this device cannot change settings. Check its connection and enrollment.'
 title: Device settings
-description: Settings are saved on the server for this device. Clear an override to inherit the administrator or site value. Remote changes synchronize within 15 seconds while the kiosk is online.
-override: Override
+description: Edit values and select Save settings to update this device in both editors. Remote updates do not replace unsaved changes.
 effective: Current effective value
-delegate: Allow local adjustment
-revoke: Clear local override
-locked: Locked by administrator
 save: Save settings
 reload: Reload settings
 saved: Settings saved.
+saveLoginRequired: 'Not saved: sign in as an administrator, then return to save. Your changes remain in this view.'
+saveForbidden: 'Not saved: this account cannot manage this device. Use an authorized administrator account.'
 failed: Could not load or save settings. Check your connection and permissions.
 conflict: Another operator changed these settings. Reload before saving; your draft has been kept.
 login: Sign in as a site operator
-loginRequired: Sign in through the management page, then return here to save. Only delegated fields on this device can be changed.
+loginRequired: Sign in as a site operator to save. All device settings can be edited here without per-field delegation.
 fields:
   textOnlyMode: Text-only mode
   serviceMode: Service mode
@@ -48,9 +50,7 @@ fieldDescriptions:
 vad:
   title: Silero voice detection
   description: Controls when recording starts and ends, and how much audio is retained around an utterance before transcription.
-  override: Override the Site default
   effective: 'Current effective setting:'
-  delegate: Allow on-site adjustment of all voice detection settings
   summary: Threshold {threshold}; minimum speech {minSpeechDurationMs} ms; maximum speech {maxSpeechDurationS} s; end after {minSilenceDurationMs} ms of silence; padding {speechPadMs} ms
   fields:
     threshold: Speech threshold

@@ -1,9 +1,14 @@
 import type { DeviceSettingsValues } from '@proj-airi/kiosk-proactive'
 
-import { deviceSettingKeys } from '@proj-airi/kiosk-proactive'
-import { array, boolean, integer, maxValue, minValue, number, optional, partial, picklist, pipe, safeParse, strictObject } from 'valibot'
+import { boolean, integer, maxValue, minValue, number, partial, picklist, pipe, safeParse, strictObject } from 'valibot'
 
 import { createBadRequestError } from '../../../utils/error'
+
+/** PIN principals are device-scoped; management/account writes retain role checks. */
+export type DeviceSettingsUpdate = { deviceId: string, siteId: string, body: unknown } & (
+  | { source: 'admin' | 'local', userId: string }
+  | { source: 'local-pin', deviceCredential: string }
+)
 
 const duration = pipe(number(), integer(), minValue(0), maxValue(600000))
 const fraction = pipe(number(), minValue(0), maxValue(1))
@@ -41,13 +46,7 @@ const overrides = partial(strictObject({
 }))
 const version = pipe(number(), integer(), minValue(1))
 
-export const localDeviceSettingsSchema = strictObject({ version, overrides })
-export const adminDeviceSettingsSchema = strictObject({
-  version,
-  overrides,
-  localControls: array(picklist(deviceSettingKeys)),
-  clearLocalOverrides: optional(array(picklist(deviceSettingKeys)), []),
-})
+const deviceSettingsSchema = strictObject({ version, overrides })
 
 /** Also check the resolved rectangle: individually valid overrides may exceed its bounds. */
 export function assertDetectionZone(values: DeviceSettingsValues) {
@@ -55,9 +54,9 @@ export function assertDetectionZone(values: DeviceSettingsValues) {
     throw createBadRequestError('Detection zone must stay inside the camera image', 'INVALID_REQUEST')
 }
 
-/** Strict input parsing rejects unknown fields, including forged delegation in local requests. */
-export function parseSettingsChange(source: 'admin' | 'local', body: unknown) {
-  const result = safeParse(source === 'admin' ? adminDeviceSettingsSchema : localDeviceSettingsSchema, body)
+/** Both editors use the same strict write contract; authorization is checked by the service. */
+export function parseSettingsChange(body: unknown) {
+  const result = safeParse(deviceSettingsSchema, body)
   if (!result.success)
     throw createBadRequestError('Invalid device settings', 'INVALID_REQUEST', result.issues)
   return result.output

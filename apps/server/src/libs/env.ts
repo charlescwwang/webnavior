@@ -134,6 +134,9 @@ const EnvSchema = object({
 
   // Fixed server-owned destination for the authenticated kiosk POS proxy.
   KIOSK_POS_BRIDGE_URL: optional(string(), 'http://127.0.0.1:5170/'),
+  // Private Server configuration; the PIN must never be embedded in Kiosk JS.
+  KIOSK_ADMIN_PIN: optional(string(), ''),
+  KIOSK_ADMIN_PIN_FILE: optional(string(), './data/kiosk-admin.pin'),
 
   // Deliberately string-valued: only the exact literal `true` opens the
   // unauthenticated numeric enrollment route, and app.ts additionally rejects

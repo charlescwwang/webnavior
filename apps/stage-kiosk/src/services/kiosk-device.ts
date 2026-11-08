@@ -157,6 +157,16 @@ export function fetchDeviceSettings(signal?: AbortSignal) {
   return request<DeviceSettingsSnapshot>('/api/kiosk/settings', { signal })
 }
 
+/** Exchanges the operator PIN for an HttpOnly grant scoped to this enrolled device. */
+export function unlockKioskAdmin(pin: string, signal?: AbortSignal) {
+  return request<{ expiresAt: number }>('/api/kiosk/admin/session', { method: 'POST', body: JSON.stringify({ pin }), signal })
+}
+
+/** Revokes this browser's local settings grant when the operator closes the panel. */
+export function lockKioskAdmin() {
+  return request<{ locked: boolean }>('/api/kiosk/admin/session', { method: 'DELETE' })
+}
+
 /** Enrolls this browser as a development kiosk when the Server explicitly permits it. */
 export async function registerDevelopmentKiosk(registrationCode: string) {
   return await request<{ device: KioskDevice }>('/api/kiosk/development/register', {

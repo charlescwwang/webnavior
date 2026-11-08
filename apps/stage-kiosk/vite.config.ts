@@ -1,5 +1,6 @@
+import type { UserConfig } from 'vite'
+
 import { join, resolve } from 'node:path'
-import { env } from 'node:process'
 
 import VueI18n from '@intlify/unplugin-vue-i18n/vite'
 import templateCompilerOptions from '@tresjs/core/template-compiler-options'
@@ -11,18 +12,9 @@ import Layouts from 'vite-plugin-vue-layouts'
 import VueRouter from 'vue-router/vite'
 
 import { DownloadLive2DSDK } from '@proj-airi/unplugin-live2d-sdk/vite'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 
-export default defineConfig(({ command, mode }) => {
-  // A clean release checkout has no ignored .env.production.local. Public builds
-  // must explicitly inherit the existing PIN rather than silently lock operators out.
-  // Process environment takes precedence over Vite's mode-specific env files.
-  const settings = { ...loadEnv(mode, import.meta.dirname, 'VITE_'), ...env }
-  if (command === 'build' && settings.VITE_API_SERVER_URL) {
-    const hostname = new URL(settings.VITE_API_SERVER_URL).hostname
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname) && !settings.VITE_KIOSK_ADMIN_PIN?.trim())
-      throw new Error('Public Kiosk builds require the existing VITE_KIOSK_ADMIN_PIN. Inherit the deployment environment before building.')
-  }
+export default defineConfig((): UserConfig => {
   return {
     base: '/kiosk/',
     // Webnavior records ordering interactions through its own API, not AIRI cloud credits/chat sync.

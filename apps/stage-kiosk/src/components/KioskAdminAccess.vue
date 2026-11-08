@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { Button } from '@proj-airi/ui'
 import { useTimeoutFn } from '@vueuse/core'
-import { shallowRef } from 'vue'
+import { onUnmounted, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import { beginKioskAdminSession } from '../services/admin-session'
+import { KioskDeviceRequestError, unlockKioskAdmin } from '../services/kiosk-device'
 
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{ singleTap?: boolean }>()
@@ -15,7 +16,9 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 
-const configuredPin = import.meta.env.VITE_KIOSK_ADMIN_PIN?.trim()
+const verifying = shallowRef(false)
+let verification: AbortController | undefined
+onUnmounted(() => verification?.abort())
 let tapCount = 0
 const pin = shallowRef('')
 const pinError = shallowRef('')
@@ -52,15 +55,32 @@ function editPin(removeLast: boolean) {
   pinError.value = ''
 }
 
-function unlockAdmin() {
-  if (!configuredPin) {
-    pinError.value = t('stage.kiosk.admin-access.missing-pin')
+async function unlockAdmin() {
+  if (verifying.value)
     return
-  }
-
-  if (pin.value !== configuredPin) {
+  if (!/^\d{4,12}$/.test(pin.value)) {
     pinError.value = t('stage.kiosk.admin-access.incorrect-pin')
     return
+  }
+  verifying.value = true
+  const controller = new AbortController()
+  verification = controller
+  try {
+    await unlockKioskAdmin(pin.value, AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
+    if (controller.signal.aborted)
+      return
+  }
+  catch (error) {
+    if (controller.signal.aborted)
+      return
+    const key = error instanceof KioskDeviceRequestError && error.status === 401
+      ? 'incorrect-pin'
+      : error instanceof KioskDeviceRequestError && error.status === 429 ? 'rate-limited' : 'verification-failed'
+    pinError.value = t(`stage.kiosk.admin-access.${key}`)
+    return
+  }
+  finally {
+    verifying.value = false
   }
 
   pin.value = ''
@@ -74,6 +94,8 @@ function unlockAdmin() {
 }
 
 function closePrompt() {
+  if (verifying.value)
+    return
   pin.value = ''
   pinError.value = ''
   pinPromptOpen.value = false
@@ -100,19 +122,19 @@ function closePrompt() {
           {{ t('stage.kiosk.admin-access.title') }}
         </h2>
         <p>{{ t('stage.kiosk.admin-access.description') }}</p>
-        <input v-model="pin" type="password" inputmode="none" autocomplete="off" :aria-label="t('stage.kiosk.admin-access.pin-label')" autofocus>
+        <input v-model="pin" :disabled="verifying" type="password" inputmode="none" autocomplete="off" :aria-label="t('stage.kiosk.admin-access.pin-label')" autofocus>
         <p v-if="pinError" :class="['pin-error']" role="alert">
           {{ pinError }}
         </p>
         <div role="group" :aria-label="t('stage.kiosk.admin-access.keypad')" :class="['grid grid-cols-3 gap-2']">
-          <Button v-for="digit in ['1', '2', '3', '4', '5', '6', '7', '8', '9']" :key="digit" type="button" :label="digit" variant="secondary" size="lg" :class="['min-h-13']" @click="appendDigit(digit)" />
-          <Button type="button" :label="t('stage.kiosk.admin-access.clear')" variant="secondary" :class="['min-h-13']" @click="editPin(false)" />
-          <Button type="button" label="0" variant="secondary" size="lg" :class="['min-h-13']" @click="appendDigit('0')" />
-          <Button type="button" :label="t('stage.kiosk.admin-access.backspace')" variant="secondary" :class="['min-h-13']" @click="editPin(true)" />
+          <Button v-for="digit in ['1', '2', '3', '4', '5', '6', '7', '8', '9']" :key="digit" :disabled="verifying" type="button" :label="digit" variant="secondary" size="lg" :class="['min-h-13']" @click="appendDigit(digit)" />
+          <Button :disabled="verifying" type="button" :label="t('stage.kiosk.admin-access.clear')" variant="secondary" :class="['min-h-13']" @click="editPin(false)" />
+          <Button :disabled="verifying" type="button" label="0" variant="secondary" size="lg" :class="['min-h-13']" @click="appendDigit('0')" />
+          <Button :disabled="verifying" type="button" :label="t('stage.kiosk.admin-access.backspace')" variant="secondary" :class="['min-h-13']" @click="editPin(true)" />
         </div>
         <div :class="['pin-actions']">
-          <Button type="button" :label="t('stage.kiosk.admin-access.cancel')" variant="secondary" @click="closePrompt" />
-          <Button type="submit" :label="t('stage.kiosk.admin-access.continue')" />
+          <Button :disabled="verifying" type="button" :label="t('stage.kiosk.admin-access.cancel')" variant="secondary" @click="closePrompt" />
+          <Button :disabled="verifying" type="submit" :label="t('stage.kiosk.admin-access.continue')" />
         </div>
       </form>
     </div>

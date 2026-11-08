@@ -9,13 +9,12 @@ import KioskAdminAccess from './KioskAdminAccess.vue'
 import { isKioskAdminSessionActive } from '../services/admin-session'
 
 beforeEach(() => {
-  // Only the deployment environment is substituted; verification/session/router
-  // are the real application code. This is a synthetic PIN, not the private PIN.
-  vi.stubEnv('VITE_KIOSK_ADMIN_PIN', '4812')
+  // Only HTTP is substituted; the client must obey the Server result.
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_, init) => JSON.parse(String(init?.body)).pin === '4812' ? Response.json({ expiresAt: Date.now() + 900000 }) : new Response('', { status: 401 }))
   isKioskAdminSessionActive.value = false
 })
 afterEach(() => {
-  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
   isKioskAdminSessionActive.value = false
 })
 
@@ -105,5 +104,17 @@ it('requires the correct PIN before emitting a fault recovery authorization', as
   for (const digit of ['4', '8', '1', '2'])
     await view.getByRole('button', { name: digit, exact: true }).click()
   await view.getByRole('button', { name: '繼續', exact: true }).click()
-  expect(view.emitted('unlocked')).toHaveLength(1)
+  await expect.poll(() => view.emitted('unlocked')?.length).toBe(1)
+})
+
+it('keeps the PIN gate locked when the Server cannot verify it', async () => {
+  vi.mocked(globalThis.fetch).mockResolvedValue(new Response('', { status: 503 }))
+  const { view, router, trigger } = await setupAccess(true)
+  await trigger.click()
+  for (const digit of ['4', '8', '1', '2'])
+    await view.getByRole('button', { name: digit, exact: true }).click()
+  await view.getByRole('button', { name: '繼續', exact: true }).click()
+  await expect.element(view.getByRole('alert')).toHaveTextContent('無法驗證 PIN')
+  expect(isKioskAdminSessionActive.value).toBe(false)
+  expect(router.currentRoute.value.query.admin).toBeUndefined()
 })

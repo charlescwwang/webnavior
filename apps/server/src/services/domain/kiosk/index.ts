@@ -1,8 +1,9 @@
-import type { DeviceSettingKey, DeviceSettings, DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+import type { DeviceSettings, DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
 
 import type { Database } from '../../../libs/db'
 import type { KioskInteractionEntryKind, KioskMediaCapturePolicy, KioskMemberRole, KioskPerformanceProfile, KioskProfileSnapshot, KioskRegistrationMethod, KioskVisitorSessionState } from '../../../schemas/kiosk'
 import type { KioskAgentInteractionState } from '../kiosk-agent-interaction'
+import type { DeviceSettingsUpdate } from './deviceSettings'
 
 import { createHash, randomBytes } from 'node:crypto'
 
@@ -24,7 +25,7 @@ export interface KioskService {
   /** Device identity must already be authenticated by the transport. */
   getDeviceSettings: (deviceId: string) => Promise<DeviceSettingsSnapshot>
   /** Central and local writes share authorization, optimistic concurrency, and audit. */
-  updateDeviceSettings: (input: { deviceId: string, siteId: string, userId: string, source: 'admin' | 'local', body: unknown }) => Promise<DeviceSettingsSnapshot>
+  updateDeviceSettings: (input: DeviceSettingsUpdate) => Promise<DeviceSettingsSnapshot>
   /** Adds a user to a site's management scope. */
   addMember: (input: { siteId: string, userId: string, role: KioskMemberRole }) => Promise<typeof schema.kioskSiteMembers.$inferSelect>
   /** Allows only a global administrator or the named site's administrator to manage configuration. */
@@ -833,11 +834,20 @@ export function createKioskService(db: Database): KioskService {
     return { deviceId, settings: device.settings, defaults, effective: resolveDeviceSettings(defaults, device.settings) }
   }
 
-  async function updateDeviceSettings(input: { deviceId: string, siteId: string, userId: string, source: 'admin' | 'local', body: unknown }) {
-    const change = parseSettingsChange(input.source, input.body)
-    const capabilities = await getSiteManagementCapabilities(input)
-    if (input.source === 'admin' ? !capabilities.canEditTechnicalSettings : !capabilities.canManageDevices)
-      throw createForbiddenError()
+  async function updateDeviceSettings(input: DeviceSettingsUpdate) {
+    const change = parseSettingsChange(input.body)
+    if (input.source === 'local-pin') {
+      // The transport verified the PIN grant. Re-resolve the credential here so
+      // this principal can never target an arbitrary device or another Site.
+      const device = await resolveDeviceCredential(input.deviceCredential)
+      if (!device || device.id !== input.deviceId || device.siteId !== input.siteId)
+        throw createForbiddenError()
+    }
+    else {
+      const capabilities = await getSiteManagementCapabilities(input)
+      if (input.source === 'admin' ? !capabilities.canEditTechnicalSettings : !capabilities.canManageDevices)
+        throw createForbiddenError()
+    }
     const snapshot = await getDeviceSettings(input.deviceId)
     await db.transaction(async (tx) => {
       // The row lock serializes settings writes with disable/delete. The revision
@@ -849,30 +859,30 @@ export function createKioskService(db: Database): KioskService {
       )).for('update')
       if (!device)
         throw createNotFoundError('Kiosk device was not found')
-      if (input.source === 'local' && device.disabledAt)
+      if (input.source !== 'admin' && device.disabledAt)
         throw createForbiddenError()
+      if (input.source === 'local-pin') {
+        // Match disable/delete's device-first lock order, then recheck credential
+        // revocation under lock so an in-flight PIN save cannot outlive revocation.
+        const [credential] = await tx.select().from(schema.kioskDeviceCredentials).where(and(
+          eq(schema.kioskDeviceCredentials.deviceId, device.id),
+          eq(schema.kioskDeviceCredentials.tokenHash, hashCredential(input.deviceCredential)),
+          isNull(schema.kioskDeviceCredentials.revokedAt),
+        )).for('update')
+        if (!credential)
+          throw createForbiddenError()
+      }
       if (device.settings.version !== change.version)
         throw createConflictError('Settings changed. Reload before saving.')
       const previous = device.settings
-      let next: DeviceSettings
-      if (input.source === 'admin' && 'localControls' in change) {
-        const localControls = [...new Set(change.localControls)]
-        // Revocation removes the value permanently; re-delegation cannot revive it.
-        const localOverrides = Object.fromEntries(Object.entries(previous.localOverrides).filter(([key]) =>
-          localControls.includes(key as DeviceSettingKey) && !change.clearLocalOverrides.includes(key as DeviceSettingKey),
-        ))
-        next = { version: previous.version + 1, overrides: change.overrides, localControls, localOverrides }
-      }
-      else {
-        if (Object.keys(change.overrides).some(key => !previous.localControls.includes(key as DeviceSettingKey)))
-          throw createForbiddenError('This setting is locked by the administrator')
-        next = { ...previous, version: previous.version + 1, localOverrides: change.overrides }
-      }
+      // Both editors replace the same complete override map at a checked revision.
+      // Clearing a field therefore restores its Site default in either UI.
+      const next: DeviceSettings = { version: previous.version + 1, overrides: change.overrides }
       assertDetectionZone(resolveDeviceSettings(snapshot.defaults, next))
       await tx.update(schema.kioskDevices).set({ settings: next }).where(eq(schema.kioskDevices.id, device.id))
       await tx.insert(schema.kioskAuditLogs).values({
         siteId: device.siteId,
-        actorUserId: input.userId,
+        actorUserId: input.source === 'local-pin' ? null : input.userId,
         action: 'device.settings.updated',
         targetType: 'kiosk_device',
         targetId: device.id,

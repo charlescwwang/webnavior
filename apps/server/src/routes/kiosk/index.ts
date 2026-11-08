@@ -11,7 +11,7 @@ import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
 import type { HonoEnv } from '../../types/hono'
 
-import { randomInt, randomUUID } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import { useLogger } from '@guiiai/logg'
 import { audioWarningSchema } from '@proj-airi/stage-shared/kiosk-audio'
@@ -20,6 +20,7 @@ import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
+import { rateLimiter } from '../../middlewares/rate-limit'
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { currentContextInstructions, preserveRequestedQuantities, readOnlyReplyTool, replyTool, reviewOperations, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
@@ -36,6 +37,7 @@ import { createDecisionStages } from '../../services/domain/kiosk-interaction-de
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 import { isLoopbackOrigin } from '../../utils/origin'
+import { createLocalAdminAccess } from './localAdmin'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
 export const kioskDeviceCookieName = 'airi_kiosk_device'
@@ -243,6 +245,8 @@ export interface KioskRoutesOptions {
   toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
+  /** Server-only PIN and signing secret; never exposed through bootstrap. */
+  localAdmin?: { pin?: string, secret: string }
   /** Fixed upstream network boundary; no browser-supplied destinations. */
   posGateway?: ReturnType<typeof createKioskPosGateway>
   /** Exact public API origin for cookie-authenticated POS writes. */
@@ -259,6 +263,25 @@ export interface KioskRoutesOptions {
 export function createKioskRoutes(options: KioskRoutesOptions) {
   const routes = new Hono<HonoEnv>()
   const decisionStages = createDecisionStages()
+  const localAdmin = createLocalAdminAccess({ ...options.localAdmin, secret: options.localAdmin?.secret ?? '', secureCookies: options.secureCookies, origin: options.apiOrigin })
+  const pinLimiter = rateLimiter({ max: 5, windowSec: 60, routeLabel: 'kiosk.admin.pin', keyGenerator: c => createHash('sha256').update(getCookie(c, kioskDeviceCookieName) ?? 'unregistered').digest('hex') })
+
+  routes.post('/admin/session', async (c, next) => {
+    // Resolve before limiting so invented credentials cannot rotate valid buckets.
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    return pinLimiter(c, next)
+  }, async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const parsed = safeParse(object({ pin: pipe(string(), regex(/^\d{4,12}$/)) }), await c.req.json().catch(() => null))
+    if (!parsed.success)
+      throw createUnauthorizedError('Incorrect local administrator PIN')
+    return c.json(await localAdmin.unlock(c, device.id, getCookie(c, kioskDeviceCookieName)!, parsed.output.pin))
+  })
+  routes.delete('/admin/session', async (c) => {
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    localAdmin.lock(c)
+    return c.json({ locked: true })
+  })
 
   routes.all('/pos/*', async (c) => {
     const path = c.req.path.split('/pos/')[1] ?? ''
@@ -342,14 +365,13 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
 
   routes.put('/settings', async (c) => {
     const device = await resolveAuthenticatedDevice(c, options.kioskService)
-    const user = c.get('user')
-    if (!user)
-      throw createUnauthorizedError('Sign in as a site operator to change settings')
+    const credential = getCookie(c, kioskDeviceCookieName)!
+    await localAdmin.authorize(c, device.id, credential)
     return c.json(await options.kioskService.updateDeviceSettings({
       deviceId: device.id,
       siteId: device.siteId,
-      userId: user.id,
-      source: 'local',
+      deviceCredential: credential,
+      source: 'local-pin',
       body: await c.req.json().catch(() => null),
     }))
   })

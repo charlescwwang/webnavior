@@ -86,12 +86,10 @@ export const deviceSettingKeys = [
 
 export type DeviceSettingKey = typeof deviceSettingKeys[number]
 
-/** Admin and local overrides are separate so revocation can discard local values. */
+/** One revisioned device policy shared by the management and on-device editors. */
 export interface DeviceSettings {
   version: number
-  localControls: DeviceSettingKey[]
   overrides: Partial<DeviceSettingsValues>
-  localOverrides: Partial<DeviceSettingsValues>
 }
 
 /** Snapshot read at a revision; writes compare the revision and never silently merge. */
@@ -104,17 +102,13 @@ export interface DeviceSettingsSnapshot {
 
 export const defaultDeviceSettings: DeviceSettings = {
   version: 1,
-  localControls: [],
   overrides: {},
-  localOverrides: {},
 }
 
 /** Birth policy for newly enrolled devices; existing saved overrides remain authoritative. */
 export const newDeviceSettings: DeviceSettings = {
   version: 1,
-  localControls: ['observationEnabled', 'greetingEnabled', 'reminderEnabled', 'triggerMode', 'voiceDiagnosticsEnabled'],
   overrides: { observationEnabled: true, greetingEnabled: true, reminderEnabled: true, triggerMode: 'mixed', voiceDiagnosticsEnabled: true },
-  localOverrides: {},
 }
 
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
@@ -144,11 +138,9 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   conversationDiagnosticsEnabled: false,
 }
 
-/** Site defaults < administrator device overrides < explicitly delegated local overrides. */
+/** Both editors write the same device overrides, which take precedence over Site defaults. */
 export function resolveDeviceSettings(defaults: DeviceSettingsValues, settings: DeviceSettings): DeviceSettingsValues {
-  const delegated = Object.fromEntries(Object.entries(settings.localOverrides)
-    .filter(([key]) => settings.localControls.includes(key as DeviceSettingKey)))
-  return { ...defaults, ...settings.overrides, ...delegated }
+  return { ...defaults, ...settings.overrides }
 }
 
 /** Projects Server-owned device values onto the existing local observation state machine. */

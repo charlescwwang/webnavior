@@ -337,6 +337,13 @@
       "when": 1793909721557,
       "tag": "0047_webnavior_tts_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1794076800000,
+      "tag": "0048_shared_device_settings",
+      "breakpoints": true
     }
   ]
 }

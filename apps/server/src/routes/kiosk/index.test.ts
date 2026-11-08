@@ -996,7 +996,7 @@ describe('kiosk routes', () => {
     ])
   })
 
-  it('requires device and operator identities, returns effective bootstrap values, and rejects stale or forged local writes', async () => {
+  it('requires device and PIN identities, returns effective bootstrap values, and rejects stale or forged local writes', async () => {
     const kioskService = createKioskService(db)
     await db.insert(schema.user).values({ id: 'settings-admin', name: 'Admin', email: 'settings@test.local', role: 'admin' })
     const app = new Hono<HonoEnv>()
@@ -1011,7 +1011,7 @@ describe('kiosk routes', () => {
           return c.json({ error: error.errorCode }, error.statusCode)
         throw error
       })
-      .route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false }))
+      .route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, kioskService, llmGateway, runtimeModelPolicy, secureCookies: false, localAdmin: { pin: '4812', secret: 'test-server-secret' } }))
     const enrollment = await app.request('/api/kiosk/development/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1022,15 +1022,17 @@ describe('kiosk routes', () => {
     const device = await kioskService.resolveDeviceCredential(cookie.split('=')[1])
     await kioskService.updateDeviceSettings({ deviceId: device!.id, siteId: device!.siteId, userId: 'settings-admin', source: 'admin', body: {
       version: 1,
-      localControls: ['observationEnabled'],
       overrides: {},
     } })
     const body = JSON.stringify({ version: 2, overrides: { observationEnabled: true } })
     expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers: { Cookie: cookie }, body })).status).toBe(401)
     expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers: { 'X-Test-Operator': 'yes' }, body })).status).toBe(401)
-    const headers = { 'Cookie': cookie, 'X-Test-Operator': 'yes', 'Content-Type': 'application/json' }
-    await useBackgroundEnforcement(db, headers.Cookie)
-    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers, body: JSON.stringify({ version: 2, overrides: { greetingEnabled: true } }) })).status).toBe(403)
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers: { 'Cookie': cookie, 'X-Test-Operator': 'yes' }, body })).status).toBe(401)
+    const login = await app.request('/api/kiosk/admin/session', { method: 'POST', headers: { 'Cookie': cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: '4812' }) })
+    expect(login.status).toBe(200)
+    const grant = login.headers.get('Set-Cookie')!.split(';')[0]
+    const headers = { 'Cookie': `${cookie}; ${grant}`, 'X-Test-Operator': 'yes', 'Content-Type': 'application/json' }
+    expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers, body: JSON.stringify({ version: 2, overrides: { unknownSetting: true } }) })).status).toBe(400)
     expect((await app.request('/api/kiosk/settings', { method: 'PUT', headers, body: JSON.stringify({ version: 2, overrides: {}, deviceId: 'another-device' }) })).status).toBe(400)
     const saved = await app.request('/api/kiosk/settings', { method: 'PUT', headers, body })
     expect(saved.status).toBe(200)
