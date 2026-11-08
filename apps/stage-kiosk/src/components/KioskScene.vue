@@ -467,6 +467,7 @@ const customerSession = useKioskCustomerSession({
     else if (completedOrderResult.value || interactiveServiceClient.tools.value.some(tool => tool.name === 'kiosk_conversation_context'))
       throw new Error('The ordering service is not ready to reset its current round.')
   },
+  waitForInteractiveSurface: () => interactiveServiceClient.waitUntilReady(),
   endVisitorSession: () => interactionRecording.end('idle'),
   resetConversation: clearConversationPresentation,
 })

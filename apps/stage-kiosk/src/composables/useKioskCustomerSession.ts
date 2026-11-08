@@ -12,6 +12,8 @@ export type { AnonymousKioskCustomer, KioskCustomerSessionState } from '@proj-ai
 interface KioskCustomerSessionHostOptions extends Omit<KioskCustomerSessionOptions, 'resetInteractiveSurface' | 'resetPolicy' | 'idleTimeoutMs'> {
   /** Renews the pinned Menu round before any old customer state is cleared. */
   resetOrderRound?: () => Promise<void>
+  /** Resolves after the replacement page's tool handshake, before new input is admitted. */
+  waitForInteractiveSurface?: () => Promise<void>
   /** Closes the host's durable visitor session before its next customer starts. */
   endVisitorSession?: () => void | Promise<void>
   /** Clears host-rendered customer content when the shared session transitions to standby. */
@@ -23,6 +25,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
     ...options,
     resetPolicy: 'confirmed-completion',
     idleTimeoutMs: 180_000,
+    restartAfterIdle: true,
     resetInteractiveSurface: async () => {
       await options.resetOrderRound?.()
       await options.endVisitorSession?.()
@@ -31,6 +34,7 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
       // waiting for the new document belonging to that service.
       await nextTick()
       await scenarioRegistry.reloadActive()
+      await options.waitForInteractiveSurface?.()
       options.resetConversation?.()
     },
   })

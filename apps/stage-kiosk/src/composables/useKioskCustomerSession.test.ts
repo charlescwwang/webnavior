@@ -61,6 +61,46 @@ describe('useKioskCustomerSession', () => {
     expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
   })
 
+  // Report: DEV-810280, Nov8 — an expired idle countdown must open a fresh order without another click.
+  it('automatically resets and starts a new customer when the idle confirmation expires', async () => {
+    vi.useFakeTimers()
+    reloadScenario.mockResolvedValue(undefined)
+    const resetOrderRound = vi.fn(async () => {})
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, resetOrderRound }))!
+    await session.recordActivity()
+    const previous = session.customer.value?.sessionId
+    await vi.advanceTimersByTimeAsync(180_000)
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(resetOrderRound).toHaveBeenCalledOnce()
+    expect(session.state.value).toBe('active')
+    expect(session.customer.value?.sessionId).not.toBe(previous)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
+  })
+
+  it('keeps idle restart input blocked until the new ordering page tools are ready', async () => {
+    vi.useFakeTimers()
+    reloadScenario.mockResolvedValue(undefined)
+    let ready!: () => void
+    const waitForInteractiveSurface = vi.fn(() => new Promise<void>((resolve) => {
+      ready = resolve
+    }))
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, waitForInteractiveSurface }))!
+    await session.recordActivity()
+    await vi.advanceTimersByTimeAsync(195_000)
+    expect(waitForInteractiveSurface).toHaveBeenCalledOnce()
+    expect(session.state.value).toBe('resetting')
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    ready()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.state.value).toBe('active')
+    expect(session.acceptsVoiceInput.value).toBe(true)
+  })
+
   it('clears the customer conversation and reloads the independent interactive service', async () => {
     const chatSession = {
       createSession: vi.fn().mockResolvedValueOnce('customer-chat').mockResolvedValueOnce('standby-chat'),
@@ -475,8 +515,8 @@ describe('useKioskCustomerSession', () => {
     expect(reloadScenario).toHaveBeenCalledOnce()
     expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
     expect(chatSession.createSession).toHaveBeenCalledTimes(2)
-    expect(session.customer.value).toBeUndefined()
-    expect(session.state.value).toBe('standby')
+    expect(session.customer.value?.sessionId).not.toBe(customerSessionId)
+    expect(session.state.value).toBe('active')
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
     expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor')
 

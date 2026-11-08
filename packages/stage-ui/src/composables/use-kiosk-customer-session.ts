@@ -27,6 +27,8 @@ export interface KioskCustomerSessionOptions {
   resetPolicy?: 'automatic' | 'confirmed-completion'
   /** Customer inactivity before the confirmation dialog; defaults to 45 seconds for Stage Web. */
   idleTimeoutMs?: number
+  /** Start a fresh active customer after unattended expiry; completion still returns to standby. */
+  restartAfterIdle?: boolean
 }
 
 const idleTimeoutMs = 45_000
@@ -221,6 +223,8 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
 
         customer.value = undefined
         state.value = 'standby'
+        if (reason === 'idle' && options.restartAfterIdle)
+          await begin()
       }
       catch (error) {
         // A failed iframe or chat reset must not strand the current visitor in
