@@ -1,4 +1,4 @@
-import type { ContextReply } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { CatalogSnapshot } from '../../../order-menu-server/src/domain/contracts'
 import type { RecommendationPresentation } from '../../../order-menu/src/webmcp'
@@ -23,7 +23,7 @@ import { supplierCatalog } from '../../../order-menu-server/src/supplierSimulati
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom, refreshConversationState, runFastPath } from '../../../stage-kiosk/src/services/kiosk-fast-path'
 import { resumeConversationRetry } from '../../../stage-kiosk/src/services/kioskConversationRetry'
-import { createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
+import { createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
 import { createDrizzle } from '../../src/libs/db'
 import { mockDB } from '../../src/libs/mock-db'
 import { createKioskRoutes } from '../../src/routes/kiosk'
@@ -580,10 +580,10 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     process.stdout.write(`[noodle-swap-replay] ${JSON.stringify(reply)}\n`)
   }, 90_000)
 
-  async function decideCurrent(transcript: string) {
+  async function decideCurrent(transcript: string, serviceClarification?: ServiceClarification) {
     const decisions: KioskInteractionDecision[] = []
     const decision = await runFastPath({ transcript, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
-      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, includeTrace: true, visitorSessionId: sessionId }) })
+      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, ...(serviceClarification ? { decisionState: { ...request.decisionState, serviceClarification } } : {}), includeTrace: true, visitorSessionId: sessionId }) })
       expect(response.status).toBe(200)
       const result = await response.json() as KioskInteractionDecision
       decisions.push(result)
@@ -671,7 +671,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     // NOTICE: match Scene's final projection; raw Menu context cannot contain
     // the host-owned, version-bound assistance invitation from this turn.
     const replyContext = refreshConversationState(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')), decisionState).context!
-    const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
+    const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, sourceUtterance: transcript, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
     expect(presented.role).toBe('assistant')
     // Match Scene's final guidance step; the raw reply renderer deliberately
     // leaves phase-owned guidance to the caller after validating the question.
@@ -732,6 +732,184 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     expect(submitted).toBe(1)
     process.stdout.write(`[table-completion] ${JSON.stringify({ merchant, answer: reply.answer, submitted, durationMs: Math.round(performance.now() - begin) })}\n`)
   }, 120_000)
+
+  // Report: DEV-810280, Nov8 18:53–19:22 Taipei, before continuation deployment.
+  // Keep the real staged route and old catalog; include the preceding browsing state.
+  it.each([
+    { id: 'absent-family', speech: '我想吃全家餐', prepare: 'none', check: 'empty' },
+    { id: 'withdraw-fuzzy-empty', speech: '我不要排骨飯了', prepare: 'none', check: 'withdraw' },
+    { id: 'withdraw-asr-empty', speech: '我不要排骨犯了', prepare: 'none', check: 'withdraw' },
+    { id: 'bulk-after-lookup', speech: '菜單上的都來一份', prepare: 'fuzzy', check: 'bulk' },
+    { id: 'delivery-question', speech: '你能幫我外送到餐廳嗎？', prepare: 'none', check: 'delivery' },
+    { id: 'preorder-question', speech: '能預定明天的餐點嗎？', prepare: 'none', check: 'preorder' },
+    { id: 'continue-from-review', speech: '我想繼續點餐', prepare: 'review', check: 'continue', count: 5 },
+    { id: 'mixed-missing-extra', speech: '水餃十份，再來一瓶酒', prepare: 'none', check: 'missing-extra', count: 10 },
+    { id: 'recommendation-cycle', speech: '還有其他的嗎？', prepare: 'seen', check: 'cycle' },
+    { id: 'fish-after-browsing', speech: '我要泰式酸辣魚', prepare: 'seen', check: 'fish' },
+  ])('configured 810280 field continuity: $id', async (scenario) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let shown: string[] = []
+    let screen: 'menu' | 'cart_review' = 'menu'
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => screen, onReviewRequested: () => {
+      screen = 'cart_review'
+    }, merchant: { id: 'original-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless', deliverySupported: false, orderTiming: 'made-to-order' }, serviceContext: () => ({ id: 'field-table', serviceMode: 'table-service', table: { id: 'a05', label: 'A05' }, directSubmissionSupported: true }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {
+      screen = 'menu'
+    }, onRecommendationsChange: (value) => {
+      shown = value.itemIds
+      screen = 'menu'
+    } })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    if (scenario.prepare === 'review') {
+      await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 5 })
+      const review = await runtime.invoke('cart_get', { display: true })
+      const question = questionReceiptFrom(review)!
+      await recordReply(`${operationReplyFrom(review)} ${question.question}`)
+      await runtime.invoke('kiosk_dialogue_presented', { content: question.question, questionId: question.questionId })
+    }
+    if (scenario.prepare === 'fuzzy') {
+      const prior = await runtime.invokeForAgent('menu_get', { query: '排骨飯' })
+      await recordReply(operationReplyFrom(prior)!)
+    }
+    if (scenario.prepare === 'seen') {
+      for (let i = 0; i < 3; i++) {
+        const prior = await runtime.invokeForAgent('menu_recommend', { action: i ? 'continue' : 'update', ...(i ? {} : { category: '便當' }) })
+        await recordReply(operationReplyFrom(prior)!)
+      }
+    }
+    const begin = performance.now()
+    const { decision, decisions } = await decideCurrent(scenario.speech)
+    const reply = decision.kind === 'NEEDS_ASSISTANT' ? await agent(scenario.speech, conversationDecisionStateFrom(decision.decisionState, decision)!) : decision.kind === 'FAST_ACTION' ? { answer: operationReplyFrom(decision.result), calls: [] } : decision.kind === 'SERVICE_CLARIFICATION' ? { answer: decision.question.question, calls: [] } : undefined
+    process.stdout.write(`[810280-field] ${JSON.stringify({ id: scenario.id, decisions, reply, shown, durationMs: Math.round(performance.now() - begin) })}\n`)
+    expect(reply?.answer).toBeTruthy()
+    expect(reply?.answer).not.toMatch(/沒有可驗證|沒有理解清楚|未接受這次操作/)
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 'count' in scenario ? scenario.count : 0)
+    if (scenario.check === 'continue') {
+      expect(screen).toBe('menu')
+      expect(reply?.answer).not.toContain('查詢未完成')
+    }
+    if (scenario.check === 'cycle') {
+      expect(shown.length).toBeGreaterThan(0)
+      expect(reply?.answer).toMatch(/再列出|重新|再.*參考/)
+    }
+    if (scenario.check === 'empty')
+      expect(reply?.answer).not.toMatch(/哪一道|哪道/)
+    if (scenario.check === 'withdraw') {
+      expect(shown).toEqual([])
+      expect(reply?.answer).toMatch(/好的|好，|沒有|先不點|保留/)
+    }
+    if (scenario.check === 'bulk')
+      expect(reply?.answer).toContain(scenario.speech)
+    if (scenario.check === 'bulk')
+      expect(reply?.answer).toMatch(/[?？]/)
+    if (scenario.check === 'delivery')
+      expect(reply?.answer).toMatch(/不提供外送|無法.*外送|不能.*外送/)
+    if (scenario.check === 'missing-extra') {
+      expect(reply?.answer).toContain('酒')
+      expect(reply?.answer).toMatch(/沒有|查不到|不提供/)
+      expect(reply?.answer).toMatch(/10 份|十份/)
+      expect(reply?.answer).not.toMatch(/查不到「水餃|沒有「水餃|水餃十份.*查不到|要點幾份|先看哪一道/)
+      // Two model-guided effects plus one receipt-only HTTP completion.
+      expect(reply && 'mainAgentRequests' in reply ? reply.mainAgentRequests.length : 0).toBeLessThanOrEqual(3)
+    }
+    if (scenario.check === 'preorder')
+      expect(reply?.answer).toMatch(/現做|不接受預約/)
+    if (scenario.check === 'fish') {
+      expect(shown).toContain('thai-sour-spicy-fish-bento')
+      expect(reply?.answer).toMatch(/泰式酸辣魚|幾份/)
+      expect(reply?.answer).not.toMatch(/想查詢哪道|先看哪一道|先看哪道|炸排骨|打拋豬/)
+      expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'excludedItems' && condition.value === 'thai-sour-spicy-fish-bento')).not.toBe(true)
+    }
+  }, 120_000)
+
+  it('configured 810280 whole conversation preserves cart, questions and new named targets', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let screen: 'menu' | 'cart_review' | 'item_configuration' = 'menu'
+    let selectedItem: string | undefined
+    let submitted = 0
+    runtime = createMenuToolRuntime({ menu: catalog.items, merchant: { id: 'original-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless', deliverySupported: false, orderTiming: 'made-to-order' }, screen: () => screen, visibleItemId: () => selectedItem, serviceContext: () => ({ id: 'field-whole', serviceMode: 'table-service', table: { id: 'a05', label: 'A05' }, directSubmissionSupported: true }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: (value) => {
+      selectedItem = value
+      screen = value ? 'item_configuration' : 'menu'
+    }, onMenuRequested: () => {
+      screen = 'menu'
+    }, onReviewRequested: () => {
+      screen = 'cart_review'
+    }, onRecommendationsChange: () => {
+      screen = 'menu'
+    }, gateway: { submit: async () => {
+      submitted++
+      throw new Error('No submission is authorized in this scenario')
+    } } })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    const serviceQuestions = createServiceClarificationWindow()
+    for (const step of [
+      { speech: '我想吃全家餐', count: 0, check: 'absent' },
+      { speech: '回到全部菜單', count: 0, check: 'menu' },
+      { speech: '我不要排骨飯了', count: 0, check: 'withdraw' },
+      { speech: '菜單上的都來一份', count: 0, check: 'bulk' },
+      { speech: '不用了，先點水餃十份', count: 10, check: 'add' },
+      { speech: '我水餃只要一半', count: 5, check: 'half' },
+      { speech: '查看購物車', count: 5, check: 'review' },
+      { speech: '我想繼續點餐', count: 5, check: 'menu' },
+      { speech: '我要泰式酸辣魚一份', count: 5, check: 'fish-proposal' },
+      { speech: '對', count: 6, check: 'fish-added' },
+      { speech: '這樣就好', count: 6, check: 'final-review' },
+    ]) {
+      const before = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+      const service = serviceQuestions.current(before)
+      const begin = performance.now()
+      const { decision } = await decideCurrent(step.speech, service)
+      serviceQuestions.settle(decision)
+      let answer: string | undefined
+      if (decision.kind === 'NEEDS_ASSISTANT') {
+        answer = (await agent(step.speech, conversationDecisionStateFrom({ ...decision.decisionState, ...(service ? { serviceClarification: service } : {}) }, decision)!)).answer
+      }
+      else if (decision.kind === 'FAST_ACTION') {
+        answer = operationReplyFrom(decision.result)
+        const question = questionReceiptFrom(decision.result)
+        await recordReply(answer!)
+        if (question)
+          await runtime.invoke('kiosk_dialogue_presented', { content: answer, questionId: question.questionId })
+      }
+      else if (decision.kind === 'SERVICE_CLARIFICATION') {
+        serviceQuestions.present(decision.question)
+        answer = decision.question.question
+        await recordReply(answer)
+      }
+      process.stdout.write(`[810280-sequence] ${JSON.stringify({ speech: step.speech, kind: decision.kind, scope: decision.requestScope, handoff: decision.kind === 'NEEDS_ASSISTANT' ? decision.handoff?.intent : undefined, answer, count: step.count, screen, durationMs: Math.round(performance.now() - begin) })}\n`)
+      expect(answer).toBeTruthy()
+      expect(answer).not.toMatch(/沒有可驗證|未接受這次操作|沒有理解清楚/)
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', step.count)
+      expect(submitted).toBe(0)
+      if (step.check === 'absent') {
+        expect(answer).toContain('全家餐')
+        expect(answer).not.toMatch(/哪一道|哪道/)
+      }
+      if (step.check === 'menu')
+        expect(screen).toBe('menu')
+      if (step.check === 'bulk') {
+        expect(answer).toContain(step.speech)
+        expect(decision.kind).toBe('SERVICE_CLARIFICATION')
+      }
+      if (step.check === 'half') {
+        expect(answer).toContain('5 份')
+        expect(answer).not.toMatch(/10 份|800元/)
+        expect(answer).toContain('送出')
+      }
+      if (['review', 'final-review'].includes(step.check)) {
+        expect(screen).toBe('cart_review')
+        expect(answer).toContain('送出')
+      }
+      if (step.check === 'fish-proposal')
+        expect(answer).toContain('泰式酸辣魚便當')
+      if (step.check === 'final-review') {
+        expect(answer).toContain('540元')
+        expect(answer).toContain('水餃 5 份')
+        expect(answer).toContain('泰式酸辣魚便當 1 份')
+      }
+    }
+  }, 180_000)
 
   // Report: this chat Nov7; acceptance must traverse the current staged HTTP
   // route and recovery, rather than the frozen flat-router diagnostic helper.
@@ -882,7 +1060,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       expect(savedInput.status).toBe(201)
       let decisionTrace: unknown
       const result = await runFastPath({ transcript: speech, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
-        const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, includeTrace: true, visitorSessionId: sessionId }) })
+        const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, ...(serviceClarification ? { decisionState: { ...request.decisionState, serviceClarification } } : {}), includeTrace: true, visitorSessionId: sessionId }) })
         expect(response.status).toBe(200)
         const decision = await response.json() as KioskInteractionDecision
         decisionTrace = decision

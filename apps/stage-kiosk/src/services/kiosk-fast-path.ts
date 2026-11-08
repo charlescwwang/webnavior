@@ -648,7 +648,7 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // catalog mention must not force it through read-only lookup before editing.
   const qualifiedOperation = decision?.requestScope === 'order-operation'
   const orderInformation = decision?.requestScope === 'order-information'
-  const serviceBoundary = decision?.requestScope === 'service-information'
+  const serviceBoundary = decision?.requestScope === 'service-information' || decision?.requestScope === 'order-preservation'
   // A qualified price-information query can use the fresh complete Menu
   // catalog through the typed factual renderer; it is not a browse request.
   // Whole-request operations include any accompanying inquiry; they take
@@ -698,6 +698,7 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
     ...(interactionState && Number.isInteger(interactionState.matchingCartLines) && interactionState.matchingCartLines >= 0
       ? { interactionState: {
           matchingCartLines: interactionState.matchingCartLines,
+          ...(Number.isInteger(interactionState.cartItemCount) && Number(interactionState.cartItemCount) >= 0 ? { cartItemCount: Number(interactionState.cartItemCount) } : {}),
           ...(['menu', 'cart_review', 'item_configuration', 'request_confirmation', 'checkout'].includes(interactionState.screen ?? '') ? { screen: interactionState.screen } : {}),
           ...(typeof interactionState.lastAddedItemName === 'string' ? { lastAddedItemName: interactionState.lastAddedItemName } : {}),
           ...(typeof interactionState.selectedItemName === 'string' ? { selectedItemName: interactionState.selectedItemName } : {}),

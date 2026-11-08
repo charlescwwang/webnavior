@@ -16,7 +16,7 @@ const input: Pick<DecisionInput, 'transcript' | 'decisionState' | 'candidates' |
 // Fixtures explicitly describe Menu-issued scopes; eligibility itself is tested
 // through Menu's public runtime, not reimplemented by the Server.
 const answerScope = (question: ConversationQuestion): IntentRecovery => ({ kind: 'answer', questionId: question.questionId, ...(question.requestId ? { requestId: question.requestId } : {}), candidateIds: question.choices.map(choice => choice.id) })
-const answer = (choice: string) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'kiosk', choice }) } }] } }] })
+const answer = (choice: string) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'kiosk', choice, requestCoverage: 'COMPLETE' }) } }] } }] })
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 core-cart.
 function modelAnswer(body: Record<string, unknown>, choice: string) {
@@ -468,7 +468,7 @@ it('qualifies a new named meal after service recovery using the existing slot fl
 
 // Report: B04 same-phrase counterpart; an owned Menu scope does not establish recipient.
 it('rejects a finite operation proposed for another speaker recipient', async () => {
-  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'other', choice: 'intent:add-item' }) } }] } }] }))
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ recipient: 'other', choice: 'intent:add-item', requestCoverage: 'COMPLETE' }) } }] } }] }))
   const result = await resolveOrderingIntent(admitted, ({
     ...input,
     transcript: '小王，給我水餃一份',
@@ -518,7 +518,7 @@ it.each(['off', 'observe'] as const)('checks answer completeness without backgro
     const tool = body.tools[0].function
     expect(tool.parameters.properties).not.toHaveProperty('recipient')
     expect(JSON.stringify(tool.parameters)).not.toContain('BACKGROUND')
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: tool.name, arguments: JSON.stringify({ choice: tool.name === 'verify_ordering_answer' ? 'OTHER_REQUEST' : candidate.id, ...(tool.name === 'verify_ordering_answer' ? { answerAction: 'OTHER_ACTION' } : {}) }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: tool.name, arguments: JSON.stringify({ choice: tool.name === 'verify_ordering_answer' ? 'OTHER_REQUEST' : candidate.id, ...(tool.name === 'verify_ordering_answer' ? { answerAction: 'OTHER_ACTION' } : { requestCoverage: 'COMPLETE' }) }) } }] } }] })
   })
   const result = await resolveOrderingIntent(admitted, { ...input, backgroundSpeechMode: mode, candidates: [candidate], decisionState: { phase: 'ordering', waitingFor, intentRecovery: answerScope(waitingFor) } }, complete)
   expect(result.kind).toBe('NEEDS_ASSISTANT')
@@ -546,7 +546,7 @@ it.each(['OTHER_REQUEST', 'COMPLETE'] as const)('regression K1107-DIRECT reviews
   const complete = vi.fn(async (body: Record<string, unknown>) => {
     const tools = body.tools as Array<{ function: { name: string } }>
     const name = tools[0]!.function.name
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify({ choice: name === 'verify_ordering_answer' ? coverage : candidate.id, ...(name === 'verify_ordering_answer' ? { answerAction: 'NO_EXPLICIT_ACTION' } : {}) }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify({ choice: name === 'verify_ordering_answer' ? coverage : candidate.id, ...(name === 'verify_ordering_answer' ? { answerAction: 'NO_EXPLICIT_ACTION' } : { requestCoverage: 'COMPLETE' }) }) } }] } }] })
   })
   const result = await resolveOrderingIntent({ kind: 'FAST_ACTION', actionId: candidate.id, confidence: 0.99 }, { ...input, transcript: coverage === 'COMPLETE' ? '對' : '可以送出去了', backgroundSpeechMode: 'off', decisionState: { phase: 'pending_confirmation', waitingFor, intentRecovery: answerScope(waitingFor) }, candidates: [candidate] }, complete)
   expect(result.kind).toBe(coverage === 'COMPLETE' ? 'FAST_ACTION' : 'NEEDS_ASSISTANT')
@@ -564,11 +564,21 @@ it.each(['QUESTION_ACTION', 'NO_EXPLICIT_ACTION', 'OTHER_ACTION', 'UNCERTAIN'])(
   const complete = vi.fn(async (body: Record<string, unknown>) => {
     const tools = body.tools as Array<{ function: { name: string } }>
     const name = tools[0]!.function.name
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(name === 'verify_ordering_answer' ? { choice: 'COMPLETE', answerAction } : { choice: candidate.id }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(name === 'verify_ordering_answer' ? { choice: 'COMPLETE', answerAction } : { choice: candidate.id, requestCoverage: 'COMPLETE' }) } }] } }] })
   })
   const result = await resolveOrderingIntent({ kind: 'FAST_ACTION', actionId: candidate.id, confidence: 0.99 }, { ...input, transcript: '可以送出去了', backgroundSpeechMode: 'off', decisionState: { phase: 'pending_confirmation', waitingFor, intentRecovery: answerScope(waitingFor) }, candidates: [candidate] }, complete)
   expect(result.kind).toBe(['QUESTION_ACTION', 'NO_EXPLICIT_ACTION'].includes(answerAction) ? 'FAST_ACTION' : 'NEEDS_ASSISTANT')
   if (['OTHER_ACTION', 'UNCERTAIN'].includes(answerAction))
     expect(result).not.toHaveProperty('actionId')
   expect(complete).toHaveBeenCalledTimes(2)
+})
+
+// Report: DEV-810280 Nov8 — Main recovery added a known dish and silently dropped an unknown second one.
+it('does not execute a recovered candidate that covers only part of the customer request', async () => {
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ choice: 'intent:add-item', requestCoverage: 'OTHER_REQUEST' }) } }] } }] }))
+  const result = await resolveOrderingIntent(admitted, { ...input, transcript: '牛肉麵一份，再來一瓶酒', backgroundSpeechMode: 'off' }, complete)
+  expect(result.kind).not.toBe('FAST_ACTION')
+  expect(result).not.toHaveProperty('actionId')
+  expect(result).toHaveProperty('trace.mainSkill.requestCoverage', 'OTHER_REQUEST')
+  expect(complete).toHaveBeenCalledOnce()
 })

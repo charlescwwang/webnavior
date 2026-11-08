@@ -103,3 +103,16 @@ it('regression K1107-GUIDE keeps data-only continuation off the customer screen'
   expect(await runtime.invoke('menu_recommend', { more: true, display: false })).toMatchObject({ dataOnly: true, queryAction: 'clarify' })
   expect(presentations).toHaveLength(count)
 })
+
+// Report: DEV-810280 Nov8 — repeated requests for more stayed on the same exhausted alternatives.
+it('cycles recommendations only after exhaustion was explained, without releasing dietary exclusions', async () => {
+  const runtime = createMenuToolRuntime({ menu: catalog, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {} })
+  await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['pork'] })
+  const exhausted = await runtime.invokeForAgent('menu_recommend', { action: 'continue' })
+  expect(exhausted).toHaveProperty('queryAction', 'clarify')
+  const again = await runtime.invokeForAgent('menu_recommend', { action: 'continue' })
+  expect(again).toHaveProperty('items', [expect.objectContaining({ id: 'fish' })])
+  expect(again).toHaveProperty('appliedFilters', expect.objectContaining({ includeIngredients: ['fish'], excludeIngredients: ['pork'] }))
+  expect(again).toHaveProperty('customerMessage', expect.stringContaining('再列出'))
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})

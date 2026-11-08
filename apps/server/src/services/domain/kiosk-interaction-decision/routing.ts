@@ -174,6 +174,13 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       throw error
     }
   }
+  async function completeMenuNavigation(candidate: KioskActionCandidate) {
+    // Safe display is not proof of correct purpose: ordering every member of a
+    // set must not collapse into merely displaying that set. Reuse a bounded
+    // semantic check without treating navigation as order-mutation consent.
+    const coverage = await choose('readCoverage', { type: 'choice', instructions: `核對本句完整需求是否僅由這個唯讀畫面效果完成：${descriptions[candidate.id] ?? candidate.description}。訂購集合中每款餐點不等於顯示集合，取消已點餐點也不等於離開畫面；如有這些其他目的須交接完整需求。`, criteria: { COMPLETE: '整句只要求這個瀏覽／返回效果，沒有未處理的購買、刪除或其他需求。', HANDOFF: '這個展示效果不能完成整句；還要求訂購、修改，或是另一個目的。', UNCERTAIN: '不能確認這個展示效果足夠。' } })
+    return coverage === 'COMPLETE' ? finish({ kind: 'FAST_ACTION', actionId: candidate.id }) : handoff('NEW_REQUEST')
+  }
   async function leaf(eligible: readonly KioskActionCandidate[], answeredQuestionId?: string): Promise<KioskInteractionDecision> {
     // Do not prune to the first N entries: a missing correct option is not a
     // model error. Large or unfamiliar groups go to Main with the whole request.
@@ -187,6 +194,8 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     const candidate = eligible.find(candidate => candidate.id === selected)
     if (!candidate)
       return handoff()
+    if (['intent:return-menu', 'intent:search-all-menu'].includes(candidate.id))
+      return await completeMenuNavigation(candidate)
     if (candidate.id === 'DECLINE_INVITATION')
       return finish({ kind: 'IGNORE', answeredQuestionId })
     const changesOrder = !candidate.id.endsWith(':unit-guidance') && !/^intent:(?:search-(?:all-)?menu|select-item|recommend(?:-more)?|show-recommendations|view-cart|return-menu|scroll-menu:)/u.test(candidate.id)
@@ -355,9 +364,8 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       // operation makes a recommendation refusal compete with HANDOFF twice.
       // The browser still checks the issued candidate and domain revisions.
       if (menu === 'EXIT') {
-        return eligible.some(candidate => candidate.id === 'intent:return-menu')
-          ? finish({ kind: 'FAST_ACTION', actionId: 'intent:return-menu' })
-          : handoff()
+        const candidate = eligible.find(candidate => candidate.id === 'intent:return-menu')
+        return candidate ? await completeMenuNavigation(candidate) : handoff()
       }
       eligible = eligible.filter(candidate => menu === 'LOOKUP' ? ['intent:search-menu', 'intent:search-all-menu'].includes(candidate.id) : menu === 'RECOMMEND' ? /recommend/u.test(candidate.id) : candidate.id.startsWith('intent:scroll-menu:'))
     }

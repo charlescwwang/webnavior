@@ -115,7 +115,11 @@ describe('action-bound customer questions', () => {
       await runtime.invoke(action, { itemId: 'chous-shrimp-roll' })
     else
       await runtime.invoke(action, action === 'menu_get' ? { query: '蝦捲' } : {})
-    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })).toMatchObject({ waitingFor: { purpose: 'checkout-entry' } })
+    const snapshot = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })
+    if (action === 'menu_open')
+      expect(snapshot).not.toHaveProperty('waitingFor')
+    else
+      expect(snapshot).toMatchObject({ waitingFor: { purpose: 'checkout-entry' } })
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
   })
 

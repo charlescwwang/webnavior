@@ -51,6 +51,9 @@ export interface MenuTestSnapshot {
 const kioskHostOnlyToolNames = new Set<MenuToolName>(hostToolNames)
 // Menu reads and order changes share the explicit phone-or-skip entry gate.
 const intentTools: Record<string, readonly MenuToolName[]> = {
+  // Whole-turn addition qualification cannot authorize replacing an existing line.
+  ADD_ONLY: ['menu_select_item', 'menu_set_quantity', 'menu_set_item_option', 'order_add_item', 'cart_add_item', 'menu_confirm_item'],
+  RETURN_MENU: ['menu_open'],
   REMOVE_ITEM: ['cart_remove_item'],
   ADD_ITEM: ['order_cancel_request', 'menu_select_item', 'menu_set_quantity', 'menu_set_item_option', 'order_add_item', 'cart_add_item', 'menu_confirm_item'],
   SET_QUANTITY: ['menu_set_quantity', 'cart_set_line_quantity'],
@@ -555,7 +558,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   // Target IDs come from the host-bound utterance, never from Agent lookup
   // arguments. An empty list requires a new customer confirmation; a contextual
   // short reply may retain a unique domain-resolved pre-task presentation reference with a quantity.
-  let agentTask: { taskId: string, transcript: string, handoff?: ConversationHandoff, expectedRevisions?: KioskRevisions, allowedToolNames?: string[], returnToMenu?: boolean, targetItemIds?: string[], proposalItemIds?: string[], broadMenuQuery: boolean, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number, querySubjects?: QueryPresentationSubject[] } | undefined
+  let agentTask: { taskId: string, transcript: string, handoff?: ConversationHandoff, expectedRevisions?: KioskRevisions, allowedToolNames?: string[], returnToMenu?: boolean, targetItemIds?: string[], proposalItemIds?: string[], broadMenuQuery: boolean, readOnly: boolean, filters: IngredientFilters, prices: PriceConditions, unresolvedPrice: boolean, unresolvedMenu: boolean, menuRevision: number, expiresAt: number, querySubjects?: QueryPresentationSubject[], uncheckedSubjects: Set<string> } | undefined
   let waitingFor: PendingQuestion | undefined
   let offeredQuestion: typeof waitingFor
   // Records belong to this order, not a model turn. Completed/superseded
@@ -571,7 +574,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   // Conditions and delivered items belong to this order, not an idle timer.
   // An explicit fresh recommendation replaces the batch; reset clears it.
   let recommendationRevision = 0
-  let recommendationBatch: { seenIds: Set<string>, filters: IngredientFilters, excludedItemIds: string[], needs: RecommendationTag[], prices: PriceConditions, category: string, queries: string[], strategy?: RecommendationStrategy, scope?: SelectedQueryScope, exhausted: boolean, hadMatches: boolean, menuRevision: number | undefined } | undefined
+  let recommendationBatch: { seenIds: Set<string>, filters: IngredientFilters, excludedItemIds: string[], needs: RecommendationTag[], prices: PriceConditions, category: string, queries: string[], strategy?: RecommendationStrategy, scope?: SelectedQueryScope, exhausted: boolean, exhaustionOffered?: boolean, hadMatches: boolean, menuRevision: number | undefined } | undefined
 
   function getQueryState(): QueryView | undefined {
     if (!recommendationBatch || recommendationBatch.menuRevision !== machine.getRevisions().menu)
@@ -595,6 +598,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       presentationItemIds = [...presentation.itemIds]
       await options.onRecommendationsChange?.(presentation)
     }
+    if (reason === 'exhausted' && previous && display)
+      recommendationBatch = { ...previous, exhaustionOffered: true }
     const customerReply = describeGuidance(reason, candidates)
     return { queryAction: 'clarify', items: [], dataOnly: !display, customerReply, customerMessage: renderCustomerReply(customerReply), guidance: { reason, itemIds: candidates.map(item => item.id) }, ...(presentation ? { presentation } : {}) }
   }
@@ -1251,6 +1256,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         return result
       const asksNext = ['order_add_item', 'cart_add_item', 'cart_get', 'cart_remove_item', 'cart_set_line_quantity', 'cart_set_line_option', 'order_set_fulfillment', 'order_set_party_size', 'seating_reserve', 'checkout_start', 'checkout_skip_membership', 'checkout_choose_invoice', 'checkout_request_tax_id', 'checkout_set_tax_id', 'checkout_confirm_tax_id', 'checkout_confirm_invoice', 'checkout_cancel'].includes(name)
       if (asksNext && (name !== 'cart_get' || input.display !== false)) {
+        if (['cart_remove_item', 'cart_set_line_quantity', 'cart_set_line_option'].includes(name) && payload.cart && tableOrderReview && tableOrderReview.contextId === options.serviceContext?.()?.id) {
+          // These controls keep the real cart review open while editing. Bind
+          // the next checkout question to the newly displayed cart fingerprint.
+          tableOrderReview = { contextId: tableOrderReview.contextId, cart: cartFingerprint(machine.getCart()) }
+        }
         const reviewCurrent = tableOrderReview?.contextId === options.serviceContext?.()?.id && tableOrderReview?.cart === cartFingerprint(machine.getCart())
         // Adding food does not mean the cart has been reviewed. Table checkout
         // questions become available only on the actual review surface.
@@ -1262,7 +1272,6 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         }
         // A cart read/edit or reaffirmed fulfillment does not answer an
         // unrelated question. Actual domain progress retires it in context.
-        const payload = result as Record<string, unknown>
         delete payload.pendingCustomerChoice
         if (offeredQuestion)
           payload.pendingCustomerChoice = offeredQuestion
@@ -1319,6 +1328,14 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (itemId)
             await closeMeal(itemId, onAction)
           await leaveReview(onAction)
+          if (waitingFor?.purpose === 'checkout-entry' || offeredQuestion?.purpose === 'checkout-entry') {
+            // Leaving review retires its send invitation. A later plain assent
+            // on the menu must never submit the cart from that previous screen.
+            finishQuestion('superseded')
+            offeredQuestion = undefined
+            tableOrderReview = undefined
+            issuedFastPathContext = undefined
+          }
           const catalog = await applyControl('查看全部菜單', undefined, { controlId: 'menu:all' }, () => invoke('menu_get', { scope: 'catalog', display: true }, onAction, queryTask), onAction) as Record<string, unknown>
           return { ...catalog, customerMessage: '已回到全部菜單，接下來想看哪一道餐點？', cart: machine.getCart() }
         }
@@ -1475,6 +1492,11 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           // Later arbitrary reads cannot authorize proposing another meal.
           if (agentTask && queries.length && queries.every(query => agentTask!.transcript.includes(query)))
             agentTask.proposalItemIds = (possibleItems.length ? possibleItems : scope).map(item => item.id)
+          if (agentTask?.handoff?.intent === 'ADD_ONLY') {
+            for (const query of queries)
+              agentTask.uncheckedSubjects.delete(query)
+          }
+          const missingQueries = queries.filter(query => !scope.some(item => itemMatchesQuery(item, query)) && !findMenuCandidates(candidateMenu, query).length)
           const itemStatuses = queries.length ? scope.map(itemAvailability) : []
           if (input.verifyClaim === true && !queries.length)
             throw new Error('Specify the meal names being verified with query or queries.')
@@ -1569,9 +1591,15 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             facts = verificationMessage
           else if (!literalDetails)
             facts = `${hasIngredientFilters ? `${filterDescription}：` : ''}${items.length ? `我找到：${items.map(item => item.name).join('、')}。` : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`
+          if (scope.length && missingQueries.length)
+            facts += orderingMessages['zh-Hant'].missingMenuSubjects.replace('{items}', missingQueries.map(query => `「${query}」`).join('、'))
+          if (queries.length && scope.length > 1 && literalDetails) {
+            facts += scope.map(item => `${item.name}單份${item.price}元。`).join('')
+            pricedItemIds.push(...scope.map(item => item.id))
+          }
           const displayReply = category || queries.length > 0 || input.display === true || hasIngredientFilters || (excludedItemIds.length > 0 && input.display !== false)
           // Display invitations are separate from factual evidence and never grant consent.
-          let selectionGuide = nextQuestion ?? orderingMessages['zh-Hant'].browseQuestion
+          let selectionGuide = nextQuestion ?? (queries.length && !items.length && !possibleItems.length ? orderingMessages['zh-Hant'].emptyLookupQuestion : orderingMessages['zh-Hant'].browseQuestion)
           if (!nextQuestion && hasIngredientFilters && items.length)
             selectionGuide = items.length === 1 ? orderingMessages['zh-Hant'].singleRecommendationQuestion : orderingMessages['zh-Hant'].recommendationQuestion
           const customerReply = displayReply
@@ -1596,6 +1624,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             ...(possibleItems.length ? { possibleItems: possibleItems.map(menuItemForAgent), candidateSearch: 'fuzzy', guidance: { reason: 'possible', itemIds: possibleItems.map(item => item.id) } } : {}),
             itemStatuses,
             requestedQueries: queries,
+            queryMatches: queries.map(query => ({ query, itemIds: scope.filter(item => itemMatchesQuery(item, query)).map(item => item.id) })),
+            missingQueries,
             excludedItemIds,
             appliedFilters,
             appliedPriceConditions: prices,
@@ -1607,6 +1637,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
         }
         case 'menu_recommend': {
+          const repeatCycle = input.more === true && recommendationBatch?.exhausted === true && recommendationBatch.exhaustionOffered === true && recommendationBatch.hadMatches
+          if (repeatCycle)
+            recommendationBatch = { ...recommendationBatch!, seenIds: new Set(), exhausted: false }
           const previous = input.more === true ? recommendationBatch : undefined
           // More keeps the confirmed universe without turning that universe
           // into food exclusions which could leak into a later fresh query.
@@ -1707,12 +1740,13 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           }
           const guidance = !items.length && filterAvailability(filtered, 0) === 'NONE' ? await queryGuidance('empty', input.display !== false) : undefined
           const customerReply = {
-            facts: `${hasIngredientFilters ? `${ingredientFilterDescription(appliedFilters)}：` : ''}${items.length > 0
+            facts: `${repeatCycle ? orderingMessages['zh-Hant'].recommendationCycle : ''}${hasIngredientFilters ? `${ingredientFilterDescription(appliedFilters)}：` : ''}${items.length > 0
               ? `推薦${items.length === 1 ? '一項' : `${items.length} 項`}：${items.map(item => item.name).join('、')}。`
               : input.more === true && filterAvailability(filtered, items.length) === 'NONE' ? '目前沒有其他符合原條件且尚未推薦的餐點。' : emptyFilterMessage(filterAvailability(filtered, items.length))}${items.length && filtered.customizable.length ? '另有餐點需要客製，尚未修改或加入。' : ''}${items.length && filtered.unknown.length ? '部分餐點資料不足，未列為符合。' : ''}`,
             ...(items.length && input.display !== false ? { nextQuestion: items.length === 1 ? orderingMessages['zh-Hant'].singleRecommendationQuestion : orderingMessages['zh-Hant'].recommendationQuestion } : {}),
           }
           return {
+            dataOnly: input.display === false,
             customerReply,
             customerMessage: renderCustomerReply(customerReply),
             items,
@@ -2004,7 +2038,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           const cart = machine.getCart()
           return {
             cart,
-            ...(input.display !== false ? { customerMessage: cart.lines.length ? mealMessages.orderSummary.replace('{items}', cart.lines.map(line => `${line.name} ${line.quantity} 份`).join('、')).replace('{total}', String(cart.total)) : mealMessages.emptyOrder } : {}),
+            ...(input.display === false ? { dataOnly: true } : { customerMessage: cart.lines.length ? mealMessages.orderSummary.replace('{items}', cart.lines.map(line => `${line.name} ${line.quantity} 份`).join('、')).replace('{total}', String(cart.total)) : mealMessages.emptyOrder }),
             nextStep: cartNextStep(cart, options.serviceContext?.()),
           }
         }
@@ -2263,7 +2297,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             if (resolved?.kind === 'PLAN' && resolved.plan.targetRef && source.referenceOrigins[resolved.plan.targetRef] === 'presentation' && typeof resolved.plan.slots.quantity === 'number' && typeof resolved.plan.slots.itemId === 'string')
               targetItemIds = [resolved.plan.slots.itemId]
           }
-          agentTask = { taskId, transcript: requiredString(input, 'transcript'), ...(input.handoff ? { handoff: parse(handoffSchema, input.handoff) } : {}), targetItemIds, broadMenuQuery: source.catalogEvidence.products.length === 0 && source.catalogEvidence.categories.length === 0, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000 }
+          agentTask = { taskId, transcript: requiredString(input, 'transcript'), ...(input.handoff ? { handoff: parse(handoffSchema, input.handoff) } : {}), targetItemIds, broadMenuQuery: source.catalogEvidence.products.length === 0 && source.catalogEvidence.categories.length === 0, readOnly: input.readOnly === true, filters: ingredientFilters(bounded), prices: priceConditions(bounded), unresolvedPrice: bounded.unresolvedPrice === true, unresolvedMenu: false, menuRevision: revision, expiresAt: Date.now() + 300_000, uncheckedSubjects: new Set(input.handoff ? parse(handoffSchema, input.handoff).subjects ?? [] : []) }
           options.onAgentControlChange?.(true)
           return { ok: true }
         }
@@ -2374,7 +2408,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             // A finite operation handoff may read evidence, but does not ask
             // for a new recommendation. General mixed-purpose tasks keep their
             // independently qualified browsing scope.
-            allowedToolNames = allowedToolNames.filter(name => !['menu_recommend', 'menu_show_recommendations'].includes(name))
+            allowedToolNames = allowedToolNames.filter(name => !['menu_recommend', 'menu_show_recommendations'].includes(name) && (agentTask?.handoff?.intent !== 'ADD_ONLY' || !['menu_open', 'menu_scroll'].includes(name)))
           }
           const canAnswerNavigation = navigation && pendingNavigation?.presented && pendingNavigation.taskId !== agentTask?.taskId
           if (!confirmation && !canAnswerNavigation)
@@ -2384,8 +2418,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
           if (!agentTask?.readOnly && phase === 'configuration' && pendingConfiguration && agentTask && mentionedUnavailableConditions(agentTask.transcript).length && machine.getMenu().some(item => item.id === pendingConfiguration!.plan.slots.itemId && !item.optionGroups.length))
             allowedToolNames.push('menu_confirm_item')
           const taskSpeech = agentTask?.transcript ?? ''
-          const preparationSpeech = deriveDecisionContext({ ...context, transcript: taskSpeech }).catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), taskSpeech)
-          const preparationOnly = agentTask && mentionedUnavailableConditions(preparationSpeech).some(reference => ['spice', 'preparation'].includes(reference.id))
+          const taskContext = deriveDecisionContext({ ...context, transcript: taskSpeech })
+          const preparationOnly = agentTask && taskContext.unavailableConditionReferences.some(reference => ['spice', 'preparation'].includes(reference.id))
             && machine.getMenu().some(item => !item.optionGroups.length && (agentTask!.targetItemIds?.includes(item.id) || pendingConfiguration?.plan.slots.itemId === item.id))
           // A named preparation request is not a recommendation-scope question.
           // Factual lookup remains available; no purchase is granted by this filter.
@@ -2410,7 +2444,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
             entryComplete: context.phase !== 'customer_entry',
             readOnly: agentTask?.readOnly === true,
             constraints: { excludeIngredients: agentTask?.filters.excludeIngredients ?? [], includeIngredients: agentTask?.filters.includeIngredients ?? [], ...(agentTask?.filters.dietary ? { dietary: agentTask.filters.dietary } : {}), ...agentTask?.prices },
-            ...(agentTask ? { unavailableConditions: mentionedUnavailableConditions(agentTask.transcript) } : {}),
+            // Share the same catalog-aware condition evidence with Main. Re-scanning
+            // raw speech here would turn a 辣 dish name back into customization.
+            ...(agentTask ? { unavailableConditions: taskContext.unavailableConditionReferences } : {}),
             ...(options.screen ? { screen: options.screen() } : {}),
             ...(recommendationBatch && recommendationBatch.menuRevision === context.revisions.menu ? { queryState: { category: recommendationBatch.category, queries: recommendationBatch.queries, exhausted: recommendationBatch.exhausted, prices: recommendationBatch.prices, filters: recommendationBatch.filters } } : {}),
             presentation: { itemIds: options.visibleItemIds?.() ?? presentationItemIds ?? [], category: recommendationBatch?.category ?? '', queries: recommendationBatch?.queries ?? [] },
@@ -2966,6 +3002,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   function agentToolRestriction(name: MenuToolName) {
     const expected = agentTask?.handoff && intentTools[agentTask.handoff.intent]
     const mutation = !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'menu_open', 'menu_scroll', 'order_ask_question'].includes(name)
+    if (agentTask?.handoff?.intent === 'ADD_ONLY' && ['menu_recommend', 'menu_show_recommendations', 'menu_open', 'menu_scroll'].includes(name))
+      return 'intent'
     if (expected && ((mutation && !expected.includes(name)) || (agentTask?.handoff?.intent === 'REMOVE_ITEM' && menuBrowsingToolNames.has(name))))
       return 'intent'
     if (agentTask?.readOnly && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question'].includes(name))
@@ -2973,7 +3011,9 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     // Confirmation answers have their own presented-ticket validation before menu locks.
     if (name === 'order_answer_confirmation')
       return
-    if (agentTask?.unresolvedMenu && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question', 'order_defer_question', 'menu_confirm_item'].includes(name))
+    if (agentTask?.handoff?.intent === 'ADD_ONLY' && agentTask.uncheckedSubjects.size && mutation)
+      return 'unresolved-menu'
+    if (agentTask?.unresolvedMenu && agentTask.handoff?.intent !== 'ADD_ONLY' && !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'order_ask_question', 'order_defer_question', 'menu_confirm_item'].includes(name))
       return 'unresolved-menu'
     if (mealClarification.question(currentFastPathContext()) && !['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name))
       return 'meal-confirmation'
@@ -2984,6 +3024,8 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
   /** Applies the browser-owned state policy before a conversational Agent's tool call. */
   async function invokeForAgent(name: MenuToolName, input: Record<string, unknown> = {}) {
     const task = agentTask
+    if (task?.handoff?.intent === 'ADD_ONLY' && input.replaceLineId !== undefined)
+      throw new Error('A new-item request cannot replace an existing cart line.')
     const mutation = !menuBrowsingToolNames.has(name) && !['cart_get', 'seating_get', 'menu_open', 'menu_scroll', 'order_ask_question'].includes(name)
     const expected = task?.handoff && intentTools[task.handoff.intent]
     if (agentToolRestriction(name) === 'intent')
@@ -3056,7 +3098,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
     // Evidence reads cannot invent an offer. An explicitly displayed review
     // uses the ordinary Menu-owned next question, without acquiring a write.
     if (agentTask?.readOnly && name === 'cart_get' && input.display !== true) {
-      return { cart: machine.getCart() }
+      return { cart: machine.getCart(), dataOnly: true }
     }
     // A failed named lookup leaves this customer's request unresolved. Do not
     // execute a partial removal or silently substitute another meal. This latch
@@ -3158,7 +3200,7 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
       // transport error. Ask through the existing scope-clarification reply;
       // never invent a first batch or relax stale-catalog checks above.
       const missingContinuation = action === 'continue' && !recommendationBatch && !presentationItemIds?.length
-      if (action === 'clarify' || missingContinuation || (action === 'continue' && recommendationBatch?.exhausted))
+      if (action === 'clarify' || missingContinuation || (action === 'continue' && recommendationBatch?.exhausted && !recommendationBatch.exhaustionOffered))
         return await queryGuidance(recommendationBatch?.exhausted ? 'exhausted' : 'unclear', input.display !== false)
       if (action === 'continue') {
         input = { ...patch, action, more: true }
@@ -3220,6 +3262,14 @@ export function createMenuToolRuntime(options: MenuToolRuntimeOptions) {
         throw new Error('Menu browsing presentation requires menu_recommend with an explicit action.')
     }
     if (agentTask && menuBrowsingToolNames.has(name)) {
+      const namedQueries = getMenuQuery(input).queries.filter(query => agentTask!.transcript.includes(query))
+      if (namedQueries.length && Array.isArray(input.excludeItemIds)) {
+        // A freshly named subject supersedes its old browsing rejection/history.
+        // Dietary/ingredient restrictions remain independently enforced below.
+        const namedIds = new Set(machine.getMenu().filter(item => namedQueries.some(query => itemMatchesQuery(item, query))).map(item => item.id))
+        input = { ...input, excludeItemIds: input.excludeItemIds.filter(id => !namedIds.has(String(id))) }
+      }
+
       // Tool arguments cannot turn a customer-wide price/filter query into a
       // named lookup of the previous recommendation. The source utterance owns
       // subject evidence, independently from the model's chosen arguments.

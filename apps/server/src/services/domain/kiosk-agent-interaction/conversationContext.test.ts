@@ -174,7 +174,7 @@ it.each([
 ])('regression K1107-CART verifies display intent without a pending question: $text', async ({ text, choice, allowed }) => {
   const context = parse(conversationContextSchema, { ...facts, sourceUtterance: text })
   const complete = vi.fn(async (_body: Record<string, unknown>) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: JSON.stringify({ choice }) } }] } }] }))
-  const accepted = await reviewOperations({ context, calls: [{ id: 'cart', type: 'function', function: { name: 'cart_get', arguments: '{"display":true}' } }], complete })
+  const accepted = await reviewOperations({ context, tools: [], calls: [{ id: 'cart', type: 'function', function: { name: 'cart_get', arguments: '{"display":true}' } }], complete })
   expect(accepted).toBe(allowed)
   expect(complete).toHaveBeenCalledOnce()
   expect(JSON.stringify(complete.mock.calls[0]![0])).toContain(text)
@@ -189,7 +189,7 @@ it.each([
   { label: 'extra argument', payload: { choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: '{"choice":"SUPPORTED","confirmed":true}' } }] } }] }, error: 'invalid choice' },
 ])('regression K1107-CONFIRM rejects malformed review: $label', async ({ payload, error }) => {
   const context = parse(conversationContextSchema, facts)
-  await expect(reviewOperations({ context, calls: [{ id: 'cart', type: 'function', function: { name: 'cart_get', arguments: '{"display":true}' } }], complete: async () => Response.json(payload) })).rejects.toThrow(error)
+  await expect(reviewOperations({ context, tools: [], calls: [{ id: 'cart', type: 'function', function: { name: 'cart_get', arguments: '{"display":true}' } }], complete: async () => Response.json(payload) })).rejects.toThrow(error)
 })
 
 // Report: this chat, Nov7 — confirming a special request must not authorize a staff call.
@@ -220,4 +220,13 @@ it.each([false, true])('keeps cart removal separate from atomic replacement (rep
 it('does not label ordinary configuration as an unsupported preparation request', () => {
   const context = parse(conversationContextSchema, { ...facts, phase: 'configuration', readOnly: false, allowedToolNames: ['menu_confirm_item'] })
   expect(currentContextInstructions(context)).not.toContain('本輪正在補齊未入車餐點的份數，並有未支援的製作調整')
+})
+
+it('provides the real phase and page-owned tool semantics to operation review', async () => {
+  const context = parse(conversationContextSchema, { ...facts, sourceUtterance: '繼續選餐' })
+  const complete = vi.fn(async (_body: Record<string, unknown>) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: '{"choice":"SUPPORTED"}' } }] } }] }))
+  await reviewOperations({ context, calls: [{ id: 'back', type: 'function', function: { name: 'menu_open', arguments: '{}' } }], tools: [{ name: 'menu_open', description: '回到菜單並保留購物車' }], complete })
+  const body = complete.mock.calls[0]![0]
+  const messages = body.messages as { content: string }[]
+  expect(JSON.parse(messages[1]!.content)).toMatchObject({ phase: context.phase, paymentState: context.paymentState, proposedOperations: [{ name: 'menu_open', description: '回到菜單並保留購物車' }] })
 })

@@ -321,7 +321,7 @@ function resolveControl(id: string) {
 const controlExecution = createControlExecution({ animate: animateAction, resolve: resolveControl })
 
 const runtime = createMenuToolRuntime({
-  merchant: props.merchant ?? { id: 'original-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' },
+  merchant: props.merchant ?? { id: 'original-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless', deliverySupported: false, orderTiming: 'made-to-order' },
   testing: import.meta.env.DEV,
   onMenuChanged: (items) => {
     if (posCatalog.value)

@@ -61,6 +61,8 @@ export const merchantFactsSchema = object({
   operatorName: optional(label),
   paymentPolicy: picklist(['cashless', 'unknown']),
   paymentMethods: optional(pipe(array(object({ id, label })), maxLength(20))),
+  deliverySupported: optional(boolean()),
+  orderTiming: optional(picklist(['made-to-order', 'unknown'])),
 })
 export type MerchantFacts = InferOutput<typeof merchantFactsSchema>
 
@@ -85,6 +87,8 @@ export const conversationOptionSchema = object({ groupId: id, valueId: id })
 /** Application resolution is preserved independently from the model's intent confidence. */
 export const handoffSchema = object({
   intent: pipe(string(), maxLength(80)),
+  /** Literal original meal subjects, qualified together with a pure-add purpose. */
+  subjects: optional(pipe(array(label), maxLength(20))),
   status: picklist(['resolved', 'ambiguous', 'unmatched', 'target-absent', 'unavailable', 'stale', 'unrepresentable']),
   itemIds: pipe(array(id), maxLength(200)),
   lineIds: pipe(array(id), maxLength(200)),
@@ -179,6 +183,8 @@ export const conversationContextSchema = pipe(object({
   allowedPaymentMethods: pipe(array(id), maxLength(20)),
   /** Offered methods; unlike allowedPaymentMethods, this does not grant phase-specific execution. */
   paymentMethods: optional(pipe(array(object({ id, label })), maxLength(20))),
+  deliverySupported: optional(boolean()),
+  orderTiming: optional(picklist(['made-to-order', 'unknown'])),
   fulfillmentModes: pipe(array(object({ id, label })), maxLength(20)),
   waitingFor: optional(conversationQuestionSchema),
   retainedRequests: pipe(array(conversationRequestSchema), maxLength(20)),
@@ -200,7 +206,7 @@ export function orderAssistanceQuestion(sourceUtterance: string): string {
 /** A model may select a factual reply, but cannot supply operation-success prose. */
 export const contextReplySchema = pipe(strictObject({
   kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'quantity-limit', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information', 'staff-assistance']),
-  topic: optional(picklist(['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units'])),
+  topic: optional(picklist(['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units', 'delivery', 'order-timing'])),
   subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
   action: optional(picklist(['confirm-order', 'offer', 'accept', 'decline'])),
 }), check(value => value.topic !== 'ordering-units' || (value.kind === 'service-information' && Boolean(value.subjects?.length)), 'Ordering units requires original menu subjects.'), check(value => value.kind === 'staff-assistance' ? value.action !== undefined && value.topic === undefined && value.subjects === undefined : value.action === undefined, 'Assistance selection requires its own action.'), check(value => value.kind !== 'clarification' || value.topic === undefined || value.topic === 'menu-kind', 'Clarification asks for unclear meaning; missing service data uses service-information/topic:other.'))
@@ -310,6 +316,10 @@ export function replyFromContext(answer: string | undefined, context: Conversati
       return { kind, content: guide('我是這台機台的點餐助手，可以幫您查菜單和點餐。', '您想吃什麼？') }
     if (topic === 'capabilities')
       return { kind, content: guide(orderingMessages['zh-Hant'].orderingGuide, '您想先點哪道餐點？') }
+    if (topic === 'delivery')
+      return { kind, topic, content: context.merchant?.deliverySupported === false ? orderingMessages['zh-Hant'].noDelivery : '外送安排需要服務人員確認。要繼續現場點餐嗎？' }
+    if (topic === 'order-timing')
+      return { kind, topic, content: context.merchant?.orderTiming === 'made-to-order' ? orderingMessages['zh-Hant'].madeToOrderOnly : '預約安排需要服務人員確認。想現在點餐嗎？' }
     if (topic === 'out-of-scope')
       return { kind, topic: 'out-of-scope' as const, content: '我是點餐助手，可以幫您看菜單、選餐和確認訂單。您想吃什麼？' }
     if (topic === 'location' || topic === 'hours')

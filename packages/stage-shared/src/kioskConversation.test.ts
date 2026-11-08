@@ -228,3 +228,12 @@ it('uses verified merchant payment facts while retaining the current question', 
   expect(verified.content).toContain('目前支援信用卡')
   expect(verified.content).not.toContain('LINE Pay')
 })
+
+// Report: DEV-810280 Nov8 — delivery/reservations were answered with unrelated fulfillment or scope text.
+it('answers the old merchant delivery and made-to-order policies from its own supplied facts', () => {
+  const context = parse(conversationContextSchema, { contextId: 'policies', capturedAt: Date.now(), entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [{ id: 'dine-in', label: '隨桌供餐' }], retainedRequests: [], allowedToolNames: [], merchant: { id: 'original-simulation', paymentPolicy: 'cashless', deliverySupported: false, orderTiming: 'made-to-order' } })
+  expect(replyFromContext('{"kind":"service-information","topic":"delivery"}', context)?.content).toContain('無法安排外送')
+  expect(replyFromContext('{"kind":"service-information","topic":"order-timing"}', context)?.content).toContain('只提供現做餐點，不接受預約')
+  expect(replyFromContext('{"kind":"service-information","topic":"delivery"}', { ...context, merchant: { id: 'other', paymentPolicy: 'unknown' } })?.content).not.toContain('無法安排外送')
+  expect(replyFromContext('{"kind":"service-information","topic":"order-timing"}', { ...context, merchant: { id: 'other', paymentPolicy: 'unknown' } })?.content).not.toContain('只提供現做')
+})

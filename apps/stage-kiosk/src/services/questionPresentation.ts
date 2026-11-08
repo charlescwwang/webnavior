@@ -42,6 +42,10 @@ export function createMenuReplyWindow() {
       if (typeof payload.customerMessage === 'string' && !waiting)
         operations.add(name)
       if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name)) {
+        // A successful cart mutation supersedes any earlier displayed snapshot
+        // in this turn. Its old quantities/prices cannot accompany the new receipt.
+        if (payload.cart && typeof payload.cart === 'object')
+          cartReply = undefined
         const message = operationReplyFrom(payload)
         // Only the current question may be spoken. Earlier operation receipts
         // remain, but their superseded follow-up prompts cannot be revived.
@@ -97,7 +101,7 @@ export function createMenuReplyWindow() {
       const structured = safeParse(customerReplySchema, payload.customerReply)
       if (structured.success) {
         const reply = structured.output
-        messages.set(reply.queryKey ?? reply.facts, { facts: reply.facts, guidance: Boolean(payload.guidance), nextQuestion: reply.nextQuestion, itemIds, pricedItemIds: reply.pricedItemIds ?? [] })
+        messages.set(name === 'menu_get' ? reply.queryKey ?? reply.facts : 'recommendation', { facts: reply.facts, guidance: Boolean(payload.guidance), nextQuestion: reply.nextQuestion, itemIds, pricedItemIds: reply.pricedItemIds ?? [] })
       }
       else {
         const message = operationReplyFrom(payload) ?? (names.length ? `我查到：${names.slice(0, 3).join('、')}。` : '目前沒有查到符合條件的餐點。')
@@ -111,7 +115,9 @@ export function createMenuReplyWindow() {
     },
     hasOperation(intent: string) {
       const tools: Record<string, string[]> = {
+        ADD_ONLY: ['order_add_item', 'cart_add_item'],
         ADD_ITEM: ['order_add_item', 'cart_add_item'],
+        RETURN_MENU: ['menu_open'],
         REMOVE_ITEM: ['cart_remove_item'],
         SET_QUANTITY: ['cart_set_line_quantity', 'menu_set_quantity'],
         SET_OPTION: ['cart_set_line_option', 'menu_set_item_option'],
@@ -200,11 +206,11 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   // A true menu receipt cannot complete a known mutation task. Preserve the
   // requested effect even when Main chooses a factual but unrelated lookup.
   const intent = options.handoff?.intent ?? ''
-  const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART', 'SET_FULFILLMENT', 'START_CHECKOUT', 'SELECT_PAYMENT', 'CANCEL_CHECKOUT'].includes(intent)
+  const operationRequired = ['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY', 'SET_OPTION', 'CLEAR_CART', 'SET_FULFILLMENT', 'START_CHECKOUT', 'SELECT_PAYMENT', 'CANCEL_CHECKOUT', 'RETURN_MENU', 'ADD_ONLY'].includes(intent)
   // The loop result is diagnostic; only the final Menu-validated question
   // supplied by the Host may be presented after release/manual state changes.
   const question = options.question
-  const configuringMeal = ['ADD_ITEM', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(question?.purpose ?? '')
+  const configuringMeal = ['ADD_ITEM', 'ADD_ONLY', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(question?.purpose ?? '')
   // Clarification pauses an unexecuted demand; it never completes the mutation
   // or consumes an old confirmation. Reads may precede a clarification; attempted
   // writes still require their actual receipt or result-unknown policy.
@@ -215,7 +221,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   }
   // A verified absence answers an unmatched add without claiming a cart write.
   // Never apply this exception to failed turns or other mutation intents.
-  const unmatchedAdd = result.status === 'completed' && intent === 'ADD_ITEM' && options.handoff?.status === 'unmatched'
+  const unmatchedAdd = result.status === 'completed' && ((intent === 'ADD_ITEM' && options.handoff?.status === 'unmatched') || intent === 'ADD_ONLY')
     && result.requestedTools.every(name => ['menu_get', 'kiosk_session_history'].includes(name))
     && options.menu.hasUnmatchedQuery(options.sourceUtterance ?? '')
   if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal && !unmatchedAdd) {
@@ -224,7 +230,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   }
   // A later owned question supersedes earlier browse/fuzzy prompts, while
   // independent factual read receipts remain available for compound requests.
-  const readReply = options.menu.hasReceipts() ? options.menu.reply({ omitGuidance: Boolean(question) }) : ''
+  const readReply = options.menu.hasReceipts() ? options.menu.reply({ omitGuidance: Boolean(question) || options.menu.hasOperation(intent) }) : ''
   const acceptedOperations = options.menu.operationReply()
   const outcome = acceptedOperations && readReply ? `${acceptedOperations} ${readReply}` : options.menu.operationReply(options.outcome) ?? (readReply || undefined)
   const receiptReply = replyFromOperation(readReply, outcome, question)
@@ -235,7 +241,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
       ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
       : { role: 'error' as const, content: options.failureMessage }
   }
-  if (!receiptReply && !commerceAttempted && options.context) {
+  const onlyEvidenceReads = result.requestedTools.every(name => ['kiosk_session_history', 'cart_get', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'seating_get'].includes(name))
+  if (!receiptReply && onlyEvidenceReads && options.context) {
     const information = replyFromContext(result.reply ? JSON.stringify(result.reply) : result.answer, options.context)
     // A display-required request still needs a presentation receipt. Only an
     // application-owned clarification or limitation may stop without claiming a menu result.
@@ -245,6 +252,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   if (options.requireMenuRead && !receiptReply)
     return unresolved
   if (!receiptReply && !commerceAttempted && !options.requireMenuRead && !options.serviceReply)
+    return unresolved
+  if (!receiptReply && (commerceAttempted || options.requireMenuRead) && !options.menu.hasReceipts())
     return unresolved
   const content = receiptReply || (commerceAttempted || options.requireMenuRead ? options.menu.reply() : result.answer)
   return content ? { role: 'assistant' as const, content, ...(!question && options.menu.needsClarification() ? { clarification: true as const } : {}) } : { role: 'error' as const, content: options.failureMessage }

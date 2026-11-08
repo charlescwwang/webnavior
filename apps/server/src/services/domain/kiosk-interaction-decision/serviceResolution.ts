@@ -3,22 +3,22 @@ import type { BackgroundSpeechMode } from '@proj-airi/stage-shared/kiosk-service
 import type { DecisionConversation, ServiceRecipient } from './context'
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
-import { assistanceQuestion, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
-import { array, literal, object, picklist, safeParse, strictObject, string } from 'valibot'
+import { assistanceQuestion, orderAssistanceQuestion, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { array, literal, object, optional, picklist, safeParse, strictObject, string } from 'valibot'
 
 import { orderingInstructions } from '../kiosk-conversation-skills'
 import { buildDecisionMessages, recipientParameter, recipientSchema } from './context'
 import { serviceDomainInstruction } from './prompt'
 
-const serviceChoices = ['SERVICE_INFORMATION_ONLY', 'MENU_INFORMATION_ONLY', 'ORDER_INFORMATION_ONLY', 'ORDER_REVIEW', 'OUT_OF_SCOPE', 'ORDER_MUTATION', 'ACKNOWLEDGEMENT', 'KEEP_ORDER', 'IDLE', 'BACKGROUND', 'CLARIFY_SERVICE', 'UNCERTAIN'] as const
-const choiceSchema = strictObject({ recipient: recipientSchema, choice: picklist(serviceChoices) })
+const serviceChoices = ['SERVICE_INFORMATION_ONLY', 'MENU_INFORMATION_ONLY', 'ORDER_INFORMATION_ONLY', 'ORDER_REVIEW', 'MENU_RETURN', 'ORDER_ASSISTANCE', 'OUT_OF_SCOPE', 'ORDER_ADDITION', 'ORDER_MUTATION', 'ACKNOWLEDGEMENT', 'KEEP_ORDER', 'IDLE', 'BACKGROUND', 'CLARIFY_SERVICE', 'UNCERTAIN'] as const
+const choiceSchema = strictObject({ recipient: recipientSchema, choice: picklist(serviceChoices), subjects: optional(array(string())) })
 const responseSchema = object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: literal('resolve_service_scope'), arguments: string() }) })) }) })) })
 
 /** Resolves generic Main handoffs without weakening evidence requirements for food or orders. */
 export async function resolveServiceHandoff(decision: KioskInteractionDecision, transcript: string, state: KioskDecisionState | undefined, complete: (body: Record<string, unknown>) => Promise<Response>, conversation?: DecisionConversation, backgroundSpeechMode: BackgroundSpeechMode = 'off'): Promise<KioskInteractionDecision> {
   const filterBackground = backgroundSpeechMode === 'enforce'
   const offeredChoices = serviceChoices.filter(choice => filterBackground || choice !== 'BACKGROUND')
-  const meaningSchema = strictObject({ choice: picklist(offeredChoices) })
+  const meaningSchema = strictObject({ choice: picklist(offeredChoices), subjects: optional(array(string())) })
   const mentions = state?.catalogEvidence
   const previouslyInterpreted = decision.resolvedBy === 'main-skill'
   // Review establishes recipient/service evidence, not the final purpose.
@@ -34,7 +34,11 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
   const unfinished = decision.kind === 'INCOMPLETE'
   const unsupportedTopic = Boolean(state?.unavailableConditionReferences?.length)
   const reviewableOrder = state?.phase === 'pending_confirmation' || state?.intentRecovery?.candidateIds.some(id => ['intent:view-cart', 'intent:start-checkout'].includes(id))
-  const genericRequest = decision.reason === undefined || decision.reason === 'NEW_REQUEST' || (decision.reason === 'GENERAL_QUESTION' && reviewableOrder) || uncertainMeaning || ungroundedRead || unfinished || unsupportedTopic
+  // A named/fragment meal can be proposed as a filter by Jev. Qualify its
+  // whole purpose before making Main permanently read-only; Menu still owns
+  // the original-name lookup and any later identity/quantity confirmation.
+  const namedQueryHypothesis = decision.reason === 'MENU_QUERY' && Boolean(state?.catalogEvidence?.products.length)
+  const genericRequest = namedQueryHypothesis || decision.reason === undefined || decision.reason === 'NEW_REQUEST' || (decision.reason === 'GENERAL_QUESTION' && reviewableOrder) || uncertainMeaning || ungroundedRead || unfinished || unsupportedTopic
   if ((!ungroundedRead && !unfinished && !clarificationProposal && decision.kind !== 'NEEDS_ASSISTANT') || !genericRequest || state?.phase === 'customer_entry' || (!unqualifiedHandoff && !uncertainMeaning && !unsupportedTopic && (mentions?.products.length || mentions?.categories.length)))
     return decision
   // Topic detection is lexical evidence only. A focused Main decision checks
@@ -71,20 +75,30 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
   }
   const startedAt = performance.now()
   let failure: KioskInteractionDecision['reason'] = 'PROVIDER_FAILURE'
+  let subjects: string[] = []
   let validChoice = false
   let recipient: ServiceRecipient | undefined
   let choice: typeof serviceChoices[number] = 'UNCERTAIN'
   try {
     const response = await complete({ temperature: 0, messages: buildDecisionMessages(`${orderingInstructions('qualification')}
 ${filterBackground ? serviceDomainInstruction : '背景過濾未啟用，不分類背景或對象。一般問題仍交助手回應或引導，不視為缺少服務資格。'}
-ORDER_REVIEW：顧客表示已點完，或要進入結帳／送出訂單的下一階段（含改口離開舊問題）。只要本句要求結束選餐、結帳或送出，就選這項，無論目前在問清空、內外帶或其他問題；此項包含送單意圖，但不代表程式可略過送單前核對。先展示核對訂單與下一步問題。此情況選ORDER_REVIEW而非ORDER_MUTATION，不是供餐方式說明、閒置、單純附和，不授權付款或送單，也不能回答舊問題。份數／客製視窗內只表示當前設定完成，不能越過尚未完成的餐點。OUT_OF_SCOPE：一般知識、工作閒聊等沒有點餐內容；過濾關閉時仍回應服務範圍，不選供餐方式或替顧客回答舊問題。
-只選本句完整目的，不操作或產生回覆。整句只要包含新增餐點、改份數、換餐等餐點修改，即使還有售價／資訊問題也選ORDER_MUTATION，不能用資訊類丟掉操作；ORDER_REVIEW只代表結束選餐進入核對／結帳，不包含新增餐點。MENU_INFORMATION_ONLY與ORDER_INFORMATION_ONLY必須是整句完全不改單。先結合近期對話理解省略、追問與改口，再按以下順序判斷：
-${filterBackground ? '1. 明確對同伴說話或沒有向本機提出需求的背景對話選BACKGROUND，對象未知選UNCERTAIN。向本機提出的職責外問題選SERVICE_INFORMATION_ONLY，交助手說明限制，不授權操作。' : '1. 背景過濾未啟用，不分類背景或對象。一般資訊與閒聊問題選SERVICE_INFORMATION_ONLY；意思不清楚選CLARIFY_SERVICE，不授權操作。'}
-2. 本句有清楚的資訊問題，即使帶「先不要操作」或資料未知，也按問題選資訊種類，不選CLARIFY_SERVICE或只回KEEP_ORDER。SERVICE_INFORMATION_ONLY：顧客確實詢問本機能力、身分、店家資訊、付款方式、位置路線、營業時間；沒有詢問本機／店家資訊、只是工作或日常閒聊敘述，必須選OUT_OF_SCOPE而非此項；包含對本機剛才答覆的追問／質疑。MENU_INFORMATION_ONLY：餐點、價格、成分、比較、推薦、換批；還沒決定吃什麼、請系統挑選，或只表達想吃某個分類，也屬於完整的餐點探索需求，沒有品名／份數不代表意思未明；可承接前文省略品名，不等於購買。ORDER_INFORMATION_ONLY：僅查看已在購物車裡的內容、總價或訂單狀態。新增／加點不是此項；問未點餐點的售價是MENU_INFORMATION_ONLY；同句任何加餐或改單都選ORDER_MUTATION。顯示只改畫面不改餐點，不順帶結帳、刪餐或取消結帳。
-3. 先核對ORDER_REVIEW：點完後要求結帳／送出，尤其舊問題仍在問清空而顧客改說送出，選ORDER_REVIEW先核對並反問，不是ORDER_MUTATION或同意清空。其餘ORDER_MUTATION：只處理修改餐點或設定，絕不包含結束選餐、結帳、送出（都選ORDER_REVIEW）。完整原句有明確新增、修改、更換、取消、用餐方式、有效操作問題回答，或實際畫面導覽需求（唯讀顯示購物車除外）；若同句還要資訊，仍保留全部需求。返回訂單／上一頁／離開結帳是畫面操作，不能改成唯讀查訂單。缺份數或必要規格仍交Menu補問，不是服務目的未明。沒有購買或修改授權就不能選此項。
-4. CLARIFY_SERVICE：本句明確向本機求助，已能確認是在請本機提供服務，但缺品名或具體目的；命令語氣不證明服務領域，領域／對象未知選UNCERTAIN，不把任意指令改寫成點餐求助。不能以此取代已清楚的資訊問題。
-5. 沒有其他問題或操作才考慮：KEEP_ORDER＝明確保持現況／撤回未執行訂購，不能刪除已存在餐點；ACKNOWLEDGEMENT＝對本機單純了解、附和；IDLE＝自行先看看或稍後再說。沒有有效操作問題時，好／對不能當成結帳或任選操作。
-資訊未知不等於目的未知；查詢不授權購買；問題存在不代表本句回答它；多項需求不能壓成第一項。只呼叫resolve_service_scope。`, { phase: state?.phase, references: state?.references ?? [], productResolution: state?.productResolution, catalogEvidence: state?.catalogEvidence, interactionState: state?.interactionState, unavailableConditions: state?.unavailableConditionReferences ?? [], waitingFor: state?.waitingFor && state.waitingFor.expiresAt > Date.now() ? state.waitingFor : null, retainedRequests: state?.retainedRequests ?? [], ...(conversation ? { recentDialogue: conversation.messages.slice(-6) } : {}) }, transcript), tools: [{ type: 'function', function: { name: 'resolve_service_scope', description: '依完整原句區分服務資訊、純查詢、明確操作、背景與未明需求；不執行操作或產生餐點答案。', parameters: { type: 'object', properties: { ...(filterBackground ? { recipient: recipientParameter } : {}), choice: { type: 'string', enum: offeredChoices } }, required: filterBackground ? ['recipient', 'choice'] : ['choice'], additionalProperties: false } } }], tool_choice: 'required' })
+只分類最後一句顧客的完整目的，不執行工具、不產生回覆。近期對話只幫助理解指涉，不能把上一輪的需求當成本輪授權。
+先核對撤回：interactionState.cartItemCount是實際購物車份數。為0且沒有selectedItemName或retainedRequests時，顧客只表示不要／不點某道餐點，必須KEEP_ORDER，包含ASR品名錯字。沒有已點對象可刪除，不是ORDER_MUTATION；也不是要把肉類排除後繼續推薦，不查品名。只有本句確實另有搜尋／推薦需求，才處理新查詢。
+其餘依下列優先順序選唯一一項：
+1. ORDER_ASSISTANCE：訂購整份菜單每款餐點，或超出本機支援的特殊／大量安排。先確認原需求，不以看全部菜單或普通加點代替。一般明確餐點與合法份數正常點餐，不算特殊需求。
+2. ORDER_REVIEW：已點完、要求結帳／送出，先核對訂單並問下一步，不代表同意送出，也不是供餐方式說明。即使前一題問清空，現在改說結帳也屬此項。份數／客製視窗尚未完成時仍須處理當前餐點。
+3. MENU_RETURN：本句只要求回全部菜單、離開推薦／購物車以繼續選餐。表示想繼續點餐而沒有指定新增餐點，也屬返回選餐，不是ORDER_ADDITION。保留現有餐點，不重新展示購物車、不回答舊送單問題。若另有加餐／刪餐等獨立需求，選ORDER_MUTATION保留完整需求。
+4. ORDER_ADDITION：本句只要新增一或多道餐點，包含其中有菜單未知名稱，沒有要求替換或修改既有餐點，且沒有其他獨立需求。subjects必須逐一列出本句所有新增餐點的原文字串，不放份數、不自行修正品名，不可只列菜單認得的名稱；其他choice subjects填空陣列。可以省略份數，Menu會補問。只是想繼續點餐／回菜單而未要求任何餐點，不是新增。已有水餃而說要魚餐，只新增魚，不能把水餃換掉。
+5. ORDER_MUTATION：其他明確改單／設定／操作，包含換餐、減量、移除、用餐方式、有效操作問題回答，或混合多項需求。取回訂單／離開結帳也屬此項。缺份數或匹配不唯一仍保留原需求，交Menu釐清；不能只做其中一項。單純撤回尚未存在的餐點則看KEEP_ORDER。
+6. MENU_INFORMATION_ONLY：整句只有餐點查詢、價格、條件、比較或推薦；想吃某種類但尚未指定餐點是探索，不代表購買。可承接前文。查無資料不代表目的不清楚。
+7. ORDER_INFORMATION_ONLY：整句只查看既有購物車內容、總價、狀態；不含加餐、改單、送單或返回選餐。
+8. SERVICE_INFORMATION_ONLY：詢問本機／店家的身分、能力、如何點餐、付款、位置、營業時間、外送或預約；即使該功能不提供仍是明確問題，不選CLARIFY_SERVICE。回答前文服務問題的質疑也屬此項。
+9. KEEP_ORDER：只保持現況／撤回未執行的訂購；cartItemCount為0且沒有未加入草稿時，不想點某道餐點也是此項，包含品名ASR錯字。不查品名、不展示推薦、不刪除既有餐點。同句另有新需求應按完整目的選其他項。
+10. ACKNOWLEDGEMENT：只表示了解、附和；沒有有效操作問題時，好／對不能猜成加餐、結帳或清空。IDLE：明確自己先看／稍後再說。
+11. OUT_OF_SCOPE：一般知識、工作或閒聊，沒有點餐內容；仍需自然說明服務範圍，不選取餐方式。
+12. CLARIFY_SERVICE：確定向本機求助但不清楚要查詢或操作什麼。UNKNOWN資料不等於UNKNOWN目的；可辨認的品名、份數或菜單條件不因匹配失敗就選此項。UNCERTAIN：確實無法確定完整目的。
+${filterBackground ? '先核對對象：明確對同伴說話或背景對話選BACKGROUND；對象不確定選UNCERTAIN。向本機詢問職責外問題選OUT_OF_SCOPE。' : '背景過濾關閉，不分類背景或對象、不選BACKGROUND；一般資訊與閒聊仍回應服務範圍，不忽略。'}
+只能選本題候選。問題存在不代表本句回答它；多項需求不能壓成第一項。只呼叫resolve_service_scope。`, { phase: state?.phase, references: state?.references ?? [], productResolution: state?.productResolution, catalogEvidence: state?.catalogEvidence, interactionState: state?.interactionState, unavailableConditions: state?.unavailableConditionReferences ?? [], waitingFor: state?.waitingFor && state.waitingFor.expiresAt > Date.now() ? state.waitingFor : null, retainedRequests: state?.retainedRequests ?? [], ...(conversation ? { recentDialogue: conversation.messages.slice(-6) } : {}) }, transcript), tools: [{ type: 'function', function: { name: 'resolve_service_scope', description: '依完整原句區分服務資訊、純查詢、明確操作、背景與未明需求；不執行操作或產生餐點答案。', parameters: { type: 'object', properties: { ...(filterBackground ? { recipient: recipientParameter } : {}), choice: { type: 'string', enum: offeredChoices }, subjects: { type: 'array', items: { type: 'string', minLength: 1, maxLength: 120 }, maxItems: 20, description: '只列新增餐點名稱，不含份數、量詞或動詞；含未知品項，每個名稱必須是原句子字串。例如烏龍麵兩份、三杯茶列為[烏龍麵,茶]，不是[烏龍麵兩份,三杯茶]。其他choice填空陣列。' } }, required: filterBackground ? ['recipient', 'choice', 'subjects'] : ['choice', 'subjects'], additionalProperties: false } } }], tool_choice: 'required' })
     if (response.ok)
       failure = 'INVALID_CHOICE'
     const parsed = safeParse(responseSchema, await response.json())
@@ -95,6 +109,9 @@ ${filterBackground ? '1. 明確對同伴說話或沒有向本機提出需求的�
       if (selected.success) {
         validChoice = true
         choice = selected.output.choice
+        subjects = [...new Set(selected.output.subjects ?? [])]
+        if (choice === 'ORDER_ADDITION' && (!subjects.length || subjects.length > 20 || subjects.some(subject => !subject.trim() || subject.length > 120 || !transcript.includes(subject))))
+          validChoice = false
         const resolvedRecipient = safeParse(recipientSchema, 'recipient' in selected.output ? selected.output.recipient : undefined)
         recipient = resolvedRecipient.success ? resolvedRecipient.output : undefined
       }
@@ -132,6 +149,12 @@ ${filterBackground ? '1. 明確對同伴說話或沒有向本機提出需求的�
     return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', ...trace }
   if ((filterBackground && choice === 'BACKGROUND') || choice === 'IDLE')
     return { ...handoff, kind: 'IGNORE', reason: undefined, ...trace }
+  if (choice === 'ORDER_ASSISTANCE')
+    return { ...handoff, kind: 'SERVICE_CLARIFICATION', question: { purpose: 'order-assistance', questionId: crypto.randomUUID(), question: orderAssistanceQuestion(transcript), sourceUtterance: transcript, contextKey: serviceContextKey(state ?? { phase: 'unknown' }), expiresAt: Date.now() + 30_000 }, ...trace }
+  if (choice === 'ORDER_ADDITION')
+    return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', resolvedBy: 'main-service', requestScope: 'order-operation', handoff: { intent: 'ADD_ONLY', subjects, status: 'ambiguous', itemIds: [], lineIds: [] }, ...trace }
+  if (choice === 'MENU_RETURN')
+    return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', resolvedBy: 'main-service', requestScope: 'order-operation', handoff: { intent: 'RETURN_MENU', status: 'resolved', itemIds: [], lineIds: [] }, ...trace }
   if (choice === 'ORDER_MUTATION')
     return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: state?.intentRecovery?.kind === 'answer' ? 'UNCERTAIN_OPERATION' : 'NEW_REQUEST', resolvedBy: 'main-service', requestScope: 'order-operation', ...trace }
   // CLARIFY_SERVICE establishes a real request with unclear meaning. UNCERTAIN
@@ -140,6 +163,8 @@ ${filterBackground ? '1. 明確對同伴說話或沒有向本機提出需求的�
     return { ...handoff, kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', ...trace }
   if (choice === 'OUT_OF_SCOPE')
     return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', resolvedBy: 'main-service', requestScope: 'service-information', ...trace }
+  if (choice === 'KEEP_ORDER' && state?.interactionState?.cartItemCount === 0 && !state.retainedRequests?.length && !state.interactionState.selectedItemName)
+    return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', resolvedBy: 'main-service', requestScope: 'order-preservation', ...trace }
   if (choice === 'ORDER_INFORMATION_ONLY' || choice === 'ORDER_REVIEW')
     return { ...handoff, kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', resolvedBy: 'main-service', requestScope: 'order-information', ...trace }
   if (choice === 'MENU_INFORMATION_ONLY' && (decision.kind !== 'FAST_ACTION' || decision.actionId === 'intent:search-menu'))

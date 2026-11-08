@@ -74,7 +74,7 @@ export type KioskInteractionDecision = {
   /** Main skill selection is distinct from JEV scores; execution still validates the issued candidate. */
   resolvedBy?: 'main-skill' | 'main-service'
   /** Qualified whole-turn purpose; independent from admission and effect targets. */
-  requestScope?: 'menu-information' | 'order-information' | 'order-operation' | 'service-information'
+  requestScope?: 'menu-information' | 'order-information' | 'order-operation' | 'service-information' | 'order-preservation'
   priceChoiceId?: string
   /** Correlated conversational invitation consumed by this answer, never mutation permission. */
   answeredQuestionId?: string
@@ -99,7 +99,7 @@ export type KioskInteractionDecision = {
   | { kind: 'GREET', confidence?: number }
   | { kind: 'CUSTOMER_ENTRY_REQUIRED', confidence?: number }
   | { kind: 'FOLLOW_UP_ACTIVE', confidence?: number }
-  | { kind: 'NEEDS_ASSISTANT', confidence?: number }
+  | { kind: 'NEEDS_ASSISTANT', confidence?: number, handoff?: ConversationHandoff }
   | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
   | { kind: 'UNAVAILABLE' }
 )
@@ -119,6 +119,8 @@ export type DecisionStageResult = KioskInteractionDecision | ServiceRecoveryProg
 
 /** Safe application-owned interaction facts shared by Jev and Agent requests. */
 export interface InteractionState {
+  /** Total current servings; zero is real cart evidence, not a missing named match. */
+  cartItemCount?: number
   /** Visible browser surface; independent from the order/checkout phase. */
   screen?: KioskScreen
   lastAddedItemName?: string

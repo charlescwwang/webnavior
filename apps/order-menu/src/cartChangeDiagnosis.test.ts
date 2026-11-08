@@ -35,7 +35,7 @@ describe('cart meal-change diagnosis', () => {
     await runtime.invoke('kiosk_agent_task', { taskId: 'menu-inquiry', action: 'BEGIN', transcript: '查詢餐點', expectedMenuRevision: state.menuRevision, readOnly: true, constraints: {} })
     await runtime.invokeForAgent('menu_get', { query: '水餃' })
     const snapshot = await runtime.invokeForAgent('cart_get')
-    expect(snapshot).toEqual({ cart: before.cart })
+    expect(snapshot).toEqual({ cart: before.cart, dataOnly: true })
     expect(snapshot).not.toHaveProperty('pendingCustomerChoice')
     await expect(runtime.invokeForAgent('order_add_item', { itemId: 'dumplings', quantity: 1 })).rejects.toThrow('only authorizes menu reads')
     await expect(runtime.invokeForAgent('cart_remove_item', { lineId: before.cart.lines[0]!.id })).rejects.toThrow('only authorizes menu reads')

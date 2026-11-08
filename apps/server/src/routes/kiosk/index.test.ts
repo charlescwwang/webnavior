@@ -81,6 +81,65 @@ describe('kiosk routes', () => {
     else expect(result.reply).toMatchObject({ kind: 'service-information', topic: 'out-of-scope' })
   })
 
+  // Report: DEV-810280 Nov8 — a pure menu return was rejected as though it answered checkout consent.
+  it.each([{ name: 'menu_open', bound: false, stream: false }, { name: 'menu_open', bound: true, stream: false }, { name: 'menu_open', bound: true, stream: true }, { name: 'cart_clear', bound: false, stream: false }])('keeps the consent guard on cart changes while allowing a qualified menu return: $name bound=$bound stream=$stream', async ({ name, bound, stream }) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
+      const tools = body.tools as Array<{ function: { name: string } }>
+      const review = tools[0]?.function.name === 'verify_customer_operation'
+      return Response.json({ choices: [{ message: { tool_calls: [{ id: 'navigate', type: 'function', function: { name: review ? 'verify_customer_operation' : name, arguments: review ? '{"choice":"UNSUPPORTED"}' : '{}' } }] } }] })
+    })
+    const service = createKioskService(db)
+    const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await service.getDeviceProfile(enrolled.device.id)
+    const session = await service.startVisitorSession({ deviceId: enrolled.device.id, profileReleaseId: profile!.id, serviceId: 'development-ordering-service' })
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: service, llmGateway: { complete }, runtimeModelPolicy }))
+    const context: ConversationContext = { contextId: 'return', capturedAt: Date.now(), taskId: 'return', sourceUtterance: '我想繼續點餐', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 0, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 1, total: 80, lines: [{ id: 'line', itemId: 'dumplings', name: '水餃', quantity: 1, unitPrice: 80, options: [] }] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['menu_open', 'cart_clear'], waitingFor: { questionId: 'send', purpose: 'checkout-entry', question: '確認並送出嗎？', expiresAt: Date.now() + 30000, choices: [] } }
+    const tools = context.allowedToolNames.map(name => ({ type: 'function', function: { name, description: name === 'menu_open' ? '回菜單並保留餐點' : '清空購物車', parameters: { type: 'object', properties: {} } } }))
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '我想繼續點餐', tools, decisionState: { phase: 'ordering', requestScope: 'order-operation', ...(bound ? { handoff: { intent: 'RETURN_MENU', status: 'resolved', itemIds: [], lineIds: [] } } : {}), context } }) })
+    expect(response.status).toBe(200)
+    const result = await response.json() as { toolCalls: { function: { name: string } }[], reply?: ContextReply }
+    if (name === 'menu_open') {
+      expect(complete).toHaveBeenCalledOnce()
+      if (bound)
+        expect(complete.mock.calls[0]![0].body.tools).toEqual([tools[0]])
+      expect(result.toolCalls).toMatchObject([{ function: { name: 'menu_open' } }])
+      if (bound) {
+        const continuation = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...(stream ? { Accept: 'text/event-stream' } : {}), 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ tools, toolResults: [{ toolCallId: 'navigate', name: 'menu_open', content: JSON.stringify({ cart: { itemCount: 1 }, customerMessage: '已回到全部菜單。' }) }], decisionState: { phase: 'ordering', requestScope: 'order-operation', handoff: { intent: 'RETURN_MENU', status: 'resolved', itemIds: [], lineIds: [] }, context } }) })
+        expect(continuation.status).toBe(200)
+        const text = await continuation.text()
+        const completed = stream ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))).find(event => event.type === 'turn-finished') : JSON.parse(text)
+        expect(completed).toHaveProperty('toolCalls', [])
+        expect(complete).toHaveBeenCalledOnce()
+      }
+    }
+    else {
+      expect(complete).toHaveBeenCalledTimes(2)
+      expect(result.toolCalls).toEqual([])
+      expect(result.reply).toMatchObject({ kind: 'clarification' })
+    }
+  })
+
+  // Report: DEV-810280 replay — a pure addition must not expose replacement or unrelated cart edits.
+  it('limits a qualified addition to its actual tool and parameter scope', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'lookup', type: 'function', function: { name: 'menu_get', arguments: '{"query":"泰式酸辣魚"}' } }] } }] }))
+    const service = createKioskService(db)
+    const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await service.getDeviceProfile(enrolled.device.id)
+    const session = await service.startVisitorSession({ deviceId: enrolled.device.id, profileReleaseId: profile!.id, serviceId: 'development-ordering-service' })
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: service, llmGateway: { complete }, runtimeModelPolicy }))
+    const names = ['menu_get', 'menu_confirm_item', 'order_add_item', 'cart_remove_item', 'menu_recommend', 'menu_open']
+    const tools = names.map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: { itemId: { type: 'string' }, replaceLineId: { type: 'string' } }, additionalProperties: false } } }))
+    const context: ConversationContext = { contextId: 'add', capturedAt: Date.now(), taskId: 'add', sourceUtterance: '我要泰式酸辣魚一份', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 0, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 5, total: 400, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: names }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase: 'ordering', requestScope: 'order-operation', handoff: { intent: 'ADD_ONLY', status: 'ambiguous', itemIds: [], lineIds: [] }, context } }) })
+    expect(response.status).toBe(200)
+    const offered = JSON.stringify(complete.mock.calls[0]![0].body.tools)
+    expect(offered).not.toContain('replaceLineId')
+    expect(offered).not.toContain('cart_remove_item')
+    expect(offered).not.toContain('menu_recommend')
+    expect(offered).not.toContain('menu_open')
+    expect(offered).toContain('menu_confirm_item')
+  })
+
   // Report: this chat Nov8 — an unknown named query after fish browsing was dismissed without lookup.
   it('requires a Menu tool before completing a qualified new menu query', async () => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'lookup', type: 'function', function: { name: 'menu_get', arguments: '{"query":"全家餐"}' } }] } }] }))
@@ -1069,7 +1128,10 @@ describe('kiosk routes', () => {
       expect(next.status).toBe(200)
       body = await next.json() as typeof body
     }
-    expect(body.actionId).toBe('intent:search-menu')
+    // This authenticated stage test ends at the qualified menu handoff; the
+    // browser still needs its fresh lookup rather than a guessed finite action.
+    expect(body).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'MENU_QUERY', requestScope: 'menu-information' })
+    expect(body).not.toHaveProperty('actionId')
     expect((await app.request(`/api/kiosk/interaction-decisions/${id}`, { method: 'POST', headers, body: '{}' })).status).toBe(400)
     expect(decide.mock.calls.map(([, questions]) => Object.keys(questions))).toEqual([
       ['admission'],

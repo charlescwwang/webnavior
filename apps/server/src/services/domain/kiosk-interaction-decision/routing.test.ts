@@ -26,10 +26,10 @@ function provider(choices: string[], scored = false) {
 describe('staged Fast Path routing', () => {
   // Report: this chat Nov8 — full-menu lookup was incorrectly sent through the order-write consent gate.
   it('treats full-menu lookup as a read without an order-mutation permission question', async () => {
-    const invoke = provider(['SINGLE', 'MENU', 'intent:search-all-menu'])
+    const invoke = provider(['SINGLE', 'MENU', 'intent:search-all-menu', 'COMPLETE'])
     const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: [{ id: 'intent:search-menu', description: '查餐點' }, { id: 'intent:search-all-menu', description: '看完整菜單' }], transcript: '我要看你們全部的菜單', invoke })
     expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-all-menu' })
-    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(invoke).toHaveBeenCalledTimes(4)
   })
 
   // Report: this conversation — many competing intents and cancellation misrouted as fulfillment.
@@ -261,11 +261,11 @@ it('allows a Menu-issued unit clarification without granting an order write', as
 
 // Report: this chat, Nov8 — classified recommendation exit was reclassified as unknown.
 it('finishes a read-only browse exit at its own leaf without interpreting order consent', async () => {
-  const invoke = provider(['SINGLE', 'MENU', 'EXIT'], true)
+  const invoke = provider(['SINGLE', 'MENU', 'EXIT', 'COMPLETE'], true)
   const menuCandidates = ['search-menu', 'search-all-menu', 'recommend', 'recommend-more', 'show-recommendations', 'return-menu'].map(name => ({ id: `intent:${name}`, description: name }))
   const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: menuCandidates, transcript: '不要了', invoke })
   expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:return-menu' })
-  expect(invoke).toHaveBeenCalledTimes(3)
+  expect(invoke).toHaveBeenCalledTimes(4)
   expect(result).not.toHaveProperty('answeredQuestionId')
 })
 
@@ -274,5 +274,14 @@ it('does not authorize a browse exit without a browser-issued return candidate',
   const menuCandidates = ['search-menu', 'search-all-menu', 'recommend', 'recommend-more', 'show-recommendations', 'scroll-menu:up'].map(name => ({ id: `intent:${name}`, description: name }))
   const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: menuCandidates, transcript: '回主畫面', invoke })
   expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result).not.toHaveProperty('actionId')
+})
+
+// Report: DEV-810280 Nov8 — buying the whole menu was classified as returning to the menu.
+it('hands off the whole request when a proposed menu exit cannot satisfy collective ordering', async () => {
+  const invoke = provider(['SINGLE', 'MENU', 'EXIT', 'HANDOFF'])
+  const candidates = ['search-menu', 'search-all-menu', 'recommend', 'recommend-more', 'show-recommendations', 'return-menu'].map(name => ({ id: `intent:${name}`, description: name }))
+  const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates, transcript: '菜單上的都來一份', invoke })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
   expect(result).not.toHaveProperty('actionId')
 })

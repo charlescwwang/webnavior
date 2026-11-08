@@ -344,7 +344,7 @@ describe('question presentation receipts', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', quantity: 2 })
     const window = createMenuReplyWindow()
-    window.record('cart_get', await runtime.invokeForAgent('cart_get', { display: false }))
+    window.record('cart_get', await runtime.invokeForAgent('cart_get', { display: true }))
     expect(window.reply()).toBe('目前訂單：蝦捲 2 份。合計 150元。')
   })
   const question = { questionId: 'Q1', purpose: 'checkout-entry', question: '要進入結帳流程嗎？', expiresAt: 100, choices: [{ id: 'intent:start-checkout', description: '開始結帳，進入會員與發票步驟。' }] }
@@ -650,4 +650,30 @@ it('retains a qualified price inquiry alongside an operation through fresh-conte
   const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
   expect(refreshConversationState(context, state).priceInquiry).toBe(true)
   expect(conversationDecisionStateFrom(snapshot, { reason: 'MENU_QUERY', requestScope: 'menu-information', priceChoiceId: 'INFORMATION' })?.priceInquiry).toBeUndefined()
+})
+
+// Report: DEV-810280 Nov8, 19:00 — a pre-edit cart snapshot contradicted the successful quantity receipt.
+it('does not speak the old cart quantity and total after a verified quantity change', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...sampleMenu[0]!, id: 'dumplings', name: '水餃', price: 80, optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 10 })
+  const window = createMenuReplyWindow()
+  window.record('cart_get', await runtime.invoke('cart_get', { display: false }))
+  const cart = await runtime.invoke('cart_get', { display: false }) as { cart: { lines: { id: string }[] } }
+  window.record('cart_set_line_quantity', await runtime.invoke('cart_set_line_quantity', { lineId: cart.cart.lines[0]!.id, quantity: 5 }))
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['cart_get', 'cart_set_line_quantity'] }, { menu: window, failureMessage: '失敗' })
+  expect(result.content).toContain('5 份')
+  expect(result.content).not.toContain('10 份')
+  expect(result.content).not.toContain('800元')
+})
+
+// Report: DEV-810280 mixed addition — a lookup's old quantity question cannot follow a successful add.
+it('retires the lookup quantity invitation after its add while retaining missing-item facts', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('menu_get', { items: [{ id: 'dumplings', name: '水餃', price: 80 }], customerReply: { facts: '水餃每份80元。菜單沒有「酒」。', nextQuestion: '這道餐點要點幾份？' } })
+  menu.record('order_add_item', { cart: { itemCount: 10 }, customerMessage: '已將水餃加入購物車，共10份。' })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get', 'order_add_item'] }, { menu, handoff: { intent: 'ADD_ONLY', status: 'ambiguous' }, failureMessage: '操作失敗。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('10份')
+  expect(reply.content).toContain('菜單沒有「酒」')
+  expect(reply.content).not.toContain('要點幾份')
 })

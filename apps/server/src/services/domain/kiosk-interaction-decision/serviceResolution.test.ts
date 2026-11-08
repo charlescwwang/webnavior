@@ -279,3 +279,17 @@ it('limits the missing-purpose clarification to menu queries and order adjustmen
   expect(result).toHaveProperty('question.question', '請再說明您想查詢的餐點，或要調整的訂單內容。')
   expect(result).not.toHaveProperty('actionId')
 })
+
+// Report: DEV-810280 Nov8 — re-showing a cart did not fulfill a request to return to the menu.
+it('preserves a qualified menu return as its existing effect handoff', async () => {
+  const result = await resolveServiceHandoff(decision, '我想繼續點餐', state, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"MENU_RETURN"}' } }] } }] }))
+  expect(result.requestScope).toBe('order-operation')
+  expect(result).toHaveProperty('handoff', { intent: 'RETURN_MENU', status: 'resolved', itemIds: [], lineIds: [] })
+})
+
+// Report: DEV-810280 replay — preserve pure addition separately from mixed edits/replacements.
+it('carries whole-turn addition semantics through the existing effect handoff', async () => {
+  const result = await resolveServiceHandoff(decision, '我要泰式酸辣魚一份', state, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"choice":"ORDER_ADDITION","subjects":["泰式酸辣魚"]}' } }] } }] }))
+  expect(result.requestScope).toBe('order-operation')
+  expect(result).toHaveProperty('handoff.intent', 'ADD_ONLY')
+})

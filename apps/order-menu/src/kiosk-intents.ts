@@ -90,7 +90,7 @@ export interface DecisionContext extends KioskIntentContext {
   ingredientReferences: Array<{ id: string, label: string }>
   dietaryReferences: Array<{ id: 'vegetarian', label: string }>
   unavailableConditionReferences: Array<{ id: string, label: string }>
-  interactionState: { lastAddedItemName?: string, matchingCartLines: number, selectedItemName?: string, seating?: { partySize?: number, ready: boolean, question: string } }
+  interactionState: { cartItemCount?: number, lastAddedItemName?: string, matchingCartLines: number, selectedItemName?: string, seating?: { partySize?: number, ready: boolean, question: string } }
   phase: KioskPhase
   references: DomainReference[]
 }
@@ -267,7 +267,7 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   for (const reference of cartRefs)
     referenceOrigins[reference.refId] = 'cart'
   const matchingCartLines = input.cart.lines.filter(line => matchingItems.some(item => item.id === line.itemId)).length
-  const interactionState = { matchingCartLines, ...(selected ? { selectedItemName: selected.name } : {}), ...(recentAddedLine ? { lastAddedItemName: recentAddedLine.name } : {}) }
+  const interactionState = { cartItemCount: input.cart.itemCount, matchingCartLines, ...(selected ? { selectedItemName: selected.name } : {}), ...(recentAddedLine ? { lastAddedItemName: recentAddedLine.name } : {}) }
   const seating = input.cart.fulfillmentMode === 'dine-in' ? input.seating : undefined
   if (seating) {
     references.push(...seating.choices.map(choice => ({ refId: `table:${choice.id}`, label: choice.label })))
@@ -279,7 +279,13 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   // sources separate while collecting finite catalog/food references.
   const ingredientReferences = [...new Map([...mentionedIngredients(input.previousTranscript ?? ''), ...mentionedIngredients(transcript)].map(reference => [reference.id, reference])).values()]
   const dietaryReferences = [...new Map([...mentionedDietaryReferences(input.previousTranscript ?? ''), ...mentionedDietaryReferences(transcript)].map(reference => [reference.id, reference])).values()]
-  const unavailableConditionReferences = [...new Map([...mentionedUnavailableConditions(input.previousTranscript ?? ''), ...mentionedUnavailableConditions(transcript)].map(reference => [reference.id, reference])).values()]
+  // A menu name can contain 辣 without requesting a preparation change. Keep
+  // nutrition/safety evidence, but derive preparation from speech outside the
+  // catalog's matched name fragment; a partial name still grants no purchase.
+  const preparationSpeech = catalogEvidence.products.reduce((speech, product) => speech.replaceAll(product.matchedText, ''), transcript)
+  const preparationReferences = mentionedUnavailableConditions(preparationSpeech)
+  const currentConditions = mentionedUnavailableConditions(transcript).filter(reference => !['spice', 'preparation'].includes(reference.id) || preparationReferences.some(current => current.id === reference.id))
+  const unavailableConditionReferences = [...new Map([...mentionedUnavailableConditions(input.previousTranscript ?? ''), ...currentConditions].map(reference => [reference.id, reference])).values()]
   const candidates: IntentCandidate[] = []
   const checkout = input.checkout
   let phase: KioskPhase = 'ordering'

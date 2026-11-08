@@ -76,9 +76,9 @@ async function createHarness(choice: 'intent:add-item' | 'intent:search-menu' | 
     if (tools[0]!.function.name === 'verify_ordering_answer')
       return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: '{"choice":"COMPLETE","answerAction":"NO_EXPLICIT_ACTION"}' } }] } }] })
     if (tools[0]!.function.name === 'resolve_service_scope')
-      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ ...recipient, choice: route === 'uncertain' ? 'UNCERTAIN' : 'ORDER_MUTATION' }) } }] } }] })
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ ...recipient, requestCoverage: 'COMPLETE', choice: route === 'uncertain' ? 'UNCERTAIN' : 'ORDER_MUTATION' }) } }] } }] })
     const selected = route === 'uncertain' ? 'UNCERTAIN' : choice === 'confirm-meal' ? choices.find(id => id.endsWith(':yes')) : choices.find(id => id.includes(':quantity:2')) ?? choice
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ ...recipient, choice: selected }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ ...recipient, requestCoverage: 'COMPLETE', choice: selected }) } }] } }] })
   })
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
     isEnabled: async () => true,

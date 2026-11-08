@@ -12,7 +12,7 @@ function tableRuntime(status: 'accepted' | 'rejected' | 'uncertain' = 'accepted'
   const completed = vi.fn()
   const runtime = createMenuToolRuntime({ menu: [{ id: 'dumplings', name: '水餃', category: '點心', description: '每份10顆', price: 80, imageUrl: '', optionGroups: [], recommendationTags: [] }], serviceContext: () => context, gateway: { submit }, orderingReady: () => false, onSessionReset: () => {
     context = { ...context, id: 'round-2', serviceMode: 'kiosk', table: undefined }
-  }, onOrderConfirmed: completed, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {} })
+  }, onOrderConfirmed: completed, onMenuRequested: () => {}, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {} })
   return { runtime, submit, completed }
 }
 
@@ -21,6 +21,18 @@ async function reviewAndSubmit(runtime: ReturnType<typeof createMenuToolRuntime>
   await runtime.invoke('kiosk_dialogue_presented', { content: review.pendingCustomerChoice.question, questionId: review.pendingCustomerChoice.questionId })
   return await runtime.invoke('checkout_start', { confirmedByUser: true })
 }
+
+// Report: DEV-810280 Nov8 — cart quantity edit left checkout guidance bound to the old cart.
+it('offers table submission for the newly edited cart without submitting it', async () => {
+  const { runtime, submit } = tableRuntime()
+  const added = await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 10 }) as { cart: CartSnapshot }
+  const edited = await runtime.invoke('cart_set_line_quantity', { lineId: added.cart.lines[0]!.id, quantity: 5 })
+  expect(edited).toHaveProperty('cart.itemCount', 5)
+  expect(edited).toHaveProperty('cart.total', 400)
+  expect(edited).toHaveProperty('pendingCustomerChoice.purpose', 'checkout-entry')
+  expect(edited).toHaveProperty('pendingCustomerChoice.question', expect.stringContaining('送出'))
+  expect(submit).not.toHaveBeenCalled()
+})
 
 describe('shared Menu service modes', () => {
   it('resets only its owning merchant through a host-only tool and preserves a refused round', async () => {
@@ -217,4 +229,17 @@ it('does not expose submission tools or ask to send when unpaid submission is un
   const result = await runtime.invoke('checkout_start', { confirmedByUser: true })
   expect(result).toMatchObject({ ok: false, customerMessage: '這份訂單無法直接送出。' })
   expect(result).not.toHaveProperty('pendingCustomerChoice')
+})
+
+// Report: DEV-810280 Nov8 — returning to selection must retire the old send invitation.
+it('cannot reuse the table-send question after returning to the menu', async () => {
+  const { runtime, submit } = tableRuntime()
+  await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+  const review = await runtime.invoke('cart_get', { display: true }) as { pendingCustomerChoice: { questionId: string, question: string } }
+  await runtime.invoke('kiosk_dialogue_presented', { content: review.pendingCustomerChoice.question, questionId: review.pendingCustomerChoice.questionId })
+  await runtime.invoke('menu_open')
+  expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor')
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+  await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:start-checkout' })).rejects.toThrow()
+  expect(submit).not.toHaveBeenCalled()
 })
