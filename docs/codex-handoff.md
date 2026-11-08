@@ -7,6 +7,133 @@ accumulating history.
 
 ## Current State
 
+- Nov08 approved conversation/UI revision COMMITTED AND DEPLOYED. Product code
+  commit a9a8d84; preceding functional batches f727a30 (settings/PIN),53c12bb
+  (shared replies/Main),4fc2bea (Menu actual controls). Authoritative scope:
+  top Nov08 section of docs/plans/2026-10-28-kiosk-conversation-repair.md.
+  Earlier dirty PIN/settings changes are now committed, not discarded.
+  Release conversation-ui-20261108T071738Z-a9a8d84 (Nov08 15:18 Taipei);
+  all three frontends plus four API source files published. Manifest/rollback:
+  /home/aimax/.local/share/webnavior/releases/conversation-ui-20261108T071738Z-a9a8d84/release.json.
+  Origin84/public84 resource checks pass; public HTML compares app references
+  excluding Cloudflare-injected analytics, JS/CSS/JSON are SHA256-verified.
+  API403837→1162719 ready; Bridge3299152 unchanged. No DB migration, PIN rotation,
+  mic/AEC changes or production order/model calls. Old hashed assets retained;
+  all overwritten files and four API files have backups. Source release commit
+  refers to product code; the later release-record commit changes docs only.
+  Real `onControl`/controlExecution click/input dispatch
+  commits once through UI handlers under App inert; plus AND minus, cart/options,
+  close, fulfillment and checkout share it. No failed-click direct write.
+  Unadded cancellation retires tickets; suspended drafts do not auto-resume.
+  Latest user choice implemented: blocked cart/fulfillment switch asks finish vs
+  cancel; finish waits actual add/missing slots, cancel clicks X then switches.
+  Ambiguous 好 cannot choose either; manual close/replacement/reset revokes it.
+  Exact/fuzzy identity precedes preparation; fuzzy+unsupported prep uses two
+  distinct questions, never waives adjustment on first assent. Passive reads
+  no longer compile purchases; original field 不要了 root still not reproduced.
+  Off-mode text visible at receive/queue time with visible outcome, not admission.
+  Shared/Main exits guided by actual live question; nutrition uses nonblocking
+  simulated assistance and decline retains constraints. Read/pre-exec failure
+  soft recovery, one read refresh; unknown transaction effect remains locked.
+  Main tool loop settles/releases before TTS; no per-click or added interim
+  speech. UI timing/TTS-start diagnostics added; normal music/TTS ordering kept.
+  Relevant Menu/Host/Server/shared/history regressions and Firefox actual-control
+  cases passed; see plan for separate counts and remaining acceptance. Scoped
+  types/lint/build passed during implementation. At commit gate root lint had
+  0errors/12 unrelated warnings; root types found the existing menuFrame reset
+  fixture returning boolean instead of void. Fixed that callback in4fc2bea;
+  stage-ui scoped types then passed, root was not repeated. No new real-model, complete Scene
+  dialogue or physical Windows/UMA8/accessible-user acceptance claimed.
+  Follow-up mode audit: both roles are 點餐助手; Kiosk uses POS fulfillment
+  options, table service stays table-bound. Fixed unavailable fulfillment being
+  examined AFTER draft-navigation creation (undefined label throw); capability
+  validation now comes first. Main instructions explicitly separate the modes.
+  Service-mode/navigation20 and Main-context28 focused tests pass; now deployed.
+  User clarification: unify ONLY self-introduction as 點餐助手; keep Kiosk/AI
+  隨桌服務員 admin modes and mode-aware answers to mid-conversation questions.
+  Payment vendors are not confirmed; only cashless policy is known. Proposed
+  cashless-only factual reply is recorded in the plan, not implemented yet;
+  current payment-methods renderer still lists context.paymentMethods, whose
+  test labels must not be mistaken for production support. No new tests/models
+  or payment-renderer change for this clarification. Existing admin mode choices
+  remain distinct; only the shared introduction uses 點餐助手.
+
+- Nov08 input visibility follow-up: Menu context returned ok:false / confirmed
+  meal constraint error on 「不要了」,0models. Naked UNAVAILABLE omitted recovery,
+  so failure UI did not run and provisional text disappeared. Reproduced before
+  fix. Context rejection/missing state now carries failed/invalid recovery;
+  thrown pre-execution failures carry provider-error; no Main fallback or write
+  retry. Scene displays/logs queued ASR and typed input when background modeoff,
+  independent of semantic admission; actual customer activity/tool authorization
+  remains gated. Visible-input ID tracking and accepted-input tracking separate.
+  Existing service-fault presentation retains original text in both modes.
+ 73fast-path +5Firefox +2replacement-decline tests, Kiosk types/lint/build pass.
+  Original meal constraint throw itself NOT reproduced/fixed. User recalls an
+  alternative; normal fish→pork/chicken→beef refusals preserve cart and pass.
+  No exact 「不要了」 stored transcript found; next reproduction retains evidence.
+  Kiosk-only release visible-kiosk-input-20261107T191843Z-98dcce3; see release.json
+  for final public verification. Menu/Web/API403837/Bridge/DB/audio unchanged;
+  no real model or Windows physical acceptance. Source still uncommitted master.
+
+- Nov08 local PIN authorization DEPLOYED, source uncommitted. User clarified Kiosk
+  has no management accounts and approved Server PIN verification. Earlier
+  account-required local-save policy below is superseded; Dashboard unchanged.
+  POST/DELETE /api/kiosk/admin/session uses enrolled credential + fixed-origin
+  checks,5attempts/device/min, Hono signed HttpOnly Strict cookie (Secure on
+  HTTPS),15min expiry bound to credential and PIN identity. PUT settings uses
+  local-pin principal, resolves/locks credential, audits null actor + source.
+  API PIN precedence: KIOSK_ADMIN_PIN then KIOSK_ADMIN_PIN_FILE, default private
+  ./data/kiosk-admin.pin. New Kiosk JS no longer reads VITE_KIOSK_ADMIN_PIN;
+  private file provisioned mode0600 at runtime/apps/server/data/kiosk-admin.pin.
+  User explicitly chose rotation and supplied a new PIN (never record it here).
+  Build credentials removed from Vite gate.
+  Frontend opens only after Server success; timeouts/disposal cannot open it.
+  Closing admin clears UI gate/cookie; expired-save inline PIN retains draft.
+ 37focused tests (PIN5/settings10/route1/Firefox19/config2),3 scoped types,
+  touched lint and both builds pass. No model/hardware/full-project rerun.
+  Release pin-device-settings-20261107T185057Z-98dcce3, pointer
+  /tmp/pin-device-settings-release-path. API343763→403837 ready DB/Redisok;
+  origin80 + public7 resource checks pass. Menu/Bridge, order data, microphone
+  and JEV/Main unchanged; no DB migration. Backups/rollback script in release.
+  Earlier handoff-only source hash advance was re-frozen; all code stayed exact.
+  No real authenticated physical-device save claimed. Operator acceptance pending.
+
+- Nov08 direct settings follow-up: observed real PUT /api/kiosk/settings401
+  repeatedly after the prior release, no accepted audit write since16:21UTC.
+  User had clicked Save but could not find the result. Keep both auth layers as
+  explicitly requested: PIN only opens local UI; account authorization still
+  owns writes. Removed all override switches, including VAD. Show effective
+  editable values, persist edited fields plus saved choices (do not freeze
+  untouched Site defaults). Save result now beside buttons;401/403 explicitly
+  say NOT SAVED and link existing sign-in, draft retained in current view.
+  Firefox11 (direct fields/VAD, success/failure remount persistence,401/403,
+  conflicts/sync), Web/Kiosk scoped types, touched lint and both builds pass.
+  Frontend-only release direct-device-settings-20261107T183238Z-98dcce3;
+  see its release.json for final publication checks. API343763/DB unchanged;
+  no real authenticated device save claimed. Source remains uncommitted master.
+
+- Nov08 shared device-settings change DEPLOYED, no commit/push this task.
+  Release device-settings-20261107T181925Z-98dcce3; source was dirty master,
+  frozen source.patch/source hashes and workingTreeChanges are in version.json.
+  Full DB dump verified (~5MB), targeted transactional settings snapshot retained
+  in shared_device_settings_backup_20261107181934. API216097→343763 ready
+  DB/Redis ok; Menu/Bridge unchanged. Origin78 + public7 checks pass. All111
+  devices migrated once with effective overrides preserved. Existing browser
+  test session settings GET401: no authenticated real-device save attempted.
+  Physical operator acceptance pending; reload both UIs before use.
+  User retained both existing PIN entry and Server account authentication.
+  Removed per-field delegation; both editors write one versioned override map.
+  Migration0048 preserves effective delegated values, discards inactive local
+  values and bumps revisions. Must ship migration + matching API + Web/Kiosk
+  together; older clients sending delegation fields receive400. This release
+  includes all three components and the migration. Clean editor refresh10s/focus; dirty drafts retained with
+ 409 on stale save; runtime local-save immediate adoption/polling retained.
+  Validation: pre-fix delegation403 reproduced; Firefox10, service/migration11,
+  authenticated route1 and shared-policy2 cases pass; Server/Kiosk/Web scoped
+  typechecks and touched-file lint pass. No full-project typecheck.
+  No audio/JEV/Main/order change; only shape-preserving settings migration. Working
+  changes are in canonical master directory, not an isolated release worktree.
+
 - Nov08 canonical Git policy: use GitHub default `master`, tracking
   `origin/master`, in `/home/aimax/webnavior`. Keep `no_mcp` at the same integrated
   tip for existing references. Authenticated fetch confirmed remote tips
