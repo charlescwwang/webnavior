@@ -96,6 +96,12 @@ describe('kiosk routes', () => {
     const local = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: false, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy, apiOrigin: 'http://localhost:5168', posGateway: { forward } }))
     expect((await local.request(path, { method: 'POST', headers: { Cookie: cookie, Origin: 'http://localhost:5166' }, body: '{}' })).status).toBe(200)
     expect(forward).toHaveBeenCalledTimes(2)
+    expect((await app.request('/api/kiosk/pos/supplier/v1/catalog')).status).toBe(200)
+    expect(forward.mock.lastCall![0]).toMatchObject({ path: 'supplier/v1/catalog', credential: undefined })
+    expect((await app.request('/api/kiosk/pos/supplier/v1/orders', { method: 'POST', body: '{}' })).status).toBe(401)
+    expect((await app.request('/api/kiosk/pos/supplier/v1/orders', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://kiosk.example.com' }, body: '{}' })).status).toBe(200)
+    expect(forward.mock.lastCall![0]).toMatchObject({ path: 'supplier/v1/orders', credential: cookie.split('=')[1] })
+    expect((await app.request('/api/kiosk/pos/supplier/v1/private-admin')).status).toBe(404)
     // Existing enrolled credentials still bootstrap after development enrollment
     // is disabled; customers do not need to register their browser again.
     const closed = new Hono<HonoEnv>().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: false, secureCookies: false, kioskService: createKioskService(db), llmGateway, runtimeModelPolicy }))

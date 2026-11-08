@@ -36,7 +36,7 @@ const orderSubmissionSchema = object({
 /**
  * Browser-facing vendor-neutral catalog, seating, payment and order contracts.
  */
-export function createPosBridgeApp(options: { allowedOrigin: string, gateway: PosGateway, tableAssignment?: TableAssignment, authenticate: (request: Request) => Promise<string | undefined>, serviceMode?: (request: Request) => Promise<ServiceMode>, onCatalogPriceDiagnostics?: (report: ReturnType<typeof inspectCatalogPrices>) => void }) {
+export function createPosBridgeApp(options: { mountPath?: string, allowedOrigin: string, gateway: PosGateway, tableAssignment?: TableAssignment, authenticate: (request: Request) => Promise<string | undefined>, serviceMode?: (request: Request) => Promise<ServiceMode>, onCatalogPriceDiagnostics?: (report: ReturnType<typeof inspectCatalogPrices>) => void }) {
   const app = new Hono<{ Variables: { owner: string } }>()
   const bridge = createBridge(options.gateway, options.tableAssignment)
   const continuations = createOrderContinuations()
@@ -62,7 +62,9 @@ export function createPosBridgeApp(options: { allowedOrigin: string, gateway: Po
   app.use('/v1/*', bodyLimit({ maxSize: 1024 * 1024 }))
   app.use('/v1/*', cors({ origin: options.allowedOrigin }))
   app.use('/v1/*', async (c, next) => {
-    const path = c.req.path
+    // The same Bridge may be mounted beneath a merchant prefix; public-read
+    // policy applies to its local route while all writes still authenticate.
+    const path = options.mountPath ? c.req.path.slice(options.mountPath.length) : c.req.path
     const publicRead = c.req.method === 'GET' && (path === '/v1/catalog' || path === '/v1/seating')
     const continuation = /^\/v1\/continuations\/[\w-]+(?:\/(?:table|takeout))?$/.test(path)
     if (publicRead || continuation)

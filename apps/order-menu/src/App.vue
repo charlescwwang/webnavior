@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { InteractionLifecycleMessage, InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
+import type { MerchantFacts } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { OrderingContext } from '@proj-airi/stage-shared/kiosk-service-mode'
 import type { ComponentPublicInstance } from 'vue'
 
@@ -26,6 +27,7 @@ import MenuQueryConditions from './components/menuQueryConditions.vue'
 import MenuRecommendationRail from './components/MenuRecommendationRail.vue'
 import OrderReview from './components/OrderReview.vue'
 import OrderSummaryBar from './components/OrderSummaryBar.vue'
+import SupplierMenuCard from './components/supplierMenuCard.vue'
 
 import { orderingMessages } from '../../../packages/i18n/src/orderingMessages'
 import { usePaymentSelectionCountdown } from './composables/usePaymentSelectionCountdown'
@@ -43,6 +45,9 @@ import { addItemControlId, cartOptionControlId, cartRemovalControlId, closeItemC
 // A deployment can lock the service to one approved host. Otherwise, a page
 // embedded by AIRI reads the browser-provided parent referrer origin, so local
 // ports and kiosk domains work without a separate startup command.
+const props = withDefaults(defineProps<{ bridgeUrl?: string, variant?: 'default' | 'supplier', merchant?: MerchantFacts }>(), { variant: 'default' })
+const bridgeUrl = props.bridgeUrl ?? import.meta.env.VITE_ORDER_MENU_SERVER_URL
+
 const expectedAiriOrigin = resolveExpectedHostOrigin({
   configuredOrigin: import.meta.env.VITE_AIRI_ORIGIN,
   isEmbedded: window.parent !== window,
@@ -78,7 +83,7 @@ const paymentMethod = shallowRef<PaymentMethod>()
 const paymentStatus = shallowRef<PaymentStatus>()
 const paymentError = shallowRef<string>()
 const receiptAccess = shallowRef<ContinuationAccess>()
-const receiptUrl = computed(() => receiptAccess.value ? continuationUrl(receiptAccess.value, import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
+const receiptUrl = computed(() => receiptAccess.value ? continuationUrl(receiptAccess.value, props.variant === 'supplier' ? new URL('supplier.html', import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href).href : import.meta.env.VITE_ORDER_MENU_PUBLIC_URL || window.location.href) : undefined)
 let checkoutRevision = 0
 // Synchronous observation preserves every checkout/payment write, including
 // a change that is undone before the next System One request arrives.
@@ -95,7 +100,7 @@ let menuUnmounted = false
 const quantities = reactive<Record<string, number>>({})
 const expandedCustomizations = reactive<Record<string, boolean>>({})
 const selectedOptionsByItem = reactive<Record<string, Record<string, string>>>({})
-const { catalog: posCatalog, error: catalogError, load: loadPosCatalog, state: catalogState } = usePosCatalog(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
+const { catalog: posCatalog, error: catalogError, load: loadPosCatalog, state: catalogState } = usePosCatalog(bridgeUrl)
 const menuItems = computed(() => posCatalog.value?.items ?? [])
 const menuPresentationLoadingTool = computed(() => menuPresentationLoadingTools.value.at(-1))
 const menuPresentationLoading = computed(() => menuPresentationLoadingTool.value !== undefined)
@@ -316,6 +321,7 @@ function resolveControl(id: string) {
 const controlExecution = createControlExecution({ animate: animateAction, resolve: resolveControl })
 
 const runtime = createMenuToolRuntime({
+  merchant: props.merchant ?? { id: 'original-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' },
   testing: import.meta.env.DEV,
   onMenuChanged: (items) => {
     if (posCatalog.value)
@@ -336,7 +342,7 @@ const runtime = createMenuToolRuntime({
   serviceContext: () => orderingContext.value,
   onSessionReset: async () => {
     if (orderingContext.value)
-      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
+      orderingContext.value = await loadOrderingContext(bridgeUrl, orderingContext.value.id)
     receiptAccess.value = undefined
     completedOrderId.value = undefined
     completedOrder.value = undefined
@@ -366,7 +372,7 @@ const runtime = createMenuToolRuntime({
     snapshot: () => checkout.value,
     start: startCheckout,
   },
-  gateway: createPosBridgeGateway(import.meta.env.VITE_ORDER_MENU_SERVER_URL, () => undefined, { phone: () => undefined, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
+  gateway: createPosBridgeGateway(bridgeUrl, () => undefined, { phone: () => undefined, onReceipt: access => receiptAccess.value = access, orderingContext: () => orderingContext.value }),
   menu: [],
   onAction: animateAction,
   onControl: (action, apply) => controlExecution.execute(action, apply),
@@ -377,7 +383,7 @@ const runtime = createMenuToolRuntime({
     // Bridge restarts can retire its in-memory round. Refresh before showing
     // the order, so the customer's new confirmation binds the current table.
     if (orderingContext.value?.serviceMode === 'table-service')
-      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
+      orderingContext.value = await loadOrderingContext(bridgeUrl)
     selectedItemId.value = undefined
     orderReviewOpen.value = true
     await nextTick()
@@ -516,7 +522,7 @@ async function completeCustomerSession() {
   }
   if (window.parent === window && orderingContext.value) {
     try {
-      await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL, orderingContext.value.id)
+      await loadOrderingContext(bridgeUrl, orderingContext.value.id)
     }
     catch (error) {
       orderStatus.value = errorMessageFrom(error) ?? '目前無法開始新訂單。'
@@ -737,7 +743,7 @@ async function waitForPayment(paymentId: string, attempt: number, deadline: numb
   if (attempt !== paymentAttempt)
     return
   try {
-    const payment = await getPayment(import.meta.env.VITE_ORDER_MENU_SERVER_URL, paymentId)
+    const payment = await getPayment(bridgeUrl, paymentId)
     if (attempt !== paymentAttempt)
       return
     paymentStatus.value = payment.status
@@ -794,7 +800,7 @@ async function simulatePayment() {
   paymentStatus.value = 'pending'
   try {
     terminalRequested = true
-    const payment = await createPayment(import.meta.env.VITE_ORDER_MENU_SERVER_URL, cart.value.total, method)
+    const payment = await createPayment(bridgeUrl, cart.value.total, method)
     if (attempt !== paymentAttempt)
       return { customerMessage: '付款操作已取消。', status: 'cancelled' }
     terminalAuthorized = payment.status === 'authorized'
@@ -908,7 +914,7 @@ function optionLabel(line: CartSnapshot['lines'][number]) {
 async function loadCatalog() {
   try {
     if (!orderingContext.value)
-      orderingContext.value = await loadOrderingContext(import.meta.env.VITE_ORDER_MENU_SERVER_URL)
+      orderingContext.value = await loadOrderingContext(bridgeUrl)
   }
   catch (error) {
     catalogError.value = errorMessageFrom(error) ?? '無法取得服務模式。'
@@ -954,7 +960,13 @@ onUnmounted(() => {
     :state="catalogState"
     @retry="loadCatalog"
   />
-  <main v-else :inert="agentControlsOrder" class="menu-app" @pointerdown="handleMenuPointerDown">
+  <main v-else :inert="agentControlsOrder" :class="['menu-app', { 'supplier-menu': variant === 'supplier' }]" @pointerdown="handleMenuPointerDown">
+    <header v-if="variant === 'supplier'" :class="['supplier-heading']">
+      <strong>{{ posCatalog?.store.name }}</strong>
+      <p role="note">
+        {{ orderingMessages['zh-Hant'].supplierSimulationNotice }}
+      </p>
+    </header>
     <p v-if="menuInteractionMessage" role="status" :class="['presentation-context']">
       {{ menuInteractionMessage }}
     </p>
@@ -1065,7 +1077,9 @@ onUnmounted(() => {
           </p>
           <div v-else class="menu-grid">
             <div v-for="item in visibleMenuItems" :key="item.id" :ref="element => setCardElement(item.id, element)">
+              <SupplierMenuCard v-if="variant === 'supplier'" :is-targeted="cursorTargetId === item.id" :item="item" @select="openItem" />
               <MenuItemCard
+                v-else
                 :is-targeted="cursorTargetId === item.id"
                 :item="item"
                 @select="openItem"

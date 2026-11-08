@@ -1,5 +1,17 @@
 # Order Menu POS Bridge
 
+## Supplier simulation
+
+The bundled runner also mounts an independent test Bridge at `/supplier`, using
+`src/fixtures/supplierMenu.json`. Its catalog, payment/order state and continuation
+capabilities are separate from the default merchant. All submissions remain in the
+`test` environment; it does not contact the supplier's real POS or payment service.
+`/supplier/v1/catalog` stays public, while ordering endpoints retain the existing
+device authentication. Mounting a Bridge beneath a prefix requires its matching
+`mountPath`, so the public-read policy evaluates the local route correctly.
+The existing reverse proxy for `/menu-api/` also carries `/menu-api/supplier/*`;
+no additional port or upstream server is required.
+
 `@proj-airi/order-menu-server` is the local server boundary between the
 customer-facing Order Menu and a POS provider. It owns normalized catalog and
 order-submission HTTP contracts; the customer UI and WebMCP never receive POS

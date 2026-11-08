@@ -1,5 +1,7 @@
-const publicRoutes = /^(?:v1\/(?:catalog|seating)|v1\/continuations\/[\w-]{1,200}(?:\/(?:table|takeout))?)$/
-const deviceRoutes = /^(?:v1\/(?:payments|orders|table-orders|ordering-context|seating\/holds)|v1\/(?:payments|seating\/holds)\/[\w-]{1,200})$/
+// Only owned merchant namespaces may share this proxy. Keep the original
+// route and authentication policy intact beneath the supplier prefix.
+const publicRoutes = /^(?:supplier\/)?(?:v1\/(?:catalog|seating)|v1\/continuations\/[\w-]{1,200}(?:\/(?:table|takeout))?)$/
+const deviceRoutes = /^(?:supplier\/)?(?:v1\/(?:payments|orders|table-orders|ordering-context|seating\/holds)|v1\/(?:payments|seating\/holds)\/[\w-]{1,200})$/
 
 /** Restricts the device proxy to POS contracts; never forwards an arbitrary URL. */
 export function isPosRoute(path: string): boolean {

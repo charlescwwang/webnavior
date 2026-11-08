@@ -235,13 +235,14 @@ export function createInMemorySimulatorGateway(
   initialPaymentMode: SimulatorPaymentMode = 'authorized',
   now: () => number = () => Date.now(),
   tableAssignment: TableAssignment = 'reservation',
+  catalog: CatalogSnapshot = simulatorCatalog,
 ): PosGateway {
-  return createSimulatorGateway(() => initialMode, () => initialPaymentMode, now, tableAssignment)
+  return createSimulatorGateway(() => initialMode, () => initialPaymentMode, now, tableAssignment, catalog)
 }
 
 // Both HTTP and in-process simulation use the same inventory/payment state
 // machine so tests cannot pass against a seating model absent in the live API.
-function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => SimulatorPaymentMode, now: () => number = () => Date.now(), tableAssignment: TableAssignment = 'reservation'): PosGateway & { depart: (tableId: string, expectedRevision: number) => void } {
+function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => SimulatorPaymentMode, now: () => number = () => Date.now(), tableAssignment: TableAssignment = 'reservation', catalog: CatalogSnapshot = simulatorCatalog): PosGateway & { depart: (tableId: string, expectedRevision: number) => void } {
   const receiptsByKey = new Map<string, SubmissionReceipt>()
   const payments = new Map<string, PaymentIntent>()
   const seating = createSeating(now)
@@ -261,7 +262,7 @@ function createSimulatorGateway(mode: () => SimulatorMode, paymentMode: () => Si
       return payment
     },
     getPayment: async (paymentId: string) => payments.get(paymentId),
-    getCatalog: async () => simulatorCatalog,
+    getCatalog: async () => catalog,
     submitTableOrder: async (submission) => {
       const existing = receiptsByKey.get(submission.idempotencyKey)
       if (existing)

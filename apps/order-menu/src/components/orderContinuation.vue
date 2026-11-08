@@ -9,7 +9,8 @@ import TakeoutChange from './takeoutChange.vue'
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { changeToTakeout, pendingOrderKey, readContinuation } from '../continuation'
 
-const props = defineProps<{ token: string, scannedTable?: string }>()
+const props = withDefaults(defineProps<{ token: string, scannedTable?: string, bridgeUrl?: string, storageKey?: string, simulation?: boolean }>(), { storageKey: pendingOrderKey, simulation: false })
+const bridgeUrl = props.bridgeUrl ?? import.meta.env.VITE_ORDER_MENU_SERVER_URL
 const snapshot = shallowRef<ContinuationSnapshot>()
 const error = shallowRef<string>()
 const busy = shallowRef(false)
@@ -39,9 +40,9 @@ function acceptSnapshot(next: ContinuationSnapshot) {
   // Only an unbound dine-in order should follow a later table scan. Pickup
   // removes this order's token without disturbing another pending order.
   if (!next.readOnly && next.fulfillmentMode === 'dine-in' && !next.table)
-    localStorage.setItem(pendingOrderKey, JSON.stringify({ token: props.token, expiresAt: next.expiresAt }))
-  else if (JSON.parse(localStorage.getItem(pendingOrderKey) ?? 'null')?.token === props.token)
-    localStorage.removeItem(pendingOrderKey)
+    localStorage.setItem(props.storageKey, JSON.stringify({ token: props.token, expiresAt: next.expiresAt }))
+  else if (JSON.parse(localStorage.getItem(props.storageKey) ?? 'null')?.token === props.token)
+    localStorage.removeItem(props.storageKey)
 }
 
 async function load(confirm = false) {
@@ -54,7 +55,7 @@ async function load(confirm = false) {
   busy.value = true
   error.value = undefined
   try {
-    acceptSnapshot(await readContinuation(import.meta.env.VITE_ORDER_MENU_SERVER_URL, props.token, confirm ? scanned.value : undefined))
+    acceptSnapshot(await readContinuation(bridgeUrl, props.token, confirm ? scanned.value : undefined))
     confirmingTakeout.value = false
   }
   catch (cause) {
@@ -69,7 +70,7 @@ async function confirmTakeout() {
   busy.value = true
   error.value = undefined
   try {
-    acceptSnapshot(await changeToTakeout(import.meta.env.VITE_ORDER_MENU_SERVER_URL, props.token))
+    acceptSnapshot(await changeToTakeout(bridgeUrl, props.token))
     scanned.value = undefined
     confirmingTakeout.value = false
   }
@@ -83,6 +84,9 @@ onMounted(() => load())
 
 <template>
   <main :class="['continuation-page']">
+    <p v-if="simulation" role="note">
+      {{ orderingMessages['zh-Hant'].supplierSimulationNotice }}
+    </p>
     <span :class="['test-label']">{{ snapshot?.environment === 'test' ? copy.testOrder : copy.receiptTitle }}</span>
     <h1>{{ heading }}</h1>
     <p v-if="error" role="alert">

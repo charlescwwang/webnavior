@@ -1,5 +1,36 @@
 # Order menu service
 
+## Separate merchant simulation
+
+`/supplier.html` is the owned 沙崙AI創新應用大樓店 simulation (operator: 周氏蝦捲),
+with a distinct product-card layout and the same real-click ordering controls.
+It visibly states that it cannot create real orders or payments. The entry uses
+`VITE_ORDER_MENU_SERVER_URL` plus `/supplier`; the existing entry continues to use
+its original API/catalog. Both HTML entries are built together. For a deployment
+under `/menu/`, the new page is `/menu/supplier.html`; serve both HTML entries with
+revalidation/no-cache, alongside the shared `/menu/version.json` release metadata.
+
+The independent simulator catalog is owned by
+`apps/order-menu-server/src/fixtures/supplierMenu.json`. The captured source and
+user-confirmed overrides are recorded in
+`docs/research/2026-11-08-esgpb-menu-observation.json`. Three source photos are
+stored under `public/supplier/`; other products explicitly have no photo. Dumplings
+are sold as servings of eight (64元), with a per-serving optional add-on of0–100
+pieces at8元 each. Serving quantity and added pieces are separate controls.
+No assistant free-text note entry or inferred dietary/recipe guarantees are added.
+
+Publish a supported page binding in the central Profile's merchant list, then
+select it in either central device settings or the PIN-protected local settings.
+The saved merchant is applied at an idle reset or the next customer-round reset;
+an active order is never transferred. A refresh restores the Server-saved choice.
+Only the active merchant is exposed to conversation tools. Registry entries do
+not make an arbitrary third-party URL operable. Merchant facts for spoken payment
+answers are configured independently from the simulated checkout options.
+
+Supplier continuation links stay on `supplier.html`, use the supplier API, and
+keep table-scan capabilities in separate merchant storage. Do not replace the old
+merchant's catalog or point the new page at its order/payment endpoints.
+
 `@proj-airi/order-menu` is a standalone Vue web service for browsing a menu and
 building an order. It reuses shared UI primitives and localized ordering copy,
 without importing avatar, Electron, Pinia, speech, or model packages.

@@ -88,7 +88,7 @@ const emit = defineEmits<{
             </button>
           </div>
         </div>
-        <div v-for="group in line.optionGroups" :key="group.id" :class="['review-line-options']" role="group" :aria-label="`${line.name} ${group.label}`">
+        <div v-for="group in line.optionGroups" :key="group.id" :class="['review-line-options', { 'many-options': group.values.length > 12 }]" role="group" :aria-label="`${line.name} ${group.label}`">
           <span>{{ group.label }}</span>
           <button v-for="value in group.values" :key="value.id" :ref="element => emit('registerControl', cartOptionControlId(line.id, group.id, value.id), element)" type="button" :disabled="props.completed" :aria-pressed="line.selectedOptions?.[group.id] === value.id" @click="emit('updateOption', line.id, group.id, value.id)">
             {{ value.label }}<span v-if="value.priceDelta"> {{ value.priceDelta > 0 ? '+' : '' }}{{ formatOrderingPrice(value.priceDelta) }}</span>
@@ -141,7 +141,7 @@ const emit = defineEmits<{
 
 <style scoped>
 .review-line-options { display:flex; grid-column:1 / -1; flex-wrap:wrap; align-items:center; gap:8px; }
-.review-line-options > span { color:#876; font-size:12px; }
+.review-line-options.many-options { max-height:240px; overflow:auto; padding:4px; }.review-line-options > span { color:#876; font-size:12px; }
 .review-line-options button { min-height:40px; border:1px solid #ead7c9; padding:8px 12px; color:#765; background:#fff9f3; }
 .review-line-options button[aria-pressed="true"] { border-color:#d95327; color:#803813; background:#ffe0c5; }
 .review-clear { min-height:40px; margin-bottom:8px; }

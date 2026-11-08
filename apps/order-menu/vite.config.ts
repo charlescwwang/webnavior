@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [Vue(), toolValidationPlugin()],
+    build: { rolldownOptions: { input: { menu: resolve(import.meta.dirname, 'index.html'), supplier: resolve(import.meta.dirname, 'supplier.html') } } },
     server: {
       allowedHosts: true,
       cors: { origin: embeddingOrigin },

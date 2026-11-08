@@ -5,6 +5,22 @@ export type { ContinuationAccess, ContinuationSnapshot } from '../../order-menu-
 /** Stores only the pending bearer token and expiry across native-camera browser tabs. */
 export const pendingOrderKey = 'webnavior-pending-order'
 
+/** Resolves a continuation only from this merchant's URL or its own unexpired table-scan capability. */
+export function continuationToken(query: URLSearchParams, storage: Pick<Storage, 'getItem'>, key = pendingOrderKey): string {
+  if (query.has('continuation'))
+    return query.get('continuation') ?? ''
+  if (!query.has('table'))
+    return ''
+  try {
+    const pending: Partial<ContinuationAccess> | null = JSON.parse(storage.getItem(key) ?? 'null')
+    return typeof pending?.token === 'string' && typeof pending.expiresAt === 'number' && pending.expiresAt > Date.now() ? pending.token : ''
+  }
+  catch {
+    // Corrupt or unavailable storage never grants another merchant's order capability.
+    return ''
+  }
+}
+
 /** Uses the configured customer-facing menu origin; local links remain clickable on desktop. */
 export function continuationUrl(access: ContinuationAccess, pageUrl: string) {
   const url = new URL(pageUrl)

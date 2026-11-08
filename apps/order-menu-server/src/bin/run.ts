@@ -1,11 +1,13 @@
 import process from 'node:process'
 
 import { serve } from '@hono/node-server'
+import { Hono } from 'hono'
 
 import { createPosBridgeApp } from '../app'
 import { createHttpPosGateway } from '../gateway/http'
 import { createKioskAuthentication, createKioskModeSelector } from '../gateway/kiosk'
-import { createPosSimulator } from '../simulator'
+import { createInMemorySimulatorGateway, createPosSimulator } from '../simulator'
+import { supplierCatalog } from '../supplierSimulation'
 
 function portFromEnvironment(name: string, fallback: number) {
   const value = Number.parseInt(process.env[name] ?? '', 10)
@@ -31,7 +33,18 @@ const bridge = createPosBridgeApp({
     timeoutMs: portFromEnvironment('ORDER_MENU_POS_TIMEOUT_MS', 3_000),
   }),
 })
-const bridgeServer = serve({ fetch: bridge.fetch, hostname: host, port: bridgePort })
+// Each merchant owns an independent Bridge, catalog, order round and payment state.
+const app = new Hono()
+app.route('/supplier', createPosBridgeApp({
+  mountPath: '/supplier',
+  authenticate: createKioskAuthentication(process.env.ORDER_MENU_KIOSK_API_URL ?? 'http://127.0.0.1:5168'),
+  serviceMode: createKioskModeSelector(process.env.ORDER_MENU_KIOSK_API_URL ?? 'http://127.0.0.1:5168'),
+  allowedOrigin: process.env.ORDER_MENU_ALLOWED_ORIGIN ?? 'http://localhost:5166',
+  tableAssignment: 'after-order',
+  gateway: createInMemorySimulatorGateway('accepted', 'authorized', Date.now, 'after-order', supplierCatalog),
+}))
+app.route('/', bridge)
+const bridgeServer = serve({ fetch: app.fetch, hostname: host, port: bridgePort })
 
 process.stdout.write(`POS simulator: http://${host}:${simulatorPort}\n`)
 process.stdout.write(`POS Bridge: http://${host}:${bridgePort}\n`)

@@ -1,0 +1,853 @@
+{
+  "revision": "supplier-menu-20261108-v1",
+  "store": {
+    "name": "沙崙AI創新應用大樓店",
+    "slogan": "模擬示意｜營運業者：周氏蝦捲",
+    "symbol": "周",
+    "fulfillmentModes": [
+      {
+        "id": "dine-in",
+        "label": "內用"
+      },
+      {
+        "id": "takeout",
+        "label": "自取"
+      }
+    ]
+  },
+  "items": [
+    {
+      "id": "supplier-item-01",
+      "name": "炸雞腿便當",
+      "category": "飯區",
+      "price": 130.0,
+      "description": "炸雞腿便當",
+      "imageUrl": "supplier/item-01.jpg",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-02",
+      "name": "炸排骨便當",
+      "category": "飯區",
+      "price": 130,
+      "description": "炸排骨便當",
+      "imageUrl": "supplier/item-02.jpg",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-03",
+      "name": "控肉飯",
+      "category": "飯區",
+      "price": 120.0,
+      "description": "控肉飯",
+      "imageUrl": "supplier/item-03.jpg",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-04",
+      "name": "三杯雞便當",
+      "category": "飯區",
+      "price": 110.0,
+      "description": "三杯雞便當",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-05",
+      "name": "宮保雞丁便當",
+      "category": "飯區",
+      "price": 110.0,
+      "description": "宮保雞丁便當",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-06",
+      "name": "烤雞腿便當",
+      "category": "飯區",
+      "price": 130.0,
+      "description": "烤雞腿便當",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-07",
+      "name": "港式油雞腿便當",
+      "category": "飯區",
+      "price": 120.0,
+      "description": "港式油雞腿便當",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-08",
+      "name": "周氏水餃(最低8顆)",
+      "category": "麵區",
+      "price": 64.0,
+      "description": "每份基本8顆64元，可加量0～100顆，每顆加8元。",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": [
+        {
+          "id": "extra-pieces",
+          "label": "加量",
+          "required": false,
+          "values": [
+            {
+              "id": "extra-0",
+              "label": "不加量",
+              "priceDelta": 0
+            },
+            {
+              "id": "extra-1",
+              "label": "加1顆",
+              "priceDelta": 8
+            },
+            {
+              "id": "extra-2",
+              "label": "加2顆",
+              "priceDelta": 16
+            },
+            {
+              "id": "extra-3",
+              "label": "加3顆",
+              "priceDelta": 24
+            },
+            {
+              "id": "extra-4",
+              "label": "加4顆",
+              "priceDelta": 32
+            },
+            {
+              "id": "extra-5",
+              "label": "加5顆",
+              "priceDelta": 40
+            },
+            {
+              "id": "extra-6",
+              "label": "加6顆",
+              "priceDelta": 48
+            },
+            {
+              "id": "extra-7",
+              "label": "加7顆",
+              "priceDelta": 56
+            },
+            {
+              "id": "extra-8",
+              "label": "加8顆",
+              "priceDelta": 64
+            },
+            {
+              "id": "extra-9",
+              "label": "加9顆",
+              "priceDelta": 72
+            },
+            {
+              "id": "extra-10",
+              "label": "加10顆",
+              "priceDelta": 80
+            },
+            {
+              "id": "extra-11",
+              "label": "加11顆",
+              "priceDelta": 88
+            },
+            {
+              "id": "extra-12",
+              "label": "加12顆",
+              "priceDelta": 96
+            },
+            {
+              "id": "extra-13",
+              "label": "加13顆",
+              "priceDelta": 104
+            },
+            {
+              "id": "extra-14",
+              "label": "加14顆",
+              "priceDelta": 112
+            },
+            {
+              "id": "extra-15",
+              "label": "加15顆",
+              "priceDelta": 120
+            },
+            {
+              "id": "extra-16",
+              "label": "加16顆",
+              "priceDelta": 128
+            },
+            {
+              "id": "extra-17",
+              "label": "加17顆",
+              "priceDelta": 136
+            },
+            {
+              "id": "extra-18",
+              "label": "加18顆",
+              "priceDelta": 144
+            },
+            {
+              "id": "extra-19",
+              "label": "加19顆",
+              "priceDelta": 152
+            },
+            {
+              "id": "extra-20",
+              "label": "加20顆",
+              "priceDelta": 160
+            },
+            {
+              "id": "extra-21",
+              "label": "加21顆",
+              "priceDelta": 168
+            },
+            {
+              "id": "extra-22",
+              "label": "加22顆",
+              "priceDelta": 176
+            },
+            {
+              "id": "extra-23",
+              "label": "加23顆",
+              "priceDelta": 184
+            },
+            {
+              "id": "extra-24",
+              "label": "加24顆",
+              "priceDelta": 192
+            },
+            {
+              "id": "extra-25",
+              "label": "加25顆",
+              "priceDelta": 200
+            },
+            {
+              "id": "extra-26",
+              "label": "加26顆",
+              "priceDelta": 208
+            },
+            {
+              "id": "extra-27",
+              "label": "加27顆",
+              "priceDelta": 216
+            },
+            {
+              "id": "extra-28",
+              "label": "加28顆",
+              "priceDelta": 224
+            },
+            {
+              "id": "extra-29",
+              "label": "加29顆",
+              "priceDelta": 232
+            },
+            {
+              "id": "extra-30",
+              "label": "加30顆",
+              "priceDelta": 240
+            },
+            {
+              "id": "extra-31",
+              "label": "加31顆",
+              "priceDelta": 248
+            },
+            {
+              "id": "extra-32",
+              "label": "加32顆",
+              "priceDelta": 256
+            },
+            {
+              "id": "extra-33",
+              "label": "加33顆",
+              "priceDelta": 264
+            },
+            {
+              "id": "extra-34",
+              "label": "加34顆",
+              "priceDelta": 272
+            },
+            {
+              "id": "extra-35",
+              "label": "加35顆",
+              "priceDelta": 280
+            },
+            {
+              "id": "extra-36",
+              "label": "加36顆",
+              "priceDelta": 288
+            },
+            {
+              "id": "extra-37",
+              "label": "加37顆",
+              "priceDelta": 296
+            },
+            {
+              "id": "extra-38",
+              "label": "加38顆",
+              "priceDelta": 304
+            },
+            {
+              "id": "extra-39",
+              "label": "加39顆",
+              "priceDelta": 312
+            },
+            {
+              "id": "extra-40",
+              "label": "加40顆",
+              "priceDelta": 320
+            },
+            {
+              "id": "extra-41",
+              "label": "加41顆",
+              "priceDelta": 328
+            },
+            {
+              "id": "extra-42",
+              "label": "加42顆",
+              "priceDelta": 336
+            },
+            {
+              "id": "extra-43",
+              "label": "加43顆",
+              "priceDelta": 344
+            },
+            {
+              "id": "extra-44",
+              "label": "加44顆",
+              "priceDelta": 352
+            },
+            {
+              "id": "extra-45",
+              "label": "加45顆",
+              "priceDelta": 360
+            },
+            {
+              "id": "extra-46",
+              "label": "加46顆",
+              "priceDelta": 368
+            },
+            {
+              "id": "extra-47",
+              "label": "加47顆",
+              "priceDelta": 376
+            },
+            {
+              "id": "extra-48",
+              "label": "加48顆",
+              "priceDelta": 384
+            },
+            {
+              "id": "extra-49",
+              "label": "加49顆",
+              "priceDelta": 392
+            },
+            {
+              "id": "extra-50",
+              "label": "加50顆",
+              "priceDelta": 400
+            },
+            {
+              "id": "extra-51",
+              "label": "加51顆",
+              "priceDelta": 408
+            },
+            {
+              "id": "extra-52",
+              "label": "加52顆",
+              "priceDelta": 416
+            },
+            {
+              "id": "extra-53",
+              "label": "加53顆",
+              "priceDelta": 424
+            },
+            {
+              "id": "extra-54",
+              "label": "加54顆",
+              "priceDelta": 432
+            },
+            {
+              "id": "extra-55",
+              "label": "加55顆",
+              "priceDelta": 440
+            },
+            {
+              "id": "extra-56",
+              "label": "加56顆",
+              "priceDelta": 448
+            },
+            {
+              "id": "extra-57",
+              "label": "加57顆",
+              "priceDelta": 456
+            },
+            {
+              "id": "extra-58",
+              "label": "加58顆",
+              "priceDelta": 464
+            },
+            {
+              "id": "extra-59",
+              "label": "加59顆",
+              "priceDelta": 472
+            },
+            {
+              "id": "extra-60",
+              "label": "加60顆",
+              "priceDelta": 480
+            },
+            {
+              "id": "extra-61",
+              "label": "加61顆",
+              "priceDelta": 488
+            },
+            {
+              "id": "extra-62",
+              "label": "加62顆",
+              "priceDelta": 496
+            },
+            {
+              "id": "extra-63",
+              "label": "加63顆",
+              "priceDelta": 504
+            },
+            {
+              "id": "extra-64",
+              "label": "加64顆",
+              "priceDelta": 512
+            },
+            {
+              "id": "extra-65",
+              "label": "加65顆",
+              "priceDelta": 520
+            },
+            {
+              "id": "extra-66",
+              "label": "加66顆",
+              "priceDelta": 528
+            },
+            {
+              "id": "extra-67",
+              "label": "加67顆",
+              "priceDelta": 536
+            },
+            {
+              "id": "extra-68",
+              "label": "加68顆",
+              "priceDelta": 544
+            },
+            {
+              "id": "extra-69",
+              "label": "加69顆",
+              "priceDelta": 552
+            },
+            {
+              "id": "extra-70",
+              "label": "加70顆",
+              "priceDelta": 560
+            },
+            {
+              "id": "extra-71",
+              "label": "加71顆",
+              "priceDelta": 568
+            },
+            {
+              "id": "extra-72",
+              "label": "加72顆",
+              "priceDelta": 576
+            },
+            {
+              "id": "extra-73",
+              "label": "加73顆",
+              "priceDelta": 584
+            },
+            {
+              "id": "extra-74",
+              "label": "加74顆",
+              "priceDelta": 592
+            },
+            {
+              "id": "extra-75",
+              "label": "加75顆",
+              "priceDelta": 600
+            },
+            {
+              "id": "extra-76",
+              "label": "加76顆",
+              "priceDelta": 608
+            },
+            {
+              "id": "extra-77",
+              "label": "加77顆",
+              "priceDelta": 616
+            },
+            {
+              "id": "extra-78",
+              "label": "加78顆",
+              "priceDelta": 624
+            },
+            {
+              "id": "extra-79",
+              "label": "加79顆",
+              "priceDelta": 632
+            },
+            {
+              "id": "extra-80",
+              "label": "加80顆",
+              "priceDelta": 640
+            },
+            {
+              "id": "extra-81",
+              "label": "加81顆",
+              "priceDelta": 648
+            },
+            {
+              "id": "extra-82",
+              "label": "加82顆",
+              "priceDelta": 656
+            },
+            {
+              "id": "extra-83",
+              "label": "加83顆",
+              "priceDelta": 664
+            },
+            {
+              "id": "extra-84",
+              "label": "加84顆",
+              "priceDelta": 672
+            },
+            {
+              "id": "extra-85",
+              "label": "加85顆",
+              "priceDelta": 680
+            },
+            {
+              "id": "extra-86",
+              "label": "加86顆",
+              "priceDelta": 688
+            },
+            {
+              "id": "extra-87",
+              "label": "加87顆",
+              "priceDelta": 696
+            },
+            {
+              "id": "extra-88",
+              "label": "加88顆",
+              "priceDelta": 704
+            },
+            {
+              "id": "extra-89",
+              "label": "加89顆",
+              "priceDelta": 712
+            },
+            {
+              "id": "extra-90",
+              "label": "加90顆",
+              "priceDelta": 720
+            },
+            {
+              "id": "extra-91",
+              "label": "加91顆",
+              "priceDelta": 728
+            },
+            {
+              "id": "extra-92",
+              "label": "加92顆",
+              "priceDelta": 736
+            },
+            {
+              "id": "extra-93",
+              "label": "加93顆",
+              "priceDelta": 744
+            },
+            {
+              "id": "extra-94",
+              "label": "加94顆",
+              "priceDelta": 752
+            },
+            {
+              "id": "extra-95",
+              "label": "加95顆",
+              "priceDelta": 760
+            },
+            {
+              "id": "extra-96",
+              "label": "加96顆",
+              "priceDelta": 768
+            },
+            {
+              "id": "extra-97",
+              "label": "加97顆",
+              "priceDelta": 776
+            },
+            {
+              "id": "extra-98",
+              "label": "加98顆",
+              "priceDelta": 784
+            },
+            {
+              "id": "extra-99",
+              "label": "加99顆",
+              "priceDelta": 792
+            },
+            {
+              "id": "extra-100",
+              "label": "加100顆",
+              "priceDelta": 800
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "supplier-item-09",
+      "name": "老董紅燒牛肉麵",
+      "category": "麵區",
+      "price": 200.0,
+      "description": "老董紅燒牛肉麵",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-10",
+      "name": "椒香麻辣牛肉麵",
+      "category": "麵區",
+      "price": 230,
+      "description": "椒香麻辣牛肉麵",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-11",
+      "name": "牛肉湯餃(10顆)",
+      "category": "麵區",
+      "price": 110.0,
+      "description": "牛肉湯餃(10顆)",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-12",
+      "name": "紅燒牛肉湯(無肉)",
+      "category": "麵區",
+      "price": 80.0,
+      "description": "紅燒牛肉湯(無肉)",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-13",
+      "name": "蛋花湯",
+      "category": "麵區",
+      "price": 40.0,
+      "description": "蛋花湯",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-14",
+      "name": "魚丸湯",
+      "category": "麵區",
+      "price": 50.0,
+      "description": "魚丸湯",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-15",
+      "name": "A套餐",
+      "category": "麵區",
+      "price": 130,
+      "description": "A套餐",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    },
+    {
+      "id": "supplier-item-16",
+      "name": "B 套餐",
+      "category": "麵區",
+      "price": 145,
+      "description": "B 套餐",
+      "imageUrl": "",
+      "available": true,
+      "aliases": [],
+      "composition": {
+        "ingredients": [],
+        "complete": false,
+        "source": "merchant",
+        "revision": "supplier-observation-20261108",
+        "removals": []
+      },
+      "recommendationTags": [],
+      "symbol": "無圖片",
+      "optionGroups": []
+    }
+  ]
+}

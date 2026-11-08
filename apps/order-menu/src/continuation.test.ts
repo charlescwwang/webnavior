@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createPosBridgeApp } from '../../order-menu-server/src/app'
 import { createInMemorySimulatorGateway } from '../../order-menu-server/src/simulator'
-import { changeToTakeout, continuationUrl, readContinuation } from './continuation'
+import { changeToTakeout, continuationToken, continuationUrl, readContinuation } from './continuation'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -41,4 +41,13 @@ describe('customer order continuation links', () => {
     expect(payments).toHaveBeenCalledOnce()
     expect(submissions).toHaveBeenCalledOnce()
   })
+})
+
+// Report: this chat Nov08 — merchant-specific continuations must not read another store's saved token.
+it('resolves only the current merchant pending capability and preserves explicit URL tokens', () => {
+  const storage = { getItem: (key: string) => key === 'new-store' ? JSON.stringify({ token: 'new-token', expiresAt: Date.now() + 30000 }) : null }
+  expect(continuationToken(new URLSearchParams('table=A08'), storage, 'new-store')).toBe('new-token')
+  expect(continuationToken(new URLSearchParams('table=A08'), storage, 'old-store')).toBe('')
+  expect(continuationToken(new URLSearchParams('continuation=explicit'), storage, 'new-store')).toBe('explicit')
+  expect(continuationToken(new URLSearchParams('table=A08'), { getItem: () => JSON.stringify({ token: 'expired', expiresAt: 1 }) }, 'new-store')).toBe('')
 })

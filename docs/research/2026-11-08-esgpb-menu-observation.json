@@ -1,0 +1,505 @@
+{
+  "sourceUrl": "https://app.esgpb.com/order/store/1kgJeql/pick_up/menu",
+  "capturedAt": "2026-11-08T07:27:08.246Z",
+  "status": "Public-page observation for planning, not an authoritative production catalog",
+  "pageStatusObserved": "準備中／未正式營運",
+  "categories": [
+    "飯區",
+    "麵區"
+  ],
+  "access": "Public menu and detail dialogs only; not logged in; no cart additions or order submissions",
+  "imagesDownloaded": true,
+  "rules": [
+    "Product names and displayed prices are observed facts; do not infer recipe/nutrition/allergy guarantees.",
+    "Empty structured option groups describe the observed public UI, not a promise that store staff accept every free-text note.",
+    "Quantity input attributes do not establish sales units or real business quantity limits.",
+    "Source item identifiers were not exposed in the inspected product-card DOM. Observation keys are local snapshot keys only."
+  ],
+  "items": [
+    {
+      "observationKey": "item-01",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "炸雞腿便當",
+      "displayedPrice": 130.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": [
+        {
+          "src": "https://app.esgpb.com/order/storage/img/products/159/2503/6ae1ba6c5a8e1.jpg",
+          "loaded": true
+        }
+      ]
+    },
+    {
+      "observationKey": "item-02",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "炸排骨便當",
+      "displayedPrice": 10.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [
+        "Displayed price needs explicit business confirmation"
+      ],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": [
+        {
+          "src": "https://app.esgpb.com/order/storage/img/products/159/2504/6ae1bb544b577.jpg",
+          "loaded": true
+        }
+      ]
+    },
+    {
+      "observationKey": "item-03",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "控肉飯",
+      "displayedPrice": 120.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": [
+        {
+          "src": "https://app.esgpb.com/order/storage/img/products/159/2505/6ae1bbb0924c9.jpg",
+          "loaded": true
+        }
+      ]
+    },
+    {
+      "observationKey": "item-04",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "三杯雞便當",
+      "displayedPrice": 110.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-05",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "宮保雞丁便當",
+      "displayedPrice": 110.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-06",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "烤雞腿便當",
+      "displayedPrice": 130.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-07",
+      "sourceItemId": null,
+      "category": "飯區",
+      "name": "港式油雞腿便當",
+      "displayedPrice": 120.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-08",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "周氏水餃(最低8顆)",
+      "displayedPrice": 64.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-09",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "老董紅燒牛肉麵",
+      "displayedPrice": 200.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-10",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "椒香麻辣牛肉麵",
+      "displayedPrice": 200.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-11",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "牛肉湯餃(10顆)",
+      "displayedPrice": 110.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-12",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "紅燒牛肉湯(無肉)",
+      "displayedPrice": 80.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-13",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "蛋花湯",
+      "displayedPrice": 40.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-14",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "魚丸湯",
+      "displayedPrice": 50.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-15",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "A套餐",
+      "displayedPrice": 0.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [
+        "Displayed price needs explicit business confirmation"
+      ],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    },
+    {
+      "observationKey": "item-16",
+      "sourceItemId": null,
+      "category": "麵區",
+      "name": "B 套餐",
+      "displayedPrice": 0.0,
+      "currency": "TWD",
+      "priceConfirmationRequired": true,
+      "anomalies": [
+        "Displayed price needs explicit business confirmation"
+      ],
+      "structuredOptionGroupsObserved": [],
+      "freeTextNoteFieldObserved": true,
+      "noteFulfillmentGuarantee": "not-established",
+      "quantityControlObserved": {
+        "tag": "INPUT",
+        "type": "number",
+        "role": "spinbutton",
+        "label": null,
+        "placeholder": null,
+        "min": "1",
+        "max": "9007199254740991",
+        "step": "1",
+        "value": "1",
+        "required": false
+      },
+      "salesUnitConfirmed": false,
+      "imagesObserved": []
+    }
+  ],
+  "implementationCorrections": {
+    "source": "User confirmations in this chat, 2026-11-08; original observations above are preserved",
+    "pricesTwd": {
+      "炸排骨便當": 130,
+      "椒香麻辣牛肉麵": 230,
+      "A套餐": 130,
+      "B 套餐": 145
+    },
+    "dumplings": {
+      "basePieces": 8,
+      "basePriceTwd": 64,
+      "extraPiecesMinimum": 0,
+      "extraPiecesMaximum": 100,
+      "extraPiecePriceTwd": 8,
+      "servingsAreSeparate": true
+    },
+    "freeTextNotes": "No new assistant note-entry feature; existing menu-declared-option policy retained",
+    "localImages": [
+      {
+        "observationKey": "item-01",
+        "path": "apps/order-menu/public/supplier/item-01.jpg"
+      },
+      {
+        "observationKey": "item-02",
+        "path": "apps/order-menu/public/supplier/item-02.jpg"
+      },
+      {
+        "observationKey": "item-03",
+        "path": "apps/order-menu/public/supplier/item-03.jpg"
+      }
+    ]
+  }
+}
