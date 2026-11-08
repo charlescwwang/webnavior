@@ -237,8 +237,18 @@ const interactionRecording = useKioskInteractionRecording()
 // Admission survives across decision callbacks until this queue item settles.
 // Correlate by utterance ID, never by equal text from an earlier customer turn.
 const shownUtteranceIds = new Set<number>()
+const processingCue = useKioskProcessingCue(
+  () => speechPreparationCount.value > 0 || transcriptionCount.value > 0 || Boolean(utteranceQueueState.value.active) || utteranceQueueState.value.pending.length > 0 || (['thinking', 'using-tool'].includes(interactionTurn.phase.value) && Boolean(currentAgentRequest())),
+  () => serviceFaultLocked.value,
+  () => processingSpeechActive.value,
+  () => transcriptionCount.value > 0 || utteranceQueueState.value.pending.length > 0,
+)
 const utteranceQueue = createKioskUtteranceQueue({
   onReceived: (utterance) => {
+    // Text simulation acknowledges only accepted, non-empty queue entries.
+    // ASR already acknowledged its captured audio before transcription.
+    if (utterance.source === 'simulation')
+      processingCue.acknowledge()
     if (props.deviceSettings?.backgroundSpeechMode === 'off')
       recognizedTranscripts.value = [...recognizedTranscripts.value.filter(entry => entry.id !== utterance.id), { id: utterance.id, text: utterance.text, waiting: true }]
   },
@@ -288,12 +298,6 @@ const utteranceQueue = createKioskUtteranceQueue({
     }
   },
 })
-const processingCue = useKioskProcessingCue(
-  () => speechPreparationCount.value > 0 || transcriptionCount.value > 0 || Boolean(utteranceQueueState.value.active) || utteranceQueueState.value.pending.length > 0 || (['thinking', 'using-tool'].includes(interactionTurn.phase.value) && Boolean(currentAgentRequest())),
-  () => serviceFaultLocked.value,
-  () => processingSpeechActive.value,
-  () => transcriptionCount.value > 0 || utteranceQueueState.value.pending.some(utterance => utterance.source === 'asr'),
-)
 
 function updateDecisionEntry(id: number, patch: Partial<KioskDecisionEntry>) {
   decisionEntries.value = decisionEntries.value.map(entry => entry.id === id ? { ...entry, ...patch } : entry)

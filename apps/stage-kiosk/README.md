@@ -151,9 +151,11 @@ current order. The deployed URL prefix is `/kiosk/audio/`; replacing these
 public files needs no frontend rebuild. Until both real files arrive the
 manifest stays disabled; no replacement audio is generated.
 
-Only an admitted non-empty microphone segment opens an audio-feedback window.
-Idle/proactive TTS, text operations and internal work flags never open one.
-Each voice window starts with one receipt chime, then loops waiting music
+An admitted non-empty microphone segment or accepted text simulation opens an
+audio-feedback window. Text uses the queue receipt event, including accepted
+retries; empty, blocked or overloaded submissions do not acknowledge receipt.
+Idle/proactive TTS and internal work flags never open a window.
+Each input window starts with one receipt chime, then loops waiting music
 on one player through ASR, Jev/Main, tools and TTS preparation. Additional VAD
 or capture events do not stop or restart ordinary waiting music. Brief handoff
 gaps (up to200ms) retain that player; real completion, cancellation or faults
@@ -162,9 +164,9 @@ ASR; recognition does not wait for the chime to finish. Waiting music (volume0.3
 if processing flags remain active. A pending receipt is also retired by reply
 playback, so its late completion cannot restart music. No waiting feedback plays
 during TTS. Reply completion closes its window; newer voice work may resume its
-own waiting feedback afterward. New captures/queued recognition retain their own work
+own waiting feedback afterward. New captures/queued text or recognition retain their own work
 through an earlier reply's completion. Late queue cleanup cannot restart a
-completed window without another captured utterance.
+completed window without another accepted customer input.
 
 Greetings retain the configured opening verbatim and append only the entry
 navigation hint when applicable. Operators can include a Taiwanese ordering

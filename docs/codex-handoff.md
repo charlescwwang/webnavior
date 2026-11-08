@@ -7,6 +7,17 @@ accumulating history.
 
 ## Current State
 
+- Nov08 text-input feedback follow-up: deployment explicitly authorized.
+  KioskScene acknowledges accepted simulation text in the existing onReceived
+  queue event (ASR still acknowledges before transcription, without duplication).
+  Pending text now survives older TTS completion just like queued recognition.
+  Existing ProcessingCue owns receipt/music/stop lifecycle; no new audio pipeline,
+  microphone or model change. README processing-feedback contract updated.
+  Firefox audio15 + queue12 tests and scoped Kiosk types/changed lint pass.
+  Full Scene/field text playback not exercised. Release status/commit are recorded
+  in /tmp/kiosk-text-feedback-release-path -> release.json and public kiosk/version.json.
+  Host-only publication preserves API, menu, admin and audio assets; no API restart.
+
 - Nov08 DEV-810280 field regressions: see new top section of
   docs/plans/2026-10-28-kiosk-conversation-repair.md and compact evidence
   docs/research/2026-11-08-810280-field-regressions.json. Field dialogue18:53–19:22

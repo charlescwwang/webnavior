@@ -5,7 +5,7 @@ import { onMounted, onScopeDispose, readonly, shallowRef, toValue, watch } from 
 import { playKioskAudio } from '../services/kioskPlayback'
 
 /** Owns receipt-then-waiting feedback; cancelling audio never cancels order work. */
-export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blocked: MaybeRefOrGetter<boolean>, speaking: MaybeRefOrGetter<boolean>, pendingVoice: MaybeRefOrGetter<boolean>) {
+export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blocked: MaybeRefOrGetter<boolean>, speaking: MaybeRefOrGetter<boolean>, pendingInput: MaybeRefOrGetter<boolean>) {
   const ready = shallowRef(false)
   const lifetime = new AbortController()
   let chime: Blob | undefined
@@ -50,7 +50,7 @@ export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blo
     clearTimeout(closeTimer)
     closeTimer = undefined
     // Work flags describe progress, not evidence that a visitor spoke.
-    // Only acknowledge() can open a voice-owned feedback window.
+    // Only acknowledge() can open a customer-input feedback window.
     if (!processingWindow) {
       stop()
       return
@@ -105,9 +105,9 @@ export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blo
     return audio.slice(0, audio.size, 'audio/wav')
   }
 
-  // Only real captured speech opens feedback. Audible TTS stops its player
-  // synchronously; reply completion closes the voice-owned window.
-  // A later capture or queued ASR belongs to the next reply and must survive
+  // Admitted captured speech or submitted text opens feedback. Audible TTS stops its player
+  // synchronously; reply completion closes the customer-input window.
+  // A later capture or queued text belongs to the next reply and must survive
   // completion/cancellation of the earlier TTS.
   watch(() => toValue(speaking), (active, previous) => {
     if (active) {
@@ -117,7 +117,7 @@ export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blo
       acknowledgementPending = false
       stop()
     }
-    else if (previous && received === replyReceived && !toValue(pendingVoice)) {
+    else if (previous && received === replyReceived && !toValue(pendingInput)) {
       finishWindow()
     }
   }, { flush: 'sync' })
@@ -156,7 +156,7 @@ export function useKioskProcessingCue(processing: MaybeRefOrGetter<boolean>, blo
     stop,
     acknowledge() {
       received += 1
-      // Called only after a non-empty admitted microphone segment is captured.
+      // Called after an admitted microphone segment or accepted non-empty text.
       // Additional captures during existing work keep the same music player.
       if (!processingWindow) {
         processingWindow = true
