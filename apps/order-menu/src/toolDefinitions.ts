@@ -47,6 +47,7 @@ export type MenuToolName
     | 'kiosk_question_validate'
     | 'kiosk_agent_task'
     | 'kiosk_query_scope'
+    | 'kiosk_ordering_reset'
 
 /** Static tool contract; runtime discovery narrows POS capability enums and availability. */
 export interface MenuToolDefinition {
@@ -67,6 +68,7 @@ const menuExclusionProperties = {
 }
 
 export const toolDefinitions: MenuToolDefinition[] = [
+  { name: 'kiosk_ordering_reset', description: 'Host-only explicit new-order reset. Advances this merchant round before clearing the cart; refuses unresolved submissions or payments.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'kiosk_test_menu', description: '開發用頁面狀態模擬，只供測試者；省略參數讀取目前狀態。', inputSchema: { type: 'object', properties: { itemId: { type: 'string' }, state: { type: 'string', enum: [...menuPageStates] } }, additionalProperties: false } },
   { name: 'kiosk_customer_entry_start', description: 'Host 在新訂單開始前請求自願電話登記；已填寫、略過或開始訂購時不重新詢問。不供 Agent 使用。', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
   { name: 'kiosk_customer_phone', description: '只供 Kiosk host 提交顧客手動輸入的電話；不供 Agent、ASR 或模型填寫。', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^09[0-9]{8}$' } }, required: ['phone'], additionalProperties: false } },

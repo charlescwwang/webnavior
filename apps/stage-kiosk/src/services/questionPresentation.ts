@@ -129,6 +129,7 @@ export function createMenuReplyWindow() {
       return outcomes.join(' ')
     },
     hasReceipts: () => reads > 0 || cartReply !== undefined,
+    hasCartReview: () => cartReply !== undefined,
     needsClarification: () => clarificationRequested,
     reply(options: { omitGuidance?: boolean } = {}) {
       // Without evidence, generated dish claims cannot become customer dialogue.
@@ -207,7 +208,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   // Clarification pauses an unexecuted demand; it never completes the mutation
   // or consumes an old confirmation. Reads may precede a clarification; attempted
   // writes still require their actual receipt or result-unknown policy.
-  if (result.status === 'completed' && result.reply?.kind === 'clarification' && result.requestedTools.every(name => ['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name)) && options.context) {
+  if (result.status === 'completed' && result.reply?.kind === 'clarification' && (!options.menu.hasCartReview() || (operationRequired && !options.menu.hasOperation(intent))) && result.requestedTools.every(name => ['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name)) && options.context) {
     const clarification = replyFromContext(JSON.stringify(result.reply), options.context)
     if (clarification)
       return { role: 'assistant' as const, content: clarification.content }
@@ -225,7 +226,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   // independent factual read receipts remain available for compound requests.
   const readReply = options.menu.hasReceipts() ? options.menu.reply({ omitGuidance: Boolean(question) }) : ''
   const acceptedOperations = options.menu.operationReply()
-  const outcome = acceptedOperations && readReply ? `${acceptedOperations} ${readReply}` : options.menu.operationReply(options.outcome)
+  const outcome = acceptedOperations && readReply ? `${acceptedOperations} ${readReply}` : options.menu.operationReply(options.outcome) ?? (readReply || undefined)
   const receiptReply = replyFromOperation(readReply, outcome, question)
   if (result.status === 'waiting')
     return question && receiptReply ? { role: 'assistant', content: receiptReply } : { role: 'error', content: options.failureMessage }

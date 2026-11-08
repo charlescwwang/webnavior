@@ -203,3 +203,21 @@ it('validates special-order clarification separately from staff-call consent', a
   expect((await select('offer', { ...base, orderAssistance: { questionId: 'expired', expiresAt: Date.now() - 1 } })).reply).toEqual({ kind: 'clarification' })
   expect((await select('confirm-order', { ...base, orderAssistance: undefined, entryComplete: false })).reply).toEqual({ kind: 'clarification' })
 })
+
+// Report: this chat, Nov08 configured replay accepted a removal as a replacement pre-step.
+it.each([false, true])('keeps cart removal separate from atomic replacement (replacement=%s)', async (replacement) => {
+  const context = parse(conversationContextSchema, { ...facts, readOnly: false, sourceUtterance: replacement ? '牛肉麵不要了，改水餃一份' : '把牛肉麵移除', cart: { itemCount: 1, total: 150, lines: [{ id: 'old', itemId: 'beef', name: '牛肉麵', quantity: 1, unitPrice: 150, options: [] }] } })
+  const calls = [{ id: 'remove', type: 'function' as const, function: { name: 'cart_remove_item', arguments: '{"lineId":"old"}' } }]
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'preserve_requested_quantities', arguments: JSON.stringify({ quantities: [{ callId: 'remove', quantity: 0, replaceExisting: replacement, removeExisting: true }] }) } }] } }] }))
+  const checked = await preserveRequestedQuantities(context, calls, complete)
+  if (replacement)
+    expect(checked).toBeUndefined()
+  else
+    expect(checked).toEqual(calls)
+})
+
+// Report: this chat, Nov08 fuzzy purchase incorrectly selected originalRecipe:true.
+it('does not label ordinary configuration as an unsupported preparation request', () => {
+  const context = parse(conversationContextSchema, { ...facts, phase: 'configuration', readOnly: false, allowedToolNames: ['menu_confirm_item'] })
+  expect(currentContextInstructions(context)).not.toContain('本輪正在補齊未入車餐點的份數，並有未支援的製作調整')
+})

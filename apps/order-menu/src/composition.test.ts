@@ -159,7 +159,7 @@ describe('composition-grounded menu filtering', () => {
     expect(context).toMatchObject({ ingredientReferences: [{ id: 'pork', label: '豬肉' }] })
     const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', ingredientFilters: { excludeIngredients: ['pork'] } })
     expect(result).toMatchObject({ items: [{ id: 'spicy-chicken-bento' }, { id: 'thai-sour-spicy-fish-bento' }], decisionTrace: { operationPlan: { input: { category: '便當', excludeIngredients: ['pork'] } } } })
-    expect(result).toMatchObject({ customerMessage: '排除豬肉：我找到：椒麻雞便當、泰式酸辣魚便當。 您想先看哪一道餐點？' })
+    expect(result).toMatchObject({ customerMessage: '排除豬肉：我找到：椒麻雞便當、泰式酸辣魚便當。 您想點哪一道？' })
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我不要豬肉的' })
     await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:recommend', ingredientFilters: { excludeIngredients: ['egg'] } })).rejects.toThrow('unoffered')
     await runtime.invoke('kiosk_fast_path_context', { transcript: '我不要豬肉的' })

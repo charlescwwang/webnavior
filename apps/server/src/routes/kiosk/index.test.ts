@@ -1,4 +1,4 @@
-import type { ConversationContext } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ConversationContext } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskRoutesOptions } from '.'
 import type { Database } from '../../libs/db'
@@ -14,6 +14,7 @@ import { createKioskRoutes, kioskDeviceCookieName } from '.'
 import { mockDB } from '../../libs/mock-db'
 import { createKioskService } from '../../services/domain/kiosk'
 import { replyTool } from '../../services/domain/kiosk-agent-interaction/conversationContext'
+import { orderingSkill } from '../../services/domain/kiosk-conversation-skills'
 import { ApiError } from '../../utils/error'
 
 import * as schema from '../../schemas'
@@ -57,6 +58,44 @@ describe('kiosk routes', () => {
 
   beforeEach(async () => {
     db = await mockDB(schema)
+  })
+
+  // Report: this chat Nov8 — preserve the scope qualifier's proof without a contradictory second cart-display review.
+  it.each(['order-information', 'service-information'] as const)('retains the qualified non-mutating purpose through the model request: %s', async (requestScope) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'qualified', type: 'function', function: requestScope === 'order-information' ? { name: 'cart_get', arguments: '{"display":true}' } : { name: 'respond_to_customer', arguments: '{"kind":"service-information","topic":"out-of-scope"}' } }] } }] }))
+    const service = createKioskService(db)
+    const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await service.getDeviceProfile(enrolled.device.id)
+    const session = await service.startVisitorSession({ deviceId: enrolled.device.id, profileReleaseId: profile!.id, serviceId: 'development-ordering-service' })
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: service, llmGateway: { complete }, runtimeModelPolicy }))
+    const context: ConversationContext = { contextId: 'review', capturedAt: Date.now(), taskId: 'review', sourceUtterance: '這樣就好', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 0, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 1, total: 80, lines: [{ id: 'line', itemId: 'dumplings', name: '水餃', quantity: 1, unitPrice: 80, options: [] }] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['cart_get', 'cart_clear'] }
+    const tools = context.allowedToolNames.map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '這樣就好', tools, decisionState: { phase: 'ordering', requestScope, readOnly: true, ...(requestScope === 'service-information' ? { replyOnly: true } : {}), context } }) })
+    expect(response.status).toBe(200)
+    expect(complete).toHaveBeenCalledOnce()
+    expect(complete.mock.calls[0]![0].body.tools).toMatchObject([{ function: { name: requestScope === 'order-information' ? 'cart_get' : 'respond_to_customer' } }])
+    expect(JSON.stringify(complete.mock.calls[0]![0].body.tools)).not.toContain('cart_clear')
+    const result = await response.json() as { toolCalls: { function: { name: string } }[], reply?: ContextReply }
+    if (requestScope === 'order-information')
+      expect(result.toolCalls[0]?.function.name).toBe('cart_get')
+    else expect(result.reply).toMatchObject({ kind: 'service-information', topic: 'out-of-scope' })
+  })
+
+  // Report: this chat Nov8 — an unknown named query after fish browsing was dismissed without lookup.
+  it('requires a Menu tool before completing a qualified new menu query', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'lookup', type: 'function', function: { name: 'menu_get', arguments: '{"query":"全家餐"}' } }] } }] }))
+    const service = createKioskService(db)
+    const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await service.getDeviceProfile(enrolled.device.id)
+    const session = await service.startVisitorSession({ deviceId: enrolled.device.id, profileReleaseId: profile!.id, serviceId: 'development-ordering-service' })
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: service, llmGateway: { complete }, runtimeModelPolicy }))
+    const context: ConversationContext = { contextId: 'new-query', capturedAt: Date.now(), taskId: 'new-query', sourceUtterance: '有全家餐嗎？', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: ['fish'] }, revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['menu_get', 'menu_recommend', 'cart_get'] }
+    const tools = context.allowedToolNames.map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: '有全家餐嗎？', tools, decisionState: { phase: 'ordering', requestScope: 'menu-information', requireMenuRead: true, readOnly: true, context } }) })
+    expect(response.status).toBe(200)
+    expect(complete.mock.calls[0]![0].body.tools).toMatchObject([{ function: { name: 'menu_get' } }, { function: { name: 'menu_recommend' } }])
+    expect(complete.mock.calls[0]![0].body.tool_choice).toBe('required')
+    expect(complete).toHaveBeenCalledOnce()
   })
 
   it('records device audio warnings without requiring a customer session or accepting conversation content', async () => {
@@ -186,7 +225,7 @@ describe('kiosk routes', () => {
     const events = transport === 'sse' ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))) : []
     const final = transport === 'sse' ? events.find(event => event.type === 'turn-finished') : JSON.parse(text)
     expect(final.reply).toEqual({ kind: 'payment-methods' })
-    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@7')
+    expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain(`ordering@${orderingSkill.version}`)
     expect(final.toolCalls).toEqual([])
     expect(complete).toHaveBeenCalledTimes(2)
     expect(complete.mock.calls[1]![0].body.tools).toEqual([replyTool])
@@ -229,15 +268,17 @@ describe('kiosk routes', () => {
   })
 
   // Report: Nov7 configured model split a replacement into removal, then stopped.
-  it.each(['json', 'sse'])('repairs a rejected partial replacement once and rechecks its consent (%s)', async (transport) => {
+  it.each(['json', 'sse'].flatMap(transport => [{ transport, acceptsPartial: false, firstClarification: false }, { transport, acceptsPartial: true, firstClarification: false }, { transport, acceptsPartial: false, firstClarification: true }]))('repairs an incomplete replacement once before browser effects: %j', async ({ transport, acceptsPartial, firstClarification }) => {
     let proposed = 0
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
       const tools = body.tools as Array<{ function: { name: string } }>
       if (tools[0]?.function.name === 'verify_customer_operation')
-        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: JSON.stringify({ choice: proposed > 1 ? 'SUPPORTED' : 'UNSUPPORTED' }) } }] } }] })
+        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: JSON.stringify({ choice: acceptsPartial || proposed > 1 ? 'SUPPORTED' : 'UNSUPPORTED' }) } }] } }] })
       if (tools[0]?.function.name === 'preserve_requested_quantities')
-        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'preserve_requested_quantities', arguments: '{"quantities":[{"callId":"swap","quantity":1,"replaceExisting":true}]}' } }] } }] })
+        return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'preserve_requested_quantities', arguments: '{"quantities":[{"callId":"swap","quantity":1,"replaceExisting":true,"removeExisting":true}]}' } }] } }] })
       proposed++
+      if (firstClarification && proposed === 1)
+        return Response.json({ choices: [{ message: { tool_calls: [{ id: 'unclear', type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"clarification"}' } }] } }] })
       return Response.json({ choices: [{ message: { tool_calls: [{ id: 'swap', type: 'function', function: proposed > 1 ? { name: 'order_add_item', arguments: '{"itemId":"dumplings","quantity":1,"replaceLineId":"old"}' } : { name: 'cart_remove_item', arguments: '{"lineId":"old"}' } }] } }] })
     })
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
@@ -245,20 +286,56 @@ describe('kiosk routes', () => {
     const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json', ...(transport === 'sse' ? { Accept: 'text/event-stream' } : {}) }
     const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
     const { session } = await started.json() as { session: { id: string } }
-    const context: ConversationContext = { contextId: 'swap', capturedAt: Date.now(), taskId: 'swap-task', sourceUtterance: '牛肉麵不要了，改水餃一份', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 0, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 1, total: 150, lines: [{ id: 'old', itemId: 'beef', name: '牛肉麵', quantity: 1, unitPrice: 150, options: [] }] }, waitingFor: { questionId: 'mode', purpose: 'fulfillment', question: '內用還是自取？', choices: [], expiresAt: Date.now() + 30000 }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['cart_remove_item', 'order_add_item'] }
+    const context: ConversationContext = { contextId: 'swap', capturedAt: Date.now(), taskId: 'swap-task', sourceUtterance: '牛肉麵不要了，改水餃一份', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 0, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 1, total: 150, lines: [{ id: 'old', itemId: 'beef', name: '牛肉麵', quantity: 1, unitPrice: 150, options: [] }] }, waitingFor: { questionId: 'mode', purpose: 'fulfillment', question: '內用還是自取？', choices: [], expiresAt: Date.now() + 30000 }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['cart_remove_item', 'order_add_item', 'cart_clear'] }
     const tools = context.allowedToolNames.map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
     const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase: context.phase, requestScope: 'order-operation', context } }) })
     const text = await response.text()
     const result = transport === 'sse' ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))).find(event => event.type === 'turn-finished') : JSON.parse(text)
     expect(response.status).toBe(200)
     expect(result.toolCalls.map((call: { function: { name: string } }) => call.function.name)).toEqual(['order_add_item'])
-    expect(complete).toHaveBeenCalledTimes(5)
-    expect(JSON.stringify(complete.mock.calls[2]![0].body)).toContain('replaceLineId')
+    let expectedCalls = acceptsPartial ? 6 : 5
+    if (firstClarification)
+      expectedCalls = 4
+    expect(complete).toHaveBeenCalledTimes(expectedCalls)
+    expect(JSON.stringify(complete.mock.calls[firstClarification ? 1 : acceptsPartial ? 3 : 2]![0].body)).toContain('replaceLineId')
+    if (!firstClarification) {
+      const repair = complete.mock.calls[acceptsPartial ? 3 : 2]![0].body
+      expect(repair.tools).not.toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: 'cart_clear' }) })]))
+      expect(repair.tools).toEqual(expect.arrayContaining([expect.objectContaining({ function: expect.objectContaining({ name: 'order_add_item', parameters: expect.objectContaining({ required: expect.arrayContaining(['replaceLineId']) }) }) })]))
+    }
     const device = await createKioskService(db).resolveDeviceCredential(headers.Cookie.split('=')[1]!)
     const saved = await createKioskService(db).getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })
     const metric = saved.entries.find(entry => entry.kind === 'service_event' && entry.content.includes('main_round_metrics'))!
-    expect(JSON.parse(metric.content).operationReviewRequests).toBe(2)
+    expect(JSON.parse(metric.content).operationReviewRequests).toBe(firstClarification ? 1 : 2)
     expect(JSON.parse(metric.content).replyRepairRequests).toBe(1)
+  })
+
+  // Report: this chat, Nov08 live mixed order/query sometimes omitted the price answer.
+  it.each(['pending', 'absent', 'priced', 'candidate', 'invalid', 'data-only'])('requires one named price read after a mixed-operation receipt (%s)', async (read) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'reply', type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"clarification"}' } }] } }] }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'mixed', capturedAt: Date.now(), taskId: 'mixed-task', sourceUtterance: '牛肉麵一份，水餃多少錢？', phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 0, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 1, total: 150, lines: [{ id: 'beef-line', itemId: 'beef', name: '牛肉麵', quantity: 1, unitPrice: 150, options: [] }] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['menu_get', 'order_add_item', 'menu_confirm_item'] }
+    const tools = context.allowedToolNames.map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
+    const toolResults = [{ name: 'order_add_item', toolCallId: 'added', content: JSON.stringify({ cart: context.cart, customerMessage: '已加入牛肉麵一份。' }) }]
+    if (read !== 'pending')
+      toolResults.push({ name: 'menu_get', toolCallId: 'price', content: JSON.stringify(read === 'candidate' ? { requestedQueries: ['打拋牛便當'], possibleItems: [{ id: 'pork', name: '打拋豬便當' }] } : read === 'absent' ? { requestedQueries: ['水餃'], matchKind: 'none', items: [], customerMessage: '沒有水餃。' } : { ...(read === 'data-only' ? { dataOnly: true } : {}), requestedQueries: ['水餃'], items: [{ id: 'dumplings', price: 80 }], customerReply: { facts: '水餃80元。', pricedItemIds: ['dumplings'] } }) })
+    if (read === 'invalid')
+      toolResults.at(-1)!.content = 'null'
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ tools, toolResults, decisionState: { phase: 'ordering', requestScope: 'order-operation', priceInquiry: true, context } }) })
+    expect(response.status).toBe(200)
+    const request = complete.mock.calls[0]![0].body
+    if (read === 'pending' || read === 'invalid' || read === 'data-only') {
+      expect(request.tools).toMatchObject([{ function: { name: 'menu_get' } }])
+      expect(request.tool_choice).toEqual({ type: 'function', function: { name: 'menu_get' } })
+    }
+    else {
+      expect(request).not.toHaveProperty('tool_choice')
+      expect(complete).toHaveBeenCalledOnce()
+    }
   })
 
   // Report: Nov6 hA7/I_A7; uncertain speech must not open or clear the cart.
@@ -518,7 +595,7 @@ describe('kiosk routes', () => {
     const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ tools, decisionState: { phase: 'ordering', context, requireMenuRead: true }, ...(continuation ? { toolResults: [{ name: 'cart_get', toolCallId: 'cart', content: '{"cart":{"lines":[],"total":0}}' }] } : { content: '排骨飯一份' }) }) })
     expect(response.status).toBe(200)
     const body = complete.mock.calls[0]![0].body
-    expect(body.tools).toEqual([tools[1], tools[2], replyTool])
+    expect(body.tools).toMatchObject([tools[1], { function: { name: 'menu_confirm_item', parameters: { properties: { originalRecipe: { type: 'boolean', enum: [false] } } } } }, replyTool])
     expect(body).not.toHaveProperty('tool_choice')
     const prompt = JSON.stringify(body.messages)
     expect(prompt.split('完整菜單唯一測試便當')).toHaveLength(2)
@@ -1374,8 +1451,10 @@ describe('kiosk routes', () => {
     expect(messages[0]).toMatchObject({ content: expect.stringContaining('【服務資訊與即時操作分界】') })
     expect(messages[0]).toMatchObject({ content: expect.stringContaining('沒有提供的資訊明確說明無法確認') })
     expect(messages[0]).toMatchObject({ content: expect.stringContaining('即時訂單狀態以最新工具回傳為準') })
-    expect(messages[0]).toMatchObject({ content: expect.stringContaining('不得使用「目前沒有」、「暫時不支援」、「還沒有」') })
-    expect(messages[0]).toMatchObject({ content: expect.stringContaining('不需要針對不同領域建立個別拒絕規則') })
+    // Menu absence is a valid fact. The current shared policy constrains
+    // capability claims and unmet requests, rather than banning absence words.
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining('未滿足的要求須先說明並確認使用者意願') })
+    expect(messages[0]).toMatchObject({ content: expect.stringContaining('不把角色或店家補充設定當成額外能力') })
     expect(messages[1]).toMatchObject({ role: 'user', content: '我想看看菜單。' })
   })
 

@@ -48,6 +48,25 @@ belongs to runtime validation and `kiosk_conversation_context.allowedToolNames`.
 rejects it without a current preparation request. This prevents BEGIN from
 changing `toolsRevision` and rejecting the following context read as STALE_TOOLS.
 
+A meal proposal binds to the current task's verified named lookup candidates,
+exact requested product, or still-valid unadded draft. An arbitrary catalog read
+cannot grant a new proposal target. A missing exact/fuzzy result cannot be waived
+as a preparation preference. Food-filter and recommendation receipts invite a
+meal choice or serving count; they do not add an order by themselves.
+
+A displayed named lookup replaces the previous browsing subject and positive
+tastes/budget, while retaining dietary exclusions. Results and the condition
+strip advance together, including empty/fuzzy results. Explicit new ingredient
+preferences replace the old positive group; price-only updates retain it and
+unchanged continuation preserves the current constraints. Alternative cards are
+proposals, never a claim that they satisfy the original taste or an order consent.
+
+An explicitly displayed cart review includes its verified summary and the current
+next-step question. It retires old clear-cart consent; internal data-only reads do
+not. Table review requires a subsequent answer before submission. The Host-only
+`kiosk_ordering_reset` advances this page's own Bridge round before clearing local
+state and refuses unresolved transactions. Conversation agents cannot call it.
+
 `toolValidationPlugin.ts` compiles the owned schemas with Ajv during Vite/Vitest
 loading and bundles its helpers into one ESM module. Browsers do not compile
 schemas or require `unsafe-eval`. Current POS capability enums are supplied by

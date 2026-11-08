@@ -59,6 +59,8 @@ export type KioskConversationDecisionState = Pick<KioskDecisionState, 'serviceMo
   context?: ConversationContext
   /** Preserves whole-turn semantic qualification for bounded proposal recovery. */
   requestScope?: KioskInteractionDecision['requestScope']
+  /** A qualified price inquiry accompanies this operation; its answer must survive the write. */
+  priceInquiry?: boolean
   handoff?: ConversationHandoff
   serviceReply?: boolean
   /** Unresolved meaning allows a typed reply, never browsing or order effects. */

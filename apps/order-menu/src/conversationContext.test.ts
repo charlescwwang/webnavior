@@ -73,6 +73,9 @@ describe('main conversation context', () => {
     const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     const original = await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 2 }) as { line: { id: string } }
     await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'replace', transcript: '水餃改排骨飯', expectedMenuRevision: 0, constraints: {} })
+    const lookup = await runtime.invokeForAgent('menu_get', { query: '排骨飯' }) as { possibleItems: { id: string }[] }
+    expect(lookup.possibleItems.map(item => item.id)).toContain('fried-pork-chop-bento')
+    await runtime.invoke('kiosk_conversation_context')
     const proposed = await runtime.invokeForAgent('menu_confirm_item', { itemId: 'fried-pork-chop-bento', replaceLineId: original.line.id }) as { pendingCustomerChoice: { questionId: string, question: string } }
     expect(proposed.pendingCustomerChoice.question).toContain('將水餃更換為炸排骨便當')
     expect(await runtime.invoke('kiosk_question_validate', { questionId: proposed.pendingCustomerChoice.questionId })).toHaveProperty('pendingCustomerChoice.questionId', proposed.pendingCustomerChoice.questionId)
@@ -143,7 +146,7 @@ it('removes mutation tools after a menu miss and resets the lock for the next cu
   expect(locked.allowedToolNames).not.toContain('order_add_item')
   expect(locked.allowedToolNames).not.toContain('cart_remove_item')
   expect(locked.allowedToolNames).toContain('menu_get')
-  expect(locked.allowedToolNames).toContain('menu_confirm_item')
+  expect(locked.allowedToolNames).not.toContain('menu_confirm_item')
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'next', transcript: '水餃一份', expectedMenuRevision: 0, constraints: {} })
   const next = await runtime.invoke('kiosk_conversation_context') as { allowedToolNames: string[] }
   expect(next.allowedToolNames).toContain('order_add_item')
@@ -180,4 +183,23 @@ it.each([false, true])('omits executor-rejected tools for task constraints (unre
   expect(context.allowedToolNames).toContain('cart_get')
   if (unresolvedPrice)
     expect(context.allowedToolNames).not.toContain('menu_get')
+})
+
+// Report: this chat, Nov08 real Main returned menu_get then order_add_item in one batch.
+it.each([false, true])('keeps same-batch reads usable without rebasing an external cart change: %s', async (externalChange) => {
+  const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+  const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'read-and-add', transcript: '牛肉麵一份幫我加，水餃一份多少錢？', expectedMenuRevision: 0, constraints: {} })
+  await runtime.invoke('kiosk_conversation_context')
+  if (externalChange)
+    await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+  await runtime.invokeForAgent('menu_get', { query: '水餃' })
+  if (externalChange) {
+    await expect(runtime.invokeForAgent('order_add_item', { itemId: 'beef-noodle-soup', quantity: 1 })).rejects.toThrow('STALE_PLAN')
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.lines.0.itemId', 'dumplings')
+  }
+  else {
+    expect(await runtime.invokeForAgent('order_add_item', { itemId: 'beef-noodle-soup', quantity: 1 })).toHaveProperty('cart.lines.0.itemId', 'beef-noodle-soup')
+  }
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
 })

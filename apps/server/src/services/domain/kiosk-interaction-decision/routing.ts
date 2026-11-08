@@ -57,7 +57,7 @@ const descriptions: Record<string, string> = {
   'intent:return-menu': '返回全部菜單／主畫面；目前僅展示推薦時，不想繼續看推薦也是此項。保留訂單，不刪除已點餐點。',
   'intent:scroll-menu:up': '看目前菜單上方、較前段的內容。',
   'intent:scroll-menu:down': '看目前菜單下方、較後段的內容。',
-  'intent:view-cart': '查看購物車，不修改。',
+  'intent:view-cart': '查看或核對購物車；已有餐點後表示點完、結束選餐，先核對訂單再問下一步，不修改、不付款或送單。',
   'intent:clear-cart': '明確取消整張訂單、清空購物車。',
   'intent:start-checkout': '明確要求開始結帳。',
   'intent:set-fulfillment:dine-in': '明確選擇或改為內用。',
@@ -189,7 +189,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       return handoff()
     if (candidate.id === 'DECLINE_INVITATION')
       return finish({ kind: 'IGNORE', answeredQuestionId })
-    const changesOrder = !candidate.id.endsWith(':unit-guidance') && !/^intent:(?:search-menu|select-item|recommend(?:-more)?|show-recommendations|view-cart|return-menu|scroll-menu:)/u.test(candidate.id)
+    const changesOrder = !candidate.id.endsWith(':unit-guidance') && !/^intent:(?:search-(?:all-)?menu|select-item|recommend(?:-more)?|show-recommendations|view-cart|return-menu|scroll-menu:)/u.test(candidate.id)
     if (changesOrder) {
       // A family/leaf is still a hypothesis. Keep communicative purpose and
       // whole-effect coverage independent, as in the existing cart guard: a
@@ -348,7 +348,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       return menuHandoff()
     let eligible = input.candidates.filter(candidate => families[family]!.accepts(candidate.id))
     if (family === 'MENU' && eligible.length > 5) {
-      const menu = await choose('menuPurpose', { type: 'choice', instructions: '只區分菜單需求。全部菜單不是其他推薦；換一批不是重顯舊推薦。', criteria: { LOOKUP: '查品名、分類或所有菜單。', RECOMMEND: '挑選推薦、換其他推薦或重顯推薦。', EXIT: '停止看本輪推薦或瀏覽，返回全部菜單／主畫面；不是取消已點餐點。', SCROLL: '繼續看目前菜單，但要移動畫面位置。', HANDOFF: '不能確定或需要其他處理。' } })
+      const menu = await choose('menuPurpose', { type: 'choice', instructions: '只區分菜單需求。全部菜單不是其他推薦；換一批不是重顯舊推薦。結束推薦、不要再看推薦屬EXIT，不是查詢餐點。', criteria: { LOOKUP: '查品名、分類或販售內容、整份菜單。', RECOMMEND: '挑選推薦、換其他推薦或重顯推薦。', EXIT: '停止看本輪推薦或瀏覽，返回全部菜單／主畫面；不是取消已點餐點。', SCROLL: '繼續看目前菜單，但要移動畫面位置。', HANDOFF: '不能確定或需要其他處理。' } })
       if (!menu || menu === 'HANDOFF')
         return handoff()
       // EXIT is already a complete read-only leaf. Reclassifying it as an

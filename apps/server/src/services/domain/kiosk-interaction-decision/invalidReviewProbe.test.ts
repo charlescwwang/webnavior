@@ -7,7 +7,9 @@ import { createEnvelopeCrypto } from '../../../utils/envelope-crypto'
 import { recoverServiceRequest } from './serviceRecovery'
 
 // Report: this chat, 2026-11-06; authorized read-only replay of the recorded review failure.
-it('probes the recorded buy-one-get-one review without executing tools', async () => {
+// NOTICE: this archived diagnostic reads private provider files and calls a real
+// service. It is opt-in, like the current configured replay, never a unit check.
+it.skipIf(process.env.KIOSK_INVALID_REVIEW_PROBE !== '1')('probes the recorded buy-one-get-one review without executing tools', async () => {
   const profile = JSON.parse(await readFile('/tmp/webnavior-main-scope-profile.json', 'utf8'))
   const state = JSON.parse(await readFile('/tmp/kiosk-invalid-review-state.json', 'utf8'))
   const crypto = createEnvelopeCrypto({ masterKey: Buffer.from(process.env.LLM_ROUTER_MASTER_KEY!, 'base64') })

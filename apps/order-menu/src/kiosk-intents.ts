@@ -317,7 +317,7 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
     if (!itemRefs.length && !possibleItems.length && (input.recommendationConditions !== undefined || input.presentationItemIds?.length))
       candidates.push(candidate('RECOMMEND', 'intent:recommend-more', `顧客追問其他推薦、要求換一批；明確要求全部菜單應選查看完整菜單的獨立候選，而非本項。每次最多三項，排除已推薦餐點，釋放前次精確單品查詢並保留有效的飲食條件，沿用${input.recommendationConditions ?? '目前的飲食條件'}，不展開整份菜單或重顯上一批。`, undefined, { more: 1 }))
     if (input.cart.lines.length)
-      candidates.push(candidate('VIEW_CART', 'intent:view-cart', '查看目前購物車。'))
+      candidates.push(candidate('VIEW_CART', 'intent:view-cart', '查看或核對目前購物車；已有餐點後表示點完、餐點就這些也先查看訂單並詢問下一步，不表示同意付款或送單。'))
     if (selected || input.cart.lines.length) {
       candidates.push(candidate('SET_QUANTITY', 'intent:set-quantity', '修改已選或購物車現有餐點數量，不新增品項。'))
       candidates.push(candidate('SET_OPTION', 'intent:set-option', '修改已選或購物車現有餐點客製選項。'))

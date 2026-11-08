@@ -24,6 +24,14 @@ function provider(choices: string[], scored = false) {
 }
 
 describe('staged Fast Path routing', () => {
+  // Report: this chat Nov8 — full-menu lookup was incorrectly sent through the order-write consent gate.
+  it('treats full-menu lookup as a read without an order-mutation permission question', async () => {
+    const invoke = provider(['SINGLE', 'MENU', 'intent:search-all-menu'])
+    const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: [{ id: 'intent:search-menu', description: '查餐點' }, { id: 'intent:search-all-menu', description: '看完整菜單' }], transcript: '我要看你們全部的菜單', invoke })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:search-all-menu' })
+    expect(invoke).toHaveBeenCalledTimes(3)
+  })
+
   // Report: this conversation — many competing intents and cancellation misrouted as fulfillment.
   it('starts with four service outcomes and never exposes operations to background speech', async () => {
     const invoke = provider(['BACKGROUND'])

@@ -13,6 +13,7 @@ export const hostToolNames = [
   'kiosk_question_validate',
   'kiosk_agent_task',
   'kiosk_query_scope',
+  'kiosk_ordering_reset',
 ] as const
 
 /** Names shared by native registration and the embedding host's tool filter. */

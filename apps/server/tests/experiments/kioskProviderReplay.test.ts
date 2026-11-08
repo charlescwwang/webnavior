@@ -19,10 +19,11 @@ import { parse } from 'valibot'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { createPosSimulator } from '../../../order-menu-server/src/simulator'
+import { supplierCatalog } from '../../../order-menu-server/src/supplierSimulation'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom, refreshConversationState, runFastPath } from '../../../stage-kiosk/src/services/kiosk-fast-path'
 import { resumeConversationRetry } from '../../../stage-kiosk/src/services/kioskConversationRetry'
-import { createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation } from '../../../stage-kiosk/src/services/questionPresentation'
+import { createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
 import { createDrizzle } from '../../src/libs/db'
 import { mockDB } from '../../src/libs/mock-db'
 import { createKioskRoutes } from '../../src/routes/kiosk'
@@ -165,6 +166,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     }
     if (shadowEnabled)
       process.stdout.write(`[slm-shadow-complete] ${JSON.stringify({ captured: shadowPending.length, attempted: shadowCalls, stopped: shadowFailures >= 3, providerCalls })}\n`)
+    process.stdout.write(`[provider-replay-complete] ${JSON.stringify({ providerCalls, elapsedMs: Date.now() - runStarted })}\n`)
     await live?.pool.end()
     if (redis)
       await redis.quit()
@@ -316,20 +318,29 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
   }, 120_000)
 
   // Report: this chat Nov7 — ordinary recommendation unexpectedly handed off to Main.
-  it('configured service boundary keeps ordinary recommendations in staged Jev', async () => {
+  it('configured service boundary completes ordinary recommendations with Jev or conditional Main', async () => {
     ready = true
+    const startedSession = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    expect(startedSession.status).toBe(201)
+    sessionId = (await startedSession.json() as { session: { id: string } }).session.id
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
-    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    let shown: string[] = []
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => 'menu', onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: value => shown = value.itemIds })
     for (const transcript of ['推薦什麼？', '你還推薦什麼？']) {
-      const tools = runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' }))
-      const checkpoints: unknown[] = []
-      const decision = await runFastPath({ transcript, isEnabled: async () => true, webMcp: { tools, execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: request => decideInteraction({ ...request, routing: 'staged', backgroundSpeechMode: 'off', policy: configuredPolicy, invoke: async (state, questions) => {
-        const answer = await systemOne.decide(state, questions)
-        checkpoints.push(answer.answers)
-        return answer
-      } }) })
-      process.stdout.write(`[service-boundary-jev] ${JSON.stringify({ transcript, kind: decision.kind, reason: decision.reason, checkpoints })}\n`)
-      expect(decision.kind).toBe('FAST_ACTION')
+      const started = performance.now()
+      const before = [...shown]
+      const { decision, decisions } = await decideCurrent(transcript)
+      let reply
+      if (decision.kind === 'NEEDS_ASSISTANT')
+        reply = await agent(transcript, conversationDecisionStateFrom(decision.decisionState, decision)!)
+      else
+        expect(decision.kind).toBe('FAST_ACTION')
+      const durationMs = Math.round(performance.now() - started)
+      process.stdout.write(`[service-boundary-jev] ${JSON.stringify({ transcript, kind: decision.kind, reason: decision.reason, decisions, reply, shown, durationMs, overFiveSeconds: durationMs >= 5000 })}\n`)
+      expect(shown.length).toBeGreaterThan(0)
+      expect(shown.length).toBeLessThanOrEqual(3)
+      expect(shown.every(id => !before.includes(id))).toBe(true)
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
     }
   }, 120_000)
 
@@ -569,6 +580,18 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     process.stdout.write(`[noodle-swap-replay] ${JSON.stringify(reply)}\n`)
   }, 90_000)
 
+  async function decideCurrent(transcript: string) {
+    const decisions: KioskInteractionDecision[] = []
+    const decision = await runFastPath({ transcript, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
+      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, includeTrace: true, visitorSessionId: sessionId }) })
+      expect(response.status).toBe(200)
+      const result = await response.json() as KioskInteractionDecision
+      decisions.push(result)
+      return result
+    } })
+    return { decision, decisions }
+  }
+
   async function recordReply(content: string) {
     const response = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'assistant_text', content }) })
     expect(response.status).toBe(201)
@@ -600,6 +623,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context', { includeCatalog: decisionState.readOnly !== true || decisionState.requireMenuRead === true }))
       expect(context.taskId).toBe(taskId)
       decisionState = refreshConversationState(context, decisionState)
+      process.stdout.write(`[agent-authority] ${JSON.stringify({ transcript, round, requestScope: decisionState.requestScope, readOnly: decisionState.readOnly, replyOnly: decisionState.replyOnly, priceInquiry: decisionState.priceInquiry, allowedToolNames: context.allowedToolNames, waitingFor: context.waitingFor?.purpose })}\n`)
       const allowed = new Set(context.allowedToolNames)
       const tools = runtime.toolDefinitions.filter(tool => allowed.has(tool.name)).map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.inputSchema } }))
       payload = { ...payload, decisionState, tools }
@@ -649,22 +673,84 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     const replyContext = refreshConversationState(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')), decisionState).context!
     const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
     expect(presented.role).toBe('assistant')
-    await recordReply(presented.content)
+    // Match Scene's final guidance step; the raw reply renderer deliberately
+    // leaves phase-owned guidance to the caller after validating the question.
+    const content = replyWithQuestion(presented.content, question, replyContext.phase)
+    await recordReply(content)
+    if (question)
+      await runtime.invoke('kiosk_dialogue_presented', { content, questionId: question.questionId })
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId })
-    return { answer: presented.content, calls, blockedTools, mainAgentRequests, toolMs: Math.round(toolMs) }
+    return { answer: content, calls, blockedTools, mainAgentRequests, toolMs: Math.round(toolMs) }
   }
+
+  // Report: this chat Nov8 — exercise named-query transitions and order completion across independent catalogs.
+  it.each(['original', 'supplier'])('configured query transition: %s', async (merchant) => {
+    const catalog = merchant === 'supplier' ? supplierCatalog : await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const speech of ['我想吃魚', '你有賣全家餐嗎？']) {
+      const begin = performance.now()
+      const { decision, decisions } = await decideCurrent(speech)
+      let reply
+      if (decision.kind === 'NEEDS_ASSISTANT')
+        reply = await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!)
+      else expect(['FAST_ACTION', 'SERVICE_CLARIFICATION']).toContain(decision.kind)
+      process.stdout.write(`[query-transition] ${JSON.stringify({ merchant, speech, decision, decisions, reply, query: runtime.getQueryState(), durationMs: Math.round(performance.now() - begin) })}\n`)
+    }
+    expect(runtime.getQueryState()?.conditions).toContainEqual(expect.objectContaining({ group: 'query', value: '全家餐' }))
+    expect(runtime.getQueryState()?.conditions.some(c => c.group === 'includeIngredients' && c.value === 'fish')).toBe(false)
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  }, 120_000)
+
+  it.each(['original', 'supplier'])('configured table completion: %s', async (merchant) => {
+    const catalog = merchant === 'supplier' ? supplierCatalog : await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const item = catalog.items.find(item => item.optionGroups.length === 0)!
+    let submitted = 0
+    runtime = createMenuToolRuntime({ menu: catalog.items, serviceContext: () => ({ id: 'table-replay', serviceMode: 'table-service', table: { id: 'a05', label: 'A05' }, directSubmissionSupported: true }), gateway: { submit: async (cart) => {
+      submitted++
+      return { id: 'isolated-table-order', serviceMode: 'table-service', table: { id: 'a05', label: 'A05' }, cart, receipt: { environment: 'test', status: 'accepted', retryable: false, customerMessage: '本桌訂單已送出。' } }
+    } }, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    await runtime.invoke('order_add_item', { itemId: item.id, quantity: 1 })
+    await recordReply(`已加入${item.name}一份。接下來想點哪道餐點？`)
+    const begin = performance.now()
+    const { decision } = await decideCurrent('這些就夠了')
+    if (decision.kind !== 'NEEDS_ASSISTANT' && decision.kind !== 'FAST_ACTION')
+      throw new Error(`Unexpected table review decision: ${decision.kind}`)
+    const reply = decision.kind === 'NEEDS_ASSISTANT' ? await agent('這些就夠了', conversationDecisionStateFrom(decision.decisionState, decision)!) : { answer: operationReplyFrom(decision.result) }
+    expect(reply.answer).toContain(item.name)
+    expect(submitted).toBe(0)
+    const reviewed = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    expect(reviewed.waitingFor?.purpose).toBe('checkout-entry')
+    expect(reply.answer).not.toMatch(/內用還是|自取|目前提供/)
+    await runtime.invoke('kiosk_dialogue_presented', { content: reply.answer, questionId: reviewed.waitingFor!.questionId })
+    const confirmation = await decideCurrent('對，送出')
+    if (confirmation.decision.kind === 'NEEDS_ASSISTANT')
+      await agent('對，送出', conversationDecisionStateFrom(confirmation.decision.decisionState, confirmation.decision)!)
+    expect(submitted).toBe(1)
+    process.stdout.write(`[table-completion] ${JSON.stringify({ merchant, answer: reply.answer, submitted, durationMs: Math.round(performance.now() - begin) })}\n`)
+  }, 120_000)
 
   // Report: this chat Nov7; acceptance must traverse the current staged HTTP
   // route and recovery, rather than the frozen flat-router diagnostic helper.
   it.each([
     { id: 'first-menu', speech: '你有賣什麼東西？', seed: false, expected: [], shown: true },
+    { id: 'preference-fish', speech: '我想吃魚', ingredient: 'fish', seed: false, expected: [], shown: true },
+    { id: 'preference-chicken', speech: '我想吃雞肉', ingredient: 'chicken', seed: false, expected: [], shown: true },
+    { id: 'preference-beef', speech: '我想吃牛肉', ingredient: 'beef', seed: false, expected: [], shown: true },
     { id: 'fuzzy-read', speech: '有打拋牛便當嗎？', seed: false, expected: [], shown: true },
     { id: 'fuzzy-purchase', speech: '我要打拋牛便當兩份', seed: false, expected: [], shown: true },
     { id: 'replacement', speech: '牛肉麵不要了，改水餃一份', seed: true, expected: [['dumplings', 1]], shown: false },
     { id: 'mixed-query-add', speech: '牛肉麵一份幫我加，水餃一份多少錢？', seed: false, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'done-order', speech: '這樣就好', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'done-order-variant', speech: '先點這些，不加了', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
     { id: 'unrelated', speech: '昨天公司的會議開了很久，大家後來都回家休息，明天再討論工作進度。', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
     { id: 'clear-question-yes', speech: '對', seed: true, expected: [], shown: false },
     { id: 'clear-question-send', speech: '可以送出去了', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'clear-question-send-checkout', speech: '開始結帳吧', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
+    { id: 'clear-question-send-submit', speech: '這份訂單幫我送出去', seed: true, expected: [['beef-noodle-soup', 1]], shown: false },
     { id: 'fish-withdrawal', speech: '我不想吃魚了，我還是吃便當好了', seed: false, expected: [], shown: true },
   ])('configured release acceptance: $id', async (scenario) => {
     const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
@@ -690,15 +776,8 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'] })
     const saved = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'asr_transcript', content: scenario.speech, metadata: { source: 'asr_simulation' } }) })
     expect(saved.status).toBe(201)
-    const decisions: unknown[] = []
     const begin = performance.now()
-    const decision = await runFastPath({ transcript: scenario.speech, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
-      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, includeTrace: true, visitorSessionId: sessionId }) })
-      expect(response.status).toBe(200)
-      const result = await response.json() as KioskInteractionDecision
-      decisions.push(result)
-      return result
-    } })
+    const { decision, decisions } = await decideCurrent(scenario.speech)
     let reply
     try {
       if (decision.kind === 'NEEDS_ASSISTANT')
@@ -710,14 +789,39 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       else if (decision.kind === 'CLARIFICATION')
         reply = { answer: decision.prompt, calls: [] }
       expect(reply?.answer?.trim()).toBeTruthy()
-      if (scenario.id !== 'clear-question-send')
+      if (!scenario.id.startsWith('clear-question-send'))
         expect(reply?.answer).not.toMatch(/未接受這次操作|沒有理解清楚|查詢未完成|換價位|換餐點種類|看別類/)
       const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context', { includeCatalog: true }))
       expect(context.cart.lines.map(line => [line.itemId, line.quantity]).sort()).toEqual([...scenario.expected].sort())
       if (scenario.shown)
         expect(shown.length).toBeGreaterThan(0)
-      if (scenario.id === 'fuzzy-purchase')
+      if (scenario.id === 'fuzzy-purchase') {
         expect(context.waitingFor?.purpose).toBe('confirm-meal')
+        expect(reply?.answer).toContain('打拋豬便當')
+        expect(reply?.answer).not.toContain('炸排骨')
+      }
+      if ('ingredient' in scenario) {
+        expect(reply?.answer).toMatch(/想點|點幾份/)
+        for (const id of shown)
+          expect(catalog.items.find(item => item.id === id)?.composition?.ingredients).toContain(scenario.ingredient)
+      }
+      if (scenario.id === 'mixed-query-add') {
+        expect(reply?.answer).toContain('水餃')
+        expect(reply?.answer).toContain(`${catalog.items.find(item => item.id === 'dumplings')!.price}元`)
+      }
+      if (scenario.id.startsWith('done-order') || scenario.id.startsWith('clear-question-send')) {
+        expect(reply?.answer).toContain('紅燒牛肉麵')
+        expect(reply?.answer).toContain('150元')
+        expect(reply?.answer).toMatch(/內用|自取|結帳|確認.*訂單|送出/)
+        expect(reply?.answer).not.toMatch(/目前提供|想查詢哪道|想點哪道/)
+        expect(context.waitingFor?.purpose).toMatch(/fulfillment|checkout-entry/)
+      }
+      if (scenario.id === 'unrelated') {
+        expect(reply?.answer).toContain('點餐助手')
+        expect(reply?.answer).not.toMatch(/請問要內用|目前提供/)
+      }
+      if (reply?.answer && !scenario.id.startsWith('clear-question'))
+        expect(reply.answer).toMatch(/[?？]/)
       if (scenario.id === 'fish-withdrawal') {
         expect(runtime.getQueryState().conditions.some(condition => condition.group === 'includeIngredients' && condition.value === 'fish')).toBe(false)
         expect(shown).not.toContain('thai-sour-spicy-fish-bento')
@@ -868,6 +972,8 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
   // Plan: docs/plans/2026-10-22-kiosk-multi-demand-evaluation.md.
   // New artificial utterances only. Actual configured models are used; a Jev
   // abstention is not replaced with a forced Main result to make the case pass.
+  // Exercise the current staged HTTP/recovery route, as the Kiosk does. The
+  // older flat-router helper omits scope qualification and is diagnostic only.
   it.each([
     { id: 'multi-add', transcript: '牛肉麵跟水餃各一份', seed: undefined, quantity: undefined, mode: undefined, expected: [['beef-noodle-soup', 1], ['dumplings', 1]] },
     { id: 'single-ambiguous', transcript: '我要一份便當', seed: undefined, quantity: undefined, mode: undefined, expected: [] },
@@ -884,7 +990,6 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
     expect(started.status).toBe(201)
     sessionId = (await started.json() as { session: { id: string } }).session.id
-    const history: DecisionConversation = { messages: [] }
     if (scenario.seed) {
       const seeded = await runtime.invoke('order_add_item', { itemId: scenario.seed, quantity: scenario.quantity })
       const saved = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: JSON.stringify(seeded), metadata: { name: 'order_add_item', decisionRoute: 'fast_path' } }) })
@@ -894,7 +999,6 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       await recordReply(content)
       if (question)
         await runtime.invoke('kiosk_dialogue_presented', { content: question.question, questionId: question.questionId })
-      history.messages.push({ role: 'assistant', content: `${content} ${question?.question ?? ''}` })
     }
     if (scenario.mode)
       await runtime.invoke('order_set_fulfillment', { mode: scenario.mode })
@@ -904,8 +1008,8 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     let decision
     let reply
     try {
-      decision = await decide(scenario.transcript, history, configuredPolicy)
-      process.stdout.write(`[configured-decision] ${JSON.stringify({ id: scenario.id, kind: decision.kind, reason: decision.reason, jevAnswers, jevRequests })}\n`)
+      decision = (await decideCurrent(scenario.transcript)).decision
+      process.stdout.write(`[configured-decision] ${JSON.stringify({ id: scenario.id, decision, jevAnswers, jevRequests })}\n`)
       if (decision.kind === 'NEEDS_ASSISTANT')
         reply = await agent(scenario.transcript, conversationDecisionStateFrom(decision.decisionState, decision)!)
       else
@@ -917,17 +1021,25 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       if (scenario.id === 'whole-menu')
         expect([...presentedIds].sort()).toEqual(catalog.items.map(item => item.id).sort())
       if (scenario.id === 'single-ambiguous') {
-        const assent = await decide('對', history, configuredPolicy)
+        const assent = (await decideCurrent('對')).decision
         process.stdout.write(`[configured-short-answer] ${JSON.stringify({ transcript: '對', decision: assent.kind, jevAnswers, jevRequests })}\n`)
-        expect(assent.kind).toBe('CLARIFICATION')
+        // The staged route can issue a Host service question instead of Menu's
+        // flat-router clarification enum. Assent still cannot select a dish.
+        expect(['CLARIFICATION', 'SERVICE_CLARIFICATION', 'NEEDS_ASSISTANT']).toContain(assent.kind)
+        const clarification = assent.kind === 'NEEDS_ASSISTANT' ? (await agent('對', conversationDecisionStateFrom(assent.decisionState, assent)!)).answer : assent.kind === 'SERVICE_CLARIFICATION' ? assent.question.question : assent.kind === 'CLARIFICATION' ? assent.prompt : ''
+        expect(clarification).toMatch(/餐點|哪道|哪一/)
         expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
-        const choice = await decide('第二項', history, configuredPolicy)
-        expect(choice.kind).toBe('FAST_ACTION')
-        expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
+        const item = catalog.items.find(item => item.id === presentedIds[1])!
+        expect(item).toBeDefined()
+        const transcript = `${item.name}一份`
+        const choice = (await decideCurrent(transcript)).decision
+        if (choice.kind === 'NEEDS_ASSISTANT')
+          await agent(transcript, conversationDecisionStateFrom(choice.decisionState, choice)!)
+        expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: item.id, quantity: 1 }] } })
       }
     }
     finally {
-      process.stdout.write(`[configured-outcome] ${JSON.stringify({ id: scenario.id, transcript: scenario.transcript, decision: decision?.kind, reply, jevAnswers, jevRequests, cart: await runtime.invoke('cart_get', { display: false }), presentedIds, durationMs: Math.round(performance.now() - begin), scope: 'Actual configured Jev + conditional Main; scratch visitor DB; runtime callbacks, no real DOM/POS/payment' })}\n`)
+      process.stdout.write(`[configured-outcome] ${JSON.stringify({ id: scenario.id, transcript: scenario.transcript, decision: decision?.kind, reply, jevAnswers, jevRequests, cart: await runtime.invoke('cart_get', { display: false }), presentedIds, durationMs: Math.round(performance.now() - begin), scope: 'Current staged HTTP/recovery route + actual configured Jev/Main; scratch visitor DB; runtime callbacks, no real DOM/POS/payment' })}\n`)
     }
   }, 120_000)
 

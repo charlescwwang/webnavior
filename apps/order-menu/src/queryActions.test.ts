@@ -89,7 +89,7 @@ it('preserves retained query conditions when the finite search choice continues 
   const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' }) as { items: Array<{ price: number }>, customerMessage: string, decisionTrace: { operationPlan: { toolName: string, input: unknown } } }
   expect(result.decisionTrace.operationPlan).toMatchObject({ toolName: 'menu_recommend', input: { more: true } })
   expect(result.items.every(item => item.price <= 100)).toBe(true)
-  expect(result.customerMessage).toMatch(/沒有|找不到|調整|條件/)
+  expect(result.customerMessage).toContain('剛才的餐點已介紹完了')
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
 })
 

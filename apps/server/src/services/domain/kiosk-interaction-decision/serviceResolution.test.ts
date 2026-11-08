@@ -7,6 +7,13 @@ import { resolveServiceHandoff } from './serviceResolution'
 
 const decision: KioskInteractionDecision = { kind: 'NEEDS_ASSISTANT', confidence: 0.95, trace: { model: 'recorded' }, modelCalls: 2, modelQuestions: 2 }
 const state: KioskDecisionState = { phase: 'ordering', catalogEvidence: { products: [], categories: [] } }
+
+// Report: this chat Nov8 — finishing an order was misclassified as generic fulfillment information.
+it.each(['ORDER_REVIEW', 'OUT_OF_SCOPE'])('qualifies a generic handoff with a reviewable order: %s', async (choice) => {
+  const result = await resolveServiceHandoff({ kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION' }, '這樣就好', { ...state, intentRecovery: { kind: 'request', candidateIds: ['intent:view-cart'] } }, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ choice }) } }] } }] }), undefined, 'off')
+  expect(result.requestScope).toBe(choice === 'ORDER_REVIEW' ? 'order-information' : 'service-information')
+  expect(result).not.toHaveProperty('actionId')
+})
 function response(choice: string) {
   return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ recipient: 'kiosk', choice }) } }] } }] })
 }
@@ -90,13 +97,14 @@ it.each([
 it.each(['SERVICE_INFORMATION_ONLY', 'MENU_INFORMATION_ONLY'])('qualifies an otherwise ungrounded read without altering a confirmed menu read: %s', async (choice) => {
   const fast = { kind: 'FAST_ACTION' as const, actionId: 'intent:search-menu' }
   const result = await resolveServiceHandoff(fast, choice === 'SERVICE_INFORMATION_ONLY' ? '有收到我的話嗎' : '請顯示全部菜單', state, async () => response(choice), undefined, 'enforce')
-  expect(result.kind).toBe(choice === 'SERVICE_INFORMATION_ONLY' ? 'NEEDS_ASSISTANT' : 'FAST_ACTION')
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
   if (choice === 'SERVICE_INFORMATION_ONLY') {
     expect(result.reason).toBe('GENERAL_QUESTION')
     expect(result).not.toHaveProperty('actionId')
   }
   else {
-    expect(result).toHaveProperty('actionId', 'intent:search-menu')
+    expect(result).toMatchObject({ reason: 'MENU_QUERY', requestScope: 'menu-information' })
+    expect(result).not.toHaveProperty('actionId')
   }
 })
 

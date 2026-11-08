@@ -648,12 +648,13 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // catalog mention must not force it through read-only lookup before editing.
   const qualifiedOperation = decision?.requestScope === 'order-operation'
   const orderInformation = decision?.requestScope === 'order-information'
+  const serviceBoundary = decision?.requestScope === 'service-information'
   // A qualified price-information query can use the fresh complete Menu
   // catalog through the typed factual renderer; it is not a browse request.
   // Whole-request operations include any accompanying inquiry; they take
   // precedence over an earlier price-only interpretation of part of the turn.
   const priceInformation = !qualifiedOperation && decision?.priceChoiceId === 'INFORMATION' && hasMealEvidence
-  const requireMenuRead = !priceInformation && !qualifiedOperation && !orderInformation && !uncertainMeaning && (state.requireMenuRead === true || unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && (hasMealEvidence || unclassifiedHandoff)))
+  const requireMenuRead = !priceInformation && !qualifiedOperation && !orderInformation && !serviceBoundary && !uncertainMeaning && (state.requireMenuRead === true || unresolvedQuery || (Boolean(decision) && state.phase !== 'customer_entry' && (hasMealEvidence || unclassifiedHandoff)))
   // Filter/price uncertainty permits clarification and factual lookup, never
   // a partial order edit. Keep that restriction through Agent continuations.
   // An uncertain phone choice grants conversation/read authority, never a
@@ -661,7 +662,7 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // Service admission says this utterance deserves a response, not which
   // mutation it authorizes. A resolved effect/target handoff retains its own
   // tool restrictions; otherwise uncertainty stays read-only in every phase.
-  const protectedUncertainty = uncertainMeaning && !qualifiedOperation && !decision?.handoff
+  const protectedUncertainty = uncertainMeaning && !qualifiedOperation && !orderInformation && !serviceBoundary && !decision?.handoff
   const serviceAnswer = uncertainMeaning && state.serviceClarification && decision?.recovery?.readOnly === true
   const readOnly = priceInformation || orderInformation || decision?.requestScope === 'menu-information' || decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   const serviceQuestion = state.serviceClarification
@@ -671,12 +672,13 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   return {
     ...(state.serviceMode ? { serviceMode: state.serviceMode } : {}),
     ...(decision?.requestScope ? { requestScope: decision.requestScope } : {}),
+    ...(qualifiedOperation && decision?.priceChoiceId === 'INFORMATION' ? { priceInquiry: true } : {}),
     phase: state.phase,
     ...(state.revisions ? { revisions: state.revisions } : {}),
     // Unresolved meaning permits a conversational clarification, not a screen
     // transition. Service admission alone never grants browsing authority.
-    ...(decision?.reason === 'GENERAL_QUESTION' || serviceAnswer ? { serviceReply: true } : {}),
-    ...(protectedUncertainty && !requireMenuRead ? { replyOnly: true } : {}),
+    ...(decision?.reason === 'GENERAL_QUESTION' || serviceAnswer || serviceBoundary ? { serviceReply: true } : {}),
+    ...((protectedUncertainty && !requireMenuRead) || serviceBoundary ? { replyOnly: true } : {}),
     ...(serviceQuestion && (!assistanceQuestion || serviceAnswerAllowed) ? { serviceClarification: serviceQuestion } : {}),
     ...(decision?.handoff ? { handoff: decision.handoff } : {}),
     ...(requireMenuRead ? { requireMenuRead: true } : {}),

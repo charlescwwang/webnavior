@@ -4,8 +4,32 @@ import { describe, expect, it } from 'vitest'
 
 import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
-import { conversationDecisionStateFrom } from './kiosk-fast-path'
+import { conversationDecisionStateFrom, refreshConversationState } from './kiosk-fast-path'
 import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+
+// Report: this chat Nov8 — an independently qualified cart review was still locked to reply-only uncertainty.
+it('preserves qualified order-review authority without acquiring writes or a reply-only lock', () => {
+  const state = conversationDecisionStateFrom({ phase: 'ordering' }, { reason: 'NEW_REQUEST', requestScope: 'order-information' })
+  expect(state?.readOnly).toBe(true)
+  expect(state?.requireMenuRead).not.toBe(true)
+  expect(state?.replyOnly).not.toBe(true)
+  expect(state?.requestScope).toBe('order-information')
+})
+
+it.each(['acknowledgement', 'clarification'] as const)('speaks the verified cart summary before its new checkout question despite %s', async (kind) => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId: sampleMenu[0]!.id, quantity: 1 })
+  const receipt = await runtime.invoke('cart_get', { display: true })
+  const menu = createMenuReplyWindow()
+  menu.record('cart_get', receipt)
+  const question = questionReceiptFrom(receipt)!
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['cart_get'], reply: { kind } }, { menu, question, context, failureMessage: '查詢失敗' })
+  expect(result.content).toContain(sampleMenu[0]!.name)
+  expect(result.content).toContain(`${sampleMenu[0]!.price}元`)
+  expect(result.content).toContain(question.question)
+  expect(result.content.match(/[?？]/g)).toHaveLength(1)
+})
 
 // Report: this chat, Nov08 — independent lookup prompts were concatenated, then prices repeated.
 it('presents two real meal lookups with each price once and one browsing question', async () => {
@@ -413,7 +437,7 @@ describe('preference lookup receipts', () => {
     expect(window.hasReceipts()).toBe(false)
     window.record('menu_recommend', await runtime.invokeForAgent('menu_recommend', { action: 'update', excludeItemIds: ['bento'] }))
     expect(window.hasReceipts()).toBe(true)
-    expect(window.reply()).toBe('推薦一項：田園沙拉。')
+    expect(window.reply()).toBe('推薦一項：田園沙拉。 想點這道的話，您要幾份？')
     expect(window.reply()).not.toContain('便當')
   })
 })
@@ -614,4 +638,16 @@ it('keeps one display question when guidance is followed by a factual meal read'
   window.record('menu_get', await runtime.invoke('menu_get', { query: '雞肉飯', display: true }))
   expect(window.reply().match(/？/g)).toHaveLength(1)
   expect(window.reply()).toContain('95元')
+})
+
+// Report: this chat, Nov08 — the accompanying price question disappeared at Main handoff.
+it('retains a qualified price inquiry alongside an operation through fresh-context projection', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const snapshot = await runtime.invoke('kiosk_interaction_state')
+  const state = conversationDecisionStateFrom(snapshot, { reason: 'NEW_REQUEST', requestScope: 'order-operation', priceChoiceId: 'INFORMATION' })!
+  expect(state.priceInquiry).toBe(true)
+  expect(state.readOnly).not.toBe(true)
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  expect(refreshConversationState(context, state).priceInquiry).toBe(true)
+  expect(conversationDecisionStateFrom(snapshot, { reason: 'MENU_QUERY', requestScope: 'menu-information', priceChoiceId: 'INFORMATION' })?.priceInquiry).toBeUndefined()
 })

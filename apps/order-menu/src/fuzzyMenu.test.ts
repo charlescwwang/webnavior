@@ -76,3 +76,19 @@ it.each([
   else
     await expect(runtime.invokeForAgent('menu_confirm_item', { itemId: 'pork', originalRecipe: true })).rejects.toThrow('preparation')
 })
+
+// Report: this chat, Nov08 actual Main asked for a dish outside the fuzzy lookup.
+it.each([
+  { asked: '打拋牛便當', offered: '打拋豬便當' },
+  { asked: '椰香雞腿飯', offered: '椰香雞肉飯' },
+])('binds proposals to verified candidates for $asked', async ({ asked, offered }) => {
+  const runtime = createMenuToolRuntime({ menu: [item('candidate', offered), item('unrelated', '炸排骨便當')], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'bound-proposal', transcript: `我要${asked}兩份`, expectedMenuRevision: 0, constraints: {} })
+  await runtime.invoke('kiosk_conversation_context')
+  await expect(runtime.invokeForAgent('menu_confirm_item', { itemId: 'candidate' })).rejects.toThrow()
+  expect(await runtime.invokeForAgent('menu_get', { query: asked })).toMatchObject({ possibleItems: [{ id: 'candidate' }] })
+  await runtime.invoke('kiosk_conversation_context')
+  await expect(runtime.invokeForAgent('menu_confirm_item', { itemId: 'unrelated' })).rejects.toThrow('verified candidates')
+  expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'candidate' })).toHaveProperty('pendingCustomerChoice')
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})

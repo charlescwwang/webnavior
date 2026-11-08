@@ -81,16 +81,20 @@ it('offers fulfillment only for a current POS mode reference or its resolved han
 
 // Report: frozen live112 C02-A2, attempt613; Main retried menu_select_item
 // for an unconfirmed alias even though the task would reject that target.
-it('offers confirmation instead of item effects when the task has no confirmed target', async () => {
+it('offers confirmation after verifying an inferred name without granting item effects', async () => {
   const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'bento', name: '炸排骨便當', aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'alias', transcript: '我要排骨飯一份', expectedMenuRevision: 0, constraints: {} })
   const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
-  expect(context.allowedToolNames).toContain('menu_confirm_item')
+  expect(context.allowedToolNames).not.toContain('menu_confirm_item')
   expect(context.allowedToolNames).not.toContain('menu_select_item')
   expect(context.allowedToolNames).not.toContain('order_add_item')
   expect(context.allowedToolNames).not.toContain('cart_add_item')
   expect(context.allowedToolNames).not.toContain('menu_set_quantity')
   expect(context.allowedToolNames).not.toContain('menu_set_item_option')
+  expect(await runtime.invokeForAgent('menu_get', { query: '排骨飯' })).toHaveProperty('possibleItems', expect.arrayContaining([expect.objectContaining({ id: 'bento' })]))
+  const verified = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  expect(verified.allowedToolNames).toContain('menu_confirm_item')
+  expect(verified.allowedToolNames).not.toContain('order_add_item')
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
 })
 

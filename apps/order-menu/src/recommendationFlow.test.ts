@@ -163,7 +163,7 @@ describe('recommendation batches', () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(await runtime.invoke('menu_recommend', { excludeIngredients: ['pork'] })).toMatchObject({ items: [{ id: 'dish-1' }, { id: 'dish-2' }, { id: 'dish-3' }] })
     expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ appliedFilters: { excludeIngredients: ['pork'] }, items: [{ id: 'dish-4' }, { id: 'dish-5' }, { id: 'dish-6' }] })
-    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], customerMessage: expect.stringContaining('符合您需求的就這幾道') })
+    expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [], customerMessage: expect.stringContaining('剛才的餐點已介紹完了') })
     await runtime.reset()
     expect(await runtime.invoke('menu_recommend')).toMatchObject({ items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }] })
   })
@@ -219,4 +219,14 @@ it('returns from a constrained recommendation to the catalog without changing th
   expect(result).toHaveProperty('queryState.prices', {})
   expect(present.mock.calls.at(-1)?.[0].itemIds).toEqual(dishes.slice(1).map(item => item.id))
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: (before as { cart: unknown }).cart })
+})
+
+// Report: this chat, Nov08 — food preferences must lead from displayed dishes to a choice.
+it.each(['fish', 'chicken', 'beef'].flatMap(ingredient => [1, 3].flatMap(count => ['menu_recommend', 'menu_get'].map(tool => ({ ingredient, count, tool })))))('guides selection after $ingredient preferences ($count matches, $tool)', async ({ ingredient, count, tool }) => {
+  const runtime = createMenuToolRuntime({ menu: dishes.map((item, index) => ({ ...item, composition: { ingredients: [index < count ? ingredient : 'pork'], complete: true, source: 'merchant' as const, revision: '1', removals: [] } })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: () => {} })
+  const result = await runtime.invoke(tool as 'menu_recommend' | 'menu_get', { includeIngredients: [ingredient], display: true }) as { customerMessage: string, items: unknown[] }
+  expect(result.items).toHaveLength(count)
+  expect(result.customerMessage).toContain('想點')
+  expect(result.customerMessage.match(/[?？]/g)).toHaveLength(1)
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })

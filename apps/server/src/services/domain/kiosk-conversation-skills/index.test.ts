@@ -22,7 +22,7 @@ const answer = (choice: string) => Response.json({ choices: [{ message: { tool_c
 function modelAnswer(body: Record<string, unknown>, choice: string) {
   const tools = body.tools as Array<{ function: { name: string } }>
   if (tools[0]?.function.name === 'verify_ordering_answer')
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: '{"choice":"COMPLETE"}' } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: '{"choice":"COMPLETE","answerAction":"NO_EXPLICIT_ACTION"}' } }] } }] })
   return answer(choice)
 }
 
@@ -420,7 +420,7 @@ it.each([false, true])('qualifies the currently named request without releasing 
 it.each(['OTHER_REQUEST', 'BACKGROUND', 'invalid'] as const)('does not consume a partial or unverified answer: %s', async (coverage) => {
   const candidate = { id: 'intent:defer-question', description: '只延後目前問題，沒有其他需求。' }
   const waitingFor = { questionId: 'fulfillment', purpose: 'fulfillment', question: '內用還是自取？', expiresAt: Date.now() + 30000, choices: [candidate] }
-  const complete = vi.fn().mockResolvedValueOnce(answer(candidate.id)).mockResolvedValueOnce(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: JSON.stringify({ choice: coverage }) } }] } }] }))
+  const complete = vi.fn().mockResolvedValueOnce(answer(candidate.id)).mockResolvedValueOnce(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: JSON.stringify({ choice: coverage, answerAction: 'NO_EXPLICIT_ACTION' }) } }] } }] }))
   const result = await resolveOrderingIntent(admitted, ({
     ...input,
     transcript: coverage === 'BACKGROUND' ? '他只要問過他就過去了啊' : '不要動訂單，我只想確認這句話有收到嗎？',
@@ -518,7 +518,7 @@ it.each(['off', 'observe'] as const)('checks answer completeness without backgro
     const tool = body.tools[0].function
     expect(tool.parameters.properties).not.toHaveProperty('recipient')
     expect(JSON.stringify(tool.parameters)).not.toContain('BACKGROUND')
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: tool.name, arguments: JSON.stringify({ choice: tool.name === 'verify_ordering_answer' ? 'OTHER_REQUEST' : candidate.id }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: tool.name, arguments: JSON.stringify({ choice: tool.name === 'verify_ordering_answer' ? 'OTHER_REQUEST' : candidate.id, ...(tool.name === 'verify_ordering_answer' ? { answerAction: 'OTHER_ACTION' } : {}) }) } }] } }] })
   })
   const result = await resolveOrderingIntent(admitted, { ...input, backgroundSpeechMode: mode, candidates: [candidate], decisionState: { phase: 'ordering', waitingFor, intentRecovery: answerScope(waitingFor) } }, complete)
   expect(result.kind).toBe('NEEDS_ASSISTANT')
@@ -546,7 +546,7 @@ it.each(['OTHER_REQUEST', 'COMPLETE'] as const)('regression K1107-DIRECT reviews
   const complete = vi.fn(async (body: Record<string, unknown>) => {
     const tools = body.tools as Array<{ function: { name: string } }>
     const name = tools[0]!.function.name
-    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify({ choice: name === 'verify_ordering_answer' ? coverage : candidate.id }) } }] } }] })
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify({ choice: name === 'verify_ordering_answer' ? coverage : candidate.id, ...(name === 'verify_ordering_answer' ? { answerAction: 'NO_EXPLICIT_ACTION' } : {}) }) } }] } }] })
   })
   const result = await resolveOrderingIntent({ kind: 'FAST_ACTION', actionId: candidate.id, confidence: 0.99 }, { ...input, transcript: coverage === 'COMPLETE' ? '對' : '可以送出去了', backgroundSpeechMode: 'off', decisionState: { phase: 'pending_confirmation', waitingFor, intentRecovery: answerScope(waitingFor) }, candidates: [candidate] }, complete)
   expect(result.kind).toBe(coverage === 'COMPLETE' ? 'FAST_ACTION' : 'NEEDS_ASSISTANT')
@@ -554,5 +554,21 @@ it.each(['OTHER_REQUEST', 'COMPLETE'] as const)('regression K1107-DIRECT reviews
     expect(result).not.toHaveProperty('actionId')
   else
     expect(result).toHaveProperty('actionId', candidate.id)
+  expect(complete).toHaveBeenCalledTimes(2)
+})
+
+// Report: this chat, Nov08 live replay marked checkout speech COMPLETE for a clear-cart question.
+it.each(['QUESTION_ACTION', 'NO_EXPLICIT_ACTION', 'OTHER_ACTION', 'UNCERTAIN'])('binds a COMPLETE answer to the question action: %s', async (answerAction) => {
+  const candidate = { id: 'intent:confirm:clear', description: '清空目前購物車' }
+  const waitingFor = { questionId: 'clear', purpose: 'operation-confirmation', question: '要清空目前購物車嗎？', expiresAt: Date.now() + 30000, choices: [candidate] }
+  const complete = vi.fn(async (body: Record<string, unknown>) => {
+    const tools = body.tools as Array<{ function: { name: string } }>
+    const name = tools[0]!.function.name
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(name === 'verify_ordering_answer' ? { choice: 'COMPLETE', answerAction } : { choice: candidate.id }) } }] } }] })
+  })
+  const result = await resolveOrderingIntent({ kind: 'FAST_ACTION', actionId: candidate.id, confidence: 0.99 }, { ...input, transcript: '可以送出去了', backgroundSpeechMode: 'off', decisionState: { phase: 'pending_confirmation', waitingFor, intentRecovery: answerScope(waitingFor) }, candidates: [candidate] }, complete)
+  expect(result.kind).toBe(['QUESTION_ACTION', 'NO_EXPLICIT_ACTION'].includes(answerAction) ? 'FAST_ACTION' : 'NEEDS_ASSISTANT')
+  if (['OTHER_ACTION', 'UNCERTAIN'].includes(answerAction))
+    expect(result).not.toHaveProperty('actionId')
   expect(complete).toHaveBeenCalledTimes(2)
 })

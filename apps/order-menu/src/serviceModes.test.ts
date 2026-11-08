@@ -23,6 +23,45 @@ async function reviewAndSubmit(runtime: ReturnType<typeof createMenuToolRuntime>
 }
 
 describe('shared Menu service modes', () => {
+  it('resets only its owning merchant through a host-only tool and preserves a refused round', async () => {
+    const first = tableRuntime()
+    const second = tableRuntime()
+    await first.runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+    await second.runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 2 })
+    await expect(second.runtime.invokeForAgent('kiosk_ordering_reset')).rejects.toThrow('unavailable to the Agent')
+    expect(await second.runtime.invoke('kiosk_ordering_reset')).toHaveProperty('cart.itemCount', 0)
+    expect(await first.runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+
+    const reset = vi.fn().mockRejectedValueOnce(new Error('round unresolved')).mockResolvedValue(undefined)
+    const refused = createMenuToolRuntime({ menu: [{ id: 'dumplings', name: '水餃', category: '點心', description: '', price: 80, imageUrl: '', optionGroups: [], recommendationTags: [] }], onSessionReset: reset, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await refused.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+    await expect(refused.invoke('kiosk_ordering_reset')).rejects.toThrow('round unresolved')
+    expect(await refused.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+    expect(await refused.invoke('kiosk_ordering_reset')).toHaveProperty('cart.itemCount', 0)
+  })
+
+  // Report: this chat Nov8 — a new checkout request must not leave the old clear-cart question executable.
+  it('replaces clear-cart consent with a reviewed table-order question without submitting', async () => {
+    const { runtime, submit } = tableRuntime()
+    await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 1 })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '清空購物車' })
+    const clear = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:clear-cart' }) as { pendingCustomerChoice: { questionId: string } }
+    await runtime.invoke('kiosk_dialogue_presented', { content: '清空嗎？', questionId: clear.pendingCustomerChoice.questionId })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'review', transcript: '幫我結帳', expectedMenuRevision: 0, readOnly: true, constraints: {} })
+    const review = await runtime.invokeForAgent('cart_get', { display: true }) as { pendingCustomerChoice: { questionId: string, question: string } }
+    expect(review.pendingCustomerChoice.question).toContain('確認這份訂單並送出嗎')
+    expect(review.pendingCustomerChoice.questionId).not.toBe(clear.pendingCustomerChoice.questionId)
+    expect(submit).not.toHaveBeenCalled()
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+    await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'review' })
+    await runtime.invoke('kiosk_dialogue_presented', { content: review.pendingCustomerChoice.question, questionId: review.pendingCustomerChoice.questionId })
+    const next = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as { candidates: { id: string }[] }
+    expect(next.candidates.some(c => c.id === 'intent:start-checkout')).toBe(true)
+    expect(next.candidates.some(c => c.id.includes(clear.pendingCustomerChoice.questionId))).toBe(false)
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:start-checkout' })
+    expect(submit).toHaveBeenCalledOnce()
+  })
+
   // Report: this chat, Nov08 — a table-bound assistant cannot offer a takeaway switch.
   it.each(['table-service', 'kiosk'] as const)('rejects unavailable fulfillment before creating a draft-navigation question: %s', async (serviceMode) => {
     const context: OrderingContext = { id: 'mode-check', serviceMode, ...(serviceMode === 'table-service' ? { table: { id: 'a03', label: 'A03' } } : {}), directSubmissionSupported: true }

@@ -276,6 +276,7 @@ describe('createMenuToolRuntime', () => {
   it('declares Menu tools from the same runtime used by the menu UI', () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     expect(runtime.toolDefinitions.map(tool => tool.name)).toEqual([
+      'kiosk_ordering_reset',
       'kiosk_fast_path_clarify',
       'kiosk_query_scope',
       'kiosk_agent_task',
@@ -1219,7 +1220,7 @@ describe('createMenuToolRuntime', () => {
       reason: '一碗主食配一杯飲料。',
       title: '今天想吃得剛剛好',
     })).resolves.toMatchObject({
-      customerMessage: '我推薦：擔仔麵、古早味冬瓜茶。',
+      customerMessage: '我推薦：擔仔麵、古早味冬瓜茶。 您想點哪一道？',
       items: [
         { id: 'danzai-noodles', name: '擔仔麵' },
         { id: 'winter-melon-tea', name: '古早味冬瓜茶' },

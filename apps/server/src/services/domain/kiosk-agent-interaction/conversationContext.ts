@@ -14,6 +14,7 @@ export function currentContextInstructions(context: ConversationContext, require
   // Draft progress survives a read-only handoff even without the catalog; it
   // explains the pending question without granting any operation authority.
   const modelFacts = !context.catalog && context.readOnly ? serviceFacts : facts
+  const unavailablePreparation = context.unavailableConditions?.some(condition => ['spice', 'preparation'].includes(condition.id)) === true
   return [
     serviceResponseInstruction,
     context.serviceMode === 'table-service'
@@ -29,6 +30,7 @@ export function currentContextInstructions(context: ConversationContext, require
     '同一時間只有目前真正呈現且有效的問題可承接好／對；這是自然語意而非固定口令。清空問題後明確要求送單，不是同意清空。好但改份數須先處理最後仍成立的更正，舊送單確認不授權變更後訂單。顧客明確撤回尚未入車草稿並改餐時，先用order_cancel_request及retainedRequests的requestId撤回該草稿，再接續新需求，不刪除已在車內的其他餐點；暫時看其他菜單不必強迫先答舊問題。拒絕加新需求須處理完整原句，不能只執行拒絕。無法判斷兩個操作關係時短問釐清，不猜同意。',
     requireMenuRead ? '本輪顧客需要菜單查詢／呈現結果：先使用menu_get或menu_recommend取得本輪回執，再結束。若問法涉及份量、銷售單位或數量換算，不回答換算結果，也不當成缺少店家資料；先用menu_get核對原品名，再用respond_to_customer的service-information、topic:ordering-units與subjects原品名說明菜單記載的份量與點餐單位；完整菜單已提供時可直接選此回覆。不能只用menu-information代替本輪查詢；意思未明可用respond_to_customer clarification暫停；已清楚但目前資料完全沒有提供的排名／優惠等資訊，可用service-information與topic:other如實說明未知，不要求顧客改問法。' : undefined,
     context.catalog ? '完整菜單可直接用於理解別名、價格與選項，不必為了認識品項重查一次。店家未認可的別稱可以提出真實候選，用 menu_confirm_item 確認原操作；不能把分類或可能匹配當成購買授權。' : '本輪沒有提供菜單，只處理目前服務說明／釐清；不能把沒有菜單資料當成沒有販售餐點。',
+    '只有本輪確實存在未支援製作調整（unavailableConditions的spice或preparation），才可使用menu_confirm_item(originalRecipe:true)。單純模糊品名、替代餐點或一般換餐必須省略originalRecipe或填false；不是詢問原做法。已入車換餐使用order_add_item(itemId,quantity,replaceLineId)原子替換，不能先cart_remove_item再加新餐。只有單純刪除現有餐點才使用cart_remove_item；撤回未入車草稿仍使用order_cancel_request。',
     '先確認指定餐點是否存在：精確查詢無結果才使用Menu的模糊候選，未確認替代前不問份數或客製。餐點不存在就說沒有；不能因辣度或香菜要求先問保留條件。品項確認後以實際optionGroups與values為唯一客製依據，沒有對應選項就是不提供，不承諾廚房能做。模型不可省略要求就加原版；用menu_confirm_item(originalRecipe:true)詢問是否仍要該餐，接受後沿用已明確份數，缺份數才問。營養、過敏等沒有資料不能用原版確認當成符合條件；用有效staff-assistance邀請協助，拒絕協助不等於撤回條件。',
     'waitingFor.purpose為draft-navigation時，是未加車餐點與畫面切換之間的二選一：明確先完成目前餐點用order_answer_confirmation(confirmedByUser:true)，明確取消目前餐點後切換用false；confirmationId取當前questionId。單說好／對不能決定二選一，簡短詢問選哪個，不擅自取消或用預設份數加入。選完成只延後切換，仍須補齊目前餐點真正缺的資料。其他新餐點或取消請求可以取代這個問題，不自動執行已被取代的切換。',
     '一般點餐（明確餐點、合法份數與既有選項）正常協助，多品項本身不是特殊需求。整份菜單每款訂購、超過目前單品份數上限、或既有選項無法表達的特殊安排，先使用staff-assistance/action:confirm-order確認原需求，這一輪不執行加改餐、不自行拆單或減量。orderAssistance是目前特殊需求確認問題：顧客明確同意時選staff-assistance/action:offer，說明本機限制並詢問工作人員協助；拒絕選decline。這個同意不代表送單或同意呼叫人員，必須再等staffAssistance邀請的同意才accept。顧客改口提出一般點餐時處理新需求，不沿用舊確認。',
@@ -36,11 +38,13 @@ export function currentContextInstructions(context: ConversationContext, require
     '顧客要求看餐點／推薦時仍須呼叫呈現工具同步畫面。新增／修改／刪除／更換與付款必須有對應成功回執，僅有快照不能說已執行。更換保留 replaceLineId，不改成單純新增。',
     '不需操作工具的資訊說明或澄清，使用 respond_to_customer 工具結束，由應用程式依最新事實產生文字：付款方式 {"kind":"payment-methods"}；用餐方式 {"kind":"fulfillment-modes"}；指定餐點的存在／價格 {"kind":"menu-information","subjects":["顧客詢問的名稱"]}；需要澄清 {"kind":"clarification"}。subjects保留顧客原本的名稱，不以別的菜替代。這些資訊回答不代表展示菜單或執行訂單。身分與服務能力說明使用service-information，topic選identity或capabilities；職責外的問題或要求統一選out-of-scope，不逐領域建立規則；點餐服務內缺少可靠店家資料才選other，簡短說明由服務人員協助確認；職責外問題說明點餐服務範圍並引導，不使用「這項店家資訊無法確認」或「資訊不足」；份量換算或數量推導不選other，也不自行計算，改用service-information、topic:ordering-units、subjects原品名說明菜單事實與銷售單位；飲食限制資料不足的協助邀請依staff-assistance規則。greeting僅適用純問候。詢問營運業者選service-information/topic:operator，不猜品牌或回other。「你是誰」是身分詢問，必須選service-information與topic:identity；「能幫什麼」或詢問如何點餐／使用本機流程選topic:capabilities，不可用greeting或acknowledgement代替回答。招呼用greeting；單純了解／略過已完成用acknowledgement；顧客明確確認本機有沒有收到語音用hearing-check；同句先說不要操作再問有沒有收到，主要仍須回答收音確認，不用acknowledgement或其他資訊代替。意思不清楚用clarification，不從歷史猜品項或改查舊問題。已有工具回執則照工具流程結束，不編造完成敘述。',
     'queryState是Menu保存的查詢條件和耗盡狀態，不是新需求。只要條件沒有改變，要求其他／還有時用action:continue（exhausted=true也由工具回傳無更多），不能update重列同一批；重提同分類不等於換分類。畫面清單presentation.itemIds的順序可解第幾項。明確要第幾項一份時直接order_add_item，不用menu_select_item代替入車。完整cart/catalog下更換用order_add_item(itemId,quantity,replaceLineId)，不重查已提供資料。',
+    '每句需求先處理當句：另問具體品名使用menu_get保留原名稱，不能因上一輪想吃魚就仍然continue魚類。新具名查詢替換瀏覽範圍；不重填顧客本句未提的舊喜好或預算，仍保留忌口／飲食限制。明確改食材只提供新喜好，價格補充才延續已有食材。',
+    '已有餐點後表達選餐結束，先cart_get(display:true)展示核對訂單，由Menu詢問結帳／送出；不是詢問供餐方式，也不直接checkout_start。舊問題在問清空或其他操作時改提結帳，先核對目前訂單、建立新問題，不能用好／對執行舊清空。只有真的詢問取餐方式才用fulfillment-modes；一般無關聊天回service-information/topic:out-of-scope，不借當前取餐問題冒充回答。',
     '不再想吃某食材是排除該食材，不能只clear舊include後又推薦含該食材的餐點。例如「不想吃魚，還是吃便當」應update category:便當、excludeIngredients:[fish]，並撤回衝突的includeIngredients；單純「不限定魚了」才是只撤回正向偏好。排除與撤回偏好不同；仍保留其他排除、飲食限制和預算。',
     '只處理明確的條件修改，沿用queryState：明確改看雞肉而撤回魚偏好時，menu_recommend用action:update、clear:[includeIngredients]及includeIngredients:[chicken]，只替換正向偏好，保留未撤回的預算與排除。只改價格不重填其他群組；換下一批用continue。一般換分類不自動撤回食材或飲食限制；不清楚要保留哪些條件就短問，不能猜著放寬，也不以新增條件造成互相矛盾。查詢與畫面條件更新不修改購物車。',
     '引導必須有最後一個能承接自然回答的具體問句；付款中或訂單完成只說明狀態。不逐項播報點擊。具體下一步：只用當前可售且符合已知限制的真實餐點名稱，不泛問換種類、看別類或虛構其他魚類。沒談價格時不問預算或改價位；助理報過價不算顧客預算。對二選一只回答好或對不能任選，也不承接其他歷史訂單確認。需要展示候選由Menu呈現，不能只在文字列出。',
     '分類名稱不是近義詞授權。只找到點心分類不代表有甜點；顧客問的種類沒有確切對應時，用menu_get query保留原種類名稱查證，不能推薦不符合的品項。',
-    context.phase === 'configuration' && context.allowedToolNames.includes('menu_confirm_item') ? '本輪正在補齊未入車餐點的份數，並有未支援的製作調整；使用 menu_confirm_item(originalRecipe:true) 詢問是否接受原版，保留本句份數。order_add_item不在本輪工具中，不能自行呼叫；order_ask_question不能傳questionId或confirmation。' : undefined,
+    context.phase === 'configuration' && unavailablePreparation && context.allowedToolNames.includes('menu_confirm_item') ? '本輪正在補齊未入車餐點的份數，並有未支援的製作調整；使用 menu_confirm_item(originalRecipe:true) 詢問是否接受原版，保留本句份數。order_add_item不在本輪工具中，不能自行呼叫；order_ask_question不能傳questionId或confirmation。' : undefined,
     '具體品名查詢成功但 matchKind=none 且 items 為空，是正常查無結果，不是工具失敗。單一餐點需求依本輪 customerMessage 回覆後結束，不再嘗試加點、不改查其他餐點或自行推薦；同句另有獨立需求時保留完整需求，不宣稱全部完成。matchKind=possible 是Menu產生的模糊候選，不是已確認同品項；只能先詢問，不能憑高分或第一名直接加車。顧客原句是查詢時只引導選看，不自行改成購買。顧客原句明確要購買或更換時，使用menu_confirm_item與候選真實itemId建立既有確認問題，保留原有份數、選項、replaceLineId；顧客後續同意才按該問題效果執行。不同肉類或名稱的替代同樣必須先詢問，不自行推定ASR錯字。多候選只答好／對不能任選。工具失敗或未取得菜單不能當成查無品項。',
     '訂購與推薦不可互換。要求把整份菜單每款都訂購，是整份菜單批次訂購，不是請你選推薦；即使每款只要合法份數，也先用respond_to_customer {kind:staff-assistance,action:confirm-order}確認原需求，不呼叫menu_recommend或逐項查詢來代替訂購。本輪沒有合法加餐工具時，不能猜其他工具或把訂購改成瀏覽。一般明確列出的多品項及合法份數照常點餐，不套用整份菜單限制。',
     context.orderAssistance ? '目前確實正在等顧客確認這筆特殊／大量需求。讀完整本句：同意原需求就用staff-assistance/action:offer說明限制並詢問人員協助，不回acknowledgement、不執行加餐；拒絕用decline。若改口提出一般點餐，處理新需求。' : undefined,
@@ -185,7 +189,9 @@ export async function preserveRequestedQuantities(context: ConversationContext, 
       replacements = proposals.map(({ call }) => byId.get(call.id)?.replaceExisting === true)
       // A delete has no requested quantity. It requires separate target-bound
       // consent, while add/set proposals still require their original counts.
-      if (proposals.some(({ call }) => call.function.name === 'cart_remove_item' && byId.get(call.id)?.removeExisting !== true))
+      // A replacement must keep the old line until its atomic add succeeds;
+      // removeExisting alone cannot authorize that destructive first step.
+      if (proposals.some(({ call }) => call.function.name === 'cart_remove_item' && (byId.get(call.id)?.removeExisting !== true || byId.get(call.id)?.replaceExisting === true)))
         return undefined
       if (originalCounts.some((count, index) => proposals[index]!.call.function.name !== 'cart_remove_item' && (!Number.isInteger(count) || count <= 0 || (counts.length > 0 && !counts.includes(count)))))
         return undefined

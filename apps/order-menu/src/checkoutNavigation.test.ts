@@ -144,7 +144,7 @@ it('allows an explicit read-only cart display to open the actual review without 
   const result = await f.runtime.invokeForAgent('cart_get', { display: true })
   expect(f.screen()).toBe('cart_review')
   expect(result).toMatchObject({ cart: { itemCount: 1, fulfillmentMode: 'dine-in' } })
-  expect(result).not.toHaveProperty('pendingCustomerChoice')
+  expect(result).toHaveProperty('pendingCustomerChoice.purpose', 'checkout-entry')
 })
 
 it('keeps internal cart reads on the current screen and preserves a live checkout', async () => {

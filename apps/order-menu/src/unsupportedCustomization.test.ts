@@ -18,11 +18,14 @@ interface Snapshot {
 
 // Report: this chat, Nov08 — a missing dish must be resolved before preparation requests.
 it.each([
-  { id: 'noodles', name: '鱔魚炒麵', request: '鱔魚意麵兩份不要辣不要香菜' },
-  { id: 'rice', name: '香菇雞飯', request: '香菇雞便當兩份不要蒜' },
-])('confirms the alternative identity before its unsupported preparation: $name', async ({ id, name, request }) => {
+  { id: 'noodles', name: '鱔魚炒麵', query: '鱔魚意麵', request: '鱔魚意麵兩份不要辣不要香菜' },
+  { id: 'rice', name: '香菇雞便當', query: '香菇雞腿便當', request: '香菇雞腿便當兩份不要蒜' },
+])('confirms the alternative identity before its unsupported preparation: $name', async ({ id, name, query, request }) => {
   const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id, name, aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'identity-first', transcript: request, expectedMenuRevision: 0, constraints: {} })
+  await runtime.invoke('kiosk_conversation_context')
+  expect(await runtime.invokeForAgent('menu_get', { query })).toMatchObject({ possibleItems: [{ id }] })
+  await runtime.invoke('kiosk_conversation_context')
   const identity = await runtime.invokeForAgent('menu_confirm_item', { itemId: id }) as { pendingCustomerChoice: Snapshot['waitingFor'] }
   expect(identity.pendingCustomerChoice.question).toContain(name)
   expect(identity.pendingCustomerChoice.question).not.toContain('客製')
@@ -148,4 +151,15 @@ it.each(['紅燒牛肉麵', '排骨便當', '水餃'])('asks about adding the na
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'custom', transcript: `我要${name}，不要蔥`, expectedMenuRevision: 0, constraints: {} })
   expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'dish', originalRecipe: true })).toMatchObject({ pendingCustomerChoice: { question: '這道餐點不提供客製化，還要點嗎？' } })
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+// Report: this chat, Nov08 — a plausible alternative without a Menu candidate is not verified identity.
+it('does not invent a preparation proposal when the named lookup has no verified alternative', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'rice', name: '香菇雞飯', aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'no-alternative', transcript: '香菇雞便當兩份不要蒜', expectedMenuRevision: 0, constraints: {} })
+  await runtime.invoke('kiosk_conversation_context')
+  expect(await runtime.invokeForAgent('menu_get', { query: '香菇雞便當' })).toMatchObject({ items: [], matchKind: 'none' })
+  await runtime.invoke('kiosk_conversation_context')
+  await expect(runtime.invokeForAgent('menu_confirm_item', { itemId: 'rice' })).rejects.toThrow()
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })

@@ -1,5 +1,5 @@
 import type { AudioWarning } from '@proj-airi/stage-shared/kiosk-audio'
-import type { ContextReply, ConversationToolCall, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ConversationContext, ConversationToolCall, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { Context } from 'hono'
 
 import type { KioskProfileSnapshot } from '../../schemas/kiosk'
@@ -15,7 +15,7 @@ import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import { useLogger } from '@guiiai/logg'
 import { audioWarningSchema } from '@proj-airi/stage-shared/kiosk-audio'
-import { contextReplySchema, conversationContextSchema, conversationRequestSchema, handoffSchema, intentRecoverySchema, isServiceLimitationReply, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { contextReplySchema, conversationContextSchema, conversationRequestSchema, customerReplySchema, handoffSchema, intentRecoverySchema, isServiceLimitationReply, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
@@ -125,6 +125,7 @@ const conversationMessageSchema = object({
     requireMenuRead: optional(boolean()),
     readOnly: optional(boolean()),
     priceEvidence: optional(priceEvidenceSchema),
+    priceInquiry: optional(boolean()),
     incompleteSpeech: optional(object({ transcript: pipe(string(), maxLength(8_000)), expiresAt: number(), related: literal(true) })),
     menuRevision: optional(pipe(number(), integer(), minValue(0))),
     constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(9)), include: optional(pipe(array(pipe(string(), maxLength(80))), maxLength(9))), dietary: optional(literal('vegetarian')), price: optional(priceConditionsSchema), unresolvedPrice: optional(boolean()) })),
@@ -1158,10 +1159,10 @@ async function completeKioskReply(input: {
   const sizes = inputMetrics(body, input.decisionState?.context)
   const startedAt = performance.now()
   const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, modelName, body })
-  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, tools: input.tools ?? [], toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName, async instruction => parseAssistantReply(await input.llmGateway.complete({
+  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, tools: input.tools ?? [], toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName, async (instruction, atomicReplacement) => parseAssistantReply(await input.llmGateway.complete({
     abortSignal: input.abortSignal,
     modelName,
-    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${instruction ?? completionReviewInstruction}` } : message) },
+    body: { ...body, ...(atomicReplacement ? { tools: replacementTools('tools' in body ? body.tools : undefined, input.decisionState?.context) } : {}), stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${instruction ?? completionReviewInstruction}` } : message) },
   })))
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, operationReviewRequests: answer.operationReviewRequests ?? 0, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
@@ -1308,10 +1309,10 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
   const response = await input.llmGateway.complete({ abortSignal: input.signal, modelName, body })
   const answer = await finishConversationReply(input, await parseKioskReplyStream(response, onTextDelta, () => {
     firstOutputMs ??= performance.now() - startedAt
-  }), modelName, async instruction => parseAssistantReply(await input.llmGateway.complete({
+  }), modelName, async (instruction, atomicReplacement) => parseAssistantReply(await input.llmGateway.complete({
     abortSignal: input.signal,
     modelName,
-    body: { ...body, stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${instruction ?? completionReviewInstruction}` } : message) },
+    body: { ...body, ...(atomicReplacement ? { tools: replacementTools('tools' in body ? body.tools : undefined, input.decisionState?.context) } : {}), stream: false, tool_choice: 'required', messages: body.messages.map((message, index) => index === 0 ? { role: 'system', content: `${systemInstructions}\n${instruction ?? completionReviewInstruction}` } : message) },
   })))
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, operationReviewRequests: answer.operationReviewRequests ?? 0, durationMs: performance.now() - startedAt, ...(firstOutputMs !== undefined ? { firstOutputMs } : {}), ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
 }
@@ -1321,7 +1322,7 @@ async function finishConversationReply(
   input: Pick<KioskReplyStreamInput, 'content' | 'decisionState' | 'toolResults' | 'tools' | 'llmGateway' | 'kioskService' | 'transcript'> & { signal?: AbortSignal },
   answer: KioskCompletion,
   modelName: string,
-  review: (instruction?: string) => Promise<KioskCompletion>,
+  review: (instruction?: string, atomicReplacement?: boolean) => Promise<KioskCompletion>,
 ): Promise<KioskCompletion> {
   const context = input.decisionState?.context
   if (!context)
@@ -1395,7 +1396,7 @@ async function finishConversationReply(
   }
   // Only the latest customer task may be resumed. A previous customer's effect
   // must neither suppress this review nor be repeated as part of this request.
-  const taskEntries = input.content ? [] : input.transcript.entries.slice(input.transcript.entries.findLastIndex(entry => entry.kind === 'user_text') + 1)
+  const { entries: taskEntries, results: taskReadReceipts } = taskReceipts(input)
   // Selection/configuration only prepares a draft. It is not a cart write and
   // must not suppress the single completion review for an unexecuted purchase.
   const preparation = new Set(['menu_select_item', 'menu_set_item_option', 'menu_set_quantity'])
@@ -1416,7 +1417,10 @@ async function finishConversationReply(
   const invoiceConfirmationAvailable = context.checkout?.invoiceDraftReady === true
     && ((context.phase === 'checkout_invoice' && context.allowedToolNames.includes('checkout_confirm_invoice'))
       || (context.phase === 'checkout_tax_id' && context.allowedToolNames.includes('checkout_confirm_tax_id')))
-  if (context.taskId && (context.phase === 'ordering' || context.phase === 'pending_confirmation' || context.allowedToolNames.includes('checkout_cancel') || invoiceConfirmationAvailable) && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && !clarificationRequested && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
+  // An independently qualified operation gets one completion check even when
+  // Main prematurely calls it unclear. A real ambiguity may remain unclear;
+  // the task marker prevents another attempt on later continuations.
+  if (context.taskId && (context.phase === 'ordering' || context.phase === 'pending_confirmation' || context.allowedToolNames.includes('checkout_cancel') || invoiceConfirmationAvailable) && (unfinishedOperation || unpresentedRead) && !effectAttempted && !reviewed && (!clarificationRequested || (input.decisionState?.requestScope === 'order-operation' && unfinishedOperation)) && !answer.toolCalls.some(call => call.function.name !== replyTool.function.name)) {
     // Reserve the one review before the provider call. Later continuations of
     // this task cannot spend another review or restart an attempted operation.
     await input.kioskService.appendDeviceInteraction({ deviceId: input.transcript.session.deviceId, visitorSessionId: input.transcript.session.id, kind: 'service_event', content: 'agent.completion_review', metadata: { source: 'main_completion_review', taskId: context.taskId } })
@@ -1426,6 +1430,7 @@ async function finishConversationReply(
   let operationReviewRequests = 0
   let operationRepaired = false
   let operations = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
+  let preservedOperations: ConversationToolCall[] | undefined
   // A service-only response cannot acquire browser effects even if a provider
   // ignores the offered reply-only schema. Live-question proposals and cart
   // display/clear requests need consent review; ordinary item turns do not.
@@ -1444,11 +1449,25 @@ async function finishConversationReply(
       return false
     }
   })
-  if (operations.length && (context.waitingFor || changesCartScreen || operations.some(call => call.function.name === 'order_answer_confirmation'))) {
+  // The whole-turn qualifier already authorized this read-only review. A
+  // second mutation-consent review mistook implicit ordering completion for
+  // no authority to look at the cart. Reuse only that narrow read proof;
+  // every write/confirmation and unqualified display still gets reviewed.
+  const qualifiedCartReview = input.decisionState?.requestScope === 'order-information' && input.decisionState.readOnly === true
+    && operations.length === 1 && operations[0]?.function.name === 'cart_get' && context.allowedToolNames.includes('cart_get')
+  if (operations.length && !qualifiedCartReview && (context.waitingFor || changesCartScreen || operations.some(call => call.function.name === 'order_answer_confirmation'))) {
     const verify = async () => reviewOperations({ context, calls: operations, complete: (body) => {
       operationReviewRequests++
       return input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal })
-    } })
+    } }).then(async (supported) => {
+      if (!supported)
+        return false
+      // The quantity/target verifier can identify replacement intent even when
+      // the general reviewer accepted only its removal step. Repair before any
+      // browser effect, and reuse the checked calls rather than reviewing twice.
+      preservedOperations = await preserveRequestedQuantities(context, operations, body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }))
+      return preservedOperations !== undefined
+    })
     let supported = await verify()
     // A qualified change-of-mind may be split into a destructive first step.
     // Nothing has executed. Permit one fresh atomic proposal for this task,
@@ -1456,7 +1475,7 @@ async function finishConversationReply(
     const repaired = input.transcript.entries.some(entry => entry.kind === 'service_event' && entry.metadata?.source === 'main_operation_repair' && entry.metadata.taskId === context.taskId)
     if (!supported && context.taskId && !repaired && input.decisionState?.requestScope === 'order-operation' && operations.some(call => call.function.name === 'cart_remove_item') && !operations.some(call => ['cart_clear', 'order_answer_confirmation', 'checkout_start'].includes(call.function.name))) {
       await input.kioskService.appendDeviceInteraction({ deviceId: input.transcript.session.deviceId, visitorSessionId: input.transcript.session.id, kind: 'service_event', content: 'agent.operation_repair', metadata: { source: 'main_operation_repair', taskId: context.taskId } })
-      answer = await review('前一個工具提案未執行，獨立授權核對不通過。重新核對完整sourceUtterance及cart：若顧客要求換餐，必須以order_add_item(itemId,quantity,replaceLineId)原子替換，不能先cart_remove_item；若無法確定就respond_to_customer clarification。不要宣稱已執行，不增加顧客未要求的效果。')
+      answer = await review('前一個工具提案未執行，獨立授權核對不通過。重新核對完整sourceUtterance及cart：若顧客要求換餐，必須以order_add_item(itemId,quantity,replaceLineId)原子替換，不能先cart_remove_item；若無法確定就respond_to_customer clarification。不要宣稱已執行，不增加顧客未要求的效果。', true)
       operationRepaired = true
       operations = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
       supported = operations.length > 0 && await verify()
@@ -1465,13 +1484,12 @@ async function finishConversationReply(
       return { ...answer, content: undefined, toolCalls: [], reply: { kind: 'clarification' }, operationReviewRequests, replyRepairRequests: Number(operationRepaired) }
   }
   const proposedBrowserCalls = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
-  const browserCalls = await preserveRequestedQuantities(context, proposedBrowserCalls, body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }))
+  const browserCalls = preservedOperations ?? await preserveRequestedQuantities(context, proposedBrowserCalls, body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }))
   if (!browserCalls)
     return { toolCalls: [], reply: { kind: 'clarification' }, operationReviewRequests, replyRepairRequests: Number(operationRepaired) + Number(completionReviewed) }
   // A completed read review may be followed by a real presentation receipt.
   // Preserve that receipt for the Host instead of turning the task marker into
   // a synthetic clarification. Mutable tasks still require their effect review.
-  const taskReadReceipts = [...input.toolResults, ...taskEntries.flatMap(entry => entry.kind === 'tool_result' && typeof entry.metadata?.name === 'string' ? [{ name: entry.metadata.name, content: entry.content }] : [])]
   // A named lookup does not complete a requested purchase. A rendered browse
   // presentation may survive later evidence reads in this same task, while an
   // unexecuted mutable demand still receives the bounded clarification below.
@@ -1509,11 +1527,43 @@ async function finishConversationReply(
   return { ...answer, toolCalls: [], reply: selected.reply, operationReviewRequests, replyRepairRequests: Number(operationRepaired) + Number(completionReviewed) + Number(selected.repaired) }
 }
 
+// A rejected destructive first step may be replanned only as an atomic
+// replacement. Narrow this model request, without altering Menu discovery or
+// inferring consent; the ordinary target/quantity verifier still checks it.
+function replacementTools(tools: Parameters<typeof completeKioskReply>[0]['tools'], context?: ConversationContext) {
+  const lineIds = context?.cart.lines.map(line => line.id) ?? []
+  const allowed = new Set(['order_add_item', 'menu_get', 'cart_get', 'seating_get', 'kiosk_session_history', replyTool.function.name])
+  return tools?.filter(tool => allowed.has(tool.function.name) && (lineIds.length || tool.function.name !== 'order_add_item')).map((tool) => {
+    if (tool.function.name !== 'order_add_item')
+      return tool
+    const parameters = tool.function.parameters
+    if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters))
+      return tool
+    const properties = 'properties' in parameters && parameters.properties && typeof parameters.properties === 'object' ? parameters.properties : {}
+    const required = 'required' in parameters && Array.isArray(parameters.required) ? parameters.required.filter((key): key is string => typeof key === 'string') : []
+    return { ...tool, function: { ...tool.function, parameters: { ...parameters, properties: { ...properties, replaceLineId: { type: 'string', enum: lineIds, description: '既有餐點的原子替換目標；不能先刪再加。' } }, required: [...new Set([...required, 'replaceLineId'])] } } }
+  })
+}
+
+// Saved receipts belong to the current visitor's latest user_text. A new
+// content starts a task; continuations retain its receipts, with the incoming
+// batch last so older model history cannot replace the newest Menu evidence.
+function taskReceipts(input: Pick<Parameters<typeof completeKioskReply>[0], 'content' | 'transcript' | 'toolResults'>) {
+  const entries = input.content ? [] : input.transcript.entries.slice(input.transcript.entries.findLastIndex(entry => entry.kind === 'user_text') + 1)
+  const results = [...entries.flatMap(entry => entry.kind === 'tool_result' && typeof entry.metadata?.name === 'string' ? [{ name: entry.metadata.name, content: entry.content }] : []), ...input.toolResults ?? []]
+  return { entries, results }
+}
+
 // A semantic food handoff must obtain a fresh read before any generated
 // final answer or order change. Internal catalog reads do not finish presentation.
-function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
+function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState' | 'content' | 'transcript'>) {
   // Read-only tool selection favors repeatable semantic decisions over prose variation.
   const generation = input.decisionState?.readOnly ? { temperature: 0 } : {}
+  if (input.decisionState?.requestScope === 'service-information') {
+    // Scope qualification established unrelated speech, not an answer to the
+    // live order question. The typed service boundary must survive Main too.
+    return { ...generation, tools: [{ ...replyTool, function: { ...replyTool.function, parameters: { type: 'object', properties: { kind: { type: 'string', enum: ['service-information'] }, topic: { type: 'string', enum: ['out-of-scope'] } }, required: ['kind', 'topic'], additionalProperties: false } } }], tool_choice: 'required' }
+  }
   // Phone entry allows service explanations, not menu reads or commerce.
   // Explicit skip is owned by the finite phone resolver/browser candidate.
   if (input.decisionState?.phase === 'customer_entry') {
@@ -1531,10 +1581,69 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   // candidate. Keep it out of Main even when a continuation omits phase: an
   // old phone reminder must not prompt an INVALID_PHASE write before lookup.
   const currentTools = input.decisionState?.context?.allowedToolNames
-  const agentTools = input.tools?.filter(tool => !['customer_skip_phone', 'order_ask_question'].includes(tool.function.name) && (!currentTools || currentTools.includes(tool.function.name) || tool.function.name === 'kiosk_session_history'))
+  const receipts = taskReceipts(input).results
+  const menuEvidence = receipts.filter(result => result.name === 'menu_get').flatMap((result) => {
+    try {
+      const parsed = safeParse(object({ dataOnly: optional(boolean()), possibleItems: optional(array(object({ id: string() }))), requestedQueries: optional(array(string())), customerReply: optional(customerReplySchema) }), JSON.parse(result.content))
+      return parsed.success ? [parsed.output] : []
+    }
+    catch {
+      // Malformed tool content cannot supply candidate IDs or claim a price answer.
+      return []
+    }
+  })
+  const proposalIds = menuEvidence.flatMap(result => result.possibleItems?.map(item => item.id) ?? [])
+  const agentTools = input.tools?.filter(tool => !['customer_skip_phone', 'order_ask_question'].includes(tool.function.name) && (!currentTools || currentTools.includes(tool.function.name) || tool.function.name === 'kiosk_session_history')).map((tool) => {
+    const unavailablePreparation = input.decisionState?.context?.unavailableConditions?.some(condition => ['spice', 'preparation'].includes(condition.id))
+    const parameters = tool.function.parameters
+    if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters))
+      return tool
+    const properties = 'properties' in parameters ? parameters.properties : undefined
+    if (tool.function.name !== 'menu_confirm_item' || !properties || typeof properties !== 'object' || Array.isArray(properties))
+      return tool
+    // This narrows only the model request. Menu discovery and toolsRevision
+    // stay stable across BEGIN/END, so an ordinary fuzzy proposal is not stale.
+    return { ...tool, function: { ...tool.function, parameters: { ...parameters, properties: { ...properties, ...(!unavailablePreparation ? { originalRecipe: { type: 'boolean', enum: [false], description: '本輪沒有未支援製作要求，只能省略或填false；模糊品名不屬於原做法確認。' } } : {}), ...(proposalIds.length ? { itemId: { type: 'string', enum: [...new Set(proposalIds)], description: '只能使用本輪Menu回執中的模糊候選，不可另選其他餐點。' } } : {}) } } } }
+  })
   const scopedTools = input.decisionState?.readOnly
     ? agentTools?.filter(tool => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'order_ask_question'].includes(tool.function.name))
     : agentTools
+  if (input.decisionState?.requestScope === 'order-information' && !receipts.some(result => result.name === 'cart_get')) {
+    const cartTool = scopedTools?.find(tool => tool.function.name === 'cart_get')
+    if (cartTool) {
+      // The qualified scope authorizes a review, never checkout/clear. Let
+      // Menu own the displayed cart and its version-bound next question.
+      return { ...generation, tools: [{ ...cartTool, function: { ...cartTool.function, parameters: { type: 'object', properties: { display: { type: 'boolean', enum: [true] } }, required: ['display'], additionalProperties: false } } }], tool_choice: { type: 'function', function: { name: 'cart_get' } } }
+    }
+  }
+  // A verified fuzzy purchase can only propose one of Menu's alternatives.
+  // Require the proposal tool on this continuation so its enum/boolean schema
+  // is applied; it creates a question, never a purchase or the customer's assent.
+  const needsProposal = proposalIds.length && input.decisionState?.requestScope === 'order-operation' && !input.decisionState.readOnly && !input.decisionState.priceInquiry
+    && !receipts.some(result => ['order_add_item', 'cart_add_item', 'cart_remove_item'].includes(result.name))
+    && input.decisionState.context?.phase !== 'meal_confirmation' && !receipts.some(result => result.name === 'menu_confirm_item')
+  if (needsProposal) {
+    const proposalTool = scopedTools?.find(tool => tool.function.name === 'menu_confirm_item')
+    if (proposalTool)
+      return { ...generation, tools: [proposalTool], tool_choice: { type: 'function', function: { name: 'menu_confirm_item' } } }
+  }
+  // An accepted cart write cannot finish an independently qualified price
+  // inquiry. Require its factual read, without re-offering a write or adding a
+  // separate review-model request. A named absence/fuzzy read also settles
+  // this boundary: asking the same missing-price lookup again would loop.
+  const needsPriceRead = input.decisionState?.priceInquiry && input.decisionState.requestScope === 'order-operation'
+    && receipts.some(result => ['order_add_item', 'cart_add_item', 'cart_remove_item', 'cart_set_line_quantity'].includes(result.name))
+    && !menuEvidence.some(result => result.dataOnly !== true && Boolean(result.requestedQueries?.length || result.customerReply?.pricedItemIds?.length))
+  if (needsPriceRead) {
+    const priceTool = scopedTools?.find(tool => tool.function.name === 'menu_get')
+    if (priceTool) {
+      const candidateSchema = priceTool.function.parameters
+      const schema = candidateSchema && typeof candidateSchema === 'object' && !Array.isArray(candidateSchema) ? candidateSchema : {}
+      const properties = schema && typeof schema === 'object' && 'properties' in schema && schema.properties && typeof schema.properties === 'object' ? schema.properties : {}
+      const required = schema && typeof schema === 'object' && 'required' in schema && Array.isArray(schema.required) ? schema.required : []
+      return { ...generation, tools: [{ ...priceTool, function: { ...priceTool.function, parameters: { ...schema, properties: { ...properties, display: { type: 'boolean', enum: [true] } }, required: [...new Set([...required, 'display'])] } } }], tool_choice: { type: 'function', function: { name: 'menu_get' } } }
+    }
+  }
   const bulkOrder = input.decisionState?.context?.catalog?.complete && !input.decisionState.readOnly && input.decisionState.context.quantityPolicy?.mentionedCounts?.some(count => count > input.decisionState!.context!.quantityPolicy!.maximum)
   // An admitted order containing oversized counts needs count validation or a
   // policy refusal. A recommendation/price question cannot resolve that order.
@@ -1563,7 +1672,11 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   const readCompleted = input.decisionState?.readOnly ? hasMenuReply(input.toolResults ?? []) : Boolean(input.toolResults?.length)
   if (!input.decisionState?.requireMenuRead || readCompleted || (input.decisionState.context?.catalog?.complete && !input.decisionState.readOnly))
     return available?.length ? { ...generation, tools: available } : generation
-  const tools = available?.filter(tool => ['menu_get', 'menu_recommend', replyTool.function.name].includes(tool.function.name)).map(tool => tool.function.name === replyTool.function.name ? readOnlyReplyTool : tool) ?? []
+  // A qualified menu query already has a service purpose. A generic prose
+  // clarification cannot satisfy it before a lookup; Menu can still ask its
+  // owned scope question through menu_recommend(action:clarify).
+  const readTools = input.decisionState.requestScope === 'menu-information' ? ['menu_get', 'menu_recommend'] : ['menu_get', 'menu_recommend', replyTool.function.name]
+  const tools = available?.filter(tool => readTools.includes(tool.function.name)).map(tool => tool.function.name === replyTool.function.name ? readOnlyReplyTool : tool) ?? []
   if (!tools.length)
     throw createBadRequestError('目前無法查詢菜單。', 'KIOSK_MENU_LOOKUP_UNAVAILABLE')
   return { ...generation, tools, tool_choice: 'required' as const }
@@ -1686,6 +1799,9 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
       : undefined,
     interaction ? { content: createInteractionInstructions(interaction, conversationScope(input.decisionState)), title: '本次點餐互動規則' } : undefined,
     input.decisionState?.context ? { content: currentContextInstructions(input.decisionState.context, input.decisionState.requireMenuRead === true), title: '目前有效點餐情境' } : undefined,
+    input.decisionState?.requestScope === 'order-operation' && input.decisionState.priceInquiry === true
+      ? { title: '同句訂購與查價', content: '本輪同時包含操作與查價。完成加餐不是完成整句；分別處理顧客指定的操作及查價對象，不重複已成功操作。針對價格問題用menu_get查詢實際品名取得售價回執，不能只回acknowledgement或只問取餐方式，也不能把另一道的查價當成訂購。' }
+      : undefined,
     input.decisionState && !input.decisionState.context
       ? {
           content: [
