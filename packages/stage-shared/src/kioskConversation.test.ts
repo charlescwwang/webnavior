@@ -36,8 +36,8 @@ it('requires an answer scope to identify its question and contain unique issued 
 it('answers identity and unavailable store facts without inventing a transaction or location', () => {
   const context = parse(conversationContextSchema, { contextId: 'identity', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
   expect(replyFromContext('{"kind":"service-information","topic":"identity"}', context)?.content).toContain('助手')
-  expect(replyFromContext('{"kind":"service-information","topic":"location"}', context)?.content).toContain('無法確認')
-  expect(replyFromContext('{"kind":"service-information","topic":"hours"}', context)?.content).toContain('無法確認')
+  expect(replyFromContext('{"kind":"service-information","topic":"location"}', context)?.content).toMatch(/服務人員確認|協助查菜單/)
+  expect(replyFromContext('{"kind":"service-information","topic":"hours"}', context)?.content).toMatch(/服務人員確認|協助查菜單/)
   expect(replyFromContext('{"kind":"service-information","topic":"made-up"}', context)).toBeUndefined()
 })
 
@@ -60,7 +60,7 @@ it('renders prices with 元 and normalizes only monetary tokens in assistant pro
 it('distinguishes missing service data from the ordering assistant scope', () => {
   const context = parse(conversationContextSchema, { contextId: 'scope', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
   const missing = replyFromContext('{"kind":"service-information","topic":"other"}', context)!
-  expect(missing.content).toContain('無法確認')
+  expect(missing.content).toMatch(/服務人員確認|協助查菜單/)
   expect(missing.content).not.toContain('理解')
   expect(replyFromContext('{"kind":"service-information","topic":"capabilities"}', context)?.content).toContain('餐點名稱和份數')
 })
@@ -97,18 +97,18 @@ it('renders a normal, concise scope refusal without staff referral or implied fu
 it.each(['other', 'location', 'hours'])('states missing information directly without promising a human answer: %s', (topic) => {
   const context = parse(conversationContextSchema, { contextId: 'missing', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
   const reply = replyFromContext(JSON.stringify({ kind: 'service-information', topic }), context)
-  expect(reply?.content).toContain('無法確認')
+  expect(reply?.content).toMatch(/服務人員確認|協助查菜單/)
   expect(reply?.content).not.toMatch(/目前沒有|暫時不支援|還沒有|店員/)
 })
 
 // Report: this chat Nov7; ordinary staff assistance must not enter the service-fault lock.
 it('regression K1107-STAFF renders only an offered and current simulated assistance response', () => {
   const context = parse(conversationContextSchema, { contextId: 'staff', capturedAt: Date.now(), entryComplete: true, readOnly: true, constraints: { excludeIngredients: ['pork'], includeIngredients: [] }, unavailableConditions: [{ id: 'allergen-safety', label: '過敏安全' }], phase: 'ordering', revisions: { menu: 1, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
-  expect(replyFromContext('{"kind":"staff-assistance","action":"offer"}', context)?.content).toBe('這部分無法確認，需要幫您呼叫工作人員嗎？')
+  expect(replyFromContext('{"kind":"staff-assistance","action":"offer"}', context)?.content).toBe('這項要求需要服務人員確認，需要幫您呼叫嗎？')
   expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', context)).toBeUndefined()
   const current = parse(conversationContextSchema, { ...context, staffAssistance: { questionId: 'staff-question', expiresAt: Date.now() + 30000 } })
-  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', current)?.content).toBe('已經呼叫工作人員，您可以繼續點餐。')
-  expect(replyFromContext('{"kind":"staff-assistance","action":"decline"}', current)?.content).toBe('好的，您可以繼續點餐。')
+  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', current)?.content).toBe('已經呼叫工作人員，您想先看看哪道餐點？')
+  expect(replyFromContext('{"kind":"staff-assistance","action":"decline"}', current)?.content).toBe('好的，接下來想點什麼餐點？')
   const expired = parse(conversationContextSchema, { ...current, staffAssistance: { questionId: 'staff-question', expiresAt: Date.now() - 1 } })
   expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', expired)).toBeUndefined()
   expect(current.constraints.excludeIngredients).toEqual(['pork'])
@@ -128,8 +128,11 @@ it.each(['other', 'location', 'hours'])('avoids data-insufficiency wording while
   const context = parse(conversationContextSchema, { contextId: 'service-boundary', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
   const reply = replyFromContext(JSON.stringify({ kind: 'service-information', topic }), context)!
   expect(reply.content).not.toMatch(/資料不足|資訊不足/)
-  expect(reply.content).toContain('無法確認')
-  expect(reply.content).toMatch(/菜單|選餐|點餐|訂單/)
+  expect(reply.content).toMatch(/服務人員確認|協助查菜單/)
+  expect(reply.content).toMatch(/菜單|選餐|點餐|訂單|服務人員/)
+  expect(reply.content).toMatch(/？$/)
+  if (topic !== 'other')
+    expect(reply).toMatchObject({ kind: 'staff-assistance', action: 'offer' })
 })
 
 // Report: this chat Nov7 — sales-unit guidance generalizes across menu names and units.
@@ -154,15 +157,15 @@ it.each([
 it.each(['available', 'sold-out', 'unknown'] as const)('offers quantity guidance only for a single available exact item: %s', (availability) => {
   const context = parse(conversationContextSchema, { contextId: 'intro', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], catalog: { complete: true, itemCount: 1, items: [{ id: 'meal', name: '餐點', aliases: [], category: '便當', price: 80, availability, optionGroups: [] }] } })
   const reply = replyFromContext(JSON.stringify({ kind: 'menu-information', subjects: ['餐點'] }), context)!
-  expect(reply.content.includes('請告訴我要幾份')).toBe(availability === 'available')
+  expect(reply.content.includes('要點幾份')).toBe(availability === 'available')
   expect(reply).not.toHaveProperty('action')
-  expect(replyFromContext(JSON.stringify({ kind: 'menu-information', subjects: ['其他餐點'] }), context)?.content).not.toContain('請告訴我要幾份')
+  expect(replyFromContext(JSON.stringify({ kind: 'menu-information', subjects: ['其他餐點'] }), context)?.content).not.toContain('要點幾份')
 })
 
 // Report: this chat, Nov7 — operator identity and confirmed special-order assistance.
 it('answers the operator separately from the assistant identity', () => {
   const context = parse(conversationContextSchema, { contextId: 'operator', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
-  expect(replyFromContext(JSON.stringify({ kind: 'service-information', topic: 'operator' }), context)?.content).toBe('本機點餐服務的營運業者是周氏蝦捲。')
+  expect(replyFromContext(JSON.stringify({ kind: 'service-information', topic: 'operator' }), context)?.content).toBe('本機點餐服務的營運業者是周氏蝦捲。您想查詢哪道餐點？')
   expect(replyFromContext(JSON.stringify({ kind: 'service-information', topic: 'identity' }), context)?.content).toContain('點餐助手')
 })
 
@@ -176,10 +179,10 @@ it('requires separate current intent and staff consent before presenting a simul
   expect(render('offer', confirmed)?.content).toContain('需要幫您通知服務人員嗎')
   expect(render('offer', confirmed)?.content).toContain('份數上限')
   expect(render('accept', confirmed)).toBeUndefined()
-  expect(render('decline', confirmed)?.content).toContain('繼續點餐')
+  expect(render('decline', confirmed)?.content).toContain('接下來想點什麼餐點')
   expect(render('offer', { ...confirmed, orderAssistance: { questionId: 'expired', expiresAt: Date.now() - 1 } })).toBeUndefined()
   const invited = { ...context, staffAssistance: { questionId: 'staff', expiresAt: Date.now() + 30000 } }
-  expect(render('accept', invited)?.content).toBe('已經呼叫工作人員，您可以繼續點餐。')
+  expect(render('accept', invited)?.content).toBe('已經呼叫工作人員，您想先看看哪道餐點？')
   expect(render('accept', invited)).not.toHaveProperty('operation')
 })
 
@@ -191,4 +194,22 @@ it('ends acknowledgement variants with a useful question without an operation', 
     expect(reply.content).toMatch(/？$/)
     expect(reply).not.toHaveProperty('action')
   }
+})
+
+// Report: this chat, Nov08; a price detour must not replace the current option question with quantity guidance.
+it('answers information and keeps the one current Menu question', () => {
+  const context = parse(conversationContextSchema, { contextId: 'price-detour', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'configuration', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], waitingFor: { questionId: 'size', purpose: 'item-configuration', question: '請問要小份還是大份？', expiresAt: Date.now() + 30000, choices: [{ id: 'small', description: '小份' }, { id: 'large', description: '大份' }] }, catalog: { complete: true, itemCount: 1, items: [{ id: 'rice', name: '雞肉飯', aliases: [], category: '飯', price: 95, availability: 'available', optionGroups: [] }] } })
+  const reply = replyFromContext('{"kind":"menu-information","subjects":["雞肉飯"]}', context)!
+  expect(reply.content).toContain('95元')
+  expect(reply.content.endsWith('請問要小份還是大份？')).toBe(true)
+  expect(reply.content).not.toContain('幾份')
+  expect(reply.content.match(/？/g)).toHaveLength(1)
+})
+
+it('does not treat refusing nutritional assistance as dropping the nutritional requirement', () => {
+  const context = parse(conversationContextSchema, { contextId: 'nutrition', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], unavailableConditions: [{ id: 'fat', label: '低脂' }], staffAssistance: { questionId: 'staff', expiresAt: Date.now() + 30000 } })
+  const reply = replyFromContext('{"kind":"staff-assistance","action":"decline"}', context)!
+  expect(reply.kind).toBe('clarification')
+  expect(reply.content).toBe('好的，目前仍無法依營養條件推薦。您想改用餐點名稱來選餐嗎？')
+  expect(reply).not.toHaveProperty('operation')
 })

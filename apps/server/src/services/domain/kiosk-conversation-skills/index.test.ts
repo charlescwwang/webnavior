@@ -5,7 +5,7 @@ import type { KioskDecisionState, KioskInteractionDecision } from '../kiosk-inte
 
 import { expect, it, vi } from 'vitest'
 
-import { resolveOrderingIntent } from '.'
+import { orderingSkill, resolveOrderingIntent } from '.'
 
 const admitted: KioskInteractionDecision = { kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', confidence: 0.2025, modelCalls: 3, modelQuestions: 3 }
 const input: Pick<DecisionInput, 'transcript' | 'decisionState' | 'candidates' | 'conversation'> = {
@@ -29,12 +29,12 @@ function modelAnswer(body: Record<string, unknown>, choice: string) {
 it.each(['intent:add-item', 'intent:search-menu'])('uses a real issued effect without turning Main selection into a JEV score: %s', async (choice) => {
   const complete = vi.fn<(body: Record<string, unknown>) => Promise<Response>>(async (body: Record<string, unknown>) => modelAnswer(body, choice))
   const result = await resolveOrderingIntent(admitted, { ...(input), backgroundSpeechMode: 'enforce' }, complete)
-  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: choice, resolvedBy: 'main-skill', modelCalls: 3, modelQuestions: 3, trace: { mainSkill: { id: 'ordering', version: 7, selected: choice, calls: 1 } } })
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: choice, resolvedBy: 'main-skill', modelCalls: 3, modelQuestions: 3, trace: { mainSkill: { id: orderingSkill.id, version: orderingSkill.version, selected: choice, calls: 1 } } })
   expect(result).not.toHaveProperty('confidence')
   expect(result).not.toHaveProperty('reason')
   expect(complete).toHaveBeenCalledOnce()
   const body = complete.mock.calls[0]![0] as Record<string, unknown>
-  expect(JSON.stringify(body)).toContain('ordering@7')
+  expect(JSON.stringify(body)).toContain(`ordering@${orderingSkill.version}`)
   expect(body).toMatchObject({ tools: [{ function: { parameters: { properties: { choice: { enum: ['intent:search-menu', 'intent:add-item', 'UNCERTAIN'] } } } } }] })
 })
 

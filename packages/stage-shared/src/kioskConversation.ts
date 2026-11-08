@@ -214,29 +214,37 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   if (!selection.success)
     return undefined
   const kind = selection.output.kind
+  const currentQuestion = context.waitingFor && context.waitingFor.expiresAt > Date.now() ? context.waitingFor : undefined
+  const guide = (facts: string, next: string = orderingMessages['zh-Hant'].nextOrderQuestion) => {
+    if (currentQuestion)
+      return `${facts}${currentQuestion.question}`.trim()
+    if (!['ordering', 'configuration', 'clarification', 'meal_confirmation'].includes(context.phase))
+      return facts
+    return `${facts}${next}`.trim()
+  }
   if (selection.output.kind === 'greeting' || selection.output.kind === 'acknowledgement') {
     const phrases = selection.output.kind === 'greeting' ? orderingMessages['zh-Hant'].greetings : orderingMessages['zh-Hant'].acknowledgements
     // Re-rendering the same turn must not change its displayed/spoken receipt.
     const index = Array.from(context.contextId).reduce((value, character) => (value * 31 + character.charCodeAt(0)) >>> 0, 0) % phrases.length
-    return { kind, content: phrases[index] }
+    return { kind, content: kind === 'acknowledgement' && currentQuestion ? guide('好的。') : phrases[index] }
   }
   if (selection.output.kind === 'hearing-check')
-    return { kind, content: '有收到您的這句話，您可以繼續說明想點的餐點或訂單調整。' }
+    return { kind, content: guide('有收到您的這句話。') }
   if (kind === 'quantity-limit')
     return context.entryComplete && context.quantityPolicy ? { kind, content: context.quantityPolicy.message } : undefined
   if (selection.output.kind === 'clarification') {
     // Generic meaning uncertainty must not revive a pending purchase question.
     const content = selection.output.topic === 'menu-kind'
       ? orderingMessages['zh-Hant'].queryActions.unsupportedKind
-      : '剛才沒有理解清楚，請再說一次您想查詢的餐點或訂單調整。'
+      : '您想查詢哪道餐點，或調整哪項訂單內容？'
     return { kind, content }
   }
   if (selection.output.kind === 'payment-methods') {
     const methods = context.paymentMethods
-    return { kind, content: methods?.length ? `目前支援${methods.map(method => method.label).join('、')}。` : '可用的付款方式無法確認。您可以繼續查詢菜單或調整訂單。' }
+    return { kind, content: guide(methods?.length ? `目前支援${methods.map(method => method.label).join('、')}。` : '付款方式需要服務人員確認。') }
   }
   if (selection.output.kind === 'fulfillment-modes')
-    return { kind, content: context.fulfillmentModes.length ? `目前提供${context.fulfillmentModes.map(mode => mode.label).join('、')}。` : '可用的取餐方式無法確認。您可以繼續查詢菜單或調整訂單。' }
+    return { kind, content: guide(context.fulfillmentModes.length ? `目前提供${context.fulfillmentModes.map(mode => mode.label).join('、')}。` : '取餐方式需要服務人員確認。') }
   if (selection.output.kind === 'staff-assistance') {
     const orderConfirmed = Boolean(context.orderAssistance && context.orderAssistance.expiresAt > Date.now())
     const staffInvited = Boolean(context.staffAssistance && context.staffAssistance.expiresAt > Date.now())
@@ -248,14 +256,16 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     if (selection.output.action === 'offer') {
       if (orderConfirmed)
         return { kind, action: 'offer' as const, content: orderingMessages['zh-Hant'].specialOrderLimits }
-      return context.unavailableConditions?.length ? { kind, action: 'offer' as const, content: '這部分無法確認，需要幫您呼叫工作人員嗎？' } : undefined
+      return context.unavailableConditions?.length ? { kind, action: 'offer' as const, content: assistanceQuestion(context.unavailableConditions) } : undefined
     }
     if (selection.output.action === 'decline' && orderConfirmed)
-      return { kind, action: 'decline' as const, content: '好的，您可以繼續點餐。' }
+      return { kind, action: 'decline' as const, content: '好的，接下來想點什麼餐點？' }
     if (!staffInvited)
       return undefined
+    if (selection.output.action === 'decline' && context.unavailableConditions?.some(condition => ['sodium', 'sugar', 'energy', 'fat', 'protein'].includes(condition.id)))
+      return { kind: 'clarification', content: orderingMessages['zh-Hant'].nutritionDeclined }
     // This is the operator-requested simulated presentation, not a delivery receipt.
-    return { kind, action: selection.output.action, content: selection.output.action === 'accept' ? '已經呼叫工作人員，您可以繼續點餐。' : '好的，您可以繼續點餐。' }
+    return { kind, action: selection.output.action, content: selection.output.action === 'accept' ? '已經呼叫工作人員，您想先看看哪道餐點？' : '好的，接下來想點什麼餐點？' }
   }
   const unitInformation = selection.output.kind === 'service-information' && selection.output.topic === 'ordering-units'
   if (selection.output.kind === 'service-information' && !unitInformation) {
@@ -263,16 +273,16 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     // source those facts are explicitly unavailable, never inferred from persona.
     const topic = selection.output.topic
     if (topic === 'operator')
-      return { kind, content: `本機點餐服務的營運業者是${orderingMessages['zh-Hant'].operatorName}。` }
+      return { kind, content: guide(`本機點餐服務的營運業者是${orderingMessages['zh-Hant'].operatorName}。`, '您想查詢哪道餐點？') }
     if (topic === 'identity')
-      return { kind, content: '我是這台機台的點餐助手，可以協助您查詢餐點與操作點餐流程。' }
+      return { kind, content: guide('我是這台機台的點餐助手，可以幫您查菜單和點餐。', '您想吃什麼？') }
     if (topic === 'capabilities')
-      return { kind, content: orderingMessages['zh-Hant'].orderingGuide }
+      return { kind, content: guide(orderingMessages['zh-Hant'].orderingGuide, '您想先點哪道餐點？') }
     if (topic === 'out-of-scope')
       return { kind, topic: 'out-of-scope' as const, content: '我是點餐助手，可以幫您看菜單、選餐和確認訂單。您想吃什麼？' }
     if (topic === 'location' || topic === 'hours')
-      return { kind, content: '這項店家資訊無法確認。我可以幫您查菜單、選餐或調整訂單。' }
-    return { kind, topic: 'other' as const, content: '這項店家資訊無法確認。我可以幫您查菜單、選餐或調整訂單。' }
+      return { kind: 'staff-assistance', action: 'offer', content: '這項店家資訊需要服務人員確認，需要幫您呼叫嗎？' }
+    return { kind, topic: 'other' as const, content: '我可以協助查菜單、選餐和調整訂單，您想先查詢什麼餐點？' }
   }
   if (!context.entryComplete || !context.catalog?.complete || !selection.output.subjects?.length)
     return undefined
@@ -291,10 +301,16 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   }).join(' ')
   const subjects = selection.output.subjects
   const matches = context.catalog.items.filter(item => [item.name, ...item.aliases].some(label => normalize(label) === normalize(subjects[0]!)))
-  const guide = !unitInformation && subjects.length === 1 && matches.length === 1 && matches[0]?.availability === 'available'
+  const nextQuestion = !unitInformation && subjects.length === 1 && matches.length === 1 && matches[0]?.availability === 'available'
     ? orderingMessages['zh-Hant'].singleItemGuide
-    : ''
-  return unitInformation ? { kind, topic: 'ordering-units', content: `${content} 請依菜單標示的單位點餐，不代為換算。` } : { kind, content: `${content}${guide}` }
+    : '您想查詢哪道餐點？'
+  return unitInformation ? { kind, topic: 'ordering-units', content: guide(`${content} 請依菜單標示的單位點餐，不代為換算。`, '您要點幾份？') } : { kind, content: guide(content, nextQuestion) }
+}
+
+/** Shared invitation wording; showing it never constitutes a staff-delivery receipt. */
+export function assistanceQuestion(conditions: ConversationContext['unavailableConditions']) {
+  const nutrition = conditions?.some(condition => ['sodium', 'sugar', 'energy', 'fat', 'protein'].includes(condition.id))
+  return nutrition ? orderingMessages['zh-Hant'].nutritionUnavailable : orderingMessages['zh-Hant'].conditionAssistance
 }
 
 /**

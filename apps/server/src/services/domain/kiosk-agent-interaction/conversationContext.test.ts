@@ -8,6 +8,21 @@ const facts = { contextId: 'current', capturedAt: 1, taskId: 'task', sourceUtter
 
 const result = (args: unknown) => Response.json({ choices: [{ message: { tool_calls: [{ id: 'reply', type: 'function', function: { name: replyTool.function.name, arguments: JSON.stringify(args) } }] } }] })
 
+// Report: this chat, Nov08 — both assistants share a role but retain service-mode boundaries.
+it.each(['kiosk', 'table-service'] as const)('states the shared assistant role and the current fulfillment policy: %s', (serviceMode) => {
+  const instructions = currentContextInstructions(parse(conversationContextSchema, { ...facts, serviceMode }))
+  expect(instructions).toContain('統一稱為點餐助手')
+  if (serviceMode === 'table-service') {
+    expect(instructions).toContain('不詢問內用／外帶')
+    expect(instructions).toContain('目前綁定桌位')
+    expect(instructions).not.toContain('本輪為Kiosk點餐')
+  }
+  else {
+    expect(instructions).toContain('本輪fulfillmentModes')
+    expect(instructions).not.toContain('本輪為桌邊服務')
+  }
+})
+
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct28 no-tool drafts rejected.
 it('repairs plain prose using only the current utterance and fresh facts, without the false draft', async () => {
   const context = parse(conversationContextSchema, facts)

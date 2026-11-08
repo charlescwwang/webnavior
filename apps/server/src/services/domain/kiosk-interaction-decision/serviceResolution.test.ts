@@ -11,6 +11,14 @@ function response(choice: string) {
   return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ recipient: 'kiosk', choice }) } }] } }] })
 }
 
+// Report: this chat, 2026-11-08; an absent dish was blocked by customization first.
+it.each(['鱔魚意麵一份不要辣不要香菜', '香菇飯兩份不要蒜'])('resolves dish identity before unsupported preparation: %s', async (transcript) => {
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_condition_support', arguments: '{"choice":"REQUIREMENT"}' } }] } }] }))
+  const result = await resolveServiceHandoff(decision, transcript, { ...state, unavailableConditionReferences: [{ id: 'preparation', label: '製作調整' }] }, complete)
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result).not.toHaveProperty('question')
+})
+
 // Report: this chat, 2026-10-21; generic Main routing incorrectly required menu reads for store FAQs.
 it.each(['你們幾點關門？', '能開電子發票嗎？', '怎麼拿餐？', '可以用現金嗎？', '你可以做什麼？'])('recovers a generic service-information handoff: %s', async (transcript) => {
   const complete = vi.fn(async (_body: Record<string, unknown>) => response('SERVICE_INFORMATION_ONLY'))
@@ -100,11 +108,19 @@ it('admits a whole-turn replacement independently from the waiting answer scope'
 })
 
 // Report: Nov1 C06-F1/C06-A1; an unsupported requirement must not be dropped.
-it('publishes an owned limitation only after Main confirms the unsupported requirement', async () => {
-  const result = await resolveServiceHandoff({ ...decision, reason: 'UNCERTAIN_FILTER' }, '不要辣', { ...state, unavailableConditionReferences: [{ id: 'spice', label: '辣度標示' }] }, async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_condition_support', arguments: '{"choice":"REQUIREMENT"}' } }] } }] }), undefined, 'enforce')
-  expect(result).toMatchObject({ kind: 'SERVICE_CLARIFICATION', question: { sourceUtterance: '不要辣', question: expect.stringContaining('無法確認') } })
-  expect(result).toMatchObject({ question: { question: expect.stringContaining('保留這項要求，還是調整點餐需求') } })
-  expect(JSON.stringify(result)).not.toContain('詢問店員')
+it('keeps preparation on the Menu lookup path instead of asking to retain an unsupported condition', async () => {
+  const complete = vi.fn(async () => response('UNCERTAIN'))
+  const result = await resolveServiceHandoff({ ...decision, reason: 'UNCERTAIN_FILTER' }, '不要辣', { ...state, unavailableConditionReferences: [{ id: 'spice', label: '辣度標示' }] }, complete)
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(result).not.toHaveProperty('question')
+  expect(complete).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov08; a nutrition question must create an answerable assistance invitation.
+it.each(['低脂', '高蛋白'])('offers nonblocking assistance when nutrition data is absent: %s', async (transcript) => {
+  const complete = vi.fn(async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_condition_support', arguments: '{"choice":"REQUIREMENT"}' } }] } }] }))
+  const result = await resolveServiceHandoff(decision, transcript, { ...state, unavailableConditionReferences: [{ id: 'protein', label: '蛋白質' }] }, complete)
+  expect(result).toMatchObject({ kind: 'SERVICE_CLARIFICATION', question: { purpose: 'staff-assistance', sourceUtterance: transcript, question: '目前菜單沒有營養標示，無法確認是否符合您的需求。需要服務人員協助嗎？' } })
   expect(result).not.toHaveProperty('actionId')
 })
 it('distinguishes a complete request for help from a genuinely unfinished fragment', async () => {

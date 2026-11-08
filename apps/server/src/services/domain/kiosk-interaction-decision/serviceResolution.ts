@@ -3,7 +3,7 @@ import type { BackgroundSpeechMode } from '@proj-airi/stage-shared/kiosk-service
 import type { DecisionConversation, ServiceRecipient } from './context'
 import type { KioskDecisionState, KioskInteractionDecision } from './contracts'
 
-import { serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { assistanceQuestion, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { array, literal, object, picklist, safeParse, strictObject, string } from 'valibot'
 
 import { orderingInstructions } from '../kiosk-conversation-skills'
@@ -40,6 +40,10 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
   // whether the topic is an actual requirement, without dropping it for a
   // separately understood budget or confusing a spicy dish name with a filter.
   if (unsupportedTopic) {
+    // Preparation has to be checked against the actual dish/options by Menu.
+    // Qualifying it here can hide an absent/fuzzy dish before identity lookup.
+    if (state!.unavailableConditionReferences!.every(reference => ['spice', 'preparation'].includes(reference.id)))
+      return { ...decision, kind: 'NEEDS_ASSISTANT', reason: state?.phase === 'ordering' ? 'NEW_REQUEST' : undefined, resolvedBy: 'main-service' }
     try {
       const response = await complete({ temperature: 0, messages: [
         { role: 'system', content: '只核對未提供資料的條件是否是顧客本句仍成立的要求。REQUIREMENT：明確要求符合該條件，例如不要辣／過敏安全保證，即使另有預算也不能略過。MENTION：只是品名、被否定的要求或背景提及，不是條件。UNCERTAIN：無法確認。只呼叫resolve_condition_support，不推薦或操作。' },
@@ -51,19 +55,12 @@ export async function resolveServiceHandoff(decision: KioskInteractionDecision, 
       const selection = calls?.length === 1 ? safeParse(strictObject({ choice: picklist(['REQUIREMENT', 'MENTION', 'UNCERTAIN']) }), JSON.parse(calls[0]!.function.arguments)) : undefined
       if (!response.ok || !selection?.success)
         return { ...decision, kind: 'UNAVAILABLE', reason: response.ok ? 'INVALID_CHOICE' : 'PROVIDER_FAILURE' }
-      if (selection.output.choice === 'REQUIREMENT' && (mentions?.products.length || state?.interactionState?.selectedItemName || state?.retainedRequests?.some(request => request.status === 'active' && request.itemId)) && state!.unavailableConditionReferences!.every(reference => ['spice', 'preparation'].includes(reference.id))) {
-        // Preserve a named dish's preparation request for Main. This is not
-        // purchase authority: Menu still requires consent to the original recipe.
-        // A preparation addition to an active draft is not a new topic.
-        // Re-routing it would discard the draft target and spend another JEV turn.
-        return { ...decision, kind: 'NEEDS_ASSISTANT', reason: state?.phase === 'ordering' ? 'NEW_REQUEST' : undefined, resolvedBy: 'main-service' }
-      }
       if (selection.output.choice !== 'MENTION') {
         const unavailableConditions = [...state!.unavailableConditionReferences!]
         const question = selection.output.choice === 'REQUIREMENT'
-          ? `菜單資料無法確認${unavailableConditions.map(condition => condition.label).join('、')}，不能保證符合您的要求。您希望保留這項要求，還是調整點餐需求？`
-          : '請再說明您要求的餐點條件；目前資料不足以確認是否符合。'
-        return { ...decision, kind: 'SERVICE_CLARIFICATION', question: { questionId: crypto.randomUUID(), question, sourceUtterance: transcript, unavailableConditions, contextKey: serviceContextKey(state!), expiresAt: Date.now() + 30000 } }
+          ? assistanceQuestion(unavailableConditions)
+          : '您想依哪項條件挑選餐點？'
+        return { ...decision, kind: 'SERVICE_CLARIFICATION', question: { ...(selection.output.choice === 'REQUIREMENT' ? { purpose: 'staff-assistance' as const } : {}), questionId: crypto.randomUUID(), question, sourceUtterance: transcript, unavailableConditions, contextKey: serviceContextKey(state!), expiresAt: Date.now() + 30000 } }
       }
     }
     catch {
