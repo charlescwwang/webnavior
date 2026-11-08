@@ -27,6 +27,40 @@ describe('useKioskCustomerSession', () => {
     vi.useRealTimers()
   })
 
+  // Report: this chat Nov8 — manual restart took two clicks and could start input before the new menu loaded.
+  it.each(['standby', 'active', 'completing', 'awaiting-idle-confirmation'])('starts a clean active order with one coalesced restart from %s', async (state) => {
+    vi.useFakeTimers()
+    const chatSession = { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }
+    const resetOrderRound = vi.fn(async () => {})
+    let finishLoad!: () => void
+    reloadScenario.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishLoad = resolve
+    }))
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession, resetOrderRound }))!
+    if (state !== 'standby')
+      await session.recordActivity()
+    if (state === 'completing')
+      session.completeOrder()
+    if (state === 'awaiting-idle-confirmation')
+      await vi.advanceTimersByTimeAsync(180_000)
+    expect(session.state.value).toBe(state)
+    const previousCustomer = session.customer.value?.sessionId
+    const first = session.startNewCustomerSession()
+    const second = session.startNewCustomerSession()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(resetOrderRound).toHaveBeenCalledOnce()
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    expect(reloadScenario).toHaveBeenCalledOnce()
+    finishLoad()
+    await Promise.all([first, second])
+    expect(session.state.value).toBe('active')
+    expect(session.customer.value?.sessionId).not.toBe(previousCustomer)
+    expect(session.acceptsVoiceInput.value).toBe(true)
+    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
+  })
+
   it('clears the customer conversation and reloads the independent interactive service', async () => {
     const chatSession = {
       createSession: vi.fn().mockResolvedValueOnce('customer-chat').mockResolvedValueOnce('standby-chat'),
@@ -300,8 +334,8 @@ describe('useKioskCustomerSession', () => {
     const nextCustomerId = session.customer.value?.sessionId
     // A second dismissal from the previous screen is not another completed order.
     await session.end('completed')
-    expect(reloadScenario).toHaveBeenCalledOnce()
-    expect(endVisitorSession).toHaveBeenCalledOnce()
+    expect(reloadScenario).toHaveBeenCalledTimes(2)
+    expect(endVisitorSession).toHaveBeenCalledTimes(2)
     expect(session.customer.value?.sessionId).toBe(nextCustomerId)
     expect(session.state.value).toBe('active')
   })

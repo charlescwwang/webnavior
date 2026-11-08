@@ -75,7 +75,7 @@ import { endKioskAdminSession } from '../services/admin-session'
 import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
-import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, reportKioskAudioWarning, resetKioskOrderingContext, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
+import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError, reportKioskAudioWarning, synthesizeKioskSpeech, transcribeKioskAudio } from '../services/kiosk-device'
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
@@ -175,6 +175,7 @@ const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
 const pendingTranscript = shallowRef<string>()
 const recognizedTranscripts = shallowRef<Array<{ id: number, text: string, waiting?: boolean }>>([])
 const customerResetError = shallowRef<string>()
+const manualRestartPending = shallowRef(false)
 const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
 let nextVoiceDiagnosticId = 0
 const voiceDiagnosticByUtterance = new Map<number, number>()
@@ -458,16 +459,18 @@ const customerSession = useKioskCustomerSession({
   activeCardId,
   chatSession: chatSessionStore,
   resetOrderRound: async () => {
-    // Other approved interactive services do not own a POS ordering context.
-    // Keep their existing reload behavior; Menu completion also survives a
-    // temporary tool-discovery outage until the round has safely advanced.
-    if (completedOrderResult.value || interactiveServiceClient.tools.value.some(tool => tool.name === 'kiosk_conversation_context'))
-      await resetKioskOrderingContext()
+    // The active merchant owns its Bridge namespace and pinned order round.
+    // Other interactive pages can reload without a POS lifecycle contract.
+    const reset = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_ordering_reset')
+    if (reset)
+      await interactiveServiceClient.execute(reset, {})
+    else if (completedOrderResult.value || interactiveServiceClient.tools.value.some(tool => tool.name === 'kiosk_conversation_context'))
+      throw new Error('The ordering service is not ready to reset its current round.')
   },
   endVisitorSession: () => interactionRecording.end('idle'),
   resetConversation: clearConversationPresentation,
 })
-const voiceInputAllowed = computed(() => customerSession.acceptsVoiceInput.value && !completionPending.value)
+const voiceInputAllowed = computed(() => customerSession.acceptsVoiceInput.value && !completionPending.value && !manualRestartPending.value)
 const performanceSettings = computed(() => kioskPerformanceSettings[props.performanceProfile])
 // The constrained profile intentionally cannot start continuous capture. The
 // Server still retains the selected policy, but weak kiosk hardware always has
@@ -519,9 +522,7 @@ watch([() => props.deviceSettings?.orderingServiceId, customerSessionState], asy
   }
 })
 
-const customerSessionButtonLabel = computed(() => (
-  customerSessionState.value === 'standby' ? '開始新交談／新訂單' : '重新開始／新訂單'
-))
+const customerSessionButtonLabel = computed(() => t(manualRestartPending.value ? 'stage.kiosk.restarting-order' : 'stage.kiosk.restart-order'))
 const { idleDiagnosticsEnabled, presenceDiagnosticsEnabled, decisionDiagnosticsEnabled } = useKioskDiagnostics()
 const showDevelopmentDiagnostics = import.meta.env.DEV
 const feedbackInvitationSettings = useFeedbackInvitationSettings()
@@ -2690,17 +2691,31 @@ async function startNewCustomerSession() {
 }
 
 async function restartCustomerSession() {
-  if (customerSessionState.value === 'standby')
+  if (manualRestartPending.value)
     return
 
   // This is an explicit customer reset, not an order completion. It bypasses
   // `completeOrder`, so no thank-you screen or feedback invitation is shown.
   customerResetError.value = undefined
+  manualRestartPending.value = true
   try {
+    const expectsOrderingTools = interactiveServiceClient.tools.value.some(tool => tool.name === 'kiosk_conversation_context')
+    utteranceQueue.reset()
+    decisionProgress.cancel()
+    interactionTurn.cancel()
+    interruptAssistantOutput()
+    // Stop admission immediately, then let any already-issued operation settle
+    // before advancing the POS round. Aborting a model cannot undo a cart write.
+    await activeAgentRequest?.done
+    await utteranceQueue.idle()
     mediaCapture.stopContinuousCapture()
     await interactionRecording.append('service_event', 'customer_requested_restart')
-    await interactionRecording.end('idle')
-    await customerSession.end('staff')
+    await resetForNewCustomer()
+    if (expectsOrderingTools)
+      await interactiveServiceClient.waitUntilReady()
+    completionPending.value = false
+    completedOrderResult.value = undefined
+    completedOrderReceiptUrl.value = undefined
     recognizedTranscripts.value = []
     conversationMessages.value = []
     streamingAssistantMessage.value = undefined
@@ -2709,6 +2724,9 @@ async function restartCustomerSession() {
   catch (error) {
     customerResetError.value = '無法重新開始，請確認連線後再試。'
     console.error('[stage-kiosk] failed to restart the customer session:', error)
+  }
+  finally {
+    manualRestartPending.value = false
   }
 }
 
@@ -2766,12 +2784,6 @@ async function restartAfterServiceFault() {
 }
 
 async function startOrRestartCustomerSession() {
-  if (customerSessionState.value === 'standby') {
-    await resetForNewCustomer()
-    completionPending.value = false
-    await recordCustomerActivity('manual')
-    return
-  }
   await restartCustomerSession()
 }
 
@@ -2936,7 +2948,7 @@ onUnmounted(() => {
         :pending-transcript="pendingTranscript"
         :recognized-transcripts="recognizedTranscripts"
         :retry-available="!serviceRecoveryBlocked && interactiveServiceClient.availability.value === 'ready' && (Boolean(retryableConversationRequest) || decisionStatus?.retryable === true)"
-        :sending="conversationSending"
+        :sending="conversationSending || manualRestartPending"
         :font-size="conversationFontSize"
         :voice-conversation-only="props.voiceConversationOnly"
         @retry-message="retryConversationMessage"
@@ -2945,7 +2957,7 @@ onUnmounted(() => {
       />
     </section>
 
-    <ScenarioSurface :inert="serviceFaultLocked" :listening="isAudioListening && !serviceFaultLocked" class="menu-region" @activity="recordCustomerActivity('manual')" />
+    <ScenarioSurface :inert="serviceFaultLocked || manualRestartPending" :listening="isAudioListening && !serviceFaultLocked" class="menu-region" @activity="recordCustomerActivity('manual')" />
     <KioskAgentControl
       v-if="agentOrderOwner && !serviceFaultLocked"
       :releasing="manualControlPending"
@@ -2953,10 +2965,10 @@ onUnmounted(() => {
     />
 
     <button
-      v-if="!serviceFaultLocked && (customerSessionState === 'active' || customerSessionState === 'standby')"
+      v-if="!serviceFaultLocked && (manualRestartPending || customerSessionState === 'active' || customerSessionState === 'standby')"
       type="button"
       class="customer-restart"
-      :disabled="conversationSending"
+      :disabled="conversationSending || manualRestartPending"
       @click="startOrRestartCustomerSession"
     >
       <span class="i-solar:restart-bold h-4 w-4" aria-hidden="true" />

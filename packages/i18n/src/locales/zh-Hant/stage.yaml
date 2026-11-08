@@ -23,6 +23,8 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
+  restart-order: 重新開始／新訂單
+  restarting-order: 正在重新開始…
   release:
     loaded: 目前載入版本
     recover: 修復後台快取

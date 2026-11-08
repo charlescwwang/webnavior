@@ -20,7 +20,7 @@ export interface KioskCustomerSessionOptions {
   /** Current character used when creating the disposable customer conversation. */
   activeCardId: Ref<string>
   /** Chat persistence owned by the stage host. */
-  chatSession: ReturnType<typeof useChatSessionStore>
+  chatSession: Pick<ReturnType<typeof useChatSessionStore>, 'initialize' | 'createSession' | 'setActiveSession' | 'deleteSession'>
   /** Clears or reloads the host's currently embedded interactive service. */
   resetInteractiveSurface: () => void | Promise<void>
   /** Kiosk requires host-confirmed completion; both policies expire unanswered idle confirmation. */

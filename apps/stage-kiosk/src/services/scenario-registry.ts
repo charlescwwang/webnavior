@@ -49,6 +49,9 @@ export function createScenarioRegistry(options: CreateScenarioRegistryOptions = 
   const activeScenarioId = shallowRef<string>()
   const revision = shallowRef(0)
   const iframeRevision = shallowRef(0)
+  // A reset owns one new document. Only that revision's attached frame may
+  // complete it; changing service/reloading again rejects the previous wait.
+  let pendingReload: { revision: number, resolve: () => void, reject: (error: Error) => void, timer: ReturnType<typeof setTimeout> } | undefined
   let scenariosById = new Map<string, RegisteredScenario>()
   let activeFrameWindow: MessageEventSource | null = null
   const activeScenario = computed(() => activeScenarioId.value ? scenariosById.get(activeScenarioId.value) : undefined)
@@ -66,6 +69,11 @@ export function createScenarioRegistry(options: CreateScenarioRegistryOptions = 
   })
 
   function setServices(services: readonly KioskInteractiveService[]) {
+    if (pendingReload) {
+      clearTimeout(pendingReload.timer)
+      pendingReload.reject(new Error('The ordering page changed during restart.'))
+      pendingReload = undefined
+    }
     const registeredIds = new Set<string>()
     const nextScenarios = services.filter((service) => {
       if (!service.enabled || !isRegisteredScenario(service) || registeredIds.has(service.id))
@@ -88,6 +96,11 @@ export function createScenarioRegistry(options: CreateScenarioRegistryOptions = 
     if (!scenario)
       throw new Error(`Kiosk scenario "${id}" is not registered.`)
 
+    if (activeScenarioId.value !== id && pendingReload) {
+      clearTimeout(pendingReload.timer)
+      pendingReload.reject(new Error('The ordering page changed during restart.'))
+      pendingReload = undefined
+    }
     if (activeScenarioId.value !== id)
       activeFrameWindow = null
     activeScenarioId.value = id
@@ -99,12 +112,31 @@ export function createScenarioRegistry(options: CreateScenarioRegistryOptions = 
   }
 
   function reloadActive() {
+    if (pendingReload)
+      return Promise.reject(new Error('The ordering page is already restarting.'))
     activeFrameWindow = null
     iframeRevision.value++
+    if (!activeScenario.value)
+      return Promise.resolve()
+    return new Promise<void>((resolve, reject) => {
+      const revision = iframeRevision.value
+      const timer = setTimeout(() => {
+        if (pendingReload?.revision !== revision)
+          return
+        pendingReload = undefined
+        reject(new Error('The ordering page did not finish loading.'))
+      }, 15_000)
+      pendingReload = { revision, resolve, reject, timer }
+    })
   }
 
   function attachActiveFrame(frameSource: MessageEventSource | null) {
     activeFrameWindow = frameSource
+    if (frameSource && pendingReload?.revision === iframeRevision.value) {
+      clearTimeout(pendingReload.timer)
+      pendingReload.resolve()
+      pendingReload = undefined
+    }
   }
 
   function on(event: InteractiveServiceEvent, listener: (message: InteractionLifecycleMessage) => void) {

@@ -7,6 +7,15 @@ PIN-protected device settings and central device settings share the Server-saved
 `orderingServiceId` dropdown. The editor shows the active merchant and a saved
 choice waiting for the next round. Active orders retain their merchant; changes
 cross the existing order/visitor reset barrier, including when the Kiosk is idle.
+
+The manual **重新開始／新訂單** control completes one reset and starts a fresh
+active session with one click. It blocks input while issued work settles and
+the replacement document loads; repeated clicks share the same transition.
+The active Menu owns its round reset through the Host-only `kiosk_ordering_reset`
+tool, so the Host never guesses a merchant API namespace. Unresolved submissions
+or payments refuse reset visibly. Saved merchant, microphone and device settings
+remain; old dialogue, query conditions and answer tickets belong to the old round.
+Deploy matching Menu and Kiosk bundles together.
 A missing published choice fails visibly instead of silently opening another
 merchant. Only the active page is exposed to dialogue tools. PIN/account rules,
 Kiosk/table service mode and microphone behavior remain independent.

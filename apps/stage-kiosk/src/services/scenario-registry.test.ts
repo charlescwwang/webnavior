@@ -3,6 +3,31 @@ import { describe, expect, it, vi } from 'vitest'
 import { createScenarioRegistry } from './scenario-registry'
 
 describe('createScenarioRegistry', () => {
+  // Report: this chat Nov8 — a restart acknowledged before the replacement iframe loaded.
+  it('waits for its replacement frame and rejects a reload superseded by a merchant change', async () => {
+    const registry = createScenarioRegistry({ messageTarget: new EventTarget() })
+    const service = { enabled: true, id: 'menu', title: '菜單', description: '點餐服務', serviceUrl: 'https://menu.test/' }
+    registry.setServices([service])
+    const frame = new MessageChannel().port1
+    registry.attachActiveFrame(frame)
+    let loaded = false
+    const first = registry.reloadActive().then(() => {
+      loaded = true
+    })
+    await Promise.resolve()
+    expect(loaded).toBe(false)
+    registry.attachActiveFrame(null)
+    expect(loaded).toBe(false)
+    registry.attachActiveFrame(frame)
+    await first
+    expect(loaded).toBe(true)
+    const second = registry.reloadActive()
+    const rejected = expect(second).rejects.toThrow('changed during restart')
+    registry.setServices([{ ...service, id: 'other' }])
+    await rejected
+    frame.close()
+  })
+
   it('accepts lifecycle events only from the active approved iframe origin', () => {
     const messageTarget = new EventTarget()
     const registry = createScenarioRegistry({ messageTarget })

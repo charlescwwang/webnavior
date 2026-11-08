@@ -1,7 +1,7 @@
 import type { KioskCustomerSessionOptions } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 
 import { useKioskCustomerSession as useSharedKioskCustomerSession } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
-import { computed, shallowRef } from 'vue'
+import { computed, nextTick, shallowRef } from 'vue'
 
 import { scenarioRegistry } from '../services/scenario-registry'
 import { applyPendingOrderingSite } from './useKioskInteractiveServices'
@@ -27,6 +27,9 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
       await options.resetOrderRound?.()
       await options.endVisitorSession?.()
       applyPendingOrderingSite()
+      // Let the approved-service watcher register a saved merchant before
+      // waiting for the new document belonging to that service.
+      await nextTick()
       await scenarioRegistry.reloadActive()
       options.resetConversation?.()
     },
@@ -34,7 +37,9 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
   // Dismissing the receipt returns to standby, but must not reopen the same
   // customer's voice session. Only an explicit new-order action clears this latch.
   const completedRound = shallowRef(false)
-  const acceptsVoiceInput = computed(() => !completedRound.value
+  const restarting = shallowRef(false)
+  let restartTask: Promise<void> | undefined
+  const acceptsVoiceInput = computed(() => !restarting.value && !completedRound.value
     && session.state.value !== 'completing' && session.state.value !== 'resetting')
 
   return {
@@ -46,13 +51,22 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
         completedRound.value = true
       return completed
     },
-    async startNewCustomerSession() {
-      if (session.state.value === 'standby')
+    startNewCustomerSession() {
+      if (restartTask)
+        return restartTask
+      // This is always an explicit new order, including standby. Repeated
+      // clicks share the reset; no new voice can enter between end and begin.
+      restarting.value = true
+      restartTask = (async () => {
+        await session.end('staff')
         await session.begin()
-      else
-        await session.startNewCustomerSession()
-      if (session.state.value === 'active')
-        completedRound.value = false
+        if (session.state.value === 'active')
+          completedRound.value = false
+      })().finally(() => {
+        restarting.value = false
+        restartTask = undefined
+      })
+      return restartTask
     },
   }
 }

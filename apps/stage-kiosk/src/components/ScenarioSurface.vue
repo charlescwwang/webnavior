@@ -11,7 +11,10 @@ const props = defineProps<{ listening?: boolean }>()
 const emit = defineEmits<{ activity: [] }>()
 const customerEntry = useKioskCustomerEntry(interactiveServiceClient)
 const scenarioFrame = useTemplateRef<HTMLIFrameElement>('scenarioFrame')
-function attachFrame() {
+function attachFrame(event: Event) {
+  // A late load from the removed iframe cannot acknowledge its replacement.
+  if (event.target !== scenarioFrame.value)
+    return
   scenarioRegistry.attachActiveFrame(scenarioFrame.value?.contentWindow ?? null)
   interactiveServiceClient.activate(scenarioRegistry.activeScenario.value?.serviceUrl, scenarioFrame.value?.contentWindow)
 }

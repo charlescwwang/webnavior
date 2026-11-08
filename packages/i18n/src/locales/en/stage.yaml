@@ -23,6 +23,8 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
+  restart-order: Restart / New order
+  restarting-order: Restarting…
   release:
     loaded: Loaded version
     recover: Repair admin cache
