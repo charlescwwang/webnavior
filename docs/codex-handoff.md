@@ -7,6 +7,29 @@ accumulating history.
 
 ## Current State
 
+- Nov08 DEV-810280 field regressions: see new top section of
+  docs/plans/2026-10-28-kiosk-conversation-repair.md and compact evidence
+  docs/research/2026-11-08-810280-field-regressions.json. Field dialogue18:53–19:22
+  predates19:42 continuation release, but current source still reproduced failures;
+  do not blame cache alone. Old catalog only; supplier catalog/settings untouched.
+  Main whole-turn qualification now retains ADD_ONLY (literal subjects incl unknown)
+  or RETURN_MENU through existing handoff. Pure add cannot replace/remove old lines;
+  each subject needs Menu lookup first. Operator explicitly chose partial addition:
+  add available dishes and name unavailable ones together. Replacement stays atomic.
+  Menu/Host retire old cart snapshots/questions; internal reads are not dialogue.
+  Catalog-aware spice evidence shared through Main snapshot; named fish cannot inherit
+  old exclusion IDs. Recommendation exhaustion now loops on repeated continue while
+  retaining safety filters; skill AND BOTH tool-description layers corrected.
+  Qualified receipted completion shared by JSON/SSE to avoid extra model generations
+  overturning a review/menu return or complete addition. Idle expiry resets and begins,
+  awaits iframe tools before admitting input. Old merchant explicitly no delivery,
+  made-to-order only/no preorder; unknown merchants do not inherit those facts.
+  Deployment: inspect /tmp/810280-release-path and public version.json; do not assume.
+  Final real-model batch27/27 (10 field, full11-turn case,16 old generalized);
+  Menu1025/202skip, policies658/81skip, Host384/3skip, shared36, Firefox6.
+  Failed model runs retained privately; evidence distinguishes before/after and timing.
+  No mic/AEC, actual Windows speech or full Scene mouse acceptance claimed.
+
 - Nov08 CONTINUATION implemented/validated; user authorized batched commits/deployment.
   Source of truth: top of docs/plans/2026-10-28-kiosk-conversation-repair.md;
   detailed evidence: docs/research/2026-11-08-kiosk-continuation-release.json.

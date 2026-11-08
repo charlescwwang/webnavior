@@ -1,0 +1,476 @@
+{
+  "capturedAt": "2026-11-08T13:18:20.960208+00:00",
+  "status": "implementation and scoped validation complete; release manifest records deployment separately",
+  "baseCommit": "488c53817ee63a6a3da125bd0e4d354d1358d021",
+  "scope": "Original seven-item test menu only. No supplier catalog/pricing/options change, no microphone/AEC change.",
+  "authorization": "Previously authorized configured real JEV/Main replay, batch commits, deployment/API restart. This turn explicitly chose adding available meals and reporting absent items for compound additions.",
+  "fieldAudit": {
+    "device": "DEV-810280",
+    "sessionTimeTaipei": "2026-11-08 18:53–19:22",
+    "previousDeploymentTimeTaipei": "2026-11-08 19:42",
+    "exactBrowserBundleObserved": false,
+    "conclusion": "Timing predates the last deployment, but current source also reproduced failures. Cache alone is not the root cause. Prior single-turn regression coverage was insufficient."
+  },
+  "models": {
+    "jev": "lookski / Qwen/Qwen3.5-4B",
+    "main": "webnavior/chat / qwen36",
+    "orderingSkillVersion": 12
+  },
+  "isolation": "Live provider settings read; all replay visitors, transcript persistence, health writes, cart and gateways isolated. No real order/payment/device setting changes.",
+  "validation": {
+    "menu": {
+      "passed": 1025,
+      "optInSkipped": 202
+    },
+    "serverPolicies": {
+      "passed": 658,
+      "optInSkipped": 81
+    },
+    "host": {
+      "passed": 384,
+      "optInSkipped": 3
+    },
+    "sharedConversation": {
+      "passed": 36
+    },
+    "serverRouteGuards": {
+      "passed": 7,
+      "unselected": 117
+    },
+    "serverFullRoutes": {
+      "fullRun": {
+        "passed": 123,
+        "failed": 1
+      },
+      "fixtureCorrectionRecheck": {
+        "passed": 1,
+        "unselected": 123
+      },
+      "conclusion": "All124 route cases accounted for across these runs. The one-use authentication test now asserts a qualified menu-information handoff, not a guessed finite action; unauthorized and reused continuation rejection assertions retained. No final all124 rerun claimed."
+    },
+    "firefoxComponents": {
+      "passed": 6,
+      "hardwareAcceptance": false
+    },
+    "types": "One root check passed before the last scoped changes; final Server, Menu and Host scoped checks pass. No second root typecheck run.",
+    "lint": "Root lint observed existing failures plus five task test-style errors; task errors fixed and changed-file lint passes. Root lint was not rerun.",
+    "realModels": {
+      "finalBatch": {
+        "passed": 27,
+        "failed": 0,
+        "originalFieldCases": 10,
+        "wholeConversationCases": 1,
+        "wholeConversationTurns": 11,
+        "earlierGeneralizedCases": 16
+      },
+      "isolatedLatencyCase": {
+        "passed": 1,
+        "failed": 0
+      }
+    }
+  },
+  "runs": [
+    {
+      "label": "initial-current-source",
+      "evidence": "/tmp/810280-model-before.json",
+      "passed": 1,
+      "failed": 6,
+      "unselected": 74,
+      "failures": [
+        "configured 810280 field continuity: 'absent-family'",
+        "configured 810280 field continuity: 'withdraw-asr-empty'",
+        "configured 810280 field continuity: 'bulk-after-lookup'",
+        "configured 810280 field continuity: 'delivery-question'",
+        "configured 810280 field continuity: 'preorder-question'",
+        "configured 810280 field continuity: 'fish-after-browsing'"
+      ]
+    },
+    {
+      "label": "before-final-completion-fix",
+      "evidence": "/tmp/810280-final-model.json",
+      "passed": 25,
+      "failed": 2,
+      "unselected": 58,
+      "failures": [
+        "configured release acceptance: 'mixed-query-add'",
+        "configured release acceptance: 'done-order-variant'"
+      ]
+    },
+    {
+      "label": "after-final-completion-fix",
+      "evidence": "/tmp/810280-parity-model.json",
+      "passed": 27,
+      "failed": 0,
+      "unselected": 58,
+      "failures": []
+    },
+    {
+      "label": "isolated-over-five-second-investigation",
+      "evidence": "/tmp/810280-mixed-latency.json",
+      "passed": 1,
+      "failed": 0,
+      "unselected": 84,
+      "failures": []
+    }
+  ],
+  "fieldCases": [
+    {
+      "id": "absent-family",
+      "latencyMs": 4315,
+      "answer": "目前菜單查不到「全家餐」。 想找其他餐點，還是回到全部菜單？",
+      "visibleItems": [],
+      "toolCalls": [
+        {
+          "name": "menu_get",
+          "input": {
+            "query": "全家餐"
+          }
+        }
+      ]
+    },
+    {
+      "id": "withdraw-fuzzy-empty",
+      "latencyMs": 1536,
+      "answer": "好的，接下來想點什麼餐點？",
+      "visibleItems": [],
+      "toolCalls": []
+    },
+    {
+      "id": "withdraw-asr-empty",
+      "latencyMs": 1913,
+      "answer": "好的，接下來想點什麼餐點？",
+      "visibleItems": [],
+      "toolCalls": []
+    },
+    {
+      "id": "bulk-after-lookup",
+      "latencyMs": 1917,
+      "answer": "您是要依照「菜單上的都來一份」安排餐點嗎？",
+      "visibleItems": [
+        "fried-pork-chop-bento"
+      ],
+      "toolCalls": []
+    },
+    {
+      "id": "delivery-question",
+      "latencyMs": 1882,
+      "answer": "這台點餐機無法安排外送。要繼續現場點餐嗎？",
+      "visibleItems": [],
+      "toolCalls": []
+    },
+    {
+      "id": "preorder-question",
+      "latencyMs": 1779,
+      "answer": "這台點餐機只提供現做餐點，不接受預約。想現在點餐嗎？",
+      "visibleItems": [],
+      "toolCalls": []
+    },
+    {
+      "id": "continue-from-review",
+      "latencyMs": 2811,
+      "answer": "已回到全部菜單，接下來想看哪一道餐點？",
+      "visibleItems": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "thai-sour-spicy-fish-bento",
+        "fried-pork-chop-bento",
+        "thai-basil-pork-bento",
+        "beef-noodle-soup",
+        "dumplings"
+      ],
+      "toolCalls": [
+        {
+          "name": "menu_open",
+          "input": {
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mixed-missing-extra",
+      "latencyMs": 7747,
+      "answer": "已將水餃加入購物車，共 10 份。 水餃目前可以點。每份10顆，80元，現點現煮。菜單沒有「酒」。 接下來想點哪道餐點？",
+      "visibleItems": [
+        "dumplings"
+      ],
+      "toolCalls": [
+        {
+          "name": "menu_get",
+          "input": {
+            "queries": [
+              "水餃",
+              "酒"
+            ]
+          }
+        },
+        {
+          "name": "order_add_item",
+          "input": {
+            "quantity": 10,
+            "itemId": "dumplings"
+          }
+        }
+      ]
+    },
+    {
+      "id": "recommendation-cycle",
+      "latencyMs": 3149,
+      "answer": "這些餐點都介紹過了，我再列出來給您參考。推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當。 您想點哪一道？",
+      "visibleItems": [
+        "signature-shrimp-roll-bento",
+        "spicy-chicken-bento",
+        "thai-sour-spicy-fish-bento"
+      ],
+      "toolCalls": [
+        {
+          "name": "menu_recommend",
+          "input": {
+            "action": "continue"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fish-after-browsing",
+      "latencyMs": 3222,
+      "answer": "泰式酸辣魚便當目前可以點。魚排佐泰式酸辣醬，搭配米飯與當日配菜。單份基本售價 140元。 您是要新增泰式酸辣魚便當嗎？",
+      "visibleItems": [
+        "thai-sour-spicy-fish-bento"
+      ],
+      "toolCalls": [
+        {
+          "name": "menu_get",
+          "input": {
+            "query": "泰式酸辣魚"
+          }
+        },
+        {
+          "name": "menu_confirm_item",
+          "input": {
+            "itemId": "thai-sour-spicy-fish-bento"
+          }
+        }
+      ]
+    }
+  ],
+  "wholeConversation": [
+    {
+      "speech": "我想吃全家餐",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-operation",
+      "handoff": "ADD_ONLY",
+      "answer": "目前菜單查不到「全家餐」。 想找其他餐點，還是回到全部菜單？",
+      "count": 0,
+      "screen": "menu",
+      "durationMs": 3308
+    },
+    {
+      "speech": "回到全部菜單",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-operation",
+      "handoff": "RETURN_MENU",
+      "answer": "已回到全部菜單，接下來想看哪一道餐點？",
+      "count": 0,
+      "screen": "menu",
+      "durationMs": 1688
+    },
+    {
+      "speech": "我不要排骨飯了",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-preservation",
+      "answer": "好的，您想查詢哪一道餐點，或調整什麼內容？",
+      "count": 0,
+      "screen": "menu",
+      "durationMs": 1518
+    },
+    {
+      "speech": "菜單上的都來一份",
+      "kind": "SERVICE_CLARIFICATION",
+      "answer": "您是要依照「菜單上的都來一份」安排餐點嗎？",
+      "count": 0,
+      "screen": "menu",
+      "durationMs": 941
+    },
+    {
+      "speech": "不用了，先點水餃十份",
+      "kind": "FAST_ACTION",
+      "answer": "已將水餃加入購物車，共 10 份。",
+      "count": 10,
+      "screen": "menu",
+      "durationMs": 450
+    },
+    {
+      "speech": "我水餃只要一半",
+      "kind": "NEEDS_ASSISTANT",
+      "handoff": "SET_QUANTITY",
+      "answer": "已將水餃調整為 5 份。 確認這份訂單並送出嗎？",
+      "count": 5,
+      "screen": "cart_review",
+      "durationMs": 4129
+    },
+    {
+      "speech": "查看購物車",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-information",
+      "answer": "目前訂單：水餃 5 份。合計 400元。 確認這份訂單並送出嗎？",
+      "count": 5,
+      "screen": "cart_review",
+      "durationMs": 2619
+    },
+    {
+      "speech": "我想繼續點餐",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-operation",
+      "handoff": "RETURN_MENU",
+      "answer": "已回到全部菜單，接下來想看哪一道餐點？",
+      "count": 5,
+      "screen": "menu",
+      "durationMs": 2256
+    },
+    {
+      "speech": "我要泰式酸辣魚一份",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-operation",
+      "handoff": "ADD_ONLY",
+      "answer": "泰式酸辣魚便當目前可以點。魚排佐泰式酸辣醬，搭配米飯與當日配菜。單份基本售價 140元。 您是要新增泰式酸辣魚便當嗎？",
+      "count": 5,
+      "screen": "menu",
+      "durationMs": 3181
+    },
+    {
+      "speech": "對",
+      "kind": "FAST_ACTION",
+      "answer": "已將泰式酸辣魚便當加入購物車，共 1 份。",
+      "count": 6,
+      "screen": "menu",
+      "durationMs": 1740
+    },
+    {
+      "speech": "這樣就好",
+      "kind": "NEEDS_ASSISTANT",
+      "scope": "order-information",
+      "answer": "目前訂單：水餃 5 份、泰式酸辣魚便當 1 份。合計 540元。 確認這份訂單並送出嗎？",
+      "count": 6,
+      "screen": "cart_review",
+      "durationMs": 1802
+    }
+  ],
+  "earlierGeneralizedCases": [
+    {
+      "id": "first-menu",
+      "latencyMs": 2891,
+      "answer": "我找到：周氏蝦捲招牌便當、椒麻雞便當、泰式酸辣魚便當、炸排骨便當、打拋豬便當、紅燒牛肉麵、水餃。 您想先看哪一道餐點？"
+    },
+    {
+      "id": "preference-fish",
+      "latencyMs": 2426,
+      "answer": "含魚：推薦一項：泰式酸辣魚便當。 想點這道的話，您要幾份？"
+    },
+    {
+      "id": "preference-chicken",
+      "latencyMs": 2225,
+      "answer": "含雞肉：推薦一項：椒麻雞便當。 想點這道的話，您要幾份？"
+    },
+    {
+      "id": "preference-beef",
+      "latencyMs": 2152,
+      "answer": "含牛肉：推薦一項：紅燒牛肉麵。 想點這道的話，您要幾份？"
+    },
+    {
+      "id": "fuzzy-read",
+      "latencyMs": 2263,
+      "answer": "菜單沒有完全相符的名稱，您想找的是打拋豬便當嗎？"
+    },
+    {
+      "id": "fuzzy-purchase",
+      "latencyMs": 3181,
+      "answer": "您是要新增打拋豬便當嗎？"
+    },
+    {
+      "id": "replacement",
+      "latencyMs": 5905,
+      "answer": "已將紅燒牛肉麵更換為水餃，共 1 份。 請問要內用還是自取？"
+    },
+    {
+      "id": "mixed-query-add",
+      "latencyMs": 3392,
+      "answer": "已將紅燒牛肉麵加入購物車，共 1 份。 紅燒牛肉麵目前可以點。水餃目前可以點。紅燒牛肉麵單份150元。水餃單份80元。 請問要內用還是自取？"
+    },
+    {
+      "id": "done-order",
+      "latencyMs": 2129,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？"
+    },
+    {
+      "id": "done-order-variant",
+      "latencyMs": 2047,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？"
+    },
+    {
+      "id": "unrelated",
+      "latencyMs": 2147,
+      "answer": "我是點餐助手，可以幫您看菜單、選餐和確認訂單。您想吃什麼？"
+    },
+    {
+      "id": "clear-question-yes",
+      "latencyMs": 1448,
+      "answer": "已清空購物車。"
+    },
+    {
+      "id": "clear-question-send",
+      "latencyMs": 2326,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？"
+    },
+    {
+      "id": "clear-question-send-checkout",
+      "latencyMs": 2082,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？"
+    },
+    {
+      "id": "clear-question-send-submit",
+      "latencyMs": 1644,
+      "answer": "目前訂單：紅燒牛肉麵 1 份。合計 150元。 請問要內用還是自取？"
+    },
+    {
+      "id": "fish-withdrawal",
+      "latencyMs": 3255,
+      "answer": "排除魚：推薦3 項：周氏蝦捲招牌便當、椒麻雞便當、炸排骨便當。 您想點哪一道？"
+    }
+  ],
+  "latency": {
+    "warningThresholdMs": 5000,
+    "fieldOutliers": [
+      {
+        "id": "mixed-missing-extra",
+        "latencyMs": 7747
+      }
+    ],
+    "generalizedOutliers": [
+      {
+        "id": "replacement",
+        "latencyMs": 5905
+      }
+    ],
+    "isolatedInvestigation": [
+      {
+        "id": "mixed-missing-extra",
+        "latencyMs": 4026,
+        "apiRoundsMs": [
+          668,
+          1735,
+          5
+        ],
+        "answer": "已將水餃加入購物車，共 10 份。 水餃目前可以點。每份10顆，80元，現點現煮。菜單沒有「酒」。 接下來想點哪道餐點？"
+      }
+    ],
+    "conclusion": "The final mixed-add case was correct but took7747ms in the batch; its add HTTP round took5261ms. Isolated replay passed at4026ms with API rounds668/1735/5ms. The first two perform model-guided lookup/add; receipt-only SSE completion now avoids another model generation. Provider latency remains variable; no guaranteed sub-five-second SLA claimed."
+  },
+  "unverified": [
+    "Windows Firefox real speech/ASR/TTS",
+    "Full Kiosk Scene actual mouse/iframe interaction",
+    "Physical idle expiry on DEV-810280",
+    "Supplier page behavior (deferred by user)"
+  ],
+  "preservedFailureEvidence": "Earlier failures retained under /tmp/810280-*.json/.log (private). No failed test is presented as a pass, and opt-in unselected cases are not counted as exercised."
+}
