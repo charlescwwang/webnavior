@@ -119,6 +119,8 @@ it('regression K1107-STAFF binds help to one live service answer and invalidates
   const answer = conversationDecisionStateFrom(state, { reason: 'UNCERTAIN_OPERATION', recovery: { status: 'completed', admission: 'service', disposition: 'assistant', readOnly: true } })
   const fresh = refreshConversationState(context, answer)
   expect(fresh.context?.staffAssistance?.questionId).toBe(cue.questionId)
+  const directAnswer = conversationDecisionStateFrom(state, { reason: 'GENERAL_QUESTION' })
+  expect(refreshConversationState(context, directAnswer).context?.staffAssistance?.questionId).toBe(cue.questionId)
   const newRequest = conversationDecisionStateFrom(state, { reason: 'NEW_REQUEST', recovery: { status: 'completed', admission: 'service', disposition: 'assistant', readOnly: false } })
   expect(refreshConversationState(context, newRequest).context?.staffAssistance).toBeUndefined()
   const changed = { ...context, revisions: { ...context.revisions, cart: context.revisions.cart + 1 } }

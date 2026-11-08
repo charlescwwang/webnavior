@@ -15,11 +15,13 @@ export function useKioskServiceFault(messages: Ref<ChatHistoryItem[]>) {
     if (message?.role === 'error')
       locked.value = true
   }, { flush: 'sync' })
-  function failUtterance(input: { transcript: string, message: string, shownInput: boolean }) {
+  function failUtterance(input: { transcript: string, message: string, shownInput: boolean, uncertain?: boolean }) {
     messages.value = [
       ...messages.value,
       ...(!input.shownInput ? [{ role: 'user' as const, content: input.transcript }] : []),
-      { role: 'error', content: input.message },
+      input.uncertain === false
+        ? { role: 'assistant', content: input.message, slices: [], tool_results: [] }
+        : { role: 'error', content: input.message },
     ]
   }
   return {
@@ -31,7 +33,9 @@ export function useKioskServiceFault(messages: Ref<ChatHistoryItem[]>) {
     failDecision(result: Pick<FastPathResult, 'kind' | 'reason' | 'recovery'>, input: { transcript: string, message: string, shownInput: boolean }) {
       if (!shouldShowDecisionRetry(result))
         return false
-      failUtterance(input)
+      // Decision failures precede browser execution. They need a visible
+      // outcome, but cannot justify locking an untouched order.
+      failUtterance({ ...input, uncertain: false })
       return true
     },
     // Call only after PIN-validated recovery or a successfully reset order round.

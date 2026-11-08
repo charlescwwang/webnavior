@@ -31,7 +31,7 @@ const props = defineProps<{
   fastPathSimulationTiming?: FastPathTiming
   fontSize: number
   messages: readonly ChatHistoryItem[]
-  recognizedTranscripts?: Array<{ id: number, text: string }>
+  recognizedTranscripts?: Array<{ id: number, text: string, waiting?: boolean }>
   pendingTranscript?: string
   retryAvailable?: boolean
   sending: boolean
@@ -145,7 +145,7 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     </div>
 
     <div v-for="entry in props.recognizedTranscripts" :key="entry.id" :class="['pending-transcript']" role="status" aria-live="polite">
-      <span>{{ t('stage.kiosk.asr-awaiting-decision') }}</span>
+      <span>{{ t(entry.waiting ? 'stage.kiosk.service-recovery.queued' : 'stage.kiosk.asr-awaiting-decision') }}</span>
       <span>{{ toOrderingTraditionalChinese(entry.text) }}</span>
     </div>
     <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">

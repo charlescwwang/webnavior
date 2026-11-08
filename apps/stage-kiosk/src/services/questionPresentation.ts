@@ -6,6 +6,8 @@ import type { ConversationTurnResult } from '../composables/useKioskInteractionR
 import { isServiceLimitationReply, orderAssistanceQuestion, quantityLimitRejectionSchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { safeParse } from 'valibot'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
  * Keep all distinct lookup results: a second lookup may be a comparison, not a
@@ -290,8 +292,14 @@ export function presentedQuestionFrom(value: unknown): PresentedQuestion | undef
 }
 
 /** Ensures the correlated question is visible; text matching only avoids duplicate rendering. */
-export function replyWithQuestion(answer: string, question: PresentedQuestion | undefined) {
-  return question && !answer.includes(question.question) ? `${answer} ${question.question}`.trim() : answer
+export function replyWithQuestion(answer: string, question: PresentedQuestion | undefined, phase?: string) {
+  if (question)
+    return answer.includes(question.question) ? answer : `${answer} ${question.question}`.trim()
+  // Open guidance never grants consent. Locked/payment/completed states must
+  // not acquire a new ordering question merely because prose lacks a question.
+  if (phase === 'ordering' && !/[?？]/.test(answer))
+    return `${answer} ${orderingMessages['zh-Hant'].nextOrderQuestion}`.trim()
+  return answer
 }
 
 /** Uses tool-owned outcomes/questions instead of a second Agent-written operation dialogue. */
@@ -373,7 +381,23 @@ export function replyFromReceipt(result: unknown, question?: PresentedQuestion) 
 /** Service questions are read-only cues, never choices for an older Menu operation. */
 export function createServiceClarificationWindow() {
   let active: ServiceClarification | undefined
+  let unansweredAttempts = 0
   return {
+    /** Bounded meaning repair; a failed decision cannot create purchase consent. */
+    clarify(state: Parameters<typeof serviceContextKey>[0], sourceUtterance: string) {
+      unansweredAttempts++
+      if (unansweredAttempts > 2)
+        return undefined
+      active = {
+        questionId: crypto.randomUUID(),
+        question: unansweredAttempts === 1 ? orderingMessages['zh-Hant'].meaningQuestion : orderingMessages['zh-Hant'].meaningAssistance,
+        ...(unansweredAttempts === 2 ? { purpose: 'staff-assistance' as const } : {}),
+        sourceUtterance,
+        contextKey: serviceContextKey(state),
+        expiresAt: Date.now() + 30_000,
+      }
+      return active
+    },
     present(question: ServiceClarification) { active = { ...question } },
     current(state: Parameters<typeof serviceContextKey>[0]) {
       if (active && (active.expiresAt <= Date.now() || active.contextKey !== serviceContextKey(state)))
@@ -382,9 +406,14 @@ export function createServiceClarificationWindow() {
     },
     /** Silent input cannot renew or consume a still-valid service question. */
     settle(result: { kind: string }) {
-      if (!['IGNORE', 'INCOMPLETE', 'UNAVAILABLE', 'DEFERRED', 'SERVICE_CLARIFICATION'].includes(result.kind))
+      if (!['IGNORE', 'INCOMPLETE', 'UNAVAILABLE', 'DEFERRED', 'SERVICE_CLARIFICATION'].includes(result.kind)) {
         active = undefined
+        unansweredAttempts = 0
+      }
     },
-    reset() { active = undefined },
+    reset() {
+      active = undefined
+      unansweredAttempts = 0
+    },
   }
 }

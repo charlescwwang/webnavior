@@ -16,7 +16,7 @@ import workletUrl from '@proj-airi/stage-ui/workers/vad/process.worklet?worker&u
 
 import { errorMessageFrom } from '@moeru/std'
 import { createAssistanceReminderWindow, createInteractionWindow, createPresenceWindow, defaultDeviceSettingsValues, defaultPresenceSettings, observationSettings } from '@proj-airi/kiosk-proactive'
-import { conversationContextSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, replyFromContext, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { CustomerSessionCompletion, CustomerSessionIdleConfirmation } from '@proj-airi/stage-ui/components'
 import { canShowFeedbackInvitation } from '@proj-airi/stage-ui/components/scenarios/feedback-invitation/settings'
 import { DeviceSettingsPanel } from '@proj-airi/stage-ui/components/scenarios/kiosk/deviceSettings'
@@ -71,6 +71,7 @@ import { useKioskProcessingCue } from '../composables/useKioskProcessingCue'
 import { useKioskServiceFault } from '../composables/useKioskServiceFault'
 import { useKioskWaitSpeech } from '../composables/useKioskWaitSpeech'
 import { setKioskLocale } from '../modules/i18n'
+import { endKioskAdminSession } from '../services/admin-session'
 import { createFixedGreetings, greetingPhase } from '../services/fixedGreetings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { transcribeKioskUtterance } from '../services/kiosk-audio'
@@ -78,7 +79,7 @@ import { decideKioskInteraction, isKioskFastPathEnabled, KioskDeviceRequestError
 import { conversationDecisionStateFrom, createDecisionFeedback, createIncompleteAsrSession, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../services/kiosk-fast-path'
 import { kioskPerformanceSettings } from '../services/kiosk-performance'
 import { createKioskStartupPermissionGate, prepareKioskMicrophonePermission } from '../services/kiosk-startup-permission-gate'
-import { isKioskConversationRetrySafeTool, resumeConversationRetry } from '../services/kioskConversationRetry'
+import { isKioskConversationRetrySafeTool, requiresOrderReconciliation, resumeConversationRetry } from '../services/kioskConversationRetry'
 import { playKioskAudio } from '../services/kioskPlayback'
 import { createKioskUtteranceQueue } from '../services/kioskUtteranceQueue'
 import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationRejectionMessage, operationReplyFrom, orderAssistanceFromRejection, questionReceiptFrom, replyFromConversation, replyFromReceipt, replyWithQuestion } from '../services/questionPresentation'
@@ -172,7 +173,7 @@ const {
 } = useKioskConversationProgress()
 const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
 const pendingTranscript = shallowRef<string>()
-const recognizedTranscripts = shallowRef<Array<{ id: number, text: string }>>([])
+const recognizedTranscripts = shallowRef<Array<{ id: number, text: string, waiting?: boolean }>>([])
 const customerResetError = shallowRef<string>()
 const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
 let nextVoiceDiagnosticId = 0
@@ -234,9 +235,18 @@ const utteranceQueueState = shallowRef<{ active?: KioskUtterance, pending: reado
 const interactionRecording = useKioskInteractionRecording()
 // Admission survives across decision callbacks until this queue item settles.
 // Correlate by utterance ID, never by equal text from an earlier customer turn.
-const admittedUtteranceIds = new Set<number>()
+const shownUtteranceIds = new Set<number>()
 const utteranceQueue = createKioskUtteranceQueue({
+  onReceived: (utterance) => {
+    if (props.deviceSettings?.backgroundSpeechMode === 'off')
+      recognizedTranscripts.value = [...recognizedTranscripts.value.filter(entry => entry.id !== utterance.id), { id: utterance.id, text: utterance.text, waiting: true }]
+  },
   onDrop: (utterance, reason) => {
+    const visible = recognizedTranscripts.value.some(entry => entry.id === utterance.id)
+    recognizedTranscripts.value = recognizedTranscripts.value.filter(entry => entry.id !== utterance.id)
+    if (visible) {
+      conversationMessages.value = [...conversationMessages.value, { role: 'user', content: utterance.text }, { role: 'assistant', content: t(reason === 'expired' ? 'stage.kiosk-agent.queued-expired' : 'stage.kiosk-agent.queued-cancelled'), slices: [], tool_results: [] }]
+    }
     finishVoiceDiagnostic(utterance.id, 'failed')
     if (utterance.source === 'simulation')
       asrSimulationStatus.value = reason === 'expired' ? '這句等待太久，未執行；請重新送出。' : '會話已重設，待處理語句已取消。'
@@ -259,7 +269,7 @@ const utteranceQueue = createKioskUtteranceQueue({
     }
     catch (cause) {
       if (ticket.isCurrent()) {
-        serviceFault.failUtterance({ transcript: utterance.text, shownInput: admittedUtteranceIds.has(utterance.id), message: t('stage.kiosk-agent.utterance-failed') })
+        serviceFault.failUtterance({ transcript: utterance.text, shownInput: shownUtteranceIds.has(utterance.id), message: t('stage.kiosk-agent.utterance-failed') })
         // Record a finite outcome only; client exception text/stack may contain
         // private runtime data and stays in the local console.
         void interactionRecording.append('service_event', JSON.stringify({ kind: 'utterance_processing_failed', utteranceId: utterance.id }), { source: 'utterance_processing_metrics', utteranceId: utterance.id })
@@ -267,7 +277,7 @@ const utteranceQueue = createKioskUtteranceQueue({
       throw cause
     }
     finally {
-      admittedUtteranceIds.delete(utterance.id)
+      shownUtteranceIds.delete(utterance.id)
       if (!ticket.isCurrent())
         decisionProgress.cancel(utterance.id)
       else
@@ -863,22 +873,40 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
   let modelQuestions: number | undefined = 0
   let firstResultDurationMs: number | undefined
   let shownInput = false
+  let acceptedInput = false
+  // Visibility is independent of service admission. With background filtering
+  // off, both typed simulation and ASR keep the submitted sentence even when
+  // browser context/model processing fails before admission. This grants no
+  // cart/tool authority and does not reset the customer-activity timer.
+  if (props.deviceSettings?.backgroundSpeechMode === 'off') {
+    shownInput = true
+    shownUtteranceIds.add(utterance.id)
+    conversationMessages.value = [...conversationMessages.value, { role: 'user', content: utterance.text }]
+    recognizedTranscripts.value = recognizedTranscripts.value.filter(entry => entry.id !== utterance.id)
+    await interactionRecording.append('asr_transcript', utterance.text, { source: `background_filter_off_${utterance.source}`, utteranceId: utterance.id })
+    recordedFastPathInput = true
+  }
   let earlyReplyIndex: number | undefined
   const earlyReadMessages: string[] = []
   for (let attempt = 0; attempt < 3 && ticket.isCurrent(); attempt++) {
     decisionProgress.start(utterance.id, utterance.source, input.deadlineAt! - serviceRecoveryLimits.turnMs)
+    if (shownInput)
+      decisionProgress.admit(utterance.id, true)
     const active = currentAgentRequest()
     let selectedTurn: ReturnType<typeof interactionTurn.begin> | undefined
     const result = await runFastPath({
       onUtteranceAccepted: async () => {
-        if (shownInput || !ticket.isCurrent())
+        if (acceptedInput || !ticket.isCurrent())
           return
+        acceptedInput = true
         // Commit the confirmed customer turn before any browser write or Agent
         // completion. Utterance ID prevents retries/re-decisions adding it twice.
-        shownInput = true
-        admittedUtteranceIds.add(utterance.id)
-        conversationMessages.value = [...conversationMessages.value, { role: 'user', content: utterance.text }]
-        recognizedTranscripts.value = recognizedTranscripts.value.filter(entry => entry.id > utterance.id)
+        if (!shownInput) {
+          shownInput = true
+          shownUtteranceIds.add(utterance.id)
+          conversationMessages.value = [...conversationMessages.value, { role: 'user', content: utterance.text }]
+          recognizedTranscripts.value = recognizedTranscripts.value.filter(entry => entry.id > utterance.id)
+        }
         await recordCustomerActivity(utterance.source === 'asr' ? 'voice_input' : 'asr_simulation')
         if (!recordedFastPathInput) {
           await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'utterance_accepted', source: utterance.source, utteranceId: utterance.id })
@@ -973,7 +1001,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
           if (!shownInput) {
             conversationMessages.value = [...conversationMessages.value, { role: 'user', content: utterance.text }]
             shownInput = true
-            admittedUtteranceIds.add(utterance.id)
+            shownUtteranceIds.add(utterance.id)
           }
           earlyReadMessages.push(readMessage)
           if (earlyReplyIndex === undefined) {
@@ -1011,6 +1039,8 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
             updateDecisionEntry(request.decisionEntryId, { agentStep: '因顧客新語句中斷' })
           interactionTurn.cancelActiveTurn()
           await request.done
+          if (ticket.isCurrent() && (utterance.source !== 'asr' || allowsObservedVoice()))
+            conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: t('stage.kiosk-agent.unstarted-replaced'), slices: [], tool_results: [] }]
         }
         if (!ticket.isCurrent() || (utterance.source === 'asr' && !allowsObservedVoice()))
           return 'DEFER'
@@ -1092,14 +1122,14 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
         : result.uncertain
           ? '暫時無法確認這次操作結果，請先確認畫面上的購物車或訂單，不要重複付款。'
           : '這次操作未完成，請確認畫面後再試一次或使用螢幕操作。')
-      const response: ChatHistoryItem = knownRejection
+      const response: ChatHistoryItem = knownRejection || !result.uncertain
         ? { role: 'assistant', content: message, slices: [], tool_results: [] }
         : { role: 'error', content: message }
       conversationMessages.value = [...conversationMessages.value, ...(!shownInput ? [{ role: 'user' as const, content: utterance.text }] : []), response]
       await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'execution_failed', source: utterance.source, utteranceId: utterance.id })
       await interactionRecording.append('service_event', JSON.stringify({ kind: 'webmcp_execution_failed', uncertain: result.uncertain, result: result.result, trace: latestDecisionTrace }), { decisionRoute: 'execution_failed', utteranceId: utterance.id })
       updateDecisionEntry(utterance.id, { route: 'execution_failed', reason: result.uncertain ? 'RESULT_UNKNOWN' : 'REJECTED' })
-      if (knownRejection) {
+      if (knownRejection || !result.uncertain) {
         await interactionRecording.append('assistant_text', message, { source: 'page_rejection' })
         if (selectedTurn && interactionTurn.isCurrent(selectedTurn)) {
           interactionTurn.advance(selectedTurn, 'speaking')
@@ -1129,9 +1159,27 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       // its staff-notification dialog and blocks further order operations.
       if (serviceFault.failDecision(result, { transcript: utterance.text, shownInput, message: t('stage.kiosk-agent.decision-failed') })) {
         shownInput = true
-        admittedUtteranceIds.add(utterance.id)
+        shownUtteranceIds.add(utterance.id)
         await interactionRecording.append('asr_transcript', utterance.text, { decisionRoute: 'unavailable', source: utterance.source, utteranceId: utterance.id })
         await interactionRecording.append('service_event', JSON.stringify({ kind: 'decision_not_completed', result: result.kind, reason: result.reason, recovery: result.recovery, trace: latestDecisionTrace }), { decisionRoute: 'unavailable', utteranceId: utterance.id })
+        if (!currentAgentRequest() && ticket.isCurrent()) {
+          const failureTurn = interactionTurn.begin('voice', 'speaking')
+          await speakAssistantReply(t('stage.kiosk-agent.decision-failed'), failureTurn)
+          if (interactionTurn.isCurrent(failureTurn))
+            interactionTurn.complete(failureTurn)
+        }
+      }
+      else if (result.kind === 'UNAVAILABLE' && props.deviceSettings?.backgroundSpeechMode === 'off' && result.decisionState?.phase === 'ordering') {
+        const question = serviceClarificationWindow.clarify(result.decisionState, utterance.text)
+        const message = question?.question ?? t('stage.kiosk-agent.meaning-unresolved')
+        conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: message, slices: [], tool_results: [] }]
+        await interactionRecording.append('assistant_text', message, { source: 'bounded_meaning_repair', questionId: question?.questionId })
+        if (!currentAgentRequest() && ticket.isCurrent()) {
+          const repairTurn = interactionTurn.begin('voice', 'speaking')
+          await speakAssistantReply(message, repairTurn)
+          if (interactionTurn.isCurrent(repairTurn))
+            interactionTurn.complete(repairTurn)
+        }
       }
       finishVoiceDiagnostic(utterance.id, shouldShowDecisionRetry(result) ? 'failed' : 'decided')
       updateDecisionEntry(utterance.id, { route: result.kind === 'IGNORE' ? 'ignored' : result.kind === 'INCOMPLETE' ? 'incomplete' : 'unavailable' })
@@ -1165,6 +1213,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
       await request.done
       if (!ticket.isCurrent())
         return
+      conversationMessages.value = [...conversationMessages.value, { role: 'assistant', content: t('stage.kiosk-agent.unstarted-combined'), slices: [], tool_results: [] }]
       interruptAssistantOutput()
       const turn = interactionTurn.begin('conversation', 'thinking')
       updateDecisionEntry(utterance.id, { route: 'main_agent' })
@@ -1269,11 +1318,12 @@ async function presentFastPathResult(
     if (result.kind === 'CUSTOMER_ENTRY_REQUIRED')
       answer = t('stage.kiosk.customer-entry.complete-first')
     else if (result.kind === 'GREET')
-      answer = '您好！'
+      answer = t('stage.kiosk-agent.greeting-reply')
     else if (earlyReadMessages.length)
       answer = replyWithQuestion(earlyReadMessages.join('\n'), question)
     else
       answer = replyFromReceipt(result.result, question) ?? '已完成你剛剛指定的操作。'
+    answer = replyWithQuestion(answer, question, result.decisionState?.phase)
     const receipt = result.kind === 'FAST_ACTION' && result.result && typeof result.result === 'object' ? result.result as Record<string, unknown> : undefined
     if (!question && (earlyReadMessages.length || Array.isArray(receipt?.items)))
       answer = await replyWithCustomerEntryGate(answer, turn)
@@ -1450,6 +1500,8 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
   if (turn.kind === 'proactive' && !allowsObservedVoice())
     return
   const generation = ++speechGeneration
+  const preparationStartedAt = performance.now()
+  let playbackStartRecorded = false
   interruptAssistantOutput()
   processingSpeechActive.value = false
   // Keep customer-request feedback during synthesis. Proactive speech follows
@@ -1472,6 +1524,10 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
       onPlaying: () => {
         if (signal.aborted || !interactionTurn.isCurrent(turn))
           return
+        if (!playbackStartRecorded) {
+          playbackStartRecorded = true
+          void interactionRecording.append('service_event', JSON.stringify({ kind: 'tts_playback_start', turnId: turn.id, preparationMs: Math.round(performance.now() - preparationStartedAt), preparedAudio: Boolean(preparedAudio) }), { source: 'tts_playback_metrics' })
+        }
         // Native playback ducks waiting music without replacing its player.
         // The cue owner stops it only when this spoken reply finishes.
         processingSpeechActive.value = true
@@ -2159,6 +2215,9 @@ async function sendConversationMessage(
   let timingTimer: ReturnType<typeof setInterval> | undefined
   let longWaitTimer: ReturnType<typeof setTimeout> | undefined
   let browserEffectAttempted = false
+  let orderEffectAttempted = false
+  let orderEffectAttempts = 0
+  let unexecutedOrderAttempts = 0
   // Isolated to this Agent turn. Interrupted turns cannot publish another
   // turn's question; subsequent results replace an earlier operational offer.
   let questionReceipt: ReturnType<typeof questionReceiptFrom>
@@ -2275,6 +2334,12 @@ async function sendConversationMessage(
               streamingAssistantMessage.value = undefined
           }
         },
+        onToolRejected: (name, knownUnexecuted) => {
+          if (interactionTurn.isCurrent(turn) && knownUnexecuted && requiresOrderReconciliation(name)) {
+            unexecutedOrderAttempts++
+            orderEffectAttempted = orderEffectAttempts > unexecutedOrderAttempts
+          }
+        },
         onTurnStarted: () => {
           if (!interactionTurn.isCurrent(turn))
             return
@@ -2313,6 +2378,10 @@ async function sendConversationMessage(
           interactionTurn.advance(turn, 'using-tool')
           if (state === 'executing' && !isKioskConversationRetrySafeTool(toolName)) {
             browserEffectAttempted = true
+            if (requiresOrderReconciliation(toolName)) {
+              orderEffectAttempts++
+              orderEffectAttempted = true
+            }
             request.stage = 'mutating'
           }
           updateAgentStep(`${toolName}：${state === 'executing' ? '網頁執行中' : state === 'done' ? '已完成' : '執行失敗'}`)
@@ -2374,6 +2443,13 @@ async function sendConversationMessage(
       if (!interactionTurn.isCurrent(turn))
         return
     }
+    const renderedReply = reply.reply && replyContext ? replyFromContext(JSON.stringify(reply.reply), replyContext) : undefined
+    if (!questionReceipt && replyContext?.waitingFor && renderedReply && !['clarification', 'staff-assistance'].includes(renderedReply.kind)) {
+      questionReceipt = await validatedQuestionReceipt({ pendingCustomerChoice: replyContext.waitingFor })
+      replyContext = { ...replyContext, waitingFor: questionReceipt }
+      if (!interactionTurn.isCurrent(turn))
+        return
+    }
     const presented = replyFromConversation(reply, {
       menu: menuReply,
       requireMenuRead: decisionState?.requireMenuRead,
@@ -2389,8 +2465,8 @@ async function sendConversationMessage(
     })
     if (entryPhase === 'customer_entry' && presented.content === entryPrompt)
       questionReceipt = undefined
-    const answer = presented.role === 'assistant' ? presented.content : undefined
-    const replyKind = presented.clarification ? 'clarification' : reply.reply?.kind
+    const answer = presented.role === 'assistant' ? replyWithQuestion(presented.content, questionReceipt, replyContext?.phase) : undefined
+    const replyKind = presented.clarification ? 'clarification' : renderedReply?.kind ?? reply.reply?.kind
     if (!interactionTurn.isCurrent(turn))
       return
     await interactionRecording.append('service_event', JSON.stringify({ kind: 'main_presentation_metrics', taskId, status: presented.role === 'assistant' ? 'presented' : 'rejected', ...(replyKind ? { replyKind } : {}), ...(reply.reply?.kind === 'staff-assistance' ? { assistanceAction: reply.reply.action, notificationMode: 'simulated' } : {}), ...(presented.clarification ? { recovery: 'presentation-clarification' } : {}), ...(presented.role === 'error' ? { reason: reply.reason ?? 'unverified-reply' } : {}) }), { source: 'main_presentation_metrics' })
@@ -2402,7 +2478,9 @@ async function sendConversationMessage(
       ...conversationMessages.value,
       answer
         ? { role: 'assistant', content: answer, slices: [], tool_results: [] }
-        : { role: 'error', content: presented.content },
+        : orderEffectAttempted
+          ? { role: 'error', content: presented.content }
+          : { role: 'assistant', content: presented.content, slices: [], tool_results: [] },
     ]
     if (!answer && !browserEffectAttempted)
       retryableConversationRequest.value = retryContextKey && interactionRecording.visitorSessionId.value ? { state: 'available', text, sessionId: interactionRecording.visitorSessionId.value, iframeRevision: scenarioRegistry.iframeRevision.value, originalUtteranceId: options.utteranceId, requestId: turn.id, contextKey: retryContextKey } : undefined
@@ -2417,11 +2495,11 @@ async function sendConversationMessage(
       if (reply.reply?.kind === 'staff-assistance' && reply.reply.action === 'confirm-order' && replyContext && entryPhase !== 'customer_entry') {
         serviceClarificationWindow.present({ purpose: 'order-assistance', questionId: crypto.randomUUID(), question: answer, sourceUtterance: text, contextKey: serviceContextKey(replyContext), expiresAt: Date.now() + 30_000 })
       }
-      else if (reply.reply?.kind === 'staff-assistance' && reply.reply.action === 'offer' && replyContext && entryPhase !== 'customer_entry') {
-        serviceClarificationWindow.present({ purpose: 'staff-assistance', questionId: crypto.randomUUID(), question: answer, sourceUtterance: text, contextKey: serviceContextKey(replyContext), expiresAt: Date.now() + 30_000 })
+      else if (renderedReply?.kind === 'staff-assistance' && renderedReply.action === 'offer' && replyContext && entryPhase !== 'customer_entry') {
+        serviceClarificationWindow.present({ purpose: 'staff-assistance', questionId: crypto.randomUUID(), question: answer, sourceUtterance: text, unavailableConditions: replyContext.unavailableConditions, contextKey: serviceContextKey(replyContext), expiresAt: Date.now() + 30_000 })
       }
       else if (replyKind === 'clarification' && replyContext && entryPhase !== 'customer_entry') {
-        serviceClarificationWindow.present({ questionId: crypto.randomUUID(), question: answer, sourceUtterance: text, contextKey: serviceContextKey(replyContext), expiresAt: Date.now() + 30_000 })
+        serviceClarificationWindow.present({ questionId: crypto.randomUUID(), question: answer, sourceUtterance: text, unavailableConditions: replyContext.unavailableConditions, contextKey: serviceContextKey(replyContext), expiresAt: Date.now() + 30_000 })
       }
       interactionTurn.advance(turn, 'speaking')
       // The server keeps operation prose only as an internal draft. Record
@@ -2435,7 +2513,10 @@ async function sendConversationMessage(
   }
   catch {
     if (interactionTurn.isCurrent(turn)) {
-      conversationMessages.value = [...conversationMessages.value, { role: 'error', content: t(`stage.kiosk-agent.${browserEffectAttempted ? 'result-unknown' : 'reply-incomplete'}`) }]
+      const failureMessage = t(`stage.kiosk-agent.${orderEffectAttempted ? 'result-unknown' : 'reply-incomplete'}`)
+      conversationMessages.value = [...conversationMessages.value, orderEffectAttempted
+        ? { role: 'error', content: failureMessage }
+        : { role: 'assistant', content: failureMessage, slices: [], tool_results: [] }]
       if (!browserEffectAttempted && retryContextKey && interactionRecording.visitorSessionId.value)
         retryableConversationRequest.value = { state: 'available', text, sessionId: interactionRecording.visitorSessionId.value, iframeRevision: scenarioRegistry.iframeRevision.value, originalUtteranceId: options.utteranceId, requestId: turn.id, contextKey: retryContextKey }
       updateAgentStep('Main Agent 未能完成')
@@ -2688,6 +2769,7 @@ function reloadKiosk() {
 }
 
 function closeAdminPanel() {
+  void endKioskAdminSession().catch(() => console.warn('Could not clear local administrator grant; it will expire automatically.'))
   const { admin: _admin, ...query } = route.query
   void router.replace({ query })
 }
@@ -2799,7 +2881,13 @@ onUnmounted(() => {
             @start="startOperatorMicrophone"
             @stop="stopMicrophone"
           />
-          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated', $event)" />
+          <DeviceSettingsPanel :endpoint="deviceSettingsEndpoint" mode="local" @updated="emit('deviceSettingsUpdated', $event)">
+            <template #reauthorize>
+              <KioskAdminAccess single-tap>
+                {{ t('deviceSettings.verifyPin') }}
+              </KioskAdminAccess>
+            </template>
+          </DeviceSettingsPanel>
         </template>
       </KioskAdminPanel>
     </aside>

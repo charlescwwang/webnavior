@@ -5,7 +5,27 @@ import { describe, expect, it } from 'vitest'
 import { menu as sampleMenu } from '../../../order-menu/src/domain/order-machine'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
-import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
+
+// Report: this chat, Nov08; unclear input needs a finite path, not a repeated question loop.
+it('asks once, offers assistance once, then stops asking until real progress or a reset', () => {
+  const window = createServiceClarificationWindow()
+  const state = { phase: 'ordering' as const }
+  expect(window.clarify(state, '不明需求')?.purpose).toBeUndefined()
+  expect(window.clarify(state, '仍不清楚')?.purpose).toBe('staff-assistance')
+  expect(window.clarify(state, '還是不清楚')).toBeUndefined()
+  window.settle({ kind: 'UNAVAILABLE' })
+  expect(window.clarify(state, '再來一次')).toBeUndefined()
+  window.reset()
+  expect(window.clarify(state, '新訪客的需求')?.purpose).toBeUndefined()
+})
+
+it('adds open guidance only to ordinary ordering and never replaces an owned question', () => {
+  expect(replyWithQuestion('已加入餐點。', undefined, 'ordering')).toBe('已加入餐點。 接下來想點哪道餐點？')
+  expect(replyWithQuestion('訂單已完成。', undefined, 'checkout_complete')).toBe('訂單已完成。')
+  expect(replyWithQuestion('付款處理中。', undefined, 'payment_locked')).toBe('付款處理中。')
+  expect(replyWithQuestion('還想吃什麼？', undefined, 'ordering')).toBe('還想吃什麼？')
+})
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct29 cancellation -> takeout.
 it.each(['我不要便當了', '我不要便當了，哪有說我要自取'])('keeps an unresolved operation conversational without allowing an unrelated write: %s', async (transcript) => {
@@ -36,7 +56,7 @@ it('turns an unverified no-operation completion into an owned clarification inst
   expect(result.role).toBe('assistant')
   expect(result.content).not.toContain('已移除')
   expect(result.content).not.toContain('再試一次')
-  expect(result.content).toContain('查詢的餐點或訂單調整')
+  expect(result.content).toContain('查詢哪道餐點，或調整哪項訂單內容')
   expect(result).toHaveProperty('clarification', true)
   expect(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')).cart).toEqual(context.cart)
 })
@@ -76,8 +96,8 @@ it('answers structured information and clarification from the current context wi
   context.allowedPaymentMethods = ['linepay', 'jkopay']
   const before = context.cart
   const present = (value: unknown) => replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], answer: JSON.stringify(value) }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' })
-  expect(present({ kind: 'payment-methods' })).toEqual({ role: 'assistant', content: '目前支援LINE Pay、街口支付。' })
-  expect(present({ kind: 'menu-information', subjects: ['湯包'] })).toEqual({ role: 'assistant', content: '目前沒有提供「湯包」。' })
+  expect(present({ kind: 'payment-methods' })).toEqual({ role: 'assistant', content: '目前支援LINE Pay、街口支付。接下來想點哪道餐點？' })
+  expect(present({ kind: 'menu-information', subjects: ['湯包'] })).toEqual({ role: 'assistant', content: '目前沒有提供「湯包」。您想查詢哪道餐點？' })
   expect(present({ kind: 'clarification' }).role).toBe('assistant')
   expect(replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['kiosk_session_history'], answer: '{"kind":"clarification"}' }, { menu: createMenuReplyWindow(), context, failureMessage: '未完成。' }).role).toBe('assistant')
   expect(present({ kind: 'payment-methods', answer: '已完成付款。' })).toHaveProperty('clarification', true)
@@ -378,7 +398,7 @@ it('pauses an unexecuted demand with a neutral clarification instead of a failur
   context.waitingFor = { questionId: 'old', purpose: 'confirmation', question: '確定加購水餃嗎？', choices: [], expiresAt: Date.now() + 30000 }
   const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: [], reply: { kind: 'clarification' }, answer: '已加入水餃。' }, { context, menu: createMenuReplyWindow(), handoff: { intent: 'ADD_ITEM' }, failureMessage: '失敗。' })
   expect(reply.role).toBe('assistant')
-  expect(reply.content).toContain('剛才沒有理解清楚')
+  expect(reply.content).toContain('您想查詢哪道餐點')
   expect(reply.content).not.toContain('水餃')
 })
 
@@ -400,7 +420,7 @@ it('presents a reviewed clarification after reads instead of replacing it with m
   menu.record('menu_get', { items: [], customerMessage: '沒有查到。' })
   const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], reply: { kind: 'clarification' } }, { menu, context, failureMessage: '失敗。' })
   expect(reply.role).toBe('assistant')
-  expect(reply.content).toContain('查詢的餐點或訂單調整')
+  expect(reply.content).toContain('查詢哪道餐點，或調整哪項訂單內容')
   expect(reply.content).not.toContain('沒有查到')
 })
 
@@ -451,7 +471,7 @@ it('preserves missing-data information through the display-required Host boundar
   const result = { status: 'completed' as const, agentMode: 'active' as const, requestedTools: [], reply: { kind: 'service-information' as const, topic: 'other' as const } }
   const shown = replyFromConversation(result, { menu: createMenuReplyWindow(), context, requireMenuRead: true, failureMessage: '未展示。' })
   expect(shown.role).toBe('assistant')
-  expect(shown.content).toContain('無法確認')
+  expect(shown.content).toContain('協助查菜單')
   expect(shown.content).not.toContain('理解')
   expect(shown).not.toHaveProperty('clarification')
 })

@@ -2,6 +2,32 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { createKioskUtteranceQueue } from './kioskUtteranceQueue'
 
+// Report: this chat, Nov08; typed text stayed invisible until the active operation finished.
+it('reports received text before waiting and does not report a late expired ASR twice', async () => {
+  let finish!: () => void
+  const received: string[] = []
+  const processed: string[] = []
+  const queue = createKioskUtteranceQueue({ onReceived: utterance => received.push(utterance.text), process: async (utterance) => {
+    processed.push(utterance.text)
+    if (utterance.text === '第一句')
+      await new Promise<void>(resolve => finish = resolve)
+  } })
+  queue.submit({ source: 'simulation', text: '第一句' })
+  await Promise.resolve()
+  queue.submit({ source: 'simulation', text: '改成兩份' })
+  expect(received).toEqual(['第一句', '改成兩份'])
+  expect(processed).toEqual(['第一句'])
+  const reservation = queue.reserve('asr')
+  if (reservation.kind !== 'ACCEPTED')
+    throw new Error('The test ASR reservation should fit in the queue.')
+  reservation.cancel()
+  reservation.complete({ text: '過期文字' })
+  expect(received).toEqual(['第一句', '改成兩份'])
+  finish()
+  await queue.idle()
+  expect(processed).toEqual(['第一句', '改成兩份'])
+})
+
 describe('kiosk utterance queue', () => {
   it('processes later ASR results after an earlier handler rejects with an HTTP 500 error', async () => {
     const failure = new Error('HTTP 500')

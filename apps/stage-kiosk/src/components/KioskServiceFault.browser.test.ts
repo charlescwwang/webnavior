@@ -9,12 +9,12 @@ import KioskServiceFault from './KioskServiceFault.vue'
 import { isKioskAdminSessionActive } from '../services/admin-session'
 
 afterEach(() => {
-  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
   isKioskAdminSessionActive.value = false
 })
 
 it('announces the simulated notification and permits recovery only after PIN verification', async () => {
-  vi.stubEnv('VITE_KIOSK_ADMIN_PIN', '4812')
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_, init) => JSON.parse(String(init?.body)).pin === '4812' ? Response.json({ expiresAt: Date.now() + 900000 }) : new Response('', { status: 401 }))
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }] })
   await router.push('/')
   const view = render(KioskServiceFault, { props: { busy: false }, global: { plugins: [router, createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
@@ -27,7 +27,7 @@ it('announces the simulated notification and permits recovery only after PIN ver
     for (const digit of ['4', '8', '1', '2'])
       await view.getByRole('button', { name: digit, exact: true }).click()
     await view.getByRole('button', { name: '繼續', exact: true }).click()
-    expect(view.emitted('unlock')).toHaveLength(1)
+    await expect.poll(() => view.emitted('unlock')?.length).toBe(1)
     await view.rerender({ busy: true })
     await expect.element(view.getByRole('button', { name: '清除內容，開始新訂單' })).toBeDisabled()
     expect(view.emitted('restart')).toBeUndefined()

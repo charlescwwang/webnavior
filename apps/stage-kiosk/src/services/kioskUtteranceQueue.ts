@@ -43,6 +43,8 @@ export function createKioskUtteranceQueue(options: {
   onDrop?: (utterance: KioskUtterance, reason: 'expired' | 'reset') => void
   onError?: (utterance: KioskUtterance, error: unknown) => void
   onState?: (state: { active?: KioskUtterance, pending: readonly KioskUtterance[] }) => void
+  /** Called once when complete text arrives, before it waits for processing. */
+  onReceived?: (utterance: KioskUtterance) => void
   process: (utterance: KioskUtterance, ticket: KioskUtteranceTicket) => Promise<void>
 }) {
   const now = options.now ?? (() => Date.now())
@@ -141,7 +143,8 @@ export function createKioskUtteranceQueue(options: {
       }, maxWaitMs)
     }
     markTranscriptionProgress()
-    pending.push({ ready, settle, utterance })
+    const item: PendingUtterance = { ready, settle, utterance }
+    pending.push(item)
     publish()
     void drain()
     return {
@@ -151,6 +154,13 @@ export function createKioskUtteranceQueue(options: {
       markTranscriptionProgress,
       complete: (input) => {
         const text = input.text.trim()
+        if (settled)
+          return
+        if (text) {
+          item.utterance = { ...utterance, ...input, text }
+          options.onReceived?.(item.utterance)
+          publish()
+        }
         settle(text ? { ...utterance, ...input, text } : undefined)
       },
       cancel: () => settle(),

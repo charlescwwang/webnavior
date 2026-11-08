@@ -2,7 +2,18 @@ import type { ConversationRetry } from './kioskConversationRetry'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { isKioskConversationRetrySafeTool, resumeConversationRetry, retryMatches } from './kioskConversationRetry'
+import { isKioskConversationRetrySafeTool, requiresOrderReconciliation, resumeConversationRetry, retryMatches } from './kioskConversationRetry'
+
+// Report: this chat, Nov08; a failed recommendation must not lock an untouched cart.
+it('separates nonreplayable presentation from unknown commerce effects', () => {
+  expect(isKioskConversationRetrySafeTool('menu_recommend')).toBe(false)
+  expect(requiresOrderReconciliation('menu_recommend')).toBe(false)
+  expect(requiresOrderReconciliation('menu_select_item')).toBe(false)
+  expect(requiresOrderReconciliation('order_add_item')).toBe(true)
+  expect(requiresOrderReconciliation('cart_set_line_quantity')).toBe(true)
+  expect(requiresOrderReconciliation('checkout_select_payment')).toBe(true)
+  expect(requiresOrderReconciliation('future-unknown-tool')).toBe(true)
+})
 
 describe('kiosk conversation retry safety', () => {
   it('only allows a replay after read-only menu and cart tools', () => {

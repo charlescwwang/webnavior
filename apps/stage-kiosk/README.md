@@ -65,10 +65,14 @@ allows that classifier to withhold background speech. All three still require
 semantic tool authorization; disabling background classification is not consent
 to arbitrary cart or payment operations.
 
-ASR text appears immediately as a provisional conversation row. After Jev
-accepts a complete utterance, Host promotes it once into formal conversation
-history before Agent/tool execution finishes. Incomplete or ignored candidates
-are not promoted; session reset clears pending rows. Existing ASR/VAD/TTS
+With background classification `off`, completed ASR and typed input remain in
+formal conversation history before semantic processing, including when browser
+context retrieval fails. Showing input does not grant tool authority or count
+as accepted customer activity. Other background modes retain provisional ASR
+rows until admission. Technical browser context/transport failures preserve the
+original sentence and trigger the existing assistance lifecycle in both input
+modes; they are not silent background rejections. Session reset clears pending
+rows. Existing ASR/VAD/TTS
 capture and provider configuration are reused.
 
 ## Service limits and unfinished requests
@@ -156,22 +160,37 @@ there is no separate consent stream for that path. Text mode stops capture and
 never requests microphone permission. Permission completion alone does not mean
 that DSP/VAD is ready; the operator can retry capture from Kiosk Admin.
 
-A customer conversation error (`role: error`, including unverified Main replies)
-or an uncaught utterance failure latches a service pause. Voice admission,
+A possible order effect without a confirmed result (`role: error`),
+or an uncaught utterance failure whose effects cannot be determined, latches a service pause. Voice admission,
 queued work, touch input and customer retry controls are blocked. The latch is
 kept in per-tab session storage through reloads. Existing items stay in the menu.
 Only a new order with a successful order-round reset or a newly validated local
 administrator PIN with successful service recovery clears it. PIN recovery
 waits for issued Agent work to settle and never resets/reloads the menu.
-The existing uncertainty and duplicate-submission guards still apply. Technical ASR
-understanding failures, including an invalid recovery tool response before speech
-admission, use this same pause, staff-notification popup and spoken reminder.
-The recognized sentence is retained in conversation with the failure; background
-speech and ordinary semantic uncertainty remain outside this failure path.
+The existing uncertainty and duplicate-submission guards still apply. Failed
+context reads and decisions before execution now retain the original input and
+show a recoverable reply instead of pausing an untouched order. A failed context
+read may be refreshed once within the same turn deadline, never a cart/payment
+write. Presentation effects remain nonreplayable even when they do not require
+order reconciliation. A tool rejection proves nonexecution only through its
+validated rejection envelope; a generic error is not that proof. Meaning repair
+asks once, offers assistance once, then stops asking and gives manual guidance.
+Ordinary no-match, missing options and refusals do not latch a technical fault.
+With background filtering off, complete ASR and successfully queued text appear
+as soon as received, then merge into history at processing without duplication.
+Expired/cancelled queued sentences have a visible outcome. Visibility does not
+grant operation consent or count as admitted customer activity.
 Technical details remain in diagnostics. At the owner’s request, staff
 notification is currently simulated: customer speech says staff were notified,
 and the service event explicitly records `delivery: simulated`. No remote
 notification is sent.
+
+Normal replies end in one actionable question, with the current Menu-owned
+question taking precedence over generic guidance. Payment/completion/restricted
+states retain their status instructions. Store-information assistance offers
+create a current invitation for the next yes/no reply. TTS remains after
+execution/results, without per-step speech; `tts_playback_start` records the
+turn ID and preparation-to-playback time separately from model/UI timing.
 
 ## Run
 
@@ -897,22 +916,34 @@ generated-text path and use the chat model when the policy is off.
 ### Per-device operational settings
 
 System administrators open **Devices → Device settings** in the Dashboard
-(`/admin/kiosk/devices`) to configure each registered Kiosk and delegate
-individual fields with **Allow local changes**. The Kiosk's **現場設定** page
-edits the same Server-owned policy; saving requires the device cookie and a
-signed-in system administrator or an administrator of that device's Site.
-The PIN alone cannot authorize a settings write.
+(`/admin/kiosk/devices`). The Kiosk's PIN-protected **現場設定** page can edit
+all the same device settings without per-field delegation. Both editors write
+one Server-owned override map. Edit any displayed field directly, then save;
+there is no per-field override switch. Only edited fields and already saved
+device choices are written, so other fields continue inheriting Site defaults.
+Local saves require the enrolled device cookie and a Server-verified PIN grant;
+no management account is needed on the Kiosk. Dashboard saves retain the existing
+system/Site administrator account checks. A rejected local save (401) is explicitly
+shown as **not saved** beside the save button, with an inline PIN entry that keeps
+the current draft. Wrong PINs, unavailable verification and expired grants do not
+change the running or persisted settings. PIN grants expire after 15 minutes,
+are bound to the device credential, and are cleared when the operator closes
+local settings. Accepted local writes are audited as `local-pin`, with no invented
+user identity.
 
-Precedence is Site defaults, then administrator device overrides, then explicitly
-delegated local overrides. Site defaults cover camera capture (off, JPEG snapshot,
-event clip, or continuous video), VLM, performance, and VAD; observation,
-greetings, reminders, timing, detection zones, and the MediaPipe face-confidence
-threshold (`0.40`–`0.80`, default `0.60`) have shared defaults and can be overridden
-per device. Newly enrolled devices override observation, greetings, reminders
-and voice diagnostics to enabled, with greeting trigger `mixed` (any signal).
-Those five settings permit local adjustment from enrollment. Other fields remain
-locked unless delegated; existing saved device settings are unchanged. Old browser-local observation
-preferences are no longer authoritative and are not migrated automatically.
+Migration `0048_shared_device_settings` preserves previously effective delegated
+local values in the shared override map, discards inactive local values and
+increments each revision so older forms cannot overwrite the migrated policy.
+Apply the migration with the matching API/UI release; older clients' delegation
+fields are no longer accepted by the strict settings write contract.
+
+Site defaults cover camera capture (off, JPEG snapshot, event clip, or continuous
+video), VLM, performance, and VAD; observation, greetings, reminders, timing,
+detection zones, and the MediaPipe face-confidence threshold (`0.40`–`0.80`,
+default `0.60`) have shared defaults and can be overridden per device. Newly
+enrolled devices still override observation, greetings, reminders and voice
+diagnostics to enabled, with greeting trigger `mixed` (any signal). Old
+browser-local observation preferences are not authoritative and are not migrated.
 
 The **Presence vision mode** setting is per-device and supports `face_only`
 (the legacy baseline), `pose_only`, and `pose_plus_conditional_face` (the
@@ -920,15 +951,16 @@ default). Pose modes use local Pose Lite for anonymous relative body-scale and
 movement evidence; conditional face checks run only for attention-capable
 greeting modes and never in the same inference callback as Pose.
 
-Removing delegation discards that local value permanently. Administrators may
-also clear an existing local override while keeping the field delegated. Every
-accepted write increments the device revision and records the operator and
-before/after values in the audit log. A stale form receives HTTP 409 and must be
-reloaded instead of silently overwriting another operator's changes.
+Every accepted write increments the device revision and records the operator,
+source and before/after values in the audit log. Both editor panels refresh
+clean forms every 10 seconds and on window focus. Unsaved drafts are retained;
+a stale save receives HTTP 409 and requires explicit reload instead of silently
+overwriting another operator's changes. Disposing a panel stops its refreshes.
 
-The active Kiosk refreshes effective settings every 15 seconds after the previous
-request finishes. Offline it retains the last snapshot; reconnection applies the
-current policy. Camera work is stopped and restarted when policy changes, and
+The active Kiosk refreshes effective settings every 10 seconds after the previous
+request finishes and on window focus; a successful local save applies its
+acknowledged snapshot immediately. Offline it retains the last snapshot;
+reconnection applies the current policy. Camera work is stopped and restarted when policy changes, and
 the Server independently enforces recording and proactive-action permissions.
 Recording without observation does not start MediaPipe. These controls do not
 change browser camera/microphone permission or the existing local preview toggle.
@@ -988,16 +1020,25 @@ as an upload-size refusal, separately from incomplete recognition/provider failu
 
 ### Local access
 
-The visitor experience does not display settings. Tap the `AIRI 餐飲服務員` label five times within two seconds, then enter the configured PIN with the onscreen number pad. It provides digits0–9, clear and backspace; the password remains masked. Four taps or an expired sequence does not open maintenance. PIN entry appears above camera/diagnostic overlays and supports touch-only use. Physical keyboard input remains available. Configure the PIN before starting the kiosk:
+The visitor experience does not display settings. Tap the `AIRI 餐飲服務員`
+label five times within two seconds, then enter the PIN with the onscreen number
+pad. The browser sends it to `POST /api/kiosk/admin/session`; only Server success
+opens maintenance. The password remains masked, and failed/offline attempts
+never unlock the UI. Five attempts per enrolled device per minute are allowed.
+The API uses an HttpOnly, Secure (HTTPS), SameSite=Strict signed cookie scoped
+to `/api/kiosk`, with exact-origin checks for local writes. It never grants
+Dashboard or other-device access. Deleting `/api/kiosk/admin/session` clears the
+browser grant; Server expiry remains authoritative if the network is unavailable.
 
-```bash
-VITE_KIOSK_ADMIN_PIN='choose-a-private-pin' pnpm --filter @proj-airi/stage-kiosk run dev
-```
-
-Public builds with a non-loopback `VITE_API_SERVER_URL` require a nonempty
-`VITE_KIOSK_ADMIN_PIN`. Isolated release builds must explicitly inherit the existing
-private PIN configuration; never substitute a new PIN or print its value in logs.
-A missing PIN fails the build before publishing. Local development can omit it.
+Configure the API's private `KIOSK_ADMIN_PIN` (4–12 digits), or use
+`KIOSK_ADMIN_PIN_FILE` (default `./data/kiosk-admin.pin`, relative to the Server's
+working directory). The environment value takes precedence. Keep the file outside
+public asset directories and readable only by the service owner (mode0600).
+Missing configuration leaves PIN verification closed. The Server reads it at
+startup; restart the API after changing it. Rotation invalidates existing grants.
+Kiosk builds no longer require or read `VITE_KIOSK_ADMIN_PIN` and must not embed
+the PIN in browser JS. Older assets may still contain the formerly embedded PIN;
+rotate that value when moving to Server verification.
 
 The startup picker and Kiosk Admin share the same concrete device selector.
 Editing the selection is a draft: the current microphone keeps running until
@@ -1189,7 +1230,7 @@ An approved interactive service can optionally serve `/.well-known/webnavior-kio
 
 The manifest must be served with CORS allowing the kiosk origin to fetch it. Labels are display-only: each non-empty label is capped at 160 characters and malformed entries are ignored individually. New tools without an entry continue to work and display the generic progress message.
 
-`VITE_KIOSK_ADMIN_PIN` is an on-device guard against accidental customer access, not a replacement for server-side administrator authentication: Vite exposes `VITE_` values to the browser bundle. Production deployment should place provider credentials in a protected management service rather than relying on this PIN alone.
+The local PIN is verified by the Server for device-scoped settings only; management accounts and provider credentials remain separate Server-owned boundaries. Never place operator secrets in browser `VITE_` variables.
 
 During a bound Main Agent task, the ordering page temporarily locks customer
 controls and shows **Use manual controls**. Switching aborts model transport,

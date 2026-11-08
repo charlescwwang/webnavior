@@ -246,7 +246,21 @@ export async function runFastPath(input: {
     }
   }
   try {
-    let rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript })
+    let rawCandidates: unknown
+    // Refresh a failed read once within the same turn. Never replay a write.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        rawCandidates = await input.webMcp.execute(candidateTool, { transcript: input.transcript })
+        if (!rawCandidates || typeof rawCandidates !== 'object' || !('ok' in rawCandidates) || rawCandidates.ok !== false)
+          break
+      }
+      catch (error) {
+        if (attempt === 1)
+          throw error
+      }
+      if (input.isCurrent?.() === false)
+        return { kind: 'DEFERRED' }
+    }
     browserContext = rawCandidates
     decisionState = decisionStateFrom(rawCandidates)
     let candidates = candidatesFrom(rawCandidates)
@@ -254,9 +268,13 @@ export async function runFastPath(input: {
     const unfinished = fragment && decisionState && fragment.stateKey === unfinishedStateKey(decisionState) ? fragment : undefined
     // A real locked phase has no writable candidates, but still admits a
     // bounded information/background decision. A missing snapshot does not.
-    if (candidates.length === 0 && !decisionState && !input.activeRequest) {
-      input.onTrace?.({ browserContext: rawCandidates, decision: { kind: 'UNAVAILABLE' }, transcript: input.transcript })
-      return { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
+    if ((rawCandidates && typeof rawCandidates === 'object' && 'ok' in rawCandidates && rawCandidates.ok === false)
+      || (candidates.length === 0 && !decisionState && !input.activeRequest)) {
+      // A failed/missing browser snapshot is a technical failure, not evidence
+      // that this utterance is background speech. Preserve it in the fault UI.
+      const decision: FastPathDecision = { kind: 'UNAVAILABLE', recovery: { status: 'failed', failure: 'invalid' } }
+      input.onTrace?.({ browserContext: rawCandidates, decision, transcript: input.transcript })
+      return { ...decision, ...(decisionState ? { decisionState } : {}) }
     }
 
     const resolvedCandidateId = rawCandidates && typeof rawCandidates === 'object' && 'resolvedCandidateId' in rawCandidates
@@ -450,12 +468,18 @@ export async function runFastPath(input: {
     if (selectedDisposition === 'DEFER' || input.isCurrent?.() === false)
       return { kind: 'DEFERRED', ...(decisionState ? { decisionState } : {}) }
 
-    executionStarted = true
+    // These finite candidates only read/present menu or cart facts. A lost
+    // read receipt must not be treated as an unknown purchase. Unknown/new
+    // action kinds retain the conservative write policy.
+    const mayChangeOrder = !['intent:search-menu', 'intent:search-all-menu', 'intent:recommend', 'intent:recommend-more', 'intent:view-cart', 'intent:return-menu'].includes(action.id)
+    executionStarted = mayChangeOrder
     let result = await input.webMcp.execute(executeTool, { candidateId: action.id, ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}), ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}), ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}) })
     executionStarted = false
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, executionResult: result, transcript: input.transcript })
-    if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
-      return { kind: 'EXECUTION_FAILED', uncertain: false, result, decisionState }
+    if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
+      const knownUnexecuted = ('executed' in result && result.executed === false) || ('rejection' in result && result.rejection === 'item-selection')
+      return { kind: 'EXECUTION_FAILED', uncertain: mayChangeOrder && !knownUnexecuted, result, decisionState }
+    }
     decisionState = completedReadState(decisionState, result)
     await notifyExecuted(result)
     if (result && typeof result === 'object' && (result as Record<string, unknown>).needsAssistant === true)
@@ -527,10 +551,11 @@ export async function runFastPath(input: {
     }
   }
   catch (error) {
-    input.onTrace?.({ browserContext: { snapshot: browserContext, error: errorMessageFrom(error) ?? 'Fast Path unavailable' }, decision: { kind: 'UNAVAILABLE' }, transcript: input.transcript })
-    // Failure is not a semantic assistant request. The caller may report it,
-    // but must not route unfiltered ambient speech to Main Agent.
-    return executionStarted ? { kind: 'EXECUTION_FAILED', uncertain: true, decisionState } : { kind: 'UNAVAILABLE', ...(decisionState ? { decisionState } : {}) }
+    const decision: FastPathDecision = { kind: 'UNAVAILABLE', recovery: { status: 'failed', failure: 'provider-error' } }
+    input.onTrace?.({ browserContext: { snapshot: browserContext, error: errorMessageFrom(error) ?? 'Fast Path unavailable' }, decision, transcript: input.transcript })
+    // Show a technical fault without treating it as permission to invoke Main
+    // or retry an operation whose execution may already have started.
+    return executionStarted ? { kind: 'EXECUTION_FAILED', uncertain: true, decisionState } : { ...decision, ...(decisionState ? { decisionState } : {}) }
   }
 }
 
@@ -569,6 +594,8 @@ function completedReadState(state: FastPathDecisionState | undefined, result: un
 export function refreshConversationState(context: ConversationContext, task?: KioskConversationDecisionState): KioskConversationDecisionState {
   const { excludeIngredients, includeIngredients, dietary, ...price } = context.constraints
   const invitation = task?.serviceClarification
+  if (invitation?.unavailableConditions?.length && invitation.expiresAt > Date.now() && invitation.contextKey === serviceContextKey(context))
+    context = { ...context, unavailableConditions: invitation.unavailableConditions }
   if (invitation?.purpose === 'order-assistance' && invitation.expiresAt > Date.now() && invitation.contextKey === serviceContextKey(context))
     context = { ...context, orderAssistance: { questionId: invitation.questionId, expiresAt: invitation.expiresAt } }
   if (invitation?.purpose === 'staff-assistance' && invitation.expiresAt > Date.now() && invitation.contextKey === serviceContextKey(context))
@@ -637,6 +664,10 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   const protectedUncertainty = uncertainMeaning && !qualifiedOperation && !decision?.handoff
   const serviceAnswer = uncertainMeaning && state.serviceClarification && decision?.recovery?.readOnly === true
   const readOnly = priceInformation || orderInformation || decision?.requestScope === 'menu-information' || decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
+  const serviceQuestion = state.serviceClarification
+  const assistanceQuestion = serviceQuestion && ['staff-assistance', 'order-assistance'].includes(serviceQuestion.purpose ?? '')
+  const serviceAnswerAllowed = decision?.reason !== 'NEW_REQUEST' && decision?.requestScope !== 'order-operation'
+    && (decision?.recovery?.readOnly === true || decision?.reason === 'GENERAL_QUESTION')
   return {
     ...(state.serviceMode ? { serviceMode: state.serviceMode } : {}),
     ...(decision?.requestScope ? { requestScope: decision.requestScope } : {}),
@@ -646,7 +677,7 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
     // transition. Service admission alone never grants browsing authority.
     ...(decision?.reason === 'GENERAL_QUESTION' || serviceAnswer ? { serviceReply: true } : {}),
     ...(protectedUncertainty && !requireMenuRead ? { replyOnly: true } : {}),
-    ...(state.serviceClarification && (!['staff-assistance', 'order-assistance'].includes(state.serviceClarification.purpose ?? '') || decision?.recovery?.readOnly === true) ? { serviceClarification: state.serviceClarification } : {}),
+    ...(serviceQuestion && (!assistanceQuestion || serviceAnswerAllowed) ? { serviceClarification: serviceQuestion } : {}),
     ...(decision?.handoff ? { handoff: decision.handoff } : {}),
     ...(requireMenuRead ? { requireMenuRead: true } : {}),
     ...(readOnly || state.readOnly === true ? { readOnly: true } : {}),

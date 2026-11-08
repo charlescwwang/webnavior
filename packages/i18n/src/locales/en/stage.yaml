@@ -47,7 +47,8 @@ kiosk:
     backspace: Delete last digit
     cancel: Cancel
     continue: Continue
-    missing-pin: Administrator PIN is not configured. Set VITE_KIOSK_ADMIN_PIN and restart the Kiosk.
+    verification-failed: Could not verify the PIN. Check the connection or ask an administrator to check the Server PIN configuration.
+    rate-limited: Too many PIN attempts. Wait one minute before trying again.
     incorrect-pin: Incorrect PIN. Please try again.
   service-recovery:
     queued: Received. Waiting for the previous request to finish…
@@ -286,7 +287,13 @@ kiosk-agent:
   utterance-deferred: Your last request has not completed. Try again shortly, or use the screen.
   utterance-failed: Voice processing stopped. Your words have been retained. Check the cart or order before asking staff for help to avoid duplicate operations.
   voice-presence-lost: Your request was not completed because your presence in the interaction area could not be confirmed. Stand in front of the camera and try again, or use the screen.
-  decision-failed: Voice processing encountered an error. Your words have been retained; please ask a staff member for help.
+  decision-failed: Processing failed before any action was performed. What would you like to request again?
+  greeting-reply: Hello, what would you like to order?
+  queued-expired: This request waited too long and was not executed. What would you like to request again?
+  queued-cancelled: This request was cancelled before execution.
+  unstarted-replaced: The previous request was stopped before execution. Processing your new request.
+  unstarted-combined: Your additional request was received and will be handled with the pending request.
+  meaning-unresolved: I still could not understand this request. No action was performed. You can order using the screen.
   decision-uncertain: I couldn’t understand your request. Please say it again.
 
 system-one:

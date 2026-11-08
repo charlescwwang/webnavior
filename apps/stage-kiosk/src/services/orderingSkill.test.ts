@@ -13,6 +13,7 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { mockDB } from '../../../server/src/libs/mock-db'
 import { createKioskRoutes } from '../../../server/src/routes/kiosk'
 import { createKioskService } from '../../../server/src/services/domain/kiosk'
+import { orderingSkill } from '../../../server/src/services/domain/kiosk-conversation-skills'
 import { runFastPath } from './kiosk-fast-path'
 import { questionReceiptFrom } from './questionPresentation'
 
@@ -145,7 +146,7 @@ it.each([false, true])('resumes the owned quantity question after Main skill han
   expect(decisions[0]).not.toHaveProperty('confidence')
   expect(sources).toContain('main-skill')
   expect(complete).toHaveBeenCalledTimes(weakAnswer ? 3 : 1)
-  expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain('ordering@6')
+  expect(JSON.stringify(complete.mock.calls[0]![0].body.messages)).toContain(`ordering@${orderingSkill.version}`)
   if (weakAnswer) {
     const messages = complete.mock.calls[1]![0].body.messages as Array<{ role: string, content: string }>
     const facts = JSON.parse(messages.find(message => message.role === 'user')!.content)

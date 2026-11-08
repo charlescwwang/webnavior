@@ -12,6 +12,26 @@ export function isKioskConversationRetrySafeTool(toolName: string, input?: Recor
   return retrySafeToolNames.has(toolName) || (toolName === 'menu_get' && input?.display === false)
 }
 
+/** Display/draft failure is recoverable even when replaying it would change browsing state. */
+export function requiresOrderReconciliation(toolName: string) {
+  return ![
+    'kiosk_session_history',
+    'menu_get',
+    'menu_recommend',
+    'menu_show_recommendations',
+    'menu_open',
+    'menu_select_item',
+    'menu_set_quantity',
+    'menu_set_item_option',
+    'menu_confirm_item',
+    'order_cancel_request',
+    'order_ask_question',
+    'order_defer_question',
+    'cart_get',
+    'seating_get',
+  ].includes(toolName)
+}
+
 /** Original intent context is retained for correlation, never as reusable operation authority. */
 export interface ConversationRetry {
   state: 'available' | 'preparing' | 'submitted' | 'expired'

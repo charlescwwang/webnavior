@@ -34,6 +34,8 @@ interface ConversationPresentationCallbacks {
   taskId?: string
   budgetMs?: number
   onToolResult?: (toolName: string, content: string) => void
+  /** Only the validated tool rejection envelope can prove no operation ran. */
+  onToolRejected?: (toolName: string, knownUnexecuted: boolean) => void
   utteranceId?: number
   decisionState?: KioskConversationDecisionState
   /** Reads this task's Menu facts; each model continuation must use a new snapshot. */
@@ -364,11 +366,13 @@ export function useKioskInteractionRecording() {
             continue
           }
           let rejected = result.completionToolResult.isError
+          let knownUnexecuted = false
           try {
             const payload = JSON.parse(content)
             rejected ||= payload?.ok === false
             if (rejected) {
               const unexecuted = safeParse(toolInputRejectionSchema, payload)
+              knownUnexecuted = unexecuted.success && unexecuted.output.toolName === toolCall.function.name
               if (unexecuted.success && unexecuted.output.toolName === toolCall.function.name && !effectAccepted && !toolSelectionRepaired)
                 inputRejected = true
               else
@@ -395,6 +399,9 @@ export function useKioskInteractionRecording() {
             callbacks.onToolResult?.(toolCall.function.name, content)
             if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'kiosk_session_history'].includes(toolCall.function.name))
               effectAccepted = true
+          }
+          else {
+            callbacks.onToolRejected?.(toolCall.function.name, knownUnexecuted)
           }
           batchRejected ||= Boolean(rejected)
           callbacks.onToolActivity?.(toolCall.function.name, rejected ? 'error' : 'done')

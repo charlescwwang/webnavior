@@ -436,7 +436,9 @@ describe('useKioskInteractionRecording', () => {
     const scope = effectScope()
     try {
       const recording = scope.run(() => useKioskInteractionRecording())!
-      const result = await recording.send('ordering', '牛肉麵一份大辣、一份小辣', [tool])
+      const onToolRejected = vi.fn()
+      const result = await recording.send('ordering', '牛肉麵一份大辣、一份小辣', [tool], { onToolRejected })
+      expect(onToolRejected).toHaveBeenCalledWith('order_add_item', true)
       const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
       if (scenario === 'corrected') {
         expect(result?.status).toBe('completed')

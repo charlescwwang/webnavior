@@ -317,13 +317,13 @@ describe('kiosk System One fast path', () => {
     expect(decide).toHaveBeenLastCalledWith(expect.objectContaining({ transcript: '蝦捲', decisionState: expect.objectContaining({ incompleteSpeech: expect.objectContaining({ related: true }) }) }))
     expect(session.snapshot()).toBeUndefined()
   })
-  it('does not report a rejected browser operation as completed', async () => {
+  it.each([true, false])('requires proof before treating a rejected browser operation as unexecuted: %s', async (knownUnexecuted) => {
     const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
       ? { phase: 'ordering', candidates: [{ id: 'intent:start-checkout', description: '進入結帳' }] }
-      : { ok: false, error: 'Checkout rejected' })
+      : { ok: false, error: 'Checkout rejected', ...(knownUnexecuted ? { executed: false } : {}) })
     const onExecuted = vi.fn()
     const result = await runFastPath({ isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:start-checkout' }), onExecuted, transcript: '我要結帳', webMcp: { execute, tools: [candidateTool, executeTool] } })
-    expect(result).toMatchObject({ kind: 'EXECUTION_FAILED', uncertain: false })
+    expect(result).toMatchObject({ kind: 'EXECUTION_FAILED', uncertain: !knownUnexecuted })
     expect(onExecuted).not.toHaveBeenCalled()
     expect(execute).toHaveBeenCalledTimes(2)
   })
@@ -596,7 +596,7 @@ describe('kiosk System One fast path', () => {
       webMcp: { execute: async () => {
         throw new Error('WebMCP disconnected')
       }, tools: [candidateTool, executeTool] },
-    })).resolves.toEqual({ kind: 'UNAVAILABLE' })
+    })).resolves.toEqual({ kind: 'UNAVAILABLE', recovery: { status: 'failed', failure: 'provider-error' } })
   })
 
   it('hands off to Main Agent when WebMCP context tools are missing or unsupported', async () => {
@@ -688,4 +688,47 @@ it('does not turn a failed Host history write into a provider fallback or execut
   expect(result.kind).toBe('UNAVAILABLE')
   expect(result.reason).not.toBe('PROVIDER_FAILURE')
   expect(execute.mock.calls).toHaveLength(1)
+})
+
+// Report: this chat Nov8 — browser context errors silently removed 「不要了」.
+it('surfaces a rejected context as a technical failure before any model or operation', async () => {
+  const decide = vi.fn()
+  const onTrace = vi.fn()
+  const execute = vi.fn(async () => ({ ok: false, error: 'The confirmed meal does not satisfy the current ordering constraints.' }))
+  const result = await runFastPath({ transcript: '不要了', isEnabled: async () => true, decide, onTrace, webMcp: { execute, tools: [candidateTool, executeTool] } })
+  expect(result.kind).toBe('UNAVAILABLE')
+  expect(shouldShowDecisionRetry(result)).toBe(true)
+  expect(result.recovery).toMatchObject({ status: 'failed', failure: 'invalid' })
+  expect(decide).not.toHaveBeenCalled()
+  expect(execute).toHaveBeenCalledTimes(2)
+  expect(onTrace).toHaveBeenCalledWith(expect.objectContaining({ browserContext: expect.objectContaining({ ok: false }), decision: expect.objectContaining({ recovery: { status: 'failed', failure: 'invalid' } }) }))
+})
+
+// Report: this chat, Nov08; recover a read once without repeating decisions or purchases.
+it('refreshes a failed context once before deciding and never repeats its execution', async () => {
+  let reads = 0
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === candidateTool.name)
+      return ++reads === 1 ? { ok: false } : { phase: 'ordering', candidates: [{ id: 'intent:search-menu', description: '查菜單' }] }
+    return { items: [], customerMessage: '沒有這道餐點。' }
+  })
+  const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:search-menu', confidence: 0.99 }))
+  const result = await runFastPath({ transcript: '有這道餐點嗎', isEnabled: async () => true, decide, webMcp: { execute, tools: [candidateTool, executeTool] } })
+  expect(result.kind).toBe('FAST_ACTION')
+  expect(reads).toBe(2)
+  expect(decide).toHaveBeenCalledTimes(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === executeTool.name)).toHaveLength(1)
+})
+
+it.each(['intent:search-menu', 'intent:add-item'])('distinguishes lost read results from possible cart writes: %s', async (actionId) => {
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === candidateTool.name)
+      return { phase: 'ordering', candidates: [{ id: actionId, description: '目前合法操作' }] }
+    throw new Error('Receipt connection lost')
+  })
+  const result = await runFastPath({ transcript: '我的需求', isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId, confidence: 0.99 }), webMcp: { execute, tools: [candidateTool, executeTool] } })
+  expect(result.kind).toBe(actionId === 'intent:add-item' ? 'EXECUTION_FAILED' : 'UNAVAILABLE')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === executeTool.name)).toHaveLength(1)
+  if (result.kind === 'EXECUTION_FAILED')
+    expect(result.uncertain).toBe(true)
 })

@@ -47,7 +47,8 @@ kiosk:
     backspace: 刪除一碼
     cancel: 取消
     continue: 繼續
-    missing-pin: 尚未設定管理員 PIN。請設定 VITE_KIOSK_ADMIN_PIN 後重新啟動 Kiosk。
+    verification-failed: 無法驗證 PIN，請確認連線或請管理人員檢查 Server PIN 設定。
+    rate-limited: PIN 嘗試次數過多，請稍候一分鐘再試。
     incorrect-pin: PIN 不正確，請再試一次。
   service-recovery:
     queued: 已收到，正在等待前一項處理完成…
@@ -286,7 +287,13 @@ kiosk-agent:
   utterance-deferred: 剛才這句尚未完成處理。請稍後再試一次，或使用螢幕操作。
   utterance-failed: 語音處理中斷，已保留您剛才說的內容。請先確認購物車或訂單，再由服務人員協助，避免重複操作。
   voice-presence-lost: 剛才的詢問尚未完成，目前無法確認您仍在互動區域。請站在鏡頭前再說一次，或使用螢幕操作。
-  decision-failed: 語音處理發生異常，已保留您剛才說的內容，請由服務人員協助。
+  decision-failed: 這次處理失敗，尚未執行操作。您想重新提出哪項需求？
+  greeting-reply: 您好，想點什麼餐點？
+  queued-expired: 這句等待太久，尚未執行，您要重新提出哪項需求？
+  queued-cancelled: 這句尚未執行，已取消。
+  unstarted-replaced: 已停止先前尚未執行的處理，改為處理這次需求。
+  unstarted-combined: 已收到補充，將合併處理尚未執行的需求。
+  meaning-unresolved: 目前仍無法理解這項需求，尚未執行操作，您可以直接使用畫面選餐。
   decision-uncertain: 剛才沒有理解清楚，請再說一次您的需求。
 
 system-one:
