@@ -1,3 +1,5 @@
+import type { MicrophoneCaptureMode } from '../audio/microphoneInput'
+
 import { isMissingAudioInputDeviceError } from '@proj-airi/stage-ui/composables/audio/audio-device'
 import { useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings/audio-device'
 import { useLocalStorage } from '@vueuse/core'
@@ -5,7 +7,7 @@ import { storeToRefs } from 'pinia'
 import { computed, nextTick, onScopeDispose, readonly, shallowRef, watch } from 'vue'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
-import { arrayCaptureConstraints } from '../audio/microphoneInput'
+import { arrayCaptureConstraints, standardCaptureConstraints } from '../audio/microphoneInput'
 
 // The shared device store deduplicates acquisition globally. Serialize Kiosk
 // acquisitions across Scene owners too: a retired permission request must drain
@@ -19,6 +21,7 @@ export function useKioskMicrophoneSelection() {
   const saved = useLocalStorage('kiosk/audio/input-device', '')
   const microphone = shallowRef(saved.value)
   const activeMicrophone = shallowRef('')
+  const captureMode = shallowRef<MicrophoneCaptureMode>('raw')
   const busy = shallowRef(false)
   const text = orderingMessages['zh-Hant'].arrayAudio
   const devices = shallowRef<readonly MediaDeviceInfo[]>(audioInputs.value)
@@ -41,10 +44,11 @@ export function useKioskMicrophoneSelection() {
     activeMicrophone.value = ''
     device.stopStream()
   }
-  function pin(id: string) {
+  function pin(id: string, mode: MicrophoneCaptureMode = 'raw') {
+    captureMode.value = mode
     selectedAudioInput.value = id
     captureConstraints.value = {
-      ...arrayCaptureConstraints,
+      ...(mode === 'standard' ? standardCaptureConstraints : arrayCaptureConstraints),
       // An empty/default ID permits implicit browser selection. Until there is
       // an explicit choice, block shared capture; consent discovery is separate.
       deviceId: { exact: id || '__kiosk_microphone_selection_required__' },
@@ -58,7 +62,7 @@ export function useKioskMicrophoneSelection() {
     if (disposed || ticket !== generation)
       throw new DOMException('Microphone operation retired.', 'AbortError')
   }
-  async function start(signal?: AbortSignal) {
+  async function start(signal?: AbortSignal, mode: MicrophoneCaptureMode = 'raw') {
     const id = selected.value
     if (!id)
       throw new Error(text.chooseMicrophone)
@@ -67,7 +71,7 @@ export function useKioskMicrophoneSelection() {
     busy.value = true
     const operation = captureQueue.then(async () => {
       check(ticket, signal)
-      pin(id)
+      pin(id, mode)
       // Let the shared enabled=false watcher finish stopping the old stream
       // before acquiring the new one; otherwise it can close newly acquired audio.
       await nextTick()
@@ -152,5 +156,5 @@ export function useKioskMicrophoneSelection() {
     // Keep the retiring device pin until any pending native request drains.
     // A later Scene installs its own pin when it acquires the shared queue.
   })
-  return { microphone, savedMicrophone: readonly(saved), activeMicrophone: readonly(activeMicrophone), permissionState: readonly(authorization), devices: readonly(devices), busy: readonly(busy), hasSelection: computed(() => Boolean(selected.value)), message, start, stop, requestDevices }
+  return { microphone, captureMode: readonly(captureMode), savedMicrophone: readonly(saved), activeMicrophone: readonly(activeMicrophone), permissionState: readonly(authorization), devices: readonly(devices), busy: readonly(busy), hasSelection: computed(() => Boolean(selected.value)), message, start, stop, requestDevices }
 }

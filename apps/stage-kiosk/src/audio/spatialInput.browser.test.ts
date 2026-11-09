@@ -1,8 +1,10 @@
+import { encodeComparisonRecording } from '@proj-airi/stage-shared/kiosk-audio'
 import { expect, it, vi } from 'vitest'
 import { userEvent } from 'vitest/browser'
 import { effectScope, ref } from 'vue'
 
 import { useArrayMicrophone } from '../composables/useArrayMicrophone'
+import { playKioskAudio } from '../services/kioskPlayback'
 import { createSpatialInput } from './spatialInput'
 
 async function fixture(channels = 8) {
@@ -67,6 +69,46 @@ it('transports real eight-channel Worklet audio through the Worker, serially dra
     expect(count).toBe(stopped)
   }
   finally {
+    input.dispose()
+    await f.close()
+  }
+}, 15000)
+
+// Report: this chat, 2026-11-09 — a screenshot taken during reported TTS shows
+// Gate. Exercise native media events through the real capture clock and Worker;
+// synthetic playback/capture cannot reproduce physical loudspeaker echo.
+it('follows actual native playback events into Binary and back to Gate across repeated replies', async () => {
+  const f = await fixture()
+  const errors: string[] = []
+  const input = await createSpatialInput(f.source, { generation: 72, channelMap: [0, 1, 2, 3, 4, 5, 6], radiusMm: 45, processing: 'dynamic', onError: reason => errors.push(reason) })
+  const audio = encodeComparisonRecording(new Float32Array(16000), { role: 'processed', channels: 1, frameCount: 16000, sampleRate: 16000 })
+  let playback: ReturnType<typeof playKioskAudio> | undefined
+  let count = 0
+  try {
+    input.start(async (samples) => {
+      count += samples.length
+    })
+    await vi.waitFor(() => expect(input.statistics.outputFrames).toBeGreaterThan(512))
+    for (let reply = 0; reply < 2; reply++) {
+      playback = playKioskAudio(audio, new AbortController().signal, f.context, {
+        loop: true,
+        onPlaying: () => input.setPlayback(true),
+        onStopped: () => input.setPlayback(false),
+      })
+      await vi.waitFor(() => expect(input.statistics.processingMode).toBe('binary'))
+      expect(input.statistics.playbackTransitions).toBe(reply * 2 + 1)
+      playback.stop()
+      expect(await playback.finished).toEqual({ kind: 'stopped' })
+      await vi.waitFor(() => expect(input.statistics.processingMode).toBe('gate'))
+      expect(input.statistics.playbackTransitions).toBe(reply * 2 + 2)
+    }
+    await input.finish()
+    expect(count).toBe(Math.ceil(input.statistics.inputFrames / 3))
+    expect(input.statistics.consumedFrames).toBe(count)
+    expect(errors).toEqual([])
+  }
+  finally {
+    playback?.stop()
     input.dispose()
     await f.close()
   }

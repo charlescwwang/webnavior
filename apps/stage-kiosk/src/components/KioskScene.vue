@@ -3,6 +3,7 @@ import type { DeviceSettingsSnapshot, DeviceSettingsValues, KioskVoiceVadSetting
 import type { InteractionLifecycleMessage, InteractiveServiceOrderResult } from '@proj-airi/stage-shared/interaction-lifecycle'
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { MicrophoneCaptureMode } from '../audio/microphoneInput'
 import type { SpatialInput } from '../audio/spatialInput'
 import type { KioskConversationDecisionState, KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile } from '../services/kiosk-device'
 import type { ConversationRetry } from '../services/kioskConversationRetry'
@@ -487,7 +488,12 @@ const effectiveMediaCaptureMode = computed<KioskMediaCaptureMode>(() => (
 ))
 // Pause the array graph with VAD; resuming creates a fresh input generation.
 const arrayActive = computed(() => enabled.value && props.voiceConversationOnly && voiceInputAllowed.value)
-const arrayMicrophone = useArrayMicrophone(rawMicrophoneStream, arrayActive, processingSpeechActive)
+const arrayMicrophone = useArrayMicrophone(rawMicrophoneStream, arrayActive, processingSpeechActive, {
+  mode: microphoneSelection.captureMode,
+  requestStandardCapture: () => {
+    void startOperatorMicrophone('standard')
+  },
+})
 const { stream } = arrayMicrophone
 // Device operations only: never present this warning in customer dialogue or TTS.
 // One warning per failed generation; reporting has a deadline and never blocks VAD.
@@ -709,6 +715,12 @@ watch(inferenceError, (message) => {
 })
 // Read metadata four times per second only while the operator panel is open.
 // The DSP/VAD owners never retain waveform data for these diagnostics.
+const captureSettings = shallowRef<MediaTrackSettings>()
+// A newly acquired device must not inherit the previous track's AEC snapshot
+// while waiting for the next operator-panel poll.
+watch(rawMicrophoneStream, () => {
+  captureSettings.value = undefined
+}, { flush: 'sync' })
 const inputDiagnostics = shallowRef<ReturnType<typeof getInputDiagnostics>>()
 const spatialStatistics = shallowRef<SpatialInput['statistics']>()
 const admissionCounts = shallowRef({ ...voiceAdmissionCounts })
@@ -716,6 +728,10 @@ const presenceAdmission = shallowRef<VoicePresenceDecision>()
 useIntervalFn(() => {
   if (!adminPanelOpen.value)
     return
+  // Read the live track, not requested constraints: channel routing can change
+  // browser processing after acquisition. A stopped track must not look enabled.
+  const track = rawMicrophoneStream.value?.getAudioTracks()[0]
+  captureSettings.value = track?.readyState === 'live' ? track.getSettings() : undefined
   inputDiagnostics.value = getInputDiagnostics()
   spatialStatistics.value = arrayMicrophone.pcmSource.value?.statistics
   admissionCounts.value = { ...voiceAdmissionCounts }
@@ -1611,8 +1627,8 @@ function stopMicrophone() {
   microphoneSelection.stop()
 }
 
-async function startMicrophoneStream() {
-  await microphoneSelection.start(microphoneStartup?.signal)
+async function startMicrophoneStream(mode: MicrophoneCaptureMode = 'raw') {
+  await microphoneSelection.start(microphoneStartup?.signal, mode)
   if (!rawMicrophoneStream.value?.getAudioTracks().some(track => track.readyState === 'live'))
     throw new Error('The browser did not provide a live microphone stream.')
 }
@@ -1638,7 +1654,7 @@ async function requestMicrophoneDevices() {
       microphoneStarting.value = false
   }
 }
-async function startOperatorMicrophone() {
+async function startOperatorMicrophone(mode: MicrophoneCaptureMode = 'raw') {
   if (microphoneStarting.value || !props.voiceConversationOnly)
     return
   microphoneStartup?.abort()
@@ -1653,7 +1669,7 @@ async function startOperatorMicrophone() {
     await nextTick()
     if (ticket !== microphoneStartGeneration)
       return
-    await startMicrophoneStream()
+    await startMicrophoneStream(mode)
     // The shared device store can outlive this scene; a retired scene must not
     // stop a stream that a new owner may already be using.
     if (ticket !== microphoneStartGeneration)
@@ -1704,7 +1720,7 @@ async function prepareMicrophone(signal: AbortSignal) {
     const result = await prepareKioskMicrophonePermission({
       hasSelectedMicrophone: microphoneSelection.hasSelection.value,
       requestDevices: () => microphoneSelection.requestDevices(signal),
-      startStream: startMicrophoneStream,
+      startStream: () => startMicrophoneStream(),
       signal,
       setAudioInputEnabled: nextEnabled => enabled.value = nextEnabled,
       voiceConversationOnly: props.voiceConversationOnly,
@@ -2888,6 +2904,7 @@ onUnmounted(() => {
             :devices="microphoneSelection.devices.value"
             :input-gain-db="recognitionInputGainDb"
             :input-diagnostics="inputDiagnostics"
+            :capture-settings="captureSettings"
             :spatial-statistics="spatialStatistics"
             :admission-counts="admissionCounts"
             :presence-admission="presenceAdmission"

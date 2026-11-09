@@ -9,6 +9,8 @@ export type SpatialProcessing = 'soft' | 'dynamic'
 export type SpatialMode = 'soft' | 'binary' | 'tail' | 'gate'
 interface MaskFrame {
   directional: boolean
+  directionDifference: number
+  maskFraction: number
   fm: Float64Array
   frontR: Float64Array
   frontI: Float64Array
@@ -363,7 +365,23 @@ export class SpatialMask {
         m += w * fm[f]
       }
     }
-    this.frames[this.frameCount++ % 32] = { fm, frontR, frontI, directional: weight > 1e-12 && d / weight > -0.10 && m / weight > 0.055 }
+    const directionDifference = weight > 1e-12 ? d / weight : 0
+    const maskFraction = weight > 1e-12 ? m / weight : 0
+    let directionSum = directionDifference
+    let maskSum = maskFraction
+    const preceding = this.processing === 'dynamic' ? Math.min(6, this.frameCount) : 0
+    // Three unsmoothed decisions can all fail under intermittent reflections,
+    // even when v4's seven-frame evidence retains a continuing front source.
+    // Use causal spatial evidence, not extra future PCM or a second VAD. The
+    // existing four-frame lookahead below still protects the opening edge.
+    for (let previous = 1; previous <= preceding; previous++) {
+      const frame = this.frames[(this.frameCount - previous) % 32]
+      directionSum += frame.directionDifference
+      maskSum += frame.maskFraction
+    }
+    const evidenceFrames = preceding + 1
+    const directional = weight > 1e-12 && directionSum / evidenceFrames > -0.10 && maskSum / evidenceFrames > 0.055
+    this.frames[this.frameCount++ % 32] = { fm, frontR, frontI, directionDifference, maskFraction, directional }
     this._pipeline(false)
   }
 

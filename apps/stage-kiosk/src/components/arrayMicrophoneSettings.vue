@@ -11,13 +11,24 @@ import KioskMicrophonePicker from './KioskMicrophonePicker.vue'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 
-const props = defineProps<{ presenceAdmission?: VoicePresenceDecision, lastVoiceBlock?: VoicePresenceDecision, cameraStatus?: string, inputDiagnostics?: VadInputDiagnostics, spatialStatistics?: SpatialInput['statistics'], admissionCounts?: { startBlocked: number, endBlocked: number, noCandidate: number, overloaded: number, asrRequests: number }, enabled: boolean, mode: 'standard' | 'mask', channelCount?: number, status: string, error: string, vadStatus: string, vadError: string, presenceStatus: string, devices: readonly MediaDeviceInfo[], inputGainDb: number, clippedSamples: number, captureStatus: string, capturedDevice: string, captureError: string, starting: boolean, voiceOnly: boolean, hasStream: boolean }>()
+const props = defineProps<{ captureSettings?: MediaTrackSettings, presenceAdmission?: VoicePresenceDecision, lastVoiceBlock?: VoicePresenceDecision, cameraStatus?: string, inputDiagnostics?: VadInputDiagnostics, spatialStatistics?: SpatialInput['statistics'], admissionCounts?: { startBlocked: number, endBlocked: number, noCandidate: number, overloaded: number, asrRequests: number }, enabled: boolean, mode: 'standard' | 'mask', channelCount?: number, status: string, error: string, vadStatus: string, vadError: string, presenceStatus: string, devices: readonly MediaDeviceInfo[], inputGainDb: number, clippedSamples: number, captureStatus: string, capturedDevice: string, captureError: string, starting: boolean, voiceOnly: boolean, hasStream: boolean }>()
 const emit = defineEmits<{ start: [], stop: [], permission: [] }>()
 const dynamicProcessing = defineModel<boolean>('dynamicProcessing', { default: false })
 const microphone = defineModel<string>('microphone', { required: true })
 const mapping = defineModel<string>('mapping', { required: true })
 const radius = defineModel<number>('radius', { required: true })
 const text = orderingMessages['zh-Hant'].arrayAudio
+// Omitted browser settings are unknown, not false. Preserve mode strings from
+// browsers that report a specific echo-cancellation mode instead of a boolean.
+function processingState(value?: boolean | string) {
+  if (!props.hasStream)
+    return text.processingInactive
+  if (value === true)
+    return text.processingEnabled
+  if (value === false)
+    return text.processingDisabled
+  return value || text.processingUnreported
+}
 function level(value?: PcmLevel) {
   if (!value)
     return '—'
@@ -71,6 +82,10 @@ function level(value?: PcmLevel) {
     </p>
     <details open>
       <summary>{{ text.signalDiagnostics }}</summary>
+      <p>{{ text.processingReported }}</p>
+      <p>{{ text.echoCancellation }}{{ processingState(props.captureSettings?.echoCancellation) }}</p>
+      <p>{{ text.noiseSuppression }}{{ processingState(props.captureSettings?.noiseSuppression) }}</p>
+      <p>{{ text.autoGainControl }}{{ processingState(props.captureSettings?.autoGainControl) }}</p>
       <p>{{ text.digitalLevel }}</p>
       <template v-if="props.spatialStatistics">
         <p>{{ text.dynamicState }} {{ props.spatialStatistics.processingMode }} / {{ props.spatialStatistics.playbackTransitions }}</p>

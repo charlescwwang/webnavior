@@ -50,6 +50,44 @@ it('retains front Raw Gate audio and suppresses a side-only directional control'
   expect(rms(front.result) / rms(front.reference)).toBeGreaterThan(0.98)
   expect(rms(side.result) / rms(side.reference)).toBeLessThan(0.05)
 })
+// Report: this chat, 2026-11-09 — normal-volume UMA-8 speech is missed;
+// reported input peaks range from about -44 to -59dBFS. These directional
+// controls isolate DSP level sensitivity; they do not establish Silero/ASR
+// acceptance or preservation of speech mixed with a stronger loudspeaker.
+it.each([-44, -58, -67])('preserves front directional controls at %i dBFS peak in Gate and Binary', (peakDbfs) => {
+  const original = signal(48000)
+  const peak = original[0].reduce((maximum, sample) => Math.max(maximum, Math.abs(sample)), 0)
+  const scale = 10 ** (peakDbfs / 20) / peak
+  const quiet = original.map(channel => Float32Array.from(channel, sample => sample * scale))
+  for (const events of [[], [{ at: 0, playing: true }]]) {
+    const normal = run(original, events)
+    const current = run(quiet, events)
+    const retention = rms(current.result) / rms(current.reference)
+    expect(retention).toBeGreaterThan(0.1)
+    expect(retention).toBeCloseTo(rms(normal.result) / rms(normal.reference), 3)
+    expect(current.result.every(Number.isFinite)).toBe(true)
+  }
+})
+// Report: this chat, 2026-11-09 — distant normal-volume speech is missed.
+// The v4 Gate averages directional evidence over time; requiring three raw
+// frame decisions can instead mute a continuing front source indefinitely.
+// This is a directional interference control, not proof of real speech/AEC.
+it.each([0.25, 0.5])('retains continuing front Gate audio with intermittent side interference at duty %s', (duty) => {
+  const period = 0.064
+  const front = signal(96000, 0, 24000)
+  const side = signal(96000, 90)
+  const interference = side.map(channel => Float32Array.from(channel, (value, i) => i / 48000 % period < period * duty ? value / 30 : 0))
+  const combined = front.map((channel, ch) => Float32Array.from(channel, (value, i) => value / 30 + interference[ch][i]))
+  const original = new SpatialEngine()
+  original.push(combined)
+  original.finish()
+  const expected = rms(original.result().gate, 8000, 16000)
+  expect(expected).toBeGreaterThan(0.0001)
+  const current = run(combined)
+  expect(rms(current.result, 8000, 16000) / expected).toBeGreaterThan(0.7)
+  const sideOnly = run(interference)
+  expect(rms(sideOnly.result) / rms(sideOnly.reference)).toBeLessThan(0.05)
+})
 it('keeps the existing scheduling bound and retains a normal-level front onset', () => {
   const start = 24000
   const current = run(signal(48000, 0, start))

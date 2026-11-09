@@ -6,8 +6,14 @@ import captureUrl from './spatialCapture.worklet?worker&url'
 
 import { channelStabilityFrames } from './spatialMaskMessages'
 
+/** Acquisition policy belongs to the selected device, not its requested channel count. */
+export type MicrophoneCaptureMode = 'raw' | 'standard'
+
 /** User-selected eight-channel recognition gain; independent of playback/comparison audio. */
 export const arrayInputGainDb = 65
+
+/** Field-trial gain for dynamic spatial output, before the shared VAD/ASR limiter. */
+export const dynamicInputGainDb = 15
 
 /** Prefer raw eight-channel capture without making ordinary devices fail getUserMedia. */
 export const arrayCaptureConstraints: MediaTrackConstraints = {
@@ -18,7 +24,7 @@ export const arrayCaptureConstraints: MediaTrackConstraints = {
   autoGainControl: false,
 }
 
-/** Existing device-store defaults, restored on the same borrowed track before stream VAD. */
+/** General voice capture policy, requested again at acquisition if runtime changes do not apply. */
 export const standardCaptureConstraints: MediaTrackConstraints = {
   echoCancellation: true,
   noiseSuppression: true,

@@ -107,3 +107,19 @@ it('requires a device choice and offers operator-initiated permission to reveal 
   await view.getByRole('button', { name: '授權麥克風／顯示裝置' }).click()
   expect(permission).toHaveBeenCalledOnce()
 })
+
+// Report: this chat Nov09 — Chrome laptop TTS leaked while AEC was only requested, not inspected.
+it('distinguishes browser-reported audio processing from requests and clears stopped capture', async () => {
+  const view = render(ArrayMicrophoneSettings, { props: { ...captureProps, hasStream: true, enabled: true, mode: 'standard', status: 'standard', error: '', mapping: '0,1,2,3,4,5,6', radius: 44, vadStatus: 'ready', vadError: '', presenceStatus: 'ENGAGED', captureSettings: { echoCancellation: false, noiseSuppression: true } } })
+  await expect.element(view.getByText('回音消除（AEC）：已關閉', { exact: true })).toBeVisible()
+  await expect.element(view.getByText('降噪（NS）：已啟用', { exact: true })).toBeVisible()
+  await expect.element(view.getByText('自動增益（AGC）：瀏覽器未回報', { exact: true })).toBeVisible()
+  await expect.element(view.getByText('以下為瀏覽器回報的實際設定；AEC 已啟用不代表回音已完全消除。')).toBeVisible()
+  await view.rerender({ captureSettings: { echoCancellation: true, noiseSuppression: false, autoGainControl: true } })
+  await expect.element(view.getByText('回音消除（AEC）：已啟用', { exact: true })).toBeVisible()
+  await expect.element(view.getByText('降噪（NS）：已關閉', { exact: true })).toBeVisible()
+  await expect.element(view.getByText('自動增益（AGC）：已啟用', { exact: true })).toBeVisible()
+  await view.rerender({ hasStream: false })
+  await expect.element(view.getByText('回音消除（AEC）：未收音', { exact: true })).toBeVisible()
+  await expect.element(view.getByText('回音消除（AEC）：已啟用', { exact: true })).not.toBeInTheDocument()
+})

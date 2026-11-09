@@ -20,9 +20,10 @@ afterEach(() => {
   localStorage.removeItem('kiosk/audio/array-mode')
   localStorage.removeItem('kiosk/audio/automatic-device')
   localStorage.removeItem('kiosk/audio/dynamic-spatial')
+  localStorage.removeItem('kiosk/audio/dynamic-spatial-enabled')
 })
 
-function fixture(label = 'miniDSP UMA-8 v2') {
+function fixture(label = 'miniDSP UMA-8 v2', capture?: Parameters<typeof useArrayMicrophone>[3]) {
   const context = new AudioContext()
   const raw = context.createMediaStreamDestination().stream
   const track = raw.getAudioTracks()[0]!
@@ -31,7 +32,7 @@ function fixture(label = 'miniDSP UMA-8 v2') {
   const scope = effectScope()
   const input = ref<MediaStream | undefined>(raw)
   const enabled = ref(true)
-  const audio = scope.run(() => useArrayMicrophone(input, enabled))!
+  const audio = scope.run(() => useArrayMicrophone(input, enabled, undefined, capture))!
   return { audio, input, enabled, apply, async close() {
     scope.stop()
     raw.getTracks().forEach(track => track.stop())
@@ -89,6 +90,8 @@ it.each([1, 2])('uses standard capture for%i actual channels regardless of the d
     expect(f.audio.error.value).toBe('')
     expect(f.audio.warning.value).toBeUndefined()
     expect(createSpatialInput).not.toHaveBeenCalled()
+    expect(f.audio.inputGainDb.value).toBe(0)
+    expect(f.audio.earlyBargeIn.value).toBe(false)
   }
   finally { await f.close() }
 })
@@ -149,8 +152,8 @@ it('reports unavailable capture when restoring standard constraints also fails',
   finally { await f.close() }
 })
 
-it('opts in once per graph, uses unamplified dynamic PCM and forwards TTS edges without restarting capture', async () => {
-  localStorage.setItem('kiosk/audio/dynamic-spatial', 'true')
+it('keeps the dynamic trial gain fixed across TTS edges and removes it on standard fallback', async () => {
+  localStorage.setItem('kiosk/audio/dynamic-spatial-enabled', 'true')
   vi.mocked(inspectChannels).mockResolvedValue(8)
   const processed = processor()
   vi.mocked(createSpatialInput).mockResolvedValue(processed)
@@ -165,9 +168,10 @@ it('opts in once per graph, uses unamplified dynamic PCM and forwards TTS edges 
     await vi.waitFor(() => expect(audio.mode.value).toBe('mask'))
     expect(vi.mocked(createSpatialInput).mock.calls[0][1].processing).toBe('dynamic')
     expect(processed.setPlayback).toHaveBeenCalledWith(true)
-    expect(audio.inputGainDb.value).toBe(0)
+    expect(audio.inputGainDb.value).toBe(15)
     expect(audio.earlyBargeIn.value).toBe(true)
     playing.value = false
+    expect(audio.inputGainDb.value).toBe(15)
     expect(processed.setPlayback).toHaveBeenLastCalledWith(false)
     expect(createSpatialInput).toHaveBeenCalledOnce()
     vi.mocked(createSpatialInput).mock.calls[0][1].onError('Worker failed')
@@ -181,7 +185,8 @@ it('opts in once per graph, uses unamplified dynamic PCM and forwards TTS edges 
     await context.close()
   }
 })
-it('retains fixed65dB and semantic interruption when the dynamic feature is disabled', async () => {
+it('retains an explicit operator disable and the soft path across restart', async () => {
+  localStorage.setItem('kiosk/audio/dynamic-spatial-enabled', 'false')
   vi.mocked(inspectChannels).mockResolvedValue(8)
   const processed = processor()
   vi.mocked(createSpatialInput).mockResolvedValue(processed)
@@ -192,6 +197,11 @@ it('retains fixed65dB and semantic interruption when the dynamic feature is disa
     expect(f.audio.inputGainDb.value).toBe(65)
     expect(f.audio.earlyBargeIn.value).toBe(false)
     expect(vi.mocked(createSpatialInput).mock.calls[0][1].processing).toBe('soft')
+    f.enabled.value = false
+    f.enabled.value = true
+    await vi.waitFor(() => expect(createSpatialInput).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(createSpatialInput).mock.calls[1][1].processing).toBe('soft')
+    expect(f.audio.dynamicProcessing.value).toBe(false)
   }
   finally { await f.close() }
 })
@@ -239,6 +249,97 @@ it('reports the standard capture channel count after an eight-channel Mask failu
     expect(f.audio.channelCount.value).toBe(1)
     expect(f.audio.mode.value).toBe('standard')
     expect(f.audio.inputGainDb.value).toBe(0)
+  }
+  finally { await f.close() }
+})
+
+// Report: this chat Nov09 — applyConstraints can resolve without enabling Chrome audio processing.
+it('requests standard reacquisition once and reports failure instead of retrying a processing-disabled fresh stream', async () => {
+  vi.mocked(inspectChannels).mockResolvedValue(1)
+  const mode = ref<'raw' | 'standard'>('raw')
+  const requestStandardCapture = vi.fn()
+  const f = fixture('Laptop microphone', { mode, requestStandardCapture })
+  vi.spyOn(f.input.value!.getAudioTracks()[0]!, 'getSettings').mockReturnValue({ echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+  try {
+    await vi.waitFor(() => expect(f.audio.status.value).toBe('reacquiring-standard'))
+    expect(requestStandardCapture).toHaveBeenCalledOnce()
+    expect(f.audio.stream.value).toBeUndefined()
+    mode.value = 'standard'
+    await vi.waitFor(() => expect(f.audio.status.value).toBe('error'))
+    expect(requestStandardCapture).toHaveBeenCalledOnce()
+    expect(f.audio.stream.value).toBeUndefined()
+    expect(f.audio.error.value).toContain('瀏覽器未能啟用一般收音')
+  }
+  finally { await f.close() }
+})
+
+it('never requests standard processing for a verified eight-channel array', async () => {
+  vi.mocked(inspectChannels).mockResolvedValue(8)
+  vi.mocked(createSpatialInput).mockResolvedValue(processor())
+  const requestStandardCapture = vi.fn()
+  const f = fixture('Eight-channel array', { mode: ref('raw'), requestStandardCapture })
+  vi.spyOn(f.input.value!.getAudioTracks()[0]!, 'getSettings').mockReturnValue({ echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+  try {
+    await vi.waitFor(() => expect(f.audio.status.value).toBe('ready'))
+    expect(f.audio.mode.value).toBe('mask')
+    expect(requestStandardCapture).not.toHaveBeenCalled()
+    expect(f.apply.mock.calls[0]![0]).toMatchObject({ echoCancellation: false, noiseSuppression: false, autoGainControl: false })
+  }
+  finally { await f.close() }
+})
+
+it('keeps AEC-enabled standard capture usable when optional NS or AGC remains disabled', async () => {
+  vi.mocked(inspectChannels).mockResolvedValue(1)
+  const requestStandardCapture = vi.fn()
+  const f = fixture('Laptop microphone', { mode: ref('standard'), requestStandardCapture })
+  vi.spyOn(f.input.value!.getAudioTracks()[0]!, 'getSettings').mockReturnValue({ echoCancellation: true, noiseSuppression: false, autoGainControl: false })
+  try {
+    await vi.waitFor(() => expect(f.audio.status.value).toBe('standard'))
+    expect(f.audio.stream.value).toBe(f.input.value)
+    expect(requestStandardCapture).not.toHaveBeenCalled()
+    expect(f.apply.mock.calls[0]![0]).toMatchObject({ echoCancellation: true })
+  }
+  finally { await f.close() }
+})
+
+// A delayed native constraint response belongs only to its original capture generation.
+it('does not reacquire from a retired standard-processing check', async () => {
+  vi.mocked(inspectChannels).mockResolvedValue(1)
+  const pending = Promise.withResolvers<void>()
+  const requestStandardCapture = vi.fn()
+  const f = fixture('Laptop microphone', { mode: ref('raw'), requestStandardCapture })
+  f.apply.mockResolvedValueOnce().mockImplementationOnce(() => pending.promise)
+  vi.spyOn(f.input.value!.getAudioTracks()[0]!, 'getSettings').mockReturnValue({ echoCancellation: false })
+  try {
+    await vi.waitFor(() => expect(f.apply).toHaveBeenCalledTimes(2))
+    f.enabled.value = false
+    pending.resolve()
+    await vi.waitFor(() => expect(f.audio.status.value).toBe('stopped'))
+    await Promise.resolve()
+    expect(requestStandardCapture).not.toHaveBeenCalled()
+  }
+  finally {
+    pending.resolve()
+    await f.close()
+  }
+})
+
+// Report: this chat Nov09 — 8CH ready retained the old default-off preference,
+// so TTS never selected the already-integrated Binary Mask playback path.
+it.each([false, true])('defaults to dynamic processing after actual 8CH detection (old saved off: %s)', async (savedOff) => {
+  if (savedOff)
+    localStorage.setItem('kiosk/audio/dynamic-spatial', 'false')
+  vi.mocked(inspectChannels).mockResolvedValue(8)
+  vi.mocked(createSpatialInput).mockResolvedValue(processor())
+  const f = fixture()
+  try {
+    await vi.waitFor(() => expect(f.audio.status.value).toBe('ready'))
+    expect(f.audio.channelCount.value).toBe(8)
+    expect(f.audio.dynamicProcessing.value).toBe(true)
+    expect(vi.mocked(createSpatialInput).mock.calls[0][1].processing).toBe('dynamic')
+    expect(f.audio.inputGainDb.value).toBe(15)
+    expect(f.audio.earlyBargeIn.value).toBe(true)
+    expect(createSpatialInput).toHaveBeenCalledOnce()
   }
   finally { await f.close() }
 })

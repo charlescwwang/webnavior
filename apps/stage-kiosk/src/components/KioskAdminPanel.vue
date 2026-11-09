@@ -51,7 +51,7 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
 
     <div class="admin-content">
       <p :class="['admin-note']" data-build-info>
-        {{ t('stage.kiosk.release.loaded') }}：{{ buildInfo.commit }} · {{ buildInfo.builtOn }}
+        {{ t('stage.kiosk.release.loaded') }}：{{ buildInfo.release }} · {{ buildInfo.builtOn }}
       </p>
       <section v-if="props.device" class="admin-section">
         <h3>此 Kiosk 裝置</h3>

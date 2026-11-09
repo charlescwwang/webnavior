@@ -1,6 +1,7 @@
 import type { AudioWarning } from '@proj-airi/stage-shared/kiosk-audio'
 import type { Ref } from 'vue'
 
+import type { MicrophoneCaptureMode } from '../audio/microphoneInput'
 import type { SpatialInput } from '../audio/spatialInput'
 
 import { errorMessageFrom } from '@moeru/std'
@@ -8,19 +9,25 @@ import { useLocalStorage } from '@vueuse/core'
 import { computed, onScopeDispose, readonly, shallowRef, watch } from 'vue'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
-import { arrayCaptureConstraints, arrayInputGainDb, inspectChannels, selectProcessing, standardCaptureConstraints } from '../audio/microphoneInput'
+import { arrayCaptureConstraints, arrayInputGainDb, dynamicInputGainDb, inspectChannels, selectProcessing, standardCaptureConstraints } from '../audio/microphoneInput'
 import { createSpatialInput } from '../audio/spatialInput'
 
 /**
  * Automatically routes each capture generation. The device store owns tracks;
- * this owner only changes their capture constraints and owns the optional Mask graph.
- * Device preference, geometry and the opt-in dynamic policy persist; actual
+ * this owner changes constraints, requests same-device reacquisition when needed,
+ * and owns the optional Mask graph.
+ * Device preference, geometry and explicit dynamic overrides persist; actual
  * channels select DSP anew. Native TTS state changes filters without graph resets.
  * LCMV remains on the test page.
  */
-export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled: Ref<boolean>, playback: Ref<boolean> = shallowRef(false)) {
+export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled: Ref<boolean>, playback: Ref<boolean> = shallowRef(false), capture?: { mode: Readonly<Ref<MicrophoneCaptureMode>>, requestStandardCapture: () => void }) {
   const mode = shallowRef<'standard' | 'mask'>('standard')
-  const dynamicProcessing = useLocalStorage('kiosk/audio/dynamic-spatial', false)
+  const captureMode = capture?.mode ?? shallowRef<MicrophoneCaptureMode>('raw')
+  // Actual Worklet channels below still gate all spatial processing. The new
+  // default-on policy has its own preference: the old opt-in key's false value
+  // may only reflect its former default, not a current operator decision.
+  // An explicit disable here persists and retains the soft-path fallback.
+  const dynamicProcessing = useLocalStorage('kiosk/audio/dynamic-spatial-enabled', true)
   const mapping = useLocalStorage('kiosk/audio/array-mapping', '0,1,2,3,4,5,6')
   const radius = useLocalStorage('kiosk/audio/array-radius-mm', 44)
   const stream = shallowRef<MediaStream>()
@@ -40,8 +47,9 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
     pcmSource.value = undefined
     stream.value = undefined
   }
-  watch([input, enabled, mapping, radius, dynamicProcessing], ([raw, active]) => {
+  watch([input, enabled, mapping, radius, dynamicProcessing, captureMode], ([raw, active]) => {
     const ticket = ++generation
+    const profile = captureMode.value
     disconnect()
     mode.value = 'standard'
     error.value = ''
@@ -66,6 +74,26 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
         mode.value = 'standard'
         try {
           await track!.applyConstraints({ ...standardCaptureConstraints, ...(deviceId ? { deviceId } : {}) })
+          // A retired track must not request reacquisition for its replacement.
+          if (ticket !== generation)
+            return
+          const applied = track!.getSettings()
+          if ([applied.echoCancellation, applied.noiseSuppression, applied.autoGainControl].includes(false)) {
+            // NOTICE: Chromium can resolve applyConstraints(true) while keeping
+            // processing disabled after a raw acquisition (native browser
+            // regression in useKioskMicrophoneSelection.browser.test.ts).
+            // The device owner must reacquire the SAME pinned input. Its mode
+            // marks the new stream, preventing another raw probe/retry loop.
+            if (profile === 'raw' && capture) {
+              status.value = 'reacquiring-standard'
+              capture.requestStandardCapture()
+              return
+            }
+            // NS/AGC support varies. Keep those actual states visible without
+            // disabling a usable AEC-enabled microphone after the bounded retry.
+            if (applied.echoCancellation === false)
+              throw new Error(orderingMessages['zh-Hant'].arrayAudio.processingUnavailable)
+          }
           // Browser echo processing may change channel count. Do not present the
           // raw array probe's channel count as the active standard capture count.
           const channels = await inspectChannels(raw!, current.signal)
@@ -91,6 +119,12 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
       }
       let stage: AudioWarning['stage'] = 'capture'
       try {
+        if (profile === 'standard') {
+          // This stream was reacquired for ordinary speech after a real raw
+          // probe. Do not disable its newly established browser processing.
+          await standard()
+          return
+        }
         await track.applyConstraints({ ...arrayCaptureConstraints, ...(deviceId ? { deviceId } : {}) })
         if (ticket !== generation)
           return
@@ -149,10 +183,14 @@ export function useArrayMicrophone(input: Ref<MediaStream | undefined>, enabled:
     })
   }, { immediate: true, flush: 'sync' })
   watch(playback, playing => pcmSource.value?.setPlayback(playing), { flush: 'sync' })
-  // The dynamic reference was ASR-tested without amplification. Applying the
-  // soft path's +65dB to gated raw audio clips normal speech and boosts leakage.
-  // One fixed gain per graph keeps both sides of a playback switch identical.
-  const inputGainDb = computed(() => mode.value === 'mask' && !dynamicProcessing.value ? arrayInputGainDb : 0)
+  // Field-trial +15dB lifts preserved weak speech, not bins removed by Binary.
+  // Keep it fixed across TTS edges and retain the existing limiter. Restoring
+  // Soft Mask's +65dB here would also amplify residual echo and clip gated Raw.
+  const inputGainDb = computed(() => {
+    if (mode.value !== 'mask')
+      return 0
+    return dynamicProcessing.value ? dynamicInputGainDb : arrayInputGainDb
+  })
   const earlyBargeIn = computed(() => mode.value === 'mask' && Boolean(pcmSource.value) && dynamicProcessing.value)
   onScopeDispose(() => {
     ++generation

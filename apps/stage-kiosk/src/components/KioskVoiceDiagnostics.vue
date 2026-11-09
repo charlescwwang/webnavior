@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { VoicePresenceDecision } from '../services/voicePresence'
 
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { useI18n } from 'vue-i18n'
 
 export interface KioskVoiceDiagnosticEntry {
@@ -46,7 +45,7 @@ function statusLabel(entry: KioskVoiceDiagnosticEntry) {
         <strong>{{ statusLabel(entry) }}</strong>
         <span v-if="entry.reason">{{ t(`stage.kiosk.voice-block-reasons.${entry.reason}`) }}</span>
         <span v-if="entry.stage">{{ t(`stage.kiosk.voice-stages.${entry.stage}`) }}</span>
-        <span v-if="entry.text" class="voice-diagnostics-text">「{{ toTaiwanTraditionalChinese(entry.text) }}」</span>
+        <span v-if="entry.text" class="voice-diagnostics-text">「{{ entry.text }}」</span>
       </li>
     </ol>
   </aside>

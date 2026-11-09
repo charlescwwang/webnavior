@@ -2,9 +2,10 @@ import { useSettingsAudioDevice } from '@proj-airi/stage-ui/stores/settings/audi
 import { createPinia, disposePinia } from 'pinia'
 import { afterEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, nextTick, toRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 
+import { useArrayMicrophone } from './useArrayMicrophone'
 import { useKioskMicrophoneSelection } from './useKioskMicrophoneSelection'
 
 const storageKeys = ['kiosk/audio/input-device', 'kiosk/audio/automatic-device', 'settings/audio/input', 'settings/audio/input/enabled']
@@ -13,16 +14,29 @@ afterEach(() => {
   for (const key of storageKeys)
     localStorage.removeItem(key)
 })
-function setup() {
+function setup(routeAudio = false) {
+  let audio: ReturnType<typeof useArrayMicrophone> | undefined
   let selection!: ReturnType<typeof useKioskMicrophoneSelection>
   let device!: ReturnType<typeof useSettingsAudioDevice>
   const pinia = createPinia()
   const view = render(defineComponent({ setup() {
     device = useSettingsAudioDevice()
     selection = useKioskMicrophoneSelection()
+    if (routeAudio) {
+      audio = useArrayMicrophone(toRef(device, 'stream'), toRef(device, 'enabled'), undefined, {
+        mode: selection.captureMode,
+        requestStandardCapture: () => {
+          void selection.start(undefined, 'standard').then(() => {
+            device.enabled = true
+          })
+        },
+      })
+    }
     return () => h('div', selection.message.value)
   } }), { global: { plugins: [pinia, createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] } })
-  return { view, selection, device, close() {
+  return { view, selection, device, get audio() {
+    return audio
+  }, close() {
     view.unmount()
     // NOTICE: Pinia stores own effects outside component scopes. Dispose them
     // between cases so late storage/device watchers cannot acquire another case's
@@ -208,3 +222,37 @@ it('requests fresh native authorization after an earlier grant and never sends t
   }
   finally { f.close() }
 })
+
+// Report: this chat Nov09 — Chrome reported AEC/NS/AGC=false despite a successful applyConstraints.
+// NOTICE: This native regression exercises Chromium's capture reconfiguration.
+// Firefox's synthetic input can report AEC=false even on a fresh standard stream;
+// unavailable-processing behavior is covered separately in automaticRouting.
+it.runIf(/Chrom(?:e|ium)\//.test(navigator.userAgent))('reacquires the same microphone with browser processing when raw-to-standard changes do not apply', async () => {
+  const media = vi.spyOn(navigator.mediaDevices, 'getUserMedia')
+  const f = setup(true)
+  try {
+    await f.selection.requestDevices()
+    await vi.waitFor(() => expect(f.selection.devices.value.some(input => input.deviceId && !['default', 'communications'].includes(input.deviceId))).toBe(true))
+    const id = f.selection.devices.value.find(input => input.deviceId && !['default', 'communications'].includes(input.deviceId))!.deviceId
+    f.selection.microphone.value = id
+    await f.selection.start()
+    f.device.enabled = true
+    await vi.waitFor(() => expect(f.audio?.status.value).toBe('standard'), { timeout: 10000 })
+    const track = f.audio!.stream.value!.getAudioTracks()[0]!
+    expect(track.getSettings().deviceId).toBe(id)
+    expect(track.getSettings().echoCancellation).toBe(true)
+    expect(track.getSettings().noiseSuppression).toBe(true)
+    expect(track.getSettings().autoGainControl).toBe(true)
+    expect(track).toBe(f.device.stream!.getAudioTracks()[0])
+    expect(f.audio!.mode.value).toBe('standard')
+    const acquisitions = media.mock.calls.filter(([constraints]) => typeof constraints?.audio === 'object' && constraints.audio.deviceId)
+    expect(acquisitions.length).toBeGreaterThan(0)
+    for (const [constraints] of acquisitions)
+      expect(constraints!.audio).toMatchObject({ deviceId: { exact: id } })
+    f.selection.stop()
+    await nextTick()
+    expect(track.readyState).toBe('ended')
+    expect(f.audio!.stream.value).toBeUndefined()
+  }
+  finally { f.close() }
+}, 15000)
