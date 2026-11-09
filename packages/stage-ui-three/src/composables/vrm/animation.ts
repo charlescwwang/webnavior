@@ -1,12 +1,12 @@
 import type { VRMAnimation } from '@pixiv/three-vrm-animation'
 import type { VRMCore } from '@pixiv/three-vrm-core'
-import type { AnimationClip } from 'three'
+import type { AnimationAction, AnimationClip, AnimationMixer } from 'three'
 import type { Ref } from 'vue'
 
 import { createVRMAnimationClip } from '@pixiv/three-vrm-animation'
-import { MathUtils, Object3D, Vector3, VectorKeyframeTrack } from 'three'
+import { LoopOnce, LoopRepeat, MathUtils, Object3D, Vector3, VectorKeyframeTrack } from 'three'
 import { randFloat } from 'three/src/math/MathUtils.js'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 import { useVRMLoader } from './loader'
 import { randomSaccadeInterval } from './utils/eye-motions'
@@ -45,6 +45,48 @@ export async function clipFromVRMAnimation(vrm?: VRMCore, animation?: VRMAnimati
 
   // create animation clip
   return createVRMAnimationClip(animation, vrm)
+}
+
+/** Owns asynchronous motion changes; asset loading must return a model-ready clip. */
+export function useMotionPlayback(options: {
+  source: Ref<string>
+  loop: Ref<boolean>
+  mixer: Ref<AnimationMixer | undefined>
+  action: Ref<AnimationAction | undefined>
+  loadClip: (source: string) => Promise<AnimationClip | undefined>
+  onError: (error: unknown) => void
+}) {
+  watch([options.source, options.loop], async ([source, loop], _previous, onCleanup) => {
+    const mixer = options.mixer.value
+    if (!mixer)
+      return
+    // Each selection owns its pending load. Superseded or disposed loads must
+    // never revive thinking after the reply has already returned to idle.
+    let current = true
+    onCleanup(() => current = false)
+    const isCurrent = () => current && options.mixer.value === mixer && options.source.value === source && options.loop.value === loop
+    try {
+      const clip = await options.loadClip(source)
+      if (!isCurrent())
+        return
+      if (!clip)
+        return
+      const action = mixer.clipAction(clip).reset()
+      action.setLoop(loop ? LoopRepeat : LoopOnce, loop ? Infinity : 1)
+      action.clampWhenFinished = !loop
+      options.action.value?.crossFadeTo(action, 0.18, false)
+      action.play()
+      options.action.value = action
+    }
+    catch (error) {
+      if (!isCurrent())
+        return
+      // A failed idle asset must not leave the previous thinking pose running.
+      options.action.value?.stop()
+      options.action.value = undefined
+      options.onError(error)
+    }
+  })
 }
 
 // Set initial positions for animation

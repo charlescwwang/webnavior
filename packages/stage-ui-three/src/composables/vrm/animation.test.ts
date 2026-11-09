@@ -1,10 +1,10 @@
 import type { VRMCore } from '@pixiv/three-vrm-core'
 
-import { Object3D, Vector3 } from 'three'
+import { AnimationClip, AnimationMixer, Object3D, Vector3 } from 'three'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { effectScope, nextTick, ref, shallowRef } from 'vue'
 
-import { useIdleEyeSaccades } from './animation'
+import { useIdleEyeSaccades, useMotionPlayback } from './animation'
 
 describe('useIdleEyeSaccades', () => {
   afterEach(() => {
@@ -39,5 +39,106 @@ describe('useIdleEyeSaccades', () => {
     expect(lookAt.target?.position.y).toBeCloseTo(expectedOffset)
     expect(lookAt.target?.position.z).toBe(-100)
     expect(lookAt.update).toHaveBeenCalledWith(0.016)
+  })
+})
+
+describe('motion playback ownership', () => {
+  it('keeps idle active when an older thinking asset finishes loading later', async () => {
+    const scope = effectScope()
+    const source = ref('idle')
+    const mixer = shallowRef(new AnimationMixer(new Object3D()))
+    const action = shallowRef(mixer.value.clipAction(new AnimationClip('initial', 1, [])))
+    const pending = new Map<string, (clip: AnimationClip) => void>()
+    const onError = vi.fn()
+    scope.run(() => useMotionPlayback({
+      source,
+      loop: ref(true),
+      mixer,
+      action,
+      onError,
+      loadClip: url => new Promise(resolve => pending.set(url, resolve)),
+    }))
+    try {
+      source.value = 'thinking'
+      await nextTick()
+      source.value = 'idle'
+      await nextTick()
+      pending.get('idle')!(new AnimationClip('idle', 1, []))
+      await nextTick()
+      expect(action.value.getClip().name).toBe('idle')
+      pending.get('thinking')!(new AnimationClip('thinking', 1, []))
+      await nextTick()
+      expect(action.value.getClip().name).toBe('idle')
+      expect(onError).not.toHaveBeenCalled()
+    }
+    finally {
+      scope.stop()
+    }
+  })
+
+  it('discards pending motion after the model mixer is replaced or scope is disposed', async () => {
+    const scope = effectScope()
+    const source = ref('idle')
+    const mixer = shallowRef(new AnimationMixer(new Object3D()))
+    const initialAction = mixer.value.clipAction(new AnimationClip('initial', 1, []))
+    const action = shallowRef(initialAction)
+    const pending = new Map<string, (clip: AnimationClip) => void>()
+    scope.run(() => useMotionPlayback({
+      source,
+      loop: ref(true),
+      mixer,
+      action,
+      onError: vi.fn(),
+      loadClip: url => new Promise(resolve => pending.set(url, resolve)),
+    }))
+    source.value = 'thinking'
+    await nextTick()
+    mixer.value = new AnimationMixer(new Object3D())
+    pending.get('thinking')!(new AnimationClip('old-model', 1, []))
+    await nextTick()
+    expect(action.value).toBe(initialAction)
+    source.value = 'idle'
+    await nextTick()
+    scope.stop()
+    pending.get('idle')!(new AnimationClip('disposed', 1, []))
+    await nextTick()
+    expect(action.value).toBe(initialAction)
+  })
+
+  it('clears the old pose when the selected asset fails and ignores a stale failure', async () => {
+    const scope = effectScope()
+    const source = ref('initial')
+    const mixer = shallowRef(new AnimationMixer(new Object3D()))
+    const initialAction = mixer.value.clipAction(new AnimationClip('thinking', 1, [])).play()
+    const action = shallowRef<typeof initialAction | undefined>(initialAction)
+    const pending = new Map<string, (error: Error) => void>()
+    const onError = vi.fn()
+    scope.run(() => useMotionPlayback({
+      source,
+      loop: ref(true),
+      mixer,
+      action,
+      onError,
+      loadClip: url => new Promise((_resolve, reject) => pending.set(url, reject)),
+    }))
+    try {
+      source.value = 'thinking'
+      await nextTick()
+      source.value = 'idle'
+      await nextTick()
+      pending.get('thinking')!(new Error('old request failed'))
+      await nextTick()
+      expect(action.value).toBe(initialAction)
+      expect(onError).not.toHaveBeenCalled()
+      const failure = new Error('idle asset unavailable')
+      pending.get('idle')!(failure)
+      await nextTick()
+      expect(action.value).toBeUndefined()
+      expect(initialAction.isRunning()).toBe(false)
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure)
+    }
+    finally {
+      scope.stop()
+    }
   })
 })

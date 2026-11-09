@@ -8,6 +8,7 @@
 
 import type { VRM } from '@pixiv/three-vrm'
 import type {
+  AnimationAction,
   Group,
   Material,
   Object3D,
@@ -73,6 +74,7 @@ import {
   reAnchorRootPositionTrack,
   useBlink,
   useIdleEyeSaccades,
+  useMotionPlayback,
 } from '../../composables/vrm/animation'
 import { loadVrm } from '../../composables/vrm/core'
 import { useVRMEmote } from '../../composables/vrm/expression'
@@ -181,7 +183,7 @@ const raycaster = new Raycaster()
 
 // Animation related ref
 const vrmAnimationMixer = ref<AnimationMixer>()
-let activeMotionAction: ReturnType<AnimationMixer['clipAction']> | undefined
+const activeMotionAction = shallowRef<AnimationAction>()
 const { onBeforeRender, stop, start } = useLoop()
 
 const vrmHooks: readonly VrmHook[] = resolveInternalVrmHooks()
@@ -790,10 +792,10 @@ async function loadModel() {
 
     // play animation
     nextVrmAnimationMixer = new AnimationMixer(_vrm.scene)
-    activeMotionAction = nextVrmAnimationMixer.clipAction(clip)
-    activeMotionAction.setLoop(animationLoop.value ? LoopRepeat : LoopOnce, animationLoop.value ? Infinity : 1)
-    activeMotionAction.clampWhenFinished = !animationLoop.value
-    activeMotionAction.play()
+    activeMotionAction.value = nextVrmAnimationMixer.clipAction(clip)
+    activeMotionAction.value.setLoop(animationLoop.value ? LoopRepeat : LoopOnce, animationLoop.value ? Infinity : 1)
+    activeMotionAction.value.clampWhenFinished = !animationLoop.value
+    activeMotionAction.value.play()
 
     nextVrmEmote = useVRMEmote(_vrm)
     const requiredLipExpressions = ['aa', 'ee', 'ih', 'oh', 'ou']
@@ -943,20 +945,23 @@ onMounted(async () => {
       loadModel()
     }
   })
-  watch(idleAnimation, async (nextAnimation, previousAnimation) => {
-    if (!vrm.value || !vrmAnimationMixer.value || nextAnimation === previousAnimation)
-      return
-    const animation = await loadVRMAnimation(nextAnimation)
-    const clip = await clipFromVRMAnimation(vrm.value, animation)
-    if (!clip)
-      return
-    reAnchorRootPositionTrack(clip, vrm.value)
-    const nextAction = vrmAnimationMixer.value.clipAction(clip).reset()
-    nextAction.setLoop(animationLoop.value ? LoopRepeat : LoopOnce, animationLoop.value ? Infinity : 1)
-    nextAction.clampWhenFinished = !animationLoop.value
-    activeMotionAction?.crossFadeTo(nextAction, 0.18, false)
-    nextAction.play()
-    activeMotionAction = nextAction
+  useMotionPlayback({
+    source: idleAnimation,
+    loop: animationLoop,
+    mixer: vrmAnimationMixer,
+    action: activeMotionAction,
+    loadClip: async (source) => {
+      const model = vrm.value
+      if (!model)
+        return
+      const animation = await loadVRMAnimation(source)
+      const clip = await clipFromVRMAnimation(model, animation)
+      if (!clip)
+        throw new Error('No VRM motion animation loaded')
+      reAnchorRootPositionTrack(clip, model)
+      return clip
+    },
+    onError: error => emit('error', error),
   })
 
   // wait until scene is not undefined
