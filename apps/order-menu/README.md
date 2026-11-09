@@ -1,5 +1,14 @@
 # Order menu service
 
+The host task binding validates the complete shared handoff shape, including
+literal meal `subjects` (up to 20, each up to 500 characters). Contract changes
+must update the compiled iframe input schema as well as the runtime parser;
+core-only replays do not exercise iframe validation.
+Returning to the full catalog retains that confirmed query universe for later
+condition changes, while preserving dietary exclusions. It must not ask the
+customer to choose an obsolete recommendation scope again. `toolValidation.test.ts`
+and Stage UI's interactive-service browser tests cover this boundary.
+
 ## Separate merchant simulation
 
 `/supplier.html` is the owned 沙崙AI創新應用大樓店 simulation (operator: 周氏蝦捲),
@@ -9,14 +18,31 @@ It visibly states that it cannot create real orders or payments. The entry uses
 its original API/catalog. Both HTML entries are built together. For a deployment
 under `/menu/`, the new page is `/menu/supplier.html`; serve both HTML entries with
 revalidation/no-cache, alongside the shared `/menu/version.json` release metadata.
+Shared ordering fixes must publish both `index.html` and `supplier.html` from the
+same build. Keeping the previous supplier entry also keeps its previous hashed
+runtime, even when the latest shared assets are already present on the server.
+Verify both entries reference the same shared runtime and update the supplier
+entry hash/release in the version metadata.
 
 The independent simulator catalog is owned by
 `apps/order-menu-server/src/fixtures/supplierMenu.json`. The captured source and
 user-confirmed overrides are recorded in
 `docs/research/2026-11-08-esgpb-menu-observation.json`. Three source photos are
-stored under `public/supplier/`; other products explicitly have no photo. Dumplings
-are sold as servings of eight (64元), with a per-serving optional add-on of0–100
-pieces at8元 each. Serving quantity and added pieces are separate controls.
+stored under `public/supplier/`; other products explicitly have no photo.
+The active supplier catalog has15 items and omits 周氏水餃(最低8顆). The Bridge
+owns this removal, so the grid, search, assistant target list and order validation
+all see the same catalog. The default merchant's dumplings remain available.
+Pre-retirement quantity/add-on regressions use the explicit historical fixture;
+they must not reintroduce the item into the published supplier catalog.
+The supplier page additionally supplies equivalent short names (including
+焢肉飯, 紅燒牛肉麵 and 麻辣牛肉麵). Unmatched names are presented as alternatives,
+not as proof that a different preparation is the requested dish; accepting an
+alternative still requires the existing owned confirmation. These policies are
+scoped to the supplier merchant and do not change the shared Kiosk or Server.
+Multi-item and explicit-price inquiries retain their original facts. The item
+dialog can add the chosen configuration and open a fresh configuration for
+another serving; different add-ons remain separate lines. This touch workflow
+does not implement compound voice-order interpretation in the shared service.
 No assistant free-text note entry or inferred dietary/recipe guarantees are added.
 
 Publish a supported page binding in the central Profile's merchant list, then
@@ -54,12 +80,26 @@ cannot grant a new proposal target. A missing exact/fuzzy result cannot be waive
 as a preparation preference. Food-filter and recommendation receipts invite a
 meal choice or serving count; they do not add an order by themselves.
 
+Selecting an authorized dish checks the actual Vue grid before dispatching its
+card click. If a preceding lookup/category hides that dish, the ordinary named
+lookup presents its card and matching conditions first; selection then uses the
+same real click path. Already visible dishes retain the existing grid. This
+applies equally to queued Fast Path additions and Main selections.
+
 A displayed named lookup replaces the previous browsing subject and positive
 tastes/budget, while retaining dietary exclusions. Results and the condition
 strip advance together, including empty/fuzzy results. Explicit new ingredient
-preferences replace the old positive group; price-only updates retain it and
-unchanged continuation preserves the current constraints. Alternative cards are
+preferences, category, price, subject, needs and sort strategy form one complete
+positive condition set per utterance: a new update replaces the previous set.
+Only explicit continuation preserves the current constraints. Manual removal of
+a condition chip supplies the complete remaining set and removes only that chip. Alternative cards are
 proposals, never a claim that they satisfy the original taste or an order consent.
+
+Displayed nonempty browsing results invite a meal choice. Selecting a concrete
+meal publishes a Menu-owned item-order question for servings (or the declared
+required confirmation prompt), without adding a default serving. Only its
+presented question can bind the next quantity answer; price/options/receipt
+validation and existing cart lines remain authoritative.
 
 An explicitly displayed cart review includes its verified summary and the current
 next-step question. It retires old clear-cart consent; internal data-only reads do
@@ -86,6 +126,18 @@ customization dialog and keep the current category, query results and browsing
 position. Selecting a dish does not replace the grid with that dish. A retained
 unfinished meal can supply the next spoken question without immediately opening
 another dialog; its next configuration action opens it when needed.
+A single-dish lookup can offer a new ordering question while an older meal is
+unfinished. Only presenting that Menu-owned question transfers foreground answer
+ownership: the older draft remains retained, its previous answer ticket is
+revoked, and the next answer targets the displayed dish. A lookup alone does not
+cancel or add food. Incompatible-unit guidance is offered only for a spoken
+piece/weight/volume count or conversion request, not every missing quantity.
+Displayed single-meal questions can also supersede passive cart-review or
+checkout-entry invitations. Active fulfillment, payment and destructive-operation
+questions retain their own guards; browsing never constitutes checkout consent.
+Probing a new request during meal confirmation leaves the live proposal intact.
+Only a checked replacement effect or a matching accepted Agent task retires it;
+a failed interpretation cannot erase the target of the next confirmation answer.
 Ordering opens directly on the catalog without initial phone registration or a
 phone-or-skip prompt. Checkout still collects invoice details with mobile carrier,
 citizen-certificate carrier, tax ID and donation; no paper invoice or automatic
@@ -376,6 +428,13 @@ Jev still decides whether the sentence is ordering or querying. Named dishes and
 merchant aliases can start an order without quantity and ask for missing slots.
 Clarifications display their eligible dishes via the existing query presentation,
 without selecting a first dish or changing the cart; wording is 「您指的是…？」.
+An absent named lookup offers a return to the full menu. `menu_open` uses the
+visible menu control and returns a read-only recommendation invitation for the
+Host's existing invitation window. Displaying the catalog does not mark all its
+dishes as already introduced recommendations. Returning keeps the cart and
+dietary exclusions; accepting the invitation can recommend but cannot add items.
+Stale conditions supplied with `continue` remain rejected before effects; the
+iframe transport reports them through the existing one-shot input-repair contract.
 Verified composition filters also qualify purchases; unknown or conflicting
 composition never becomes a confirmed match. Option edits retain their existing
 POS slot flow rather than treating customization as a dish exclusion.
@@ -437,6 +496,20 @@ constraints, so model-supplied dish names cannot silently narrow a broad price
 request. Publish Menu and Kiosk together with the matching API and reload Kiosk.
 See research section17 for live-model, HTTP, host and Chrome acceptance limits.
 
+### Spoken menu introductions
+
+A displayed multi-result lookup of one subject/category keeps every matching
+card visible. The customer reply introduces at most three names per turn;
+spoken progress belongs to that lookup's recommendation batch independently
+from the visible IDs. Continue introduces the next unheard names without
+changing the grid or condition strip. A fresh lookup replaces that progress;
+data-only reads do not advance it. Exhaustion uses the existing return-to-menu
+invitation and never silently widens the query. Explicit price inquiries,
+verification reads and multi-subject factual queries retain their factual
+receipts. Selecting a dish states its base price and asks for servings without
+adding a default serving. Existing ranked recommendations retain their own
+three-result batch policy. No extra model call is used for wording.
+
 ### Single-dish price queries and recommendations
 
 `menu_get` and `menu_recommend` share `minPrice`, `maxPrice`, optional
@@ -454,6 +527,13 @@ Literal ranges and price/comparison amounts may omit the currency unit
 `剛好130`, including Chinese/full-width numerals). They issue finite price
 evidence for Jev to interpret, not an automatic filter. Range endpoints can be
 independently inclusive/exclusive; exact prices cannot become a looser bound.
+An unambiguous literal comparison limits the offered numeric interpretations:
+以下/以內 includes its boundary, 低於/不到 excludes it. Jev still determines
+whether this is a price request, information, or unrelated text; negated or
+ambiguous comparisons retain semantic interpretation. Once qualified, the whole
+price group is authoritative: Main cannot narrow, widen, or change inclusivity.
+A fresh named lookup releases an older budget, while explicit prices in the same
+utterance remain enforced.
 Explicit serving/party-size and clock amounts remain outside that evidence.
 The customer reply and visible recommendation IDs come from the same qualified
 batch; at most three matches are shown at once. Approximate/relative amounts,
@@ -583,7 +663,7 @@ Conversational `menu_recommend` calls require an explicit `action`:
 | Action | Browser-owned behavior |
 | --- | --- |
 | `continue` | Return the next unseen batch, keeping dietary/category conditions. A previous precise meal query is released so other dishes can be found. No caller-supplied condition changes are allowed. Repeated price fields are checked as expectations against the retained values; a new or different bound is rejected without consuming a batch. |
-| `update` | Apply only supplied changes; retain other groups. New numeric price bounds replace the old price group. Sort-only changes retain bounds. Use `clear` to remove explicit groups. |
+| `update` | Supply the current utterance’s complete positive conditions; omitted price/category/subject/needs/strategy/inclusions are removed. Dietary restrictions and food exclusions remain until explicitly cleared. |
 | `reset` | Release browsing bounds/category/subject/needs/strategy; retain dietary restrictions, food exclusions, cart and shown history. |
 | `clarify` | Return one application-owned spoken question; do not query, present, consume a batch or change the cart. |
 
@@ -597,16 +677,25 @@ implicit reset. Tool receipts expose `queryState` from the current browser batch
 The Agent does not reconstruct this state from conversational prose.
 
 `query`/`queries` identify concrete meal names or name fragments, including a
-real name absent from the catalog. Relative requests such as other items are
+real name absent from the catalog. Literal matching uses names, merchant aliases
+and categories, excluding item IDs and descriptive side-dish text: a bento that
+mentions soup is not the soup product. A displayed category/ingredient lookup
+publishes the same fresh query state to the condition strip as to the item grid.
+A semantically qualified `SEARCH_MENU` handoff with literal `subjects` binds
+customer-facing reads to those subjects, including absent kinds. A proposed
+clarify/recommend call cannot substitute unrelated prior recommendations. Relative requests such as other items are
 query actions, not literal product names. `menu_get(display:false)` remains an
 internal evidence read; customer-facing category browsing also uses explicit
 query actions, for example `menu_recommend({ action: 'update', category: '便當' })`.
-`menu_get({ category: '便當', display: true })` is rejected: its category field
-is for internal reads. Displayed `menu_get` results require a concrete
+Conversational Agent calls to `menu_get({ category: '便當', display: true })`
+are rejected; the Host's existing direct category reads remain supported. Displayed `menu_get` results require a concrete
 meal query or explicit `scope:catalog`. Uncertain intent/scope uses `clarify`, while a clear new browsing
 request may use `reset`. No additional choice card is created. On exhaustion,
-continuation asks whether to change the price range or food type and retains
-the last presentation. It does not relax conditions or recycle the same batch.
+continuation offers the existing return-to-menu invitation and retains the last
+matching presentation and condition strip until acceptance. It never replaces
+the grid with relaxed alternatives under the old chips or recycles the batch.
+Accepted menu navigation clears positive query conditions together with the
+filtered view, preserving the cart and dietary exclusions.
 An explicit `action:continue` with neither a confirmed batch nor a usable
 presentation returns the existing clarification reply without inventing a first
 batch or changing the cart. Catalog/plan staleness checks still reject old scope.
@@ -634,6 +723,28 @@ The menu renders the returned items as a
 non-blocking recommendation view with the catalog's own data; it never trusts
 model-generated product details. `menu_show_recommendations` remains available
 when the Agent needs to display a previously verified custom set.
+
+Piece-counter options accept 顆/粒 and an explicit 加量 count within the existing
+local numeric-slot parser; weight units do not become pieces or servings. Only
+one explicitly matched catalog value is offered, including zero: unparsed,
+out-of-range or ambiguous counts cannot default to no add-on. The ask-count
+answer retains the same draft/options and cannot advance to serving count.
+
+A factual lookup of a meal with an explicit required-option confirmation first
+asks whether to order that meal. Only acceptance opens option/serving
+configuration; each option-to-serving transition returns its owned next question.
+Supplier dumpling cart facts use the persisted add-on and actual line unit price,
+including per-serving and line totals. Looking up an already ordered portion
+keeps the current owned question rather than appending an unrelated selection prompt.
+
+Pending customer questions follow their question identity, purpose and relevant
+menu/cart/checkout revisions, not elapsed customer thinking time. The wire
+`expiresAt` snapshot does not retire an unchanged semantic question. A changed
+order revokes old answer authority; an unmet fulfillment/checkout need may be
+rebased to a new question ID. Actual answer candidates, Agent tasks and one-use
+operation tickets keep their own deadlines. Passive reads never renew execution
+authority; a fresh answer turn revalidates current state before issuing it.
+Destructive confirmations remain bound to their exact payload and cart.
 
 Selecting an order item first focuses its catalog card in the menu, so adding a
 different dish while a fulfillment question is pending does not leave the old
@@ -988,6 +1099,14 @@ does not cancel checkout or escape a payment lock. Related unfinished speech
 reaches the resolver as `previousTranscript` separate from the current utterance,
 only after Jev's relation choice and a same-state revision check.
 
+Decision, passive Host and Main context readers project the same foreground
+scope/clarification question. Scope snapshots include the complete owner revision
+tuple, and a pending scope cannot advertise ordinary item additions to Main.
+Menu/Host/API use the shared `decisionRevisionsSchema`; recovery and service
+clarification freshness includes menu, cart, selection, checkout, recommendation
+and seating versions. A recommendation or seating change invalidates old meaning
+recovery even if the cart and phase are unchanged.
+
 Operational questions carry a purpose, question ID, finite choices with explicit
 effects (including refusal/deferral), and relevant revisions. Current-turn
 receipts include validated values such as party size and tax ID even when those
@@ -1004,6 +1123,34 @@ the customer sees it. Fulfillment changes require a current POS choice reference
 or a resolved fulfillment handoff; checkout is offered only when Menu currently
 issues `START_CHECKOUT`. These capabilities follow domain readiness, not merely
 the ordering phase. Item selection/add/configuration tools also require a target bound before the task. Until then, Main receives lookup/confirmation capabilities; later reads cannot manufacture customer consent to an item. Staged quantity/option edits and cart_add_item additionally require a real current selection bound to the task; an atomic addition clears that selection. A finite operation handoff retains evidence lookup but does not advertise new recommendation tools; independently qualified mixed-purpose tasks retain their browsing scope.
+Table-service additions offer a `cart-review` question whose only affirmative
+effect is `VIEW_CART`; the actual review receipt then owns `checkout-entry`.
+This next-step invitation does not interrupt a compound add at its first item.
+A bare request to add more returns to selection with cart lines retained. An
+invalid subject-free addition proposal gets at most one semantic requalification;
+it never bypasses literal target validation or grants a write.
+Host reply composition uses verified addition lines and preserves explicit price
+inquiries/missing subjects instead of appending same-item availability evidence.
+
+Single displayed available meals may issue an `item-order` quantity invitation
+from lookup, filtered lookup, recommendation or redisplay receipts. Only the
+acknowledged presentation activates its item-bound `ADD_ITEM` answer; lookup
+itself never selects or adds a meal. A quantity-only answer uses that verified
+item and still passes quantity, options, composition and live-revision checks.
+Active fulfillment/payment/destructive confirmations and navigation take
+precedence. A newly presented single-meal question can supersede a passive
+cart-review/checkout-entry invitation while retaining an older unfinished draft.
+Agent recommendations carry the same task owner through presentation as lookups;
+compound inquiries finish their reads before any purchase invitation.
+Explicit inquiry corrections use open browsing guidance instead of another
+quantity question. Catalog-only reply builders also use open guidance because
+they do not own Menu presentation or answer authority.
+
+A changed menu/cart/selection/recommendation, another foreground meal, return to
+catalog, refusal or reset retires the old item invitation. Silence alone preserves
+its unanswered need; only a new decision renews the 30-second answer lease.
+A late result from an ended/replaced task cannot offer a new quantity question.
+
 Actually presented unanswered questions survive lookups, plain acknowledgements,
 deferral and idle within the same order. Question records remain until new-order
 reset; completed/superseded records are not active answer authority. Host-only
@@ -1057,7 +1204,9 @@ views. Removing one condition preserves unrelated conditions and the cart;
 removing the vegetarian label does not silently remove existing food exclusions.
 Ordinary named information lookups do not display an unrelated saved filter strip.
 
-Guidance distinguishes unclear intent, no matches and exhausted results. It uses
+Guidance distinguishes unclear intent, no matches and exhausted results. Exhausted
+results ask whether to return to the full menu, using the existing Host-owned
+invitation; repeated continue/clarify requests retain that boundary. Other guidance uses
 actual available dish names, never a generic change-food-type/price question.
 Alternative cards are proposals to view; saved positive preferences remain until
 a customer chooses to change them. Exclusions, dietary restrictions and budget

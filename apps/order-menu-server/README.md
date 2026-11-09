@@ -12,6 +12,13 @@ device authentication. Mounting a Bridge beneath a prefix requires its matching
 The existing reverse proxy for `/menu-api/` also carries `/menu-api/supplier/*`;
 no additional port or upstream server is required.
 
+The served supplier catalog is `supplier-menu-20261109-v2` with15 items.
+`周氏水餃(最低8顆)` (`supplier-item-08`) is retired from the public catalog and
+therefore from price/order validation. The captured JSON retains the original
+record solely as evidence; tests use `fixtures/historicalSupplierCatalog.ts`
+when replaying its past failures. It is not a public merchant or selectable menu.
+The default merchant's dumplings and catalog are unchanged.
+
 `@proj-airi/order-menu-server` is the local server boundary between the
 customer-facing Order Menu and a POS provider. It owns normalized catalog and
 order-submission HTTP contracts; the customer UI and WebMCP never receive POS

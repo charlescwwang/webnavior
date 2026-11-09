@@ -21,14 +21,13 @@ it.each(['kiosk', 'table-service'] as const)('uses the new merchant API and actu
   const screen = render(App, { props: { variant: 'supplier', bridgeUrl: 'http://bridge.test/supplier', merchant: { id: 'shalun-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' } } })
   try {
     await expect.element(screen.getByRole('note')).toHaveTextContent('模擬示意')
-    await screen.getByRole('button', { name: /^周氏水餃/ }).click()
-    await screen.getByRole('button', { name: /^加2顆/ }).click()
+    await expect.element(screen.getByRole('button', { name: /^周氏水餃/ })).not.toBeInTheDocument()
+    await screen.getByRole('button', { name: /^炸排骨便當/ }).click()
     await screen.getByRole('button', { name: '增加一份', exact: true }).click()
     await screen.getByRole('button', { name: '減少一份', exact: true }).click()
     await screen.getByRole('button', { name: '加入購物車', exact: true }).click()
     await screen.getByRole('button', { name: '查看訂單', exact: true }).click()
-    await expect.element(screen.getByRole('region', { name: '訂單總計' })).toHaveTextContent('80元')
-    await expect.element(screen.getByRole('button', { name: '加2顆+16元', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect.element(screen.getByRole('region', { name: '訂單總計' })).toHaveTextContent('130元')
     if (serviceMode === 'table-service') {
       await expect.element(screen.getByRole('button', { name: '自取', exact: true })).not.toBeInTheDocument()
       await expect.element(screen.getByRole('button', { name: '確認訂單，直接送出' })).toBeEnabled()

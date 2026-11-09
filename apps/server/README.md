@@ -231,7 +231,25 @@ Live question answers select only currently issued effects and carry the exact
 `answeredQuestionId`. Expired/unresolved answers cannot authorize an operation.
 An independent request supersedes an invitation by ID; uncertain meaning does
 not consume it. Configuration/confirmation topic changes retain the existing
-browser reroute/revocation protocol. Active-request and unfinished-fragment
+browser reroute/revocation protocol. Uncertain meal identity answers re-present
+the owned confirmation rather than becoming independent new orders. A valid
+addition classification with explicitly empty meal subjects or the exact
+last-added label inherited from context, after one repair, can ask whether to change existing quantities or add food when current cart
+references exist; it grants no operation. Provider/malformed responses retain
+their technical-failure policy. Menu reads with invalid original-name subjects
+receive at most one bounded repair: contextual continuation uses no invented
+current name, while a newly requested absent dish retains its literal subject.
+An invalid addition that only reintroduces a live meal proposal's name can
+re-present its correlated confirmation, without adding it. Known ingredient
+labels in a valid menu inquiry remain condition browsing rather than a named
+meal lookup; genuinely named/unknown subjects retain literal lookup authority.
+A repair that fails at the provider remains a provider fault. Conventional selection-completion phrases
+(e.g. 這樣就好, 就這些, 點好了, 不用再加了) can qualify only a read-only order
+review when the cart is nonempty and there is no unfinished meal or live
+quantity/identity/checkout question. This bounded fallback removes a competing
+recommendation/deferral proposal; it never submits an order. Compound demands
+remain semantic. Background filtering still requires service admission when
+enabled. A live checkout question retains its own answer authority. Active-request and unfinished-fragment
 relations are separate finite questions, not implicit duplicate operations.
 Browser phase, target, revisions, quantities/options and one-use high-risk
 confirmation remain mandatory. A route is never an operation receipt.
@@ -418,6 +436,18 @@ similar names must not turn an unmatched request into another dish or a leading
 “did you mean” confirmation. Report the missing item and let the customer choose
 whether to browse the menu or request recommendations.
 
+A recovered answer to a generic service-meaning question passes the existing
+whole-request scope qualifier before receiving a new purpose. Recovery admission
+and its conservative read-only flag are not a final operation qualification.
+Only a newly qualified operation can supersede the prior generic clarification
+read scope; Menu revisions, tool restrictions and operation reviews still apply.
+Staff and special-order assistance retain their separate consent contracts.
+
+Promotion/discount inquiries belong to merchant service information. No promotion
+source is currently published; `service-information/topic:promotions` renders a
+staff-assistance offer through the existing simulated, nonblocking notification
+flow. It is not a menu lookup, purchase authorization or an out-of-scope refusal.
+
 Every staged utterance rechecks service admission, including while a service
 clarification is pending. Uncertain service relevance and unknown service meaning
 remain distinct: a valid Menu question keeps its existing bounded answer route;
@@ -434,7 +464,11 @@ authorize removal or checkout. Review clarification/held-answer proposals also p
 whole-service purpose qualification before they can restart or suppress dialogue.
 An unresolved-target question cannot reopen or renew itself on another vague
 fragment. A directed follow-up to unavailable menu data can refine its conditions
-within the original expiry, without repeating the same question. A later explicit
+while its question identity and relevant service state remain current, without
+repeating the same question. Customer silence does not expire a semantic question;
+the wire `expiresAt` snapshot is separate from bounded model/operation deadlines.
+Context changes, settlement and session reset revoke the question. Old model or
+operation tickets remain invalid even when the conversational need is retained. A later explicit
 meal request continues through the ordinary Menu-owned ordering flow.
 Uncertain admission, an uninterpreted clarification answer and uncertain recipient
 scope stay silent. Accepted service questions enter model history only together
@@ -504,6 +538,14 @@ checked by the strict `verify_customer_operation` selector against the complete
 utterance and fresh question/cart/retained-request facts. An unsupported batch
 returns a typed clarification with no browser effects; malformed review output
 or provider failure follows the technical failure path, never assumed consent.
+An independently qualified `ADD_ONLY` task may read its literal subjects and
+ask a Menu-evidenced identity question without reinterpreting the old cart/checkout
+question. This admission requires ordering phase, no retained draft, current-task
+lookup evidence for the candidate, allowed tools, and a single non-mutating call.
+It does not complete the purchase or permit recipe acceptance, replacement,
+mixed batches or cart writes. Menu retains revision, dietary, quantity and later
+customer-consent validation. Generation and admission share task-local evidence;
+failed receipts and earlier turns cannot establish a candidate.
 Ordinary item/quantity turns and data-only cart reads add no such review by default.
 `replyOnly` admits only typed customer replies and rejects browser effects even
 if the provider ignores its offered tool schema. This semantic check is an
