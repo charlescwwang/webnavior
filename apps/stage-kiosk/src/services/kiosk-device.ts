@@ -170,9 +170,14 @@ export async function registerDevelopmentKiosk(registrationCode: string) {
   })
 }
 
+// Bookkeeping sits outside the model task deadline. Bound these waits too,
+// including response bodies, without automatically retrying uncertain writes.
+const visitorRequestTimeoutMs = 15_000
+
 /** Starts one durable visitor interaction using this device's assigned Profile. */
 export async function startKioskVisitorSession(serviceId: string) {
   return await request<{ session: KioskVisitorSession }>('/api/kiosk/visitor-sessions', {
+    signal: AbortSignal.timeout(visitorRequestTimeoutMs),
     method: 'POST',
     body: JSON.stringify({ serviceId }),
   })
@@ -186,6 +191,7 @@ export async function appendKioskInteraction(input: {
   visitorSessionId: string
 }) {
   return await request<{ entry: { id: string } }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/entries`, {
+    signal: AbortSignal.timeout(visitorRequestTimeoutMs),
     method: 'POST',
     body: JSON.stringify({ content: input.content, kind: input.kind, metadata: input.metadata ?? {} }),
   })
@@ -194,7 +200,7 @@ export async function appendKioskInteraction(input: {
 /** Reads a bounded page of text from the authenticated visitor's own session. */
 export async function fetchKioskSessionHistory(input: { before?: number, visitorSessionId: string }) {
   const cursor = input.before === undefined ? '' : `?before=${input.before}`
-  return await request<{ entries: Array<{ content: string, index: number, role: 'assistant' | 'user' }>, nextBefore?: number, total: number }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/history${cursor}`)
+  return await request<{ entries: Array<{ content: string, index: number, role: 'assistant' | 'user' }>, nextBefore?: number, total: number }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/history${cursor}`, { signal: AbortSignal.timeout(visitorRequestTimeoutMs) })
 }
 
 /** Records the terminal reason for a visitor interaction. */
@@ -203,6 +209,7 @@ export async function endKioskVisitorSession(input: {
   visitorSessionId: string
 }) {
   return await request<{ session: KioskVisitorSession }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/end`, {
+    signal: AbortSignal.timeout(visitorRequestTimeoutMs),
     method: 'POST',
     body: JSON.stringify({ state: input.state }),
   })

@@ -8,7 +8,7 @@ export type KioskInteractionPhase
     | 'using-tool'
     | 'speaking'
 
-export type KioskInteractionTurnKind = 'conversation' | 'proactive' | 'voice'
+export type KioskInteractionTurnKind = 'conversation' | 'proactive' | 'voice' | 'completion'
 
 export interface KioskInteractionTurn {
   id: number

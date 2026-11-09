@@ -651,6 +651,80 @@ describe('useKioskInteractionRecording', () => {
   // unused provider response into the following independent customer test.
   afterEach(() => vi.resetAllMocks())
 
+  // Report: this chat Nov8 reliability audit — restart while session creation/closure is in flight.
+  it('does not resurrect a session whose creation finishes after a reset', async () => {
+    let finish!: (value: { session: { id: string } }) => void
+    kioskApi.startKioskVisitorSession.mockImplementationOnce(() => new Promise(resolve => finish = resolve)).mockResolvedValueOnce({ session: { id: 'new-visitor' } })
+    kioskApi.endKioskVisitorSession.mockResolvedValue({})
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      const oldStart = recording.start('ordering')
+      await recording.end('idle')
+      finish({ session: { id: 'old-visitor' } })
+      await expect(oldStart).resolves.toBeUndefined()
+      expect(recording.visitorSessionId.value).toBeUndefined()
+      await expect(recording.start('ordering')).resolves.toBe('new-visitor')
+      expect(recording.visitorSessionId.value).toBe('new-visitor')
+      expect(kioskApi.endKioskVisitorSession).toHaveBeenCalledWith({ visitorSessionId: 'old-visitor', state: 'cancelled' })
+    }
+    finally { scope.stop() }
+  })
+
+  it('does not reuse a closing session or clear its replacement when the old end arrives late', async () => {
+    let finish!: () => void
+    kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'old-visitor' } }).mockResolvedValueOnce({ session: { id: 'new-visitor' } })
+    kioskApi.endKioskVisitorSession.mockImplementationOnce(() => new Promise<void>(resolve => finish = resolve))
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      await recording.start('ordering')
+      const ending = recording.end('idle')
+      await expect(recording.start('ordering')).resolves.toBe('new-visitor')
+      finish()
+      await ending
+      expect(recording.visitorSessionId.value).toBe('new-visitor')
+    }
+    finally { scope.stop() }
+  })
+
+  it('retires a possibly ended session when its end receipt is lost', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'old-visitor' } }).mockResolvedValueOnce({ session: { id: 'new-visitor' } })
+    kioskApi.endKioskVisitorSession.mockRejectedValue(new Error('Lost end receipt'))
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      await recording.start('ordering')
+      await recording.end('idle')
+      expect(recording.visitorSessionId.value).toBeUndefined()
+      await expect(recording.start('ordering')).resolves.toBe('new-visitor')
+    }
+    finally { scope.stop() }
+  })
+
+  it('does not let a retired visitor receipt queue block the next visitor', async () => {
+    let finish!: () => void
+    kioskApi.startKioskVisitorSession.mockResolvedValueOnce({ session: { id: 'old-visitor' } }).mockResolvedValueOnce({ session: { id: 'new-visitor' } })
+    kioskApi.appendKioskInteraction.mockImplementationOnce(() => new Promise<void>(resolve => finish = resolve)).mockResolvedValue({})
+    kioskApi.endKioskVisitorSession.mockResolvedValue({})
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    try {
+      await recording.start('ordering')
+      const oldReceipt = recording.append('assistant_text', '舊回覆')
+      await vi.waitFor(() => expect(kioskApi.appendKioskInteraction).toHaveBeenCalledOnce())
+      await recording.end('idle')
+      await recording.start('ordering')
+      const newReceipt = recording.append('assistant_text', '新回覆')
+      try {
+        await vi.waitFor(() => expect(kioskApi.appendKioskInteraction).toHaveBeenCalledWith(expect.objectContaining({ visitorSessionId: 'new-visitor', content: '新回覆' })), { timeout: 100 })
+      }
+      finally { finish() }
+      await Promise.all([oldReceipt, newReceipt])
+    }
+    finally { scope.stop() }
+  })
+
   it('creates one device session before saving ASR, proactive output, and its terminal state', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
     kioskApi.appendKioskInteraction.mockResolvedValue({})

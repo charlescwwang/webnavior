@@ -475,6 +475,8 @@ const customerSession = useKioskCustomerSession({
   waitForInteractiveSurface: () => interactiveServiceClient.waitUntilReady(),
   endVisitorSession: () => interactionRecording.end('idle'),
   resetConversation: clearConversationPresentation,
+  onNewOrder: resetProactiveWindows,
+  onOrderCompleted: () => void announceCompletedOrder(),
 })
 const voiceInputAllowed = computed(() => customerSession.acceptsVoiceInput.value && !completionPending.value && !manualRestartPending.value)
 const performanceSettings = computed(() => kioskPerformanceSettings[props.performanceProfile])
@@ -1533,6 +1535,10 @@ function clearConversationPresentation() {
 async function speakAssistantReply(text: string, turn: ReturnType<typeof interactionTurn.begin>, preparedAudio?: Blob, signal = turn.signal) {
   if (signal.aborted || !interactionTurn.isCurrent(turn))
     return
+  // Completion owns the terminal announcement. An older Agent/fast-path reply
+  // may still settle its receipt, but cannot duplicate or replace that speech.
+  if (customerSessionState.value === 'completing' && turn.kind !== 'completion')
+    return
   if (turn.kind === 'proactive' && !allowsObservedVoice())
     return
   const generation = ++speechGeneration
@@ -1548,6 +1554,8 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
   try {
     const audio = preparedAudio ?? await synthesizeKioskSpeech({ locale: language.value, signal, text })
     if (signal.aborted || !interactionTurn.isCurrent(turn))
+      return
+    if (customerSessionState.value === 'completing' && turn.kind !== 'completion')
       return
     if (turn.kind === 'proactive' && !allowsObservedVoice())
       return
@@ -1594,6 +1602,23 @@ async function speakAssistantReply(text: string, turn: ReturnType<typeof interac
       speechPreparationCount.value -= 1
     if (generation === speechGeneration)
       processingSpeechActive.value = false
+  }
+}
+
+async function announceCompletedOrder() {
+  const customerId = customerSession.customer.value?.sessionId
+  interruptAssistantOutput()
+  // Let already-issued operations and their accepted receipts settle. Closing
+  // the input queue must not cancel the independent completion announcement.
+  await Promise.allSettled([currentAgentRequest()?.done, utteranceQueue.idle()])
+  if (customerSessionState.value !== 'completing' || customerSession.customer.value?.sessionId !== customerId)
+    return
+  const turn = interactionTurn.begin('completion', 'speaking')
+  try {
+    await speakAssistantReply(t('stage.customer-session.completion.title'), turn)
+  }
+  finally {
+    interactionTurn.complete(turn)
   }
 }
 
@@ -1802,7 +1827,7 @@ onUnmounted(() => {
   ++audioGeneration
 })
 
-watch(proactiveSettings, () => {
+function resetProactiveWindows() {
   voicePresence.reset()
   proactiveWindow = createInteractionWindow(proactiveSettings.value.proactiveGreeting)
   assistanceReminderWindow = createAssistanceReminderWindow(proactiveSettings.value.assistanceReminder)
@@ -1811,9 +1836,12 @@ watch(proactiveSettings, () => {
     greetingRoi: proactiveSettings.value.observation.detectionZone,
   }, proactiveSettings.value.proactiveGreeting)
   presenceDecision.value = undefined
+  lastPresenceCandidate.value = undefined
+  visualEngagementProtectionStartedAtMs = undefined
   if (customerSessionState.value === 'active')
     assistanceReminderWindow.start(performance.now())
-}, { deep: true })
+}
+watch(proactiveSettings, resetProactiveWindows, { deep: true })
 
 async function syncProactiveVision() {
   if (!cameraRequired.value) {
@@ -1907,7 +1935,7 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
     return
   }
 
-  if (customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
+  if (!customerSession.canGreet.value || !interactionTurn.canProactivelySpeak.value)
     return
 
   if ((props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode) !== 'face_only')
@@ -1921,14 +1949,22 @@ async function handleProactiveObservation(observation: Parameters<typeof proacti
 
   await startProactiveGreeting()
   // Face-only dwell is claimed by decide(). If admission failed while still
-  // in standby, allow a fresh dwell instead of losing this visitor's welcome.
-  if (customerSessionState.value === 'standby')
+  // awaiting a welcome, allow a fresh dwell instead of losing this visitor.
+  if (customerSession.canGreet.value)
     proactiveWindow.reset()
 }
 
 function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoiHit' | 'interactionRoiHit'> | undefined) {
   const observedAtMs = performance.now()
   const decision = presenceWindow.decide(observedAtMs, candidate)
+  // Fault/stop callbacks also clear candidates. Only a healthy inference lane
+  // may confirm departure and authorize the next visitor's order reset.
+  if (localObservationRequired.value && proactiveVision.status.value === 'observing'
+    && (decision.state !== 'EMPTY' || Number.isFinite(decision.lastSeenAgeMs))
+    && customerSession.observePresence(decision.state)) {
+    void restartCustomerSession()
+    return
+  }
   // Presence and voice share the same measured frame and ROI classification.
   // Rechecking only the greeting zone here falsely rejected ENGAGED customers.
   voicePresence.observe(observedAtMs, decision.candidate)
@@ -1955,7 +1991,7 @@ function handlePresenceCandidate(candidate: Omit<PresenceCandidate, 'greetingRoi
   syncPresenceIdleSuppression(decision)
 
   const visionMode = props.deviceSettings?.presenceVisionMode ?? defaultDeviceSettingsValues.presenceVisionMode
-  if (visionMode !== 'face_only' && customerSessionState.value === 'standby' && decision.greetingEligible && interactionTurn.canProactivelySpeak.value)
+  if (visionMode !== 'face_only' && customerSession.canGreet.value && decision.greetingEligible && interactionTurn.canProactivelySpeak.value)
     void startProactiveGreeting(() => presenceWindow.claimGreeting())
 }
 
@@ -1986,7 +2022,7 @@ function syncPresenceIdleSuppression(decision: ReturnType<typeof presenceWindow.
 }
 
 async function startProactiveGreeting(onStarted?: () => void) {
-  if (!allowsObservedVoice() || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value)
+  if (!allowsObservedVoice() || !customerSession.canGreet.value || !interactionTurn.canProactivelySpeak.value)
     return
 
   const stateTool = interactiveServiceClient.tools.value.find(tool => tool.name === 'kiosk_interaction_state')
@@ -1999,7 +2035,7 @@ async function startProactiveGreeting(onStarted?: () => void) {
       })
     : undefined
   const state = conversationDecisionStateFrom(stateResult)
-  if (!allowsObservedVoice() || !greetingPhase(state) || customerSessionState.value !== 'standby' || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
+  if (!allowsObservedVoice() || !greetingPhase(state) || !customerSession.canGreet.value || !interactionTurn.canProactivelySpeak.value || currentAgentRequest())
     return
 
   const frame = props.proactiveVlmEnabled ? captureProactiveCameraFrame(proactiveCamera.value) : undefined

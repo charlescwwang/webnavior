@@ -172,12 +172,16 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
     if (presenceIdleSuppressed.value === suppressed)
       return
     presenceIdleSuppressed.value = suppressed
+    // Presence protects an active conversation before the idle warning. Once
+    // the warning is displayed, only explicit continuation may cancel expiry;
+    // clearing its timer here leaves the confirmation dialog stuck indefinitely.
+    if (state.value !== 'active')
+      return
     if (suppressed) {
       clearTimers()
       return
     }
-    if (state.value === 'active')
-      scheduleIdleTimeout()
+    scheduleIdleTimeout()
   }
 
   function completeOrder() {
@@ -191,8 +195,20 @@ export function useKioskCustomerSession(options: KioskCustomerSessionOptions) {
 
   async function end(reason: 'completed' | 'idle' | 'staff') {
     // A canceled/late idle callback has no authority over a resumed or new order.
-    if (reason === 'idle' && (state.value !== 'awaiting-idle-confirmation' || idleDeadlineAt.value === undefined || Date.now() < idleDeadlineAt.value))
-      return
+    if (reason === 'idle') {
+      if (state.value !== 'awaiting-idle-confirmation' || idleDeadlineAt.value === undefined)
+        return
+      const remainingMs = idleDeadlineAt.value - Date.now()
+      if (remainingMs > 0) {
+        // Browser timers and the wall clock may disagree after clock correction.
+        // Recheck the remaining interval instead of dropping the only expiry
+        // callback and leaving an actionable confirmation stranded at zero.
+        if (endTimer)
+          clearTimeout(endTimer)
+        endTimer = setTimeout(end, remainingMs, 'idle')
+        return
+      }
+    }
     if (options.resetPolicy === 'confirmed-completion') {
       // Only a host-confirmed completion may clear the order. A late dismissal
       // from an old overlay must not reset the next customer's active session.

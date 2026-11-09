@@ -138,6 +138,10 @@ export function useKioskProactiveVision(options: Options) {
   function stop() {
     generation++
     running = false
+    // Consumers may use healthy EMPTY observations to start the next order.
+    // Publish inactivity before clearing candidates, never after that callback.
+    if (status.value !== 'failed' && status.value !== 'unsupported')
+      status.value = 'idle'
     document.removeEventListener('visibilitychange', visibilityChanged)
     for (const cancel of [...cancelModelLoads])
       cancel()
@@ -166,8 +170,6 @@ export function useKioskProactiveVision(options: Options) {
     retryAtMs = 0
     consecutiveFailures = 0
     clearObservation()
-    if (status.value !== 'failed' && status.value !== 'unsupported')
-      status.value = 'idle'
   }
 
   function scheduleNextFrame() {

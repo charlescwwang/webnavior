@@ -68,6 +68,9 @@ export function useKioskInteractionRecording() {
     // releasing the UI before its receipt would allow conflicting cart writes.
     activeControl.controller.abort()
   }
+  // Reset retires local ownership immediately. Network completion may arrive
+  // later, but can never republish an old visitor or clear its replacement.
+  let sessionGeneration = 0
   let pendingStart: Promise<string | undefined> | undefined
   let pendingAppend: Promise<unknown> = Promise.resolve()
   let pendingDiagnostic: Promise<unknown> = Promise.resolve()
@@ -78,21 +81,31 @@ export function useKioskInteractionRecording() {
     if (pendingStart)
       return await pendingStart
 
+    const generation = sessionGeneration
     pendingStart = (async () => {
       starting.value = true
       error.value = undefined
       try {
         const { session } = await startKioskVisitorSession(serviceId)
+        if (generation !== sessionGeneration) {
+          // This creation was never admitted to a visitor round. Close only its
+          // own server record; a lost cleanup receipt cannot revive it locally.
+          void endKioskVisitorSession({ visitorSessionId: session.id, state: 'cancelled' }).catch(() => {})
+          return undefined
+        }
         visitorSessionId.value = session.id
         return session.id
       }
       catch {
-        error.value = '無法建立互動會話，請確認 kiosk 已取得發布設定。'
+        if (generation === sessionGeneration)
+          error.value = '無法建立互動會話，請確認 kiosk 已取得發布設定。'
         return undefined
       }
       finally {
-        starting.value = false
-        pendingStart = undefined
+        if (generation === sessionGeneration) {
+          starting.value = false
+          pendingStart = undefined
+        }
       }
     })()
     return await pendingStart
@@ -114,7 +127,8 @@ export function useKioskInteractionRecording() {
         return entry
       }
       catch {
-        error.value = '互動資料暫時無法保存。'
+        if (visitorSessionId.value === sessionId)
+          error.value = '互動資料暫時無法保存。'
       }
     }
     // Metrics preserve their own event order, but must not delay transcript or
@@ -132,15 +146,26 @@ export function useKioskInteractionRecording() {
   }
 
   async function end(state: 'completed' | 'cancelled' | 'idle') {
-    if (!visitorSessionId.value)
+    const sessionId = visitorSessionId.value
+    const generation = ++sessionGeneration
+    visitorSessionId.value = undefined
+    pendingStart = undefined
+    starting.value = false
+    // Prior saves keep their captured visitor IDs, but their network latency
+    // must not serialize the replacement visitor behind retired work.
+    pendingAppend = Promise.resolve()
+    pendingDiagnostic = Promise.resolve()
+    if (!sessionId)
       return
 
     try {
-      await endKioskVisitorSession({ visitorSessionId: visitorSessionId.value, state })
-      visitorSessionId.value = undefined
+      await endKioskVisitorSession({ visitorSessionId: sessionId, state })
     }
     catch {
-      error.value = '互動會話暫時無法結束。'
+      // The server may already have ended this session. Reusing it would poison
+      // later conversations; report the lost receipt without restoring ownership.
+      if (generation === sessionGeneration && !visitorSessionId.value)
+        error.value = '互動會話暫時無法結束。'
     }
   }
 

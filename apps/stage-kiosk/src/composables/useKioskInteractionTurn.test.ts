@@ -4,6 +4,21 @@ import { effectScope } from 'vue'
 import { useKioskInteractionTurn } from './useKioskInteractionTurn'
 
 describe('useKioskInteractionTurn', () => {
+  // Report: this chat, 2026-11-09 — closing voice admission must not cancel
+  // the accepted-order announcement as though it were a proactive greeting.
+  it('keeps completion speech through proactive cancellation and retires it on a new round', () => {
+    const scope = effectScope()
+    const interaction = scope.run(() => useKioskInteractionTurn())!
+    const completion = interaction.begin('completion', 'speaking')
+    interaction.cancelProactive()
+    expect(completion.signal.aborted).toBe(false)
+    expect(interaction.isCurrent(completion)).toBe(true)
+    interaction.cancel()
+    expect(completion.signal.aborted).toBe(true)
+    expect(interaction.isCurrent(completion)).toBe(false)
+    expect(interaction.phase.value).toBe('listening')
+    scope.stop()
+  })
   it('cancels a welcome for touch activity without cancelling customer work', () => {
     const scope = effectScope()
     const interaction = scope.run(() => useKioskInteractionTurn())

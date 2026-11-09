@@ -24,6 +24,28 @@ function fixture() {
   return { video, options, getStream: () => cameraStream, close: () => video.remove() }
 }
 
+// Report: this chat, 2026-11-09 — only healthy EMPTY observations may rearm a
+// completed order. Clearing a stopped camera must not impersonate departure.
+it('marks a stopped camera inactive before publishing cleared presence', async () => {
+  const f = fixture()
+  const states: string[] = []
+  const vision = useKioskProactiveVision({ ...f.options, createPoseLandmarker: async () => poseRuntime(), onPresenceCandidate: (candidate) => {
+    if (!candidate)
+      states.push(vision.status.value)
+  } })
+  try {
+    await vision.start(f.video)
+    await expect.poll(() => vision.status.value).toBe('observing')
+    states.length = 0
+    vision.stop()
+    expect(states).toEqual(['idle'])
+  }
+  finally {
+    vision.stop()
+    f.close()
+  }
+})
+
 // Report: this chat, 2026-11-07: inference errors were only logged while status stayed observing.
 // NOTICE: Video acquisition is a real browser fake-device stream. The optional
 // factories replace only the external MediaPipe IO boundary, not presence policy.

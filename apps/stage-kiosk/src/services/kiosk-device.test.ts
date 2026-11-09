@@ -1,9 +1,34 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled, reportKioskAudioWarning, synthesizeKioskSpeech } from './kiosk-device'
+import { appendKioskInteraction, createKioskTranscriptionBody, decideKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, isKioskFastPathEnabled, reportKioskAudioWarning, startKioskVisitorSession, synthesizeKioskSpeech } from './kiosk-device'
 
 describe('segmented device requests', () => {
   afterEach(() => vi.restoreAllMocks())
+
+  // Report: this chat Nov8 reliability audit — session/receipt waits must not block the next turn forever.
+  it('bounds visitor lifecycle and ordered receipt requests without retrying them', async () => {
+    const network = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ session: { id: 'visitor' }, entries: [], total: 0 }))
+    await startKioskVisitorSession('ordering')
+    await appendKioskInteraction({ visitorSessionId: 'visitor', kind: 'assistant_text', content: '回覆' })
+    await fetchKioskSessionHistory({ visitorSessionId: 'visitor' })
+    await endKioskVisitorSession({ visitorSessionId: 'visitor', state: 'idle' })
+    expect(network).toHaveBeenCalledTimes(4)
+    for (const [, input] of network.mock.calls) {
+      expect(input?.signal).toBeInstanceOf(AbortSignal)
+      expect(input?.signal?.aborted).toBe(false)
+    }
+  })
+
+  it('settles a hung visitor request at its real network deadline without retry', async () => {
+    const network = vi.spyOn(globalThis, 'fetch').mockImplementation((_url, input) => new Promise((_resolve, reject) => {
+      const signal = input?.signal
+      if (!signal)
+        throw new Error('Missing visitor deadline')
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    }))
+    await expect(startKioskVisitorSession('ordering')).rejects.toMatchObject({ name: 'TimeoutError' })
+    expect(network).toHaveBeenCalledOnce()
+  }, 20_000)
 
   it('reports device audio diagnostics with a deadline and no session or conversation payload', async () => {
     const network = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ accepted: true }))

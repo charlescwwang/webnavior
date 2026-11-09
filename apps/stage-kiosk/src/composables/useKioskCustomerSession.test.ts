@@ -27,8 +27,121 @@ describe('useKioskCustomerSession', () => {
     vi.useRealTimers()
   })
 
+  // Report: this chat, 2026-11-09 — after completion/restart the camera only
+  // greets again after a page reload. New-order permission must be one-use,
+  // while completion must continue blocking the previous customer's voice.
+  it('allows one camera greeting after an explicit new order until greeting or customer activity claims it', async () => {
+    reloadScenario.mockResolvedValue(undefined)
+    const onNewOrder = vi.fn()
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, onNewOrder }))!
+    expect(session.canGreet.value).toBe(true)
+    await session.recordActivity()
+    expect(session.canGreet.value).toBe(false)
+    await session.startNewCustomerSession()
+    expect(session.state.value).toBe('standby')
+    expect(onNewOrder).toHaveBeenCalledOnce()
+    expect(session.canGreet.value).toBe(true)
+    await session.begin()
+    expect(session.canGreet.value).toBe(false)
+    await session.startNewCustomerSession()
+    expect(onNewOrder).toHaveBeenCalledTimes(2)
+    await session.recordActivity()
+    expect(session.canGreet.value).toBe(false)
+  })
+
+  it('rearms a completed round only after confirmed departure and an approaching visitor after receipt cleanup', async () => {
+    reloadScenario.mockResolvedValue(undefined)
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() } }))!
+    await session.recordActivity()
+    session.completeOrder()
+    expect(session.canGreet.value).toBe(false)
+    expect(session.observePresence('ENGAGED')).toBe(false)
+    expect(session.observePresence('EMPTY')).toBe(false)
+    expect(session.observePresence('APPROACHING')).toBe(false)
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    await session.end('completed')
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    expect(session.observePresence('PASSING')).toBe(false)
+    expect(session.observePresence('APPROACHING')).toBe(true)
+    expect(session.observePresence('ENGAGED')).toBe(false)
+    await session.startNewCustomerSession()
+    expect(session.acceptsVoiceInput.value).toBe(true)
+    expect(session.canGreet.value).toBe(true)
+    expect(session.observePresence('EMPTY')).toBe(false)
+    expect(session.observePresence('ENGAGED')).toBe(false)
+  })
+
+  it('does not treat a still-present customer or ordinary active-order movement as a new visitor', async () => {
+    reloadScenario.mockResolvedValue(undefined)
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() } }))!
+    await session.recordActivity()
+    expect(session.observePresence('EMPTY')).toBe(false)
+    expect(session.observePresence('ENGAGED')).toBe(false)
+    session.completeOrder()
+    await session.end('completed')
+    expect(session.observePresence('ENGAGED')).toBe(false)
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    expect(reloadScenario).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a failed next-visitor reset blocked until an explicit retry succeeds', async () => {
+    reloadScenario.mockResolvedValue(undefined)
+    const resetOrderRound = vi.fn(async () => {})
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, resetOrderRound }))!
+    await session.recordActivity()
+    session.completeOrder()
+    await session.end('completed')
+    session.observePresence('EMPTY')
+    expect(session.observePresence('APPROACHING')).toBe(true)
+    resetOrderRound.mockRejectedValueOnce(new Error('reset unavailable'))
+    await expect(session.startNewCustomerSession()).rejects.toThrow('reset unavailable')
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    expect(session.canGreet.value).toBe(false)
+    expect(session.observePresence('ENGAGED')).toBe(false)
+    await session.startNewCustomerSession()
+    expect(session.state.value).toBe('standby')
+    expect(session.acceptsVoiceInput.value).toBe(true)
+    expect(session.canGreet.value).toBe(true)
+  })
+
+  // Report: this chat, 2026-11-09 — accepted orders show the completion screen
+  // but no longer say that the order was submitted. Completion output must
+  // remain independent of the input queue that closes at this same boundary.
+  it('notifies accepted completion once after voice admission is closed, including direct screen orders', async () => {
+    reloadScenario.mockResolvedValue(undefined)
+    const scope = effectScope()
+    scopes.push(scope)
+    const admission: boolean[] = []
+    const onOrderCompleted = vi.fn()
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, onOrderCompleted }))!
+    onOrderCompleted.mockImplementation(() => admission.push(session.acceptsVoiceInput.value))
+    expect(session.completeOrder()).toBe(false)
+    expect(onOrderCompleted).not.toHaveBeenCalled()
+    await session.recordActivity()
+    expect(session.completeOrder()).toBe(true)
+    expect(session.completeOrder()).toBe(false)
+    expect(onOrderCompleted).toHaveBeenCalledOnce()
+    expect(admission).toEqual([false])
+    await session.end('completed')
+    expect(session.acceptsVoiceInput.value).toBe(false)
+    expect(onOrderCompleted).toHaveBeenCalledOnce()
+    await session.startNewCustomerSession()
+    await session.recordActivity()
+    expect(session.completeOrder()).toBe(true)
+    expect(onOrderCompleted).toHaveBeenCalledTimes(2)
+    expect(admission).toEqual([false, false])
+  })
+
   // Report: this chat Nov8 — manual restart took two clicks and could start input before the new menu loaded.
-  it.each(['standby', 'active', 'completing', 'awaiting-idle-confirmation'])('starts a clean active order with one coalesced restart from %s', async (state) => {
+  it.each(['standby', 'active', 'completing', 'awaiting-idle-confirmation'])('returns a clean order to standby with one coalesced restart from %s', async (state) => {
     vi.useFakeTimers()
     const chatSession = { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }
     const resetOrderRound = vi.fn(async () => {})
@@ -46,7 +159,6 @@ describe('useKioskCustomerSession', () => {
     if (state === 'awaiting-idle-confirmation')
       await vi.advanceTimersByTimeAsync(180_000)
     expect(session.state.value).toBe(state)
-    const previousCustomer = session.customer.value?.sessionId
     const first = session.startNewCustomerSession()
     const second = session.startNewCustomerSession()
     await vi.advanceTimersByTimeAsync(0)
@@ -55,14 +167,58 @@ describe('useKioskCustomerSession', () => {
     expect(reloadScenario).toHaveBeenCalledOnce()
     finishLoad()
     await Promise.all([first, second])
-    expect(session.state.value).toBe('active')
-    expect(session.customer.value?.sessionId).not.toBe(previousCustomer)
+    expect(session.state.value).toBe('standby')
+    expect(session.customer.value).toBeUndefined()
     expect(session.acceptsVoiceInput.value).toBe(true)
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
+    expect(session.canGreet.value).toBe(true)
+    expect(session.idleDeadlineAt.value).toBeUndefined()
   })
 
   // Report: DEV-810280, Nov8 — an expired idle countdown must open a fresh order without another click.
-  it('automatically resets and starts a new customer when the idle confirmation expires', async () => {
+  it.each([true, false])('does not cancel an already displayed countdown on a presence change (release=%s)', async (release) => {
+    vi.useFakeTimers()
+    reloadScenario.mockResolvedValue(undefined)
+    const resetOrderRound = vi.fn(async () => {})
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, resetOrderRound }))!
+    await session.recordActivity()
+    const previous = session.customer.value?.sessionId
+    await vi.advanceTimersByTimeAsync(180_000)
+    const deadline = session.idleDeadlineAt.value
+    session.setPresenceIdleSuppressed(true)
+    if (release)
+      session.setPresenceIdleSuppressed(false)
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    expect(session.idleDeadlineAt.value).toBe(deadline)
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(resetOrderRound).toHaveBeenCalledOnce()
+    expect(session.state.value).toBe('standby')
+    expect(session.customer.value?.sessionId).not.toBe(previous)
+  })
+
+  // Report: this chat Nov8 — countdown expiry should not require another customer decision.
+  it('rechecks an idle expiry that fires before the displayed wall-clock deadline', async () => {
+    vi.useFakeTimers()
+    reloadScenario.mockResolvedValue(undefined)
+    const resetOrderRound = vi.fn(async () => {})
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession: { createSession: vi.fn().mockResolvedValue('chat'), deleteSession: vi.fn(), initialize: vi.fn(), setActiveSession: vi.fn() }, resetOrderRound }))!
+    await session.recordActivity()
+    await vi.advanceTimersByTimeAsync(180_000)
+    // A wall-clock correction does not postpone an already scheduled browser timer.
+    vi.setSystemTime(Date.now() - 1)
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(resetOrderRound).not.toHaveBeenCalled()
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    await vi.advanceTimersByTimeAsync(1)
+    expect(resetOrderRound).toHaveBeenCalledOnce()
+    expect(session.state.value).toBe('standby')
+  })
+
+  // Report: DEV-810280 Nov8 — normal expiry opens a clean order automatically.
+  it('automatically resets to standby when the idle confirmation expires', async () => {
     vi.useFakeTimers()
     reloadScenario.mockResolvedValue(undefined)
     const resetOrderRound = vi.fn(async () => {})
@@ -75,9 +231,9 @@ describe('useKioskCustomerSession', () => {
     expect(session.state.value).toBe('awaiting-idle-confirmation')
     await vi.advanceTimersByTimeAsync(15_000)
     expect(resetOrderRound).toHaveBeenCalledOnce()
-    expect(session.state.value).toBe('active')
+    expect(session.state.value).toBe('standby')
     expect(session.customer.value?.sessionId).not.toBe(previous)
-    expect(session.idleDeadlineAt.value).toBe(Date.now() + 180_000)
+    expect(session.idleDeadlineAt.value).toBeUndefined()
   })
 
   it('keeps idle restart input blocked until the new ordering page tools are ready', async () => {
@@ -97,7 +253,7 @@ describe('useKioskCustomerSession', () => {
     expect(session.acceptsVoiceInput.value).toBe(false)
     ready()
     await vi.advanceTimersByTimeAsync(0)
-    expect(session.state.value).toBe('active')
+    expect(session.state.value).toBe('standby')
     expect(session.acceptsVoiceInput.value).toBe(true)
   })
 
@@ -365,7 +521,7 @@ describe('useKioskCustomerSession', () => {
     expect(session.state.value).toBe('standby')
     expect(session.acceptsVoiceInput.value).toBe(false)
     await session.startNewCustomerSession()
-    expect(session.state.value).toBe('active')
+    expect(session.state.value).toBe('standby')
     expect(session.acceptsVoiceInput.value).toBe(true)
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0, lines: [] } })
     expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '好' })).toMatchObject({ phase: 'ordering' })
@@ -516,7 +672,7 @@ describe('useKioskCustomerSession', () => {
     expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
     expect(chatSession.createSession).toHaveBeenCalledTimes(2)
     expect(session.customer.value?.sessionId).not.toBe(customerSessionId)
-    expect(session.state.value).toBe('active')
+    expect(session.state.value).toBe('standby')
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
     expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor')
 

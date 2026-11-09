@@ -14,13 +14,14 @@ afterEach(() => {
 })
 
 // Report: this chat Nov8 — verify the real iframe replacement through one visible restart click.
-it('starts a fresh active session after one click and the replacement document load', async () => {
+it('returns a fresh order to standby after one click and the replacement document load', async () => {
   scenarioRegistry.setServices([{ enabled: true, id: 'restart-menu', title: 'Menu', description: 'Ordering', serviceUrl: new URL('/favicon.ico', location.origin).href }])
   const resetOrderRound = vi.fn(async () => {})
+  const onNewOrder = vi.fn()
   const chatSession = { initialize: vi.fn(), createSession: vi.fn().mockResolvedValue('new-chat'), setActiveSession: vi.fn(), deleteSession: vi.fn() }
   const Harness = defineComponent({
     setup() {
-      const session = useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession, resetOrderRound })
+      const session = useKioskCustomerSession({ activeCardId: shallowRef('default'), chatSession, resetOrderRound, onNewOrder })
       return () => h('main', [
         h('button', { onClick: () => session.startNewCustomerSession() }, '重新開始'),
         h('output', session.state.value),
@@ -33,7 +34,8 @@ it('starts a fresh active session after one click and the replacement document l
     await expect.poll(() => interactiveServiceClient.availability.value).not.toBe('idle')
     const previous = screen.container.querySelector('iframe')
     await screen.getByRole('button', { name: '重新開始' }).click()
-    await expect.element(screen.getByText('active', { exact: true })).toBeVisible()
+    await expect.poll(() => onNewOrder.mock.calls.length).toBe(1)
+    await expect.element(screen.getByText('standby', { exact: true })).toBeVisible()
     expect(screen.container.querySelector('iframe')).not.toBe(previous)
     expect(resetOrderRound).toHaveBeenCalledOnce()
   }
