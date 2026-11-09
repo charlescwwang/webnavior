@@ -26,14 +26,14 @@ it('keeps the new merchant catalog and confirmed prices separate from the origin
   const supplier = createInMemorySimulatorGateway('accepted', 'authorized', Date.now, 'after-order', supplierCatalog)
   const first = await original.getCatalog()
   const next = await supplier.getCatalog()
-  expect(next.items).toHaveLength(15)
+  expect(next.items).toHaveLength(12)
   expect(new Set(next.items.map(item => item.category))).toEqual(new Set(['飯區', '麵區']))
   expect(next.items.find(item => item.name === '炸排骨便當')?.price).toBe(130)
   expect(next.items.find(item => item.name === '椒香麻辣牛肉麵')?.price).toBe(230)
   expect(next.items.find(item => item.name === 'A套餐')?.price).toBe(130)
   expect(next.items.find(item => item.name === 'B 套餐')?.price).toBe(145)
   expect(next.items.every(item => !first.items.some(previous => previous.id === item.id))).toBe(true)
-  expect(next.items.filter(item => item.imageUrl)).toHaveLength(3)
+  expect(next.items.filter(item => item.imageUrl)).toHaveLength(2)
   expect(next.items.every(item => !item.composition.complete)).toBe(true)
   const app = createPosBridgeApp({ allowedOrigin: 'http://menu.test', authenticate: async () => 'device', gateway: supplier, tableAssignment: 'after-order' })
   const response = await app.request('/v1/catalog')
@@ -65,5 +65,19 @@ it('removes supplier dumplings from lookup and rejects attempts to add the retir
   expect(result.items).toEqual([])
   expect(result.customerMessage).toContain('查不到')
   await expect(runtime.invoke('order_add_item', { itemId: 'supplier-item-08', quantity: 1 })).rejects.toThrow()
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})
+
+// Report: this chat Nov09 — additional supplier meals are no longer offered.
+it.each([
+  { id: 'supplier-item-03', name: '控肉飯' },
+  { id: 'supplier-item-05', name: '宮保雞丁便當' },
+  { id: 'supplier-item-06', name: '烤雞腿便當' },
+])('does not resurrect retired $name through lookup or a direct item ID', async ({ id, name }) => {
+  const runtime = createMenuToolRuntime({ menu: supplierCatalog.items, merchant: { id: 'shalun-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' }, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: () => {}, onMenuRequested: () => {} })
+  const result = await runtime.invoke('menu_get', { query: name }) as { items: Array<{ id: string }>, matchKind: string }
+  expect(result.items.some(item => item.id === id)).toBe(false)
+  expect(result.matchKind).not.toBe('literal')
+  await expect(runtime.invoke('order_add_item', { itemId: id, quantity: 1 })).rejects.toThrow()
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })

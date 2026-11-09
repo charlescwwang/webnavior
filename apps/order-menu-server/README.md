@@ -12,8 +12,10 @@ device authentication. Mounting a Bridge beneath a prefix requires its matching
 The existing reverse proxy for `/menu-api/` also carries `/menu-api/supplier/*`;
 no additional port or upstream server is required.
 
-The served supplier catalog is `supplier-menu-20261109-v2` with15 items.
-`周氏水餃(最低8顆)` (`supplier-item-08`) is retired from the public catalog and
+The served supplier catalog is `supplier-menu-20261109-v3` with12 items.
+控肉飯 (`supplier-item-03`), 宮保雞丁便當 (`supplier-item-05`), 烤雞腿便當
+(`supplier-item-06`), and 周氏水餃(最低8顆) (`supplier-item-08`) are retired
+from the public catalog and
 therefore from price/order validation. The captured JSON retains the original
 record solely as evidence; tests use `fixtures/historicalSupplierCatalog.ts`
 when replaying its past failures. It is not a public merchant or selectable menu.

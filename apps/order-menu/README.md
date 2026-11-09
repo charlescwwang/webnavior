@@ -29,7 +29,8 @@ The independent simulator catalog is owned by
 user-confirmed overrides are recorded in
 `docs/research/2026-11-08-esgpb-menu-observation.json`. Three source photos are
 stored under `public/supplier/`; other products explicitly have no photo.
-The active supplier catalog has15 items and omits 周氏水餃(最低8顆). The Bridge
+The active supplier catalog has12 items and omits 控肉飯, 宮保雞丁便當,
+烤雞腿便當 and 周氏水餃(最低8顆). The Bridge
 owns this removal, so the grid, search, assistant target list and order validation
 all see the same catalog. The default merchant's dumplings remain available.
 Pre-retirement quantity/add-on regressions use the explicit historical fixture;
