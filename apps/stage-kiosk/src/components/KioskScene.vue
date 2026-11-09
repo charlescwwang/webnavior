@@ -174,7 +174,7 @@ const {
 } = useKioskConversationProgress()
 const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
 const pendingTranscript = shallowRef<string>()
-const recognizedTranscripts = shallowRef<Array<{ id: number, text: string, waiting?: boolean }>>([])
+const recognizedTranscripts = shallowRef<Array<{ id: number, text: string, waiting?: boolean, blocked?: boolean }>>([])
 const customerResetError = shallowRef<string>()
 const manualRestartPending = shallowRef(false)
 const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
@@ -845,20 +845,20 @@ async function processVoiceCandidate(
       },
     })
     const afterAsrAdmission = readVoiceAdmission()
-    if (!voiceInputAllowed.value)
+    if (!voiceInputAllowed.value || !interactionTurn.isCurrentVoiceCandidate(candidate))
       return
-    if (!afterAsrAdmission.allowed) {
-      updateVoiceDiagnostic(diagnosticId, { status: 'ignored', text, reason: afterAsrAdmission.reason, stage: 'after_asr' })
-      return
-    }
     if (!text.trim()) {
       updateVoiceDiagnostic(diagnosticId, { status: 'unrecognized' })
       return
     }
-    updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text, stage: 'after_asr' })
-    if (!interactionTurn.isCurrentVoiceCandidate(candidate))
+    // Visibility follows a current ASR receipt, not the later presence/model
+    // admission. A reset/old candidate still cannot publish another round's text.
+    recognizedTranscripts.value = [...recognizedTranscripts.value.filter(entry => entry.id !== reservation.id), { id: reservation.id, text, ...(!afterAsrAdmission.allowed ? { blocked: true } : {}) }].slice(-16)
+    if (!afterAsrAdmission.allowed) {
+      updateVoiceDiagnostic(diagnosticId, { status: 'ignored', text, reason: afterAsrAdmission.reason, stage: 'after_asr' })
       return
-    recognizedTranscripts.value = [...recognizedTranscripts.value.filter(entry => entry.id !== reservation.id), { id: reservation.id, text }].slice(-16)
+    }
+    updateVoiceDiagnostic(diagnosticId, { status: 'recognized', text, stage: 'after_asr' })
     reservation.complete({ recording, text })
     submitted = true
     pendingTranscript.value = undefined

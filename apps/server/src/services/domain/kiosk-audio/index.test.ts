@@ -57,7 +57,7 @@ describe('createKioskAudioGateway', () => {
   })
 
   // Report: this chat, 2026-11-04 — LINE Pay / 街口支付 recognition.
-  it('supplies payment vocabulary to ASR without rewriting the returned transcript', async () => {
+  it.each(['我想先看看付款方式', '等兩分鐘再點，現在先不要。', '水餃兩份，牛肉麵一碗。'])('supplies ordering vocabulary to ASR without rewriting the transcript: %s', async (transcript) => {
     const configStore = new Map<string, string>()
     const configKV = createConfigKVService({
       get: vi.fn(async key => configStore.get(key) ?? null),
@@ -72,6 +72,8 @@ describe('createKioskAudioGateway', () => {
       const body = init?.body as FormData
       expect(body.get('prompt')).toContain('LINE Pay')
       expect(body.get('prompt')).toContain('街口支付')
+      for (const quantity of ['一份', '兩份', '三份', '五份', '十份', '二十份', '一碗', '兩碗'])
+        expect(body.get('prompt')).toContain(quantity)
       expect(body.get('model')).toBe('whisper-1')
       const uploaded = body.get('file')
       if (!(uploaded instanceof File))
@@ -79,10 +81,10 @@ describe('createKioskAudioGateway', () => {
       expect(uploaded.name).toBe('payment.wav')
       expect(uploaded.type).toBe('audio/wav')
       await expect(uploaded.text()).resolves.toBe('audio')
-      return Response.json({ text: '我想先看看付款方式' })
+      return Response.json({ text: transcript })
     })
     const gateway = createKioskAudioGateway({ configKV, envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32) }), fetchImpl })
-    await expect(gateway.transcribe({ audio, modelName: 'openai-compatible/whisper-1' })).resolves.toBe('我想先看看付款方式')
+    await expect(gateway.transcribe({ audio, modelName: 'openai-compatible/whisper-1' })).resolves.toBe(transcript)
     expect(fetchImpl).toHaveBeenCalledOnce()
   })
 

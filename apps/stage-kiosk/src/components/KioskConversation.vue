@@ -31,7 +31,7 @@ const props = defineProps<{
   fastPathSimulationTiming?: FastPathTiming
   fontSize: number
   messages: readonly ChatHistoryItem[]
-  recognizedTranscripts?: Array<{ id: number, text: string, waiting?: boolean }>
+  recognizedTranscripts?: Array<{ id: number, text: string, waiting?: boolean, blocked?: boolean }>
   pendingTranscript?: string
   retryAvailable?: boolean
   sending: boolean
@@ -54,6 +54,9 @@ const assistantLabel = 'Webnavior'
 const historyMessages = computed<ChatHistoryItem[]>(() => [
   ...props.messages,
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
+  // ASR receipts are visible immediately, even while an earlier task owns the
+  // queue. They remain display-only until Scene admits them into formal history.
+  ...(props.recognizedTranscripts ?? []).map((entry): ChatHistoryItem => ({ role: 'user', content: entry.text })),
 ].map((message): ChatHistoryItem => {
   // Presentation owns a copy: ASR, model history and tool payloads remain the
   // original evidence even when their visible text uses Taiwan Traditional.
@@ -66,14 +69,10 @@ const historyMessages = computed<ChatHistoryItem[]>(() => [
       slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toOrderingTraditionalChinese(normalizeOrderingPrices(slice.text)) } : slice),
     }
   }
-  if (message.role === 'user') {
-    return {
-      ...message,
-      content: typeof message.content === 'string'
-        ? toOrderingTraditionalChinese(normalizeOrderingPrices(message.content))
-        : message.content.map(part => part.type === 'text' ? { ...part, text: toOrderingTraditionalChinese(normalizeOrderingPrices(part.text)) } : part),
-    }
-  }
+  // User input is evidence: preserve the actual spelling and notation in both
+  // text and voice histories; only assistant output is normalized.
+  if (message.role === 'user')
+    return message
   if (message.role === 'error')
     return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
@@ -145,13 +144,12 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     </div>
 
     <div v-for="entry in props.recognizedTranscripts" :key="entry.id" :class="['pending-transcript']" role="status" aria-live="polite">
-      <span>{{ t(entry.waiting ? 'stage.kiosk.service-recovery.queued' : 'stage.kiosk.asr-awaiting-decision') }}</span>
-      <span>{{ toOrderingTraditionalChinese(entry.text) }}</span>
+      <span>{{ t(entry.blocked ? 'stage.kiosk-agent.voice-presence-lost' : entry.waiting ? 'stage.kiosk.service-recovery.queued' : 'stage.kiosk.asr-awaiting-decision') }}</span>
     </div>
     <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
-        <span>{{ toOrderingTraditionalChinese(props.pendingTranscript) }}</span>
+        <span>{{ props.pendingTranscript }}</span>
       </div>
       <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />

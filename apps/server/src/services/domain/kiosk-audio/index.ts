@@ -45,7 +45,7 @@ export function createKioskAudioGateway(options: KioskAudioGatewayOptions): Kios
     body.set('model', config.upstreamModel)
     // ASR vocabulary context, not an instruction to replace the spoken text.
     // OpenAI-compatible prompt: https://developers.openai.com/api/docs/guides/speech-to-text
-    body.set('prompt', '餐廳點餐與結帳，付款方式包含 LINE Pay、街口支付。')
+    body.set('prompt', '餐廳點餐與結帳，付款方式包含 LINE Pay、街口支付。點餐份數常用語：一份、兩份、二份、三份、四份、五份、六份、七份、八份、九份、十份、二十份；一碗、兩碗。')
     const response = await forward(config, 'audio/transcriptions', { body, method: 'POST' })
     if (!response.ok) {
       const requestUrl = new URL(endpoint(config.baseURL, 'audio/transcriptions'))

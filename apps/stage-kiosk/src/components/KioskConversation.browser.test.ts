@@ -31,7 +31,7 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
     props: { ...props, messages, streamingAssistantMessage: streaming, voiceConversationOnly: true },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
-  await expect.element(screen.getByText('我要一碗牛肉麵', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('我要一碗牛肉面', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('請確認這份訂單。', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('暫時無法連線，請稍後再試。', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('正在查詢菜單。', { exact: true })).toBeVisible()
@@ -41,12 +41,12 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
   expect(streaming.slices[0]).toEqual({ type: 'text', text: '正在查询菜单。' })
 })
 
-it('presents pending recognition and processing text in Traditional Chinese', async () => {
+it('preserves pending input while presenting progress text in Traditional Chinese', async () => {
   const screen = render(KioskConversation, {
     props: { ...props, voiceConversationOnly: true, pendingTranscript: '请帮我推荐', activityStatus: '正在查询菜单', activitySteps: [{ label: '确认订单', state: 'executing', toolName: 'menu_get' }] },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
-  await expect.element(screen.getByText('請幫我推薦', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('请帮我推荐', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
 })
@@ -76,13 +76,13 @@ it('keeps voice-only mode free of text inputs and normalizes its welcome text', 
   await expect.element(screen.getByText('請確認訂單', { exact: true })).toBeVisible()
 })
 
-it('normalizes diagnostic transcript display while preserving the recognized text', async () => {
+it('preserves diagnostic transcript display as recognized', async () => {
   const entry = { id: 1, status: 'recognized' as const, text: '请问牛肉面' }
   const screen = render(KioskVoiceDiagnostics, {
     props: { entries: [entry] },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
-  await expect.element(screen.getByText('「請問牛肉麵」', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('「请问牛肉面」', { exact: true })).toBeVisible()
   expect(entry.text).toBe('请问牛肉面')
 })
 
@@ -90,7 +90,7 @@ it('normalizes inspector headings without changing model evidence', async () => 
   const entry = { id: 1, transcript: '我要水饺', source: 'asr' as const, route: 'ignored' as const, startedAt: Date.now(), modelContext: '原始语音：我要水饺' }
   const screen = render(KioskDecisionInspector, { props: { entries: [entry], pendingCount: 0 } })
   await screen.getByRole('button', { name: /決策流程/ }).click()
-  await expect.element(screen.getByText('我要水餃', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('我要水饺', { exact: true })).toBeVisible()
   expect(entry.transcript).toBe('我要水饺')
   expect(screen.container.querySelector('pre')?.textContent).toBe(entry.modelContext)
 })
@@ -140,21 +140,42 @@ it('normalizes prices in final and streaming assistant content without changing 
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   await expect.element(screen.getByText('便當 80元。', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('預算100元', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('預算NT$100', { exact: true })).toBeVisible()
   expect(messages[0].content).toBe('預算NT$100')
   expect(messages[1].content).toBe('便當 NT$80。')
 })
 
-it('shows recognized speech provisionally before it becomes a formal chat message', async () => {
+it.each([true, false])('shows ASR text inside chat before semantic processing, voiceOnly=%s', async (voiceConversationOnly) => {
   const messages: ChatHistoryItem[] = []
   const screen = render(KioskConversation, {
-    props: { ...props, messages, voiceConversationOnly: true, recognizedTranscripts: [{ id: 11, text: '水餃兩份' }] },
+    props: { ...props, messages, voiceConversationOnly, recognizedTranscripts: [{ id: 11, text: '水餃兩份', waiting: true }] },
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   try {
     await expect.element(screen.getByText('水餃兩份', { exact: true })).toBeVisible()
-    await expect.element(screen.getByText('stage.kiosk.asr-awaiting-decision', { exact: true })).toBeVisible()
+    expect(screen.container.querySelector('.message-history')?.textContent).toContain('水餃兩份')
+    await expect.element(screen.getByText('stage.kiosk.service-recovery.queued', { exact: true })).toBeVisible()
+    await screen.rerender({ recognizedTranscripts: [], messages: [{ role: 'user', content: '水餃兩份' }] })
+    await expect.element(screen.getByText('水餃兩份', { exact: true })).toBeVisible()
+    expect(screen.container.textContent?.split('水餃兩份')).toHaveLength(2)
     expect(messages).toHaveLength(0)
   }
   finally { screen.unmount() }
+})
+
+// Report: this chat, Nov09 — user-authored input must be displayed as entered.
+it('preserves the original user spelling and price notation in conversation', async () => {
+  const messages: ChatHistoryItem[] = [{ role: 'user', content: '虱目魚 $130 单价' }]
+  const screen = render(KioskConversation, { props: { ...props, messages }, global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] } })
+  await expect.element(screen.getByText('虱目魚 $130 单价', { exact: true })).toBeVisible()
+  expect(messages[0]!.content).toBe('虱目魚 $130 单价')
+})
+
+// Report: this chat Nov09 — a successful ASR receipt must remain visible even if presence later closes admission.
+it('keeps recognized text visible when later voice admission blocks processing', async () => {
+  const screen = render(KioskConversation, { props: { ...props, voiceConversationOnly: true, recognizedTranscripts: [{ id: 12, text: '牛肉麵兩份', blocked: true }] }, global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] } })
+  await expect.element(screen.getByText('牛肉麵兩份', { exact: true })).toBeVisible()
+  expect(screen.container.querySelector('.message-history')?.textContent).toContain('牛肉麵兩份')
+  await expect.element(screen.getByText('stage.kiosk-agent.voice-presence-lost', { exact: true })).toBeVisible()
+  screen.unmount()
 })

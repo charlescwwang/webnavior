@@ -40,5 +40,7 @@ export function normalizeAssistantMessageForTaiwanTraditional(message: Streaming
 
 /** Customer ordering copy uses the restaurant term, including after OpenCC's phrase conversion. */
 export function toOrderingTraditionalChinese(text: string) {
-  return toTaiwanTraditionalChinese(text).replaceAll('選單', '菜單')
+  // OpenCC's generic 虱→蝨 mapping is wrong inside the Taiwanese food name.
+  // This is output vocabulary, never an alias for finding or ordering a dish.
+  return toTaiwanTraditionalChinese(text).replaceAll('選單', '菜單').replaceAll('蝨目魚', '虱目魚')
 }

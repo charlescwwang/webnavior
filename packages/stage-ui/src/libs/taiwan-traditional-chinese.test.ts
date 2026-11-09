@@ -17,3 +17,8 @@ it('preserves restaurant vocabulary without changing software menus', () => {
   expect(toOrderingTraditionalChinese('您好，需要点餐或查询菜单吗？')).toBe('您好，需要點餐或查詢菜單嗎？')
   expect(toTaiwanTraditionalChinese('软件菜单')).toBe('軟體選單')
 })
+
+// Report: this chat, Nov09 — OpenCC misconverted the food name 虱目魚 into 蝨目魚.
+it('keeps the Taiwanese fish name when normalizing ordering replies', () => {
+  expect(toOrderingTraditionalChinese('目前菜單查不到「虱目魚」。')).toBe('目前菜單查不到「虱目魚」。')
+})
