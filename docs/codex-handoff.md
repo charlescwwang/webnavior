@@ -7,6 +7,792 @@ accumulating history.
 
 ## Current State
 
+
+- Nov09 neighboring regressions + supplier retirement DEPLOYED;
+  code commits c2bcc2b (ordering lifecycle) and e4f14e2 (supplier retirement). User asked for representative regressions and that staff locking
+  remain exceptional. Supplier public catalog now15 items, revision
+  supplier-menu-20261109-v2; exporter excludes supplier-item-08. Default menu
+  dumplings unchanged. Captured supplierMenu.json keeps historical evidence;
+  fixtures/historicalSupplierCatalog.ts is test-only, never a served catalog.
+  Historical dumpling tests/replay explicitly use it; current supplier browser
+  test uses actual15-item catalog, asserts no dumpling card and normal pork
+  select/add/quantity/remove in kiosk and table-service modes. Bridge targeted
+  catalog tests2 pass; menu lookup cannot add retired ID.
+  Real-model neighboring replay: six scenarios passed in batches:
+  replacement refusal then fresh purchase, unfinished-noodle -> pork switch,
+  retired dumpling absent -> return catalog -> pork purchase, fish -> absent
+  family-meal query chip replacement, table review then explicit submit to TEST
+  gateway only, staff-assistance assent with zero tools/no cart writes.
+  /tmp/nov09-neighbor-regression-real.log first run found a real refusal loop:
+  intent chose no, verifier called it OTHER_ACTION, scope KEEP_ORDER preserved
+  the old proposal. Verification now defines a pure refusal of the current meal
+  as that question's answer, not another operation; independent requests still
+  hand off. Regression asserts no confirm-meal remains and no repeated 要改點.
+  /tmp/nov09-neighbor-regression-real2.log confirms refusal fixed and staff case
+  passes. Staff test initially expected obsolete 已經呼叫工作人員; corrected to
+  actual 已通知服務人員 plus typed staff-assistance accept, no production change.
+  No lock policy weakened. shouldShowDecisionRetry checked in added live cases;
+  browser22 fault tests include ordinary clarification/non-lock paths and genuine
+  INVALID_CHOICE/provider failures still locking and retaining input. Supplier
+  browser2 cases pass;17 initial browser tests passed before added7 boundaries.
+  Current Menu1133/202 opt-in skip, Server663/81 skip, Host211 unit tests pass;
+  Bridge full suite60 pass/9 fail in default app/security/simulator test fixtures
+  (old catalog name/cart values vs current source; these modules do not import
+  changed supplierSimulation). Do NOT claim Bridge full suite green or silently
+  repair unrelated fixtures. /tmp/nov09-neighbor-bridge.log has details.
+  Four scoped types and release root typecheck pass. Full lint has2364 errors
+  in13 unchanged files (research/eval/generated Godot artifacts/other providers);
+  scoped lint and both pre-commit hooks pass. Browser Vite
+  emitted virtual:generated-layouts discovery diagnostics; selected tests pass.
+  User authorized commits and deployment. Release
+  menu-recovery-20261109T013732Z-e4f14e2be6;
+  /tmp/ordering-recovery-published/release.json and
+  /tmp/publish-ordering-recovery.py preserve hashes/backups/rollback.
+  Menu index+supplier entries/assets/version,4 API runtime files and Bridge
+  supplierSimulation.ts updated. API PID2700644; Bridge2700944. Public7 resources,
+  new supplier15/no water dumplings, old menu7/dumplings retained, readiness all
+  verified. Both direct Bridge and actual /api/kiosk/pos[/supplier]/v1/catalog
+  proxy endpoints checked. Kiosk/admin entry/version, microphone config and
+  unpublished qualifiedAdditionStep API route kept unchanged.
+  Deployment correction: first build omitted /menu/ base. Immediately restored
+  previous frontend entries, then rebuilt with --base=/menu/ and original
+  VITE_ORDER_MENU_SERVER_URL=https://webnavior.aikcitri.qzz.io/api/kiosk/pos.
+  Final JS/CSS refs and hashes verified (7 resources); no second API restart.
+  First attempt retained at frontends-attempt1; final manifest has correction.
+  Final isolated real replay used the DEPLOYED route, not local unpublished
+  qualification changes: /tmp/nov09-deployed-route-replay.log,4 cases/10 turns
+  pass (replacement yes/no, fish continuation, retired-item lookup->return->buy),
+  no real cart/POS writes. Temporary local route restored byte-for-byte.
+  Reload the full Kiosk page to replace an already-open iframe and its catalog.
+  Do not claim stale already-open browser contexts were hot-updated.
+
+
+- Nov09 confirmation/quantity/fish-continuation fixes DEPLOYED above;
+  included in ordering lifecycle commit c2bcc2b. User authorized necessary real JEV/Main isolated replays in this
+  chat. Current live release remains the Menu foreground release below.
+  Field sessions: 6uT_MUjOadRP0GlicoaFP replacement assent,
+  ZYfY4d6VYjoPSy_1KqTB- dumpling follow-up,
+  dQhGzMppwvc-EulxUtK2V old-menu fish continuation.
+  Real replay exposed gaps missed by initial mocked tests; preserve private
+  /tmp/nov09-semantic-gap-real{,2,3,4,5}.log (never print full provider traces).
+  Main intent accepted 對一份 but answer verifier called it OTHER_ACTION;
+  scope then inherited replacement name not present in current utterance.
+  Verification now defines same-meal quantity/option supplements consistently.
+  Uncertain confirm-meal answers retain their Menu question; invalid scope
+  inheriting only that live correlated proposal can re-present it, not lock/buy.
+  Menu candidate probes retain a proposal until accepted Agent BEGIN or checked
+  fast-path effect; interruptedMeal requestId binds the same utterance/lease.
+  Nameless quantities may be returned as ORDER_ADDITION with [] OR exact
+  lastAddedItemName (observed 周氏水餃(最低8顆)). After one repair, existing cart
+  refs and no conflicting drafts/food evidence allow a no-write quantity-meaning
+  clarification. A semantically qualified ORDER_MUTATION retains its normal
+  validated edit path; do not claim 我要三份 always prompts deterministically.
+  Provider/malformed/invented-target failures retain technical-fault policy.
+  Copy lives in i18n via shared quantityChangeQuestion; NEVER import i18n directly
+  from Server (TS6307 composite boundary), and do not change tsconfig.
+  Fish: invalid MENU_INFORMATION_ONLY subjects receive one bounded repair;
+  absent literal names remain literal. Known ingredient labels route condition
+  browsing rather than dish-name lookup (whose continuation can broaden scope).
+  A composition-checked meal proposal bypasses only the raw-preparation gate
+  when compiling its confirmation; target/composition checks still apply.
+  Single-meal offers can supersede passive review/checkout invitations only on
+  actual presentation. Agent recommendation execution now carries its task owner
+  through invoke, just like menu_get; missing owner previously left old checkout
+  live even after the single fish card painted. Active confirmations still win.
+  Final real replay /tmp/nov09-semantic-gap-real5.log: all3 scenarios/8 turns pass,
+  0.8–4.8s observed per turn, 38 provider calls, no production writes/POS submit.
+  Replacement absent-name question -> assent adds pork1; dumpling extra5 retained
+  on total3 (312); fish recommendation owns item-order, continuation keeps fish
+  conditions and offers return to catalog without altering cart. Earlier failed
+  logs remain evidence, not passing runs. Fixture includes supplier merchant ID.
+  Harness: apps/server/tests/experiments/kioskProviderReplay.test.ts,
+  -t 'configured Nov09 semantic gap'; opt-in via existing provider replay env.
+  Wrappers /tmp/run-nov09-semantic-gap-real*.py load private env without printing,
+  force live DB read-only; app uses mock persistence and submit-forbidden carts.
+  Latest automatic checks: Menu1133 pass/202 opt-in skips; Server663/81 skips;
+  prior Host211 and Shared45 still apply. Menu/Server scoped types and scoped
+  ESLint pass; no root typecheck, build, physical speech test or deployment.
+  Source tests reproduced failures before corresponding fixes. Logs:
+  /tmp/nov09-semantic-*.log and /tmp/nov09-recommend-owner-{before,after}.log.
+  Published minimal API overlays skills/index.ts,
+  serviceResolution.ts, shared kioskConversation.ts, i18n quantityChangeQuestion
+  insertion only. Do NOT ship unrelated staged qualifiedAdditionStep route fix.
+
+
+- Nov09 OLD-menu foreground loop DEPLOYED, no commits.
+  Menu release menu-foreground-20261108T213304Z-478917577c;
+  /tmp/menu-foreground-published/release.json and /tmp/publish-menu-foreground.py.
+  Both Menu entries/assets/version published. Origin7/public7 checks passed;
+  backup/rollback retained. Kiosk/admin entries and API/bridge PIDs unchanged.
+  Reload the Kiosk page to reload its iframe; already-open Menu JS stays old.
+  Session s6ma-FTAYX9AQsBuN4NSo (Taipei05:02–05:05) showed fish lookup on screen
+  while beef-noodle quantity draft still owned the answer. menu_get/recommend
+  can now offer a single-meal item-order question while retaining an older draft.
+  Only dialogue_presented activates it: revokes the old issued answer ticket;
+  configurationSnapshot no longer overrides the live item-order invitation;
+  retainedRequests marks the older draft suspended while that invitation owns
+  the foreground. Query alone neither cancels nor orders. Unit-guidance candidate
+  now requires piece/weight/volume-count or conversion evidence, not any absent
+  quantity (就這一道 must never get incompatible-unit guidance).
+  Tests reproduce old failure first, then verify two catalog pairs, stale old
+  answer rejection, new quantity target, unrelated answers, and Host→Menu Main
+  handoff for fragment/correction/replacement. Explicit replacement can use
+  existing order_cancel_request; a fragment still needs its original-name lookup
+  before menu_confirm_item is offered (do NOT broaden tool scope before evidence).
+  Menu1129 pass/202 opt-in skips, Host202 pass; both scoped types and ESLint pass.
+  Logs /tmp/old-menu-loop-*.log; build /tmp/old-menu-foreground-build.log passed.
+  No real-model replay or physical acceptance.
+  Exact field-model decisions not reproduced: deterministic scope decisions are
+  injected; do not claim all Jev/Main classifications fixed. API/Host production
+  source unchanged by this task. Outer Kiosk remains at prior piece-help release;
+  Menu version.json reports the new foreground release independently.
+  Evidence /tmp/old-menu-loop-journal-private.json and
+  /tmp/kiosk-lock-nov09-private.json. Unrelated staged route fix still excluded.
+
+
+- Nov09 piece-count/correction/help repairs DEPLOYED, no commits.
+  Release kiosk-piece-help-20261108T210802Z-466afb6e1c; /tmp/dumpling-help-published/release.json;
+  /tmp/publish-dumpling-help.py. Kiosk + both Menu entries +4 API runtime files.
+  顆/粒 and 加量 count normalize only in declared piece-counter slots. Missing,
+  ambiguous or invalid counts offer no implicit zero; ask-count cannot change
+  draft options or advance servings. Tests cover 加五粒->兩份=extra5/unit104/
+  total208, wrong weights and recovery, zero/quantity separation.
+  Generic clarification recovery reuses whole-purpose qualification; only a
+  fresh order-operation scope removes its old read-only/cue, with ordinary Menu
+  revisions/tool guards/review still required. Staff/order assistance excluded.
+  Staff acceptance renders 已通知服務人員，您可以繼續點餐 plus only current Menu
+  question, nonblocking/simulated. Completed unrenderable typed non-operation
+  replies can clarify without a technical lock; provider/unknown-effect faults
+  unchanged. Actual promo lock's raw response not persisted: do NOT claim exact
+  provider output/cause reproduced. Observed completed/no-tool event at04:59:09;
+  deterministic invitation/acceptance/refusal and no-order-effect tests pass.
+  Also ships named absence retention: structured current none/possible/partial
+  absence cannot be erased by generic clarification; preserves menu-information
+  provenance so Host won't reopen a generic cue. Qualified named SEARCH_MENU
+  guards tested across catalogs; unqualified model recommendation mistakes remain.
+  Menu1124/202 opt-in skips, Host199, Shared45, Server617/81 opt-in skips pass;
+  all3 scoped types, lint, both builds pass. No new real-model/physical replay.
+  API 2364571->2413418; bridge1326468 unchanged.
+  Origin59 verified; public verification status in manifest. Backup/rollback and
+  source snapshots retained. Pending qualifiedAdditionStep route still excluded.
+  FULL outer Kiosk reload required, not just a fresh iframe/order. Fault latch
+  still requires PIN/reset recovery. Logs /tmp/dumpling-fix-*.log.
+
+
+- Nov09 pre-inquiry-release lock investigated READ-ONLY. Session wqgs03p2vWavpJgZGuhPS
+  last ASR「我知道了，想幫我送出吧」at Taipei04:31:15.047; prior authorized
+  state-question deployment killed API2120560 at04:31:15.130, ready04:31:23.
+  Nginx confirms502 + upstream-refused on interaction-decisions/status, journal
+  uploads and audio/speech in the same second. No subsequent tool/submit receipt;
+  reset recorded04:34:31. Thus this lock aligns with deployment availability,
+  not evidenced as another JEV misclassification. Current useKioskServiceFault
+  latches SERVICE_UNAVAILABLE through reload; transient recovery policy remains
+  unchanged by inquiry-flow release. Evidence /tmp/kiosk-lock-nov09-private.json,
+  /tmp/supplier-nov09-journal-private.json. No runtime edits/model calls.
+
+
+- Nov09 supplier inquiry/foreground repairs DEPLOYED, no commits.
+  Release kiosk-inquiry-flow-20261108T204202Z-ba454ffb8d;
+  /tmp/supplier-inquiry-published/release.json; /tmp/publish-supplier-inquiry.py.
+  New read-only Host invitation records the exact displaced passive cart-review/
+  checkout-entry ID; newer questions, configuration and operation phases win.
+  Main/fast-path presentation pass their prior question ID. Required-option meal
+  inquiries ask purchase consent before configuration; explicit selected-draft
+  flow retains option prompts. Option->quantity continuation publishes next
+  owned question. Supplier ordered dumpling facts use actual unit/line prices,
+  keep the current owned follow-up; no invented checkout question. Promotions
+  receive service-information/topic:promotions -> existing nonblocking simulated
+  staff offer/assent. No promotion data source or real staff delivery added.
+  Menu1109, Host187, Shared44, Server614 passed; opt-in202+81 skipped.
+  All3 scoped types/lint and both builds pass. No new real-model/physical tests.
+  Origin59 verified; public status in manifest. API2339457->2364571; bridge
+  unchanged1326468. Runtime4-file overlay, i18n only promotion copy; pending
+  qualifiedAdditionStep API changes excluded. Customer pages must reload.
+  Logs /tmp/supplier-repair-*.log; actual source snapshots/backups in artifact.
+
+
+- Nov09 state-bound pending questions DEPLOYED, no commits.
+  Release kiosk-question-state-20261108T203005Z-5dc0aea732;
+  /tmp/state-question-published/release.json and publish-state-question.py.
+  Kiosk + both Menu entries +6 runtime files; route overlay includes only two
+  semantic-deadline checks, excludes staged qualifiedAdditionStep API changes.
+  API restarted2120560->2339457; bridge1326468 unchanged. Origin59 verified;
+  public verification recorded in release manifest. Backup/rollback retained.
+  Shared Host/Menu/Server semantic questions survive customer silence; relevant
+  context/revision change, settlement and reset revoke them. Existing expiresAt
+  wire fields are snapshot metadata, not customer-answer deadlines. Unmet POS
+  needs can rebase after edits with a new question ID; stale issued plans fail.
+  Confirmation execution has a separate per-answer deadline, renewed only on a
+  fresh qualified context/task; passive snapshots cannot renew it. Expired Agent
+  tasks cannot renew answer authority. Staff bare-assent continuation below now
+  uses context binding rather than its old30s cue expiry. No new model calls.
+  Menu1107 pass/202 opt-in skips; Host183, Shared43, Server domains613/81 skips.
+  Scoped types/lint and both builds passed; route regression6 passed. No root
+  typecheck or physical acceptance. Existing browser sessions must reload.
+  Logs /tmp/{menu,kiosk,shared,server}-state-questions*.log.
+
+
+- Nov09 staff-answer continuation FRONTEND DEPLOYED:
+  kiosk-staff-20261108T201359Z-edfb6a40b5; /tmp/kiosk-staff-published/release.json.
+  Exact food-safety question -> 好啊 reproduced wrong ORDER_ASSISTANCE on both
+  original/supplier catalogs with real models. Host now binds finite bare yes/no
+  to a live staff-assistance cue (same question/context, original30s expiry in deployed version,
+  no active request) and hands it to existing read-only service reply; Main still
+  chooses accept/refusal. No cart/submit authority. Compound/addressed speech,
+  other question purposes, stale/changed state keep normal routing. Trace owns
+  application route with zero decision-model calls. Only Kiosk production source
+  kiosk-fast-path.ts changed; API/bridge not restarted, menu entries preserved.
+  Host182 + Menu60 pass, real-model4 pass (both pages, 好啊/不用了); scoped types,
+  lint/build pass. Origin50/public50 verified; prior Chromium mic recovery retained.
+  Staff notification remains simulated and ordinary ordering remains available;
+  no physical microphone/Windows voice acceptance. A broader stagedInteraction
+  run had one unrelated pre-existing unmatched-item text assertion (expects no
+  return-menu prompt); that case never invokes runFastPath. Not changed here.
+  Logs /tmp/kiosk-staff-{tests,menu-tests,real,types,lint,build}.log. No commits.
+
+
+- Nov09 Chromium standard-microphone processing recovery FRONTEND DEPLOYED.
+  User's MacBook built-in mic/speaker: Firefox reports AEC/NS/AGC=true and works;
+  Chrome reports all=false. Native Chromium fake-device experiment reproduced
+  raw getUserMedia(false) -> successful applyConstraints(true) -> settings still
+  false (/tmp/kiosk-chrome-aec-before.log), establishing a missing applied-state
+  check. useArrayMicrophone now checks actual settings before exposing standard
+  capture. If any reported flag is false on raw capture, request one reacquisition
+  via Scene/useKioskMicrophoneSelection with standard constraints at acquisition,
+  same exact pinned device, normal abort/stop/late-stream ownership. The owner
+  exposes raw/standard acquisition mode; a standard replacement never gets raw
+  constraints/probing again. AEC still false after replacement surfaces an error,
+  no retry loop; NS/AGC-only false remains usable and honestly visible. Unknown
+  settings stay unknown. Actual8CH retains raw capture, original Mask/VAD/gain;
+  manual Apply resets to raw probe. No new deps/model calls/steady buffers.
+  Chromium43 browser tests, scoped Kiosk types/lint/diff checks pass. A final
+  regression also checks a retired applyConstraints response cannot reacquire
+  the newer generation; guard added immediately after native await. New native
+  integrated selection+routing test verifies same device, real AEC/NS/AGC=true,
+  stop cleanup; controlled cases cover bounded failure and8CH isolation/optional
+  NS/AGC. Firefox cross-run NOT passed: expected installed executable absent,
+  alternate1543 launch stalled and test-only process stopped. No physical Mac
+  acoustic/short-answer/TTS acceptance or commits. User explicitly authorized
+  deployment for hardware testing despite incomplete Firefox cross-run. Build
+  passed; release kiosk-chrome-aec-20261108T200216Z-bf723e5441, artifact
+  /tmp/kiosk-chrome-aec-published/release.json origin50/public50 verified. Kiosk
+  frontend only, API/bridge PIDs unchanged, Menu/supplier/admin hashes preserved;
+  backup and entry rollback retained. README documents startup-only recovery.
+  Staged-addition API fix remains unshipped. Logs /tmp/kiosk-chrome-aec-{browser,types,lint,firefox}.log.
+
+
+- Nov09 live browser audio-processing diagnostics FRONTEND DEPLOYED.
+  User reports laptop built-in mic+speaker on Chrome: short 好 sometimes missed
+  both during/after TTS and TTS sometimes merged into customer ASR. General path
+  requests AEC/NS/AGC=true after channel probing (raw probe requests false), but
+  did not expose applied settings. Scene now polls the live track's getSettings
+  at existing operator-only4Hz; clears snapshot on stream replacement. Existing
+  arrayMicrophoneSettings panel shows AEC/NS/AGC enabled/disabled/unreported,
+  and not-capturing after stop. No capture/VAD/gain/DSP/ASR policy change or media
+  upload. Browser component regression failed before and13 tests pass now;
+  Kiosk scoped types/lint checked. README explains setting vs acoustic efficacy.
+  Release kiosk-aec-diagnostics-20261108T194902Z-afff1a1dc7; artifact
+  /tmp/kiosk-aec-diagnostics-published/release.json origin50/public50 verified.
+  Kiosk assets/entry/version only; Menu/supplier/admin hashes and API/bridge PIDs
+  unchanged (2120560/1326468), no API restart or commits. No field Chrome capture
+  state obtained or acoustic acceptance. Firefox briefly stayed disabled/stopped
+  after Apply without error then recovered by itself; root cause unconfirmed,
+  capture startup logic unchanged. Pending staged-addition API fix is NOT deployed.
+
+
+- Nov09 supplier local-flow FRONTEND ONLY deployed:
+  supplier-local-flow-20261108T191525Z; /tmp/supplier-local-final-published.
+  New-page projection adds equivalent aliases (焢肉飯, 水餃, short red-braised/
+  spicy beef noodles), not cooking-method substitutions. Supplier-only fuzzy
+  results now state unavailable original name + other choices, with a single
+  choose-which question; purchase lookup leaves the question to an explicit
+  "要改點…嗎" consent owned by mealClarification. Existing expiry/preparation/
+  revision/consent guards remain. describeDumplingPortion reports base8+real
+  add-on per serving and total; supplier cart review/summary and named lookup
+  include current cart facts. Only single-item read-only non-price lookup uses
+  cart facts alone; multi-item/price inquiries retain their original evidence.
+  Touch "加入並設定另一份" adds current configuration and opens a fresh one.
+  Browser verifies extra3/extra10 as separate qty1 lines88/144,total232, with
+  per-serving11/18 shown. Release Menu1106 pass/202 opt-in skips; scoped types,
+  lint/build pass, origin5/public5 verified. Exact alias no longer needs identity
+  consent; confirmation regression uses genuine 周氏水絞 mismatch instead.
+  Old Menu/Kiosk/admin hashes and API/Bridge PIDs unchanged. No backend edits,
+  shared Kiosk edits, model calls or restarts; existing unrelated unshipped
+  backend prerequisite fix remains unshipped. Source /tmp/supplier-local-source
+  derives from deployed supplier-four snapshot plus only this task's changes.
+  Unresolved outside-page issues: old question consuming "好", backend review/
+  speech qualification of short names, compound voice orders. No claim of full
+  live voice acceptance. Private field audit /tmp/supplier-latest-audit-private.json
+  covers Nov09 02:51–03:02 Taipei; final test order was120+72=192.
+
+- Nov09 staged addition review FIXED LOCALLY, NOT DEPLOYED; no commits.
+  Field02:46–02:47 after four servings/505 and cart-review: 酸辣魚便當三份
+  twice ended in generic clarification. Authorized real replay confirmed Main
+  correctly proposed menu_get then menu_confirm_item, each separately rejected
+  as UNSUPPORTED because the reviewer expected the whole purchase at each step.
+  routes/kiosk/index.ts now admits only single-call ADD_ONLY prerequisites in
+  ordering with taskId, literal qualified subjects, no retained draft and allowed
+  tools: subject-bound menu_get or current-task Menu-evidenced identity proposal.
+  Reject recipe:true/replacement parameters, unrelated/failed/missing evidence,
+  mixed batches; retain all actual cart-write/consent reviews and Menu guards.
+  Generation and admission share taskMenuEvidence. README documents the boundary.
+  Five positive regression cases failed before; all16 positive/negative cases
+  now pass. Route+conversation suite170 pass (before three additional evidence
+  negatives, separately verified); Menu fuzzy11, Server scoped types/lint pass.
+  Real JEV/Main isolated replay succeeds: lookup -> identity question; synthetic
+  explicit 對 through real Menu confirmation adds exactly3 fish, retains four
+  original qty1 lines, total925/count7, never submits. Latest run model endpoint
+  rounds692/767/1119ms; full fixture/model test5.2s is not a field latency promise.
+  Opt-in test kioskProviderReplay.test.ts now asserts the flow/count/total.
+  Private evidence /tmp/kiosk-short-fish-fixed-real.log; production DB read-only,
+  all visitor/cart writes in scratch memory. No browser/Windows voice validation.
+  Prior root-cause logs /tmp/kiosk-short-fish-table-real.log and
+  /tmp/kiosk-short-fish-read-control.log; temporary reviewer bypass removed.
+
+- Nov09 selection completion + technical pause DEPLOYED.
+  Bounded conventional completion phrases (這樣就好/就這些/點好了/不用再加了,
+  exact normalized whole utterances) qualify read-only order-information with
+  a nonempty cart in ordering and no unfinished meal/live identity/quantity/
+  checkout question. Supersede wrong recommendation/deferral proposals, never
+  submit. Compound demands stay semantic. Filtering-on requires established
+  service admission; current checkout answers retain the original authority.
+  ServiceResolution fallback adds no model call. Existing ordering-skill prompt
+  also names completion expressions as possible answers to live checkout entry.
+  useKioskServiceFault now latches terminal model/provider/format/time/round/
+  duplicate/context/service/session failures before or after writes. Scene also
+  pauses unrenderable replies/exceptions and unavailable service entry. Keep
+  recognized input/accepted effects, discard automatic retry; common existing
+  lock owner stops admission and speaks simulated staff notice. Normal questions,
+  quantity refusals and semantic clarification do not lock. PIN/new-order reset
+  remains the recovery boundary. No external staff notification was added.
+  Targeted Server157/Host159/Menu50 pass; headless browser17 pass including real
+  alertdialog in voice/text modes, persistence/recovery, partial progress. Scoped
+  types/lint/build pass. No real model replay or Windows voice validation.
+  Release kiosk-completion-fault-20261108T182401Z-8fbd8ce0cc;
+  /tmp/kiosk-completion-fault-published/release.json origin51/public51 pass.
+  Kiosk + API serviceResolution/ordering-skill overlays deployed; API PID2120560
+  ready; bridge1326468 unchanged. Menu/supplier entries and settings preserved;
+  Menu version API overlay metadata refreshed. No commits.
+
+
+- Nov09 single-question Host receipt fix DEPLOYED (Kiosk only).
+  User explicitly accepts 我想吃飯 lookup behavior; do not change rice semantics.
+  Field02:02 short 酸辣魚便當 lookup then menu_confirm_item narrated stale
+  您想點哪一道 plus current identity confirmation. replyFromConversation selected
+  callback raw outcome over its cleaned structured read whenever no accepted
+  operation receipt existed. Prefer accepted operation receipts + structured
+  facts, then raw fallback only without either. Preserve fuzzy identity consent;
+  no default serving/cart write. Two regressions cover waiting/completed with
+  an earlier raw browse prompt and a real runtime-generated confirmation;
+  fail before fix, now pass. questionPresentation93 pass; Kiosk types/lint/build
+  pass. No real model replay or Windows speech test. Current Menu source may
+  also suppress purchase-lookup questions; this deployment changes only Kiosk.
+  Release kiosk-single-question-20261108T180721Z-b09762963e;
+  /tmp/kiosk-single-question-published/release.json origin50/public50 pass.
+  Menu/supplier/admin entries and API/bridge PIDs preserved; no commits.
+
+
+- Nov09 supplier conversation repair FRONTEND ONLY deployed:
+  supplier-conversation-20261108T180605Z; /tmp/supplier-four-published/release.json.
+  Includes original Menu spoken-batch release175811 (max3 introduced names,
+  unchanged full card grid), suppresses a purchase task's single named lookup
+  question before its owned identity confirmation, and bounds supplier piece
+  configuration to at most5 choices including cancel/inquiry. Field01:56
+  加五顆/加五顆水餃 was HTTP400 Invalid kiosk conversation message, with actual
+  validation expected<=20/received103 candidates; not evidence of a model outage.
+  The UI still has0–100 real POS options; numeric slot resolution exposes only
+  zero plus one uniquely spoken valid value and a no-write count clarification.
+  Invalid/ambiguous counts do not create a cart line. Release Menu1098 pass/
+  202 existing opt-in skips, scoped types/lint/build pass, origin5/public5 checks.
+  API/Bridge PIDs and original/Kiosk/admin entry hashes unchanged. No model calls
+  or backend edits/restart. Built in /tmp/supplier-four-source from the latest
+  original release source plus this task's two-file patch/untracked Menu sources.
+  User's separate generic-error→staff-dialog/lock request remains OUTSIDE this
+  iframe: KioskScene/useKioskServiceFault own that lifecycle; requires a separate
+  Kiosk frontend change, not a supplier page workaround or fake staff notification.
+
+- Nov09 compact multi-result lookup narration DEPLOYED (Menu only).
+  One-subject/category displayed menu_get retains all matching cards but speaks
+  at most three names, without repeated availability/price lists. introduction
+  progress belongs to recommendationBatch independently from visible IDs;
+  continue via Agent/direct fast tools speaks next unheard names without grid
+  or chip changes. Fresh lookup resets progress; data-only reads never advance;
+  exhausted/unclear follow-ups use existing menu-return/clarification boundaries.
+  Explicit price evidence bypasses compact narration; validated fast INFORMATION
+  forwards internal priceInformation to the receipt, so fast reads also retain
+  factual prices without an Agent transcript. Selection receipt now states base
+  price once (pricedItemIds for deduplication) and asks servings. Multi-subject
+  verification and ranked recommendations keep their existing policies.
+  Six new unit cases cover4/5/8-result paging, price inquiry on both paths,
+  data-only/fresh lookup, price on selection and exhausted return. Menu1089
+  pass/202 existing opt-in skips; scoped types/lint/build pass. No fresh real
+  model/browser/Windows voice validation; no extra model call for wording.
+  Release menu-spoken-batches-20261108T175811Z-59ff676a92;
+  /tmp/menu-spoken-batches-published/release.json origin5/public5 pass.
+  API/bridge unchanged, supplier/Kiosk/admin entries preserved, no commits.
+
+
+- Nov09 supplier re-aligned FRONTEND ONLY to the latest original Menu release
+  menu-exhaustion-return-20261108T175205Z-22049956d5. Published the existing
+  paired supplier-CmizyAQV.js entry importing styles-00DAEpEz.js; built original
+  index exactly matched deployed original index and every asset already existed
+  with matching hashes. Only supplier.html and its version metadata changed.
+  Supplier A/B catalog, explicit pieces-before-servings and plus/minus controls
+  retained. Focused178 tests pass; origin5/public5 verified. API/Bridge PIDs,
+  original Menu, Kiosk and admin entries/metadata unchanged; no backend edits or
+  restart. Backup/manifest: /tmp/supplier-realignment-published; publisher:
+  /tmp/publish-supplier-realignment.py. No new build/full typecheck/model replay.
+
+- Nov09 exhausted recommendation/card-chip fix DEPLOYED (Menu only).
+  Field01:41–01:43: exhausted bento budget proposed dumplings, then 先不要，
+  還有其他的嗎 invoked clarify and repeated the same alternative. queryGuidance
+  relaxed positive filters for proposal cards while retaining original chips;
+  implicit recycle was another continuation route. Exhausted reads now retain
+  the last matching grid/conditions and offer existing Host menu-return invitation;
+  no relaxed alternative grid or implicit recycle. Accepted menu_open clears
+  positive query state with the view, retains cart/dietary exclusions. Other
+  unclear/empty guidance remains unchanged. Two ingredient variants reproduced
+  failures before fix, now exercise continue/clarify/direct-more and explicit
+  return with aligned chips/cards. Menu1083 pass/202 existing opt-in skips;
+  scoped types/lint/build pass. No new model replay or field voice validation.
+  Release menu-exhaustion-return-20261108T175205Z-22049956d5;
+  /tmp/menu-exhaustion-return-published/release.json origin5/public5 pass.
+  API/bridge and supplier/Kiosk/admin entries preserved; no commits.
+
+
+- Nov09 price-boundary fix DEPLOYED (Menu only).
+  Field/replay 我想要130元以下的便當 chose UPPER_EXCLUSIVE in Jev;
+  tool merging also let Main tighten verified bounds. Existing priceEvidence
+  now constrains unambiguous single-amount literal operators, retaining
+  INFORMATION/NONE/UNSUPPORTED and ambiguous/negated interpretations for Jev.
+  resolvePrices preserves the complete verified group; supplied exclusive flags
+  are removed before merging. Fresh named lookups release old budgets, not
+  explicit prices in the current utterance. Before: 4/6 added guard regressions
+  failed and configured replay excluded pork130. After: Menu1082 pass/202
+  existing opt-in skips; scoped types/lint/build pass. Explicitly authorized
+  same two-utterance real replay includes130 for 以下, excludes130 for 低於;
+  scratch cart remains empty. No Windows voice or field timing verification.
+  Release menu-price-boundary-20261108T174733Z-ef1c37aeb5;
+  /tmp/menu-price-boundary-published/release.json, origin5/public5 pass.
+  API/bridge PIDs unchanged; supplier/Kiosk/admin entries preserved. No commits.
+
+
+- Nov09 noodle browsing/selection follow-up DEPLOYED.
+  Field01:14–01:16: three additions succeeded, repeated 我想吃麵 produced no tool
+  call and generic clarification. Server read guards reviewed inferred category
+  (麵→麵食) even though SEARCH_MENU subjects bind execution to literal 麵;
+  pending fulfillment also triggered mutation-consent review for read-only menu
+  tools. Skip unused-category review only for subject-bound SEARCH_MENU; admitted
+  read-only menu browsing in ordering with no retained draft skips mutation
+  consent review, never cart/confirmation/write tools. Menu browsing now invites
+  ordering, and menu_select_item offers a real item-order servings ticket without
+  adding one by default. Existing option-confirmation policy retained.
+  Menu1064/202 opt-in skips, HTTP125, actual controls/conditions browser6 and
+  iframe29 pass; scoped Menu/Server types/lint pass. True configured replay after
+  three additions finds beef noodles, selecting then answering兩份 raises only
+  that line from1 to3, cart preserved. Replay4.33s total excluding UI/voice;
+  no field latency/Windows voice guarantee. No commits; supplier preserved.
+  Release kiosk-noodle-flow-20261108T172502Z-969e076c5a; /tmp/kiosk-noodle-release-path,
+  origin5/public5 pass; API PID2020958 ready, bridge unchanged.
+  Menu bundle and API index.ts/orderingMessages.ts published with rollback
+  backups. Kiosk bundle/release unchanged; version API overlay metadata updated.
+
+
+- Nov09 overlapping additions: two field sessions00:42/00:44 show first two
+  dishes succeeded, second utterance deferred, then ADD_ITEM failed with
+  "The requested control is not visible or available." It tried a new dish
+  outside the two-item grid; no evidence of an API restart causing that failure.
+  revealItem now checks existing visibleItemIds and runs the ordinary named
+  lookup before clicking a hidden target. Original visible selections preserve
+  their grid. Actual browser repro failed then passed, now sends second sentence
+  before first finishes using the queue; three real additions exactly once.
+  Menu1062/202 opt-in skips, queue12, browser3 pass; scoped Menu/Kiosk types
+  and changed lint pass; no full-project typecheck or fresh model replay.
+  Menu-only release menu-visible-target-20261108T171041Z-b88ef7d833 deployed;
+  /tmp/menu-visible-target-published/release.json, origin5/public5 pass.
+  API PID1995246 and bridge PID1326468 unchanged; no settings/PIN or supplier
+  change. Kiosk entry/version deliberately unchanged; reload the menu iframe
+  to load this frontend fix. No commits.
+
+
+- Nov09 original Menu follow-up DEPLOYED: menu_get
+  displayed category/ingredient reads now publish the same replacement QueryView
+  as the grid. Literal menu lookup excludes description/id (bento side soup is
+  not a soup product). Existing service qualification preserves unknown original
+  subjects in SEARCH_MENU handoff; visible reads stay bound to those names,
+  including an erroneous Main clarify proposal. Service questions supersede Host
+  navigation invitations, bind to raw Menu state, and block stale invitation
+  projection. No cart authority weakened. Menu1062/202 opt-in skips, Host178,
+  Server185, real condition-strip browser3/iframe29 pass; configured real-provider
+  six-turn absent-food + low-fat→staff assent passes, cart0, no formal writes.
+  Logs /tmp/kiosk-followup-*. Scoped Menu/Kiosk/Server types and lint pass.
+  Release kiosk-query-followup-20261108T170309Z-ef4f2bac90;
+  /tmp/kiosk-query-followup-release-path -> release.json, origin63/public63 pass, API PID1995246.
+  Manifest state deployed-public-verified.
+  No full-project typecheck or commits. Preserve separately deployed supplier
+  HTML/assets and current device/PIN settings; no microphone changes.
+
+
+- Nov09 supplier piece counter FRONTEND ONLY deployed:
+  supplier-piece-counter-20261108T164622Z; backup/manifest
+  /tmp/piece-counter-published. pieceCounter.vue replaces101 option tags in
+  item dialog AND order review with adjacent minus/count/plus controls and an
+  explicit zero-choice next step. Supplier projection alone opts in; POS IDs,
+  prices/catalog and backend remain unchanged. optionSteps and runtime selection/
+  cart edits traverse real adjacent controls with ownership checks; no hidden
+  offscreen option targets. Release snapshot Menu1053 pass/202 opt-in skips;
+  current scoped types/lint pass. Browser confirms2 extra pieces ×2 servings160元,
+  then cart minus to1 extra piece144元; no tags/checkbox list. No backend restart,
+  original Menu HTML change, full-project types or live voice/model acceptance.
+  Built in /tmp/supplier-ordering-source from the deployed snapshot plus these
+  page changes, excluding newer unshipped query policies in the working tree.
+
+- Nov09 original query-policy fixes DEPLOYED: customer
+  bubbles/transcripts retain original text; assistant vocabulary 虱目魚. Added
+  food-safety evidence + bounded semantic guard, staff-assistance question and
+  removed stale FAST_ACTION actionId. Fresh positive conditions replace prior
+  category/query/price/needs/strategy/include; continue alone retains them.
+  Dietary/exclusions persist unless explicitly cleared. Manual chip removal
+  sends the complete remaining condition set. Host fast/Main/schema instructions
+  aligned. Menu1053 pass/202 opt-in skips, Server182/shared42/word4/display-browser10
+  pass; real-provider scratch four-turn fish→pork→budget/category→food-safety pass,
+  no cart writes. Actual iframe29, scoped Menu/Kiosk/Server types and changed-file lint pass.
+  Release kiosk-query-policy-20261108T164525Z-d1ef9d8d74;
+  /tmp/kiosk-query-policy-release-path -> manifest, origin63 pass, API PID1971148.
+  Public63 checks pass; state deployed-public-verified. No full-project typecheck.
+  Preserve current separately deployed supplier entry/assets; no supplier menu,
+  microphone or model-library changes. No commits. Private logs /tmp/kiosk-query-*.
+
+
+- Nov09 supplier dumpling order sequence is FRONTEND ONLY: supplierOrdering.ts
+  projects extra-pieces to explicit required confirmation (including extra-0),
+  with a concise pieces prompt before servings. App applies it only to supplier;
+  MenuItemDialog hides servings/add until selected. Invitation and configuration
+  receipts share the prompt; consumed invitation ID no longer blocks the later
+  revision-bound configuration ticket. Touch option callbacks formerly reset
+  the chosen serving count; addItem now captures it before option application.
+  No backend edits/deployment/restarts or catalog/price/ID/config changes.
+  Supplier-only release supplier-ordering-20261108T164159Z; backup/manifest
+  /tmp/supplier-ordering-final-published. Built from the previous deployed
+  multi-review snapshot plus this request in /tmp/supplier-ordering-source,
+  excluding the working tree's newer unshipped query policies. Original Menu
+  HTML remains unchanged intentionally for this page-specific release.
+  Release Menu1051 pass/202 opt-in skips; current Menu types and changed lint pass.
+  Piece-choice tests cover extra-0/extra-2, then two servings128/160, with no early
+  cart line. Public5 resource checks pass; browser confirms no serving controls
+  before the add-on choice, then two servings with extra-2 add as160元 (×2).
+  No full-project typecheck or live voice/model acceptance claimed.
+
+- Nov09 supplier entry aligned with the deployed original Menu fixes. The old
+  supplier HTML imported styles-B9jYPQsa.js while original Menu already imported
+  styles-C0E-fMWV.js; prior release scripts deliberately restored supplier HTML.
+  Published the existing paired supplier-D1rpZB6K.js entry from the same build as
+  deployed original index (byte-identical original index verified), plus supplier
+  entry version metadata only. No rebuild of the newer dirty working tree, API
+  restart, catalog/config/PIN change. Backup/manifest/scripts:
+  /tmp/supplier-alignment-published and /tmp/publish-supplier-alignment.py.
+  Supplier-specific A/B/dumpling presented-quantity tests added; focused25 pass,
+  changed-file lint passes. Broader42-test selection has one existing conflict:
+  queryContinuity.test.ts:90 expects old maxPrice retention whereas the newer
+  unshipped query-turn policy clears it; not changed or shipped here. Public
+  browser verifies16 items, dumplings8+2=80元, cart review and return retaining
+  cart. No full voice/model/Scene/payment acceptance or full-project typecheck.
+  Future shared Menu releases must publish both HTML entries from the same build;
+  do not reuse old publication scripts' supplier-preservation step unchanged.
+
+- Nov09 multi-add narration/review/add-more correction DEPLOYED:
+  kiosk-multi-review-20261108T161849Z-bf4d8863b4; /tmp/kiosk-multi-review-release-path,
+  deployed-public-verified, origin63/public63 pass. API restarted PID1929452.
+  PIN/settings/bridge/admin/supplier assets preserved. Field23:50/23:54 exact entries found:
+  dual add concatenated lookup availability/prices; no owned table review
+  invitation; bare 我要加點 misqualified ORDER_ADDITION without literal subjects.
+  Host now summarizes actual addition lines (latest quantity per line), omits
+  same-item lookup evidence, preserves missingQueries and qualified priceInquiry
+  (including direct line.unitPrice). Table add issues cart-review/VIEW_CART only,
+  actual review alone issues checkout-entry; Scene retains then validates latest
+  question candidate. Invalid addition qualification gets one bounded semantic
+  repair, never weaker target checks/writes. Return-menu candidate clarifies
+  continued selection; no keyword routing. Normal additions gain no model call.
+  Menu1046/202 opt-in skips, Host236, Server166, actual iframe28 pass; scoped
+  types/lint pass. True Jev/Main scratch5-turn chain passes after first replay
+  exposed 點完 misread as defer; corrected question-effect descriptions. Private
+  /tmp/kiosk-multi-real-before.log and /tmp/kiosk-multi-real.log retain evidence.
+  No formal submission; full Windows voice/Scene/payment unverified. No commits.
+  API overlays serviceResolution.ts/orderingMessages.ts and paired original
+  Menu/Kiosk publication complete; no new supplier or mic changes.
+
+- Nov09 cross-route state audit DEPLOYED: kiosk-state-alignment-20261108T160000Z-ce554e3572.
+  /tmp/kiosk-state-alignment-release-path -> release.json,
+  deployed-public-verified, origin63/public63 pass. API restarted PID1906433;
+  bridge/PIN/device settings/admin/supplier unchanged. No commits.
+  Reproductions found recovery key/HTTP schema omitted recommendation+seating
+  versions; query-scope snapshots omitted revisions; Main context omitted
+  query_scope and item-clarification foreground phases. Shared
+  decisionRevisionsSchema/DecisionRevisions now owns all six versions across
+  Menu/Host/API. queryScopeSnapshot shares live scope/expiry/version policy for
+  all three readers; Main uses the same scope/clarification and read-only scope
+  tool set. No widening order authorization or semantic model changes.
+  Menu1044 pass/202 opt-in skipped, Host266, shared42, HTTP6, Server226/1 opt-in
+  skipped, real headless iframe27 pass. HTTP tests exercise both explicitly
+  enforced admission and default-off version transport; budget provider fixture
+  now follows strict requested recipient fields in off mode. Scoped types/lint
+  pass; no root typecheck, no fresh real-model calls. Original menu only; no
+  mic/AEC or supplier changes. This is bounded invariant/route coverage, not
+  complete Scene/Windows/voice/payment or universal semantic acceptance.
+  API overlay: routes/kiosk/index.ts, decision/contracts.ts and shared
+  kioskConversation.ts; paired Kiosk/Menu publication is complete.
+
+- Nov08 owned quantity invitation correction DEPLOYED: kiosk-owned-questions-20261108T154246Z-058b6154d1.
+  /tmp/kiosk-owned-questions-release-path -> release.json,
+  deployed-public-verified, origin63/public63 pass, no API restart.
+  Field seq68–76 confirmed assistant asked 炸排骨便當幾份 but 一份 had
+  waitingFor:null, then INVALID_CHOICE after weak Jev/Main recovery. Do not
+  remove literal-target qualification globally. Menu lookup/filtered lookup/
+  recommendation/redisplay now offer item-order questions; actual presentation
+  binds the next quantity to that verified dish. Reads never add items.
+  Stronger operational/configuration/navigation questions take precedence;
+  inquiry corrections/catalog-only prose use open guidance without a quantity
+  ticket. State/recommendation changes, refusal/reset retire it; silence retains
+  the need with decision-only lease renewal. Replaced task's late query cannot
+  overwrite newer question. Menu1043 pass/202 existing opt-in skipped, Host146,
+  shared36, Server106; actual iframe browser26 pass. Real configured model replay
+  炸排骨便當有嗎→一份 passes, both FAST_ACTION/no Main, correct one item.
+  Existing Main recovery accepts only current issued quantity choice, proven
+  for weak Jev in both background modes plus stale/unissued/wrong-effect rejection.
+  Scoped Menu/Kiosk types and changed lint pass. Server changes this turn are
+  tests only; no API restart required. No commits. Full Windows/voice acceptance
+  not claimed. Exact field device label810280 not proven by session lookup.
+
+- Separate Nov08 TTS503 at15:00:35Z: upstream /v1/audio/speech returned502 HTML,
+  Kiosk mapped to503 KIOSK_TTS_UPSTREAM_ERROR; later200. Frontend publications
+  followed at15:03:51Z/15:09:49Z, both apiRestart:false. Provider issue remains
+  unresolved; do not conflate it with owned-question fault or blame deployment.
+  Private field records /tmp/recent-failure-entries-private.json.
+
+- Nov08 returned-catalog query scope correction: latest Kiosk/original Menu
+  release kiosk-catalog-scope-20261108T150919Z-1eb77fd0f0, pointer
+  /tmp/kiosk-catalog-scope-release-path; deployed-public-verified, origin63/
+  public63 pass, no API restart/provider
+  calls. User path fish→missing milkfish→return all→pork incorrectly asked shown
+  vs catalog. Explicit catalog browsing cleared recommendationBatch.scope,
+  turning known full-catalog scope into ambiguity. It now retains CATALOG.
+  Regression fails before fix across pork/chicken/beef,37 Menu scope/catalog/
+  continuity tests pass after; actual iframe browser verifies new price condition
+  reaches dishes outside old recommendations. Genuine unresolved scope tests
+  retain their questions. Types/lint/build pass; supplier/admin/settings/PIN
+  unchanged. Exact live field path not replayed with models; Windows full Scene
+  acceptance remains unverified. No commits.
+
+- Nov08 frontend availability audit completed; previous Kiosk-only release
+  kiosk-audit-20261108T150312Z-11173bb57d, /tmp/kiosk-audit-release-path,
+  deployed-public-verified (origin53/public53).
+  No API restart or fresh provider calls; Menu/admin/supplier/PIN/settings
+  preserved.209 scoped Host tests and24 actual headless iframe tests pass,
+  Kiosk types/lint/build pass. New failures reproduced before fixes: late start
+  resurrects retired session; closing session reused/late end clears replacement;
+  lost end receipt retains a possibly closed ID; retired append lane blocks new
+  visitor. useKioskInteractionRecording now retires ownership immediately on end,
+  generations isolate pending creation, obsolete creations close as cancelled,
+  and new visitor gets independent transcript/diagnostic queues. Old failures
+  cannot overwrite the replacement's error. Start/end/append/history HTTP have
+  15s AbortSignal deadlines; actual native deadline test passed, no write retry.
+  These are audit-found risks, not proven causes of all reported field failures.
+  Full Windows Scene acceptance/backend universal correctness are not claimed.
+
+- Nov08 named-request common-entry fault DEPLOYED: previous Kiosk/original Menu
+  release kiosk-handoff-20261108T145448Z-7d0b7b2a4f, pointer
+  /tmp/kiosk-handoff-release-path, deployed-public-verified. Origin63/public63
+  pass; API not restarted. User confirmed
+  prior motion142c479e37 loaded, so do not blame cache. Field entries57–64 show
+  鱔魚意麵 accepted, kiosk_agent_task resolved, but Main never started. Root:
+  shared handoff subjects accepted by runtime was missing from strict compiled
+  iframe JSON schema (additionalProperties:false). This blocked qualified
+  ADD_ONLY bindings broadly, not just one meal. toolDefinitions now admits
+  subjects with the shared20-item/500-char limits. Compiled-validator repro
+  fails before fix, passes after;16 schema/continuity tests and actual headless
+  iframe chain (absent→return→three absent named tasks→available水餃) pass.
+  Real-provider exact three-turn chain passes at core level but bypasses iframe
+  schema; never call that full UI acceptance. Added browser boundary coverage.
+  Menu types/lint/build pass; supplier/admin/PIN/settings preserved. No commits.
+
+- Nov08 reply-visible/thinking-motion report: fixed VRM motion load ordering.
+  Previous async watcher let an old thinking load replace a newer idle action.
+  useMotionPlayback now invalidates stale/disposed loads, pins mixer ownership,
+  handles loop changes and stops the old action on current asset failure.
+  Reproduction failed before protection; four real Three.js mixer lifecycle
+  tests, scoped Kiosk types/lint/build pass. No model calls or API restart.
+  Previous Kiosk-only release kiosk-motion-20261108T144219Z-142c479e37; pointer
+  /tmp/kiosk-motion-release-path. Original Menu/admin/PIN/settings preserved.
+  Field report says reply is visible and only the character remains thinking;
+  exact field trigger and actual browser animation acceptance remain unverified.
+
+- Nov08 missing-dish waiting reply correction DEPLOYED: previous Kiosk/original
+  Menu release is kiosk-missing-reply-20261108T143328Z-e29da5bece; pointer
+  /tmp/kiosk-missing-reply-release-path -> release.json, deployed-public-verified,
+  origin63/public63 pass. No API restart; admin/supplier/PIN/settings preserved.
+  Real Host loop reproduces the reported incomplete reply: ADD_ONLY absence
+  ends waiting for menu-return-invitation, but questionPresentation accepted
+  only completed. It now accepts this narrowly validated read-only absence.
+  Multiple requested dishes must all be checked before a missing sibling can
+  interrupt with return invitation. Replay previously forced completed and hid
+  this gap; it now preserves waiting and tool receipts. Six real-model chains,
+  Host142/Menu12 tests, scoped types/lint/build pass. Field transcript was not
+  found in stored records; full Scene/Windows acceptance remains unverified.
+
+- Nov08 loaded-version display correction DEPLOYED: prior Kiosk release is
+  kiosk-build-id-20261108T142220Z-2067e88d3c; pointer
+  /tmp/kiosk-build-id-release-path -> release.json, deployed-public-verified,
+  origin53/public53 pass. No API restart; Menu/admin/PIN/settings unchanged.
+  KioskAdminPanel now displays useBuildInfo().release, embedded at build time
+  via VITE_RELEASE_ID; fallback is commit@UTC build time. Do not fetch latest
+  server metadata and label it as the currently loaded browser code. This fixes
+  unchanged HEAD4789175 being misleading after a working-tree publication.
+  Scoped Kiosk types, changed lint and production build pass; immutable JS was
+  checked for the same identifier as version.json. No actual field UI claimed.
+
+- Nov08 return-menu/invitation + idle follow-up DEPLOYED on explicit authorization.
+  Release kiosk-return-idle-20261108T141641Z-a933061b13; pointer
+  /tmp/kiosk-return-idle-release-path -> release.json, state deployed-public-verified.
+  Origin63/public63 checks pass, API1667695->1744134 ready DB/Redisok; bridge unchanged.
+  Kiosk + original Menu published; admin, supplier HTML/assets, PIN and device
+  settings preserved. API overlay is routing.ts, serviceResolution.ts and orderingMessages.ts.
+  Git remains HEAD4789175 with these changes uncommitted per current instructions;
+  release is a checksummed working-tree snapshot (version.json workingTreeChanges:true,
+  sourceSnapshotSha256). Do NOT identify this release by HEAD alone. Backup, source
+  patch, hashes and rollback script are in the release directory. No fresh model
+  calls during deployment; prior 4-case real-provider regression retained. No
+  full Scene/actual Windows microphone acceptance has been claimed.
+
+- Nov08 idle countdown follow-up, included in release above: previous public version was
+  verified as 4789175. Current UX is three-minute inactivity then a 15-second
+  continue/restart warning. User recognizes the popup but cannot distinguish
+  the timer phases; preserve existing UX, clearly explain warning zero must
+  auto-reset. No UX duration/confirmation removal was requested or made.
+  Reproduced wall clock -1ms while
+  a browser expiry timer remains scheduled: old end('idle') returned early and
+  abandoned the only callback. Now re-arms the remaining interval. Shared presence
+  suppression also cannot cancel an already displayed warning; current Scene
+  already guards its presence calls to active state, so do NOT claim that shared
+  edge is the confirmed field cause. Session tests20 pass (three new regressions),
+  scoped lint and Kiosk types pass; actual field root/Windows countdown not confirmed.
+
+- Nov08 absent-lookup follow-up implemented and deployed in release above, uncommitted.
+  New source of truth: first section of docs/plans/2026-10-28-kiosk-conversation-repair.md.
+  Actual new field session GZoe-FQFz572mVtAE5gqL: lookup released fish preference,
+  Main then restated fish with continue; correct guard became unrepairable refusal.
+  Transport now supplies existing one-shot INVALID_TOOL_INPUT contract (no effect).
+  User chose absent -> ask only return-menu -> actual menu control -> ask recommendation.
+  Both are Host-owned read-only invitations, retained with answer scope in existing
+  invitationWindow; Main loop stops at owned question and saves receipts. Jev uses
+  existing finite answer leaf; Main fallback retains same question. Settled read
+  answer cannot be reclassified as acknowledgement; no write bypass. Full catalog
+  display starts a fresh recommendation history, retaining dietary exclusions/cart.
+  Current live version is the return-idle snapshot above; inspect its release pointer.
+  Validation: Menu1027/202skip, Host141, routing/service100 + ordering-skill74;
+  scoped Menu/Host/Server types pass; final real-model report is
+  /tmp/kiosk-menu-return-final-parity.json: 4/4 passed, 85 other opt-ins skipped.
+  Earlier failed runs retained privately; no actual Scene mouse/Windows voice acceptance.
+
 - Nov08 text-input feedback follow-up: deployment explicitly authorized.
   KioskScene acknowledges accepted simulation text in the existing onReceived
   queue event (ASR still acknowledges before transcription, without duplication).
