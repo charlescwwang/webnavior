@@ -71,7 +71,7 @@ export async function recoverServiceRequest(decision: KioskInteractionDecision, 
         abort()
     })
     const waitingFor = input.state?.waitingFor
-    const liveQuestion = waitingFor && waitingFor.expiresAt > Date.now() ? { purpose: waitingFor.purpose, question: waitingFor.question, choices: waitingFor.choices } : null
+    const liveQuestion = waitingFor ? { purpose: waitingFor.purpose, question: waitingFor.question, choices: waitingFor.choices } : null
     const payload = {
       phase: input.state?.phase,
       screen: input.state?.interactionState?.screen,

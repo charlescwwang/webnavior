@@ -1,9 +1,9 @@
-import type { ConversationContext, ConversationHandoff, ConversationQuestion as PresentedQuestion, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ConversationContext, ConversationHandoff, ConversationQuestion as PresentedQuestion, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-import { customerReplySchema, isServiceLimitationReply, orderAssistanceQuestion, quantityLimitRejectionSchema, renderCustomerReply, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { customerReplySchema, formatOrderingPrice, isServiceLimitationReply, orderAssistanceQuestion, quantityLimitRejectionSchema, renderCustomerReply, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { safeParse } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
@@ -14,10 +14,12 @@ import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages
  * replacement recommendation. The Agent still selects queries and operations.
  */
 export function createMenuReplyWindow() {
-  const messages = new Map<string, { facts: string, guidance: boolean, nextQuestion?: string, itemIds: string[], pricedItemIds: string[] }>()
+  const messages = new Map<string, { facts: string, guidance: boolean, nextQuestion?: string, itemIds: string[], pricedItemIds: string[], missingQueries: string[], namedAbsence: boolean }>()
   const items = new Map<string, { name: string, price: number }>()
   const operations = new Set<string>()
   const outcomes: string[] = []
+  const additionOutcomes = new Set<string>()
+  const addedLines = new Map<string, { itemId: string, name: string, quantity: number }>()
   const unmatchedQueries = new Set<string>()
   let reads = 0
   let cartReply: string | undefined
@@ -50,8 +52,18 @@ export function createMenuReplyWindow() {
         // Only the current question may be spoken. Earlier operation receipts
         // remain, but their superseded follow-up prompts cannot be revived.
         const outcome = question && message ? message.replace(question.question, '').trim() : message
-        if (outcome && !waiting)
+        if (outcome && !waiting) {
           outcomes.push(outcome)
+          if (['order_add_item', 'cart_add_item'].includes(name) && !payload.replacedLine && payload.line && typeof payload.line === 'object') {
+            const line = payload.line as Record<string, unknown>
+            if (typeof line.id === 'string' && typeof line.itemId === 'string' && typeof line.name === 'string' && typeof line.quantity === 'number') {
+              additionOutcomes.add(outcome)
+              addedLines.set(line.id, { itemId: line.itemId, name: line.name, quantity: line.quantity })
+              if (typeof line.unitPrice === 'number' && Number.isFinite(line.unitPrice) && line.unitPrice >= 0)
+                items.set(line.itemId, { name: line.name, price: line.unitPrice })
+            }
+          }
+        }
       }
       if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get'].includes(name))
         return
@@ -98,14 +110,21 @@ export function createMenuReplyWindow() {
         if (typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0)
           items.set(item.id, { name: item.name, price: item.price })
       }
+      // Only a successful, displayed, named Menu lookup can prove absence.
+      // Empty filters, rejected calls and free-form model prose cannot.
+      const missingQueries = Array.isArray(payload.missingQueries) ? payload.missingQueries.filter((query): query is string => typeof query === 'string') : []
+      const requestedQueries = Array.isArray(payload.requestedQueries) ? payload.requestedQueries.filter((query): query is string => typeof query === 'string' && Boolean(query.trim())) : []
+      const namedAbsence = name === 'menu_get' && requestedQueries.length > 0
+        && ((payload.items.length === 0 && ['none', 'possible'].includes(String(payload.matchKind)))
+          || missingQueries.some(query => requestedQueries.includes(query)))
       const structured = safeParse(customerReplySchema, payload.customerReply)
       if (structured.success) {
         const reply = structured.output
-        messages.set(name === 'menu_get' ? reply.queryKey ?? reply.facts : 'recommendation', { facts: reply.facts, guidance: Boolean(payload.guidance), nextQuestion: reply.nextQuestion, itemIds, pricedItemIds: reply.pricedItemIds ?? [] })
+        messages.set(name === 'menu_get' ? reply.queryKey ?? reply.facts : 'recommendation', { facts: reply.facts, guidance: Boolean(payload.guidance), nextQuestion: reply.nextQuestion, itemIds, pricedItemIds: reply.pricedItemIds ?? [], missingQueries, namedAbsence: Boolean(namedAbsence && reply.facts.trim()) })
       }
       else {
         const message = operationReplyFrom(payload) ?? (names.length ? `我查到：${names.slice(0, 3).join('、')}。` : '目前沒有查到符合條件的餐點。')
-        messages.set(message, { facts: message, guidance: Boolean(payload.guidance), itemIds, pricedItemIds: [] })
+        messages.set(message, { facts: message, guidance: Boolean(payload.guidance), itemIds, pricedItemIds: [], missingQueries, namedAbsence: false })
       }
     },
     hasUnmatchedQuery(sourceUtterance: string) {
@@ -113,6 +132,7 @@ export function createMenuReplyWindow() {
       // or a partially handled multi-meal request. No generated prose is used.
       return reads === 1 && unmatchedQueries.size === 1 && [...unmatchedQueries].every(query => sourceUtterance.includes(query))
     },
+    hasNamedAbsence: () => [...messages.values()].some(reply => reply.namedAbsence),
     hasOperation(intent: string) {
       const tools: Record<string, string[]> = {
         ADD_ONLY: ['order_add_item', 'cart_add_item'],
@@ -132,16 +152,27 @@ export function createMenuReplyWindow() {
     operationReply(fallback?: string) {
       if (!outcomes.length)
         return fallback
+      if (outcomes.length > 1 && outcomes.every(outcome => additionOutcomes.has(outcome)))
+        return orderingMessages['zh-Hant'].addedItemsSummary.replace('{items}', [...addedLines.values()].map(line => `${line.name}共${line.quantity}份`).join('、'))
       return outcomes.join(' ')
     },
     hasReceipts: () => reads > 0 || cartReply !== undefined,
     hasCartReview: () => cartReply !== undefined,
     needsClarification: () => clarificationRequested,
-    reply(options: { omitGuidance?: boolean } = {}) {
-      // Without evidence, generated dish claims cannot become customer dialogue.
+    reply(options: { omitGuidance?: boolean, omitPurchasedItems?: boolean, priceInquiry?: boolean } = {}) {
+      const purchased = new Set([...addedLines.values()].map(line => line.itemId))
+      // Same-item availability is evidence for the write, not a second customer
+      // result. Preserve structured missing subjects and explicit price inquiries.
+      const redundantReads = options.omitPurchasedItems ? [...messages.values()].filter(reply => reply.itemIds.length > 0 && reply.itemIds.every(id => purchased.has(id))) : []
+      const omitted = new Set(redundantReads)
+      const missing = [...new Set(redundantReads.flatMap(reply => reply.missingQueries))]
+      const missingFacts = missing.length ? orderingMessages['zh-Hant'].missingMenuSubjects.replace('{items}', missing.map(query => `「${query}」`).join('、')) : ''
+      const requestedPrices = options.priceInquiry ? [...items].filter(([id]) => purchased.has(id)).map(([_id, item]) => `${item.name}單份${formatOrderingPrice(item.price)}。`).join('') : ''
+      // A direct add can answer an explicit unit-price question from its real
+      // line receipt, without forcing another lookup/model round.
       if (!reads)
-        return cartReply ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。'
-      const scopedReplies = [...messages.values()].filter(reply => !options.omitGuidance || !reply.guidance)
+        return cartReply ?? (options.omitPurchasedItems ? requestedPrices : '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。')
+      const scopedReplies = [...messages.values()].filter(reply => !omitted.has(reply) && (!options.omitGuidance || !reply.guidance))
       const replies = [...new Map(scopedReplies.map(reply => [reply.facts || reply.nextQuestion, reply])).values()]
       const currentItems = new Set(replies.flatMap(reply => reply.itemIds))
       const pricedItems = new Set(replies.flatMap(reply => reply.pricedItemIds))
@@ -152,7 +183,7 @@ export function createMenuReplyWindow() {
       const nextQuestion = !options.omitGuidance && replies.some(reply => reply.nextQuestion)
         ? replies.length > 1 ? orderingMessages['zh-Hant'].browseQuestion : replies[0]?.nextQuestion
         : undefined
-      return renderCustomerReply({ facts: `${replies.map(reply => reply.facts).filter(Boolean).join(' ')}${prices}`.trim(), nextQuestion })
+      return renderCustomerReply({ facts: [replies.map(reply => reply.facts).filter(Boolean).join(' '), prices.trim(), missingFacts, requestedPrices].filter(Boolean).join(' '), nextQuestion })
     },
   }
 }
@@ -168,6 +199,8 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   question?: PresentedQuestion
   failureMessage: string
   requireMenuRead?: boolean
+  /** An independently qualified price question must survive an accompanying write. */
+  priceInquiry?: boolean
   /** Only a classified service FAQ may use generated prose without an operation receipt. */
   serviceReply?: boolean
   handoff?: Pick<ConversationHandoff, 'intent'> & Partial<Pick<ConversationHandoff, 'status'>>
@@ -177,7 +210,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   context?: ConversationContext
   /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
   customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
-}): { role: 'assistant' | 'error', content: string, clarification?: true } {
+}): { role: 'assistant' | 'error', content: string, clarification?: true, kind?: ContextReply['kind'] } {
   // Entry must still be complete when the reply arrives: a session reset
   // cannot expose an earlier menu receipt or let a stale task bypass phone choice.
   const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
@@ -211,6 +244,13 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   // supplied by the Host may be presented after release/manual state changes.
   const question = options.question
   const configuringMeal = ['ADD_ITEM', 'ADD_ONLY', 'SET_OPTION', 'SET_QUANTITY'].includes(intent) && ['item-configuration', 'confirm-meal'].includes(question?.purpose ?? '')
+  // Main's generic clarification cannot erase an explicit named absence from
+  // this completed read-only turn. Keep its receipt provenance too: otherwise
+  // Host would display the facts but create a new unrelated clarification cue.
+  if (result.status === 'completed' && result.reply?.kind === 'clarification' && !operationRequired && options.menu.hasNamedAbsence()
+    && result.requestedTools.every(name => ['kiosk_session_history', 'menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(name))) {
+    return { role: 'assistant', kind: 'menu-information', content: options.menu.reply({ omitGuidance: Boolean(question) }) }
+  }
   // Clarification pauses an unexecuted demand; it never completes the mutation
   // or consumes an old confirmation. Reads may precede a clarification; attempted
   // writes still require their actual receipt or result-unknown policy.
@@ -220,8 +260,10 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
       return { role: 'assistant' as const, content: clarification.content }
   }
   // A verified absence answers an unmatched add without claiming a cart write.
-  // Never apply this exception to failed turns or other mutation intents.
-  const unmatchedAdd = result.status === 'completed' && ((intent === 'ADD_ITEM' && options.handoff?.status === 'unmatched') || intent === 'ADD_ONLY')
+  // An owned return-menu question also pauses an unmatched add after a real
+  // absence receipt. It is not a failed mutation or proof of a cart write.
+  const unmatchedAdd = (result.status === 'completed' || (result.status === 'waiting' && question?.purpose === 'menu-return-invitation'))
+    && ((intent === 'ADD_ITEM' && options.handoff?.status === 'unmatched') || intent === 'ADD_ONLY')
     && result.requestedTools.every(name => ['menu_get', 'kiosk_session_history'].includes(name))
     && options.menu.hasUnmatchedQuery(options.sourceUtterance ?? '')
   if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal && !unmatchedAdd) {
@@ -230,9 +272,14 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   }
   // A later owned question supersedes earlier browse/fuzzy prompts, while
   // independent factual read receipts remain available for compound requests.
-  const readReply = options.menu.hasReceipts() ? options.menu.reply({ omitGuidance: Boolean(question) || options.menu.hasOperation(intent) }) : ''
+  const readReply = (options.menu.hasReceipts() || (options.priceInquiry && options.menu.hasOperation('ADD_ITEM'))) ? options.menu.reply({ omitGuidance: Boolean(question) || options.menu.hasOperation(intent), omitPurchasedItems: options.menu.hasOperation('ADD_ITEM'), priceInquiry: options.priceInquiry }) : ''
   const acceptedOperations = options.menu.operationReply()
-  const outcome = acceptedOperations && readReply ? `${acceptedOperations} ${readReply}` : options.menu.operationReply(options.outcome) ?? (readReply || undefined)
+  // The callback fallback can still contain a previous lookup's browse prompt.
+  // Prefer the structured read with superseded questions removed; only actual
+  // accepted operation receipts may precede it. Raw fallback is last resort.
+  const outcome = acceptedOperations
+    ? [acceptedOperations, readReply].filter(Boolean).join(' ')
+    : readReply || options.outcome
   const receiptReply = replyFromOperation(readReply, outcome, question)
   if (result.status === 'waiting')
     return question && receiptReply ? { role: 'assistant', content: receiptReply } : { role: 'error', content: options.failureMessage }
@@ -247,11 +294,13 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     // A display-required request still needs a presentation receipt. Only an
     // application-owned clarification or limitation may stop without claiming a menu result.
     if (information && (!options.requireMenuRead || information.kind === 'clarification' || isServiceLimitationReply(information)))
-      return { role: 'assistant' as const, content: information.content }
+      return { role: 'assistant' as const, content: information.content, ...(information.kind === 'staff-assistance' ? { kind: information.kind } : {}) }
   }
   if (options.requireMenuRead && !receiptReply)
     return unresolved
-  if (!receiptReply && !commerceAttempted && !options.requireMenuRead && !options.serviceReply)
+  // A completed typed service selection with no attempted operation may
+  // need clarification, but has no uncertain order effect to lock the screen.
+  if (!receiptReply && !commerceAttempted && ((!options.requireMenuRead && !options.serviceReply) || Boolean(options.context && result.reply)))
     return unresolved
   if (!receiptReply && (commerceAttempted || options.requireMenuRead) && !options.menu.hasReceipts())
     return unresolved
@@ -259,24 +308,37 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   return content ? { role: 'assistant' as const, content, ...(!question && options.menu.needsClarification() ? { clarification: true as const } : {}) } : { role: 'error' as const, content: options.failureMessage }
 }
 
-/** Retains host invitation history for this order; service questions always take foreground priority. */
+/** Retains host invitations and the exact passive question displaced by their presentation. */
 export function createInvitationWindow() {
   let pending: PresentedQuestion | undefined
+  let displacedQuestionId: string | undefined
   const records = new Map<string, { question: PresentedQuestion, status: 'pending' | 'answered' | 'superseded' }>()
   return {
-    present(question: PresentedQuestion) {
-      if (question.purpose !== 'recommendation-invitation')
+    present(question: PresentedQuestion, previousQuestionId?: string) {
+      if (!['recommendation-invitation', 'menu-return-invitation'].includes(question.purpose))
         return
       if (pending)
         records.set(pending.questionId, { question: pending, status: 'superseded' })
       pending = question
+      displacedQuestionId = previousQuestionId
       records.set(question.questionId, { question, status: 'pending' })
     },
     decisionState(state: KioskDecisionState | undefined, now: number) {
-      if (!state || state.phase !== 'ordering' || state.waitingFor || state.activeRequest || !pending)
+      const previous = state?.waitingFor
+      // Only the exact older passive navigation question may be displaced.
+      // A newly presented question, unfinished meal or operation confirmation wins.
+      const displaced = previous && previous.questionId === displacedQuestionId && ['cart-review', 'checkout-entry'].includes(previous.purpose)
+      if (!state || state.phase !== 'ordering' || (previous && !displaced) || state.serviceClarification || state.activeRequest || !pending)
         return state
       // Idle expires a per-decision answer ticket, not the unanswered invitation.
-      return { ...state, waitingFor: { ...pending, expiresAt: now + 30000 } }
+      return {
+        ...state,
+        waitingFor: { ...pending, expiresAt: now + 30000 },
+        // The Host owns this read-only invitation. Carry its answer scope into
+        // the existing Main fallback too, so a weak Jev result cannot lose the
+        // latest question and revert to an older product lookup.
+        intentRecovery: { kind: 'answer' as const, questionId: pending.questionId, candidateIds: pending.choices.map(choice => choice.id) },
+      }
     },
     resolve(decision: Pick<KioskInteractionDecision, 'answeredQuestionId' | 'supersededQuestionId'>) {
       if (!pending)
@@ -290,10 +352,19 @@ export function createInvitationWindow() {
         return // A stale decision cannot consume a newer invitation.
       records.set(pending.questionId, { question: pending, status })
       pending = undefined
+      displacedQuestionId = undefined
+    },
+    /** A newer service question retires this navigation invitation without erasing history. */
+    supersede() {
+      if (pending)
+        records.set(pending.questionId, { question: pending, status: 'superseded' })
+      pending = undefined
+      displacedQuestionId = undefined
     },
     history: () => [...records.values()],
     reset() {
       pending = undefined
+      displacedQuestionId = undefined
       records.clear()
     },
   }
@@ -428,9 +499,14 @@ export function createServiceClarificationWindow() {
       }
       return active
     },
-    present(question: ServiceClarification) { active = { ...question } },
+    present(question: ServiceClarification, state?: Parameters<typeof serviceContextKey>[0]) {
+      // Server scope may include a Host-only navigation invitation. Bind the
+      // new foreground service question to the Menu snapshot used on the next
+      // request, so the retired invitation cannot invalidate or steal its answer.
+      active = { ...question, ...(state ? { contextKey: serviceContextKey(state) } : {}) }
+    },
     current(state: Parameters<typeof serviceContextKey>[0]) {
-      if (active && (active.expiresAt <= Date.now() || active.contextKey !== serviceContextKey(state)))
+      if (active && (active.contextKey !== serviceContextKey(state)))
         active = undefined
       return active
     },

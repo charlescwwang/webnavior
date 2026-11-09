@@ -84,7 +84,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
   let weakChoice = false
   let invalidChoice = false
   const live = input.decisionState?.waitingFor
-  const question = live && live.expiresAt > Date.now() ? live : undefined
+  const question = live
   const state = JSON.stringify({
     customerUtterance: transcript.normalized,
     serviceMode: input.decisionState?.serviceMode,
@@ -120,7 +120,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
   })
   const finish = (result: KioskInteractionDecision): KioskInteractionDecision => ({
     ...result,
-    ...(question?.purpose === 'recommendation-invitation' && !result.answeredQuestionId
+    ...(question && ['recommendation-invitation', 'menu-return-invitation'].includes(question.purpose) && !result.answeredQuestionId
       && (result.kind === 'FAST_ACTION' || (result.kind === 'NEEDS_ASSISTANT' && ['NEW_REQUEST', 'MENU_QUERY', 'UNCERTAIN_FILTER'].includes(result.reason ?? '')))
       ? { supersededQuestionId: question.questionId }
       : {}),
@@ -174,12 +174,12 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       throw error
     }
   }
-  async function completeMenuNavigation(candidate: KioskActionCandidate) {
+  async function completeMenuNavigation(candidate: KioskActionCandidate, answeredQuestionId?: string) {
     // Safe display is not proof of correct purpose: ordering every member of a
     // set must not collapse into merely displaying that set. Reuse a bounded
     // semantic check without treating navigation as order-mutation consent.
     const coverage = await choose('readCoverage', { type: 'choice', instructions: `核對本句完整需求是否僅由這個唯讀畫面效果完成：${descriptions[candidate.id] ?? candidate.description}。訂購集合中每款餐點不等於顯示集合，取消已點餐點也不等於離開畫面；如有這些其他目的須交接完整需求。`, criteria: { COMPLETE: '整句只要求這個瀏覽／返回效果，沒有未處理的購買、刪除或其他需求。', HANDOFF: '這個展示效果不能完成整句；還要求訂購、修改，或是另一個目的。', UNCERTAIN: '不能確認這個展示效果足夠。' } })
-    return coverage === 'COMPLETE' ? finish({ kind: 'FAST_ACTION', actionId: candidate.id }) : handoff('NEW_REQUEST')
+    return coverage === 'COMPLETE' ? finish({ kind: 'FAST_ACTION', actionId: candidate.id, ...(answeredQuestionId ? { answeredQuestionId } : {}) }) : handoff('NEW_REQUEST')
   }
   async function leaf(eligible: readonly KioskActionCandidate[], answeredQuestionId?: string): Promise<KioskInteractionDecision> {
     // Do not prune to the first N entries: a missing correct option is not a
@@ -195,7 +195,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     if (!candidate)
       return handoff()
     if (['intent:return-menu', 'intent:search-all-menu'].includes(candidate.id))
-      return await completeMenuNavigation(candidate)
+      return await completeMenuNavigation(candidate, answeredQuestionId)
     if (candidate.id === 'DECLINE_INVITATION')
       return finish({ kind: 'IGNORE', answeredQuestionId })
     const changesOrder = !candidate.id.endsWith(':unit-guidance') && !/^intent:(?:search-(?:all-)?menu|select-item|recommend(?:-more)?|show-recommendations|view-cart|return-menu|scroll-menu:)/u.test(candidate.id)
@@ -259,7 +259,7 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     // Recheck the current speaker/request before interpreting a service answer.
     // The review owns its relation to this cue, not an older Menu operation.
     const cue = input.decisionState?.serviceClarification
-    if (cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(input.decisionState!))
+    if (cue && cue.contextKey === serviceContextKey(input.decisionState!))
       return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } })
     if (input.decisionState?.activeRequest) {
       const relation = await choose('requestRelation', { type: 'choice', instructions: '只判斷本句與進行中需求的關係，不規劃如何中斷或執行。', criteria: { FOLLOW_UP: '補充、更正或詢問同一個仍在處理的需求。', NEW_REQUEST: '獨立的新服務需求。', UNCERTAIN: '不能確認是否同一需求。' } })
@@ -287,6 +287,17 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
       if (phone === 'SKIP' && skip)
         return finish({ kind: 'FAST_ACTION', actionId: skip.id, ...(question?.purpose === 'customer-entry' ? { answeredQuestionId: question.questionId } : {}) })
       return handoff()
+    }
+    // A presented navigation/recommendation invitation supplies a bounded read
+    // question. Use the existing finite answer checkpoint directly; classifying
+    // a bare assent as a fresh general-purpose request loses this correlation.
+    // HANDOFF remains available for a new or compound demand, and this question
+    // never offers a cart/checkout effect.
+    if (question && ['recommendation-invitation', 'menu-return-invitation'].includes(question.purpose) && input.decisionState?.phase === 'ordering'
+      && !input.decisionState.activeRequest && question.choices.some(choice => input.candidates.some(candidate => candidate.id === choice.id))) {
+      const effect = question.purpose === 'recommendation-invitation' ? 'intent:recommend' : 'intent:return-menu'
+      const answers = question.choices.filter(choice => (choice.id === effect && input.candidates.some(candidate => candidate.id === effect)) || choice.id === 'DECLINE_INVITATION')
+      return await leaf(answers, question.questionId)
     }
     // Custom policy affects semantic interpretation only after service
     // admission. The program-owned question and candidate contract remain last.

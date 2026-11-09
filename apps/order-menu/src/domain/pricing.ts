@@ -51,28 +51,9 @@ export function filterPrices<T extends { price: number }>(items: readonly T[], c
   return conditions.priceOrder === 'ASC' ? matches.sort((a, b) => a.price - b.price) : matches
 }
 
-/** An Agent may narrow verified task bounds, never replace or relax them. */
-export function intersectPrices(verified: PriceConditions, supplied: PriceConditions): PriceConditions {
-  const result: PriceConditions = { ...verified }
-  for (const bound of ['minPrice', 'maxPrice'] as const) {
-    const exclusive = bound === 'minPrice' ? 'minPriceExclusive' : 'maxPriceExclusive'
-    const value = supplied[bound]
-    const current = result[bound]
-    if (value === undefined)
-      continue
-    if (current === undefined || (bound === 'minPrice' ? value > current : value < current)) {
-      result[bound] = value
-      delete result[exclusive]
-      if (supplied[exclusive])
-        result[exclusive] = true
-    }
-    else if (value === current && supplied[exclusive]) {
-      result[exclusive] = true
-    }
-  }
-  if (!result.priceOrder && supplied.priceOrder)
-    result.priceOrder = supplied.priceOrder
-  return priceConditions({ ...result })
+/** Verified customer bounds own the whole price group, including inclusive edges. */
+export function resolvePrices(verified: PriceConditions, supplied: PriceConditions): PriceConditions {
+  return priceConditions(Object.keys(verified).length ? { ...verified } : { ...supplied })
 }
 
 /** Stable customer-facing labels also serve batch-state descriptions, not spoken prices. */
@@ -192,11 +173,32 @@ export function priceEvidence(transcript: string): PriceEvidence | undefined {
     }
     if (amounts.length === 1) {
       const amount = amounts[0]!.amount
-      add('UPPER_INCLUSIVE', { maxPrice: amount })
-      add('UPPER_EXCLUSIVE', { maxPrice: amount, maxPriceExclusive: true })
-      add('LOWER_INCLUSIVE', { minPrice: amount })
-      add('LOWER_EXCLUSIVE', { minPrice: amount, minPriceExclusive: true })
-      add('EXACT', { minPrice: amount, maxPrice: amount })
+      // Literal comparison operators constrain numeric interpretations, not
+      // intent: INFORMATION/NONE/UNSUPPORTED remain available to Jev. Without
+      // an unambiguous operator keep all interpretations for semantic judgment.
+      const numeral = '[0-9零〇一二兩两三四五六七八九十百千萬万億亿]+'
+      const suffix = `${numeral}(?:\\s*[元塊块])?\\s*`
+      const comparisons = [
+        ['UPPER_INCLUSIVE', new RegExp(`${suffix}(?:以下|以內|以内)|(?:不超過|不超过|至多|最多)\\s*${numeral}`)],
+        ['UPPER_EXCLUSIVE', new RegExp(`(?:低於|低于|不到|少於|少于)\\s*${numeral}`)],
+        ['LOWER_INCLUSIVE', new RegExp(`${suffix}以上|(?:至少|最少)\\s*${numeral}`)],
+        ['LOWER_EXCLUSIVE', new RegExp(`(?:高於|高于|超過|超过|大於|大于)\\s*${numeral}`)],
+        ['EXACT', new RegExp(`(?:剛好|刚好|正好|等於|等于)\\s*${numeral}`)],
+      ] as const
+      const explicit = comparisons.filter(([, pattern]) => pattern.test(transcript))
+      const negated = /不是|並非|并非|不低於|不低于|不高於|不高于/.test(transcript)
+      const boundary = !negated && explicit.length === 1 ? explicit[0]![0] : undefined
+      const interpretations: Array<[string, PriceConditions]> = [
+        ['UPPER_INCLUSIVE', { maxPrice: amount }],
+        ['UPPER_EXCLUSIVE', { maxPrice: amount, maxPriceExclusive: true }],
+        ['LOWER_INCLUSIVE', { minPrice: amount }],
+        ['LOWER_EXCLUSIVE', { minPrice: amount, minPriceExclusive: true }],
+        ['EXACT', { minPrice: amount, maxPrice: amount }],
+      ]
+      for (const [id, conditions] of interpretations) {
+        if (!boundary || boundary === id)
+          add(id, conditions)
+      }
     }
     if (amounts.length === 2 && amounts[0]!.amount <= amounts[1]!.amount) {
       add('RANGE', { minPrice: amounts[0]!.amount, maxPrice: amounts[1]!.amount })

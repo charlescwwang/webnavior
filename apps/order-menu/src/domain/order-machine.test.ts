@@ -1058,10 +1058,11 @@ describe('createMenuToolRuntime', () => {
       items: Array<{ id: string, name: string }>
     }
     expect(shrimpRollSearch.items).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'fish-floss-minced-pork-rice-set', name: '魚鬆肉燥飯套餐' }),
       expect.objectContaining({ id: 'chous-shrimp-roll', name: '蝦捲' }),
       expect.objectContaining({ id: 'tofu-skin-shrimp-roll', name: '豆皮鮮蝦捲' }),
     ]))
+
+    expect(shrimpRollSearch.items).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: 'fish-floss-minced-pork-rice-set' })]))
 
     const multipleDishSearch = await runtime.invoke('menu_get', { queries: ['水餃', '擔仔麵'] }) as {
       items: Array<{ id: string, name: string }>
@@ -1130,17 +1131,17 @@ describe('createMenuToolRuntime', () => {
     await expect(runtime.invoke('menu_get', { query: '蝦捲' })).resolves.toMatchObject({
       presentation: {
         kind: 'query-results',
-        itemIds: ['fish-floss-minced-pork-rice-set', 'chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+        itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
         title: '與「蝦捲」相關的餐點',
       },
     })
 
     expect(presentations).toEqual([{
       kind: 'query-results',
-      itemIds: ['fish-floss-minced-pork-rice-set', 'chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+      itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
       subjects: [{
         id: 'query:蝦捲',
-        itemIds: ['fish-floss-minced-pork-rice-set', 'chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
+        itemIds: ['chous-shrimp-roll', 'tofu-skin-shrimp-roll'],
         label: '蝦捲',
       }],
       title: '與「蝦捲」相關的餐點',

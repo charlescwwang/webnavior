@@ -1,7 +1,7 @@
 import { parse, safeParse } from 'valibot'
 import { expect, it } from 'vitest'
 
-import { contextReplySchema, conversationContextSchema, conversationRequestSchema, formatOrderingPrice, intentRecoverySchema, normalizeOrderingPrices, replyFromContext } from './kioskConversation'
+import { contextReplySchema, conversationContextSchema, conversationRequestSchema, formatOrderingPrice, intentRecoverySchema, normalizeOrderingPrices, replyFromContext, serviceContextKey } from './kioskConversation'
 
 const draft = { id: 'draft', itemId: 'meal', status: 'active', options: [], missing: { quantity: true, optionGroupIds: [] }, expectedRevisions: { menu: 1 } }
 
@@ -107,10 +107,10 @@ it('regression K1107-STAFF renders only an offered and current simulated assista
   expect(replyFromContext('{"kind":"staff-assistance","action":"offer"}', context)?.content).toBe('這項要求需要服務人員確認，需要幫您呼叫嗎？')
   expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', context)).toBeUndefined()
   const current = parse(conversationContextSchema, { ...context, staffAssistance: { questionId: 'staff-question', expiresAt: Date.now() + 30000 } })
-  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', current)?.content).toBe('已經呼叫工作人員，您想先看看哪道餐點？')
+  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', current)?.content).toBe('已通知服務人員，您可以繼續點餐。接下來想點哪道餐點？')
   expect(replyFromContext('{"kind":"staff-assistance","action":"decline"}', current)?.content).toBe('好的，接下來想點什麼餐點？')
   const expired = parse(conversationContextSchema, { ...current, staffAssistance: { questionId: 'staff-question', expiresAt: Date.now() - 1 } })
-  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', expired)).toBeUndefined()
+  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', expired)?.content).toBe('已通知服務人員，您可以繼續點餐。接下來想點哪道餐點？')
   expect(current.constraints.excludeIngredients).toEqual(['pork'])
 })
 
@@ -154,10 +154,11 @@ it.each([
 })
 
 // Report: this chat, Nov7 — a single-item explanation should lead into ordering.
-it.each(['available', 'sold-out', 'unknown'] as const)('offers quantity guidance only for a single available exact item: %s', (availability) => {
+it.each(['available', 'sold-out', 'unknown'] as const)('keeps catalog-only guidance open without inventing a quantity ticket: %s', (availability) => {
   const context = parse(conversationContextSchema, { contextId: 'intro', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], catalog: { complete: true, itemCount: 1, items: [{ id: 'meal', name: '餐點', aliases: [], category: '便當', price: 80, availability, optionGroups: [] }] } })
   const reply = replyFromContext(JSON.stringify({ kind: 'menu-information', subjects: ['餐點'] }), context)!
-  expect(reply.content.includes('要點幾份')).toBe(availability === 'available')
+  expect(reply.content).not.toContain('要點幾份')
+  expect(reply.content).toContain('您想查詢哪道餐點')
   expect(reply).not.toHaveProperty('action')
   expect(replyFromContext(JSON.stringify({ kind: 'menu-information', subjects: ['其他餐點'] }), context)?.content).not.toContain('要點幾份')
 })
@@ -180,9 +181,9 @@ it('requires separate current intent and staff consent before presenting a simul
   expect(render('offer', confirmed)?.content).toContain('份數上限')
   expect(render('accept', confirmed)).toBeUndefined()
   expect(render('decline', confirmed)?.content).toContain('接下來想點什麼餐點')
-  expect(render('offer', { ...confirmed, orderAssistance: { questionId: 'expired', expiresAt: Date.now() - 1 } })).toBeUndefined()
+  expect(render('offer', { ...confirmed, orderAssistance: { questionId: 'expired', expiresAt: Date.now() - 1 } })?.content).toContain('需要幫您通知服務人員嗎')
   const invited = { ...context, staffAssistance: { questionId: 'staff', expiresAt: Date.now() + 30000 } }
-  expect(render('accept', invited)?.content).toBe('已經呼叫工作人員，您想先看看哪道餐點？')
+  expect(render('accept', invited)?.content).toBe('已通知服務人員，您可以繼續點餐。接下來想點哪道餐點？')
   expect(render('accept', invited)).not.toHaveProperty('operation')
 })
 
@@ -236,4 +237,36 @@ it('answers the old merchant delivery and made-to-order policies from its own su
   expect(replyFromContext('{"kind":"service-information","topic":"order-timing"}', context)?.content).toContain('只提供現做餐點，不接受預約')
   expect(replyFromContext('{"kind":"service-information","topic":"delivery"}', { ...context, merchant: { id: 'other', paymentPolicy: 'unknown' } })?.content).not.toContain('無法安排外送')
   expect(replyFromContext('{"kind":"service-information","topic":"order-timing"}', { ...context, merchant: { id: 'other', paymentPolicy: 'unknown' } })?.content).not.toContain('只提供現做')
+})
+
+// Report: this chat, Nov08 — freshness must cover alternate query and seating paths.
+it.each(['menu', 'cart', 'checkout', 'selectedItem', 'recommendation', 'seating'] as const)('invalidates service context after a %s revision change', (field) => {
+  const state = { phase: 'ordering', revisions: { menu: 1, cart: 2, checkout: 3, selectedItem: 4, recommendation: 5, seating: 6 } }
+  const changed = { ...state, revisions: { ...state.revisions, [field]: state.revisions[field] + 1 } }
+  expect(serviceContextKey(changed)).not.toBe(serviceContextKey(state))
+})
+
+// Report: this chat Nov09 — wall-clock expiry changed a still-current question's correlation key.
+it('keeps question correlation stable across silence and changes it on question or order replacement', () => {
+  const state = { phase: 'ordering', revisions: { menu: 1, cart: 1, selectedItem: 0, checkout: 0 }, waitingFor: { questionId: 'question', expiresAt: 30000 } }
+  expect(serviceContextKey(state, 1000)).toBe(serviceContextKey(state, 120000))
+  expect(serviceContextKey({ ...state, waitingFor: { questionId: 'replacement', expiresAt: 30000 } }, 120000)).not.toBe(serviceContextKey(state, 120000))
+  expect(serviceContextKey({ ...state, revisions: { ...state.revisions, cart: 2 } }, 120000)).not.toBe(serviceContextKey(state, 120000))
+})
+
+// Report: this chat Nov09 — missing promotion data must offer staff, not reject the service topic.
+it('offers nonblocking simulated staff assistance for unavailable promotions', () => {
+  const context = parse(conversationContextSchema, { contextId: 'promotion', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'ordering', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] })
+  const offer = replyFromContext('{"kind":"service-information","topic":"promotions"}', context)
+  expect(offer).toMatchObject({ kind: 'staff-assistance', action: 'offer' })
+  expect(offer?.content).toContain('需要幫您呼叫嗎？')
+  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', { ...context, staffAssistance: { questionId: 'promotion', expiresAt: 1 } })?.content).toContain('已通知服務人員')
+  expect(replyFromContext('{"kind":"staff-assistance","action":"accept"}', context)).toBeUndefined()
+})
+
+it('keeps a current meal question after a consented simulated staff notification', () => {
+  const context = parse(conversationContextSchema, { contextId: 'staff-resume', capturedAt: 1, entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, phase: 'configuration', revisions: { menu: 0, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [], staffAssistance: { questionId: 'offer', expiresAt: 1 }, waitingFor: { questionId: 'quantity', purpose: 'item-configuration', question: '請問水餃要幾份？', expiresAt: 1, choices: [] } })
+  const reply = replyFromContext('{"kind":"staff-assistance","action":"accept"}', context)!
+  expect(reply.content).toBe('已通知服務人員，您可以繼續點餐。請問水餃要幾份？')
+  expect(reply).not.toHaveProperty('operation')
 })

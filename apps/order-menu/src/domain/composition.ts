@@ -72,6 +72,7 @@ export function mentionedIngredients(transcript: string) {
 }
 
 const unavailableConditionDefinitions = [
+  { id: 'food-safety', label: '食品安全與衛生查證（菜單不提供檢驗或安全保證）', aliases: ['食安', '食品安全', '食物安全', '衛生', '食材檢驗'] },
   { id: 'preparation', label: '製作調整（依各餐點實際客製選項）', aliases: ['蔥', '香菜', '蒜'] },
   { id: 'spice', label: '辣度或製作調整（依餐點選項；沒有全面不辣保證）', aliases: ['辣'] },
   { id: 'sodium', label: '鈉含量（沒有營養數據）', aliases: ['鈉', '鹽分'] },

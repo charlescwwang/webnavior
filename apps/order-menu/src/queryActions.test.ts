@@ -16,22 +16,22 @@ describe('explicit conversational query actions', () => {
   it('clarifies without consuming a batch, presenting dishes or changing the cart', async () => {
     const context = await runtime.invoke('kiosk_fast_path_context')
     const result = await runtime.invokeForAgent('menu_recommend', { action: 'clarify' })
-    expect(result).toMatchObject({ queryAction: 'clarify', customerMessage: expect.stringContaining('哪一道餐點？'), items: [] })
+    expect(result).toMatchObject({ queryAction: 'clarify', customerMessage: expect.stringContaining('要回到全部菜單看看嗎？'), items: [] })
     expect(result).not.toHaveProperty('pendingCustomerChoice')
     expect(await runtime.invoke('kiosk_fast_path_context')).toMatchObject({ revisions: (context as { revisions: unknown }).revisions })
     expect(present).toHaveBeenCalledTimes(1)
     expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
   })
 
-  it('replaces this price group and retains category, dietary limits and shown history', async () => {
-    expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 150, excludeShown: true })).toMatchObject({ appliedPriceConditions: { maxPrice: 150 }, appliedFilters: { dietary: 'vegetarian' }, items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
+  it('replaces the positive condition set while retaining dietary limits and shown history', async () => {
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 150, excludeShown: true })).toMatchObject({ appliedPriceConditions: { maxPrice: 150 }, appliedFilters: { dietary: 'vegetarian' }, items: [{ id: 'dish-3' }, { id: 'dish-4' }, { id: 'dish-5' }] })
   })
 
   it('includes already displayed matches in a plain condition update and keeps bounds explicit', async () => {
     const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 150 })
     expect(result).toMatchObject({ appliedPriceConditions: { maxPrice: 150 }, items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }] })
     expect(result).not.toHaveProperty('queryState.prices.minPrice')
-    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue' })).toMatchObject({ items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue' })).toMatchObject({ items: [{ id: 'dish-3' }, { id: 'dish-4' }, { id: 'dish-5' }] })
   })
 
   // Report: Nov1 C05-A2/C06-F3: Main restates the retained restriction.
@@ -41,8 +41,8 @@ describe('explicit conversational query actions', () => {
     await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', excludeIngredients: ['egg'] })).rejects.toThrow('continue cannot change')
   })
 
-  it('clears only the requested price group', async () => {
-    expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', clear: ['price'], excludeShown: true })).toMatchObject({ appliedPriceConditions: {}, appliedFilters: { dietary: 'vegetarian' }, items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
+  it('starts a new positive set when clearing price while keeping dietary limits', async () => {
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', clear: ['price'], excludeShown: true })).toMatchObject({ appliedPriceConditions: {}, appliedFilters: { dietary: 'vegetarian' }, items: [{ id: 'dish-3' }, { id: 'dish-4' }, { id: 'dish-5' }] })
   })
 
   it('resets browsing bounds while retaining dietary limits, shown history and the cart', async () => {
@@ -59,7 +59,7 @@ describe('explicit conversational query actions', () => {
   // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct31 live replay.
   it('checks repeated continuation prices against retained conditions without changing them', async () => {
     await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 150 })
-    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 150, limit: 3 })).toMatchObject({ queryAction: 'continue', appliedPriceConditions: { maxPrice: 150 }, items: [{ id: 'dish-3' }, { id: 'dish-4' }] })
+    expect(await runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 150, limit: 3 })).toMatchObject({ queryAction: 'continue', appliedPriceConditions: { maxPrice: 150 }, items: [{ id: 'dish-3' }, { id: 'dish-4' }, { id: 'dish-5' }] })
     await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: 151 })).rejects.toThrow('continue')
     await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', minPrice: 0 })).rejects.toThrow('continue')
     await expect(runtime.invokeForAgent('menu_recommend', { action: 'continue', maxPrice: '150' })).rejects.toThrow()
@@ -127,7 +127,7 @@ it('reverses a previous fish preference without clearing other exclusions or the
   ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['egg'], maxPrice: 200 })
   const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', excludeIngredients: ['fish'] })
-  expect(result).toMatchObject({ appliedFilters: { includeIngredients: [], excludeIngredients: ['egg', 'fish'] }, appliedPriceConditions: { maxPrice: 200 }, items: [{ id: 'chicken' }] })
+  expect(result).toMatchObject({ appliedFilters: { includeIngredients: [], excludeIngredients: ['egg', 'fish'] }, appliedPriceConditions: {}, items: [{ id: 'chicken' }] })
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
   // A fresh include must never silently release a prior allergy/exclusion.
   const conflict = await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['egg'] })
@@ -135,7 +135,7 @@ it('reverses a previous fish preference without clearing other exclusions or the
 })
 
 // Report: this chat, 2026-11-07, session ggUmSdBBOnjiRPKu06-uR.
-it('can explicitly withdraw an inclusion preference while retaining allergy exclusions, prices and the cart', async () => {
+it('can withdraw an inclusion preference while retaining allergy exclusions and the cart', async () => {
   const presentations: string[][] = []
   const runtime = createMenuToolRuntime({ menu: [
     { ...menu[0]!, id: 'fish', name: '魚便當', price: 140, category: '便當', composition: { ingredients: ['fish'], complete: true, source: 'merchant', revision: '1', removals: [] } },
@@ -144,7 +144,7 @@ it('can explicitly withdraw an inclusion preference while retaining allergy excl
   ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: p => presentations.push(p.itemIds) })
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['egg'], maxPrice: 150 })
   const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', clear: ['includeIngredients'], category: '便當' })
-  expect(result).toMatchObject({ appliedFilters: { includeIngredients: [], excludeIngredients: ['egg'] }, appliedPriceConditions: { maxPrice: 150 }, items: [{ id: 'fish' }, { id: 'chicken' }] })
+  expect(result).toMatchObject({ appliedFilters: { includeIngredients: [], excludeIngredients: ['egg'] }, appliedPriceConditions: {}, items: [{ id: 'fish' }, { id: 'chicken' }] })
   expect(presentations.at(-1)).toEqual(['fish', 'chicken'])
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })
@@ -155,7 +155,7 @@ it('guides quantity entry only for one available exact meal without adding it', 
     { ...menu[0]!, id: 'available', name: '可點餐點', available: true, aliases: [] },
     { ...menu[0]!, id: 'sold-out', name: '售完餐點', available: false, aliases: [] },
   ], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
-  expect(await runtime.invoke('menu_get', { query: '可點餐點', display: false })).toHaveProperty('customerMessage', expect.stringContaining('要點幾份'))
+  expect(await runtime.invoke('menu_get', { query: '可點餐點', display: false })).not.toHaveProperty('customerMessage', expect.stringContaining('要點幾份'))
   expect(await runtime.invoke('menu_get', { query: '售完餐點', display: false })).toHaveProperty('customerMessage', expect.not.stringContaining('要點幾份'))
   expect(await runtime.invoke('menu_get', { queries: ['可點餐點', '售完餐點'], display: false })).toHaveProperty('customerMessage', expect.not.stringContaining('要點幾份'))
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)

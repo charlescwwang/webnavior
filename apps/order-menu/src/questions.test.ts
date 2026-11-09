@@ -28,6 +28,10 @@ describe('action-bound customer questions', () => {
     expect(serviceContextKey(current)).toBe(serviceContextKey(decision))
     expect(current.revisions).toBeDefined()
     expect(decision.revisions).toBeDefined()
+    const conversation = await runtime.invoke('kiosk_conversation_context') as { phase: string, waitingFor?: { questionId: string }, revisions: unknown }
+    expect(conversation.phase).toBe(current.phase)
+    expect(conversation.revisions).toEqual(current.revisions)
+    expect(conversation.waitingFor?.questionId).toBe((current as { waitingFor?: { questionId: string } }).waitingFor?.questionId)
   })
 
   // Report: this conversation — local SLM completed correct add routes at 16s,
@@ -143,7 +147,7 @@ describe('action-bound customer questions', () => {
     finally { vi.useRealTimers() }
   })
 
-  it('retains the same unanswered need after cart edits without reviving the old execution ticket', async () => {
+  it('revokes old answer authority after cart edits while retaining the unmet checkout question', async () => {
     const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     const offered = await runtime.invoke('order_set_fulfillment', { mode: 'takeout' }) as { pendingCustomerChoice: { questionId: string, question: string } }
@@ -151,7 +155,9 @@ describe('action-bound customer questions', () => {
     await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:start-checkout' })).rejects.toThrow()
-    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })).toMatchObject({ waitingFor: { purpose: 'checkout-entry' } })
+    const refreshed = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as { waitingFor: { questionId: string, purpose: string } }
+    expect(refreshed.waitingFor.purpose).toBe('checkout-entry')
+    expect(refreshed.waitingFor.questionId).not.toBe(offered.pendingCustomerChoice.questionId)
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 2 } })
   })
 
@@ -164,7 +170,7 @@ describe('action-bound customer questions', () => {
       const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:clear-cart' }) as { pendingConfirmation: { confirmationId: string } }
       vi.setSystemTime(Date.now() + 55_000)
       await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: `intent:confirm:${result.pendingConfirmation.confirmationId}` })).rejects.toThrow('expired')
-      expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '確認' })).not.toMatchObject({ phase: 'pending_confirmation' })
+      expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '確認' })).toMatchObject({ phase: 'pending_confirmation' })
       expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
     }
     finally { vi.useRealTimers() }
@@ -258,33 +264,34 @@ describe('action-bound customer questions', () => {
       const result = await runtime.invoke('order_set_fulfillment', { mode: 'takeout' }) as { pendingCustomerChoice: { questionId: string } }
       await runtime.invoke('kiosk_dialogue_presented', { content: '準備結帳？', questionId: result.pendingCustomerChoice.questionId })
       await runtime.invoke('kiosk_fast_path_context', { transcript: '不要' })
-      vi.advanceTimersByTime(30_000)
+      vi.advanceTimersByTime(120_000)
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ waitingFor: { purpose: 'checkout-entry' } })
       await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:defer-question' })).rejects.toThrow('expired')
       const resumed = await runtime.invoke('kiosk_fast_path_context', { transcript: '不要' })
       expect(resumed).toMatchObject({ waitingFor: { purpose: 'checkout-entry', question: expect.stringContaining('結帳') } })
-      expect(resumed).not.toMatchObject({ waitingFor: { questionId: result.pendingCustomerChoice.questionId } })
+      expect(resumed).toMatchObject({ waitingFor: { questionId: result.pendingCustomerChoice.questionId } })
       expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:defer-question' })).toMatchObject({ customerMessage: expect.stringContaining('保留目前訂單') })
       expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })).toMatchObject({ waitingFor: { purpose: 'checkout-entry' } })
     }
     finally { vi.useRealTimers() }
   })
 
-  it('never renews an expired question that the host did not actually present', async () => {
+  it('does not activate an offered question across silence before the host presents it', async () => {
     vi.useFakeTimers()
     try {
       const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
       const result = await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' }) as { pendingCustomerChoice: { questionId: string } }
       vi.setSystemTime(Date.now() + 55_000)
-      expect(await runtime.invoke('kiosk_question_validate', { questionId: result.pendingCustomerChoice.questionId })).toEqual({})
-      await runtime.invoke('kiosk_dialogue_presented', { content: '內用還是自取？', questionId: result.pendingCustomerChoice.questionId })
       expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })).not.toHaveProperty('waitingFor')
+      expect(await runtime.invoke('kiosk_question_validate', { questionId: result.pendingCustomerChoice.questionId })).toHaveProperty('pendingCustomerChoice.questionId', result.pendingCustomerChoice.questionId)
+      await runtime.invoke('kiosk_dialogue_presented', { content: '內用還是自取？', questionId: result.pendingCustomerChoice.questionId })
+      expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '對' })).toHaveProperty('waitingFor.questionId', result.pendingCustomerChoice.questionId)
       expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1 } })
     }
     finally { vi.useRealTimers() }
   })
 
-  it('lets a new meal request retain the unanswered checkout question, while a bare agreement cannot create a meal', async () => {
+  it('retains the unmet checkout question after a new meal without bare assent creating a meal', async () => {
     const runtime = createMenuToolRuntime({ menu: [...menu, { id: 'dumplings', name: '水餃', description: '十顆一份', price: 60, imageUrl: '', category: '點心', recommendationTags: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
     await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
     const result = await runtime.invoke('order_set_fulfillment', { mode: 'takeout' }) as { pendingCustomerChoice: { questionId: string } }
@@ -294,7 +301,7 @@ describe('action-bound customer questions', () => {
     const added = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' }) as { cart: { lines: Array<{ name: string, quantity: number }> } }
     expect(added.cart.lines).toContainEqual(expect.objectContaining({ name: '水餃', quantity: 2 }))
     const resumed = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as { candidates: Array<{ id: string }> }
-    expect(resumed).toMatchObject({ waitingFor: { purpose: 'checkout-entry' } })
+    expect(resumed).toHaveProperty('waitingFor.purpose', 'checkout-entry')
     expect(resumed.candidates.map(candidate => candidate.id)).not.toContain('intent:add-item')
   })
 
@@ -425,4 +432,64 @@ it('offers checkout only after the Menu domain has a ready checkout effect', asy
   expect(pending.allowedToolNames).not.toContain('checkout_start')
   await runtime.invoke('order_set_fulfillment', { mode: 'takeout' })
   expect(await runtime.invoke('kiosk_conversation_context')).toHaveProperty('allowedToolNames', expect.arrayContaining(['checkout_start']))
+})
+
+// Report: DEV-810280 — successful table additions need review guidance, not direct submission consent.
+it('offers review after adding, and only offers submission after the review is actually displayed', async () => {
+  let screen: 'menu' | 'cart_review' = 'menu'
+  let submitted = 0
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, optionGroups: [] }], screen: () => screen, serviceContext: () => ({ id: 'test-table', serviceMode: 'table-service', table: { id: 'A1', label: 'A1' }, directSubmissionSupported: true }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {
+    screen = 'menu'
+  }, onReviewRequested: () => {
+    screen = 'cart_review'
+  }, gateway: { submit: async () => {
+    submitted++
+    throw new Error('Must not submit')
+  } } })
+  const added = await runtime.invoke('order_add_item', { itemId: menu[0]!.id, quantity: 1 }) as { pendingCustomerChoice: { questionId: string, question: string, choices: Array<{ id: string }> } }
+  expect(added.pendingCustomerChoice).toHaveProperty('purpose', 'cart-review')
+  expect(added.pendingCustomerChoice.choices.map(choice => choice.id)).toEqual(['intent:view-cart'])
+  await runtime.invoke('kiosk_dialogue_presented', { content: added.pendingCustomerChoice.question, questionId: added.pendingCustomerChoice.questionId })
+  await runtime.invoke('kiosk_fast_path_context', { transcript: '好' })
+  const review = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:view-cart' })
+  expect(screen).toBe('cart_review')
+  expect(review).toHaveProperty('pendingCustomerChoice.purpose', 'checkout-entry')
+  await runtime.invoke('menu_open')
+  expect(screen).toBe('menu')
+  expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor.purpose', 'checkout-entry')
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+  expect(submitted).toBe(0)
+})
+
+it('retires an unanswered table review invitation when the customer returns to selection', async () => {
+  const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, optionGroups: [] }], serviceContext: () => ({ id: 'test-table', serviceMode: 'table-service', table: { id: 'A1', label: 'A1' }, directSubmissionSupported: true }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onReviewRequested: () => {} })
+  const added = await runtime.invoke('order_add_item', { itemId: menu[0]!.id, quantity: 1 }) as { pendingCustomerChoice: { questionId: string, question: string } }
+  await runtime.invoke('kiosk_dialogue_presented', { content: added.pendingCustomerChoice.question, questionId: added.pendingCustomerChoice.questionId })
+  expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('waitingFor.purpose', 'cart-review')
+  await runtime.invoke('menu_open')
+  expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor')
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+})
+
+// Report: this chat Nov09 — waiting for a customer is separate from executing an old tool ticket.
+it('keeps a presented clear-cart question across silence but requires a fresh one-use answer ticket', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll' })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '清空訂單' })
+    const proposal = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:clear-cart' }) as { pendingCustomerChoice: { questionId: string, question: string } }
+    const question = proposal.pendingCustomerChoice
+    await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    vi.advanceTimersByTime(120000)
+    expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('waitingFor.questionId', question.questionId)
+    const candidateId = `intent:confirm:${question.questionId}`
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId })).rejects.toThrow('expired')
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '好' })).toHaveProperty('waitingFor.questionId', question.questionId)
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId })
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId })).rejects.toThrow()
+  }
+  finally { vi.useRealTimers() }
 })

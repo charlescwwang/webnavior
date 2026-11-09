@@ -57,7 +57,7 @@ describe('recommendation batches', () => {
     const runtime = createMenuToolRuntime({ menu: dishes, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: result => presentations.push(result.itemIds) })
     for (const transcript of ['有賣什麼？', '我要看全部', '再看全部']) {
       await runtime.invoke('kiosk_fast_path_context', { transcript })
-      const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:search-menu' })
+      const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: transcript === '有賣什麼？' ? 'intent:search-menu' : 'intent:search-all-menu' })
       expect(result).toMatchObject({ items: dishes.map(item => ({ id: item.id })), presentation: { kind: 'query-results', itemIds: dishes.map(item => item.id) }, decisionTrace: { operationPlan: { toolName: 'menu_get', input: { scope: 'catalog', display: true } } } })
     }
     expect(presentations).toHaveLength(3)

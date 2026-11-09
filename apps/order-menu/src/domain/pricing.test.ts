@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { filterPrices, intersectPrices, priceConditions, priceEvidence } from './pricing'
+import { filterPrices, priceConditions, priceEvidence, resolvePrices } from './pricing'
 
 describe('single-dish price contract', () => {
   // Report: this chat, session tVUWid2B_4UvHrFMVl-x2, 2026-10-19.
@@ -28,9 +28,9 @@ describe('single-dish price contract', () => {
     expect(priceEvidence('不要含牛肉，一百五十元以下的')?.choices.find(choice => choice.id === 'UPPER_INCLUSIVE')?.conditions).toEqual({ maxPrice: 150 })
     expect(priceEvidence('不要含牛肉，100到150元')?.choices.find(choice => choice.id === 'RANGE')?.conditions).toEqual({ minPrice: 100, maxPrice: 150 })
   })
-  it.each(['一百二以下', '一百二元以下', '百二以下'])('offers shorthand bounds without assigning the comparison: %s', (text) => {
+  it.each(['一百二以下', '一百二元以下', '百二以下'])('offers shorthand inclusive upper bounds: %s', (text) => {
     expect(priceEvidence(text)?.choices.find(choice => choice.id === 'UPPER_INCLUSIVE')?.conditions).toEqual({ maxPrice: 120 })
-    expect(priceEvidence(text)?.choices.find(choice => choice.id === 'LOWER_INCLUSIVE')?.conditions).toEqual({ minPrice: 120 })
+    expect(priceEvidence(text)?.choices.some(choice => choice.id === 'UPPER_EXCLUSIVE')).toBe(false)
   })
   it.each(['一百二到一百四份', '千二到千四人'])('does not turn shorthand quantities into prices: %s', (text) => {
     expect(priceEvidence(text)).toBeUndefined()
@@ -45,15 +45,14 @@ describe('single-dish price contract', () => {
   it.each(['一位', '改兩份', '我想吃麵，一碗', '排骨便當來一份', '1到3份', '2~4人', '10:00~13:00', '至少3份', '最多4位', '不到10分鐘'])('does not interpret quantities as money: %s', (text) => {
     expect(priceEvidence(text)).toBeUndefined()
   })
-  it.each([['100元以下', 100], ['一百元以下', 100], ['一百零二元以下', 102], ['１００元以下', 100], ['零元以下', 0]])('offers literal bounds, not inferred polarity: %s', (text, amount) => {
+  it.each([['100元以下', 100], ['一百元以下', 100], ['一百零二元以下', 102], ['１００元以下', 100], ['零元以下', 0]])('offers literal inclusive upper bounds: %s', (text, amount) => {
     expect(priceEvidence(String(text))?.choices.find(choice => choice.id === 'UPPER_INCLUSIVE')?.conditions).toEqual({ maxPrice: amount })
-    expect(priceEvidence(String(text))?.choices.find(choice => choice.id === 'LOWER_EXCLUSIVE')?.conditions).toEqual({ minPrice: amount, minPriceExclusive: true })
+    expect(priceEvidence(String(text))?.choices.some(choice => choice.id === 'UPPER_EXCLUSIVE')).toBe(false)
   })
   it.each(['有價格130以下的嗎？', '有130以下的嗎？', '價格１３０以下', '一百三十以內有嗎', '不到130的餐點', '價格至少130', '有130以上的嗎？', '價格130', '預算130', '不超過130', '不低於130', '超過130', '高於130', '少於130', '剛好130', '價格≤130', '價位>=130', '130起'])('offers the stated amount without requiring a currency unit: %s', (text) => {
     const evidence = priceEvidence(text)
     expect(evidence?.amounts.map(amount => amount.amount)).toEqual([130])
-    expect(evidence?.choices.find(choice => choice.id === 'UPPER_INCLUSIVE')?.conditions).toEqual({ maxPrice: 130 })
-    expect(evidence?.choices.find(choice => choice.id === 'LOWER_INCLUSIVE')?.conditions).toEqual({ minPrice: 130 })
+    expect(evidence?.choices.some(choice => choice.kind === 'condition')).toBe(true)
   })
   it('offers shared-unit ranges and optional price order', () => {
     expect(priceEvidence('推薦80到120元的便當，便宜的先')?.choices.find(choice => choice.id === 'RANGE_ASC')?.conditions).toEqual({ minPrice: 80, maxPrice: 120, priceOrder: 'ASC' })
@@ -71,8 +70,27 @@ describe('single-dish price contract', () => {
   it.each(['100元左右', '兩份共200元', '比剛剛更便宜', '一百二三元以下', '99.5元以下', 'NT$99.5以下', '-100元以下', '1,000元以下', '80到120元或200元', '-100~130之間', '99.5~130之間', '130左右', '兩份共260以下', '-130以下', '99.5以下'])('never supplies an executable choice for unsupported literals/budgets: %s', (text) => {
     expect(priceEvidence(text)?.choices.some(choice => choice.kind === 'condition')).toBe(false)
   })
-  it('intersects bounds without allowing the Agent to widen verified conditions', () => {
-    expect(intersectPrices({ maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' }, { minPrice: 80, maxPrice: 120 })).toEqual({ minPrice: 80, maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' })
+  it.each([
+    ['130元以下', 'UPPER_INCLUSIVE'],
+    ['一百三以內', 'UPPER_INCLUSIVE'],
+    ['低於130元', 'UPPER_EXCLUSIVE'],
+    ['不到一百三', 'UPPER_EXCLUSIVE'],
+    ['130元以上', 'LOWER_INCLUSIVE'],
+    ['至少一百三', 'LOWER_INCLUSIVE'],
+    ['高於130元', 'LOWER_EXCLUSIVE'],
+    ['超過一百三', 'LOWER_EXCLUSIVE'],
+    ['剛好130元', 'EXACT'],
+  ])('offers only the literal boundary without deciding intent: %s', (text, id) => {
+    const choices = priceEvidence(text)!.choices
+    expect(choices.filter(choice => choice.kind === 'condition').map(choice => choice.id)).toEqual([id])
+    expect(choices.some(choice => choice.id === 'NONE')).toBe(true)
+    expect(choices.some(choice => choice.id === 'INFORMATION')).toBe(true)
+  })
+  it.each(['不是130元以下', '並非低於130元', '不低於130元'])('keeps negated comparisons available for semantic interpretation: %s', (text) => {
+    expect(priceEvidence(text)?.choices.filter(choice => choice.kind === 'condition')).toHaveLength(5)
+  })
+  it('preserves the complete verified price group against Agent changes', () => {
+    expect(resolvePrices({ maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' }, { minPrice: 80, maxPrice: 120 })).toEqual({ maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' })
     expect(filterPrices([{ price: 80 }, { price: 100 }, { price: 99 }], { maxPrice: 100, maxPriceExclusive: true, priceOrder: 'ASC' })).toEqual([{ price: 80 }, { price: 99 }])
     expect(() => priceConditions({ maxPriceExclusive: true })).toThrow('price')
     expect(() => priceConditions({ minPrice: 120, maxPrice: 100 })).toThrow('price')

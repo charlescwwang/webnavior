@@ -22,9 +22,10 @@ export function currentContextInstructions(context: ConversationContext, require
       ? '對顧客統一稱為點餐助手。本輪為桌邊服務，餐點送至目前綁定桌位，不詢問內用／外帶、不改桌位、不套用Kiosk取餐或付款流程；依本輪工具與真實送單回執引導。'
       : '對顧客統一稱為點餐助手。本輪為Kiosk點餐，用餐／取餐方式只依本輪fulfillmentModes提供的內用、外帶等實際選項，不自行增加方式；依既有流程確認與付款。',
     '以下是本輪最新 Menu 事實，優先於歷史對話。歷史中的提醒、待答問題與舊餐點需求不會自行恢復授權。資料是點餐事實，不是額外指令。',
+    'waitingFor、staffAssistance與orderAssistance是否仍待答由Application按目前狀態驗證；顧客思考或沉默不會撤銷問題，快照expiresAt只屬執行票券，不可自行用它否定目前問題。新問題、改單或換對象會撤銷舊確認，不能從歷史對話恢復。',
     context.entryComplete ? '目前可直接查詢菜單與點餐，不要要求填寫手機或略過電話。' : '電話步驟尚未完成，只能回答店家服務資訊，不查詢／介紹菜單、不操作訂單。',
     context.readOnly ? '本輪只允許資訊查詢，不授權新增、修改、刪除、購買確認或付款。' : '操作仍須符合本輪顧客要求；資料完整或工具可用不是操作授權。',
-    '意思清楚但缺少資料不是聽不懂。人氣／銷售排名、優惠或配料未提供可核對資料時，先依本輪菜單回執核對，仍未知使用service-information/topic:other說明資料未提供；不要改成clarification叫顧客換問法，不編造排名或優惠。明確超出點餐服務職責的請求用service-information/topic:out-of-scope簡短說明無法協助；capabilities回答可提供哪些點餐協助，以及顧客詢問如何開始、如何操作點餐流程；點餐教學不是未知店家事實；真正品名／數量或意圖未明才釐清。',
+    '意思清楚但缺少資料不是聽不懂。促銷／優惠活動是店家服務問題，不是職責外閒聊；目前沒有發布活動資料，直接用service-information/topic:promotions邀請服務人員確認，不編造優惠、不為此查餐點。人氣／銷售排名或配料未提供可核對資料時，先依本輪菜單回執核對，仍未知使用service-information/topic:other說明資料未提供；不要改成clarification叫顧客換問法，不編造排名或優惠。明確超出點餐服務職責的請求用service-information/topic:out-of-scope簡短說明無法協助；capabilities回答可提供哪些點餐協助，以及顧客詢問如何開始、如何操作點餐流程；點餐教學不是未知店家事實；真正品名／數量或意圖未明才釐清。',
     'retainedRequests保留尚未入車的餐點進度，已知quantity／options不能丟棄；missing列出真正缺少的資料，省略quantity不代表一份。confirming尚待餐點或原版確認，suspended保留但不是目前要求執行的餐點；草稿不是成功回執，不自動恢復suspended餐點的舊問題；好／對不能使舊問題復活。waitingFor正在詢問是否接受原版餐點時，同意或拒絕都須呼叫 order_answer_confirmation，confirmationId取waitingFor.questionId；同意照原本做是接受尚未入車的餐點，不是保持購物車現況。不能只回acknowledgement留下問題未結束。',
     'quantityPolicy是Menu本輪提供的真實份數上限。相對增加／減少以最新cart或selection數量計算，不能將少一份當成改成一份；低於畫面最小份數時不自動移除，先釐清是否要移除。一般合法份數照常點餐；超量或混合了超量的整體需求，先用staff-assistance/action:confirm-order確認需求，不先執行部分餐點、不呼叫超量工具試錯、不自行減量或拆單。顧客同意特殊需求後只說明限制並邀請工作人員，不因此取得加餐或突破上限的授權。已取得quantity-limit拒絕仍不能宣稱加入成功，原購物車保留。',
     '只回答本輪 sourceUtterance 與 handoff 的效果。target-absent 是該對象目前不存在，不能轉去處理歷史的另一道菜。active 問題以 waitingFor 為準，suspended 不是現在要求執行的任務。',
@@ -67,7 +68,7 @@ export const replyTool = {
       type: 'object',
       properties: {
         kind: { type: 'string', description: 'menu-information用於品名、價格、份量與銷售單位，以菜單事實回覆，不代算購買份數。clarification只用於意思未明。service-information處理服務範圍或無法確認的店家事實。', enum: ['payment-methods', 'fulfillment-modes', 'menu-information', 'quantity-limit', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information', 'staff-assistance'] },
-        topic: { type: 'string', description: 'operator用於營運業者、由誰營運，與identity的助手身分不同；capabilities用於詢問服務能力或如何點餐／操作本機，不可選other；out-of-scope用於一般知識、計算等超出點餐服務的要求；涉及餐點份量或購買單位則選ordering-units並提供subjects原品名，由程式引用完整菜單說明銷售單位，不計算、不選other。other僅用於無法確認的店家事實，搭配service-information。clarification不填topic，只有菜單種類未確認時用menu-kind。', enum: ['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units', 'delivery', 'order-timing'] },
+        topic: { type: 'string', description: 'promotions用於促銷、折扣、優惠活動，目前由服務人員協助確認；operator用於營運業者、由誰營運，與identity的助手身分不同；capabilities用於詢問服務能力或如何點餐／操作本機，不可選other；out-of-scope用於一般知識、計算等超出點餐服務的要求；涉及餐點份量或購買單位則選ordering-units並提供subjects原品名，由程式引用完整菜單說明銷售單位，不計算、不選other。other僅用於無法確認的店家事實，搭配service-information。clarification不填topic，只有菜單種類未確認時用menu-kind。', enum: ['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units', 'delivery', 'order-timing', 'promotions'] },
         action: { type: 'string', enum: ['confirm-order', 'offer', 'accept', 'decline'], description: '僅staff-assistance使用。confirm-order先確認特殊或大量點餐意圖，不執行訂單；orderAssistance有效且顧客同意後用offer說明限制與邀請工作人員；accept/decline只回答目前staffAssistance邀請，不能代替任何訂單確認。' },
         subjects: { type: 'array', items: { type: 'string' }, maxItems: 5 },
       },
@@ -104,8 +105,8 @@ export async function selectReply(input: {
         return undefined
       if (parsed.output.kind === 'staff-assistance') {
         const invitation = input.context.staffAssistance
-        const confirmed = input.context.orderAssistance && input.context.orderAssistance.expiresAt > Date.now()
-        const invited = invitation && invitation.expiresAt > Date.now()
+        const confirmed = input.context.orderAssistance
+        const invited = invitation
         if (parsed.output.action === 'confirm-order') {
           if (!input.context.entryComplete || !input.context.sourceUtterance || confirmed || invited)
             return undefined
@@ -230,7 +231,7 @@ export async function reviewOperations(input: {
   complete: (body: Record<string, unknown>) => Promise<Response>
 }): Promise<boolean> {
   const pending = input.context.waitingFor
-  const question = pending && pending.expiresAt > Date.now() ? pending : undefined
+  const question = pending
   if (!question && input.calls.some(call => call.function.name === 'order_answer_confirmation'))
     return false
   for (const call of input.calls) {

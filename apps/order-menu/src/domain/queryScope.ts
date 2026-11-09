@@ -43,8 +43,8 @@ export function createQueryScope(input: {
     question,
     get conditions() { return { ...prices, ...filters, includeIngredients: [...filters.includeIngredients], excludeIngredients: [...filters.excludeIngredients] } },
     /** Consumes one qualified choice; unknown replies preserve the question. */
-    resolve(answer: { questionId: string, choice: ScopeChoice, transcript?: string }, current: ScopeRevision, now = Date.now()) {
-      if (consumed || answer.questionId !== questionId || now >= expiresAt || expected.menu !== current.menu || expected.recommendation !== current.recommendation)
+    resolve(answer: { questionId: string, choice: ScopeChoice, transcript?: string }, current: ScopeRevision, _now = Date.now()) {
+      if (consumed || answer.questionId !== questionId || expected.menu !== current.menu || expected.recommendation !== current.recommendation)
         return { status: 'STALE' as const }
       // A complete label or ordinal is already a bounded domain reference.
       // Reuse the existing reference parser so a model cannot reinterpret the

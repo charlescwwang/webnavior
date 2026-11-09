@@ -65,7 +65,10 @@ export function resolveCategories(menu: readonly MenuItem[], transcript: string)
 /** Literal query matching shares merchant aliases with intent resolution; fragments remain discovery only. */
 export function itemMatchesQuery(item: MenuItem, query: string) {
   const normalized = query.toLocaleLowerCase().replace(/\s/g, '')
-  return [item.id, item.name, ...(item.aliases ?? []), item.description, item.category]
+  // A side dish mentioned in a description does not make the whole meal that
+  // product kind (e.g. a bento with soup is not a soup offering). Ingredient
+  // requirements use composition filters; literal discovery uses menu labels.
+  return [item.name, ...(item.aliases ?? []), item.category]
     .some(value => value.toLocaleLowerCase().replace(/\s/g, '').includes(normalized))
 }
 

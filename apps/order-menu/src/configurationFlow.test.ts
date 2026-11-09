@@ -19,6 +19,52 @@ async function configuredCatalog(): Promise<CatalogSnapshot> {
 }
 
 describe('required order configuration', () => {
+  // Report: this chat Nov09, s6ma-FTAYX9AQsBuN4NSo — fish lookup followed by
+  // 就這一道 resumed beef noodles and even offered incompatible-unit guidance.
+  it.each([
+    ['beef-noodle-soup', '紅燒牛肉麵', 'thai-sour-spicy-fish-bento', '泰式酸辣魚便當'],
+    ['dumplings', '水餃', 'fried-pork-chop-bento', '炸排骨便當'],
+  ])('binds the presented lookup question from %s (%s) to %s (%s)', async (oldId, oldName, nextId, nextName) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    // Use actual catalog identities while varying the two roles across cases.
+    expect(catalog.items.some(item => item.id === nextId)).toBe(true)
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: `我要${oldName}` })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    const oldAnswer = await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' }) as { candidates: Array<{ id: string }> }
+    const staleQuantity = oldAnswer.candidates.find(choice => choice.id.includes(':quantity:2'))!
+    expect(staleQuantity).toBeDefined()
+    const read = await runtime.invoke('menu_get', { query: nextName, display: true }) as { pendingCustomerChoice?: { questionId: string, question: string } }
+    expect(read.pendingCustomerChoice).toBeDefined()
+    expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('retainedRequests', expect.arrayContaining([expect.objectContaining({ itemId: oldId })]))
+    const question = read.pendingCustomerChoice!
+    await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('retainedRequests', expect.arrayContaining([expect.objectContaining({ itemId: oldId, status: 'suspended' })]))
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: staleQuantity.id })).rejects.toThrow('STALE_PLAN')
+    const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '就這一道' }) as { phase: string, waitingFor?: { purpose: string }, candidates: Array<{ id: string }> }
+    expect(answer.phase).toBe('ordering')
+    expect(answer.waitingFor?.purpose).toBe('item-order')
+    expect(answer.candidates.some(choice => choice.id.endsWith(':unit-guidance'))).toBe(false)
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    const draft = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    expect(draft).toHaveProperty('customerMessage', expect.stringContaining(nextName))
+    const quantity = await runtime.invoke('kiosk_fast_path_context', { transcript: '一份' }) as { candidates: Array<{ id: string }> }
+    const one = quantity.candidates.find(choice => choice.id.includes(':quantity:1'))!
+    expect(one).toBeDefined()
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: one.id })
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: nextId, quantity: 1 }] } })
+    expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('interactionState.selectedItemName', oldName)
+  })
+
+  it.each(['就這一道', '先不要了，我看有沒有魚', '我是說泰式酸辣魚'])('does not offer a quantity-unit correction for an unrelated answer: %s', async (transcript) => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '我要牛肉麵' })
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    const context = await runtime.invoke('kiosk_fast_path_context', { transcript }) as { candidates: Array<{ id: string }> }
+    expect(context.candidates.some(choice => choice.id.endsWith(':unit-guidance'))).toBe(false)
+  })
+
   // Report: this chat,2026-11-05 — saying 不要了 while asked 幾份 leaves the dialog open.
   it('closes the quantity dialog when cancelling the unadded meal and preserves the cart', async () => {
     const catalog = await configuredCatalog()

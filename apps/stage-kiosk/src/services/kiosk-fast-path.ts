@@ -167,6 +167,7 @@ export async function runFastPath(input: {
   let browserContext: unknown
   let recoveryUsed = false
   let utteranceAccepted = false
+  let staffAnswerResolved = false
   let decisionState: FastPathDecisionState | undefined
   const handoff = async (reason: 'SYSTEM_ONE_DISABLED' | 'PROVIDER_FAILURE', failedDecision?: FastPathDecision): Promise<FastPathResult> => {
     if (input.isCurrent?.() === false)
@@ -209,11 +210,25 @@ export async function runFastPath(input: {
   // Catch only the external decision call. Browser execution errors remain a
   // separate outcome so a lost mutation receipt cannot cause an Agent replay.
   const decide = async (request: Parameters<typeof input.decide>[0]): Promise<FastPathDecision> => {
+    const cue = request.decisionState && input.serviceClarification?.(request.decisionState)
+    if (cue && decisionState)
+      decisionState = { ...decisionState, serviceClarification: cue }
+    // A live staff offer owns a bare yes/no answer. Requalifying it as a
+    // fresh order can turn 好啊 into “arrange this meal”. Keep this handoff
+    // read-only; Main still interprets acceptance/refusal and owns the reply.
+    // Whole-utterance matching excludes compound orders and addressed speech.
+    const staffAnswer = /^(?:[好對是]|好啊|好的|是的|可以|不用|不需要|不要|不用了)[\s，。！？,.!?]*$/u.test(input.transcript.trim())
+    if (cue?.purpose === 'staff-assistance' && !input.activeRequest && staffAnswer
+      && cue.contextKey === serviceContextKey(request.decisionState!)) {
+      if (!utteranceAccepted) {
+        await input.onUtteranceAccepted?.()
+        utteranceAccepted = true
+      }
+      staffAnswerResolved = true
+      return { kind: 'NEEDS_ASSISTANT', reason: 'GENERAL_QUESTION', requestScope: 'service-information', modelCalls: 0, modelQuestions: 0 }
+    }
     let result: FastPathDecision
     try {
-      const cue = request.decisionState && input.serviceClarification?.(request.decisionState)
-      if (cue && decisionState)
-        decisionState = { ...decisionState, serviceClarification: cue }
       result = await input.decide({ ...request, recoveryUsed, ...(cue ? { decisionState: { ...request.decisionState!, serviceClarification: cue } } : {}) })
     }
     catch {
@@ -301,7 +316,7 @@ export async function runFastPath(input: {
       const currentScope = current && !decisionState?.waitingFor && decisionState?.intentRecovery?.kind === 'request'
         ? { ...current, waitingFor: undefined }
         : current
-      if ((decisionState?.waitingFor && decisionState.waitingFor.expiresAt <= Date.now()) || (decisionState?.serviceClarification && decisionState.serviceClarification.expiresAt <= Date.now()) || !current || !currentScope || serviceContextKey(currentScope) !== serviceContextKey(decisionState ?? { phase: 'unknown' }) || input.isCurrent?.() === false)
+      if (!current || !currentScope || serviceContextKey(currentScope) !== serviceContextKey(decisionState ?? { phase: 'unknown' }) || input.isCurrent?.() === false)
         return { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', decisionState }
       if (decision.kind === 'SERVICE_CLARIFICATION')
         decision = { ...decision, question: { ...decision.question, contextKey: serviceContextKey(current) } }
@@ -359,17 +374,17 @@ export async function runFastPath(input: {
     }
     if (decision.kind === 'CONTINUE_INCOMPLETE')
       return { kind: 'UNAVAILABLE', decisionState }
-    const decisionSource = applicationResolved ? 'application' : decision.resolvedBy === 'main-skill' ? 'main-skill' : 'system-one'
+    const decisionSource = applicationResolved || staffAnswerResolved ? 'application' : decision.resolvedBy === 'main-skill' ? 'main-skill' : 'system-one'
     decisionState = resolvedPriceState(decisionState, decision)
     if (decision.reason === 'UNSUPPORTED_PRICE')
       return { kind: 'CLARIFICATION', prompt: priceClarification, decisionState }
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, transcript: input.transcript })
     if (decisionState?.phase === 'clarification' && decision.kind === 'CLARIFICATION') {
       const question = decisionState.waitingFor
-      if (!question || question.expiresAt <= Date.now())
+      if (!question)
         return { kind: 'UNAVAILABLE', decisionState }
       // The server admitted a reply to this kiosk, but no unique target yet.
-      // Keep the owned choices and original deadline; only explicit cancellation
+      // Keep the owned choices and identity; only explicit cancellation
       // may retire this request. Do not turn another question into a cart write.
       return { kind: 'CLARIFICATION', prompt: question.question, question, decisionState }
     }
@@ -594,11 +609,11 @@ function completedReadState(state: FastPathDecisionState | undefined, result: un
 export function refreshConversationState(context: ConversationContext, task?: KioskConversationDecisionState): KioskConversationDecisionState {
   const { excludeIngredients, includeIngredients, dietary, ...price } = context.constraints
   const invitation = task?.serviceClarification
-  if (invitation?.unavailableConditions?.length && invitation.expiresAt > Date.now() && invitation.contextKey === serviceContextKey(context))
+  if (invitation?.unavailableConditions?.length && invitation.contextKey === serviceContextKey(context))
     context = { ...context, unavailableConditions: invitation.unavailableConditions }
-  if (invitation?.purpose === 'order-assistance' && invitation.expiresAt > Date.now() && invitation.contextKey === serviceContextKey(context))
+  if (invitation?.purpose === 'order-assistance' && invitation.contextKey === serviceContextKey(context))
     context = { ...context, orderAssistance: { questionId: invitation.questionId, expiresAt: invitation.expiresAt } }
-  if (invitation?.purpose === 'staff-assistance' && invitation.expiresAt > Date.now() && invitation.contextKey === serviceContextKey(context))
+  if (invitation?.purpose === 'staff-assistance' && invitation.contextKey === serviceContextKey(context))
     context = { ...context, staffAssistance: { questionId: invitation.questionId, expiresAt: invitation.expiresAt } }
   return {
     ...task,
@@ -679,10 +694,12 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
     // transition. Service admission alone never grants browsing authority.
     ...(decision?.reason === 'GENERAL_QUESTION' || serviceAnswer || serviceBoundary ? { serviceReply: true } : {}),
     ...((protectedUncertainty && !requireMenuRead) || serviceBoundary ? { replyOnly: true } : {}),
-    ...(serviceQuestion && (!assistanceQuestion || serviceAnswerAllowed) ? { serviceClarification: serviceQuestion } : {}),
+    ...(serviceQuestion && !qualifiedOperation && (!assistanceQuestion || serviceAnswerAllowed) ? { serviceClarification: serviceQuestion } : {}),
     ...(decision?.handoff ? { handoff: decision.handoff } : {}),
     ...(requireMenuRead ? { requireMenuRead: true } : {}),
-    ...(readOnly || state.readOnly === true ? { readOnly: true } : {}),
+    // A fresh whole-turn operation qualification supersedes a generic
+    // clarification's conservative read scope, not Menu's execution guards.
+    ...(!qualifiedOperation && (readOnly || state.readOnly === true) ? { readOnly: true } : {}),
     ...(state.priceEvidence ? { priceEvidence: state.priceEvidence } : {}),
     ...((state.incompleteSpeech?.related || (uncertainMeaning && state.incompleteSpeech)) ? { incompleteSpeech: state.incompleteSpeech } : {}),
     ...(state.menuRevision !== undefined ? { menuRevision: state.menuRevision } : {}),

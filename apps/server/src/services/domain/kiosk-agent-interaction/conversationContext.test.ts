@@ -200,7 +200,7 @@ it('validates special-order clarification separately from staff-call consent', a
   } })
   expect((await select('offer')).reply).toEqual({ kind: 'staff-assistance', action: 'offer' })
   expect((await select('accept')).reply).toEqual({ kind: 'clarification' })
-  expect((await select('offer', { ...base, orderAssistance: { questionId: 'expired', expiresAt: Date.now() - 1 } })).reply).toEqual({ kind: 'clarification' })
+  expect((await select('offer', { ...base, orderAssistance: { questionId: 'expired', expiresAt: Date.now() - 1 } })).reply).toEqual({ kind: 'staff-assistance', action: 'offer' })
   expect((await select('confirm-order', { ...base, orderAssistance: undefined, entryComplete: false })).reply).toEqual({ kind: 'clarification' })
 })
 
@@ -229,4 +229,23 @@ it('provides the real phase and page-owned tool semantics to operation review', 
   const body = complete.mock.calls[0]![0]
   const messages = body.messages as { content: string }[]
   expect(JSON.parse(messages[1]!.content)).toMatchObject({ phase: context.phase, paymentState: context.paymentState, proposedOperations: [{ name: 'menu_open', description: '回到菜單並保留購物車' }] })
+})
+
+// Report: this chat Nov09 — a visible operation question expired while the customer considered it.
+it('reviews a still-current question after its old answer lease elapsed', async () => {
+  const context = parse(conversationContextSchema, { ...facts, sourceUtterance: '好', waitingFor: { questionId: 'clear', purpose: 'operation-confirmation', question: '清空購物車嗎？', expiresAt: Date.now() - 60000, choices: [] } })
+  const complete = vi.fn(async (_body: Record<string, unknown>) => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: '{"choice":"SUPPORTED"}' } }] } }] }))
+  expect(await reviewOperations({ context, calls: [{ id: 'answer', type: 'function', function: { name: 'order_answer_confirmation', arguments: '{"confirmationId":"clear","confirmedByUser":true}' } }], tools: [], complete })).toBe(true)
+  expect(complete).toHaveBeenCalledOnce()
+})
+
+// Report: this chat Nov09 — promotion inquiry was repeatedly answered as outside service scope.
+it('accepts a promotion staff-offer topic without a speculative menu read or repair', async () => {
+  const complete = vi.fn()
+  const reply = { kind: 'service-information', topic: 'promotions' }
+  const context = parse(conversationContextSchema, { ...facts, sourceUtterance: '你們有促銷活動嗎？' })
+  expect(currentContextInstructions(context)).toContain('service-information/topic:promotions')
+  const selected = await selectReply({ context, requireMenuRead: true, calls: [{ id: 'promotions', type: 'function', function: { name: replyTool.function.name, arguments: JSON.stringify(reply) } }], complete })
+  expect(selected).toEqual({ reply, repaired: false })
+  expect(complete).not.toHaveBeenCalled()
 })

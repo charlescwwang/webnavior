@@ -10,21 +10,27 @@ const catalog: MenuItem[] = [
   { id: 'pork', name: '薑汁燒肉飯', price: 110, ingredient: 'pork' },
 ].map(({ ingredient, ...item }) => ({ ...item, category: '主餐', description: '', imageUrl: '', recommendationTags: [], optionGroups: [], composition: { ingredients: [ingredient, 'rice'], complete: true, source: 'merchant', revision: '1', removals: [] } }))
 
-// Report: this chat Nov7; exhausted guidance must offer real dishes without unsolicited prices.
-it('regression K1107-GUIDE names actual alternatives and synchronizes the cards without changing filters or cart', async () => {
+// Report: this chat Nov09 — declined alternatives repeated with stale filter chips.
+it.each(['fish', 'chicken'])('exhausted %s browsing keeps cards and conditions aligned until explicit menu return', async (ingredient) => {
   const presentations: Array<{ itemIds: string[] }> = []
-  const runtime = createMenuToolRuntime({ menu: catalog, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {}, onRecommendationsChange: value => presentations.push(value) })
-  await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['pork'] })
-  const before = await runtime.invoke('kiosk_conversation_context')
-  const result = await runtime.invokeForAgent('menu_recommend', { action: 'continue' }) as { customerMessage: string, items: MenuItem[] }
-  expect(result.customerMessage).toContain('香烤雞腿飯')
-  expect(result.customerMessage).not.toMatch(/價位|預算|元|別類|種類|其他魚/)
-  expect(result.customerMessage).not.toContain('薑汁燒肉飯')
-  expect(result.items).toEqual([])
-  expect(presentations.at(-1)?.itemIds).toEqual(['chicken'])
-  const after = await runtime.invoke('kiosk_conversation_context')
-  expect(after).toMatchObject({ cart: { itemCount: 0 }, queryState: { filters: { includeIngredients: ['fish'], excludeIngredients: ['pork'] } } })
-  expect(before).toMatchObject({ queryState: { filters: { includeIngredients: ['fish'] } } })
+  const runtime = createMenuToolRuntime({ menu: catalog, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {}, onMenuRequested: () => {}, onRecommendationsChange: value => presentations.push(value) })
+  await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: [ingredient], excludeIngredients: ['pork'], maxPrice: 150 })
+  const before = runtime.getQueryState()
+  for (const action of ['continue', 'clarify', 'continue'] as const) {
+    const result = await runtime.invokeForAgent('menu_recommend', { action })
+    expect(result).toMatchObject({ items: [], customerReply: { nextQuestion: '要回到全部菜單看看嗎？' }, pendingCustomerChoice: { purpose: 'menu-return-invitation' } })
+    expect(result).not.toHaveProperty('presentation.proposedAlternatives')
+    expect(presentations.at(-1)?.itemIds).toEqual([ingredient])
+    expect(runtime.getQueryState()).toEqual(before)
+  }
+  // A direct continuation must not secretly recycle the same batch either.
+  expect(await runtime.invoke('menu_recommend', { more: true })).toMatchObject({ items: [] })
+  expect(presentations.at(-1)?.itemIds).toEqual([ingredient])
+  await runtime.invoke('menu_open')
+  const state = await runtime.invoke('kiosk_conversation_context')
+  expect(state).toMatchObject({ cart: { itemCount: 0 }, queryState: { category: '', queries: [], prices: {}, filters: { includeIngredients: [], excludeIngredients: ['pork'] } } })
+  expect(runtime.getQueryState()?.conditions.map(condition => condition.label)).toEqual(['不含：豬肉'])
+  expect(presentations.at(-1)?.itemIds).toEqual(['fish', 'chicken'])
 })
 
 it('regression K1107-GUIDE asks for a concrete meal and never introduces money when the request is unclear', async () => {
@@ -39,7 +45,7 @@ it('regression K1107-GUIDE does not invent a second fish or repeat sold-out or u
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['pork'] })
   const result = await runtime.invokeForAgent('menu_recommend', { action: 'continue' }) as { customerMessage: string }
   expect(result.customerMessage).not.toMatch(/香烤雞腿飯|薑汁燒肉飯|其他魚|價位|預算/)
-  expect(result.customerMessage).toContain('哪一道餐點？')
+  expect(result.customerMessage).toContain('要回到全部菜單看看嗎？')
 })
 
 // The public touch boundary must share Menu's actual condition state, not reconstruct prose.
@@ -57,12 +63,12 @@ it('regression K1107-FILTER removes only a chosen condition and rejects an obsol
   expect(runtime.getQueryState()).toBeUndefined()
 })
 
-it('regression K1107-FILTER reuses explicit positive-scope replacement while keeping exclusions and budget', async () => {
+it('regression K1107-FILTER replaces positive conditions on a new query while keeping exclusions', async () => {
   const runtime = createMenuToolRuntime({ menu: catalog, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {} })
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['pork'], maxPrice: 150 })
   await runtime.invokeForAgent('menu_recommend', { action: 'update', clear: ['includeIngredients'], includeIngredients: ['chicken'] })
   const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 145 })
-  expect(result).toMatchObject({ queryState: { filters: { includeIngredients: ['chicken'], excludeIngredients: ['pork'] }, prices: { maxPrice: 145 } } })
+  expect(result).toMatchObject({ queryState: { filters: { includeIngredients: [], excludeIngredients: ['pork'] }, prices: { maxPrice: 145 } } })
 })
 
 // Report: this chat Nov7; zero matches and a consumed result batch are different outcomes.
@@ -105,14 +111,14 @@ it('regression K1107-GUIDE keeps data-only continuation off the customer screen'
 })
 
 // Report: DEV-810280 Nov8 — repeated requests for more stayed on the same exhausted alternatives.
-it('cycles recommendations only after exhaustion was explained, without releasing dietary exclusions', async () => {
+it('never recycles an exhausted query implicitly or releases dietary exclusions', async () => {
   const runtime = createMenuToolRuntime({ menu: catalog, onAction: () => {}, onMenuSelection: () => {}, onCartChange: () => {} })
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['pork'] })
   const exhausted = await runtime.invokeForAgent('menu_recommend', { action: 'continue' })
   expect(exhausted).toHaveProperty('queryAction', 'clarify')
   const again = await runtime.invokeForAgent('menu_recommend', { action: 'continue' })
-  expect(again).toHaveProperty('items', [expect.objectContaining({ id: 'fish' })])
-  expect(again).toHaveProperty('appliedFilters', expect.objectContaining({ includeIngredients: ['fish'], excludeIngredients: ['pork'] }))
-  expect(again).toHaveProperty('customerMessage', expect.stringContaining('再列出'))
+  expect(again).toHaveProperty('items', [])
+  expect(await runtime.invoke('kiosk_conversation_context')).toMatchObject({ queryState: { filters: { includeIngredients: ['fish'], excludeIngredients: ['pork'] } } })
+  expect(again).toHaveProperty('customerMessage', expect.stringContaining('要回到全部菜單看看嗎？'))
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
 })

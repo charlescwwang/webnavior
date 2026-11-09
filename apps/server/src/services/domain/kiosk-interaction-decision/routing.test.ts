@@ -24,6 +24,34 @@ function provider(choices: string[], scored = false) {
 }
 
 describe('staged Fast Path routing', () => {
+  // Report: this chat Nov8 — returning on assent consumes that invitation, not an older checkout question.
+  it('retains the answered return invitation ID through the read coverage check', async () => {
+    const invoke = provider(['intent:return-menu', 'COMPLETE'])
+    const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: [{ id: 'intent:return-menu', description: '回到全部菜單' }], decisionState: { phase: 'ordering', waitingFor: { questionId: 'return-1', purpose: 'menu-return-invitation', question: '要回菜單嗎？', expiresAt: Date.now() + 30_000, choices: [{ id: 'intent:return-menu', description: '回菜單，不改訂單。' }, { id: 'DECLINE_INVITATION', description: '保留。' }] } }, transcript: '好', invoke })
+    expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:return-menu', answeredQuestionId: 'return-1' })
+    expect(result).not.toHaveProperty('supersededQuestionId')
+    expect(invoke).toHaveBeenCalledTimes(2)
+  })
+
+  // Report: this chat Nov8 — a bare assent after returning to the menu lost the recommendation invitation.
+  it.each(['intent:recommend', 'DECLINE_INVITATION', 'HANDOFF'])('uses only the current invitation effects: %s', async (choice) => {
+    const invoke = provider([choice])
+    const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: [...candidates, { id: 'intent:recommend', description: '推薦' }], decisionState: { phase: 'ordering', waitingFor: createRecommendationInvitation('current-invitation', Date.now()) }, transcript: choice === 'HANDOFF' ? '改水餃兩份' : choice === 'DECLINE_INVITATION' ? '不用' : '好', invoke })
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(Object.keys(invoke.mock.calls[0]![1].operation!.criteria!)).toEqual(['intent:recommend', 'DECLINE_INVITATION', 'HANDOFF'])
+    if (choice === 'intent:recommend') {
+      expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: 'intent:recommend', answeredQuestionId: 'current-invitation' })
+    }
+    else if (choice === 'DECLINE_INVITATION') {
+      expect(result).toMatchObject({ kind: 'IGNORE', answeredQuestionId: 'current-invitation' })
+    }
+    else {
+      expect(result.kind).toBe('NEEDS_ASSISTANT')
+      expect(result).not.toHaveProperty('answeredQuestionId')
+      expect(result).not.toHaveProperty('actionId')
+    }
+  })
+
   // Report: this chat Nov8 — full-menu lookup was incorrectly sent through the order-write consent gate.
   it('treats full-menu lookup as a read without an order-mutation permission question', async () => {
     const invoke = provider(['SINGLE', 'MENU', 'intent:search-all-menu', 'COMPLETE'])
@@ -89,14 +117,13 @@ describe('staged Fast Path routing', () => {
     expect(result).not.toHaveProperty('actionId')
   })
 
-  it('binds an answer to the exact live question and rejects an expired answer', async () => {
+  it('binds an answer to the exact current question irrespective of silence', async () => {
     const question = { questionId: 'ticket-1', purpose: 'confirm-action', question: '確定清空嗎？', expiresAt: Date.now() + 30_000, choices: [{ id: 'confirm:ticket-1', description: '明確同意清空' }] }
     const input = { routing: 'staged' as const, backgroundSpeechMode: 'enforce' as const, policy, candidates: [{ id: 'confirm:ticket-1', description: '明確同意清空' }], transcript: '對', decisionState: { phase: 'pending_confirmation', waitingFor: question } }
     const answer = await decideInteraction({ ...input, invoke: provider(['SERVICE', 'ANSWER', 'confirm:ticket-1', 'OPERATION', 'SINGLE']) })
     expect(answer).toMatchObject({ kind: 'FAST_ACTION', actionId: 'confirm:ticket-1', answeredQuestionId: 'ticket-1' })
-    const expired = await decideInteraction({ ...input, decisionState: { ...input.decisionState, waitingFor: { ...question, expiresAt: Date.now() - 1 } }, invoke: provider(['SERVICE', 'ANSWER']) })
-    expect(expired).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION' })
-    expect(expired).not.toHaveProperty('actionId')
+    const delayed = await decideInteraction({ ...input, decisionState: { ...input.decisionState, waitingFor: { ...question, expiresAt: Date.now() - 60000 } }, invoke: provider(['SERVICE', 'ANSWER', 'confirm:ticket-1', 'OPERATION', 'SINGLE']) })
+    expect(delayed).toMatchObject({ kind: 'FAST_ACTION', actionId: 'confirm:ticket-1', answeredQuestionId: 'ticket-1' })
   })
 
   it('retains all candidates and hands off an oversized group instead of truncating', async () => {

@@ -73,28 +73,42 @@ export function describeConditions(query: QueryConditions, menu: readonly MenuIt
   return result
 }
 
-/** Removes exactly the clicked condition using existing explicit update/clear semantics. */
+/** Removes the clicked condition and submits the complete remaining query. */
 export function removeCondition(query: QueryConditions, target: QueryCondition): Record<string, unknown> {
-  const action = 'update'
+  // A touch removes one chip from the current query, unlike a new spoken
+  // preference. Submit every remaining positive group under the same update
+  // contract instead of depending on implicit retention in the Agent wrapper.
+  const current = {
+    action: 'update',
+    ...(target.group !== 'price' ? query.prices : {}),
+    ...(target.group !== 'category' && query.category ? { category: query.category } : {}),
+    ...(target.group !== 'query' && query.queries.length ? { queries: [...query.queries] } : {}),
+    ...(target.group !== 'needs' && query.needs.length ? { needs: [...query.needs] } : {}),
+    ...(target.group !== 'strategy' && query.strategy ? { strategy: query.strategy } : {}),
+    ...(target.group !== 'dietary' && query.filters.dietary ? { dietary: query.filters.dietary } : {}),
+    includeIngredients: [...query.filters.includeIngredients],
+    excludeIngredients: [...query.filters.excludeIngredients],
+    excludeItemIds: [...query.excludedItemIds],
+  }
   switch (target.group) {
     case 'includeIngredients':
-      return { action, clear: ['includeIngredients'], includeIngredients: query.filters.includeIngredients.filter(value => value !== target.value) }
+      return { ...current, clear: ['includeIngredients'], includeIngredients: query.filters.includeIngredients.filter(value => value !== target.value) }
     case 'excludeIngredients':
-      return { action, clear: ['ingredients'], includeIngredients: query.filters.includeIngredients, excludeIngredients: query.filters.excludeIngredients.filter(value => value !== target.value) }
+      return { ...current, clear: ['ingredients'], includeIngredients: query.filters.includeIngredients, excludeIngredients: query.filters.excludeIngredients.filter(value => value !== target.value) }
     case 'query': {
       const queries = query.queries.filter(value => value !== target.value)
-      return { action, clear: ['query'], ...(queries.length ? { queries } : {}) }
+      return { ...current, clear: ['query'], ...(queries.length ? { queries } : {}) }
     }
     case 'excludedItems':
-      return { action, clear: ['excludedItems'], excludeItemIds: query.excludedItemIds.filter(value => value !== target.value) }
+      return { ...current, clear: ['excludedItems'], excludeItemIds: query.excludedItemIds.filter(value => value !== target.value) }
     case 'needs': {
       const needs = query.needs.filter(value => value !== target.value)
-      return { action, clear: ['needs'], ...(needs.length ? { needs } : {}) }
+      return { ...current, clear: ['needs'], ...(needs.length ? { needs } : {}) }
     }
     // Removing a dietary label never silently releases existing food exclusions.
     // Those remain visible and require their own explicit customer removal.
     default:
-      return { action, clear: [target.group] }
+      return { ...current, clear: [target.group] }
   }
 }
 
@@ -104,4 +118,14 @@ export function describeGuidance(reason: 'unclear' | 'empty' | 'exhausted', cand
   const prefix = reason === 'exhausted' ? copy.exhausted : reason === 'empty' ? copy.empty : ''
   const names = candidates.slice(0, 2).map(item => `「${item.name}」`).join('或')
   return { facts: prefix, nextQuestion: names ? (candidates.length === 1 ? copy.chooseSingle : copy.choose).replace('{items}', names) : copy.clarify }
+}
+
+/** Speaks a compact page independently from the full visible lookup results. */
+export function describeIntroduction(items: readonly Pick<MenuItem, 'name'>[], offset: number): CustomerReply {
+  const copy = orderingMessages['zh-Hant'].menuIntroduction
+  const page = items.slice(offset, offset + 3)
+  return {
+    facts: (offset === 0 ? copy.first : copy.next).replace('{count}', String(items.length)).replace('{items}', page.map(item => item.name).join('、')),
+    nextQuestion: offset + page.length < items.length ? copy.more : orderingMessages['zh-Hant'].recommendationQuestion,
+  }
 }

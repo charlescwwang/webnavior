@@ -22,6 +22,10 @@ export interface MenuOptionGroup {
   id: string
   label: string
   required: boolean
+  /** Page-owned confirmation step shown before serving count; never sent as a POS field. */
+  confirmationPrompt?: string
+  /** The supplier's ordered 0–100 piece options render as adjacent quantity steps. */
+  presentation?: 'piece-counter'
   values: MenuOptionValue[]
 }
 

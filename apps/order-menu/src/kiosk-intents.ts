@@ -1,4 +1,4 @@
-import type { ConversationQuestion, ConversationRequest, IntentRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ConversationQuestion, ConversationRequest, DecisionRevisions, IntentRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { ServiceMode } from '@proj-airi/stage-shared/kiosk-service-mode'
 
 import type { PaymentMethod } from '../../order-menu-server/src/domain/contracts'
@@ -29,7 +29,8 @@ export type KioskIntent
     | 'SET_OPTION' | 'SET_QUANTITY' | 'SET_TAX_ID' | 'SHOW_RECOMMENDATIONS'
     | 'SKIP_CUSTOMER_ENTRY' | 'SKIP_MEMBERSHIP' | 'START_CHECKOUT' | 'VIEW_CART' | 'SET_PARTY_SIZE' | 'RESERVE_TABLES' | 'DEFER_QUESTION' | 'RETURN_MENU'
 
-export interface KioskRevisions { cart: number, checkout: number, menu?: number, selectedItem: number, seating?: number, recommendation?: number }
+/** Menu execution tickets share the same owner versions as Host and HTTP decisions. */
+export type KioskRevisions = DecisionRevisions
 export interface DomainReference { label: string, refId: string }
 /** Catalog growth must not enlarge or silently truncate model target choices. */
 export const targetReferenceLimit = 5
@@ -90,7 +91,7 @@ export interface DecisionContext extends KioskIntentContext {
   ingredientReferences: Array<{ id: string, label: string }>
   dietaryReferences: Array<{ id: 'vegetarian', label: string }>
   unavailableConditionReferences: Array<{ id: string, label: string }>
-  interactionState: { cartItemCount?: number, lastAddedItemName?: string, matchingCartLines: number, selectedItemName?: string, seating?: { partySize?: number, ready: boolean, question: string } }
+  interactionState: { screen?: string, cartItemCount?: number, lastAddedItemName?: string, matchingCartLines: number, selectedItemName?: string, seating?: { partySize?: number, ready: boolean, question: string } }
   phase: KioskPhase
   references: DomainReference[]
 }
@@ -110,17 +111,18 @@ export interface DomainPlan {
 /** A question actually presented by the application, independent from recent subject focus. */
 export interface PendingQuestion {
   questionId: string
-  purpose: 'customer-entry' | 'fulfillment' | 'party-size' | 'tables' | 'checkout-entry' | 'membership' | 'invoice' | 'tax-id' | 'payment-method'
+  purpose: 'cart-review' | 'item-order' | 'customer-entry' | 'fulfillment' | 'party-size' | 'tables' | 'checkout-entry' | 'membership' | 'invoice' | 'tax-id' | 'payment-method'
   phase: KioskPhase
   choices: IntentCandidate[]
   expectedRevisions: Partial<KioskRevisions>
+  /** Answer-window snapshot; question lifetime is governed by relevant revisions. */
   expiresAt: number
   question: string
 }
 
 /** Only relevant state changes invalidate a question; silence never authorizes an action. */
-export function questionIsCurrent(question: PendingQuestion, revisions: KioskRevisions, now: number) {
-  return question.expiresAt > now && Object.entries(question.expectedRevisions).every(([key, value]) => revisions[key as keyof KioskRevisions] === value)
+export function questionIsCurrent(question: PendingQuestion, revisions: KioskRevisions, _now: number) {
+  return Object.entries(question.expectedRevisions).every(([key, value]) => revisions[key as keyof KioskRevisions] === value)
 }
 
 export type KioskOperationToolName
@@ -158,6 +160,7 @@ export interface PendingConfirmation {
   confirmationId: string
   consumedAt?: number
   createdAt: number
+  /** Original offer window; the runtime owns each answer execution deadline separately. */
   expiresAt: number
   payload: Record<string, string | number>
   selectedItemRevision?: number
@@ -167,11 +170,10 @@ export function createConfirmation(input: Omit<PendingConfirmation, 'consumedAt'
   return input
 }
 
+/** Validates identity, state and one-use consumption; callers also enforce the issued answer deadline. */
 export function validateConfirmation(confirmation: PendingConfirmation, input: { action?: PendingConfirmation['action'], cartRevision?: number, checkoutRevision?: number, now: number, payload?: PendingConfirmation['payload'], selectedItemRevision?: number }) {
   if (confirmation.consumedAt !== undefined)
     return { kind: 'INVALID' as const, reason: 'CONSUMED' as const }
-  if (input.now > confirmation.expiresAt)
-    return { kind: 'INVALID' as const, reason: 'EXPIRED' as const }
   if (confirmation.cartRevision !== undefined && confirmation.cartRevision !== input.cartRevision)
     return { kind: 'INVALID' as const, reason: 'STALE' as const }
   if (confirmation.checkoutRevision !== undefined && confirmation.checkoutRevision !== input.checkoutRevision)
@@ -301,7 +303,7 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   }
   else if (!checkout) {
     if (input.menuReturnSupported)
-      candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到全部菜單／主畫面繼續看；目前僅展示推薦而不想再看、不要推薦時也返回全部菜單。關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空或刪除餐點。'))
+      candidates.push(candidate('RETURN_MENU', 'intent:return-menu', '回到全部菜單／主畫面繼續看；表示要繼續加點但尚未指定餐點，也先返回選餐，不猜餐點或份數。目前僅展示推薦而不想再看、不要推薦時也返回全部菜單。關閉購物車或餐點設定畫面；保留購物車，不開始結帳、不清空或刪除餐點。'))
     // Target resolution is independent of intent selection: Jev receives one
     // candidate per operation, never one per product or cart line.
     candidates.push(candidate('SEARCH_MENU', 'intent:search-menu', '查詢餐點／分類的種類、款式、有哪些選擇、有幾種、有沒有，以及價格、成分／飲食條件。詢問已知品名有哪些款式也是查詢，商品唯一也不等於訂購。只說想吃某分類而未指定數量，是瀏覽分類，即使分類只有一道菜也不等於訂購。沒有既有瀏覽條件時，泛問販售內容可展示完整菜單；已有條件時沿用條件找其他，明確要全部則選查看完整菜單的獨立候選；指定品名、分類及食材／單份價格條件仍精確查詢，不新增訂單。'))
@@ -410,7 +412,24 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
   // qualify a compound request; this only removes the incompatible shortcut.
   const newFulfillmentReference = input.cart.lines.length > 0 && input.waitingFor?.purpose !== 'fulfillment'
     && input.fulfillmentModes?.some(mode => transcript.includes(mode.label)) === true
-  const waiting = input.waitingFor?.phase === phase && !newFulfillmentReference ? input.waitingFor : undefined
+  const invitationItemId = input.waitingFor?.purpose === 'item-order' ? input.waitingFor.choices.find(choice => choice.intent === 'ADD_ITEM')?.slots?.itemId : undefined
+  const newMealTopic = typeof invitationItemId === 'string' && (possibleItems.length > 0 || categoryRefs.length > 0 || ingredientReferences.length > 0 || dietaryReferences.length > 0 || currentItems.some(item => item.id !== invitationItemId))
+  const waiting = input.waitingFor?.phase === phase && !newFulfillmentReference && !newMealTopic ? input.waitingFor : undefined
+  if (waiting?.purpose === 'item-order' && typeof invitationItemId === 'string') {
+    const item = menuItems.find(item => item.id === invitationItemId && item.available !== false)
+    if (item) {
+      const reference = { refId: itemRef(item), label: item.name }
+      if (!references.some(current => current.refId === reference.refId))
+        references.push(reference)
+      referenceOrigins[reference.refId] = 'confirmation'
+      const offered = waiting.choices.find(choice => choice.intent === 'ADD_ITEM')!
+      const existing = candidates.findIndex(choice => choice.id === offered.id)
+      if (existing === -1)
+        candidates.push({ ...offered })
+      else
+        candidates[existing] = { ...offered }
+    }
+  }
   if (newFulfillmentReference)
     candidates.splice(0, candidates.length, ...candidates.filter(choice => choice.intent !== 'START_CHECKOUT'))
   if (waiting) {
@@ -432,13 +451,30 @@ export function deriveDecisionContext(input: KioskIntentContext): DecisionContex
       if (current)
         current.description = choice.description
     }
-    bounded.push(candidate('DEFER_QUESTION', 'intent:defer-question', '顧客只拒絕或暫緩目前問題，沒有提出其他需求；保留訂單與設定。', undefined, { questionId: waiting.questionId }))
+    bounded.push(candidate('DEFER_QUESTION', 'intent:defer-question', waiting.purpose === 'cart-review' ? '顧客明確拒絕查看訂單，或要稍後再看；保留餐點與畫面。表示已點完或準備結帳不是暫緩，應查看訂單。' : '顧客只拒絕或暫緩目前問題，沒有提出其他需求；保留訂單與設定。', undefined, { questionId: waiting.questionId }))
     candidates.splice(0, candidates.length, ...bounded)
   }
   const targetRefs = references.filter(reference => !reference.refId.startsWith('category:'))
   const modelReferences = possibleItems.length ? [] : targetRefs.length > targetReferenceLimit ? categoryRefs : references
   const prices = priceEvidence(transcript)
   return { ...input, ...(prices ? { priceEvidence: prices } : {}), catalogEvidence, productResolution, modelReferences, referenceOrigins, targetConstraints: { itemIds: matchingItems.map(item => item.id), categories: matchingCategories }, waitingFor: waiting, allowedPaymentMethods, candidates, constraints: { ...constraints, ...(prices ? { unresolvedPrice: true } : {}) }, ingredientReferences, dietaryReferences, unavailableConditionReferences, interactionState: { ...interactionState, ...(seating ? { seating: { partySize: seating.partySize, ready: seating.ready, question: !seating.partySize ? '請問幾位用餐？' : seating.ready ? '桌位已暫留。' : seating.choices.some(choice => choice.splitRequired) ? '需要分桌；是否同意並選擇顯示的桌位組合？' : '請選擇可用桌位。' } } : {}) }, phase, references }
+}
+
+/** Offers a read-only quantity question for one verified displayed meal; presentation activates it. */
+export function createItemOrderQuestion(context: DecisionContext, itemId: string, questionId: string, now: number, question: string, purchaseInquiry = false): PendingQuestion | undefined {
+  const item = context.menu.find(item => item.id === itemId && item.available !== false)
+  if (context.phase !== 'ordering' || !item || !context.presentationItemIds?.includes(itemId))
+    return undefined
+  const confirmation = item.optionGroups.find(group => group.required && group.confirmationPrompt)
+  return {
+    questionId,
+    purpose: 'item-order',
+    phase: 'ordering',
+    question: confirmation && purchaseInquiry ? orderingMessages['zh-Hant'].singleItemPurchaseQuestion : confirmation?.confirmationPrompt ?? question,
+    choices: [candidate('ADD_ITEM', 'intent:add-item', confirmation ? `同意訂購目前${item.name}，才開始詢問${confirmation.label}與份數；不將查詢或拒絕當成購買，不預設選項。` : `回答目前${item.name}的訂購份數；仍須確認份數、菜單選項及實際操作結果。`, itemRef(item), { itemId })],
+    expectedRevisions: { ...context.revisions },
+    expiresAt: now + 30_000,
+  }
 }
 
 /** Builds operational questions only from currently legal domain choices. */
@@ -460,6 +496,11 @@ export function createQuestion(context: DecisionContext, questionId: string, now
       intents = purpose === 'party-size' ? ['SET_PARTY_SIZE'] : ['RESERVE_TABLES']
       if (!question)
         return undefined
+    }
+    else if (context.serviceMode === 'table-service' && context.interactionState.screen !== 'cart_review') {
+      purpose = 'cart-review'
+      question = orderingMessages['zh-Hant'].cartReviewQuestion
+      intents = ['VIEW_CART']
     }
     else {
       purpose = 'checkout-entry'
@@ -483,6 +524,10 @@ export function createQuestion(context: DecisionContext, questionId: string, now
     intents = [...definition.intents]
   }
   const choices = context.candidates.filter(choice => intents.includes(choice.intent)).map(choice => ({ ...choice }))
+  if (purpose === 'cart-review') {
+    for (const choice of choices)
+      choice.description = '顧客同意查看訂單，或表示餐點點完／這樣就好／準備結帳送出：先開啟訂單供核對，尚未送單。不把表示點完當成拒絕或暫緩。'
+  }
   if (purpose === 'checkout-entry') {
     for (const choice of choices)
       choice.description = context.serviceMode === 'table-service' ? '顧客確認本桌訂單，直接送出。' : '顧客同意開始結帳；進入會員與發票步驟。'
@@ -501,7 +546,12 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
     return { kind: 'IGNORE' }
   const transcript = context.transcript?.trim() ?? ''
   const preparationSpeech = context.catalogEvidence.products.reduce((text, product) => text.replaceAll(product.matchedText, ''), transcript)
-  if (resolved.intent === 'ADD_ITEM' && (context.ingredientReferences.length || context.unavailableConditionReferences.length) && context.targetConstraints.itemIds.some(id => context.menu.some(item => item.id === id && !item.optionGroups.length)) && (mentionedIngredients(preparationSpeech).length || mentionedUnavailableConditions(preparationSpeech).length))
+  // A page-owned proposal has already checked composition and unsupported
+  // preparation. Reapplying the raw-utterance gate to its chosen identity
+  // confuses ingredient browsing with a customization request. The usual
+  // target/composition checks below still apply; this does not authorize a buy.
+  const proposedIdentity = chosenTargetRef && context.referenceOrigins[chosenTargetRef] === 'confirmation'
+  if (!proposedIdentity && resolved.intent === 'ADD_ITEM' && (context.ingredientReferences.length || context.unavailableConditionReferences.length) && context.targetConstraints.itemIds.some(id => context.menu.some(item => item.id === id && !item.optionGroups.length)) && (mentionedIngredients(preparationSpeech).length || mentionedUnavailableConditions(preparationSpeech).length))
     return { kind: 'NEEDS_ASSISTANT' }
   // One finite operation cannot determine which of several explicit counts
   // survives a correction or split order. Keep the whole utterance for Main;
@@ -560,6 +610,8 @@ export function resolveIntent(decision: IntentCandidate, context: DecisionContex
       // A selected draft and the last cart addition are both plausible for a
       // bare repeat request. Never silently prefer one when they differ.
       targetRefs = menuRefs.length ? menuRefs : [...selectedRefs, ...distinctRecentAddedRefs]
+      if (context.waitingFor?.purpose === 'item-order' && resolved.targetRef)
+        targetRefs = context.references.filter(reference => reference.refId === resolved.targetRef)
       // An ordinal belongs to the pre-task visible order, never catalog order
       // or a later lookup. The whole short phrase must be a reference with an
       // optional quantity; it cannot turn a quoted/query sentence into a buy.
@@ -808,7 +860,7 @@ export function intentRecovery(context: DecisionContext, question: ConversationQ
   const namedFulfillment = context.cart.lines.length > 0 && question?.purpose !== 'fulfillment'
     && context.fulfillmentModes?.some(mode => context.transcript!.includes(mode.label)) === true
   if (question && !newMeal && !namedFulfillment) {
-    if (question.expiresAt <= Date.now() || !question.choices.length)
+    if (!question.choices.length)
       return undefined
     // Owned draft questions use their stable request ID; ordinary ordering
     // questions must be the domain's current presented question. Neither path
@@ -853,12 +905,24 @@ export function configurationQuestion(plan: DomainPlan, menu: readonly MenuItem[
   const options: Array<{ groupId: string, valueId: string }> = typeof plan.slots.options === 'string' ? JSON.parse(plan.slots.options) : []
   const group = item.optionGroups.find(group => group.required && !options.some(option => option.groupId === group.id))
   if (group) {
-    const quantity = plan.slots.quantity ?? quantityFromTranscript(transcript, true)
+    const quantity = plan.slots.quantity ?? quantityFromTranscript(transcript, group.presentation !== 'piece-counter')
     const slots = { ...plan.slots, ...(quantity !== undefined ? { quantity } : {}) }
+    let values = group.values
+    if (group.presentation === 'piece-counter') {
+      // The counter has 101 valid values, but the live conversation contract
+      // accepts at most 20 answer candidates and staged selection at most five.
+      // Offer only the uniquely spoken real option. Zero also needs explicit
+      // customer evidence; an unparsed count must never become no extra pieces.
+      const spoken = optionSlotsFromTranscript(item, transcript).filter(option => option.groupId === group.id)
+      values = group.values.filter(value => spoken.length === 1 && spoken[0]!.valueId === value.id)
+    }
+    const choices = values.map(value => candidate('ADD_ITEM', `configure:${sessionId}:${group.id}:${value.id}`, `將這筆${item.name}的${group.label}設為${value.label}${quantity !== undefined ? `、${quantity}份` : ''}，保留原訂購需求。`, plan.targetRef, { ...slots, options: JSON.stringify([...options, { groupId: group.id, valueId: value.id }]) }))
+    if (group.presentation === 'piece-counter')
+      choices.push(candidate('ADD_ITEM', `configure:${sessionId}:${group.id}:ask-count`, '顧客要加量但未提供唯一有效的顆數，或顆數超出範圍；保留需求，繼續詢問每份加幾顆，不設定顆數或份數、不加入購物車。', plan.targetRef, { ...plan.slots }))
     return {
       slot: 'option' as const,
-      prompt: `請問${item.name}的${group.label}要選${group.values.map(value => value.label).join('、')}？`,
-      choices: group.values.map(value => candidate('ADD_ITEM', `configure:${sessionId}:${group.id}:${value.id}`, `將這筆${item.name}的${group.label}設為${value.label}${quantity !== undefined ? `、${quantity}份` : ''}，保留原訂購需求。`, plan.targetRef, { ...slots, options: JSON.stringify([...options, { groupId: group.id, valueId: value.id }]) })),
+      prompt: group.confirmationPrompt ?? `請問${item.name}的${group.label}要選${group.values.map(value => value.label).join('、')}？`,
+      choices,
     }
   }
   if (plan.slots.quantity === undefined) {
@@ -914,11 +978,11 @@ export function compileOperationPlan(plan: DomainPlan): OperationPlan {
       if (plan.slots.scope === 'all' && plan.slots.more)
         return { ...base, input: { more: true, ...filters }, toolName: 'menu_recommend' }
       if (plan.slots.scope === 'all' && Object.keys(filters).some(key => ['minPrice', 'maxPrice', 'priceOrder'].includes(key)))
-        return { ...base, input: { ...(plan.slots.more ? { more: true } : {}), ...filters }, toolName: 'menu_recommend' }
+        return { ...base, input: { action: plan.slots.more ? 'continue' : 'update', ...(plan.slots.more ? { more: true } : {}), ...filters }, toolName: 'menu_recommend' }
       if (plan.slots.scope === 'all')
         return { ...base, input: { scope: 'catalog', display: true, ...filters }, toolName: 'menu_get' }
       return { ...base, input: { ...(plan.slots.queries ? { queries: JSON.parse(String(plan.slots.queries)) as string[] } : plan.slots.scope === 'all' ? { display: true } : plan.slots.category ? { category: plan.slots.category } : { query: plan.slots.query }), ...filters }, toolName: 'menu_get' }
-    case 'RECOMMEND': return { ...base, input: { ...(plan.slots.more ? { more: true } : {}), ...(plan.slots.category ? { category: plan.slots.category } : {}), ...(plan.slots.needs ? { needs: [plan.slots.needs] } : {}), ...filters }, toolName: 'menu_recommend' }
+    case 'RECOMMEND': return { ...base, input: { action: plan.slots.more ? 'continue' : 'update', ...(plan.slots.more ? { more: true } : {}), ...(plan.slots.category ? { category: plan.slots.category } : {}), ...(plan.slots.needs ? { needs: [plan.slots.needs] } : {}), ...filters }, toolName: 'menu_recommend' }
     case 'SHOW_RECOMMENDATIONS': return { ...base, input: { itemIds: String(plan.slots.itemIds).split(',') }, toolName: 'menu_show_recommendations' }
     case 'SELECT_ITEM': return { ...base, input: { itemId: plan.slots.itemId ?? targetId }, toolName: 'menu_select_item' }
     case 'SET_OPTION': return plan.targetRef?.startsWith('cart:') ? { ...base, input: { groupId: plan.slots.groupId, lineId: targetId, valueId: plan.slots.valueId }, toolName: 'cart_set_line_option' } : { ...base, input: { groupId: plan.slots.groupId, valueId: plan.slots.valueId }, toolName: 'menu_set_item_option' }
@@ -1091,9 +1155,16 @@ function quantityFromTranscript(transcript: string, allowBare = false) {
 
 function optionSlotsFromTranscript(item: MenuItem, transcript: string) {
   const normalizedTranscript = normalizeSlotNumbers(transcript).replace(/要/g, '').replace(/\s/g, '')
-  return item.optionGroups.flatMap(group => group.values
-    .filter(value => normalizedTranscript.includes(value.label.replace(/要/g, '')))
-    .map(value => ({ groupId: group.id, valueId: value.id })))
+  return item.optionGroups.flatMap((group) => {
+    // Normalize count units only inside a declared piece counter. Do not
+    // rewrite ASR product names, weights, or quantities measured in servings.
+    const transcript = group.presentation === 'piece-counter'
+      ? normalizedTranscript.replace(/粒/g, '顆').replace(/加量(?=\d)/g, '加').replace(/(?:不用|不要|不需要)加量?/g, '不加量')
+      : normalizedTranscript
+    return group.values
+      .filter(value => transcript.includes(value.label.replace(/要/g, '')))
+      .map(value => ({ groupId: group.id, valueId: value.id }))
+  })
 }
 
 // Normalize only local numeric slots, never the ASR text used for item names.

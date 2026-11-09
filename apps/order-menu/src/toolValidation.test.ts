@@ -28,3 +28,13 @@ it('validates the bound confirmation identifier and affirmative or negative answ
   expect(validators.order_answer_confirmation!({ input: { confirmationId: 'ticket', confirmedByUser: '確認' }, enums: {} })).toBe(false)
   expect(validators.order_answer_confirmation!({ input: { confirmedByUser: true }, enums: {} })).toBe(false)
 })
+
+// Report: this chat Nov8 — 鱔魚意麵 after declining the recommendation path failed before Main started.
+it('accepts literal meal subjects on host task binding while retaining strict input validation', () => {
+  const input = { action: 'BEGIN', taskId: 'new-meal', transcript: '我想吃鱔魚意麵', expectedMenuRevision: 0, constraints: {}, handoff: { intent: 'ADD_ONLY', subjects: ['鱔魚意麵'], status: 'ambiguous', itemIds: [], lineIds: [] } }
+  expect(validators.kiosk_agent_task!({ input, enums: {} })).toBe(true)
+  expect(validators.kiosk_agent_task!({ input: { ...input, handoff: { ...input.handoff, subjects: [42] } }, enums: {} })).toBe(false)
+  expect(validators.kiosk_agent_task!({ input: { ...input, handoff: { ...input.handoff, subjects: Array.from({ length: 21 }).fill('水餃') } }, enums: {} })).toBe(false)
+  expect(validators.kiosk_agent_task!({ input: { ...input, handoff: { ...input.handoff, subjects: ['魚'.repeat(501)] } }, enums: {} })).toBe(false)
+  expect(validators.kiosk_agent_task!({ input: { ...input, handoff: { ...input.handoff, inventedAuthority: true } }, enums: {} })).toBe(false)
+})

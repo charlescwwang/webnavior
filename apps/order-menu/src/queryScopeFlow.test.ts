@@ -61,3 +61,18 @@ describe('real menu query scope flow', () => {
     expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 120 })).toMatchObject({ items: [{ id: 'dumpling' }, { id: 'soup' }, { id: 'greens' }] })
   })
 })
+
+// Report: this chat, Nov08 — every special phase must preserve the owner revision tuple.
+it('preserves domain revisions in query-scope decision and passive snapshots', async () => {
+  const runtime = await setup()
+  const before = await runtime.invoke('kiosk_interaction_state') as { revisions: Record<string, number> }
+  await runtime.invoke('menu_get', { maxPrice: 120, display: true })
+  const decision = await runtime.invoke('kiosk_fast_path_context', { transcript: '剛才那些' }) as { revisions: Record<string, number> }
+  const passive = await runtime.invoke('kiosk_interaction_state') as { revisions: Record<string, number> }
+  expect(decision.revisions).toEqual(before.revisions)
+  expect(passive.revisions).toEqual(decision.revisions)
+  const conversation = await runtime.invoke('kiosk_conversation_context') as { phase: string, revisions: unknown, allowedToolNames: string[] }
+  expect(conversation.phase).toBe('query_scope')
+  expect(conversation.revisions).toEqual(decision.revisions)
+  expect(conversation.allowedToolNames).not.toContain('order_add_item')
+})

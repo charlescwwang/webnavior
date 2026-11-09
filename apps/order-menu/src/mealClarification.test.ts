@@ -20,6 +20,23 @@ interface Snapshot {
 }
 
 describe('simple meal confirmation', () => {
+  // Report: this chat Nov09 — a reroute probe erased the target for 對一份
+  // before the second decision could establish any independent new request.
+  it('retains the original proposal while a new-request interpretation is only being probed', async () => {
+    const runtime = await pendingMeal()
+    const offer = await runtime.invoke('kiosk_fast_path_context', { transcript: '排骨便當' }) as Snapshot
+    await runtime.invoke('kiosk_fast_path_clarify', { questionId: offer.clarificationOffer!.id })
+    const answer = await runtime.invoke('kiosk_fast_path_context', { transcript: '對一份' }) as Snapshot
+    await runtime.invoke('kiosk_fast_path_context', { transcript: '對一份', newRequestQuestionId: answer.waitingFor.questionId })
+    await expect(runtime.invoke('kiosk_fast_path_execute', { candidateId: 'unissued' })).rejects.toThrow('expired')
+    expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ phase: 'meal_confirmation', waitingFor: { question: answer.waitingFor.question } })
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    // A later independently verified answer gets its own lease for this target.
+    const retried = await runtime.invoke('kiosk_fast_path_context', { transcript: '對，一份' }) as Snapshot
+    const yes = retried.candidates.find(candidate => candidate.id.endsWith(':yes'))!
+    expect(await runtime.invoke('kiosk_fast_path_execute', { candidateId: yes.id })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'fried-pork-chop-bento', quantity: 1 }] } })
+  })
+
   it('allows Agent reads but blocks mutations and host-only tools during confirmation', async () => {
     const runtime = await pendingMeal()
     const context = await runtime.invoke('kiosk_fast_path_context', { transcript: '牛肉麵' }) as Snapshot
@@ -202,4 +219,18 @@ it.each([
   const decline = answer.candidates.find(choice => choice.id.endsWith(':no'))!
   await runtime.invoke('kiosk_fast_path_execute', { candidateId: decline.id })
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'original', quantity: 1 }] } })
+})
+
+// Report: Nov09 real replay — a verified ingredient match proposed by Main
+// was rejected as unsupported preparation while compiling its confirmation.
+it('can propose a composition-verified dish without treating its ingredient as customization', async () => {
+  const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+  const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 3 })
+  const before = await runtime.invoke('cart_get', { display: false })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'fish-proposal', transcript: '我想吃魚', expectedMenuRevision: 0, constraints: { includeIngredients: ['fish'] } })
+  await runtime.invokeForAgent('menu_get', { query: '魚', display: true })
+  const proposal = await runtime.invokeForAgent('menu_confirm_item', { itemId: 'thai-sour-spicy-fish-bento' })
+  expect(proposal).toHaveProperty('pendingCustomerChoice.purpose', 'confirm-meal')
+  expect(await runtime.invoke('cart_get', { display: false })).toEqual(before)
 })

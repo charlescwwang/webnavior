@@ -6,11 +6,15 @@ import type { MenuItem } from '../domain/order-machine'
 import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 import { computed } from 'vue'
 
+import PieceCounter from './pieceCounter.vue'
+
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { addItemControlId, closeItemControlId, optionControlId, quantityControlId, quantityStepControlId } from '../webmcp'
 
 const props = defineProps<{ locked?: boolean, item?: MenuItem, quantity: number, selectedOptions: Record<string, string> }>()
 const emit = defineEmits<{
   add: [itemId: string]
+  addAnother: [itemId: string]
   close: []
   registerControl: [id: string, element: Element | ComponentPublicInstance | null]
   updateOption: [groupId: string, valueId: string]
@@ -18,6 +22,8 @@ const emit = defineEmits<{
 }>()
 
 const missingRequiredOptions = computed(() => props.item?.optionGroups.filter(group => group.required && !group.values.some(value => value.id === props.selectedOptions[group.id])) ?? [])
+const confirmingOptions = computed(() => missingRequiredOptions.value.some(group => group.confirmationPrompt))
+const hasConfirmation = computed(() => props.item?.optionGroups.some(group => group.confirmationPrompt))
 
 function registerControl(id: string, element: Element | ComponentPublicInstance | null) {
   emit('registerControl', id, element)
@@ -60,12 +66,19 @@ function currency(amount: number) {
             ×
           </button>
         </header><section v-for="group in props.item.optionGroups" :key="group.id" :class="['option-group', { 'many-options': group.values.length > 12 }]">
-          <div><strong>{{ group.label }}</strong><small>{{ group.required ? '必選' : '可略過' }}</small></div><div>
+          <p v-if="group.confirmationPrompt">
+            {{ group.confirmationPrompt }}
+          </p>
+          <div><strong>{{ group.label }}</strong><small>{{ group.required ? '必選' : '可略過' }}</small></div>
+          <PieceCounter v-if="group.presentation === 'piece-counter'" :group="group" :selected="props.selectedOptions[group.id]" :owner-id="props.item.id" @select="valueId => emit('updateOption', group.id, valueId)" @register-control="registerControl" />
+          <div v-else>
             <button v-for="option in group.values" :key="option.id" :ref="optionControlRef(props.item.id, group.id, option.id)" type="button" :class="['option-button', { 'is-selected': props.selectedOptions[group.id] === option.id }]" @click="emit('updateOption', group.id, option.id)">
               {{ option.label }}<span v-if="option.priceDelta"> +{{ currency(option.priceDelta) }}</span>
             </button>
           </div>
-        </section><div class="dialog-actions">
+        </section><p v-if="hasConfirmation && !confirmingOptions">
+          {{ orderingMessages['zh-Hant'].supplierServingQuestion }}
+        </p><div v-if="!confirmingOptions" :class="['dialog-actions']">
           <div :ref="quantityControlRef(props.item.id)" class="quantity-control">
             <button :ref="stepControlRef(props.item.id, 'decrease')" type="button" :disabled="props.quantity === 1" aria-label="減少一份" @click="emit('updateQuantity', props.quantity - 1)">
               −
@@ -76,6 +89,9 @@ function currency(amount: number) {
             加入購物車
           </button>
         </div>
+        <button v-if="hasConfirmation && !confirmingOptions" type="button" :class="['confirm-add', 'add-another']" :disabled="missingRequiredOptions.length > 0" @click="emit('addAnother', props.item.id)">
+          {{ orderingMessages['zh-Hant'].supplierAddAnother }}
+        </button>
         <p v-if="missingRequiredOptions.length" role="status">
           請先選擇{{ missingRequiredOptions.map(group => group.label).join('、') }}。
         </p>
@@ -85,5 +101,6 @@ function currency(amount: number) {
 </template>
 
 <style scoped>
+.add-another { width:100%; margin-top:10px; padding:12px; }
 .item-dialog-backdrop { position:fixed; z-index:20; inset:0; display:grid; place-items:center; padding:20px; background:#2a140866; }.item-dialog { max-height:90dvh; overflow:auto; width:min(520px,100%); border-radius:20px; padding:20px; background:#fff; color:#3d281c; }.item-dialog header { display:flex; align-items:start; justify-content:space-between; gap:12px; }.item-dialog header p,.item-dialog h2 { margin:0 0 5px; }.item-dialog header p,.item-dialog small { color:#876; font-size:12px; }.item-dialog header button { background:transparent; color:#765; font-size:24px; }.option-group { margin-top:16px; border-top:1px solid #f0e4da; padding-top:14px; }.option-group > div:first-child { display:flex; justify-content:space-between; }.many-options > div:last-child { max-height:240px; overflow:auto; padding:3px; }.option-button { margin:9px 7px 0 0; border:1px solid #ead7c9; background:#fff9f3; color:#765; padding:8px 10px; }.option-button.is-selected { border-color:#d95327; background:#ffe0c5; color:#803813; font-weight:800; }.dialog-actions { display:grid; grid-template-columns:130px 1fr; gap:10px; margin-top:20px; }.quantity-control { display:grid; grid-template-columns:38px 1fr 38px; align-items:center; border:1px solid #ead7c9; border-radius:10px; text-align:center; }.quantity-control button { background:transparent; color:#803813; font-size:19px; }.confirm-add { background:#d95327; color:#fff; font-weight:800; }
 </style>

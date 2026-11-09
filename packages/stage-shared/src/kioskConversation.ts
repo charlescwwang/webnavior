@@ -30,8 +30,24 @@ export function describeOrderingDetails(price: number, description = ''): string
 const id = pipe(string(), minLength(1), maxLength(200))
 const label = pipe(string(), maxLength(500))
 const revision = pipe(number(), integer(), minValue(0))
+
+/** Domain-owner versions carried unchanged through Menu, Host and decision HTTP requests. */
+export const decisionRevisionsSchema = object({
+  menu: optional(revision),
+  cart: revision,
+  selectedItem: revision,
+  checkout: revision,
+  recommendation: optional(revision),
+  seating: optional(revision),
+})
+
+/** Versions issued by state owners; absent optional owners cannot authorize their effects. */
+export type DecisionRevisions = InferOutput<typeof decisionRevisionsSchema>
 /** Menu policy shared with tool contracts; not a provider confidence threshold. */
 export const orderQuantityMaximum = 20
+
+/** Clarifies an omitted target without deciding whether to change or add servings. */
+export const quantityChangeQuestion = orderingMessages['zh-Hant'].quantityChangeQuestion
 const quantity = pipe(number(), integer(), minValue(0), maxValue(orderQuantityMaximum))
 /** A proven business refusal before an effect, never a retryable malformed tool input. */
 export const quantityLimitRejectionSchema = strictObject({
@@ -87,7 +103,7 @@ export const conversationOptionSchema = object({ groupId: id, valueId: id })
 /** Application resolution is preserved independently from the model's intent confidence. */
 export const handoffSchema = object({
   intent: pipe(string(), maxLength(80)),
-  /** Literal original meal subjects, qualified together with a pure-add purpose. */
+  /** Literal original food subjects qualified for a pure addition or a menu lookup. */
   subjects: optional(pipe(array(label), maxLength(20))),
   status: picklist(['resolved', 'ambiguous', 'unmatched', 'target-absent', 'unavailable', 'stale', 'unrepresentable']),
   itemIds: pipe(array(id), maxLength(200)),
@@ -100,6 +116,8 @@ export const conversationQuestionSchema = object({
   requestId: optional(id),
   purpose: pipe(string(), maxLength(80)),
   question: pipe(string(), maxLength(2000)),
+  // Answer-ticket deadline in this snapshot; the displayed question remains
+  // current until its owner changes identity/state, irrespective of silence.
   expiresAt: number(),
   choices: pipe(array(object({ id, description: label })), maxLength(253)),
 })
@@ -154,7 +172,7 @@ export const conversationContextSchema = pipe(object({
   presentation: optional(object({ itemIds: pipe(array(id), maxLength(200)), category: pipe(string(), maxLength(200)), queries: pipe(array(label), maxLength(20)) })),
   /** Saved browse conditions are not the current utterance's operation constraints. */
   queryState: optional(object({ category: label, queries: pipe(array(label), maxLength(20)), exhausted: boolean(), prices: object({ minPrice: optional(number()), maxPrice: optional(number()), minPriceExclusive: optional(boolean()), maxPriceExclusive: optional(boolean()), priceOrder: optional(literal('ASC')) }), filters: object({ excludeIngredients: pipe(array(id), maxLength(100)), includeIngredients: pipe(array(id), maxLength(100)), dietary: optional(literal('vegetarian')) }) })),
-  revisions: object({ menu: revision, cart: revision, selectedItem: revision, checkout: revision, recommendation: optional(revision), seating: optional(revision) }),
+  revisions: object({ ...decisionRevisionsSchema.entries, menu: revision }),
   catalog: optional(object({
     complete: literal(true),
     itemCount: pipe(number(), integer(), minValue(0), maxValue(200)),
@@ -206,7 +224,7 @@ export function orderAssistanceQuestion(sourceUtterance: string): string {
 /** A model may select a factual reply, but cannot supply operation-success prose. */
 export const contextReplySchema = pipe(strictObject({
   kind: picklist(['payment-methods', 'fulfillment-modes', 'menu-information', 'quantity-limit', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information', 'staff-assistance']),
-  topic: optional(picklist(['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units', 'delivery', 'order-timing'])),
+  topic: optional(picklist(['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units', 'delivery', 'order-timing', 'promotions'])),
   subjects: optional(pipe(array(pipe(string(), minLength(1), maxLength(120))), minLength(1), maxLength(5))),
   action: optional(picklist(['confirm-order', 'offer', 'accept', 'decline'])),
 }), check(value => value.topic !== 'ordering-units' || (value.kind === 'service-information' && Boolean(value.subjects?.length)), 'Ordering units requires original menu subjects.'), check(value => value.kind === 'staff-assistance' ? value.action !== undefined && value.topic === undefined && value.subjects === undefined : value.action === undefined, 'Assistance selection requires its own action.'), check(value => value.kind !== 'clarification' || value.topic === undefined || value.topic === 'menu-kind', 'Clarification asks for unclear meaning; missing service data uses service-information/topic:other.'))
@@ -216,7 +234,7 @@ export type ContextReply = InferOutput<typeof contextReplySchema>
 
 /** A missing-data reply reports unavailable evidence, never a menu result or completed action. */
 export function isMissingInformationReply(reply: ContextReply | undefined): boolean {
-  return reply?.kind === 'service-information' && reply.topic === 'other'
+  return reply?.kind === 'service-information' && ['other', 'promotions'].includes(reply.topic ?? '')
 }
 
 /** Service boundaries and catalog unit facts never claim a browser read or order effect. */
@@ -245,7 +263,7 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   if (!selection.success)
     return undefined
   const kind = selection.output.kind
-  const currentQuestion = context.waitingFor && context.waitingFor.expiresAt > Date.now() ? context.waitingFor : undefined
+  const currentQuestion = context.waitingFor
   const guide = (facts: string, next: string = orderingMessages['zh-Hant'].nextOrderQuestion) => {
     if (currentQuestion)
       return `${facts}${currentQuestion.question}`.trim()
@@ -281,8 +299,8 @@ export function replyFromContext(answer: string | undefined, context: Conversati
   if (selection.output.kind === 'fulfillment-modes')
     return { kind, content: guide(context.fulfillmentModes.length ? `目前提供${context.fulfillmentModes.map(mode => mode.label).join('、')}。` : '取餐方式需要服務人員確認。') }
   if (selection.output.kind === 'staff-assistance') {
-    const orderConfirmed = Boolean(context.orderAssistance && context.orderAssistance.expiresAt > Date.now())
-    const staffInvited = Boolean(context.staffAssistance && context.staffAssistance.expiresAt > Date.now())
+    const orderConfirmed = Boolean(context.orderAssistance)
+    const staffInvited = Boolean(context.staffAssistance)
     if (selection.output.action === 'confirm-order') {
       return context.entryComplete && context.sourceUtterance && !orderConfirmed && !staffInvited
         ? { kind, action: 'confirm-order' as const, content: orderAssistanceQuestion(context.sourceUtterance) }
@@ -300,7 +318,7 @@ export function replyFromContext(answer: string | undefined, context: Conversati
     if (selection.output.action === 'decline' && context.unavailableConditions?.some(condition => ['sodium', 'sugar', 'energy', 'fat', 'protein'].includes(condition.id)))
       return { kind: 'clarification', content: orderingMessages['zh-Hant'].nutritionDeclined }
     // This is the operator-requested simulated presentation, not a delivery receipt.
-    return { kind, action: selection.output.action, content: selection.output.action === 'accept' ? '已經呼叫工作人員，您想先看看哪道餐點？' : '好的，接下來想點什麼餐點？' }
+    return { kind, action: selection.output.action, content: selection.output.action === 'accept' ? guide(orderingMessages['zh-Hant'].staffNotification) : '好的，接下來想點什麼餐點？' }
   }
   const unitInformation = selection.output.kind === 'service-information' && selection.output.topic === 'ordering-units'
   if (selection.output.kind === 'service-information' && !unitInformation) {
@@ -322,6 +340,8 @@ export function replyFromContext(answer: string | undefined, context: Conversati
       return { kind, topic, content: context.merchant?.orderTiming === 'made-to-order' ? orderingMessages['zh-Hant'].madeToOrderOnly : '預約安排需要服務人員確認。想現在點餐嗎？' }
     if (topic === 'out-of-scope')
       return { kind, topic: 'out-of-scope' as const, content: '我是點餐助手，可以幫您看菜單、選餐和確認訂單。您想吃什麼？' }
+    if (topic === 'promotions')
+      return { kind: 'staff-assistance', action: 'offer', content: orderingMessages['zh-Hant'].promotionAssistance }
     if (topic === 'location' || topic === 'hours')
       return { kind: 'staff-assistance', action: 'offer', content: '這項店家資訊需要服務人員確認，需要幫您呼叫嗎？' }
     return { kind, topic: 'other' as const, content: '我可以協助查菜單、選餐和調整訂單，您想先查詢什麼餐點？' }
@@ -341,16 +361,18 @@ export function replyFromContext(answer: string | undefined, context: Conversati
       return `${item.name}，${unitInformation ? item.description || '份量請依菜單標示。' : describeOrderingDetails(item.price, item.description === item.name ? '' : item.description)}${availability}`
     }).join(' ')
   }).join(' ')
-  const subjects = selection.output.subjects
-  const matches = context.catalog.items.filter(item => [item.name, ...item.aliases].some(label => normalize(label) === normalize(subjects[0]!)))
-  const nextQuestion = !unitInformation && subjects.length === 1 && matches.length === 1 && matches[0]?.availability === 'available'
-    ? orderingMessages['zh-Hant'].singleItemGuide
-    : '您想查詢哪道餐點？'
-  return unitInformation ? { kind, topic: 'ordering-units', content: guide(`${content} 請依菜單標示的單位點餐，不代為換算。`, '您要點幾份？') } : { kind, content: guide(content, nextQuestion) }
+  // Catalog-only prose owns no Menu question ticket. Keep its follow-up open;
+  // a concrete quantity prompt is issued by the displayed Menu receipt instead.
+  const nextQuestion = '您想查詢哪道餐點？'
+  return unitInformation ? { kind, topic: 'ordering-units', content: guide(`${content} 請依菜單標示的單位點餐，不代為換算。`, nextQuestion) } : { kind, content: guide(content, nextQuestion) }
 }
 
 /** Shared invitation wording; showing it never constitutes a staff-delivery receipt. */
 export function assistanceQuestion(conditions: ConversationContext['unavailableConditions']) {
+  // A single food-safety topic needs a direct evidence limitation; mixed
+  // requirements continue through the existing combined assistance policy.
+  if (conditions?.length && conditions.every(condition => condition.id === 'food-safety'))
+    return orderingMessages['zh-Hant'].foodSafetyUnavailable
   const nutrition = conditions?.some(condition => ['sodium', 'sugar', 'energy', 'fat', 'protein'].includes(condition.id))
   return nutrition ? orderingMessages['zh-Hant'].nutritionUnavailable : orderingMessages['zh-Hant'].conditionAssistance
 }
@@ -420,7 +442,9 @@ export interface ServiceRecoveryProgress {
 }
 
 /** Correlation uses domain versions and the live question, never a transcript guess. */
-export function serviceContextKey(state: { phase: string, menuRevision?: number, revisions?: { menu?: number, cart: number, checkout: number, selectedItem: number }, waitingFor?: { questionId: string, expiresAt: number } }, now = Date.now()): string {
-  const question = state.waitingFor && state.waitingFor.expiresAt > now ? state.waitingFor.questionId : null
-  return JSON.stringify([state.phase, state.menuRevision ?? state.revisions?.menu ?? null, state.revisions?.cart ?? null, state.revisions?.checkout ?? null, state.revisions?.selectedItem ?? null, question])
+export function serviceContextKey(state: { phase: string, menuRevision?: number, revisions?: DecisionRevisions, waitingFor?: { questionId: string, expiresAt: number } }, _now = Date.now()): string {
+  const question = state.waitingFor?.questionId ?? null
+  // A displayed recommendation or seating update can change what a short
+  // answer refers to without editing the cart. Both invalidate old recovery.
+  return JSON.stringify([state.phase, state.menuRevision ?? state.revisions?.menu ?? null, state.revisions?.cart ?? null, state.revisions?.checkout ?? null, state.revisions?.selectedItem ?? null, state.revisions?.recommendation ?? null, state.revisions?.seating ?? null, question])
 }

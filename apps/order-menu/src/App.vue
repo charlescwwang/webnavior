@@ -40,6 +40,7 @@ import { resolveExpectedHostOrigin } from './embedding-origin'
 import { connectInteractiveService } from './interactiveService'
 import { scrollViewport } from './menuScroll'
 import { createPayment, createPosBridgeGateway, getPayment, loadOrderingContext, paymentLabels, testPaymentMethods } from './pos-bridge'
+import { applySupplierOrdering, describeDumplingPortion } from './supplierOrdering'
 import { addItemControlId, cartOptionControlId, cartRemovalControlId, closeItemControlId, createMenuToolRuntime, optionControlId, quantityStepControlId } from './webmcp'
 
 // A deployment can lock the service to one approved host. Otherwise, a page
@@ -857,8 +858,11 @@ async function setFulfillmentMode(mode: FulfillmentMode) {
 async function addItem(itemId: string) {
   const item = menuItems.value.find(candidate => candidate.id === itemId)
   if (!item || addingItemId.value)
-    return
+    return false
 
+  // Applying an option synchronizes the machine's current selection back to
+  // the dialog. Preserve the customer's serving count before those callbacks.
+  const quantity = quantities[itemId] ?? 1
   addingItemId.value = itemId
   try {
     await invoke('menu_select_item', { itemId }, { animate: false })
@@ -869,13 +873,15 @@ async function addItem(itemId: string) {
 
       await invoke('menu_set_item_option', { groupId, valueId }, { animate: false })
     }
-    await invoke('menu_set_quantity', { quantity: quantities[itemId] ?? 1 }, { animate: false })
+    await invoke('menu_set_quantity', { quantity }, { animate: false })
     await invoke('cart_add_item', {}, { animate: false })
+    return true
   }
   catch (error) {
     if (!(error instanceof ItemSelectionError))
       throw error
     menuInteractionMessage.value = error.message
+    return false
   }
   finally {
     addingItemId.value = undefined
@@ -898,12 +904,22 @@ async function openItem(itemId: string) {
 
 async function addSelectedItem(itemId: string) {
   return controlExecution.handle(addItemControlId(itemId), async () => {
-    await addItem(itemId)
-    selectedItemId.value = undefined
+    if (await addItem(itemId))
+      selectedItemId.value = undefined
   })
 }
 
+async function addAnotherSelectedItem(itemId: string) {
+  if (await addItem(itemId))
+    await openItem(itemId)
+}
+
 function optionLabel(line: CartSnapshot['lines'][number]) {
+  if (props.variant === 'supplier') {
+    const portions = describeDumplingPortion(line)
+    if (portions)
+      return portions
+  }
   const item = menuItems.value.find(candidate => candidate.id === line.itemId)
   return Object.entries(line.options)
     .map(([groupId, valueId]) => item?.optionGroups.find(group => group.id === groupId)?.values.find(value => value.id === valueId)?.label)
@@ -925,6 +941,11 @@ async function loadCatalog() {
   if (!catalog || menuUnmounted)
     return
 
+  // This page requires explicit add-on consent; the Bridge catalog and prices stay unchanged.
+  if (props.variant === 'supplier') {
+    catalog.items = applySupplierOrdering(catalog.items)
+    posCatalog.value = { ...catalog }
+  }
   runtime.setMenu(catalog.items, catalog.revision)
   runtime.setFulfillmentModes(catalog.store.fulfillmentModes)
   for (const item of catalog.items) {
@@ -1095,6 +1116,7 @@ onUnmounted(() => {
         :quantity="selectedItem ? quantities[selectedItem.id] ?? 1 : 1"
         :selected-options="selectedItem ? selectedOptionsByItem[selectedItem.id] ?? {} : {}"
         @add="addSelectedItem"
+        @add-another="addAnotherSelectedItem"
         @close="closeSelectedItem"
         @register-control="setControlElement"
         @update-option="(groupId, valueId) => selectedItem && updateOption(selectedItem.id, groupId, valueId)"

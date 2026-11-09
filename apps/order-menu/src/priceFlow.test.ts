@@ -110,3 +110,20 @@ describe('price-qualified menu reads', () => {
     expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
   })
 })
+
+// Report: this chat, Nov09 — Main changed an inclusive 130 boundary to exclusive after admission.
+it.each([
+  { label: 'inclusive maximum', verified: { maxPrice: 130 }, proposed: { maxPrice: 130, maxPriceExclusive: true }, ids: ['below', 'equal'] },
+  { label: 'exclusive maximum', verified: { maxPrice: 130, maxPriceExclusive: true }, proposed: { maxPrice: 130, maxPriceExclusive: false }, ids: ['below'] },
+  { label: 'inclusive minimum', verified: { minPrice: 130 }, proposed: { minPrice: 130, minPriceExclusive: true }, ids: ['equal', 'above'] },
+  { label: 'exclusive minimum', verified: { minPrice: 130, minPriceExclusive: true }, proposed: { minPrice: 130, minPriceExclusive: false }, ids: ['above'] },
+  { label: 'smaller invented maximum', verified: { maxPrice: 130 }, proposed: { maxPrice: 129 }, ids: ['below', 'equal'] },
+  { label: 'invented lower bound', verified: { maxPrice: 130 }, proposed: { minPrice: 130, maxPrice: 130 }, ids: ['below', 'equal'] },
+])('retains the verified price group through Main: $label', async ({ verified, proposed, ids }) => {
+  const runtime = createMenuToolRuntime({ ...runtimeOptions, menu: ['below', 'equal', 'above'].map((id, index) => ({ ...dishes[0]!, id, name: `餐點${index}`, aliases: [], price: 129 + index })) })
+  await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'boundary', transcript: '依價格找餐點', expectedMenuRevision: 0, readOnly: true, constraints: verified })
+  const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', ...proposed })
+  expect(result).toMatchObject({ appliedPriceConditions: verified, items: ids.map(id => ({ id })) })
+  expect(runtime.getQueryState()?.conditions).toHaveLength(1)
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})

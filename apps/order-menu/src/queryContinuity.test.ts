@@ -3,6 +3,58 @@ import { expect, it, vi } from 'vitest'
 import { menu } from './domain/order-machine'
 import { createMenuToolRuntime } from './webmcp'
 
+// Report: this chat, Nov8 — absent dish -> full menu -> invite a fresh recommendation.
+it('returns through the menu control and offers recommendations without counting the catalog as introduced dishes', async () => {
+  const onAction = vi.fn()
+  const onMenuRequested = vi.fn()
+  const runtime = createMenuToolRuntime({ menu, onAction, onMenuRequested, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invokeForAgent('menu_get', { query: '炸雞腿' })
+  const result = await runtime.executeTool('menu_open', {})
+  expect(onMenuRequested).toHaveBeenCalledOnce()
+  expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ controlId: 'menu:all' }))
+  expect(result).toHaveProperty('customerReply.nextQuestion', '需要我幫您推薦餐點嗎？')
+  expect(result).toHaveProperty('customerMessage', '已回到全部菜單。 需要我幫您推薦餐點嗎？')
+  expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '好' })).toHaveProperty('candidates', expect.arrayContaining([expect.objectContaining({ id: 'intent:recommend' })]))
+  expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'query')).toBe(false)
+  expect(await runtime.executeTool('menu_recommend', { action: 'continue' })).toHaveProperty('items', expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]))
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})
+
+// Report: this chat Nov8 — fish → absent milkfish → all menu → pork must not ask about the old recommendation.
+it.each(['pork', 'chicken', 'beef'] as const)('uses the returned full catalog for a new %s condition', async (ingredient) => {
+  const onMenuRequested = vi.fn()
+  const runtime = createMenuToolRuntime({ menu: ['fish', 'pork', 'chicken', 'beef'].map((ingredient, index) => ({ ...menu[0]!, id: ingredient, name: ['魚便當', '豬肉便當', '雞肉便當', '牛肉便當'][index]!, aliases: [], composition: { ingredients: [ingredient], complete: true, source: 'merchant', revision: '1', removals: [] } })), onAction: () => {}, onMenuRequested, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'] })
+  expect(await runtime.invokeForAgent('menu_get', { query: '蝨目魚' })).toHaveProperty('requestedQueries', ['蝨目魚'])
+  expect(await runtime.executeTool('menu_open', {})).toHaveProperty('pendingCustomerChoice.purpose', 'recommendation-invitation')
+  const result = await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: [ingredient] })
+  expect(result).not.toHaveProperty('pendingCustomerChoice.purpose', 'menu-query-scope')
+  expect(result).toHaveProperty('items', expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]))
+  expect(result).toHaveProperty('appliedFilters.includeIngredients', [ingredient])
+  expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'includeIngredients' && condition.value === 'fish')).toBe(false)
+  expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '水餃一份' })).not.toHaveProperty('phase', 'query_scope')
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})
+
+// Report: this chat, Nov8 — session GZoe-FQFz572mVtAE5gqL, tool call85.
+it('offers one input correction for stale continuation filters without executing or reviving them', async () => {
+  const present = vi.fn()
+  const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: present })
+  await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'] })
+  await runtime.invokeForAgent('menu_get', { query: '炸雞腿' })
+  const before = runtime.getQueryState()
+  const calls = present.mock.calls.length
+  const rejected = await runtime.executeTool('menu_recommend', { action: 'continue', includeIngredients: ['fish'] })
+  expect(rejected).toMatchObject({ ok: false, executed: false, toolName: 'menu_recommend', error: 'INVALID_TOOL_INPUT' })
+  expect(rejected).toHaveProperty('message', expect.stringContaining('includeIngredients'))
+  expect(runtime.getQueryState()).toEqual(before)
+  expect(present).toHaveBeenCalledTimes(calls)
+  expect(await runtime.executeTool('menu_recommend', { action: 'continue' })).toHaveProperty('items', expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]))
+  expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'query')).toBe(false)
+  expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'includeIngredients')).toBe(false)
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})
+
 // Report: this chat, Nov8 — a named lookup after fish browsing left the fish condition strip behind.
 it.each(['全家餐', '雙人套餐'])('replaces browsing preferences with the new named lookup: %s', async (name) => {
   const onQueryStateChange = vi.fn()
@@ -35,7 +87,7 @@ it('keeps an explicit ingredient with a new named query, including an empty resu
 it('replaces a positive preference without requiring a second clear command and retains exclusions', async () => {
   const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'], excludeIngredients: ['egg'], maxPrice: 200 })
-  expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['chicken'] })).toMatchObject({ appliedFilters: { includeIngredients: ['chicken'], excludeIngredients: ['egg'] }, appliedPriceConditions: { maxPrice: 200 } })
+  expect(await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['chicken'] })).toMatchObject({ appliedFilters: { includeIngredients: ['chicken'], excludeIngredients: ['egg'] }, appliedPriceConditions: {} })
 })
 
 // Report: DEV-810280 Nov8 — old recommendation exclusions must not hide a newly named dish.
@@ -76,10 +128,12 @@ it('cannot turn a qualified new-item request into a cart replacement', async () 
 // Report: DEV-810280; operator authorized adding available items and naming missing ones in the same reply.
 it('checks mixed named subjects and keeps authorized additions when another meal is absent', async () => {
   const item = { ...menu[0]!, id: 'dumplings', name: '水餃', aliases: [], optionGroups: [] }
-  const runtime = createMenuToolRuntime({ menu: [item], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const runtime = createMenuToolRuntime({ menu: [item], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {} })
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'mixed-add', transcript: '水餃十份，再來一瓶酒', expectedMenuRevision: 0, readOnly: false, constraints: {}, handoff: { intent: 'ADD_ONLY', subjects: ['水餃', '酒'], status: 'ambiguous', itemIds: [], lineIds: [] } })
   expect(await runtime.invokeForAgent('order_add_item', { itemId: 'dumplings', quantity: 10 })).toHaveProperty('ok', false)
   expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  // Finding the missing sibling first must not pause before checking/adding the available meal.
+  expect(await runtime.invokeForAgent('menu_get', { query: '酒' })).not.toHaveProperty('pendingCustomerChoice')
   const found = await runtime.invokeForAgent('menu_get', { queries: ['水餃', '酒'] })
   expect(found).toHaveProperty('missingQueries', ['酒'])
   expect(found).toHaveProperty('customerReply.facts', expect.stringContaining('菜單沒有「酒」'))

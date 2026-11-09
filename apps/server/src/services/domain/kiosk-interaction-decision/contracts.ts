@@ -1,4 +1,4 @@
-import type { ConversationContext, ConversationHandoff, ConversationQuestion, ConversationRequest, IntentRecovery, ServiceClarification, ServiceRecovery, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ConversationContext, ConversationHandoff, ConversationQuestion, ConversationRequest, DecisionRevisions, IntentRecovery, ServiceClarification, ServiceRecovery, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { PriceConditions, PriceEvidence } from './priceContracts'
 import type { ScopeChoice } from './queryScopeContracts'
@@ -27,7 +27,7 @@ export interface KioskDecisionState {
   productResolution?: { status: 'exact' | 'possible' | 'none' | 'overflow', count: number, references: readonly { label: string, refId: string }[] }
   /** Separate unfinished user fragment; never concatenated into the current utterance. */
   incompleteSpeech?: { transcript: string, expiresAt: number, related?: boolean }
-  revisions?: { cart: number, checkout: number, selectedItem: number, menu?: number }
+  revisions?: DecisionRevisions
   /** Application-owned catalog revision, not a vendor catalog identifier. */
   menuRevision?: number
   /** Verified receipts from this same request, not past model plans. */

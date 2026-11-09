@@ -18,12 +18,14 @@ import { Hono } from 'hono'
 import { parse } from 'valibot'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { historicalSupplierCatalog } from '../../../order-menu-server/src/fixtures/historicalSupplierCatalog'
 import { createPosSimulator } from '../../../order-menu-server/src/simulator'
 import { supplierCatalog } from '../../../order-menu-server/src/supplierSimulation'
+import { applySupplierOrdering } from '../../../order-menu/src/supplierOrdering'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
-import { conversationDecisionStateFrom, refreshConversationState, runFastPath } from '../../../stage-kiosk/src/services/kiosk-fast-path'
+import { conversationDecisionStateFrom, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../../../stage-kiosk/src/services/kiosk-fast-path'
 import { resumeConversationRetry } from '../../../stage-kiosk/src/services/kioskConversationRetry'
-import { createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
 import { createDrizzle } from '../../src/libs/db'
 import { mockDB } from '../../src/libs/mock-db'
 import { createKioskRoutes } from '../../src/routes/kiosk'
@@ -54,6 +56,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
   let systemOne: ReturnType<typeof createKioskSystemOneService>
   let configuredPolicy: SystemOnePolicyInput
   let runtime: ReturnType<typeof createMenuToolRuntime>
+  const invitationWindow = createInvitationWindow()
   let ready = false
   let providerCalls = 0
   const runStarted = Date.now()
@@ -95,6 +98,8 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     systemOne = { ...configuredOne, decide: async (...args) => {
       try {
         const result = await configuredOne.decide(...args)
+        if (process.env.KIOSK_RELEASE_TRACE === '1')
+          process.stdout.write(`[jev-checkpoint] ${JSON.stringify({ questions: Object.keys(args[1]), result })}\n`)
         jevFailures = 0
         // Capture immutable inputs now; SLM runs after the Jev scenarios so its
         // prefill cost cannot change checkpoint deadlines or Jev/Main outcomes.
@@ -582,10 +587,13 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
 
   async function decideCurrent(transcript: string, serviceClarification?: ServiceClarification) {
     const decisions: KioskInteractionDecision[] = []
-    const decision = await runFastPath({ transcript, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
-      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, ...(serviceClarification ? { decisionState: { ...request.decisionState, serviceClarification } } : {}), includeTrace: true, visitorSessionId: sessionId }) })
+    const decision = await runFastPath({ transcript, serviceClarification: () => serviceClarification, isEnabled: () => systemOne.isEnabled(), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://ordering.test' })), execute: (tool, input) => runtime.invoke(runtime.toolDefinitions.find(definition => definition.name === tool.name)!.name, input) }, decide: async ({ signal, ...request }) => {
+      if (process.env.KIOSK_RELEASE_TRACE === '1')
+        process.stdout.write(`[invitation-state] ${JSON.stringify({ transcript, state: invitationWindow.decisionState(request.decisionState, Date.now()), history: invitationWindow.history() })}\n`)
+      const response = await app.request('/api/kiosk/interaction-decisions', { method: 'POST', headers, signal, body: JSON.stringify({ ...request, decisionState: invitationWindow.decisionState({ ...request.decisionState, ...(serviceClarification ? { serviceClarification } : {}) }, Date.now()), includeTrace: true, visitorSessionId: sessionId }) })
       expect(response.status).toBe(200)
       const result = await response.json() as KioskInteractionDecision
+      invitationWindow.resolve(result)
       decisions.push(result)
       return result
     } })
@@ -597,6 +605,118 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     expect(response.status).toBe(201)
     await runtime.invoke('kiosk_dialogue_presented', { content })
   }
+
+  // Report: this chat Nov09 — exercise the three field failures through the
+  // current route/providers and real Menu guards, with no production cart/POS.
+  it.each(['replacement', 'quantity-correction', 'fish-continuation', 'replacement-decline', 'draft-switch', 'retired-dumpling'] as const)('configured Nov09 semantic gap: %s', async (scenario) => {
+    const originalMenu = scenario === 'fish-continuation' || scenario === 'draft-switch'
+    const catalog = originalMenu ? await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot : scenario === 'quantity-correction' ? historicalSupplierCatalog : supplierCatalog
+    let screen: 'menu' | 'cart_review' | 'item_configuration' = 'menu'
+    let selectedItem: string | undefined
+    runtime = createMenuToolRuntime({
+      menu: originalMenu ? catalog.items : applySupplierOrdering(catalog.items),
+      ...(originalMenu ? {} : { merchant: { id: 'shalun-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' as const } }),
+      serviceContext: () => ({ id: 'isolated-nov09', serviceMode: 'table-service', table: { id: 'test', label: '測試桌' }, directSubmissionSupported: true }),
+      screen: () => screen,
+      visibleItemId: () => selectedItem,
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: (id) => {
+        selectedItem = id
+        screen = id ? 'item_configuration' : 'menu'
+      },
+      onReviewRequested: () => { screen = 'cart_review' },
+      onMenuRequested: () => { screen = 'menu' },
+      onRecommendationsChange: () => { screen = 'menu' },
+      gateway: { submit: async () => { throw new Error('This replay must never submit a POS order') } },
+    })
+    invitationWindow.supersede()
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    expect(started.status).toBe(201)
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    const services = createServiceClarificationWindow()
+    const turn = async (transcript: string) => {
+      const begin = performance.now()
+      const before = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+      const cue = services.current(before)
+      const { decision } = await decideCurrent(transcript, cue)
+      services.settle(decision)
+      let content: string | undefined
+      if (decision.kind === 'NEEDS_ASSISTANT') {
+        content = (await agent(transcript, conversationDecisionStateFrom({ ...decision.decisionState, ...(cue ? { serviceClarification: cue } : {}) }, decision)!)).answer
+      }
+      else if (decision.kind === 'SERVICE_CLARIFICATION') {
+        services.present(decision.question, decision.decisionState)
+        content = decision.question.question
+        await recordReply(content)
+      }
+      else if (decision.kind === 'CLARIFICATION' || decision.kind === 'FAST_ACTION') {
+        const question = decision.kind === 'CLARIFICATION' ? decision.question : questionReceiptFrom(decision.result)
+        content = decision.kind === 'CLARIFICATION' ? decision.prompt : operationReplyFrom(decision.result)
+        expect(content).toBeTruthy()
+        await recordReply(content!)
+        if (question)
+          await runtime.invoke('kiosk_dialogue_presented', { content, questionId: question.questionId })
+      }
+      const cart = await runtime.invoke('cart_get', { display: false })
+      process.stdout.write(`[nov09-semantic-gap] ${JSON.stringify({ scenario, transcript, decision, content, cart, durationMs: Math.round(performance.now() - begin) })}\n`)
+      expect(shouldShowDecisionRetry(decision)).toBe(false)
+      expect(content, JSON.stringify(decision)).toBeTruthy()
+      expect(content).not.toMatch(/未接受這次操作|尚未完成|已通知服務人員|已經呼叫工作人員/)
+      return { decision, content, cart }
+    }
+    if (scenario === 'replacement') {
+      await turn('一份排骨飯這樣就好')
+      const answer = await turn('對一份')
+      if (answer.decision.kind === 'CLARIFICATION')
+        await turn('對，一份')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, total: 130, lines: [{ itemId: 'supplier-item-02', quantity: 1 }] } })
+    }
+    else if (scenario === 'quantity-correction') {
+      await turn('我要一份水餃')
+      await turn('每份加5顆')
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
+      await turn('我要三份')
+      await turn('水餃改成總共三份')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 3, total: 312, lines: [{ itemId: 'supplier-item-08', quantity: 3, options: { 'extra-pieces': 'extra-5' } }] } })
+    }
+    else if (scenario === 'replacement-decline') {
+      await turn('排骨飯一份')
+      const refused = await turn('不要了')
+      expect(refused.content).not.toContain('要改點')
+      expect(await runtime.invoke('kiosk_interaction_state')).not.toHaveProperty('waitingFor.purpose', 'confirm-meal')
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+      await turn('我要炸排骨便當一份')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'supplier-item-02', quantity: 1 }] } })
+    }
+    else if (scenario === 'draft-switch') {
+      await turn('我要紅燒牛肉麵')
+      await turn('改成炸排骨便當一份')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'fried-pork-chop-bento', quantity: 1 }] } })
+    }
+    else if (scenario === 'retired-dumpling') {
+      const absent = await turn('有周氏水餃嗎？')
+      expect(absent.content).toContain('查不到')
+      await turn('好，回菜單')
+      await turn('炸排骨便當一份')
+      expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'supplier-item-02', quantity: 1 }] } })
+    }
+    else {
+      const receipt = await runtime.invoke('order_add_item', { itemId: 'dumplings', quantity: 3 })
+      await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: JSON.stringify(receipt), metadata: { name: 'order_add_item', decisionRoute: 'fast_path' } }) })
+      const review = await runtime.invoke('order_ask_question', { purpose: 'checkout-entry' })
+      const question = questionReceiptFrom(review)!
+      await recordReply(question.question)
+      await runtime.invoke('kiosk_dialogue_presented', { content: question.question, questionId: question.questionId })
+      await turn('我想吃魚')
+      expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('waitingFor.purpose', 'item-order')
+      const before = await runtime.invoke('cart_get', { display: false })
+      const continuation = await turn('還有其他的嗎？')
+      expect(continuation.content).toContain('回到全部菜單')
+      expect(continuation.content).not.toMatch(/推薦3|推薦一項/)
+      expect(await runtime.invoke('cart_get', { display: false })).toEqual(before)
+    }
+  }, 180_000)
 
   async function agent(transcript: string, decisionState: KioskConversationDecisionState) {
     // Match the real Kiosk task lifecycle; runtime task guards must participate
@@ -617,6 +737,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     let selectedReply: ContextReply | undefined
     let question: ReturnType<typeof questionReceiptFrom>
     let completed = false
+    let completionStatus: 'completed' | 'waiting' = 'completed'
     let operationReply: string | undefined
     const deadline = AbortSignal.timeout(60_000)
     for (let round = 0; round < 5; round++) {
@@ -664,6 +785,15 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
           operationReply = operationReplyFrom(result) ?? operationReply
         toolResults.push({ toolCallId: call.id, name: call.function.name, content: JSON.stringify(result) })
       }
+      if (question && ['recommendation-invitation', 'menu-return-invitation'].includes(question.purpose)) {
+        for (const result of toolResults) {
+          const saved = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: result.content, metadata: { name: result.name, toolCallId: result.toolCallId } }) })
+          expect(saved.status).toBe(201)
+        }
+        completed = true
+        completionStatus = 'waiting'
+        break
+      }
       payload = { toolResults }
     }
     expect(completed, JSON.stringify({ message: 'Provider tool loop must finish within five rounds', calls, answer })).toBe(true)
@@ -671,16 +801,18 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     // NOTICE: match Scene's final projection; raw Menu context cannot contain
     // the host-owned, version-bound assistance invitation from this turn.
     const replyContext = refreshConversationState(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')), decisionState).context!
-    const presented = replyFromConversation({ status: 'completed', agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, sourceUtterance: transcript, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
+    const presented = replyFromConversation({ status: completionStatus, agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, sourceUtterance: transcript, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, priceInquiry: decisionState.priceInquiry, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
     expect(presented.role).toBe('assistant')
     // Match Scene's final guidance step; the raw reply renderer deliberately
     // leaves phase-owned guidance to the caller after validating the question.
     const content = replyWithQuestion(presented.content, question, replyContext.phase)
     await recordReply(content)
+    if (question && ['recommendation-invitation', 'menu-return-invitation'].includes(question.purpose))
+      invitationWindow.present(question)
     if (question)
       await runtime.invoke('kiosk_dialogue_presented', { content, questionId: question.questionId })
     await runtime.invoke('kiosk_agent_task', { action: 'END', taskId })
-    return { answer: content, calls, blockedTools, mainAgentRequests, toolMs: Math.round(toolMs) }
+    return { answer: content, selectedReply, calls, blockedTools, mainAgentRequests, toolMs: Math.round(toolMs) }
   }
 
   // Report: this chat Nov8 — exercise named-query transitions and order completion across independent catalogs.
@@ -820,6 +952,360 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       expect(reply?.answer).not.toMatch(/想查詢哪道|先看哪一道|先看哪道|炸排骨|打拋豬/)
       expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'excludedItems' && condition.value === 'thai-sour-spicy-fish-bento')).not.toBe(true)
     }
+  }, 120_000)
+
+  // Report: this chat — accepting the assistant's own empty-result alternative led to a tool refusal.
+  it.each([{ name: '炸雞腿', answer: '好' }, { name: '全家餐', answer: '要' }, { name: '雙人套餐', answer: '回到全部菜單' }, { name: '炸雞腿', answer: '不用' }, { name: '虱目魚粥', answer: '好', speech: '我想吃虱目魚粥，你可以煮給我嗎？' }, { name: '海鮮烏龍麵', answer: '好', speech: '我想吃海鮮烏龍麵，你能幫我做嗎？' }, { name: '蝨目魚粥轉鱔魚意麵', answer: '好', speech: '我想吃蝨目魚粥，可以煮給我嗎？', followUp: '我想吃鱔魚意麵' }])('configured empty lookup continuation: $name / $answer', async ({ name, answer, speech: querySpeech, followUp }) => {
+    invitationWindow.reset()
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let shown: string[] = []
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: value => shown = value.itemIds })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const [turn, speech] of [querySpeech ?? `有賣${name}嗎`, answer, ...(answer === '不用' ? [] : [followUp ?? '好'])].entries()) {
+      const { decision } = await decideCurrent(speech)
+      const reply = decision.kind === 'NEEDS_ASSISTANT' ? await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!) : decision.kind === 'FAST_ACTION' ? { answer: operationReplyFrom(decision.result) } : undefined
+      if (decision.kind === 'FAST_ACTION' && reply?.answer) {
+        await recordReply(reply.answer)
+        const question = questionReceiptFrom(decision.result)
+        if (question)
+          invitationWindow.present(question)
+      }
+      process.stdout.write(`[empty-continuation] ${JSON.stringify({ name, speech, decision: { kind: decision.kind, reason: decision.reason, scope: decision.requestScope }, reply, shown })}\n`)
+      if (answer !== '不用' || turn !== 1)
+        expect(reply?.answer).toBeTruthy()
+      expect(reply?.answer ?? '').not.toMatch(/未接受這次操作|查詢未完成|沒有可驗證/)
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+      if (turn === 2 && followUp) {
+        expect(shown).toEqual([])
+        expect(reply?.answer).toContain('鱔魚意麵')
+        expect(reply?.answer).toContain('要回到全部菜單看看嗎')
+      }
+      else if (turn === 2) {
+        expect(shown.length).toBeGreaterThan(0)
+        expect(shown.length).toBeLessThanOrEqual(3)
+        expect(reply?.answer).not.toMatch(/都介紹過|介紹完/)
+      }
+      else if (turn === 1) {
+        if (answer === '不用') {
+          expect(shown).toEqual([])
+        }
+        else {
+          expect(shown.length).toBeGreaterThan(0)
+          expect(reply?.answer).toContain('需要我幫您推薦餐點嗎')
+          expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'query' && condition.value === name)).not.toBe(true)
+        }
+      }
+      else {
+        expect(reply?.answer).toContain('要回到全部菜單看看嗎')
+        expect(shown).toEqual([])
+      }
+    }
+  }, 120_000)
+
+  // Report: this chat Nov8 23:01 — a short quantity answer must retain the displayed meal identity.
+  // Report: this chat, Nov09 — new preference turns replace positives; food-safety inquiry cannot recommend.
+  it('configured fresh preference turns and food-safety inquiry preserve their distinct purposes', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const speech of ['我想吃魚', '我想吃豬肉', '我想吃150元以內的便當']) {
+      const { decision } = await decideCurrent(speech)
+      let answer: string | undefined
+      if (decision.kind === 'NEEDS_ASSISTANT') {
+        answer = (await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!)).answer
+      }
+      else if (decision.kind === 'FAST_ACTION') {
+        const question = questionReceiptFrom(decision.result)
+        answer = replyWithQuestion(operationReplyFrom(decision.result) ?? '', question)
+        await recordReply(answer)
+        if (question)
+          await runtime.invoke('kiosk_dialogue_presented', { content: answer, questionId: question.questionId })
+      }
+      expect(answer).toBeTruthy()
+      expect(answer).not.toMatch(/未完成|處理失敗/)
+      const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+      process.stdout.write(`[fresh-preferences] ${JSON.stringify({ speech, decision: decision.kind, answer, queryState: context.queryState })}\n`)
+      if (speech === '我想吃豬肉') {
+        expect(context.queryState?.filters.includeIngredients).toEqual(['pork'])
+        expect(context.queryState?.prices).toEqual({})
+      }
+      if (speech.includes('150')) {
+        expect(context.queryState?.category).toBe('便當')
+        expect(context.queryState?.prices).toEqual({ maxPrice: 150 })
+        expect(context.queryState?.filters.includeIngredients).toEqual([])
+      }
+    }
+    const before = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    const { decision } = await decideCurrent('那你說明一下便當是否符合食安？')
+    process.stdout.write(`[food-safety] ${JSON.stringify({ kind: decision.kind, question: decision.kind === 'SERVICE_CLARIFICATION' ? decision.question : undefined })}\n`)
+    expect(decision.kind).toBe('SERVICE_CLARIFICATION')
+    if (decision.kind === 'SERVICE_CLARIFICATION')
+      expect(decision.question.purpose).toBe('staff-assistance')
+    const after = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    expect(after.revisions.recommendation).toBe(before.revisions.recommendation)
+    expect(after.cart.itemCount).toBe(0)
+  }, 180_000)
+
+  // Report: this chat, Nov09 — unknown food requests and staff assent must not fall back to older recommendation navigation.
+  it('configured absent food lookup and latest staff consent preserve their purpose', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const speech of ['我想吃麵包', '有湯嗎', '我今天跑了10公里，我要喝飲料', '你有賣湯嗎']) {
+      const { decision } = await decideCurrent(speech)
+      expect(decision.kind).toBe('NEEDS_ASSISTANT')
+      const result = await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!)
+      process.stdout.write(`[absent-food] ${JSON.stringify({ speech, answer: result.answer, decision: decision.kind, handoff: decision.handoff, calls: result.calls, mainAgentRequests: result.mainAgentRequests })}\n`)
+      expect(result.answer).toContain('查不到')
+      expect(result.answer).toContain('回到全部菜單')
+      expect(result.answer).not.toContain('推薦3')
+    }
+    const { decision } = await decideCurrent('你推薦我，我想吃低脂餐')
+    expect(decision.kind).toBe('SERVICE_CLARIFICATION')
+    if (decision.kind !== 'SERVICE_CLARIFICATION')
+      throw new Error('Expected a staff offer')
+    const services = createServiceClarificationWindow()
+    invitationWindow.supersede()
+    services.present(decision.question, decision.decisionState)
+    await recordReply(decision.question.question)
+    const cue = services.current(conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!)!
+    expect(cue?.purpose).toBe('staff-assistance')
+    const accepted = await decideCurrent('好', cue)
+    expect(accepted.decision.kind).toBe('NEEDS_ASSISTANT')
+    const reply = await agent('好', { ...conversationDecisionStateFrom(accepted.decision.decisionState, accepted.decision)!, serviceClarification: cue })
+    expect(reply.answer).toContain('已經呼叫工作人員')
+    expect(reply.answer).not.toContain('已回到全部菜單')
+    expect(reply.calls).toEqual([])
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  }, 180_000)
+
+  // Report: this chat Nov09 03:55 — 好啊 after the food-safety staff offer became a meal question.
+  it.each([['original', '好啊'], ['supplier', '好啊'], ['original', '不用了'], ['supplier', '不用了']])('configured food-safety staff continuation: %s / %s', async (merchant, transcript) => {
+    const catalog = merchant === 'supplier' ? supplierCatalog : await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: merchant === 'supplier' ? applySupplierOrdering(catalog.items) : catalog.items, ...(merchant === 'supplier' ? { merchant: { id: 'shalun-simulation', operatorName: '周氏蝦捲', paymentPolicy: 'cashless' as const } } : {}), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    invitationWindow.supersede()
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    const first = await decideCurrent('你們的食安資訊怎麼樣？')
+    expect(first.decision.kind).toBe('SERVICE_CLARIFICATION')
+    if (first.decision.kind !== 'SERVICE_CLARIFICATION')
+      throw new Error('Expected a food-safety staff offer')
+    const services = createServiceClarificationWindow()
+    services.present(first.decision.question, first.decision.decisionState)
+    await recordReply(first.decision.question.question)
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+    const cue = services.current(state)
+    expect(cue?.purpose).toBe('staff-assistance')
+    const accepted = await decideCurrent(transcript, cue)
+    process.stdout.write(`[food-safety-continuation] ${JSON.stringify({ merchant, cue, decision: accepted.decision })}\n`)
+    expect(accepted.decision.kind).toBe('NEEDS_ASSISTANT')
+    const answerState = conversationDecisionStateFrom(accepted.decision.decisionState, accepted.decision)!
+    expect(answerState.serviceClarification?.questionId).toBe(cue!.questionId)
+    const reply = await agent(transcript, answerState)
+    process.stdout.write(`[food-safety-reply] ${JSON.stringify({ merchant, transcript, answer: reply.answer, reply: reply.selectedReply })}\n`)
+    if (transcript === '好啊') {
+      expect(reply.selectedReply).toMatchObject({ kind: 'staff-assistance', action: 'accept' })
+      expect(reply.answer).toContain('已通知服務人員')
+    }
+    else {
+      expect(reply.selectedReply).not.toMatchObject({ kind: 'staff-assistance', action: 'accept' })
+      expect(reply.answer).not.toContain('已通知服務人員')
+      expect(reply.answer).not.toContain('安排餐點')
+    }
+    expect(reply.calls).toEqual([])
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  }, 90_000)
+
+  // Report: this chat, Nov09 — a fresh noodle query after three additions repeated a generic clarification.
+  it('configured fresh noodle browse after additions leads to selection and quantity', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const itemId of ['fried-pork-chop-bento', 'beef-noodle-soup', 'dumplings']) {
+      const added = await runtime.invoke('order_add_item', { itemId, quantity: 1 })
+      const question = questionReceiptFrom(added)
+      if (question)
+        await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    }
+    const { decision } = await decideCurrent('我想吃麵')
+    const answer = decision.kind === 'NEEDS_ASSISTANT' ? (await agent('我想吃麵', conversationDecisionStateFrom(decision.decisionState, decision)!)).answer : decision.kind === 'FAST_ACTION' ? String((decision.result as { customerMessage: string }).customerMessage) : ''
+    process.stdout.write(`[noodle-browse] ${JSON.stringify({ kind: decision.kind, answer })}\n`)
+    expect(answer).toContain('紅燒牛肉麵')
+    expect(answer).not.toContain('調整哪項訂單')
+    expect(answer).not.toContain('先看哪一道')
+    const queried = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    expect([queried.queryState?.category, ...queried.queryState?.queries ?? []].join(' ')).toContain('麵')
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 3)
+    const selected = await runtime.invoke('menu_select_item', { itemId: 'beef-noodle-soup' })
+    const question = questionReceiptFrom(selected)!
+    expect(question.purpose).toBe('item-order')
+    expect(question.question).toContain('幾份')
+    await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '兩份' })).toHaveProperty('waitingFor.purpose', 'item-order')
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.lines', expect.arrayContaining([expect.objectContaining({ itemId: 'beef-noodle-soup', quantity: 3 })]))
+  }, 120_000)
+
+  // Report: this chat Nov09 — short fish name plus three servings stalled after four additions.
+  it('configured short fish addition diagnostic after four cart entries', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, serviceContext: () => ({ id: 'short-fish', serviceMode: 'table-service', table: { id: 'test-table', label: '測試桌' }, directSubmissionSupported: true }), gateway: {
+      submit: async () => {
+        throw new Error('Submission is outside this replay')
+      },
+    }, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const itemId of ['fried-pork-chop-bento', 'signature-shrimp-roll-bento', 'dumplings', 'beef-noodle-soup']) {
+      const receipt = await runtime.invoke('order_add_item', { itemId, quantity: 1 })
+      const saved = await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: JSON.stringify(receipt), metadata: { name: 'order_add_item', decisionRoute: 'fast_path' } }) })
+      expect(saved.status).toBe(201)
+      const question = questionReceiptFrom(receipt)!
+      await recordReply(`${operationReplyFrom(receipt)} ${question.question}`)
+      await runtime.invoke('kiosk_dialogue_presented', { questionId: question.questionId, content: question.question })
+    }
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 4)
+    expect(await runtime.invoke('kiosk_fast_path_context', { transcript: '酸辣魚便當三份' })).toHaveProperty('waitingFor.purpose', 'cart-review')
+    const attempt = 1
+    const { decision, decisions } = await decideCurrent('酸辣魚便當三份')
+    process.stdout.write(`[short-fish-decision] ${JSON.stringify({ attempt, decision, decisions })}\n`)
+    const result = decision.kind === 'NEEDS_ASSISTANT' ? await agent('酸辣魚便當三份', conversationDecisionStateFrom(decision.decisionState, decision)!) : { answer: decision.kind === 'FAST_ACTION' ? (decision.result as { customerMessage?: string }).customerMessage : decision.kind, calls: [] }
+    process.stdout.write(`[short-fish-result] ${JSON.stringify({ attempt, ...result, cart: await runtime.invoke('cart_get', { display: false }) })}\n`)
+    if (result.answer)
+      await recordReply(result.answer)
+    expect(result.calls.map(call => call.name)).toEqual(['menu_get', 'menu_confirm_item'])
+    expect(result.answer).toContain('您是要新增泰式酸辣魚便當嗎')
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 4)
+    // The real models only propose the candidate; this explicit synthetic
+    // customer assent checks the existing Menu-owned quantity/consent boundary.
+    const confirmation = await runtime.invoke('kiosk_fast_path_context', { transcript: '對' }) as { candidates: Array<{ id: string }> }
+    const yes = confirmation.candidates.find(candidate => candidate.id.endsWith(':yes'))
+    expect(yes).toBeDefined()
+    await runtime.invoke('kiosk_fast_path_execute', { candidateId: yes!.id })
+    const updated = await runtime.invoke('cart_get', { display: false })
+    expect(updated).toHaveProperty('cart.itemCount', 7)
+    expect(updated).toHaveProperty('cart.total', 925)
+    expect(updated).toHaveProperty('cart.lines', expect.arrayContaining([
+      expect.objectContaining({ itemId: 'thai-sour-spicy-fish-bento', quantity: 3 }),
+      ...['fried-pork-chop-bento', 'signature-shrimp-roll-bento', 'dumplings', 'beef-noodle-soup'].map(itemId => expect.objectContaining({ itemId, quantity: 1 })),
+    ]))
+  }, 180_000)
+
+  // Report: this chat, Nov09 — 130元以下 incorrectly removed the 130元 pork bento.
+  it('configured inclusive and exclusive upper prices retain the pork bento boundary', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let shown: string[] = []
+    runtime = createMenuToolRuntime({
+      menu: catalog.items,
+      onAction: () => {},
+      onCartChange: () => {},
+      onMenuSelection: () => {},
+      onRecommendationsChange: (presentation) => {
+        shown = presentation.itemIds
+      },
+    })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const speech of ['我想要130元以下的便當', '低於130元的便當']) {
+      const { decision } = await decideCurrent(speech)
+      process.stdout.write(`[boundary-decision] ${JSON.stringify({ speech, kind: decision.kind, priceChoiceId: decision.priceChoiceId, constraints: decision.decisionState?.constraints })}\n`)
+      const answer = decision.kind === 'NEEDS_ASSISTANT' ? (await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!)).answer : decision.kind === 'FAST_ACTION' ? String((decision.result as { customerMessage: string }).customerMessage) : ''
+      process.stdout.write(`[boundary-result] ${JSON.stringify({ speech, answer, shown })}\n`)
+      expect(answer).not.toContain('調整哪項訂單')
+      expect(shown).toContain('thai-basil-pork-bento')
+      if (speech.includes('以下'))
+        expect(shown).toContain('fried-pork-chop-bento')
+      else
+        expect(shown).not.toContain('fried-pork-chop-bento')
+    }
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  }, 120_000)
+
+  // Report: DEV-810280 Nov8 23:50–23:54 — multi-add narration and returning from review to add more.
+  it('configured multi-add review and add-more flow preserves concise receipts and cart', async () => {
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    let screen: 'menu' | 'cart_review' | 'item_configuration' = 'menu'
+    let selectedItem: string | undefined
+    let submitted = 0
+    runtime = createMenuToolRuntime({ menu: catalog.items, screen: () => screen, visibleItemId: () => selectedItem, serviceContext: () => ({ id: 'multi-add', serviceMode: 'table-service', table: { id: 'a05', label: 'A05' }, directSubmissionSupported: true }), onAction: () => {}, onCartChange: () => {}, onMenuSelection: (value) => {
+      selectedItem = value
+      screen = value ? 'item_configuration' : 'menu'
+    }, onMenuRequested: () => {
+      screen = 'menu'
+    }, onReviewRequested: () => {
+      screen = 'cart_review'
+    }, onRecommendationsChange: () => {
+      screen = 'menu'
+    }, gateway: { submit: async () => {
+      submitted++
+      throw new Error('No submission authorized')
+    } } })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const speech of ['我要一份排骨便當，還要一份牛肉麵', '好', '我要加點', '再來一份水餃', '這樣就好']) {
+      const { decision } = await decideCurrent(speech)
+      let answer: string | undefined
+      if (decision.kind === 'NEEDS_ASSISTANT') {
+        answer = (await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!)).answer
+      }
+      else if (decision.kind === 'FAST_ACTION') {
+        const question = questionReceiptFrom(decision.result)
+        answer = replyWithQuestion(operationReplyFrom(decision.result) ?? '', question)
+        await recordReply(answer)
+        if (question)
+          await runtime.invoke('kiosk_dialogue_presented', { content: answer, questionId: question.questionId })
+      }
+      process.stdout.write(`[multi-add-review] ${JSON.stringify({ speech, decision: decision.kind, reason: decision.reason, answer, screen })}\n`)
+      expect(answer).toBeTruthy()
+      expect(answer).not.toMatch(/處理失敗|未完成|重新提出|目前可以點/)
+      if (speech.startsWith('我要一份')) {
+        expect(answer).not.toMatch(/130元|150元/)
+        expect(answer).toContain('查看訂單')
+        expect(answer!.match(/[?？]/g)).toHaveLength(1)
+        expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 2)
+      }
+      if (speech === '我要加點') {
+        expect(screen).toBe('menu')
+        expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 2)
+      }
+    }
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 3, lines: expect.arrayContaining([expect.objectContaining({ itemId: 'dumplings', quantity: 1 })]) } })
+    expect(screen).toBe('cart_review')
+    expect(submitted).toBe(0)
+  }, 180_000)
+
+  it('configured owned single-item quantity answer preserves the queried meal', async () => {
+    invitationWindow.reset()
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {}, onRecommendationsChange: () => {} })
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await started.json() as { session: { id: string } }).session.id
+    for (const speech of ['炸排骨便當有嗎？', '一份']) {
+      const { decision } = await decideCurrent(speech)
+      let answer: string | undefined
+      if (decision.kind === 'NEEDS_ASSISTANT') {
+        answer = (await agent(speech, conversationDecisionStateFrom(decision.decisionState, decision)!)).answer
+      }
+      else if (decision.kind === 'FAST_ACTION') {
+        answer = operationReplyFrom(decision.result)
+        const question = questionReceiptFrom(decision.result)
+        await recordReply(answer!)
+        if (question)
+          await runtime.invoke('kiosk_dialogue_presented', { content: answer, questionId: question.questionId })
+      }
+      process.stdout.write(`[owned-quantity] ${JSON.stringify({ speech, decision: { kind: decision.kind, reason: decision.reason }, answer })}\n`)
+      expect(answer).toBeTruthy()
+      expect(answer).not.toMatch(/處理失敗|未完成|沒有可驗證/)
+      if (speech === '炸排骨便當有嗎？') {
+        expect(await runtime.invoke('kiosk_interaction_state')).toHaveProperty('waitingFor.purpose', 'item-order')
+        expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+      }
+    }
+    expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'fried-pork-chop-bento', quantity: 1 }] } })
   }, 120_000)
 
   it('configured 810280 whole conversation preserves cart, questions and new named targets', async () => {

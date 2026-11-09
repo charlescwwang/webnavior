@@ -19,6 +19,8 @@ interface Proposal {
   replaceLineId?: string
   replacementName?: string
   explicitAddition?: boolean
+  /** A page-owned alternative must not be presented as the originally requested product. */
+  alternativeFor?: string
   originalRecipe?: boolean
   ownerTaskId?: string
   presented?: boolean
@@ -88,6 +90,9 @@ export function createMealClarification() {
     else if (pending.replacementName) {
       prompt = mealMessages.confirmReplacement.replace('{original}', pending.replacementName).replace('{item}', pending.label)
     }
+    else if (pending.alternativeFor) {
+      prompt = mealMessages.supplierConfirmAlternative.replace('{query}', pending.alternativeFor).replace('{item}', pending.label)
+    }
     else {
       prompt = (pending.explicitAddition ? mealMessages.confirmAddition : mealMessages.confirmMeal).replace('{item}', pending.label)
     }
@@ -122,7 +127,7 @@ export function createMealClarification() {
   return {
     question,
     /** Main may propose a real target; only a later customer answer establishes it. */
-    propose(context: DecisionContext, itemId: string, replaceLineId?: string, originalRecipe = false, ownerTaskId?: string) {
+    propose(context: DecisionContext, itemId: string, replaceLineId?: string, originalRecipe = false, ownerTaskId?: string, alternativeFor?: string) {
       const item = context.menu.find(item => item.id === itemId && item.available !== false)
       const original = replaceLineId ? context.cart.lines.find(line => line.id === replaceLineId) : undefined
       if (context.phase !== 'ordering' || !item || (replaceLineId && (!original || context.cart.lines.filter(line => line.itemId === original.itemId).length > 1)))
@@ -143,7 +148,7 @@ export function createMealClarification() {
       if (!eligible.length || context.constraints.unresolvedPrice || context.unavailableConditionReferences.length)
         throw new Error('The proposed meal does not satisfy the current verified request conditions.')
       issuedAnswer = undefined
-      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, originalRecipe, deferredPreparation, unsupportedAdjustments: item.optionGroups.length ? unsupported : undefined, ownerTaskId, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
+      pending = { id: crypto.randomUUID(), itemId, label: item.name, context, expiresAt: Date.now() + 30_000, repeatCurrent: false, attempts: 1, explicitAddition: true, originalRecipe, deferredPreparation, unsupportedAdjustments: item.optionGroups.length ? unsupported : undefined, ownerTaskId, alternativeFor, ...(original ? { replaceLineId: original.id, replacementName: original.name } : {}) }
       // Resolve when proposing, never while reading context or processing a
       // refusal. A passive snapshot cannot make a purchase validation throw.
       pending.plan = resolveMealPlan(pending, context)
@@ -163,7 +168,7 @@ export function createMealClarification() {
     /** Resolves the live proposal for a read, without converting it to an order. */
     inquire(questionId: string, context: DecisionContext) {
       const item = inquiry(context)
-      if (!item || question(context)?.questionId !== questionId || (question(context)?.expiresAt ?? 0) <= Date.now())
+      if (!item || question(context)?.questionId !== questionId)
         throw new Error('STALE_PLAN: The meal inquiry expired or changed.')
       pending = undefined
       offer = undefined
@@ -191,11 +196,11 @@ export function createMealClarification() {
       return { id: offer.id, label: offer.label }
     },
     request(questionId: string, context: DecisionContext) {
-      if (pending && question(context)?.questionId === questionId && (question(context)?.expiresAt ?? 0) > Date.now() && current(pending, context)) {
+      if (pending && question(context)?.questionId === questionId && current(pending, context)) {
         pending.attempts++
       }
       else {
-        if (!offer || offer.id !== questionId || offer.expiresAt <= Date.now() || !current(offer, context))
+        if (!offer || offer.id !== questionId || !current(offer, context))
           throw new Error('STALE_PLAN: The meal clarification offer expired or changed.')
         if (offer.repeatCurrent) {
           offer = undefined

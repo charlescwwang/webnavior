@@ -39,22 +39,22 @@ it('latches a technical error, retains the cart, survives remount and requires e
 })
 
 // Report: this chat, 2026-11-06; failed review before admission discarded the recognized sentence.
-it('retains pre-operation failures without locking or duplicating admitted input', () => {
+it('locks pre-operation technical failures without duplicating admitted input', () => {
   const messages = shallowRef<ChatHistoryItem[]>([])
   const scope = effectScope()
   const fault = scope.run(() => useKioskServiceFault(messages))!
   const failure = { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_OPERATION' as const, recovery: { status: 'failed' as const, failure: 'invalid' as const } }
   expect(fault.failDecision(failure, { transcript: '你有買一送一嗎？', message: '處理異常', shownInput: false })).toBe(true)
   expect(messages.value[0]).toMatchObject({ role: 'user', content: '你有買一送一嗎？' })
-  expect(messages.value[1]).toMatchObject({ role: 'assistant', content: '處理異常' })
-  expect(fault.locked.value).toBe(false)
+  expect(messages.value[1]).toMatchObject({ role: 'error', content: '處理異常' })
+  expect(fault.locked.value).toBe(true)
   fault.clear()
   expect(fault.failDecision({ kind: 'IGNORE' }, { transcript: '背景對話', message: '處理異常', shownInput: false })).toBe(false)
   expect(messages.value).toHaveLength(2)
   expect(fault.locked.value).toBe(false)
   expect(fault.failDecision(failure, { transcript: '你有買一送一嗎？', message: '處理異常', shownInput: true })).toBe(true)
   expect(messages.value.filter(message => message.role === 'user')).toHaveLength(1)
-  expect(fault.locked.value).toBe(false)
+  expect(fault.locked.value).toBe(true)
   scope.stop()
 })
 
@@ -87,4 +87,69 @@ it('makes a thrown utterance failure visible, retains speech and latches assista
     view.unmount()
     scope.stop()
   }
+})
+
+// Report: this chat Nov09 — model failures and tool limits bypassed the staff pause before writes.
+it.each(['provider-error', 'timeout', 'tool-limit', 'duplicate-tool-call', 'context-unavailable', 'service-unavailable', 'session-error'] as const)('latches %s before writes and preserves existing successful receipts', (reason) => {
+  const messages = shallowRef<ChatHistoryItem[]>([{ role: 'assistant', content: '水餃兩份已加入。', slices: [], tool_results: [] }])
+  const scope = effectScope()
+  const fault = scope.run(() => useKioskServiceFault(messages))!
+  expect(fault.failConversation({ status: 'failed', reason }, { transcript: '這樣就好', shownInput: false, message: '助手暫時無法完成。' })).toBe(true)
+  expect(fault.locked.value).toBe(true)
+  expect(messages.value[0].content).toBe('水餃兩份已加入。')
+  expect(messages.value.at(-1)?.role).toBe('error')
+  fault.clear()
+  expect(fault.locked.value).toBe(false)
+  scope.stop()
+})
+
+it.each(['completed', 'waiting'] as const)('does not lock a legitimate %s quantity refusal or required question', (status) => {
+  const messages = shallowRef<ChatHistoryItem[]>([])
+  const scope = effectScope()
+  const fault = scope.run(() => useKioskServiceFault(messages))!
+  expect(fault.failConversation({ status }, { transcript: '水餃100份', shownInput: true, message: '請調整份數。' })).toBe(false)
+  expect(fault.locked.value).toBe(false)
+  expect(messages.value).toHaveLength(0)
+  scope.stop()
+})
+
+it.each(['provider-error', 'timeout', 'tool-limit'] as const)('pauses after partial progress on %s without erasing accepted effects', (reason) => {
+  const messages = shallowRef<ChatHistoryItem[]>([{ role: 'assistant', content: '水餃兩份已加入。', slices: [], tool_results: [] }])
+  const scope = effectScope()
+  const fault = scope.run(() => useKioskServiceFault(messages))!
+  expect(fault.failConversation({ status: 'incomplete', reason }, { transcript: '再來一份便當', shownInput: false, message: '先前已完成的餐點保留，這次回覆中斷。' })).toBe(true)
+  expect(fault.locked.value).toBe(true)
+  expect(messages.value[0].content).toBe('水餃兩份已加入。')
+  expect(messages.value.at(-1)?.role).toBe('error')
+  scope.stop()
+})
+
+// Report: this chat Nov09 — ordinary clarification/refusal must remain usable;
+// the staff lock is reserved for a failed technical boundary.
+it.each([
+  { kind: 'CLARIFICATION' },
+  { kind: 'SERVICE_CLARIFICATION' },
+  { kind: 'FAST_ACTION' },
+  { kind: 'NEEDS_ASSISTANT' },
+  { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_OPERATION' },
+] as const)('does not convert a recoverable $kind decision into a technical lock', (decision) => {
+  const messages = shallowRef<ChatHistoryItem[]>([{ role: 'user', content: '不要了' }])
+  const scope = effectScope()
+  const fault = scope.run(() => useKioskServiceFault(messages))!
+  expect(fault.failDecision(decision, { transcript: '不要了', message: '請再確認餐點。', shownInput: true })).toBe(false)
+  expect(fault.locked.value).toBe(false)
+  expect(messages.value).toHaveLength(1)
+  expect(messages.value[0].content).toBe('不要了')
+  scope.stop()
+})
+
+it.each(['INVALID_CHOICE', 'PROVIDER_FAILURE'] as const)('still pauses on a genuine %s failure and preserves the utterance', (reason) => {
+  const messages = shallowRef<ChatHistoryItem[]>([])
+  const scope = effectScope()
+  const fault = scope.run(() => useKioskServiceFault(messages))!
+  expect(fault.failDecision({ kind: 'UNAVAILABLE', reason }, { transcript: '一份便當', message: '處理失敗。', shownInput: false })).toBe(true)
+  expect(fault.locked.value).toBe(true)
+  expect(messages.value[0]).toMatchObject({ role: 'user', content: '一份便當' })
+  expect(messages.value.at(-1)?.role).toBe('error')
+  scope.stop()
 })

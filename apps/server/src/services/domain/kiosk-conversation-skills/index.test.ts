@@ -23,8 +23,37 @@ function modelAnswer(body: Record<string, unknown>, choice: string) {
   const tools = body.tools as Array<{ function: { name: string } }>
   if (tools[0]?.function.name === 'verify_ordering_answer')
     return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_ordering_answer', arguments: '{"choice":"COMPLETE","answerAction":"NO_EXPLICIT_ACTION"}' } }] } }] })
+  const parameters = (body.tools as Array<{ function: { parameters: { required: string[] } } }>)[0]?.function.parameters
+  if (!parameters?.required.includes('recipient'))
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_ordering_intent', arguments: JSON.stringify({ choice, requestCoverage: 'COMPLETE' }) } }] } }] })
   return answer(choice)
 }
+
+// Report: this chat Nov09, 6uT_MUjOadRP0GlicoaFP — 對一份 lost its
+// replacement question after uncertain verification and became an invalid add.
+it.each([
+  { stage: 'intent', direct: false },
+  { stage: 'verification', direct: false },
+  { stage: 'intent', direct: true },
+  { stage: 'verification', direct: true },
+])('keeps a meal question when Main is uncertain at $stage (direct: $direct)', async ({ stage, direct }) => {
+  const candidate = { id: 'confirm-meal:current:yes', description: '確認替代餐點，份數由Menu解析。' }
+  const waitingFor = { questionId: 'current', requestId: 'meal', purpose: 'confirm-meal', question: '要改點炸排骨便當嗎？', expiresAt: Date.now() + 30000, choices: [candidate] }
+  const complete = vi.fn(async (body: Record<string, unknown>) => {
+    const name = (body.tools as Array<{ function: { name: string } }>)[0]!.function.name
+    const args = name === 'verify_ordering_answer'
+      ? { choice: 'COMPLETE', answerAction: 'UNCERTAIN' }
+      : { choice: stage === 'intent' ? 'UNCERTAIN' : candidate.id, requestCoverage: stage === 'intent' ? 'UNCERTAIN' : 'COMPLETE' }
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name, arguments: JSON.stringify(args) } }] } }] })
+  })
+  const decision: KioskInteractionDecision = direct ? { kind: 'FAST_ACTION', actionId: candidate.id, answeredQuestionId: waitingFor.questionId } : admitted
+  const result = await resolveOrderingIntent(decision, { ...input, transcript: '對一份', backgroundSpeechMode: 'off', candidates: [candidate], decisionState: { phase: 'meal_confirmation', waitingFor, intentRecovery: answerScope(waitingFor) } }, complete)
+  expect(result.kind).toBe('NEEDS_CLARIFICATION')
+  expect(result).not.toHaveProperty('actionId')
+  expect(result).not.toHaveProperty('answeredQuestionId')
+  expect(result.reason).not.toBe('NEW_REQUEST')
+  expect(complete).toHaveBeenCalledTimes(stage === 'intent' ? 1 : 2)
+})
 
 it.each(['intent:add-item', 'intent:search-menu'])('uses a real issued effect without turning Main selection into a JEV score: %s', async (choice) => {
   const complete = vi.fn<(body: Record<string, unknown>) => Promise<Response>>(async (body: Record<string, unknown>) => modelAnswer(body, choice))
@@ -581,4 +610,19 @@ it('does not execute a recovered candidate that covers only part of the customer
   expect(result).not.toHaveProperty('actionId')
   expect(result).toHaveProperty('trace.mainSkill.requestCoverage', 'OTHER_REQUEST')
   expect(complete).toHaveBeenCalledOnce()
+})
+
+// Report: this chat Nov8 — weak Jev after a displayed quantity invitation must retain the Menu-owned answer scope.
+it.each(['off', 'enforce'] as const)('recovers a quantity invitation through bounded Main with background mode %s', async (mode) => {
+  const candidate = { id: 'intent:add-item', description: '回答目前炸排骨便當的訂購份數' }
+  const waitingFor = { questionId: 'quantity-offer', purpose: 'item-order', question: '這道餐點要點幾份？', expiresAt: Date.now() + 30000, choices: [candidate] }
+  const result = await resolveOrderingIntent(admitted, { ...input, transcript: '一份', backgroundSpeechMode: mode, decisionState: { phase: 'ordering', waitingFor, intentRecovery: answerScope(waitingFor) }, candidates: [candidate] }, async body => modelAnswer(body, candidate.id))
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', actionId: candidate.id, answeredQuestionId: waitingFor.questionId, resolvedBy: 'main-skill' })
+})
+
+it.each(['expired', 'other-effect', 'unissued'] as const)('does not recover a quantity invitation with %s authority', async (scenario) => {
+  const candidate = { id: 'intent:add-item', description: '回答目前餐點的份數' }
+  const waitingFor = { questionId: 'quantity-offer', purpose: 'item-order', question: '幾份？', expiresAt: Date.now() + (scenario === 'expired' ? -1 : 30000), choices: [candidate] }
+  const result = await resolveOrderingIntent(admitted, { ...input, transcript: '一份', backgroundSpeechMode: 'off', decisionState: { phase: 'ordering', waitingFor, ...(scenario !== 'unissued' ? { intentRecovery: answerScope(waitingFor) } : {}) }, candidates: [candidate] }, async body => modelAnswer(body, scenario === 'other-effect' ? 'intent:start-checkout' : candidate.id))
+  expect(result).not.toHaveProperty('actionId')
 })

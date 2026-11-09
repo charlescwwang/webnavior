@@ -40,7 +40,6 @@ describe('query scope prototype state', () => {
     { questionId: 'another-question', current: revisions, now: 100 },
     { questionId: 'scope-1', current: { menu: 2, recommendation: 2 }, now: 100 },
     { questionId: 'scope-1', current: { menu: 1, recommendation: 3 }, now: 100 },
-    { questionId: 'scope-1', current: revisions, now: 200 },
   ])('rejects stale or mismatched authority: %j', ({ questionId, current, now }) => {
     expect(offer().resolve({ questionId, choice: 'CATALOG' }, current, now)).toEqual({ status: 'STALE' })
   })
@@ -53,4 +52,11 @@ describe('query scope prototype state', () => {
     const flow = offer()
     expect(flow.resolve({ questionId: 'scope-1', choice: 'SHOWN', transcript: '第二個，改成100以下' }, revisions, 100)).toMatchObject({ status: 'NEW_REQUEST', transcript: '第二個，改成100以下' })
   })
+})
+
+// Silence does not change the meaning of a still-visible scope question.
+it('accepts a scope answer after the former time limit while retaining one-use consumption', () => {
+  const flow = offer()
+  expect(flow.resolve({ questionId: 'scope-1', choice: 'CATALOG' }, revisions, 90000)).toMatchObject({ status: 'QUERY', scope: 'CATALOG' })
+  expect(flow.resolve({ questionId: 'scope-1', choice: 'CATALOG' }, revisions, 90001)).toEqual({ status: 'STALE' })
 })

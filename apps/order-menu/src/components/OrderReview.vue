@@ -6,6 +6,8 @@ import type { FulfillmentMode, MenuItem } from '../domain/order-machine'
 
 import { formatOrderingPrice } from '@proj-airi/stage-shared/kiosk-conversation'
 
+import PieceCounter from './pieceCounter.vue'
+
 import { cartOptionControlId, cartRemovalControlId, fulfillmentControlId, quantityStepControlId } from '../webmcp'
 
 interface ReviewLine {
@@ -90,9 +92,12 @@ const emit = defineEmits<{
         </div>
         <div v-for="group in line.optionGroups" :key="group.id" :class="['review-line-options', { 'many-options': group.values.length > 12 }]" role="group" :aria-label="`${line.name} ${group.label}`">
           <span>{{ group.label }}</span>
-          <button v-for="value in group.values" :key="value.id" :ref="element => emit('registerControl', cartOptionControlId(line.id, group.id, value.id), element)" type="button" :disabled="props.completed" :aria-pressed="line.selectedOptions?.[group.id] === value.id" @click="emit('updateOption', line.id, group.id, value.id)">
-            {{ value.label }}<span v-if="value.priceDelta"> {{ value.priceDelta > 0 ? '+' : '' }}{{ formatOrderingPrice(value.priceDelta) }}</span>
-          </button>
+          <PieceCounter v-if="group.presentation === 'piece-counter'" :group="group" :selected="line.selectedOptions?.[group.id]" :owner-id="line.id" cart :disabled="props.completed" @select="valueId => emit('updateOption', line.id, group.id, valueId)" @register-control="(id, element) => emit('registerControl', id, element)" />
+          <template v-else>
+            <button v-for="value in group.values" :key="value.id" :ref="element => emit('registerControl', cartOptionControlId(line.id, group.id, value.id), element)" type="button" :disabled="props.completed" :aria-pressed="line.selectedOptions?.[group.id] === value.id" @click="emit('updateOption', line.id, group.id, value.id)">
+              {{ value.label }}<span v-if="value.priceDelta"> {{ value.priceDelta > 0 ? '+' : '' }}{{ formatOrderingPrice(value.priceDelta) }}</span>
+            </button>
+          </template>
         </div>
       </li>
     </ul>

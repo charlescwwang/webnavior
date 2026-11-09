@@ -147,7 +147,9 @@ it('does not offer original-recipe confirmation for a fresh normal meal order', 
 it.each(['紅燒牛肉麵', '排骨便當', '水餃'])('asks about adding the named dish without a settings receipt: %s', async (name) => {
   const runtime = createMenuToolRuntime({ menu: [{ ...menu[0]!, id: 'dish', name, aliases: [], optionGroups: [] }], onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
   const selected = await runtime.invoke('menu_select_item', { itemId: 'dish' })
-  expect(selected).not.toHaveProperty('customerMessage')
+  expect(selected).toHaveProperty('customerMessage', expect.stringContaining('幾份'))
+  expect(selected).toHaveProperty('pendingCustomerChoice.purpose', 'item-order')
+  expect(selected).toHaveProperty('customerMessage', expect.not.stringContaining('設定'))
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'custom', transcript: `我要${name}，不要蔥`, expectedMenuRevision: 0, constraints: {} })
   expect(await runtime.invokeForAgent('menu_confirm_item', { itemId: 'dish', originalRecipe: true })).toMatchObject({ pendingCustomerChoice: { question: '這道餐點不提供客製化，還要點嗎？' } })
   expect(await runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })

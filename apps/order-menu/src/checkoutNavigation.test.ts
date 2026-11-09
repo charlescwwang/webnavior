@@ -97,7 +97,7 @@ it('cancels the bound proposal while retaining checkout and dine-in', async () =
   expect(await f.runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { fulfillmentMode: 'dine-in', itemCount: 1 } })
 })
 
-it.each(['wrong-id', 'expired', 'changed', 'same-turn', 'unpresented', 'duplicate'])('rejects %s confirmation without selecting invoice or silently applying another action', async (scenario) => {
+it.each(['wrong-id', 'expired-task', 'changed', 'same-turn', 'unpresented', 'duplicate'])('rejects %s confirmation without selecting invoice or silently applying another action', async (scenario) => {
   vi.useFakeTimers()
   try {
     const f = await setup()
@@ -106,8 +106,8 @@ it.each(['wrong-id', 'expired', 'changed', 'same-turn', 'unpresented', 'duplicat
       await f.present(result)
     if (scenario !== 'same-turn')
       await f.begin('確認')
-    if (scenario === 'expired')
-      vi.advanceTimersByTime(15_001)
+    if (scenario === 'expired-task')
+      vi.advanceTimersByTime(300_001)
     if (scenario === 'changed') {
       await f.end()
       await f.runtime.invokeManual('cart_set_line_quantity', { lineId: (await f.runtime.invoke('cart_get', { display: false }) as { cart: { lines: Array<{ id: string }> } }).cart.lines[0]!.id, quantity: 2 })
@@ -178,19 +178,23 @@ it('reaffirms the existing mode during checkout without asking to return and cha
   expect(f.snapshot()?.stage).toBe('invoice')
 })
 
-it('does not expose invoice choices or an answer write after confirmation expiry', async () => {
+it('retains the presented confirmation across silence and answers only in a fresh task', async () => {
   vi.useFakeTimers()
   try {
     const f = await setup()
     const offered = await f.offer()
     await f.present(offered)
-    vi.advanceTimersByTime(15_001)
+    await f.end()
+    vi.advanceTimersByTime(120_000)
     const context = await f.begin('確認')
     expect(context.phase).toBe('pending_confirmation')
     expect(context.waitingFor?.expiresAt).toBeLessThan(Date.now())
     expect(context.allowedToolNames).not.toContain('checkout_choose_invoice')
-    expect(context.allowedToolNames).not.toContain('order_answer_confirmation')
+    expect(context.allowedToolNames).toContain('order_answer_confirmation')
     expect(f.snapshot()?.invoiceMethod).toBeUndefined()
+    await f.runtime.invokeForAgent('order_answer_confirmation', { confirmationId: offered.pendingConfirmation.confirmationId, confirmedByUser: true })
+    expect(f.snapshot()).toBeUndefined()
+    expect(await f.runtime.invoke('cart_get', { display: false })).toMatchObject({ cart: { fulfillmentMode: 'takeout', itemCount: 1 } })
   }
   finally { vi.useRealTimers() }
 })

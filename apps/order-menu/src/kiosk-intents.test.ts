@@ -183,7 +183,7 @@ describe('kiosk intent routing', () => {
     expect(resolveIntent(browse.candidates.find(candidate => candidate.intent === 'SEARCH_MENU')!, browse)).toMatchObject({ kind: 'PLAN', plan: { slots: { scope: 'all' } } })
     const question = { questionId: 'Q1', purpose: 'fulfillment' as const, phase: 'ordering' as const, choices: [], question: '內用還是自取？', expiresAt: 100, expectedRevisions: { cart: 0 } }
     expect(questionIsCurrent(question, base.revisions, 99)).toBe(true)
-    expect(questionIsCurrent(question, base.revisions, 100)).toBe(false)
+    expect(questionIsCurrent(question, base.revisions, 100)).toBe(true)
     expect(questionIsCurrent(question, { ...base.revisions, cart: 1 }, 99)).toBe(false)
   })
   it('bounds a full menu to semantic intents and resolves a specific alias before its category', () => {
@@ -483,6 +483,7 @@ describe('kiosk intent routing', () => {
     expect(authorize(compileOperationPlan(clearResult.plan), clear)).toEqual({ kind: 'REQUIRE_CONFIRMATION' })
     const confirmation = createConfirmation({ action: 'CLEAR_CART', cartRevision: 3, confirmationId: 'confirm-1', createdAt: 1_000, expiresAt: 4_000, payload: {} })
     expect(validateConfirmation(confirmation, { cartRevision: 3, now: 2_000 })).toEqual({ kind: 'VALID' })
+    expect(validateConfirmation(confirmation, { cartRevision: 3, now: 90_000 })).toEqual({ kind: 'VALID' })
     expect(validateConfirmation(confirmation, { action: 'CANCEL_CHECKOUT', cartRevision: 3, now: 2_000 })).toEqual({ kind: 'INVALID', reason: 'MISMATCH' })
     expect(validateConfirmation({ ...confirmation, consumedAt: 2_000 }, { cartRevision: 3, now: 2_001 })).toEqual({ kind: 'INVALID', reason: 'CONSUMED' })
 
