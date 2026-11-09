@@ -8,6 +8,40 @@ accumulating history.
 ## Current State
 
 
+- Nov09 supplier availability follow-up DEPLOYED: commit36ad1d0 removes
+  supplier-item-03 控肉飯,05 宮保雞丁便當,06 烤雞腿便當, retaining08 retirement.
+  Active supplier catalog12 items/revision supplier-menu-20261109-v3. Old menu
+  unchanged. /tmp/supplier-retire-three-published/release.json plus
+  /tmp/publish-supplier-retire-three.py have backup/rollback. Only Bridge source
+  supplierSimulation.ts updated; Bridge PID2730337, API/frontends unchanged.
+  Public direct and actual /api/kiosk/pos/supplier/v1/catalog verified12/retired
+  IDs absent. Menu1136 pass/202 opt-in skip, Bridge catalog2 pass, scoped types
+  and lint pass. No microphone code changed. Reload Kiosk to fetch new catalog.
+  Mic report confirmed by user: UMA-8 eight-channel, leak during TTS (not merely
+  waiting music). Asked for dynamic-processing switch, actual channels/status,
+  playback spatial mode (binary/soft/gate); response pending. Current code
+  switches from actual TTS playing event; dynamic path fixed0dB,320ms tail guard
+  unmeasured for that room. Do not blindly alter VAD/gain/tail/AEC3 or assume
+  eight-channel RAW has hardware echo cancellation. AEC3 remains unaccepted.
+
+- Bridge9 failures root cause CONFIRMED in read-only isolated snapshots:
+  /tmp/bridge-cause-audit-20261109/audit.json and /tmp/bridge-cause-audit-*.log.
+  Local Git source menu store周氏蝦捲/product周氏蝦捲招牌便當 differs from deployed
+  source store示範餐館/product蝦捲招牌便當 (both145). Code app.ts,bridge.ts,
+  simulator.ts hash-identical to deployed; the source JSON differs. Baseline
+  local60 pass/9 fail; updating ONLY7 test string literals (5 meal/2 store) gives
+  69 pass. Original unmodified tests with DEPLOYED source JSON also69 pass.
+  Seven transaction tests rejected stale meal names at validateCartAgainstCatalog
+  before the intended payment/idempotency assertions; two catalog expectations
+  differed. This is data/test/deployment version drift, not nine proven trading
+  bugs. In-memory control: stale name rejected/submit0,canonical accepted/submit1;
+  /tmp/bridge-cause-name-control2.log. No real payment/order or production edits.
+  Future work: explicitly align catalog sources/fixtures; never weaken name or
+  price validation just to turn tests green. Full lint2364 errors in13 unchanged
+  files: JSON formatting1623, eval scripts697, research30,generated Godot2,
+  existing source/test policy12. No release-modified files among those13.
+
+
 - Nov09 neighboring regressions + supplier retirement DEPLOYED;
   code commits c2bcc2b (ordering lifecycle) and e4f14e2 (supplier retirement). User asked for representative regressions and that staff locking
   remain exceptional. Supplier public catalog now15 items, revision
