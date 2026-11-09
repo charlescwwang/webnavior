@@ -18,8 +18,11 @@ accumulating history.
   IDs absent. Menu1136 pass/202 opt-in skip, Bridge catalog2 pass, scoped types
   and lint pass. No microphone code changed. Reload Kiosk to fetch new catalog.
   Mic report confirmed by user: UMA-8 eight-channel, leak during TTS (not merely
-  waiting music). Asked for dynamic-processing switch, actual channels/status,
-  playback spatial mode (binary/soft/gate); response pending. Current code
+  waiting music). User confirmed dynamic processing OFF,ready/8CH. This uses
+  soft mode, not playback-switched Binary Mask. Instructed stop microphone ->
+  enable dynamic processing -> apply/restart, then verify binary during TTS,
+  tail->gate after stop,normal speech/short 好/barge-in. No field results yet.
+  Current code
   switches from actual TTS playing event; dynamic path fixed0dB,320ms tail guard
   unmeasured for that room. Do not blindly alter VAD/gain/tail/AEC3 or assume
   eight-channel RAW has hardware echo cancellation. AEC3 remains unaccepted.
