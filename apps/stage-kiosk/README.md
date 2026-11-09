@@ -24,13 +24,14 @@ Kiosk/table service mode and microphone behavior remain independent.
 
 Use it for customer-facing horizontal or vertical kiosk displays. Do not use it as a replacement for the normal settings-oriented `stage-web` application.
 
-Chinese conversation text, recognized-speech display, status messages and diagnostic
-transcript headings use the shared OpenCC Taiwan Traditional converter. Speech
-synthesis receives the same converted text. Presentation uses copies: original
-ASR, model history, tool arguments/results and raw diagnostic traces remain
-unchanged for decisions and troubleshooting. Text typed into the simulation
-input is also submitted unchanged. This normalizes Chinese writing; it does
-not translate other languages or verify the truth of a model reply.
+Assistant conversation text, status messages and diagnostic headings use the
+shared OpenCC Taiwan Traditional converter. Speech synthesis receives the same
+converted assistant text. The ordering vocabulary keeps 虱目魚 instead of
+OpenCC’s 蝨目魚. Customer message bubbles and recognized/pending transcripts
+preserve the received text, including original spelling and price notation.
+Presentation uses copies: original ASR, model history, tool arguments/results,
+typed input and raw diagnostic traces remain unchanged for decisions and
+troubleshooting. Conversion does not verify the truth of a model reply.
 
 ## Per-device text input
 
@@ -108,6 +109,12 @@ Main execution and bounded reply repair share the customer-response policy in
 reply topic `out-of-scope` explains the limit; `capabilities` answers an explicit
 capability question, while `other` reports insufficient ordering information.
 Scope-refusal wording does not imply future support or staff referral.
+
+A validated, unexecuted quantity-limit refusal explains the per-item limit and
+offers optional staff assistance. Acceptance displays the simulated notification;
+refusal keeps ordering available. Both retain the cart and never latch the
+technical-fault overlay. Bound short staff answers finish locally; special-order intent confirmation
+continues through read-only Main. Neither grants cart writes.
 A scope refusal is a normal assistant reply, never a technical fault or an order
 receipt. It requires no unrelated menu lookup and grants no operation authority.
 
@@ -126,6 +133,21 @@ This is a **simulated presentation**, with `notificationMode: simulated` in the
 presentation event; it sends no external notification. It does not activate the
 technical service pause, open an overlay, clear dietary constraints or disable
 manual ordering. A declined or expired invitation grants no order authority.
+A bare finite acceptance/refusal (for example 好啊 or 不用了) to a live
+`staff-assistance` question uses the existing factual reply renderer directly
+after a fresh Menu context check, without a JEV/Main request. The local receipt
+records its question ID, acceptance/refusal and simulated delivery mode. It is not
+requalified as a new meal request. Compound utterances, new requests, other
+question purposes and stale invitations retain normal semantic routing. This
+Host policy applies to both the original and supplier Menu entries.
+For longer staff answers, staged routing first chooses accept, decline, a new
+request or clarification against the current assistance invitation. The
+question-bound `STAFF_ANSWER` response cannot select the older cart/checkout
+question; Host rechecks live Menu context before displaying its simulated
+notification. New requests still use ordinary ordering qualification.
+Main limitation replies after menu reads retain their fresh policy context;
+validated quantity refusals and quantity-policy replies both offer optional
+staff help instead of entering the technical-fault overlay.
 
 Uncertain service admission uses `replyOnly` when it has no qualified menu-read
 scope. This permits a reply without giving Main permission to open the cart,
@@ -272,11 +294,24 @@ screen with the QR-code enrollment flow.
 An accepted order-completion event closes voice admission before asynchronous
 recording work. The host pauses VAD/array processing, invalidates queued speech
 and rejects late ASR results. The submitting Agent can still finish its accepted
-receipt. Dismissing the completion screen keeps voice closed; the customer must
-press the new-conversation/new-order button to resume. Resetting also blocks
+receipt. Dismissing the completion screen keeps voice closed. Explicit new-order
+actions resume only after a successful reset. With healthy local observation,
+confirmed departure followed by an approaching/engaged visitor also requests
+that same reset, after receipt cleanup finishes. Passing people, camera faults
+and a still-present customer do not resume voice. Resetting also blocks
 voice. This does not change the saved microphone setting, capture algorithms,
 AEC, or browser permission. Lifecycle unit controls cover closure and explicit
 resumption; full Scene, Windows Firefox and physical playback remain to be tested.
+Every fresh round returns to standby, including manual and idle-countdown resets;
+it does not create an active customer until a welcome or customer interaction
+begins. New-round readiness rearms local greeting windows without reloading the
+page. Merely dismissing a receipt preserves departure history and the voice latch.
+Accepted completion independently announces the localized “Order submitted”
+message once, including orders submitted directly on the screen. It waits for
+already-issued work to settle, then owns terminal speech instead of a late
+Agent/fast-path reply. Microphone admission remains closed. Ending the receipt
+or beginning a new round retires pending/playing completion speech; persistence
+of the completion record is not a prerequisite for that announcement.
 
 ## Meal clarification
 
@@ -302,6 +337,12 @@ current confirmation without buying it, guessing quantity or asking the same
 purchase question again. This read has an additional recipient check; ordinary
 Yes/No answers still take one Jev call. Companion speech and uncertain recipients
 remain silent. Named alternatives, categories and filters use normal routing.
+
+A newly presented service/staff question supersedes an older Host navigation
+invitation and binds to the raw Menu state, rather than the projected invitation
+snapshot. The next assent is scoped to that service question. An existing service
+cue prevents the Host from projecting an older menu-return invitation over it;
+revision changes and expiry still invalidate the cue.
 
 Service clarification is a bounded context cue, not automatic admission for the
 next microphone segment. Silent background/uncertain segments neither renew nor
@@ -616,6 +657,14 @@ Kiosk. Preserve the full-page manual-input check when evaluating any CSS fix.
 
 ## Anonymous customer sessions
 
+Visitor recording ownership is retired immediately on reset, independently of
+late start/end HTTP responses. A retired creation is closed as cancelled; a lost
+end receipt cannot restore the old session ID. Ordered transcript and diagnostic
+queues remain separate per visitor, so retired saves cannot block the next round.
+Session start/end, transcript saves and history reads have a 15-second HTTP
+deadline; these requests are not automatically retried. The existing model-task
+budget and uncertain ordering-effect recovery remain unchanged.
+
 Main Agent accepts both direct requests with Fast Path disabled and Jev handoffs
 through the same conversation loop. With current Menu context, customer text is
 rendered from validated reply selectors or actual tool receipts; draft success
@@ -682,6 +731,12 @@ Each customer starts an anonymous Kiosk session when they touch the screen, type
 - After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and menu/order state are reset to clean standby. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
 - The owned menu reports completion immediately after payment and accepted submission. Its transient read-only receipt URL is displayed as a separate QR and link, even when the survey is disabled. Both dine-in and takeout customers can scan to keep their pickup number, meals, quantities and total; the link lasts 30 minutes and offers no table, fulfillment or payment actions. The earlier test-only table-binding continuation stays separate. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
 - In administrator mode, use **結束目前接待** to immediately clear the current customer's data.
+
+Presence-based idle protection applies before the warning appears. Once the
+15-second warning is displayed, presence updates cannot cancel its deadline;
+explicit continuation still retains the current order. If a scheduled expiry
+fires before that deadline after wall-clock correction, it rechecks the remaining
+interval rather than leaving the dialog without an expiry callback.
 
 This is intentionally separate from AIRI's general chat history. Reception reset
 clears customer-visible state, while the restricted system archive retains the
@@ -806,6 +861,34 @@ and both decisions share the per-utterance question budget. Main Agent turns bin
 host-owned task before sending messages, and release only their matching task.
 Completed reads and their conditions accompany the handoff so the Agent does
 not restart an unfiltered search.
+A completed typed service reply with no attempted tool effect may fall back to
+clarification if its selection cannot render; it does not fabricate a staff call
+or enter the technical order-fault lock. Provider/transport failures and unknown
+operation results keep their existing fault handling. A consented simulated staff
+notice says the customer may continue ordering and repeats only the current
+Menu-owned question, when one exists.
+
+A completed read-only named lookup retains its structured absence and alternative
+facts even when Main subsequently chooses generic clarification. The presented
+reply also retains `menu-information` provenance, so Host does not create a new
+unrelated clarification cue over those facts. This applies to partial absence in
+multi-subject reads too. Failed/data-only/empty-filter receipts and unfinished
+mutations do not acquire this policy. Unqualified recommendation-versus-lookup
+model routing is unchanged; only already qualified subject handoffs constrain it.
+
+A newly presented recommendation/menu-return invitation records the exact passive
+cart-review or checkout-entry question it displaced. It may own assent over that
+older question, but never over a newer question ID, meal configuration or a
+confirmation/payment phase. Both Main and fast-path presentation use this policy.
+
+A presented customer question does not expire merely because the customer pauses.
+Its identity, purpose and current service/order state determine whether a reply
+still answers it. Service cues are cleared on settlement, supersession or session
+reset. Staff-assistance assent stays on the read-only staff reply path in both
+text and voice modes. Inference/operation deadlines remain separate: a late model
+result cannot revive an old execution ticket, and a fresh answer must revalidate
+current state. This does not extend the session idle-reset policy.
+
 Unfinished speech is retained for three seconds in the same phase/revisions. Jev
 classifies the next utterance's relation before the application resolves separate
 fragments; transcripts are never blindly joined. Background does not consume a
@@ -885,6 +968,10 @@ are stored independently from the model, hash-versioned, and applied only after
 that Profile is published. **待機動作** loops while the Kiosk waits; **招呼客人**
 plays once when a proactive greeting is spoken. Other configured clips map to
 listening, thinking, recommendation presentation, and order acknowledgement.
+Motion loads are owned by the latest selection: a late thinking clip cannot
+replace idle after a reply. Model replacement and component disposal invalidate
+pending motion loads; a failed current asset stops the previous motion and
+reports the loading error instead of leaving thinking running indefinitely.
 
 ## Completion survey invitation
 
@@ -1069,8 +1156,8 @@ verifies its actual track identity, observes its channels and rebuilds processin
 and VAD. Only a successfully acquired input is saved in
 `kiosk/audio/input-device`; unavailable or mismatched devices never silently use
 the browser default. An actual eight-channel input selects the existing array
-path; other channel layouts retain standard capture. The dynamic spatial trial
-flag remains independent and defaults off.
+path with TTS-aware dynamic processing enabled by default; other channel layouts
+retain standard capture. An explicit operator disable remains available.
 
 Capture state, actual captured device, observed channels, processing mode and VAD
 readiness are separate. A listed input or loaded VAD model does not establish
@@ -1100,14 +1187,48 @@ Mask arithmetic.
 
 Active eight-channel **Soft Mask** uses the operator-requested fixed **+65 dB**
 gain (about1778.28×), after spatial processing and before both VAD inference and
-ASR buffering. Opt-in dynamic Binary/Raw Gate processing uses fixed **0 dB** for
-the entire graph, following the supplied unamplified offline reference; it never
+ASR buffering. Dynamic Binary/Raw Gate processing uses fixed **+15 dB trial gain**
+for the entire graph, a field trial for weak preserved speech (+3dB over the previous setting);
+it never
 changes gain at a TTS edge. Applying65dB to normal-level gated Raw would clip
 speech and amplify leakage. Standard capture, including a failed Mask generation,
 uses0dB. At nonzero gain the existing streaming limiter retains its0.98 ceiling,
 immediate attack and50ms release. There is no new AGC or normalization. Raw and
-processed comparison recordings stay unamplified. Neither gain choice establishes
+processed comparison recordings stay unamplified. The +15dB also amplifies
+residual echo; it cannot reconstruct bins removed by Binary. It is not an AEC
+fix or a physically accepted setting. Neither gain choice establishes
 physical speech/VAD quality; normal-volume acceptance remains required.
+
+Current-session ASR receipts appear immediately as user bubbles inside the
+auto-following conversation area, including while an older tool turn owns the
+queue. Pending/blocked status remains separate. Promotion to formal history
+removes the provisional bubble in the same update, without changing raw text
+or granting order authority. If presence closes after successful ASR, retain
+the receipt with the existing presence explanation; reset/retired candidates
+cannot publish into another customer round.
+
+General capture verifies browser processing after applying its AEC/NS/AGC
+constraints. Chromium can resolve that call while keeping all three disabled
+on a stream acquired for raw channel probing. When a reported value is false,
+the Kiosk reacquires the same explicitly selected device once with general voice
+constraints at acquisition. The device owner retains track ownership and exact
+identity verification; the replacement is marked standard so routing never turns
+processing off again or repeats raw probing on that stream. AEC still reported disabled after this
+single reacquisition is surfaced instead of entering a retry loop. Optional NS/AGC
+remaining disabled does not block usable AEC-enabled capture. Missing browser
+settings remain unknown in diagnostics. Actual eight-channel capture retains raw
+acquisition and the existing spatial processing; manual Apply starts a fresh raw
+probe for the chosen device. This adds acquisition work only when recovery is
+needed, not buffering or model calls to normal speech turns. Acoustic TTS-only,
+normal-volume short answers and interruption still need physical acceptance.
+
+The same panel reports live-track `getSettings()` values for echo cancellation
+(AEC), noise suppression (NS) and automatic gain control (AGC), rather than the
+requested capture constraints. These snapshots refresh at4Hz only while the panel
+is open and clear when the input stream changes. Missing values mean the browser
+has not reported the setting; stopped capture is shown separately. An enabled
+AEC setting is not evidence of successful acoustic echo suppression. No recording
+or diagnostic upload is added, and capture/VAD policies are unchanged.
 
 The operator audio panel measures reference/Mask RMS and peak before gain,
 recognition RMS/peak after gain/limiting, processed VAD sample counts, current and
@@ -1288,10 +1409,22 @@ The Main tool loop distinguishes `waiting` from completed/failed. A Menu-owned
 scope/identity/configuration or new membership/invoice/tax/payment question
 pauses the batch before later sibling calls execute, records those siblings as unexecuted, and returns the question
 without another model continuation. Deferred calls are not automatically replayed.
+Terminal conversation failures (provider/format failure, timeout, tool round
+limit, duplicate calls, unavailable context/service/session, or an unrenderable
+reply) enter the persisted service-fault pause before or after browser effects.
+Recognized input, cart and accepted effects remain intact; no automatic replay
+is offered. The same lock renders the staff notice and starts its spoken reminder
+in voice and text modes. PIN recovery or a successful new-order reset releases
+it. Staff notification remains simulated. Ordinary domain refusals, valid
+quantity-limit replies, semantic clarification and pending questions stay normal.
+
 Final Host/Menu validation still decides which question may be shown. Operation
 presentation retains every accepted receipt in this turn, with only the current
 validated question; a later failure reports partial progress rather than losing
-earlier successes or claiming the entire request completed.
+earlier successes or claiming the entire request completed. Structured read facts take precedence over the callback's raw fallback
+message: an older lookup prompt must not reappear before a later validated
+identity/quantity/configuration question. Accepted operation receipts still
+precede independent factual reads.
 
 Run the retained offline field regressions after changing Jev routing, Main
 instructions/skills, Host authority/receipts, or Menu ordering state:
@@ -1418,17 +1551,27 @@ seven-microphone spatial processor, independent of device name. Mapping/radius
 remain operator settings; channel count does not establish physical geometry.
 Other channel counts retain ordinary browser capture and stream VAD.
 
-The operator panel offers **TTS-aware directional processing**, a local opt-in
-(`kiosk/audio/dynamic-spatial`, default false), editable only while capture is
-stopped. Disabled uses the deployed Soft Mask and semantic interruption. Enabled
+The operator panel offers **TTS-aware directional processing**, enabled by default
+only on the actual eight-channel spatial path. Its local operator preference
+(`kiosk/audio/dynamic-spatial-enabled`, default true) is editable while capture
+is stopped. The former default-off opt-in key is no longer read: existing
+installations receive the new default, while an explicit disable under this
+policy persists across capture restarts. Disabled uses Soft Mask and semantic
+interruption. Enabled
 uses the same48→16k FIR, Hann512/hop256 STFT, direction competition and Gaussian
 smoothing in a single bounded Worker. During native audible TTS it selects Binary
 Mask (front coherence wins per frequency bin). Otherwise it selects gated Raw
 from mapped microphone5, not a second capture or detector. The spatial Gate uses
-v4's speech-band weighted coherence/mask criteria, requires three directional
-frames, and reuses existing four-frame lookahead for32ms pre-open; its320ms
+v4's speech-band weighted coherence/mask criteria, averages seven causal frames
+before requiring three directional decisions, and reuses existing four-frame
+lookahead for32ms pre-open; its320ms
 hangover/32ms release does not buffer audio. This shortened Gate differs from the
 v4 offline centred smoothing/96ms pre-open and must be separately field-validated.
+The causal average prevents intermittent side interference from indefinitely
+closing the Gate in the synthetic regression. It adds no PCM wait or frames,
+but spatial evidence can take up to six hops (96ms) to settle after a direction
+change; this is in addition to the existing hangover. It does not recover speech
+removed by Binary during TTS, change recognition gain or tune Silero thresholds.
 
 Native `playing` and synchronous playback termination drive switching, not the
 Agent's speaking phase or pending synthesis. The Worklet flushes partial capture
@@ -1672,4 +1815,9 @@ policy. Physical voice acceptance remains pending.
 
 ### 版本辨識與更新
 
-現場管理設定顯示載入版本（Git commit 與 UTC 建置時間）。新版部署後請在無進行中訂單時使用既有重新載入功能；`/kiosk/admin-recover.html` 可復原被舊管理 PWA 攔截的後台入口，保留登入及裝置偏好。
+現場管理設定顯示實際內嵌於已載入 JS 的發布識別與 UTC 建置時間。建置時用
+`VITE_RELEASE_ID` 指定與 `version.json.release` 相同的識別；未指定時顯示
+Git commit 加 UTC 建置時間，同一 commit 重建也可分辨。這個欄位不以伺服器
+最新 `version.json` 取代已載入程式的版本。新版部署後請在無進行中訂單時使用
+既有重新載入功能；`/kiosk/admin-recover.html` 可復原被舊管理 PWA 攔截的後台
+入口，保留登入及裝置偏好。

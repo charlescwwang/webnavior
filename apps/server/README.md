@@ -448,6 +448,22 @@ source is currently published; `service-information/topic:promotions` renders a
 staff-assistance offer through the existing simulated, nonblocking notification
 flow. It is not a menu lookup, purchase authorization or an out-of-scope refusal.
 
+ASR requests include ordering quantity vocabulary (一份、兩份 through 十份、
+二十份 and 一碗、兩碗) in the existing upstream `prompt`. This guides recognition;
+the gateway returns the upstream transcript unchanged and does not rewrite
+ordinary duration words such as 兩分鐘 into order quantities. Recognition
+improvement still requires physical-microphone acceptance.
+
+A current staff invitation takes priority over passive cart/navigation questions.
+Staged routing classifies a longer reply as acceptance, refusal, new request or
+uncertain; only acceptance/refusal returns a question-bound `STAFF_ANSWER`.
+The Host validates its fresh Menu context and renders the simulated notification
+without commerce tools. Finite bare answers may finish locally.
+For pure staff/quantity-policy replies, descriptive `topic`/`subjects` fields
+from the shared information tool are discarded before strict action/context
+validation. Unknown fields, invalid actions and missing invitation/policy facts
+still fail validation; no mutation arguments are normalized by this policy.
+
 Every staged utterance rechecks service admission, including while a service
 clarification is pending. Uncertain service relevance and unknown service meaning
 remain distinct: a valid Menu question keeps its existing bounded answer route;
