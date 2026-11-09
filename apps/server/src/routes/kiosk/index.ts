@@ -15,10 +15,10 @@ import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import { useLogger } from '@guiiai/logg'
 import { audioWarningSchema } from '@proj-airi/stage-shared/kiosk-audio'
-import { contextReplySchema, conversationContextSchema, conversationRequestSchema, customerReplySchema, handoffSchema, intentRecoverySchema, isServiceLimitationReply, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { contextReplySchema, conversationContextSchema, conversationRequestSchema, customerReplySchema, decisionRevisionsSchema, handoffSchema, intentRecoverySchema, isServiceLimitationReply, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
+import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, strictObject, string, unknown } from 'valibot'
 
 import { rateLimiter } from '../../middlewares/rate-limit'
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
@@ -131,7 +131,7 @@ const conversationMessageSchema = object({
     menuRevision: optional(pipe(number(), integer(), minValue(0))),
     constraints: optional(object({ exclude: pipe(array(pipe(string(), maxLength(80))), maxLength(9)), include: optional(pipe(array(pipe(string(), maxLength(80))), maxLength(9))), dietary: optional(literal('vegetarian')), price: optional(priceConditionsSchema), unresolvedPrice: optional(boolean()) })),
     completedReads: optional(pipe(array(object({ toolName: pipe(string(), maxLength(80)), customerMessage: pipe(string(), maxLength(2_000)) })), maxLength(2))),
-    unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
+    unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(20))),
     fulfillmentModes: optional(pipe(array(object({ id: picklist(['dine-in', 'takeout']), label: pipe(string(), minLength(1), maxLength(80)) })), maxLength(2))),
     retainedRequests: optional(pipe(array(conversationRequestSchema), maxLength(20))),
     intentRecovery: optional(intentRecoverySchema),
@@ -194,7 +194,7 @@ const interactionDecisionSchema = object({
       products: pipe(array(object({ label: pipe(string(), maxLength(120)), matchedText: pipe(string(), minLength(1), maxLength(120)), source: picklist(['name', 'alias', 'fragment']) })), maxLength(5)),
       categories: pipe(array(object({ label: pipe(string(), maxLength(120)), matchedText: pipe(string(), minLength(1), maxLength(120)), itemCount: pipe(number(), integer(), minValue(0)) })), maxLength(5)),
     })),
-    revisions: optional(object({ cart: number(), checkout: number(), selectedItem: number(), menu: optional(number()) })),
+    revisions: optional(decisionRevisionsSchema),
     completedReads: optional(pipe(array(object({ toolName: pipe(string(), maxLength(80)), customerMessage: pipe(string(), maxLength(2_000)) })), maxLength(2))),
     unavailableConditionReferences: optional(pipe(array(object({ id: pipe(string(), regex(/^[a-z-]+$/), maxLength(80)), label: pipe(string(), maxLength(120)) })), maxLength(7))),
     menuRevision: optional(pipe(number(), integer(), minValue(0))),
@@ -450,7 +450,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!options.systemOne || !await options.systemOne.isEnabled())
       return c.json({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
     const cue = result.output.decisionState?.serviceClarification
-    if (cue && (cue.expiresAt <= Date.now() || cue.contextKey !== serviceContextKey(result.output.decisionState!)))
+    if (cue && (cue.contextKey !== serviceContextKey(result.output.decisionState!)))
       delete result.output.decisionState!.serviceClarification
     const decisionInput = {
       backgroundSpeechMode: decisionSettings.backgroundSpeechMode,
@@ -1338,17 +1338,22 @@ async function finishConversationReply(
   // not permission for the program to guess a different query action.
   let queryReview: string | undefined
   let inferredCategory: string | undefined
+  // Menu's SEARCH_MENU task binds visible reads to these qualified literal
+  // subjects, including an erroneous category/clarify proposal. Reviewing the
+  // unused inferred category would block the actual original-name lookup.
+  const subjectBoundRead = input.decisionState?.handoff?.intent === 'SEARCH_MENU'
+    && Boolean(input.decisionState.handoff.subjects?.length)
   if (context.taskId && context.sourceUtterance) {
     for (const call of answer.toolCalls) {
       if (call.function.name !== 'menu_recommend' || !context.allowedToolNames.includes(call.function.name))
         continue
       try {
         const args = JSON.parse(call.function.arguments)
-        const categoryNeedsReview = typeof args.category === 'string' && !context.sourceUtterance.includes(args.category)
+        const categoryNeedsReview = !subjectBoundRead && typeof args.category === 'string' && !context.sourceUtterance.includes(args.category)
         if (categoryNeedsReview)
           inferredCategory = args.category
         const saved = context.queryState && { category: context.queryState.category, ...context.queryState.prices, ...context.queryState.filters }
-        const unchangedUpdate = args.action === 'update' && saved && Object.entries(args).every(([key, value]) => key === 'action' || key === 'limit' || (key in saved && JSON.stringify(value) === JSON.stringify(saved[key as keyof typeof saved])))
+        const unchangedUpdate = !subjectBoundRead && args.action === 'update' && saved && Object.entries(args).every(([key, value]) => key === 'action' || key === 'limit' || (key in saved && JSON.stringify(value) === JSON.stringify(saved[key as keyof typeof saved])))
         const withdrawnPreference = Array.isArray(args.clear) && args.clear.includes('includeIngredients') && Boolean(context.queryState?.filters.includeIngredients.length)
         if (withdrawnPreference)
           queryReview = `這個查詢提案尚未執行：${JSON.stringify(args)}。核對完整sourceUtterance，不能只撤回舊include而遺漏新的排除。「不想吃某食材」須excludeIngredients排除該食材並clear衝突include；只有「不限定」才只clear。沿用現有queryState保留其他限制，重新產生符合完整原句的唯讀查詢。不能宣稱已執行。`
@@ -1457,7 +1462,7 @@ async function finishConversationReply(
   // The whole-turn qualifier already authorized this read-only review. A
   // second mutation-consent review mistook implicit ordering completion for
   // no authority to look at the cart. Reuse only that narrow read proof;
-  // every write/confirmation and unqualified display still gets reviewed.
+  // cart writes, customer assent and unqualified displays still get reviewed.
   const qualifiedCartReview = input.decisionState?.requestScope === 'order-information' && input.decisionState.readOnly === true
     && operations.length === 1 && operations[0]?.function.name === 'cart_get' && context.allowedToolNames.includes('cart_get')
   // Returning from review only changes the visible page. The whole request is
@@ -1466,7 +1471,14 @@ async function finishConversationReply(
   // classifier must not reinterpret this as a purchase/checkout permission.
   const qualifiedMenuReturn = input.decisionState?.requestScope === 'order-operation' && context.phase === 'ordering'
     && context.retainedRequests.length === 0 && operations.length === 1 && operations[0]?.function.name === 'menu_open' && context.allowedToolNames.includes('menu_open')
-  if (operations.length && !qualifiedCartReview && !qualifiedMenuReturn && (context.waitingFor || changesCartScreen || operations.some(call => call.function.name === 'order_answer_confirmation'))) {
+  // A fresh admitted menu inquiry does not answer the earlier fulfillment or
+  // order question. Read-only menu tools cannot clear/add/submit anything, and
+  // Menu still owns their scope, revisions and dietary checks. Requiring the
+  // old question's mutation consent here turns clear food requests into loops.
+  const qualifiedMenuRead = context.phase === 'ordering' && context.retainedRequests.length === 0
+    && input.decisionState?.readOnly === true && input.decisionState.requireMenuRead === true
+    && operations.length > 0 && operations.every(call => ['menu_get', 'menu_recommend', 'menu_show_recommendations'].includes(call.function.name) && context.allowedToolNames.includes(call.function.name))
+  if (operations.length && !qualifiedCartReview && !qualifiedMenuReturn && !qualifiedMenuRead && !qualifiedAdditionStep(input, operations) && (context.waitingFor || changesCartScreen || operations.some(call => call.function.name === 'order_answer_confirmation'))) {
     const verify = async () => reviewOperations({ context, calls: operations, tools: input.tools.map(tool => ({ name: tool.function.name, description: tool.function.description ?? tool.function.name })), complete: (body) => {
       operationReviewRequests++
       return input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal })
@@ -1565,6 +1577,60 @@ function taskReceipts(input: Pick<Parameters<typeof completeKioskReply>[0], 'con
   return { entries, results }
 }
 
+// Generation and execution admission share the same task-local evidence. Never
+// use an earlier user turn's candidates to authorize a new meal confirmation.
+function taskMenuEvidence(input: Pick<Parameters<typeof completeKioskReply>[0], 'content' | 'transcript' | 'toolResults'>) {
+  return taskReceipts(input).results.filter(result => result.name === 'menu_get').flatMap((result) => {
+    try {
+      const parsed = safeParse(object({ ok: optional(boolean()), dataOnly: optional(boolean()), items: optional(array(object({ id: string() }))), possibleItems: optional(array(object({ id: string() }))), requestedQueries: optional(array(string())), customerReply: optional(customerReplySchema) }), JSON.parse(result.content))
+      return parsed.success && parsed.output.ok !== false ? [parsed.output] : []
+    }
+    catch {
+      // Malformed/failed receipts cannot establish a candidate or price answer.
+      return []
+    }
+  })
+}
+
+// An admitted purchase may need evidence and an identity question before any
+// cart write. These steps do not answer an older checkout/cart question and do
+// not complete the purchase. Menu still validates revisions, constraints and
+// customer confirmation; all actual writes keep the independent consent review.
+function qualifiedAdditionStep(input: Pick<Parameters<typeof completeKioskReply>[0], 'content' | 'transcript' | 'toolResults' | 'decisionState'>, calls: KioskCompletion['toolCalls']): boolean {
+  const state = input.decisionState
+  const context = state?.context
+  const subjects = state?.handoff?.subjects ?? []
+  if (state?.requestScope !== 'order-operation' || state.readOnly || state.handoff?.intent !== 'ADD_ONLY'
+    || !subjects.length || !context?.taskId || context.phase !== 'ordering' || context.retainedRequests.length || calls.length !== 1) {
+    return false
+  }
+  const call = calls[0]!
+  if (!context.allowedToolNames.includes(call.function.name))
+    return false
+  try {
+    const args: unknown = JSON.parse(call.function.arguments)
+    if (call.function.name === 'menu_get') {
+      const parsed = safeParse(strictObject({ query: optional(string()), queries: optional(array(string())), display: optional(boolean()) }), args)
+      if (!parsed.success || (parsed.output.query !== undefined && parsed.output.queries !== undefined))
+        return false
+      const queries = parsed.output.query !== undefined ? [parsed.output.query] : parsed.output.queries ?? []
+      return queries.length > 0 && new Set(queries).size === queries.length && queries.every(query => subjects.includes(query))
+    }
+    if (call.function.name === 'menu_confirm_item') {
+      const parsed = safeParse(strictObject({ itemId: string(), originalRecipe: optional(literal(false)) }), args)
+      if (!parsed.success)
+        return false
+      return taskMenuEvidence(input).some(result => result.requestedQueries?.some(query => subjects.includes(query))
+        && (result.possibleItems?.some(item => item.id === parsed.output.itemId)
+          || (!context.allowedToolNames.includes('order_add_item') && result.items?.some(item => item.id === parsed.output.itemId))))
+    }
+  }
+  catch {
+    // Invalid arguments cannot establish the narrow prerequisite proof.
+  }
+  return false
+}
+
 /** Settles only the same user's qualified, fully receipted task; never a partial edit. */
 function taskCompleted(input: Pick<Parameters<typeof completeKioskReply>[0], 'content' | 'decisionState' | 'transcript' | 'toolResults'>): boolean {
   if (input.content || !input.decisionState?.context?.taskId)
@@ -1633,16 +1699,7 @@ function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], '
   // old phone reminder must not prompt an INVALID_PHASE write before lookup.
   const currentTools = input.decisionState?.context?.allowedToolNames
   const receipts = taskReceipts(input).results
-  const menuEvidence = receipts.filter(result => result.name === 'menu_get').flatMap((result) => {
-    try {
-      const parsed = safeParse(object({ dataOnly: optional(boolean()), items: optional(array(object({ id: string() }))), possibleItems: optional(array(object({ id: string() }))), requestedQueries: optional(array(string())), customerReply: optional(customerReplySchema) }), JSON.parse(result.content))
-      return parsed.success ? [parsed.output] : []
-    }
-    catch {
-      // Malformed tool content cannot supply candidate IDs or claim a price answer.
-      return []
-    }
-  })
+  const menuEvidence = taskMenuEvidence(input)
   const namedProposalIds = currentTools?.includes('menu_confirm_item') && !currentTools.includes('order_add_item')
     ? menuEvidence.filter(result => result.requestedQueries?.some(query => input.decisionState?.context?.sourceUtterance?.includes(query))).flatMap(result => result.items?.map(item => item.id) ?? [])
     : []
@@ -1897,7 +1954,7 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
             `POS 目前提供的用餐方式（只能使用這些名稱）：${JSON.stringify(input.decisionState.fulfillmentModes ?? [])}`,
             `付款狀態：${input.decisionState.paymentState ?? 'unknown'}`,
             `目前可選付款方式：${input.decisionState.allowedPaymentMethods?.join('、') || '無'}`,
-            input.decisionState.waitingFor && input.decisionState.waitingFor.expiresAt > Date.now() ? `目前真正等待顧客回答的操作問題與回答效果：${JSON.stringify(input.decisionState.waitingFor)}` : undefined,
+            input.decisionState.waitingFor ? `目前真正等待顧客回答的操作問題與回答效果：${JSON.stringify(input.decisionState.waitingFor)}` : undefined,
             input.decisionState.interactionState?.screen ? `目前可見畫面：${input.decisionState.interactionState.screen}` : undefined,
             input.decisionState.interactionState?.selectedItemName ? `目前選取餐點：${input.decisionState.interactionState.selectedItemName}` : undefined,
             input.decisionState.interactionState?.lastAddedItemName ? `最近加入餐點：${input.decisionState.interactionState.lastAddedItemName}` : undefined,

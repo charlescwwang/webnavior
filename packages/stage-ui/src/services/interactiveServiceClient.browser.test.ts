@@ -4,10 +4,13 @@ import { defineInvoke } from '@moeru/eventa'
 import { createContext } from '@moeru/eventa/adapters/window-message'
 import { readInteractionLifecycle } from '@proj-airi/stage-shared/interaction-lifecycle'
 import { discoverService, executeServiceTool, interactiveServiceChannel } from '@proj-airi/stage-shared/interactive-service'
+import { conversationContextSchema, decisionRevisionsSchema } from '@proj-airi/stage-shared/kiosk-conversation'
+import { parse } from 'valibot'
 import { afterEach, expect, it } from 'vitest'
 import { readonly } from 'vue'
 
 import { ingredientDefinitions } from '../../../../apps/order-menu-server/src/domain/composition'
+import { createMenuReplyWindow, questionReceiptFrom, replyFromConversation } from '../../../../apps/stage-kiosk/src/services/questionPresentation'
 import { createInteractiveServiceClient } from './interactiveServiceClient'
 
 const cleanups: Array<() => void> = []
@@ -323,3 +326,108 @@ it.each([true, false])('keeps one iframe binding valid across ingredient and pre
     expect(await execute('cart_get', { display: false }), transcript).toMatchObject({ cart: { itemCount: 0 } })
   }
 }, 30_000)
+
+// Report: this chat Nov8 — missing subjects in the iframe schema rejected every qualified add before Main.
+it('binds consecutive named requests through the iframe validator after returning to the menu', async () => {
+  const { execute } = await setup()
+  const state = await execute('kiosk_interaction_state') as { menuRevision: number }
+  expect(await execute('menu_get', { query: '蝨目魚粥' })).toMatchObject({ pendingCustomerChoice: { purpose: 'menu-return-invitation' } })
+  expect(await execute('menu_open')).toMatchObject({ pendingCustomerChoice: { purpose: 'recommendation-invitation' } })
+  for (const [index, subject] of ['鱔魚意麵', '蝨目魚粥', '雞腿飯'].entries()) {
+    const taskId = `named-${index}`
+    expect(await execute('kiosk_agent_task', { taskId, action: 'BEGIN', transcript: `我想吃${subject}`, expectedMenuRevision: state.menuRevision, readOnly: false, constraints: {}, handoff: { intent: 'ADD_ONLY', subjects: [subject], status: 'ambiguous', itemIds: [], lineIds: [] } })).toMatchObject({ ok: true })
+    expect(await execute('menu_get', { query: subject })).toMatchObject({ matchKind: 'none', requestedQueries: [subject] })
+    expect(await execute('kiosk_conversation_context')).toMatchObject({ taskId, handoff: { intent: 'ADD_ONLY', subjects: [subject] } })
+    expect(await execute('kiosk_agent_task', { taskId, action: 'END' })).toMatchObject({ ok: true })
+  }
+  expect(await execute('kiosk_agent_task', { taskId: 'available', action: 'BEGIN', transcript: '水餃一份', expectedMenuRevision: state.menuRevision, constraints: {}, handoff: { intent: 'ADD_ONLY', subjects: ['水餃'], status: 'ambiguous', itemIds: [], lineIds: [] } })).toMatchObject({ ok: true })
+  expect(await execute('menu_get', { query: '水餃' })).toMatchObject({ items: [{ id: 'dish-0' }] })
+  expect(await execute('kiosk_agent_task', { taskId: 'available', action: 'END' })).toMatchObject({ ok: true })
+  expect(await execute('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 0 } })
+})
+
+// Report: this chat Nov8 — returning to all dishes must retire the old recommendation's ambiguous scope.
+it('applies new conditions to the full menu after recommendation and absent lookup navigation', async () => {
+  const { execute } = await setup()
+  await execute('menu_recommend', { action: 'update', maxPrice: 90 })
+  await execute('menu_get', { query: '蝨目魚' })
+  expect(await execute('menu_open')).toHaveProperty('pendingCustomerChoice.purpose', 'recommendation-invitation')
+  const result = await execute('menu_recommend', { action: 'update', maxPrice: 130 })
+  expect(result).not.toHaveProperty('pendingCustomerChoice.purpose', 'menu-query-scope')
+  expect(result).toHaveProperty('items', expect.arrayContaining([expect.objectContaining({ id: 'dish-2' })]))
+  expect(await execute('kiosk_fast_path_context', { transcript: '查看菜單' })).not.toHaveProperty('phase', 'query_scope')
+  expect(await execute('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})
+
+// Report: this chat Nov8 — every concrete quantity prompt must survive the real iframe boundary as a question.
+it('continues a displayed meal inquiry with quantity and retires its question after adding', async () => {
+  const { execute } = await setup()
+  const receipt = await execute('menu_get', { query: '水餃' }) as { customerMessage: string, pendingCustomerChoice: { questionId: string, purpose: string } }
+  expect(receipt.pendingCustomerChoice.purpose).toBe('item-order')
+  expect(await execute('kiosk_interaction_state')).not.toHaveProperty('waitingFor')
+  await execute('kiosk_dialogue_presented', { content: receipt.customerMessage, questionId: receipt.pendingCustomerChoice.questionId })
+  expect(await execute('kiosk_fast_path_context', { transcript: '一份' })).toMatchObject({ waitingFor: { purpose: 'item-order' }, intentRecovery: { kind: 'answer', questionId: receipt.pendingCustomerChoice.questionId } })
+  expect(await execute('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })).not.toHaveProperty('ok', false)
+  expect(await execute('cart_get', { display: false })).toMatchObject({ cart: { itemCount: 1, lines: [{ itemId: 'dish-0', quantity: 1 }] } })
+  expect(await execute('kiosk_interaction_state')).not.toHaveProperty('waitingFor.purpose', 'item-order')
+})
+
+// Report: this chat, Nov09 — new conditions use the full menu without reviving an old scope question.
+it('carries the same fresh query state and versions through the actual iframe for all readers', async () => {
+  const { execute } = await setup()
+  await execute('kiosk_fast_path_context', { transcript: '推薦餐點' })
+  await execute('kiosk_fast_path_execute', { candidateId: 'intent:recommend' })
+  await execute('kiosk_fast_path_context', { transcript: '120元以下有什麼' })
+  const offered = await execute('kiosk_fast_path_execute', { candidateId: 'intent:search-menu', priceChoiceId: 'UPPER_INCLUSIVE' })
+  expect(offered).not.toHaveProperty('pendingCustomerChoice.purpose', 'menu-query-scope')
+  expect(offered).toHaveProperty('appliedPriceConditions', { maxPrice: 120 })
+  const decision = await execute('kiosk_fast_path_context', { transcript: '還有其他的嗎' }) as { revisions: unknown }
+  const passive = await execute('kiosk_interaction_state') as { revisions: unknown }
+  const conversation = parse(conversationContextSchema, await execute('kiosk_conversation_context'))
+  expect(parse(decisionRevisionsSchema, decision.revisions)).toEqual(conversation.revisions)
+  expect(passive.revisions).toEqual(conversation.revisions)
+  expect(conversation.phase).toBe('ordering')
+  expect(decision).not.toHaveProperty('waitingFor.purpose', 'menu-query-scope')
+  expect(passive).not.toHaveProperty('waitingFor.purpose', 'menu-query-scope')
+  expect(conversation.waitingFor?.purpose).not.toBe('menu-query-scope')
+  expect(conversation.queryState?.prices).toEqual({ maxPrice: 120 })
+  expect(conversation.cart.itemCount).toBe(0)
+})
+
+// Report: DEV-810280 — real iframe receipts must lead to review, then allow adding more.
+it('summarizes multi-add and returns from table review to selecting more without submitting', async () => {
+  const { execute } = await setup('?table')
+  const receipts = createMenuReplyWindow()
+  receipts.record('menu_get', await execute('menu_get', { queries: ['水餃', '便當2'], display: true }))
+  receipts.record('order_add_item', await execute('order_add_item', { itemId: 'dish-0', quantity: 1 }))
+  const added = await execute('order_add_item', { itemId: 'dish-2', quantity: 1 })
+  receipts.record('order_add_item', added)
+  const question = questionReceiptFrom(added)!
+  const rendered = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get', 'order_add_item', 'order_add_item'] }, { menu: receipts, question, handoff: { intent: 'ADD_ONLY' }, failureMessage: '失敗' })
+  expect(rendered.content).not.toContain('目前可以點')
+  expect(rendered.content).not.toContain('80元')
+  expect(rendered.content.match(/加入購物車/g)).toHaveLength(1)
+  expect(rendered.content).toContain(question.question)
+  expect(question.purpose).toBe('cart-review')
+  await execute('kiosk_dialogue_presented', { content: rendered.content, questionId: question.questionId })
+  await execute('kiosk_fast_path_context', { transcript: '好' })
+  const review = await execute('kiosk_fast_path_execute', { candidateId: 'intent:view-cart' })
+  expect(review).toHaveProperty('pendingCustomerChoice.purpose', 'checkout-entry')
+  await execute('menu_open')
+  expect(await execute('cart_get', { display: false })).toHaveProperty('cart.itemCount', 2)
+  expect(await execute('kiosk_interaction_state')).not.toHaveProperty('waitingFor.purpose', 'checkout-entry')
+})
+
+// Report: this chat, Nov09 — a new preference turn must replace, not patch, old positive filters.
+it('replaces an earlier price cap on the actual iframe while combining current category and price', async () => {
+  const { execute } = await setup()
+  expect(await execute('menu_recommend', { action: 'update', category: '便當', maxPrice: 80 })).toHaveProperty('items', [expect.objectContaining({ id: 'dish-0' })])
+  const next = await execute('menu_recommend', { action: 'update', category: '便當' })
+  expect(next).toMatchObject({ appliedPriceConditions: {}, items: [{ id: 'dish-0' }, { id: 'dish-1' }, { id: 'dish-2' }] })
+  const combined = await execute('menu_recommend', { action: 'update', category: '便當', minPrice: 100, maxPrice: 120 })
+  expect(combined).toMatchObject({ appliedPriceConditions: { minPrice: 100, maxPrice: 120 }, items: [{ id: 'dish-2' }, { id: 'dish-3' }, { id: 'dish-4' }] })
+  const context = parse(conversationContextSchema, await execute('kiosk_conversation_context'))
+  expect(context.queryState?.category).toBe('便當')
+  expect(context.queryState?.prices).toEqual({ minPrice: 100, maxPrice: 120 })
+  expect(context.cart.itemCount).toBe(0)
+})

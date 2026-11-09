@@ -3,7 +3,7 @@ import type { ContextReply, ConversationContext, ConversationHandoff, Conversati
 import type { KioskDecisionState, KioskInteractionDecision } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
-import { customerReplySchema, formatOrderingPrice, isServiceLimitationReply, orderAssistanceQuestion, quantityLimitRejectionSchema, renderCustomerReply, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { customerReplySchema, formatOrderingPrice, isServiceLimitationReply, quantityLimitRejectionSchema, renderCustomerReply, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { safeParse } from 'valibot'
 
 import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
@@ -217,8 +217,21 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   if (options.customerEntry?.phase === 'customer_entry' && (entryRequired || options.requireMenuRead))
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
   const rejection = safeParse(quantityLimitRejectionSchema, result.rejection)
-  if (rejection.success)
-    return { role: 'assistant', content: [options.menu.operationReply(), rejection.output.customerMessage, result.question?.question].filter(Boolean).join(' ') }
+  if (rejection.success) {
+    const assistance = orderAssistanceFromRejection(rejection.output, options.sourceUtterance ?? '', options.context)
+    return { role: 'assistant', content: [options.menu.operationReply(), assistance?.question ?? rejection.output.customerMessage].filter(Boolean).join(' ') }
+  }
+  const quantityAssistance = quantityAssistanceFromConversation(result, options.sourceUtterance ?? '', options.context)
+  if (quantityAssistance)
+    return { role: 'assistant', content: [options.menu.operationReply(), quantityAssistance.question].filter(Boolean).join(' ') }
+  if (result.status === 'completed' && result.reply?.kind === 'staff-assistance' && options.context
+    && result.requestedTools.every(name => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'kiosk_session_history'].includes(name))) {
+    // A validated service limitation can finish after evidence reads without
+    // claiming an ADD_ITEM effect. It must survive the commerce-completion guard.
+    const assistance = replyFromContext(JSON.stringify(result.reply), options.context)
+    if (assistance)
+      return { role: 'assistant', kind: assistance.kind, content: assistance.content }
+  }
   if (result.status === 'completed' && result.reply?.kind === 'quantity-limit' && options.context) {
     const policy = replyFromContext(JSON.stringify(result.reply), options.context)
     if (policy)
@@ -425,11 +438,24 @@ export function operationReplyFrom(result: unknown): string | undefined {
   return typeof message === 'string' && message.trim() ? message : undefined
 }
 
-/** A proven no-effect quantity refusal may start intent confirmation, never an order retry. */
-export function orderAssistanceFromRejection(result: unknown, sourceUtterance: string, state: KioskDecisionState | undefined, uncertain = false): ServiceClarification | undefined {
-  if (uncertain || !state || !safeParse(quantityLimitRejectionSchema, result).success)
+/** A proven quantity refusal invites optional staff help, never an order retry or a fault lock. */
+export function orderAssistanceFromRejection(result: unknown, sourceUtterance: string, state: Parameters<typeof serviceContextKey>[0] | undefined, uncertain = false): ServiceClarification | undefined {
+  const rejection = safeParse(quantityLimitRejectionSchema, result)
+  if (uncertain || !state || !rejection.success)
     return undefined
-  return { purpose: 'order-assistance', questionId: crypto.randomUUID(), question: orderAssistanceQuestion(sourceUtterance), sourceUtterance, contextKey: serviceContextKey(state), expiresAt: Date.now() + 30_000 }
+  return { purpose: 'staff-assistance', questionId: crypto.randomUUID(), question: orderingMessages['zh-Hant'].quantityAssistance.replace('{maximum}', String(rejection.output.maximum)), sourceUtterance, contextKey: serviceContextKey(state), expiresAt: Date.now() + 30_000 }
+}
+
+/** A typed quantity-policy reply after evidence reads may offer help without inventing a tool refusal. */
+export function quantityAssistanceFromConversation(result: ConversationTurnResult, sourceUtterance: string, context: ConversationContext | undefined): ServiceClarification | undefined {
+  const rejected = orderAssistanceFromRejection(result.rejection, sourceUtterance, context)
+  if (rejected)
+    return rejected
+  if (!context?.quantityPolicy || result.status !== 'completed' || result.reply?.kind !== 'quantity-limit'
+    || !result.requestedTools.every(name => ['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get', 'kiosk_session_history'].includes(name))) {
+    return undefined
+  }
+  return { purpose: 'staff-assistance', questionId: crypto.randomUUID(), question: orderingMessages['zh-Hant'].quantityAssistance.replace('{maximum}', String(context.quantityPolicy.maximum)), sourceUtterance, contextKey: serviceContextKey(context), expiresAt: Date.now() + 30_000 }
 }
 
 /** Presents only service-owned business refusals whose effects are known not to have executed. */

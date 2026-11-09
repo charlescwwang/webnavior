@@ -32,11 +32,14 @@ it.each(priceRecoveryCases)('qualifies price for an admitted request (clarified=
   if (clarified)
     window.present({ questionId: 'budget-clarification', question: '請再說一次您想詢問或調整的內容。', sourceUtterance: '有其他的嗎', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 })
   const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
+    // The provider fixture follows the requested schema in background-off mode;
+    // an extra recipient field is rejected by the real strict validator.
+    const properties = (body.tools as Array<{ function: { parameters: { properties: Record<string, unknown> } } }>)[0]!.function.parameters.properties
     if (JSON.stringify(body.tools).includes('resolve_service_scope'))
-      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: '{"recipient":"kiosk","choice":"MENU_INFORMATION_ONLY"}' } }] } }] })
+      return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_scope', arguments: JSON.stringify({ ...('recipient' in properties ? { recipient: 'kiosk' } : {}), choice: 'MENU_INFORMATION_ONLY' }) } }] } }] })
     const price = JSON.stringify(body.tools).includes('resolve_price_choice')
     const review = JSON.stringify(body.tools).includes('"admission"')
-    const args = price ? { choice: 'UPPER_INCLUSIVE' } : review ? { recipient: 'kiosk', admission: 'service', disposition: proposedQuestion ? 'clarify' : 'assistant', ...(proposedQuestion ? { question: '想查哪種餐點？' } : {}), ...(clarified ? { requestKind: 'new-request' } : {}) } : { choice: 'REQUEST' }
+    const args = price ? { choice: 'UPPER_INCLUSIVE' } : review ? { ...('recipient' in properties ? { recipient: 'kiosk' } : {}), admission: 'service', disposition: proposedQuestion ? 'clarify' : 'assistant', ...(proposedQuestion ? { question: '想查哪種餐點？' } : {}), ...('requestKind' in properties ? { requestKind: 'new-request' } : {}) } : { choice: 'REQUEST' }
     return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: price ? 'resolve_price_choice' : 'resolve_service_request', arguments: JSON.stringify(args) } }] } }] })
   })
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
@@ -57,9 +60,9 @@ it.each(priceRecoveryCases)('qualifies price for an admitted request (clarified=
     return await response.json() as FastPathDecision
   }, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
   expect(result.kind).toBe('NEEDS_ASSISTANT')
-  expect(systemOne.decide).toHaveBeenCalledTimes(clarified ? 1 : 2)
+  expect(systemOne.decide).toHaveBeenCalledTimes(clarified ? 0 : 1)
   expect(result.decisionState?.constraints).toMatchObject({ price: { maxPrice: 200 }, unresolvedPrice: false })
-  expect(complete).toHaveBeenCalledTimes(3)
+  expect(complete).toHaveBeenCalledTimes(clarified ? 2 : 3)
   const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
   await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'budget-recovery', transcript, expectedMenuRevision: context.revisions.menu, constraints: { ...result.decisionState?.constraints?.price, unresolvedPrice: result.decisionState?.constraints?.unresolvedPrice === true }, readOnly: true })
   const receipt = await runtime.invokeForAgent('menu_recommend', { action: 'update', maxPrice: 200 })

@@ -24,6 +24,81 @@ const kioskApi = vi.hoisted(() => ({
 vi.mock('../services/kiosk-device', () => kioskApi)
 
 describe('useKioskInteractionRecording', () => {
+  // Report: this chat Nov8 — typed「我想吃虱目魚粥，你可以煮給我嗎？」fell back after a valid absence invitation.
+  it('presents a waiting absence invitation for an unmatched add without claiming the item was added', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'missing-meal-invitation', state: 'active' } })
+    const speech = '我想吃虱目魚粥，你可以煮給我嗎？'
+    const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {} })
+    await runtime.invoke('kiosk_agent_task', { action: 'BEGIN', taskId: 'missing-meal', transcript: speech, expectedMenuRevision: 0, constraints: {}, handoff: { intent: 'ADD_ONLY', status: 'ambiguous', itemIds: [], lineIds: [], subjects: ['虱目魚粥'] } })
+    const definition = runtime.toolDefinitions.find(tool => tool.name === 'menu_get')!
+    const tool = rawTool({ name: definition.name, description: definition.description, parameters: definition.inputSchema, execute: async (input: Record<string, unknown>) => runtime.executeTool('menu_get', input) })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'lookup', type: 'function', function: { name: 'menu_get', arguments: '{"query":"虱目魚粥"}' } }] })
+    const scope = effectScope()
+    try {
+      const receipts = createMenuReplyWindow()
+      const result = await scope.run(() => useKioskInteractionRecording())!.send('ordering', speech, [tool], { onToolResult: (name, content) => receipts.record(name, content) })
+      expect(result).toMatchObject({ status: 'waiting', question: { purpose: 'menu-return-invitation' } })
+      await runtime.invoke('kiosk_agent_task', { action: 'END', taskId: 'missing-meal' })
+      const displayed = replyFromConversation(result!, { menu: receipts, question: result!.question, handoff: { intent: 'ADD_ONLY' }, sourceUtterance: speech, failureMessage: '這句回覆尚未完成，請再試一次或重新說明您的需求。' })
+      expect(displayed).toEqual({ role: 'assistant', content: '目前菜單查不到「虱目魚粥」。 要回到全部菜單看看嗎？' })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledOnce()
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: this chat Nov8 — Main must not bypass a navigation/recommendation invitation with another search.
+  it.each(['menu_get', 'menu_open'] as const)('waits for the customer after the owned invitation from %s', async (name) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'browsing-invitation', state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onMenuRequested: () => {} })
+    const definition = runtime.toolDefinitions.find(tool => tool.name === name)!
+    const tool = rawTool({ name, description: definition.description, parameters: definition.inputSchema, execute: async (input: Record<string, unknown>) => runtime.executeTool(name, input) })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'browse', type: 'function', function: { name, arguments: JSON.stringify(name === 'menu_get' ? { query: '炸雞腿' } : {}) } }] })
+    const scope = effectScope()
+    try {
+      const result = await scope.run(() => useKioskInteractionRecording())!.send('ordering', name === 'menu_get' ? '有炸雞腿嗎' : '回菜單', [tool])
+      expect(result).toMatchObject({ status: 'waiting', question: { purpose: name === 'menu_get' ? 'menu-return-invitation' : 'recommendation-invitation' } })
+      expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledOnce()
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    }
+    finally { scope.stop() }
+  })
+
+  // Report: this chat, Nov8, GZoe-FQFz572mVtAE5gqL — stale fish filter on a continuation.
+  it.each([false, true])('bounds correction of an unexecuted stale query (repeatInvalid=%s)', async (repeatInvalid) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'query-correction', state: 'active' } })
+    const runtime = createMenuToolRuntime({ menu, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    await runtime.invokeForAgent('menu_recommend', { action: 'update', includeIngredients: ['fish'] })
+    await runtime.invokeForAgent('menu_get', { query: '炸雞腿' })
+    const before = runtime.getQueryState()
+    const definition = runtime.toolDefinitions.find(tool => tool.name === 'menu_recommend')!
+    const execute = vi.fn(async (input: Record<string, unknown>) => runtime.executeTool('menu_recommend', input))
+    const tool = rawTool({ name: definition.name, description: definition.description, parameters: definition.inputSchema, execute })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'stale', type: 'function', function: { name: 'menu_recommend', arguments: JSON.stringify({ action: 'continue', includeIngredients: ['fish'] }) } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'corrected', type: 'function', function: { name: 'menu_recommend', arguments: JSON.stringify({ action: 'continue', ...(repeatInvalid ? { includeIngredients: ['fish'] } : {}) }) } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [] })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '想找其他餐點', [tool])
+      expect(execute).toHaveBeenCalledTimes(2)
+      expect(kioskApi.streamKioskConversationMessage.mock.calls[1]![0].toolResults).toMatchObject([{ name: 'menu_recommend', content: expect.stringContaining('INVALID_TOOL_INPUT') }])
+      if (repeatInvalid) {
+        expect(result).toMatchObject({ status: 'incomplete', reason: 'tool-rejected' })
+        expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+        expect(runtime.getQueryState()).toEqual(before)
+      }
+      else {
+        expect(result).toMatchObject({ status: 'completed' })
+        expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(3)
+        expect(runtime.getQueryState()?.conditions.some(condition => condition.group === 'query')).toBe(false)
+      }
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    }
+    finally { scope.stop() }
+  })
+
   // Report: this chat, Nov2; legal siblings may execute; oversized counts must not be reduced or retried.
   it.each([false, true])('adds the legal sibling and explains oversized quantity (oversizedFirst=%s)', async (oversizedFirst) => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'quantity-limit', state: 'active' } })

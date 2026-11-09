@@ -259,8 +259,22 @@ export async function decideStagedInteraction(input: DecisionInput): Promise<Kio
     // Recheck the current speaker/request before interpreting a service answer.
     // The review owns its relation to this cue, not an older Menu operation.
     const cue = input.decisionState?.serviceClarification
-    if (cue && cue.contextKey === serviceContextKey(input.decisionState!))
-      return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } })
+    if (cue && cue.contextKey === serviceContextKey(input.decisionState!)) {
+      if (cue.purpose === 'staff-assistance' && !input.decisionState?.activeRequest) {
+        // This foreground question supersedes passive cart/navigation prompts.
+        // Interpret the whole utterance before exposing those older choices.
+        const answer = await choose('staffAnswer', { type: 'choice', instructions: '只判斷顧客整句是否回答目前「需要通知服務人員嗎」的邀請。ACCEPT只代表同意顯示人員協助提示，不授權點餐、清空或送單。拒絕選DECLINE。明確提出另一項點餐／查詢／改單需求選NEW_REQUEST，包含同句先肯定又提出新訂單操作，不能只採前半句。單純問「好嗎」、聽不清楚或語意不明選UNCERTAIN，不套到底下舊購物車問題。', criteria: { ACCEPT: '明確要求或同意通知服務人員，例如好，幫我通知一下、麻煩叫人員。', DECLINE: '清楚表示不用通知服務人員。', NEW_REQUEST: '提出另一個完整的點餐、查詢、修改或其他服務需求。', UNCERTAIN: '無法確認是否接受協助，或句子不清楚。' } })
+        if (answer === 'ACCEPT' || answer === 'DECLINE')
+          return finish({ kind: 'STAFF_ANSWER', questionId: cue.questionId, action: answer === 'ACCEPT' ? 'accept' : 'decline' })
+        if (answer !== 'NEW_REQUEST')
+          return finish({ kind: 'SERVICE_CLARIFICATION', question: cue })
+        // A new request goes through ordinary scope qualification; it does not
+        // answer the assistance invitation or acquire its consent.
+      }
+      else {
+        return finish({ kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', recovery: { status: 'eligible' } })
+      }
+    }
     if (input.decisionState?.activeRequest) {
       const relation = await choose('requestRelation', { type: 'choice', instructions: '只判斷本句與進行中需求的關係，不規劃如何中斷或執行。', criteria: { FOLLOW_UP: '補充、更正或詢問同一個仍在處理的需求。', NEW_REQUEST: '獨立的新服務需求。', UNCERTAIN: '不能確認是否同一需求。' } })
       if (relation === 'FOLLOW_UP')

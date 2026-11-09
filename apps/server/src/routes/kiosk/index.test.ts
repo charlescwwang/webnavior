@@ -140,6 +140,57 @@ describe('kiosk routes', () => {
     expect(offered).toContain('menu_confirm_item')
   })
 
+  // Report: this chat Nov09, DEV-810280 — a new purchase was blocked by the old cart-review question.
+  it.each([
+    { stage: 'lookup', query: '酸辣魚便當', accepted: true },
+    { stage: 'lookup', query: '椰香雞腿飯', accepted: true },
+    { stage: 'batch', query: '酸辣魚便當', accepted: true },
+    { stage: 'proposal', query: '酸辣魚便當', accepted: true },
+    { stage: 'proposal', query: '椰香雞腿飯', accepted: true },
+    { stage: 'unrelated-read', query: '酸辣魚便當', accepted: false },
+    { stage: 'unrelated-proposal', query: '酸辣魚便當', accepted: false },
+    { stage: 'failed-receipt', query: '酸辣魚便當', accepted: false },
+    { stage: 'missing-receipt', query: '酸辣魚便當', accepted: false },
+    { stage: 'foreign-query', query: '酸辣魚便當', accepted: false },
+    { stage: 'recipe', query: '酸辣魚便當', accepted: false },
+    { stage: 'replacement', query: '酸辣魚便當', accepted: false },
+    { stage: 'write', query: '酸辣魚便當', accepted: false },
+    { stage: 'mixed', query: '酸辣魚便當', accepted: false },
+    { stage: 'draft', query: '酸辣魚便當', accepted: false },
+    { stage: 'unqualified', query: '酸辣魚便當', accepted: false },
+  ])('admits only qualified addition prerequisites: $stage $query', async ({ stage, query, accepted }) => {
+    const proposal = ['proposal', 'unrelated-proposal', 'failed-receipt', 'missing-receipt', 'foreign-query', 'recipe', 'replacement'].includes(stage)
+    const name = proposal ? 'menu_confirm_item' : stage === 'write' ? 'order_add_item' : 'menu_get'
+    const args = proposal
+      ? { itemId: stage === 'unrelated-proposal' ? 'foreign' : 'candidate', ...(stage === 'recipe' ? { originalRecipe: true } : {}), ...(stage === 'replacement' ? { replaceLineId: 'old' } : {}) }
+      : stage === 'write'
+        ? { itemId: 'candidate', quantity: 3 }
+        : stage === 'batch' ? { queries: [query, '水餃'] } : { query: stage === 'unrelated-read' ? '整份菜單' : query }
+    const call = { id: 'step', type: 'function', function: { name, arguments: JSON.stringify(args) } }
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async ({ body }) => {
+      const review = (body.tools as Array<{ function: { name: string } }>)[0]?.function.name === 'verify_customer_operation'
+      return Response.json({ choices: [{ message: { tool_calls: review
+        ? [{ id: 'review', type: 'function', function: { name: 'verify_customer_operation', arguments: '{"choice":"UNSUPPORTED"}' } }]
+        : stage === 'mixed' ? [call, { id: 'clear', type: 'function', function: { name: 'cart_clear', arguments: '{}' } }] : [call] } }] })
+    })
+    const service = createKioskService(db)
+    const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await service.getDeviceProfile(enrolled.device.id)
+    const session = await service.startVisitorSession({ deviceId: enrolled.device.id, profileReleaseId: profile!.id, serviceId: 'development-ordering-service' })
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: service, llmGateway: { complete }, runtimeModelPolicy }))
+    const names = ['menu_get', 'menu_confirm_item', 'order_add_item', 'cart_clear']
+    const context: ConversationContext = { contextId: 'add-step', capturedAt: Date.now(), taskId: 'add-step', sourceUtterance: `${query}三份`, phase: 'ordering', entryComplete: true, readOnly: false, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 1, selectedItem: 0, checkout: 0 }, cart: { itemCount: 4, total: 505, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: stage === 'draft' ? [{ id: 'draft', itemId: 'other', status: 'active', options: [], missing: { quantity: true, optionGroupIds: [] }, expectedRevisions: { menu: 1 } }] : [], allowedToolNames: names, waitingFor: { questionId: 'review', purpose: 'cart-review', question: '要先查看訂單，準備送出嗎？', expiresAt: Date.now() + 30000, choices: [] } }
+    const tools = names.map(name => ({ type: 'function', function: { name, parameters: { type: 'object', properties: {} } } }))
+    const toolResults = proposal && stage !== 'missing-receipt' ? [{ toolCallId: 'lookup', name: 'menu_get', content: JSON.stringify({ ...(stage === 'failed-receipt' ? { ok: false } : {}), requestedQueries: [stage === 'foreign-query' ? '其他餐點' : query], matchKind: 'possible', items: [], possibleItems: [{ id: 'candidate' }] }) }] : []
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: context.sourceUtterance, tools, toolResults, decisionState: { phase: 'ordering', requestScope: 'order-operation', ...(stage !== 'unqualified' ? { handoff: { intent: 'ADD_ONLY', status: 'ambiguous', itemIds: [], lineIds: [], subjects: stage === 'batch' ? [query, '水餃'] : [query] } } : {}), context } }) })
+    expect(response.status).toBe(200)
+    const result = await response.json() as { toolCalls: unknown[], reply?: ContextReply }
+    expect(result.toolCalls).toEqual(accepted ? [call] : [])
+    expect(complete).toHaveBeenCalledTimes(accepted ? 1 : 2)
+    if (!accepted)
+      expect(result.reply).toMatchObject({ kind: 'clarification' })
+  })
+
   // Report: this chat Nov8 — an unknown named query after fish browsing was dismissed without lookup.
   it('requires a Menu tool before completing a qualified new menu query', async () => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'lookup', type: 'function', function: { name: 'menu_get', arguments: '{"query":"全家餐"}' } }] } }] }))
@@ -2098,5 +2149,22 @@ describe('kiosk routes', () => {
     const transcript = await kioskService.getVisitorSessionForDevice({ deviceId: device!.id, visitorSessionId: session.id })
     expect(transcript.session.agentInteraction.cartSummary).toMatchObject({ itemCount: 1, lines: [expect.objectContaining({ lineId: 'L1', itemId: 'dumplings' })] })
     expect(transcript.session.agentInteraction.recentMenuSubjects).toContainEqual({ id: 'dumplings', name: '水餃' })
+  })
+  // Report: this chat, Nov09 — a pending fulfillment question turned a fresh noodle lookup into an endless generic clarification.
+  it('dispatches an admitted read-only menu query without asking mutation consent for an older question', async () => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+      .mockResolvedValueOnce(Response.json({ choices: [{ message: { tool_calls: [{ id: 'noodles', type: 'function', function: { name: 'menu_recommend', arguments: '{"action":"update","category":"麵食"}' } }] } }] }))
+      .mockResolvedValue(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'verify_customer_operation', arguments: '{"choice":"UNSUPPORTED"}' } }] } }] }))
+    const service = createKioskService(db)
+    const enrolled = await service.registerDevelopmentDevice({ registrationCode: '483920' })
+    const profile = await service.getDeviceProfile(enrolled.device.id)
+    const session = await service.startVisitorSession({ deviceId: enrolled.device.id, profileReleaseId: profile!.id, serviceId: 'development-ordering-service' })
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: service, llmGateway: { complete }, runtimeModelPolicy }))
+    const context: ConversationContext = { contextId: 'noodle-query', taskId: 'noodle-query', capturedAt: Date.now(), sourceUtterance: '我想吃麵', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 3, selectedItem: 0, checkout: 0 }, cart: { itemCount: 3, total: 360, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], fulfillmentModes: [], retainedRequests: [], allowedToolNames: ['menu_recommend'], waitingFor: { questionId: 'fulfillment', purpose: 'fulfillment', question: '請問要內用還是自取？', expiresAt: Date.now() + 30000, choices: [{ id: 'takeout', description: '自取' }] } }
+    const tools = [{ type: 'function', function: { name: 'menu_recommend', description: '查詢目前餐點', parameters: { type: 'object', properties: { action: { type: 'string' }, category: { type: 'string' } }, required: ['action'], additionalProperties: false } } }]
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { 'Cookie': `${kioskDeviceCookieName}=${enrolled.credential}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ content: context.sourceUtterance, tools, decisionState: { phase: 'ordering', readOnly: true, requireMenuRead: true, handoff: { intent: 'SEARCH_MENU', subjects: ['麵'], status: 'ambiguous', itemIds: [], lineIds: [] }, context } }) })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toHaveProperty('toolCalls', [expect.objectContaining({ function: expect.objectContaining({ name: 'menu_recommend' }) })])
+    expect(complete).toHaveBeenCalledTimes(1)
   })
 })

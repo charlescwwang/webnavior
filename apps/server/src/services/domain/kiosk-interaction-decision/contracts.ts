@@ -101,6 +101,7 @@ export type KioskInteractionDecision = {
   | { kind: 'FOLLOW_UP_ACTIVE', confidence?: number }
   | { kind: 'NEEDS_ASSISTANT', confidence?: number, handoff?: ConversationHandoff }
   | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
+  | { kind: 'STAFF_ANSWER', questionId: string, action: 'accept' | 'decline' }
   | { kind: 'UNAVAILABLE' }
 )
 

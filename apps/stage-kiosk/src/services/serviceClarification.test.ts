@@ -1,7 +1,7 @@
 import type { CatalogSnapshot } from '../../../order-menu-server/src/domain/contracts'
 import type { KioskDecisionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
-import { conversationContextSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { parse } from 'valibot'
 import { expect, it, vi } from 'vitest'
 
@@ -280,8 +280,9 @@ it('offers intent confirmation only for a proven no-effect quantity rejection', 
   const rejection = { ok: false, executed: false, rejection: 'quantity-limit', error: 'QUANTITY_LIMIT', toolName: 'order_add_item', maximum: 20, requestedQuantity: 100, customerMessage: '每款單次最多20份。' }
   const state = { phase: 'ordering', revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 } }
   const cue = orderAssistanceFromRejection(rejection, '水餃100份', state)!
-  expect(cue.purpose).toBe('order-assistance')
-  expect(cue.question).toContain('水餃100份')
+  expect(cue.purpose).toBe('staff-assistance')
+  expect(cue.question).toContain('20份')
+  expect(cue.question).toContain('需要幫您通知服務人員嗎')
   expect(cue.question).not.toContain('已經呼叫')
   expect(orderAssistanceFromRejection(rejection, '水餃100份', state, true)).toBeUndefined()
   expect(orderAssistanceFromRejection({ ...rejection, executed: true }, '水餃100份', state)).toBeUndefined()
@@ -325,22 +326,23 @@ it.each(['original', 'supplier'])('keeps a finite staff answer in its current in
   const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
   const cue = { purpose: 'staff-assistance' as const, questionId: 'food-safety', question: '需要幫您呼叫服務人員嗎？', sourceUtterance: '食安資訊', contextKey: serviceContextKey(context), expiresAt: Date.now() - 120000 }
   const decide = vi.fn(async () => ({ kind: 'SERVICE_CLARIFICATION' as const, question: { ...cue, purpose: 'order-assistance' as const, question: '您是要依照「好啊」安排餐點嗎？' } }))
-  for (const transcript of ['好啊', '好', '可以', '不用', '不需要', '不用了']) {
+  for (const transcript of ['好啊', '對啊', '對的', '是啊', '好', '可以', '不用', '不需要', '不用了']) {
     services.present(cue)
     const accepted = vi.fn()
     const result = await runFastPath({ transcript, isEnabled: async () => true, serviceClarification: state => services.current(state), onUtteranceAccepted: accepted, decide, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
-    expect(result.kind).toBe('NEEDS_ASSISTANT')
+    expect(result.kind).toBe('SERVICE_REPLY')
     expect(accepted).toHaveBeenCalledTimes(1)
-    const answer = conversationDecisionStateFrom(result.decisionState, result)
-    expect(refreshConversationState(context, answer).context?.staffAssistance?.questionId).toBe(cue.questionId)
-    expect(answer?.readOnly).toBe(true)
+    if (result.kind !== 'SERVICE_REPLY')
+      throw new Error('Expected a direct staff reply')
+    expect(result.questionId).toBe(cue.questionId)
+    expect(result.reply.action).toBe(['不用', '不需要', '不用了'].includes(transcript) ? 'decline' : 'accept')
+    expect(result.reply.content.includes('已通知服務人員')).toBe(result.reply.action === 'accept')
     expect(decide).not.toHaveBeenCalled()
     expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
   }
   for (const [transcript, question] of [
     ['好啊，水餃兩份', cue],
     ['小明，好啊', cue],
-    ['好啊', { ...cue, purpose: 'order-assistance' as const }],
     ['好啊', { ...cue, contextKey: 'changed-cart' }],
   ] as const) {
     decide.mockClear()
@@ -374,4 +376,78 @@ it('uses a newly qualified cart-option correction without changing servings or a
   expect(after.cart.lines.find(line => line.itemId === 'supplier-item-08')).toMatchObject({ quantity: 2, unitPrice: 104, options: [{ groupId: 'extra-pieces', valueId: 'extra-5' }] })
   expect(after.cart.lines.find(line => line.itemId === 'supplier-item-10')).toEqual(before.cart.lines.find(line => line.itemId === 'supplier-item-10'))
   expect(after.cart.total).toBe(438)
+})
+
+// Report: this chat Nov09 — the answer to an oversized-order question locked DEV-403776.
+it('hands a bound special-order answer to Main without granting an order effect', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const cue = { purpose: 'order-assistance' as const, questionId: 'oversized', question: '您是要一百份嗎？', sourceUtterance: '水餃100份', contextKey: serviceContextKey(context), expiresAt: Date.now() + 30000 }
+  const decide = vi.fn(async () => ({ kind: 'UNAVAILABLE' as const, reason: 'INVALID_CHOICE' as const }))
+  const result = await runFastPath({ transcript: '對啊', isEnabled: async () => true, serviceClarification: () => cue, decide, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
+  expect(result.kind).toBe('NEEDS_ASSISTANT')
+  expect(decide).not.toHaveBeenCalled()
+  const task = conversationDecisionStateFrom(result.decisionState, result)
+  expect(task?.readOnly).toBe(true)
+  expect(refreshConversationState(context, task).context?.orderAssistance?.questionId).toBe(cue.questionId)
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+})
+
+// Report: this chat Nov09 — accepting quantity help must stay non-blocking and preserve normal ordering.
+it.each(['accept', 'decline'] as const)('continues ordering after a quantity assistance %s', async (action) => {
+  const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+  const itemId = catalog.items.find(item => item.name.includes('水餃'))!.id
+  const runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId, quantity: 1 })
+  const rejection = await runtime.executeTool('order_add_item', { itemId, quantity: 100 })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const cue = orderAssistanceFromRejection(rejection, '水餃100份', context)!
+  expect(cue.purpose).toBe('staff-assistance')
+  const decision = conversationDecisionStateFrom({ ...context, serviceClarification: cue }, { reason: 'GENERAL_QUESTION', requestScope: 'service-information' })
+  const answerContext = refreshConversationState(context, decision).context!
+  const reply = replyFromContext(JSON.stringify({ kind: 'staff-assistance', action }), answerContext)!
+  if (action === 'accept')
+    expect(reply.content).toContain('已通知服務人員')
+  else
+    expect(reply.content).not.toContain('已通知服務人員')
+  expect(reply.kind).toBe('staff-assistance')
+  expect(answerContext.cart.itemCount).toBe(1)
+  expect(await runtime.invoke('order_add_item', { itemId, quantity: 2 })).toHaveProperty('cart.itemCount', 3)
+})
+
+// Report: this chat Nov09 11:30 — 好的 was reclassified as identity prose after a staff offer.
+it.each(['好的', '不用了'])('completes the quantity staff answer without model reinterpretation: %s', async (transcript) => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('kiosk_fast_path_context', { transcript: '蝦捲100份' })
+  const rejection = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+  const before = await runtime.invoke('kiosk_interaction_state') as KioskDecisionState
+  const window = createServiceClarificationWindow()
+  window.present(orderAssistanceFromRejection(rejection, '蝦捲100份', before)!)
+  const decide = vi.fn(async () => ({ kind: 'NEEDS_ASSISTANT' as const, reason: 'GENERAL_QUESTION' as const }))
+  const result = await runFastPath({ transcript, isEnabled: async () => true, serviceClarification: state => window.current(state), decide, webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
+  window.settle(result)
+  expect(result.kind).toBe('SERVICE_REPLY')
+  if (result.kind !== 'SERVICE_REPLY')
+    throw new Error('Expected a direct staff reply')
+  expect(result.reply.content.includes('已通知服務人員')).toBe(transcript === '好的')
+  expect(result.reply.content).not.toContain('我是點餐助手')
+  expect(decide).not.toHaveBeenCalled()
+  expect(window.current(before)).toBeUndefined()
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+  expect(await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', quantity: 2 })).toHaveProperty('cart.itemCount', 2)
+})
+
+// Report: this chat Nov09 — semantic staff answers must not select the older cart-review action.
+it.each(['accept', 'decline'] as const)('finishes a semantic staff %s against the current question', async (action) => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  await runtime.invoke('order_add_item', { itemId: 'chous-shrimp-roll', quantity: 1 })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const cue = { purpose: 'staff-assistance' as const, questionId: 'current-staff', question: '需要通知服務人員嗎？', sourceUtterance: '100份', contextKey: serviceContextKey(context), expiresAt: Date.now() + 30000 }
+  const result = await runFastPath({ transcript: '麻煩幫我通知一下', isEnabled: async () => true, serviceClarification: () => cue, decide: async () => ({ kind: 'STAFF_ANSWER', questionId: cue.questionId, action }), webMcp: { tools: runtime.toolDefinitions.map(tool => ({ ...tool, origin: 'https://menu.example' })), execute: (tool, input) => runtime.invoke(tool.name as Parameters<typeof runtime.invoke>[0], input) } })
+  expect(result.kind).toBe('SERVICE_REPLY')
+  if (result.kind !== 'SERVICE_REPLY')
+    throw new Error('Expected staff-only receipt')
+  expect(result.reply.action).toBe(action)
+  expect(result.reply.content.includes('已通知服務人員')).toBe(action === 'accept')
+  expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 1)
 })

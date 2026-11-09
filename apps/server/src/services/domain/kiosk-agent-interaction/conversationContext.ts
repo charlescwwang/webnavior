@@ -69,7 +69,7 @@ export const replyTool = {
       properties: {
         kind: { type: 'string', description: 'menu-information用於品名、價格、份量與銷售單位，以菜單事實回覆，不代算購買份數。clarification只用於意思未明。service-information處理服務範圍或無法確認的店家事實。', enum: ['payment-methods', 'fulfillment-modes', 'menu-information', 'quantity-limit', 'clarification', 'greeting', 'acknowledgement', 'hearing-check', 'service-information', 'staff-assistance'] },
         topic: { type: 'string', description: 'promotions用於促銷、折扣、優惠活動，目前由服務人員協助確認；operator用於營運業者、由誰營運，與identity的助手身分不同；capabilities用於詢問服務能力或如何點餐／操作本機，不可選other；out-of-scope用於一般知識、計算等超出點餐服務的要求；涉及餐點份量或購買單位則選ordering-units並提供subjects原品名，由程式引用完整菜單說明銷售單位，不計算、不選other。other僅用於無法確認的店家事實，搭配service-information。clarification不填topic，只有菜單種類未確認時用menu-kind。', enum: ['identity', 'operator', 'capabilities', 'out-of-scope', 'location', 'hours', 'other', 'menu-kind', 'ordering-units', 'delivery', 'order-timing', 'promotions'] },
-        action: { type: 'string', enum: ['confirm-order', 'offer', 'accept', 'decline'], description: '僅staff-assistance使用。confirm-order先確認特殊或大量點餐意圖，不執行訂單；orderAssistance有效且顧客同意後用offer說明限制與邀請工作人員；accept/decline只回答目前staffAssistance邀請，不能代替任何訂單確認。' },
+        action: { type: 'string', enum: ['confirm-order', 'offer', 'accept', 'decline'], description: '僅staff-assistance使用，此kind只傳kind與action，不傳topic或subjects。confirm-order先確認特殊或大量點餐意圖，不執行訂單；orderAssistance有效且顧客同意後用offer說明限制與邀請工作人員；accept/decline只回答目前staffAssistance邀請，不能代替任何訂單確認。' },
         subjects: { type: 'array', items: { type: 'string' }, maxItems: 5 },
       },
       required: ['kind'],
@@ -98,8 +98,19 @@ export async function selectReply(input: {
     if (calls.length !== 1 || calls[0]!.function.name !== replyTool.function.name)
       return undefined
     try {
-      const parsed = safeParse(contextReplySchema, JSON.parse(calls[0]!.function.arguments))
+      let value = JSON.parse(calls[0]!.function.arguments)
+      if (value && typeof value === 'object' && !Array.isArray(value) && ['staff-assistance', 'quantity-limit'].includes(value.kind)) {
+        // The shared tool advertises information fields for other reply kinds.
+        // They cannot authorize an effect; staff owns kind/action, quantity policy owns kind.
+        // Keep unknown fields for strict validation and still require a live
+        // invitation below before accepting consent.
+        const { topic: _topic, subjects: _subjects, ...policySelection } = value
+        value = policySelection
+      }
+      const parsed = safeParse(contextReplySchema, value)
       if (!parsed.success)
+        return undefined
+      if (parsed.output.kind === 'quantity-limit' && (!input.context.entryComplete || !input.context.quantityPolicy))
         return undefined
       if (parsed.output.topic === 'ordering-units' && !input.context.catalog?.complete)
         return undefined

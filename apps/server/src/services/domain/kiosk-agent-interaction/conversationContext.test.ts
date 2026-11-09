@@ -249,3 +249,25 @@ it('accepts a promotion staff-offer topic without a speculative menu read or rep
   expect(selected).toEqual({ reply, repaired: false })
   expect(complete).not.toHaveBeenCalled()
 })
+
+// Report: this chat Nov09 — Main selected staff confirmation but attached unrelated information fields.
+it('keeps a staff action while discarding only non-authorizing descriptive fields', async () => {
+  const context = parse(conversationContextSchema, { ...facts, sourceUtterance: '椒麻雞便當一百份', entryComplete: true })
+  const calls = [{ id: 'reply', type: 'function' as const, function: { name: replyTool.function.name, arguments: JSON.stringify({ kind: 'staff-assistance', action: 'confirm-order', topic: 'other', subjects: ['椒麻雞便當'] }) } }]
+  const complete = vi.fn()
+  const result = await selectReply({ context, calls, complete, repair: false })
+  expect(result.reply).toEqual({ kind: 'staff-assistance', action: 'confirm-order' })
+  expect(complete).not.toHaveBeenCalled()
+  const accept = [{ ...calls[0]!, function: { ...calls[0]!.function, arguments: JSON.stringify({ kind: 'staff-assistance', action: 'accept', topic: 'other', subjects: ['椒麻雞便當'] }) } }]
+  expect((await selectReply({ context, calls: accept, complete, repair: false })).reply).toEqual({ kind: 'clarification' })
+})
+
+// Report: this chat Nov09 real-model replay — irrelevant topic broke a valid quantity-policy reply.
+it('renders a quantity policy selection independently of non-authorizing information fields', async () => {
+  const context = parse(conversationContextSchema, { ...facts, sourceUtterance: '水餃一百個', quantityPolicy: { maximum: 20, mentionedCounts: [100], message: '每款最多20份' } })
+  const calls = [{ id: 'reply', type: 'function' as const, function: { name: replyTool.function.name, arguments: JSON.stringify({ kind: 'quantity-limit', topic: 'quantity-limit', subjects: ['水餃'] }) } }]
+  const complete = vi.fn()
+  expect((await selectReply({ context, calls, complete, repair: false })).reply).toEqual({ kind: 'quantity-limit' })
+  expect((await selectReply({ context: { ...context, quantityPolicy: undefined }, calls, complete, repair: false })).reply).toEqual({ kind: 'clarification' })
+  expect(complete).not.toHaveBeenCalled()
+})

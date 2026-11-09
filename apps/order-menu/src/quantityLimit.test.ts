@@ -1,7 +1,10 @@
+import type { CatalogSnapshot } from '../../order-menu-server/src/domain/contracts'
+
 import { conversationContextSchema, quantityLimitRejectionSchema } from '@proj-airi/stage-shared/kiosk-conversation'
 import { parse } from 'valibot'
 import { expect, it } from 'vitest'
 
+import { createPosSimulator } from '../../order-menu-server/src/simulator'
 import { createOrderMachine } from './domain/order-machine'
 import { mentionedServingCounts, QuantityLimitError } from './domain/quantityPolicy'
 import { createMenuToolRuntime } from './webmcp'
@@ -88,4 +91,21 @@ it.each([
   ['200元以內，排骨便當一份', [1]],
 ])('extracts raw count evidence without treating budgets as portions: %s', (transcript, expected) => {
   expect(mentionedServingCounts(transcript)).toEqual(expected)
+})
+
+// Report: this chat Nov09 — cover every current dish and spoken serving unit, not just dumplings.
+it.each(['份', '碗', '個'].flatMap(unit => [{ quantity: 20, spoken: '20' }, { quantity: 21, spoken: '21' }, { quantity: 100, spoken: '100' }, { quantity: 20, spoken: '二十' }, { quantity: 21, spoken: '二十一' }, { quantity: 100, spoken: '一百' }].map(count => ({ unit, ...count }))))('applies the shared limit across the active catalog: $spoken / $unit', async ({ unit, quantity, spoken }) => {
+  const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+  for (const item of catalog.items.filter(item => item.available)) {
+    const runtime = createMenuToolRuntime({ ...options, menu: catalog.items })
+    await runtime.invoke('kiosk_fast_path_context', { transcript: `我要${item.name}${spoken}${unit}` })
+    const result = await runtime.invoke('kiosk_fast_path_execute', { candidateId: 'intent:add-item' })
+    if (quantity > 20) {
+      expect(parse(quantityLimitRejectionSchema, result)).toMatchObject({ maximum: 20, requestedQuantity: quantity, executed: false })
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    }
+    else {
+      expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 20)
+    }
+  }
 })

@@ -1,12 +1,12 @@
 import type { PresenceState } from '@proj-airi/kiosk-proactive'
 import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
-import type { ConversationContext, ConversationHandoff, ConversationQuestion as PresentedQuestion, ServiceClarification, ServiceRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, ConversationContext, ConversationHandoff, ConversationQuestion as PresentedQuestion, ServiceClarification, ServiceRecovery } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { DecisionStageResult, KioskInteractionDecision as FastPathDecision, KioskDecisionState as FastPathDecisionState, InteractionState } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { KioskConversationDecisionState } from './kiosk-device'
 
 import { errorMessageFrom } from '@moeru/std'
-import { conversationRequestSchema, handoffSchema, intentRecoverySchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, conversationRequestSchema, handoffSchema, intentRecoverySchema, replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { array, parse } from 'valibot'
 
 import { priceClarification } from '../../../order-menu/src/domain/pricing'
@@ -54,6 +54,7 @@ export type FastPathResult = {
   | { kind: 'DEFERRED' }
   | { confidence?: number, kind: 'NEEDS_ASSISTANT' }
   | { kind: 'SERVICE_CLARIFICATION', question: ServiceClarification }
+  | { kind: 'SERVICE_REPLY', reply: ContextReply & { content: string }, questionId: string }
   | { kind: 'UNAVAILABLE' }
   | { kind: 'SERVICE_UNAVAILABLE' }
   | { kind: 'EXECUTION_FAILED', uncertain: boolean, result?: unknown }
@@ -213,12 +214,12 @@ export async function runFastPath(input: {
     const cue = request.decisionState && input.serviceClarification?.(request.decisionState)
     if (cue && decisionState)
       decisionState = { ...decisionState, serviceClarification: cue }
-    // A live staff offer owns a bare yes/no answer. Requalifying it as a
+    // A live assistance question owns a bare yes/no answer. Requalifying it as a
     // fresh order can turn 好啊 into “arrange this meal”. Keep this handoff
     // read-only; Main still interprets acceptance/refusal and owns the reply.
     // Whole-utterance matching excludes compound orders and addressed speech.
-    const staffAnswer = /^(?:[好對是]|好啊|好的|是的|可以|不用|不需要|不要|不用了)[\s，。！？,.!?]*$/u.test(input.transcript.trim())
-    if (cue?.purpose === 'staff-assistance' && !input.activeRequest && staffAnswer
+    const staffAnswer = /^(?:[好對是]|好啊|好的|對啊|對的|是啊|是的|可以|不用|不需要|不要|不用了)[\s，。！？,.!?]*$/u.test(input.transcript.trim())
+    if (cue && ['staff-assistance', 'order-assistance'].includes(cue.purpose ?? '') && !input.activeRequest && staffAnswer
       && cue.contextKey === serviceContextKey(request.decisionState!)) {
       if (!utteranceAccepted) {
         await input.onUtteranceAccepted?.()
@@ -292,6 +293,34 @@ export async function runFastPath(input: {
       return { ...decision, ...(decisionState ? { decisionState } : {}) }
     }
 
+    // Resolve display-only staff consent against live Menu facts, never an old
+    // checkout question. Used by finite local replies and semantic full-sentence answers.
+    const answerStaffInvitation = async (questionId: string, action: 'accept' | 'decline'): Promise<Extract<FastPathResult, { kind: 'SERVICE_REPLY' }> | undefined> => {
+      const invitation = decisionState && input.serviceClarification?.(decisionState)
+      const contextTool = input.webMcp.tools.find(tool => tool.name === 'kiosk_conversation_context')
+      if (invitation?.purpose !== 'staff-assistance' || invitation.questionId !== questionId || !contextTool || input.activeRequest)
+        return
+      const context = parse(conversationContextSchema, await input.webMcp.execute(contextTool, { includeCatalog: false }))
+      if (input.isCurrent?.() === false || invitation.contextKey !== serviceContextKey(context))
+        return
+      const reply = replyFromContext(JSON.stringify({ kind: 'staff-assistance', action }), { ...context, staffAssistance: { questionId, expiresAt: invitation.expiresAt } })
+      if (!reply)
+        return
+      if (!utteranceAccepted) {
+        await input.onUtteranceAccepted?.()
+        utteranceAccepted = true
+      }
+      return { kind: 'SERVICE_REPLY', reply, questionId, decisionState: { ...decisionState!, serviceClarification: invitation } }
+    }
+    const invitation = decisionState && input.serviceClarification?.(decisionState)
+    const staffConsent = /^(?:[好對是]|好啊|好的|好呀|對啊|對的|是啊|是的|可以)[\s，。！？,.!?]*$/u.test(input.transcript.trim())
+    const staffRefusal = /^(?:不用|不需要|不要|不用了|不要了)[\s，。！？,.!?]*$/u.test(input.transcript.trim())
+    if (invitation?.purpose === 'staff-assistance' && !input.activeRequest && (staffConsent || staffRefusal)) {
+      const reply = await answerStaffInvitation(invitation.questionId, staffConsent ? 'accept' : 'decline')
+      if (reply)
+        return reply
+    }
+
     const resolvedCandidateId = rawCandidates && typeof rawCandidates === 'object' && 'resolvedCandidateId' in rawCandidates
       ? (rawCandidates as Record<string, unknown>).resolvedCandidateId
       : undefined
@@ -347,6 +376,8 @@ export async function runFastPath(input: {
     let spent = applicationResolved ? 0 : decision.modelQuestions
     if (decisionState?.phase === 'query_scope' && decisionState.waitingFor && decision.kind !== 'SCOPE_CHOICE')
       return { kind: 'CLARIFICATION', prompt: decisionState.waitingFor.question, question: decisionState.waitingFor, decisionState }
+    if (decision.kind === 'STAFF_ANSWER')
+      return await answerStaffInvitation(decision.questionId, decision.action) ?? { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', decisionState }
     if (decision.reason === 'PROVIDER_FAILURE' || decision.reason === 'SYSTEM_ONE_DISABLED')
       return await handoff(decision.reason, decision)
     // Defer fragment expiry-by-state until a real semantic result exists;
@@ -466,6 +497,8 @@ export async function runFastPath(input: {
       // utterances, in order; history alone does not bind unfinished intent.
       return { ...decision, decisionState, requestText: `${input.activeRequest.text}\n${input.transcript}` }
     }
+    if (decision.kind === 'STAFF_ANSWER')
+      return await answerStaffInvitation(decision.questionId, decision.action) ?? { kind: 'UNAVAILABLE', reason: 'UNCERTAIN_SERVICE_REQUEST', decisionState }
     if (decision.kind !== 'FAST_ACTION')
       return decision.kind === 'COMPLETE' ? { kind: 'UNAVAILABLE', decisionState } : { ...decision, ...(decisionState ? { decisionState } : {}) }
 

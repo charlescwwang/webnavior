@@ -312,3 +312,23 @@ it('hands off the whole request when a proposed menu exit cannot satisfy collect
   expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
   expect(result).not.toHaveProperty('actionId')
 })
+
+// Report: this chat Nov09, DEV-747131 — staff assent was stolen by an older cart-review question.
+it.each(['ACCEPT', 'DECLINE', 'UNCERTAIN'])('gives the current staff invitation priority: %s', async (choice) => {
+  const state = { phase: 'ordering', waitingFor: { questionId: 'cart', purpose: 'cart-review', question: '要先查看訂單嗎？', expiresAt: Date.now() + 30000, choices: [{ id: 'intent:view-cart', description: '看訂單' }] } }
+  const cue = { purpose: 'staff-assistance' as const, questionId: 'staff', question: '需要通知服務人員嗎？', sourceUtterance: '水餃一百份', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 }
+  const invoke = provider([choice])
+  const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates: [{ id: 'intent:view-cart', description: '看訂單' }], decisionState: { ...state, serviceClarification: cue }, transcript: '好啦，幫我通知一下', invoke })
+  expect(result.kind).toBe(choice === 'UNCERTAIN' ? 'SERVICE_CLARIFICATION' : 'STAFF_ANSWER')
+  expect(result).not.toHaveProperty('actionId')
+  expect(Object.keys(invoke.mock.calls[0]![1])).toEqual(['staffAnswer'])
+})
+
+// Report: this chat Nov09 — replacing a staff invitation must still allow a genuinely new order.
+it('keeps a new meal request independent from staff consent', async () => {
+  const state = { phase: 'ordering' }
+  const cue = { purpose: 'staff-assistance' as const, questionId: 'staff', question: '需要通知服務人員嗎？', sourceUtterance: '100份', contextKey: serviceContextKey(state), expiresAt: Date.now() + 30000 }
+  const result = await decideInteraction({ routing: 'staged', backgroundSpeechMode: 'off', policy, candidates, decisionState: { ...state, serviceClarification: cue }, transcript: '不用，改點牛肉麵兩份', invoke: provider(['NEW_REQUEST', 'HANDOFF']) })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST' })
+  expect(result).not.toHaveProperty('action')
+})

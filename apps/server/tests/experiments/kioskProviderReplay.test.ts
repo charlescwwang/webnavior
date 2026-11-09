@@ -1,4 +1,4 @@
-import type { ContextReply, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { ContextReply, QuantityLimitRejection, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { CatalogSnapshot } from '../../../order-menu-server/src/domain/contracts'
 import type { RecommendationPresentation } from '../../../order-menu/src/webmcp'
@@ -12,10 +12,10 @@ import { Buffer } from 'node:buffer'
 import Redis from 'ioredis'
 
 import { errorMessageFrom } from '@moeru/std'
-import { conversationContextSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { conversationContextSchema, quantityLimitRejectionSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { eq } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { parse } from 'valibot'
+import { parse, safeParse } from 'valibot'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { historicalSupplierCatalog } from '../../../order-menu-server/src/fixtures/historicalSupplierCatalog'
@@ -25,7 +25,7 @@ import { applySupplierOrdering } from '../../../order-menu/src/supplierOrdering'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom, refreshConversationState, runFastPath, shouldShowDecisionRetry } from '../../../stage-kiosk/src/services/kiosk-fast-path'
 import { resumeConversationRetry } from '../../../stage-kiosk/src/services/kioskConversationRetry'
-import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
+import { createInvitationWindow, createMenuReplyWindow, createServiceClarificationWindow, operationReplyFrom, orderAssistanceFromRejection, questionReceiptFrom, replyFromConversation, replyWithQuestion } from '../../../stage-kiosk/src/services/questionPresentation'
 import { createDrizzle } from '../../src/libs/db'
 import { mockDB } from '../../src/libs/mock-db'
 import { createKioskRoutes } from '../../src/routes/kiosk'
@@ -735,6 +735,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     let payload: Record<string, unknown> = { content: transcript }
     let answer: string | undefined
     let selectedReply: ContextReply | undefined
+    let quantityRejection: QuantityLimitRejection | undefined
     let question: ReturnType<typeof questionReceiptFrom>
     let completed = false
     let completionStatus: 'completed' | 'waiting' = 'completed'
@@ -776,6 +777,9 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
         const toolStarted = performance.now()
         const result = await runtime.invokeForAgent(definition!.name, input)
         process.stdout.write(`[configured-tool] ${JSON.stringify({ name: call.function.name, input, result })}\n`)
+        const limit = safeParse(quantityLimitRejectionSchema, result)
+        if (limit.success && limit.output.toolName === call.function.name)
+          quantityRejection = limit.output
         if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
           blockedTools.push(call.function.name)
         toolMs += performance.now() - toolStarted
@@ -784,6 +788,14 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
         if (!['menu_get', 'menu_recommend', 'menu_show_recommendations', 'cart_get', 'seating_get'].includes(call.function.name))
           operationReply = operationReplyFrom(result) ?? operationReply
         toolResults.push({ toolCallId: call.id, name: call.function.name, content: JSON.stringify(result) })
+      }
+      // Match the real Host loop: a validated quantity refusal finishes without
+      // another model round and remains available to final presentation.
+      if (quantityRejection) {
+        for (const result of toolResults)
+          await app.request(`/api/kiosk/visitor-sessions/${sessionId}/entries`, { method: 'POST', headers, body: JSON.stringify({ kind: 'tool_result', content: result.content, metadata: { name: result.name, toolCallId: result.toolCallId } }) })
+        completed = true
+        break
       }
       if (question && ['recommendation-invitation', 'menu-return-invitation'].includes(question.purpose)) {
         for (const result of toolResults) {
@@ -801,7 +813,7 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
     // NOTICE: match Scene's final projection; raw Menu context cannot contain
     // the host-owned, version-bound assistance invitation from this turn.
     const replyContext = refreshConversationState(parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context')), decisionState).context!
-    const presented = replyFromConversation({ status: completionStatus, agentMode: 'active', answer, reply: selectedReply, requestedTools }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, sourceUtterance: transcript, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, priceInquiry: decisionState.priceInquiry, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
+    const presented = replyFromConversation({ status: completionStatus, agentMode: 'active', answer, reply: selectedReply, requestedTools, rejection: quantityRejection }, { menu, question, outcome: operationReply, context: replyContext, handoff: decisionState.handoff, sourceUtterance: transcript, serviceReply: decisionState.serviceReply, requireMenuRead: decisionState.requireMenuRead, priceInquiry: decisionState.priceInquiry, failureMessage: '查詢未完成。', customerEntry: { phase: livePhase, prompt: '請先填寫手機或選擇略過。' } })
     expect(presented.role).toBe('assistant')
     // Match Scene's final guidance step; the raw reply renderer deliberately
     // leaves phase-owned guidance to the caller after validating the question.
@@ -2012,4 +2024,31 @@ describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk pro
       expect(await runtime.invoke('kiosk_interaction_state')).toMatchObject({ waitingFor: { questionId: question!.questionId } })
     }
   }, 180_000)
+  // Report: this chat Nov09 — generalize oversized ordering and explicit staff consent.
+  it.each(['牛肉麵一百碗', '椒麻雞便當一百份', '水餃一百個'])('configured quantity-staff boundary: %s', async (speech) => {
+    ready = true
+    const catalog = await (await createPosSimulator().app.request('/v1/catalog')).json() as CatalogSnapshot
+    runtime = createMenuToolRuntime({ menu: catalog.items, onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+    invitationWindow.supersede()
+    const opened = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    sessionId = (await opened.json() as { session: { id: string } }).session.id
+    const state = conversationDecisionStateFrom(await runtime.invoke('kiosk_interaction_state'))!
+    // Deliberately exercise Main's lookup/limitation continuation as well as Fast Path's refusal.
+    const reply = await agent(`我要${speech}`, { ...state, handoff: { intent: 'ADD_ONLY', subjects: [speech.replace(/一百[碗份個]/u, '')], status: 'ambiguous', itemIds: [], lineIds: [] } })
+    expect(reply.answer).not.toContain('查詢未完成')
+    expect(reply.answer).toMatch(/20|安排餐點|通知服務人員/)
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    const refusal = await runtime.executeTool('order_add_item', { itemId: catalog.items[0]!.id, quantity: 100 })
+    const current = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+    const cue = orderAssistanceFromRejection(refusal, speech, current)!
+    await recordReply(cue.question)
+    const accepted = await decideCurrent('好啦，幫我通知一下服務人員', cue)
+    expect(accepted.decision.kind).toBe('SERVICE_REPLY')
+    if (accepted.decision.kind !== 'SERVICE_REPLY')
+      throw new Error('Staff acceptance was not displayed')
+    expect(accepted.decision.reply.content).toContain('已通知服務人員')
+    expect(accepted.decision.reply.action).toBe('accept')
+    expect(await runtime.invoke('cart_get', { display: false })).toHaveProperty('cart.itemCount', 0)
+    process.stdout.write(`[quantity-staff-boundary] ${JSON.stringify({ speech, answer: reply.answer, selectedReply: reply.selectedReply, staff: accepted.decision.reply, decisions: accepted.decisions.map(result => result.kind) })}\n`)
+  }, 120_000)
 })

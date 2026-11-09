@@ -904,3 +904,26 @@ it('clarifies an invalid non-operation staff answer without notifying or enterin
   expect(answer.content).not.toContain('已通知')
   expect(answer.content).not.toContain('技術失敗')
 })
+
+// Report: this chat Nov09 — Main and Fast Path must offer non-locking quantity assistance.
+it('offers optional staff help after a Main quantity refusal while retaining the cart', async () => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const rejection = { ok: false as const, executed: false as const, rejection: 'quantity-limit' as const, error: 'QUANTITY_LIMIT' as const, toolName: 'order_add_item', maximum: 20 as const, requestedQuantity: 100, customerMessage: '最多20份' }
+  const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['order_add_item'], rejection }, { menu: createMenuReplyWindow(), context, sourceUtterance: '一百份水餃', failureMessage: '失敗' })
+  expect(result.role).toBe('assistant')
+  expect(result.content).toContain('需要幫您通知服務人員嗎？')
+  expect(result.content).not.toContain('已通知')
+  expect(context.cart.itemCount).toBe(0)
+})
+
+// Report: this chat Nov09 — 牛肉麵100碗 read the dish then locked on its typed special-order reply.
+it.each(['confirm-order', 'offer'] as const)('preserves a validated %s after read-only meal lookup', async (action) => {
+  const runtime = createMenuToolRuntime({ onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {} })
+  const context = parse(conversationContextSchema, await runtime.invoke('kiosk_conversation_context'))
+  const current = { ...context, sourceUtterance: '我要牛肉麵一百碗', ...(action === 'offer' ? { orderAssistance: { questionId: 'large', expiresAt: Date.now() + 30000 } } : {}) }
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['menu_get'], reply: { kind: 'staff-assistance', action } }, { menu: createMenuReplyWindow(), context: current, sourceUtterance: current.sourceUtterance, handoff: { intent: 'ADD_ONLY' }, failureMessage: '技術故障' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.kind).toBe('staff-assistance')
+  expect(reply.content).not.toContain('技術故障')
+})

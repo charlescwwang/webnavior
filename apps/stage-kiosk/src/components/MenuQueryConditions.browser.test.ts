@@ -57,3 +57,29 @@ it('regression K1107-FUZZY shows the same actual candidate in the cards and veri
     screen.unmount()
   }
 })
+
+// Report: this chat, Nov09 — the grid changed while the condition strip kept the earlier query.
+it('renders fresh category and ingredient conditions from the same runtime as the menu result', async () => {
+  const state = shallowRef<QueryView>()
+  const runtime = createMenuToolRuntime({ menu: [
+    { id: 'fish', name: '魚飯', category: '飯', ingredient: 'fish' },
+    { id: 'pork', name: '豬肉麵', category: '麵', ingredient: 'pork' },
+  ].map(({ ingredient, ...item }) => ({ ...item, description: '', imageUrl: '', price: 100, aliases: [], optionGroups: [], recommendationTags: [], composition: { ingredients: [ingredient], complete: true, source: 'merchant', revision: '1', removals: [] } })), onAction: () => {}, onCartChange: () => {}, onMenuSelection: () => {}, onRecommendationsChange: () => {}, onQueryStateChange: value => state.value = value })
+  const Harness = defineComponent({ setup: () => () => h(MenuQueryConditions, { state: state.value, locked: false }) })
+  const screen = render(Harness)
+  try {
+    await runtime.invoke('menu_recommend', { action: 'update', includeIngredients: ['fish'] })
+    await expect.element(screen.getByText('想吃：魚', { exact: true })).toBeVisible()
+    expect(await runtime.invoke('menu_get', { category: '麵', display: true })).toHaveProperty('items', [expect.objectContaining({ id: 'pork' })])
+    await expect.element(screen.getByText('麵', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('想吃：魚', { exact: true })).not.toBeInTheDocument()
+    expect(runtime.getQueryState()?.conditions).toHaveLength(1)
+    await runtime.invoke('menu_get', { includeIngredients: ['pork'], display: true })
+    await expect.element(screen.getByText('想吃：豬肉', { exact: true })).toBeVisible()
+    await expect.element(screen.getByText('麵', { exact: true })).not.toBeInTheDocument()
+    expect(runtime.getQueryState()?.conditions).toHaveLength(1)
+  }
+  finally {
+    screen.unmount()
+  }
+})

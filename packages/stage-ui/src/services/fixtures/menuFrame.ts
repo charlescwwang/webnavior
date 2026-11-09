@@ -24,7 +24,10 @@ function assertCanRestart() {
   if (payment)
     throw new Error('Cannot restart while a payment is pending, authorized, or awaiting reconciliation.')
 }
+const tableMode = new URL(window.location.href).searchParams.has('table')
 const runtime = createMenuToolRuntime({
+  ...(tableMode ? { serviceContext: () => ({ id: 'browser-table', serviceMode: 'table-service' as const, table: { id: 'A1', label: 'A1' }, directSubmissionSupported: true }) } : {}),
+  onReviewRequested: () => {},
   menu: Array.from({ length: 6 }, (_, index) => ({ ...menu[0]!, id: `dish-${index}`, name: index === 0 ? '水餃' : index === 1 ? '牛肉麵' : `便當${index}`, category: '便當', aliases: [], price: 80 + index * 10, optionGroups: index === 1 ? [{ id: 'spice', label: '辣度', required: true, values: [{ id: 'none', label: '不辣', priceDelta: 0 }, { id: 'hot', label: '辣', priceDelta: 0 }] }] : [] })),
   orderingReady: () => ready,
   onCustomerEntryRequested: () => ready = false,
@@ -43,6 +46,7 @@ const runtime = createMenuToolRuntime({
   },
   onCartChange: () => {},
   onMenuSelection: () => {},
+  onMenuRequested: () => {},
   onRecommendationsChange: () => {},
   onSessionReset: () => {
     ready = true

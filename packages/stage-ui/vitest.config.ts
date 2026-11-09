@@ -8,11 +8,16 @@ import { playwright } from '@vitest/browser-playwright'
 import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
+import { toolValidationPlugin } from '../../apps/order-menu/toolValidationPlugin'
+
 export default defineConfig(({ mode }) => {
   return {
     root: import.meta.dirname,
     plugins: [
       Info(),
+      // The real embedded Menu entry imports its build-time validation module.
+      // Its iframe tests need the same compiler as the Menu's Vite build.
+      toolValidationPlugin(),
     ],
     test: {
       projects: [
