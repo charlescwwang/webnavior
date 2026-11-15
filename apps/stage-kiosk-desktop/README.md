@@ -22,20 +22,57 @@ release. It does not include the pet desktop's windows, widgets or game engine.
   device to fetch the new release. Do not reload an unresolved transaction.
 - Tracks the real DOM region's bounds, hides the native View for host settings
   and modal overlays, and forwards document-scoped input activity to Kiosk.
+- Shows a host loading indicator while a new native document loads, keeping the
+  native View hidden through resize/visibility updates until the current document
+  finishes loading. Website-initiated navigation returns `loading` from placement
+  updates even when an earlier `loadURL` promise has already settled.
+  Navigation/load-failure events own that state; a late aborted `loadURL`
+  promise cannot mark a newer successful page failed or hide it again.
+  Failed loads show the existing staff-facing error. This initial-document state
+  does not claim that PB's later asynchronous menu requests have finished.
+- Emits owned navigation revisions for later full-page loads as well, including
+  table Start and reload. Kiosk revokes old tool handles during loading and
+  rediscovers the new document without replaying operations. Update native
+  preload and Kiosk UI together for this contract.
+- Reloading the trusted Host invalidates its previous native placement key, so
+  its next placement loads the configured entry even when the new Host reuses
+  the same service/revision. An old SPA menu/checkout URL is never adopted as
+  the new entry; vendor cookies and unfinished cart data remain intact.
 - Keeps host/device cookies separate from vendor service login partitions.
   Service identity plus origin select the vendor store inside this installation.
   Vendor account-based carts may still be shared upstream; test that separately.
+- Allows one named, blank text-console child window from the trusted Kiosk.
+  Vue moves its existing console into that window, above the native website;
+  no second app, router or ordering session starts. Its title bar uses native
+  dragging, and its collapse/reset controls retain the draft and trace. Closing
+  it returns the console to the host row, with an explicit reopen action.
+  Host and this owned popup can write plain text to the system clipboard;
+  clipboard reads and vendor/iframe clipboard permissions remain denied. Copy
+  handlers in teleported controls use their actual owner document.
+  Other popups, child navigation and child desktop RPC are denied. Host reload
+  or shutdown closes the owned popup. Vendor popup policy remains unchanged.
 
 External pages have no preload, Node or raw IPC. HTTPS is required except for
-loopback development. Cross-origin main-frame navigation, popups, downloads and
+loopback development. Cross-origin main-frame navigation, vendor popups, downloads and
 vendor camera/microphone permissions are not enabled as part of this pilot. Only
 the configured Kiosk main frame may request audio/video for existing speech and
 presence features; OS consent and device/profile capture controls still apply.
 Both Electron permission callbacks enforce this boundary. In-page
 login at the service's origin is supported; LINE OAuth is not accepted yet.
+Tool discovery confirms transport only. The reviewed member pickup site requires
+a current vendor login inside this app's service partition; the reviewed current
+and RD internal-use sites accept its verified cookie-buyer mode. Both use the shared
+`pb-journey` scope and never grant automation to another store or origin merely
+because it is PB. On the member site, a page-confirmed signed-out
+state returns `sign-in-required` before dispatch, and Kiosk asks the operator to
+sign in on this machine and submit a new request. It neither imports browser
+cookies nor retries an operation automatically; unknown cart effects stay unknown.
 
 PB product frames and the illustrative moving hand now render inside this
-native surface. The existing remote Kiosk owns Jev/Main routing and the summary
+native surface. Operation frames, hand and label hide on finger release (about
+150 ms after dispatch), independently of merchant verification; discovery frames
+retain their display time. Hiding a cue does not cancel or replay an operation.
+The existing remote Kiosk owns Jev/Main routing and the summary
 above it. No additional controller, browser extension or OS mouse privilege is
 required. After updating the PB bundle, rebuild and restart this pilot so the
 native service loads the new implementation; ordinary Vite HMR updates only the
@@ -45,6 +82,13 @@ quantity change; it does not add then delete duplicate meals. Ambiguous groups
 and changed prices remain blocked.
 
 ## Run locally
+
+On this Ubuntu host, use **PB 測試管理** from the desktop/application menu; see
+[the isolated PB test system](../../scripts/pbTest/README.md). It owns separate
+API/data/static UI resources and an explicit Electron profile. Do not start the
+ordinary Server `.env.local` as a test API: it points at the existing production
+database. The manual Mac commands below describe the earlier pilot, not the
+Ubuntu management workflow.
 
 Use the repository's Node 24.22.1 and install with the workspace lockfile. Start
 the existing Kiosk and API normally. Build this host (this also bundles the shared PB service into `out/service/pb.js`):
@@ -99,9 +143,72 @@ ESGPB_ELECTRON_PATH=/path/to/inspected/electron node scripts/verifyKioskDesktop.
 ```
 
 Set `KIOSK_TEST_VIDEO_DIR` to retain the smoke test's synthetic page recordings.
-`KIOSK_TEST_PORTRAIT=1` requests a taller window, but macOS may constrain it to
-the available screen: use the printed native viewport dimensions as evidence,
-not the requested window size. These test options do not configure deployment.
+`KIOSK_TEST_PORTRAIT=1` now requires and asserts an actual 1080×1920 Host content
+viewport. A laptop screen can clamp native bounds; use a sufficiently large test
+display. On Ubuntu with Xvfb installed, run the same disposable fixture on its
+own display so it cannot take the operator's keystrokes:
+
+```bash
+xvfb-run -a -s '-screen 0 1280x2200x24 -nolisten tcp' \
+  env ESGPB_ELECTRON_PATH=/path/to/inspected/electron KIOSK_TEST_PORTRAIT=1 \
+  node scripts/verifyKioskDesktop.mjs
+```
+
+The native vendor region is smaller than the Host because the Host reserves its
+own controls; the fixture prints that actual viewport too. These test options do
+not configure deployment or prove the physical kiosk's layout/input acceptance.
+
+For the complete built Host with the local PB test API and its configured real
+Jev/Main providers, start `scripts/pbTest/manage.py` and the existing
+`test-sites/pb-order-lab/start.sh` fixture, then run:
+
+```bash
+xvfb-run -a -s '-screen 0 1280x2200x24 -nolisten tcp' \
+  env ESGPB_ELECTRON_PATH=/path/to/inspected/electron \
+  node scripts/verifyKioskOrdering.mjs
+```
+
+The Electron launcher is a synthetic test host: Playwright implicitly supplies
+`--no-sandbox`, and Xvfb uses software WebGL. It is not normal sandbox acceptance.
+For the normal systemd/user-service launch, use a separately enrolled disposable
+profile with a loopback CDP port, then set `PB_AUDIT_CDP=http://127.0.0.1:PORT`
+instead of `ESGPB_ELECTRON_PATH`. Attach before enrollment: the runner installs
+loopback-only request interception and blocks WebSockets before any merchant
+surface opens. Never attach this runner to an operator's existing device/profile.
+Stop that temporary service and close its CDP port afterward.
+
+This runner enrolls a disposable device/profile against the local API and retains
+its synthetic conversation records. It uses the currently published prompts and
+real configured models, so provider requests may incur charges. Merchant-origin
+requests are intercepted by the loopback fixture; unknown external sessions fail
+closed. No operator browser storage is reused. It checks table equivalence,
+questions, delta/final quantities, dumpling configuration, three-dish cues,
+search cancellation, carrier-preserving cart edits and idle return to table entry.
+The runner uses real time, including the three-minute idle wait and fifteen-second
+countdown. `PB_AUDIT_ACCELERATE_IDLE=1` installs a Playwright clock for the Electron
+browser context and advances the final idle wait. This affects all its renderer
+pages and may distort native movement and request timing; do not use that mode
+for latency claims or final native-scroll acceptance. The API/models stay real.
+The report is written to
+`/tmp/pb-ordering-audit.json`; physical audio, merchant submission and payment are
+outside this runner's coverage. `PB_AUDIT_SCENARIO=recommendation`, `search` or
+`cart` selects focused journeys; each also checks idle return and the next
+visitor's fresh table selection.
+`PB_AUDIT_SCENARIO=reset` replaces the idle wait with the actual customer restart
+button; its result proves manual restart, not the idle countdown.
+`PB_AUDIT_SCENARIO=idle` separately checks a meal request is discarded during
+the idle question without extending its countdown, a semantic continue keeps
+the current menu, and semantic end yields an actual `session:end` decision
+before returning to table entry. It starts a fresh reception between the first
+two cases rather than spending one fifteen-second deadline on two model calls.
+This longer journey requires real time and rejects `PB_AUDIT_ACCELERATE_IDLE=1`:
+browser-only acceleration makes Server continuation expiry disagree with the
+Host clock. Realigning Date during network calls also invalidates the original
+idle deadline, so it cannot provide acceptance evidence for this journey.
+
+A native renderer exit publishes a failed navigation and revokes tool admission.
+It cannot stay in loading indefinitely or resume merchant actions on its own;
+pending/unknown effects still require their existing reconciliation policy.
 
 The Electron check uses only disposable loopback fixtures. It checks real IPC,
 View visibility, storage isolation, reload sequencing and remote privilege
@@ -125,8 +232,13 @@ login. A separate actual Mac pilot has completed manual PB login, device/login
 retention across app restarts, natural Agent menu/price queries, paid-rice additions
 (one meal and two meals each with one rice option), quantity changes preserving
 options, and an explicit meal removal. Latest add, quantity and cleanup receipts
-verified `displayUpdated=true`. Customer reset cleared prior dialogue, preserved
-login/cart, and prevented a new visitor from editing an unfinished old cart.
+verified `displayUpdated=true`. That earlier pilot used the previous preserved-cart
+reset policy: prior dialogue was cleared, login/cart retained and new visitors
+blocked from editing an unfinished old cart. The current reception-end policy
+instead clears unfinished rows with PB's native **清空** button and verifies empty
+before the next visitor; it retains the document/login. The network-intercepted
+portrait fixture covers this new policy, including exactly one click and replay
+deduplication. Live acceptance of this changed policy is still an operator check.
 Authorized test cleanup left an empty cart. Filtered actual evidence is saved at
 `output/playwright/pb-electron/acceptance.json`.
 No order was submitted or paid. Physical ASR, microphone arrays and Windows release
@@ -142,7 +254,10 @@ replayed. It never contacts PB.
 It also withholds a passive cue's catalog response and verifies that a required
 cart read completes within 1.5 seconds before that response is released. The cue
 settles as cancelled, with no vendor writes; existing movement/reset and accepted
-cart-effect checks then run on a restored fixture state.
+cart-effect checks then run on a restored fixture state. Reception-end coverage
+also holds a synthetic clear response while a real pointer click targets the
+covered native button: it must be blocked, no hand may appear, the loading cover
+must remain through return navigation and disappear only after settlement.
 
 Browser+Companion and Electron are retained as separate hosts sharing ordering
 logic; this native relay does not ship a production browser Companion. Windows

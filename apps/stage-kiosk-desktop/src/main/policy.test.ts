@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { clipBounds, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
+import { clipBounds, isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
 
 describe('kiosk desktop navigation policy', () => {
   it('allows TLS websites and loopback development without embedded credentials', () => {
@@ -45,4 +45,16 @@ describe('kiosk desktop navigation policy', () => {
     expect(isHostMediaRequest(entry.href, entry, 'media', entry.origin, { ...details, mediaType: 'unknown' })).toBe(false)
     expect(isHostMediaRequest(entry.href, entry, 'media', entry.origin, { isMainFrame: true, requestingUrl: entry.href, mediaTypes: [] })).toBe(false)
   })
+})
+
+// Report: this chat, 2026-11-14 — Kiosk Copy failed to reach the OS clipboard.
+it('allows clipboard writes from the host and its owned text popup only, without clipboard reads', () => {
+  const entry = new URL('https://example.com/kiosk/')
+  expect(isHostClipboardWrite(entry.href, entry, 'clipboard-sanitized-write', entry.origin, { isMainFrame: true, requestingUrl: entry.href })).toBe(true)
+  expect(isHostClipboardWrite('about:blank', entry, 'clipboard-sanitized-write', entry.origin, { isMainFrame: true, requestingUrl: 'about:blank' }, true)).toBe(true)
+  expect(isHostClipboardWrite('about:blank', entry, 'clipboard-sanitized-write', entry.origin, { isMainFrame: true }, false)).toBe(false)
+  expect(isHostClipboardWrite(entry.href, entry, 'clipboard-read', entry.origin, { isMainFrame: true })).toBe(false)
+  expect(isHostClipboardWrite(entry.href, entry, 'clipboard-sanitized-write', entry.origin, { isMainFrame: false })).toBe(false)
+  expect(isHostClipboardWrite(entry.href, entry, 'clipboard-sanitized-write', 'https://other.example', { isMainFrame: true })).toBe(false)
+  expect(isHostClipboardWrite('https://app.esgpb.com/order/', entry, 'clipboard-sanitized-write', entry.origin, { isMainFrame: true })).toBe(false)
 })

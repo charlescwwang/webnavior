@@ -52,3 +52,14 @@ export function isHostMediaRequest(page: string, entry: URL, permission: string,
     return Boolean(details.mediaTypes?.length && details.mediaTypes.every(type => type === 'audio' || type === 'video'))
   return 'mediaType' in details && (details.mediaType === 'audio' || details.mediaType === 'video')
 }
+
+/** Clipboard writes belong to the trusted host or its explicitly owned about:blank text popup. */
+export function isHostClipboardWrite(page: string, entry: URL, permission: string, origin: string | undefined, details: PermissionDetails, ownedPopup = false): boolean {
+  if (permission !== 'clipboard-sanitized-write' || !details.isMainFrame)
+    return false
+  const admitted = (value: string) => isHostPage(value, entry) || (ownedPopup && value === 'about:blank')
+  if (!admitted(page) || (details.requestingUrl && !admitted(details.requestingUrl)))
+    return false
+  const origins = [origin, 'securityOrigin' in details ? details.securityOrigin : undefined, 'embeddingOrigin' in details ? details.embeddingOrigin : undefined]
+  return origins.every(value => value === undefined || value === entry.origin || value === `${entry.origin}/`)
+}

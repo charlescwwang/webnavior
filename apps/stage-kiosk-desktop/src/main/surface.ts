@@ -1,9 +1,13 @@
-import type { DesktopServiceRequest, DesktopSurfaceActivity, DesktopSurfaceRequest, DesktopSurfaceResult } from '@proj-airi/stage-shared/kiosk-desktop'
-import type { BrowserWindow } from 'electron'
+import type { DesktopServiceRequest, DesktopSurfaceActivity, DesktopSurfaceNavigation, DesktopSurfaceRequest, DesktopSurfaceResult } from '@proj-airi/stage-shared/kiosk-desktop'
+import type { BrowserWindow, Event, WebContentsWillNavigateEventParams, WebContentsWillRedirectEventParams } from 'electron'
 
 import { createHash } from 'node:crypto'
 
+import { executionResultSchema } from '@proj-airi/stage-shared/interactive-service'
+import { pbSubmissionDispatchSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceiptSchema, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
 import { WebContentsView } from 'electron'
+import { safeParse } from 'valibot'
 
 import { clipBounds, parsePageUrl } from './policy'
 
@@ -17,11 +21,15 @@ export class ServiceSurface {
   private hostGeneration = 0
   private active?: DesktopSurfaceActivity
   private loading?: Promise<void>
+  private documentLoading = false
   private serviceReady?: Promise<void>
   private navigation = 0
+  private navigationTarget?: string
+  private serviceEntry?: string
+  private desiredVisible = false
   private removeDownloadGuard?: () => void
 
-  constructor(private readonly window: BrowserWindow, private readonly onActivity: (activity: DesktopSurfaceActivity) => void, private readonly serviceScript: string) {}
+  constructor(private readonly window: BrowserWindow, private readonly onActivity: (activity: DesktopSurfaceActivity) => void, private readonly serviceScript: string, private readonly onNavigation: (navigation: DesktopSurfaceNavigation) => void) {}
 
   /** Applies the latest host placement; superseded loads cannot restore an older visibility state. */
   async update(input: DesktopSurfaceRequest): Promise<DesktopSurfaceResult> {
@@ -31,6 +39,7 @@ export class ServiceSurface {
     const hostGeneration = this.hostGeneration
     this.active = { serviceId: input.serviceId, documentKey: input.documentKey }
     const url = parsePageUrl(input.url)
+    this.serviceEntry = url.href
     // Each service and origin has its own login store inside this installation's userData.
     // A separate store cannot isolate a cart that the vendor itself keys by account.
     const partition = `persist:service-${createHash('sha256').update(JSON.stringify([input.serviceId, url.origin])).digest('hex')}`
@@ -46,20 +55,60 @@ export class ServiceSurface {
       } })
       this.window.contentView.addChildView(this.view)
       this.view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-      const guardNavigation = (event: { preventDefault: () => void }, destination: string) => {
+      const guardNavigation = (event: Event<WebContentsWillNavigateEventParams | WebContentsWillRedirectEventParams>) => {
         // OAuth/popups need an explicit policy later; this stage tests same-origin account login.
-        if (new URL(destination).origin !== url.origin)
+        if (new URL(event.url).origin !== url.origin)
           event.preventDefault()
       }
       this.view.webContents.on('will-navigate', guardNavigation)
       this.view.webContents.on('will-redirect', guardNavigation)
-      this.view.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
-        if (mainFrame && !inPlace) {
+      const current = this.view
+      // NOTICE: Use event details, not deprecated positional arguments. Both
+      // the installed type contract and the pilot runtime support these fields;
+      // electron.d.ts:16445 and https://www.electronjs.org/docs/latest/api/web-contents#event-did-start-navigation
+      // define isMainFrame/isSameDocument on the event itself.
+      current.webContents.on('did-start-navigation', (event) => {
+        if (this.view === current && event.isMainFrame && !event.isSameDocument) {
           this.navigation++
+          this.navigationTarget = event.url
           this.serviceReady = undefined
+          this.documentLoading = true
+          this.failed = false
+          current.setVisible(false)
+          if (this.view === current && this.active)
+            this.onNavigation({ ...this.active, revision: this.navigation, state: 'loading' })
         }
       })
-      const current = this.view
+      current.webContents.on('did-finish-load', () => {
+        if (this.view !== current || !this.active || this.failed)
+          return
+        this.documentLoading = false
+        this.failed = false
+        current.setVisible(this.desiredVisible)
+        this.onNavigation({ ...this.active, revision: this.navigation, state: 'ready' })
+      })
+      current.webContents.on('did-fail-load', (_event, code, _description, _url, mainFrame) => {
+        // Chromium aborts the previous load during a redirect. The following
+        // document owns the final readiness; it is not a failed merchant page.
+        if (code === -3 || !mainFrame || this.view !== current || !this.active)
+          return
+        this.documentLoading = false
+        this.failed = true
+        current.setVisible(false)
+        this.onNavigation({ ...this.active, revision: this.navigation, state: 'failed' })
+      })
+      current.webContents.on('render-process-gone', () => {
+        if (this.view !== current || !this.active)
+          return
+        // A crashed renderer can retain its URL without another load event.
+        // Revoke admission and release the Host's loading wait; never replay
+        // pending merchant work or let an old view fail its replacement.
+        this.documentLoading = false
+        this.serviceReady = undefined
+        this.failed = true
+        current.setVisible(false)
+        this.onNavigation({ ...this.active, revision: this.navigation, state: 'failed' })
+      })
       current.webContents.on('input-event', (_event, input) => {
         // Do not retain keys, field values or mouse coordinates in customer activity records.
         if (this.view === current && current.getVisible() && this.active && ['mouseDown', 'touchStart', 'rawKeyDown', 'mouseWheel'].includes(input.type))
@@ -76,23 +125,31 @@ export class ServiceSurface {
     const bounds = clipBounds(input.bounds, this.window.getContentBounds())
     view.setBounds(bounds)
     const visible = input.visible && bounds.width > 0 && bounds.height > 0
-    view.setVisible(visible && !this.failed)
+    this.desiredVisible = visible
     const key = JSON.stringify([input.documentKey, url.href])
     if (key !== this.documentKey) {
       this.documentKey = key
       this.failed = false
-      this.loading = view.webContents.loadURL(url.href).catch(() => {
-        // Replacement navigation owns its own load; an old completion cannot hide a new view.
-        if (this.view === view && this.documentKey === key) {
-          this.failed = true
-          view.setVisible(false)
-        }
+      this.documentLoading = true
+      const loading = view.webContents.loadURL(url.href).catch(() => {
+        // Navigation events own readiness and failure. A superseded loadURL
+        // can reject with ERR_ABORTED after a new placement or PB Start has
+        // already navigated successfully; its promise must not hide that page.
+        // Actual main-frame failures still revoke the view in did-fail-load.
       })
+      this.loading = loading
     }
+    // Native content covers host DOM. Keep it hidden until the host loading screen can yield.
+    view.setVisible(visible && !this.failed && !this.documentLoading)
     await this.loading
     if (hostGeneration !== this.hostGeneration || input.sequence !== this.sequence || this.view !== view)
       return { sequence: input.sequence, state: 'superseded' }
-    view.setVisible(visible && !this.failed)
+    // A website-initiated table navigation does not replace loadURL's already
+    // settled promise. A resize/overlay update must not expose the half-loaded
+    // document or announce readiness; its navigation event owns that boundary.
+    view.setVisible(visible && !this.failed && !this.documentLoading)
+    if (this.documentLoading)
+      return { sequence: input.sequence, state: 'loading' }
     return { sequence: input.sequence, state: this.failed ? 'failed' : visible ? 'visible' : 'hidden' }
   }
 
@@ -103,7 +160,11 @@ export class ServiceSurface {
       throw new Error('Native service document ownership changed.')
     await this.loading
     const generation = this.navigation
-    const approved = () => this.view === view && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && ['https://app.esgpb.com/order/store/1kgJeql/pick_up/menu', 'https://app.esgpb.com/order/store/1kgJeql/pick_up/orders/create'].includes(view.webContents.getURL().split('?')[0])
+    const hostGeneration = this.hostGeneration
+    const entry = this.serviceEntry!
+    const beforeUrl = new URL(view.webContents.getURL())
+    const before = readPbJourney(beforeUrl.href)
+    const approved = () => this.view === view && !this.failed && !this.documentLoading && this.navigation === generation && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey && isPbJourneyPage(entry, view.webContents.getURL())
     if (!approved())
       throw new Error('Native automation is restricted to the approved PB menu/cart journey.')
     // All JavaScript is bundled application code. The untrusted renderer can
@@ -114,13 +175,52 @@ export class ServiceSurface {
       throw new Error('Native service navigated during initialization.')
     const { kind, request } = input.command
     const result = await view.webContents.executeJavaScriptInIsolatedWorld(1001, [{ code: `globalThis.__webnaviorPbService[${JSON.stringify(kind)}](${JSON.stringify(request)})` }])
-    if (!approved())
+    if (!approved()) {
+      // Start intentionally replaces its table document. Acknowledge dispatch
+      // once navigation to this exact menu has started; page readiness belongs
+      // to the loading/ready events, not this receipt. Slow assets must not turn
+      // an accepted click into a rejection. This proves no cart/order effect.
+      // Every other stale-document result, especially a cart write, still fails.
+      const receipt = safeParse(executionResultSchema, result)
+      const submission = receipt.success && safeParse(pbSubmissionDispatchSchema, receipt.output.result)
+      // Inertia/history navigation can replace the cart URL without starting a
+      // new document. The last full-navigation target is stale in that case;
+      // use the committed current URL, retaining every receipt/owner check.
+      const submissionTarget = this.navigation === generation ? view.webContents.getURL() : this.navigationTarget
+      if (kind === 'execute' && request.name === 'browser_order_submit' && receipt.success
+        && receipt.output.connectionId === request.connectionId && receipt.output.documentId === request.documentId && receipt.output.operationId === request.operationId
+        && submission && submission.success && submission.output.confirmationToken === request.input.confirmationToken
+        && beforeUrl.pathname === before?.cartPath && submissionTarget && isPbOrderResultUrl(entry, submissionTarget)
+        && this.view === view && this.hostGeneration === hostGeneration && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
+        // This acknowledges one native click, not merchant acceptance/payment.
+        // The result page has no automation privileges and cannot revive tools.
+        return result
+      }
+      const started = receipt.success && safeParse(menuEntryReceiptSchema, receipt.output.result)
+      if (kind === 'execute' && request.name === 'browser_start_ordering'
+        && receipt.success && receipt.output.connectionId === request.connectionId && receipt.output.documentId === request.documentId && receipt.output.operationId === request.operationId
+        && started && started.success && started.output.selectedTable === request.input.name
+        && before?.tablePath === beforeUrl.pathname) {
+        // did-start-navigation precedes getURL's commit. Its target, rather
+        // than the still-visible old URL, identifies the accepted destination.
+        const target = this.navigationTarget ? readPbJourney(this.navigationTarget) : undefined
+        const menuTarget = target && new URL(entry).origin === target.origin && before.basePath === target.basePath && new URL(this.navigationTarget!).pathname === before.menuPath
+        const tableEntryTarget = this.navigationTarget && isPbTableEntryUrl(entry, this.navigationTarget)
+        if ((menuTarget || tableEntryTarget)
+          && this.view === view && !this.failed && this.hostGeneration === hostGeneration && this.navigation > generation
+          && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
+          return result
+        }
+        throw new Error(`Native menu entry has not reached an approved target (targetApproved=${Boolean(target)}, ownerCurrent=${this.view === view && this.hostGeneration === hostGeneration}, navigationStarted=${this.navigation > generation}, loadFailed=${this.failed}).`)
+      }
       throw new Error('Native service navigated during execution; do not replay.')
+    }
     return result
   }
 
   /** Hides the service immediately when the trusted host document is being replaced. */
   hide() {
+    this.desiredVisible = false
     this.view?.setVisible(false)
   }
 
@@ -129,6 +229,10 @@ export class ServiceSurface {
     this.hostGeneration++
     this.sequence = 0
     this.active = undefined
+    // The reloaded Host can reuse the same service/revision key. Its next
+    // placement must load the configured entry, not adopt the previous view's
+    // SPA menu/checkout URL merely because that old key still compares equal.
+    this.documentKey = undefined
     this.hide()
   }
 
@@ -138,6 +242,7 @@ export class ServiceSurface {
   }
 
   private disposeView() {
+    this.navigationTarget = undefined
     if (!this.view)
       return
     this.window.contentView.removeChildView(this.view)
@@ -148,5 +253,6 @@ export class ServiceSurface {
     this.serviceReady = undefined
     this.view = undefined
     this.loading = undefined
+    this.documentLoading = false
   }
 }
