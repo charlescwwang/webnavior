@@ -149,3 +149,14 @@ apps/stage-tamagotchi/electron.vite.config.*.mjs
 
 docs/ai/context/verifications/
 .playwright-mcp/
+
+# Windows remote Kiosk: machine-specific connections and verified local runtimes.
+.windows-kiosk.local/
+kiosk.windows.local.json
+# Generated test captures and Python bytecode are not project source.
+**/__screenshots__/
+**/__pycache__/
+# Captured fixture acceptance artifacts (recreated by test scripts).
+/test-sites/pb-order-lab/verified-compatibility.json
+/test-sites/pb-order-lab/verified-compatibility.png
+/test-sites/pb-order-lab/verified-receipt.png

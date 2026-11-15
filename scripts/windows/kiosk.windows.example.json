@@ -1,0 +1,12 @@
+{
+  "kioskUrl": "http://127.0.0.1:15169/kiosk/",
+  "windowed": true,
+  "diagnosticPort": 0,
+  "ssh": {
+    "host": "REPLACE_WITH_UBUNTU_IP_OR_HOST",
+    "user": "aimax",
+    "port": 22,
+    "identityFile": "",
+    "forwardTestSite": true
+  }
+}
