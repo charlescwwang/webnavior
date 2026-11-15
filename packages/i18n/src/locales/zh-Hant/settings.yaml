@@ -1700,3 +1700,10 @@ wip:
 kiosk-thinking:
   title: Main Agent 思考模式（Thinking）
   description: 控制支援此設定的模型（例如 vLLM 模型）是否進行思考，預設關閉。驗證並儲存後，按「套用到 Kiosk」生效。
+
+kiosk-chat-response:
+  title: 對話回應方式
+  auto: 沿用目前方式
+  json: 一次回傳（JSON）
+  sse: 串流回傳（SSE）
+  description: SSE 可逐步顯示模型回覆；JSON 等完整回覆。變更後請驗證並儲存，再套用到 Kiosk。

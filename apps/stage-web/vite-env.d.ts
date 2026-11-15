@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="unplugin-yaml/types" />
 /// <reference types="../../vite-env.d.ts" />
 
 interface ImportMetaEnv {

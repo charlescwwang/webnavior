@@ -5,7 +5,10 @@ import { Button, FieldCheckbox, Input, Select, Textarea } from '@proj-airi/ui'
 import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import CatalogLabelsEditor from './catalogLabelsEditor.vue'
 import ExperienceEditorSection from './experienceEditorSection.vue'
+import KioskCharacterPackageActions from './kioskCharacterPackageActions.vue'
+import OrderingSitesEditor from './orderingSitesEditor.vue'
 
 import { greetingPhraseLimits } from '../../../../server/src/services/domain/kiosk/interactionContracts'
 
@@ -20,14 +23,18 @@ const props = withDefaults(defineProps<{
 }>(), {
   // Templates edit both banks before a Site exists to own a mode setting.
   proactiveVlmEnabled: undefined,
+  // Files belong to a Site; system templates explicitly disable uploads.
+  allowAssetUpload: true,
 })
 
 const emit = defineEmits<{
   save: [input: { draft: KioskProfileDraft, publish: boolean }]
-  uploadAvatar: [file: File]
-  uploadBackground: [file: File]
-  uploadMotion: [input: { file: File, slot: MotionSlot }]
-  uploadRoleCard: [file: File]
+  uploadAvatar: [file: File, draft: KioskProfileDraft]
+  uploadBackground: [file: File, draft: KioskProfileDraft]
+  uploadMotion: [input: { file: File, slot: MotionSlot, draft: KioskProfileDraft }]
+  uploadRoleCard: [file: File, draft: KioskProfileDraft]
+  downloadCharacterPackage: [draft: KioskProfileDraft]
+  uploadCharacterPackage: [file: File, draft: KioskProfileDraft]
   updateProactiveVlm: [enabled: boolean]
 }>()
 
@@ -51,7 +58,8 @@ function cloneDraft(draft: KioskProfileDraft): KioskProfileDraft {
       ...(draft.snapshot.motionPack ? { motionPack: { ...draft.snapshot.motionPack } } : {}),
       ...(draft.snapshot.characterCard ? { characterCard: { ...draft.snapshot.characterCard } } : {}),
       ...(draft.snapshot.greetingPhrases ? { greetingPhrases: [...draft.snapshot.greetingPhrases] } : {}),
-      interactiveService: { ...draft.snapshot.interactiveService },
+      interactiveService: { ...draft.snapshot.interactiveService, ...(draft.snapshot.interactiveService.catalogLabels ? { catalogLabels: draft.snapshot.interactiveService.catalogLabels.map(label => ({ ...label, aliases: [...label.aliases] })) } : {}) },
+      orderingSites: (draft.snapshot.orderingSites ?? []).map(site => ({ ...site, ...(site.catalogLabels ? { catalogLabels: site.catalogLabels.map(label => ({ ...label, aliases: [...label.aliases] })) } : {}) })),
     },
   }
 }
@@ -89,7 +97,7 @@ function selectAvatar(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.item(0)
   if (file)
-    emit('uploadAvatar', file)
+    emit('uploadAvatar', file, cloneDraft(form))
   input.value = ''
 }
 
@@ -97,7 +105,7 @@ function selectBackground(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.item(0)
   if (file)
-    emit('uploadBackground', file)
+    emit('uploadBackground', file, cloneDraft(form))
   input.value = ''
 }
 
@@ -105,7 +113,7 @@ function selectRoleCard(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.item(0)
   if (file)
-    emit('uploadRoleCard', file)
+    emit('uploadRoleCard', file, cloneDraft(form))
   input.value = ''
 }
 
@@ -113,7 +121,7 @@ function selectMotion(slot: MotionSlot, event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.item(0)
   if (file)
-    emit('uploadMotion', { file, slot })
+    emit('uploadMotion', { file, slot, draft: cloneDraft(form) })
   input.value = ''
 }
 </script>
@@ -138,11 +146,17 @@ function selectMotion(slot: MotionSlot, event: Event) {
     </ExperienceEditorSection>
 
     <ExperienceEditorSection title="角色卡與虛擬角色" description="匯入角色卡可帶入角色文字，並將 VRM 或 Live2D 模型保存到 Server；發布後 Kiosk 會自動下載及快取。">
+      <KioskCharacterPackageActions
+        v-if="props.capabilities?.canEditExperience && props.allowAssetUpload"
+        :busy="busy"
+        @download="emit('downloadCharacterPackage', cloneDraft(form))"
+        @upload="emit('uploadCharacterPackage', $event, cloneDraft(form))"
+      />
       <div v-if="props.capabilities?.canEditExperience && props.allowAssetUpload !== false" :class="['grid gap-4 sm:grid-cols-2']">
         <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
           匯入角色卡
           <input type="file" accept=".zip" :class="['block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-cyan-700 file:px-3 file:py-2 file:font-semibold file:text-white hover:file:bg-cyan-800 dark:text-slate-300']" :disabled="busy" @change="selectRoleCard">
-          <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">讀取 AIRI 角色卡 ZIP 的姓名、個性、情境與系統指示；若封包附帶模型，也會一併帶入。</span>
+          <span :class="['text-xs font-normal text-slate-500 dark:text-slate-400']">{{ t('stage.kiosk.character-editor.card-package') }}</span>
         </label>
         <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
           更換虛擬角色
@@ -154,7 +168,13 @@ function selectMotion(slot: MotionSlot, event: Event) {
         <span :class="['font-semibold text-slate-900 dark:text-white']">目前虛擬角色：</span>
         <span :class="['text-slate-600 dark:text-slate-300']">{{ form.snapshot.characterAsset.name }}（{{ form.snapshot.characterAsset.format === 'vrm' ? 'VRM' : 'Live2D' }}）</span>
       </div>
-      <div v-if="props.capabilities?.canEditExperience && form.snapshot.characterAsset?.format === 'vrm'" :class="['grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30']">
+      <p v-else :class="['m-0 text-sm text-slate-600 dark:text-slate-300']">
+        {{ t('stage.kiosk.character-editor.builtin') }}
+      </p>
+      <p v-if="props.capabilities?.canEditExperience && props.allowAssetUpload" :class="['m-0 text-xs text-slate-500 dark:text-slate-400']">
+        {{ t('stage.kiosk.character-editor.publish-hint') }}
+      </p>
+      <div v-if="props.capabilities?.canEditExperience && props.allowAssetUpload && form.snapshot.characterAsset?.format === 'vrm'" :class="['grid gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30']">
         <div>
           <p :class="['m-0 text-sm font-semibold text-amber-950 dark:text-amber-100']">
             角色動作包
@@ -273,6 +293,11 @@ function selectMotion(slot: MotionSlot, event: Event) {
         說明
         <Textarea v-model="form.snapshot.interactiveService.description" :disabled="busy || !props.capabilities?.canEditExperience" :rows="2" />
       </label>
+      <CatalogLabelsEditor v-model="form.snapshot.interactiveService.catalogLabels" :disabled="busy || !props.capabilities?.canEditExperience" />
+    </ExperienceEditorSection>
+
+    <ExperienceEditorSection v-if="props.capabilities?.canEditTechnicalSettings" :title="t('deviceSettings.orderingSite')" :description="t('deviceSettings.orderingSiteRegistryHint')">
+      <OrderingSitesEditor v-model="form.snapshot.orderingSites" :disabled="busy" />
     </ExperienceEditorSection>
 
     <ExperienceEditorSection v-if="props.capabilities?.canEditTechnicalSettings" title="回饋" description="互動結束後提供給顧客的回饋連結。">

@@ -4,8 +4,11 @@ import type { KioskVisitorMedia } from '../../composables/useKioskManagement'
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { computed, onUnmounted, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{ media: KioskVisitorMedia[] }>()
+const { t } = useI18n()
+const audioItems = computed(() => props.media.filter(item => item.kind === 'audio_recording'))
 const sources = shallowRef<Record<string, string>>({})
 const loadingId = shallowRef<string>()
 const continuousVideoItems = computed(() => props.media.filter(item => item.kind === 'continuous_video'))
@@ -110,6 +113,18 @@ onUnmounted(() => Object.values(sources.value).forEach(source => URL.revokeObjec
           {{ loadingId === item.id ? '載入中…' : '檢視圖片' }}
         </button>
         <img v-else :src="sources[item.id]" alt="互動觸發圖片快照" :class="['w-full rounded']">
+      </article>
+    </div>
+    <div v-if="audioItems.length" :class="['mt-4 grid gap-4 lg:grid-cols-2']">
+      <h4 :class="['m-0 lg:col-span-2']">
+        {{ t('stage.kiosk.media-audio-list') }}
+      </h4>
+      <article v-for="item in audioItems" :key="item.id" :class="['rounded-lg border border-slate-200 p-3 dark:border-slate-700']">
+        <p>{{ timeline(item) }} · {{ size(item.byteSize) }}</p>
+        <button v-if="!sources[item.id]" type="button" :disabled="loadingId === item.id" @click="load(item)">
+          {{ t('stage.kiosk.media-play') }}
+        </button>
+        <audio v-else :src="sources[item.id]" controls :class="['w-full']" />
       </article>
     </div>
   </section>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { KioskProfileDraft } from '../../composables/useKioskManagement'
+
 import { Button } from '@proj-airi/ui'
 import {
   AlertDialogAction,
@@ -11,14 +13,18 @@ import {
   AlertDialogTitle,
 } from 'reka-ui'
 import { onMounted, shallowRef, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 
 import KioskTechnicalSettingsEditor from '../../components/Webnavior/kioskModelPolicyEditor.vue'
 import KioskProfileEditor from '../../components/Webnavior/kioskProfileEditor.vue'
 
 import { useKioskManagement } from '../../composables/useKioskManagement'
+import { useWebnaviorNotice } from '../../composables/useWebnaviorNotice'
 
 const route = useRoute()
+const { t } = useI18n()
+const notice = useWebnaviorNotice()
 const deleteDialogOpen = shallowRef(false)
 const {
   capabilities,
@@ -45,17 +51,51 @@ const {
   uploadCharacterAsset,
   uploadMotionAsset,
   uploadSceneBackgroundAsset,
+  downloadCharacterPackage,
+  uploadCharacterPackage,
 } = useKioskManagement()
 
-async function handleRoleCardUpload(file: File) {
+async function handleCharacterPackageUpload(file: File, draft: KioskProfileDraft) {
+  const owner = profileDraft.value
+  const siteId = selectedSiteId.value
+  try {
+    const character = await uploadCharacterPackage(file)
+    if (!ownsUpload(owner, siteId))
+      return
+    profileDraft.value = {
+      ...draft,
+      snapshot: {
+        ...draft.snapshot,
+        ...character,
+        // An absent model/card/motion means the package deliberately uses the
+        // built-in/default presentation; do not retain the previous character.
+        characterAsset: character.characterAsset,
+        characterCard: character.characterCard,
+        sceneBackground: character.sceneBackground,
+        idleMotion: character.idleMotion,
+        motionPack: character.motionPack,
+        greetingPhrases: character.greetingPhrases,
+      },
+    }
+    notice.success(t('stage.kiosk.character-package.imported'))
+  }
+  catch {
+    // The management boundary already displays the server's actionable error.
+    // Keep the editor draft intact when validation or upload fails.
+  }
+}
+
+async function handleRoleCardUpload(file: File, draft: KioskProfileDraft) {
+  const owner = profileDraft.value
+  const siteId = selectedSiteId.value
   const uploaded = await uploadCharacterAsset(file, 'role_card')
-  if (!profileDraft.value)
+  if (!ownsUpload(owner, siteId))
     return
 
   profileDraft.value = {
-    ...profileDraft.value,
+    ...draft,
     snapshot: {
-      ...profileDraft.value.snapshot,
+      ...draft.snapshot,
       characterAsset: uploaded.asset,
       characterCard: {
         description: uploaded.card.description ?? '',
@@ -64,45 +104,57 @@ async function handleRoleCardUpload(file: File) {
         scenario: uploaded.card.scenario ?? '',
         systemPrompt: uploaded.card.system_prompt ?? '',
       },
-      characterName: uploaded.card.name || profileDraft.value.snapshot.characterName,
-      greetingPrompt: uploaded.card.first_mes || profileDraft.value.snapshot.greetingPrompt,
+      characterName: uploaded.card.name || draft.snapshot.characterName,
+      greetingPrompt: uploaded.card.first_mes || draft.snapshot.greetingPrompt,
     },
   }
 }
 
-async function handleAvatarUpload(file: File) {
+async function handleAvatarUpload(file: File, draft: KioskProfileDraft) {
+  const owner = profileDraft.value
+  const siteId = selectedSiteId.value
   const uploaded = await uploadCharacterAsset(file, 'avatar')
-  if (!profileDraft.value)
+  if (!ownsUpload(owner, siteId))
     return
   profileDraft.value = {
-    ...profileDraft.value,
-    snapshot: { ...profileDraft.value.snapshot, characterAsset: uploaded.asset },
+    ...draft,
+    snapshot: { ...draft.snapshot, characterAsset: uploaded.asset },
   }
 }
 
-async function handleBackgroundUpload(file: File) {
+async function handleBackgroundUpload(file: File, draft: KioskProfileDraft) {
+  const owner = profileDraft.value
+  const siteId = selectedSiteId.value
   const uploaded = await uploadSceneBackgroundAsset(file)
-  if (!profileDraft.value)
+  if (!ownsUpload(owner, siteId))
     return
   profileDraft.value = {
-    ...profileDraft.value,
-    snapshot: { ...profileDraft.value.snapshot, sceneBackground: uploaded.asset },
+    ...draft,
+    snapshot: { ...draft.snapshot, sceneBackground: uploaded.asset },
   }
 }
 
-async function handleMotionUpload(input: { file: File, slot: 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking' }) {
+async function handleMotionUpload(input: { file: File, slot: 'acknowledge' | 'greeting' | 'idle' | 'listening' | 'presentRecommendations' | 'thinking', draft: KioskProfileDraft }) {
+  const owner = profileDraft.value
+  const siteId = selectedSiteId.value
   const uploaded = await uploadMotionAsset(input.file)
-  if (!profileDraft.value)
+  if (!ownsUpload(owner, siteId))
     return
 
   profileDraft.value = {
-    ...profileDraft.value,
+    ...input.draft,
     snapshot: {
-      ...profileDraft.value.snapshot,
+      ...input.draft.snapshot,
       ...(input.slot === 'idle' ? { idleMotion: uploaded.asset } : {}),
-      motionPack: { ...profileDraft.value.snapshot.motionPack, [input.slot]: uploaded.asset },
+      motionPack: { ...input.draft.snapshot.motionPack, [input.slot]: uploaded.asset },
     },
   }
+}
+
+// Uploads carry the editor's current unsaved fields. A response belongs only to
+// the same selected draft object and Site; switching away retires that upload.
+function ownsUpload(owner: KioskProfileDraft | undefined, siteId: string) {
+  return Boolean(owner && profileDraft.value === owner && selectedSiteId.value === siteId)
 }
 
 async function deleteSite() {
@@ -250,6 +302,8 @@ watch(() => route.query.site, async (siteId) => {
           @upload-background="handleBackgroundUpload"
           @upload-motion="handleMotionUpload"
           @upload-role-card="handleRoleCardUpload"
+          @download-character-package="downloadCharacterPackage"
+          @upload-character-package="handleCharacterPackageUpload"
         />
         <KioskTechnicalSettingsEditor
           v-if="siteTechnicalSettings && capabilities?.canEditTechnicalSettings"

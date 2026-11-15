@@ -1,18 +1,35 @@
+activeOrderingSite: 'Currently active: {name}'
+pendingOrderingSite: Merchant selection saved; waiting for the current round to finish or restart.
+orderingSiteApplyFailed: Could not apply the merchant selection. Check the connection and published sites before starting a new order.
+orderingSiteRegistryHint: Add supported merchant pages and publish them before selecting them on a device. A URL alone does not provide an operation adapter.
+orderingSiteId: Stable merchant ID
+orderingSiteUrl: Ordering page URL
+orderingSiteDescription: Description
+removeOrderingSite: Remove merchant option
+addOrderingSite: Add merchant / ordering website
+orderingSite: Merchant / ordering website
+defaultOrderingSite: Use the published default merchant
+orderingSiteHint: Applied at the next conversation or order; an active order stays on its current merchant.
+localAccess: Enter the local administrator PIN to save this device’s settings. No management account is required.
+verifyPin: Verify PIN again
+savePinRequired: 'Not saved: local access has expired. Enter the PIN again, then save. Your changes remain in this view.'
+saveLocalForbidden: 'Not saved: this device cannot change settings. Check its connection and enrollment.'
 title: Device settings
-description: Settings are saved on the server for this device. Clear an override to inherit the administrator or site value. Remote changes synchronize within 15 seconds while the kiosk is online.
-override: Override
+description: Edit values and select Save settings to update this device in both editors. Remote updates do not replace unsaved changes.
 effective: Current effective value
-delegate: Allow local adjustment
-revoke: Clear local override
-locked: Locked by administrator
 save: Save settings
 reload: Reload settings
 saved: Settings saved.
+saveLoginRequired: 'Not saved: sign in as an administrator, then return to save. Your changes remain in this view.'
+saveForbidden: 'Not saved: this account cannot manage this device. Use an authorized administrator account.'
 failed: Could not load or save settings. Check your connection and permissions.
 conflict: Another operator changed these settings. Reload before saving; your draft has been kept.
 login: Sign in as a site operator
-loginRequired: Sign in through the management page, then return here to save. Only delegated fields on this device can be changed.
+loginRequired: Sign in as a site operator to save. All device settings can be edited here without per-field delegation.
 fields:
+  textOnlyMode: Text-only mode
+  serviceMode: Service mode
+  backgroundSpeechMode: Background speech classification
   observationEnabled: Local camera observation
   greetingEnabled: Proactive greeting
   reminderEnabled: Inactivity reminder
@@ -35,6 +52,9 @@ fields:
   voiceDiagnosticsEnabled: Voice diagnostics (testing)
   conversationDiagnosticsEnabled: Conversation duration (testing)
 fieldDescriptions:
+  textOnlyMode: Show text input and disable voice capture on this Kiosk only. When off, follow the shared Profile. Speech playback keeps its existing configuration.
+  serviceMode: Applies to the next order round. Test tables are randomly assigned a01–a09.
+  backgroundSpeechMode: Off by default. Observe records decisions; enforce may reject background speech. VAD and operation authorization remain independent.
   performanceProfile: Adjusts camera quality, people-detection speed, and recording limits for this device. Choose General for most devices, Resource-saving if it stutters, and High-spec only for powerful hardware.
   faceDetectionConfidence: 'Lower values detect smaller or more distant faces, but can create more false positives. Default: 0.60.'
   voiceDiagnosticsEnabled: Enable only while testing. The kiosk shows ASR, Speech Guard, and turn-decision results; ordinary visitors never see this information.
@@ -42,9 +62,7 @@ fieldDescriptions:
 vad:
   title: Silero voice detection
   description: Controls when recording starts and ends, and how much audio is retained around an utterance before transcription.
-  override: Override the Site default
   effective: 'Current effective setting:'
-  delegate: Allow on-site adjustment of all voice detection settings
   summary: Threshold {threshold}; minimum speech {minSpeechDurationMs} ms; maximum speech {maxSpeechDurationS} s; end after {minSilenceDurationMs} ms of silence; padding {speechPadMs} ms
   fields:
     threshold: Speech threshold
@@ -53,6 +71,10 @@ vad:
     minSilenceDurationMs: Silence before ending (ms)
     speechPadMs: Audio padding (ms)
 options:
+  kiosk: Kiosk
+  table-service: AI table service
+  observe: Observe only
+  enforce: Enforce
   attention: Looking at kiosk
   presence: Presence in area
   mixed: Either signal
@@ -76,3 +98,16 @@ localDiagnostics:
   presenceDescription: Shows presence states such as engaged, pose quality, dwell time, and detection cadence. Requires active camera observation.
   decision: Show decision flow
   decisionDescription: Shows the per-utterance phase, candidates, model decision, operation, and authorization trace.
+
+conversationMode:
+  label: Active conversation mode
+  text: Text-only mode
+  voice: Voice-only mode
+  description: Change text-only mode in Device Settings. Successful saves apply immediately. This status reflects both device settings and the assigned Profile.
+catalogLabels:
+  hint: 'Discovery labels: enter the exact current PB product name, comma-separated aliases and category. These never change merchant prices, options or availability. Renamed, absent or duplicate-name products receive no labels; shared aliases require clarification. Save and publish to apply.'
+  name: 'Exact product name'
+  aliases: 'Common aliases, separated by commas'
+  category: 'Discovery category'
+  add: 'Add product aliases / category'
+  remove: 'Remove product labels'

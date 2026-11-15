@@ -3,88 +3,80 @@ import type { DeviceSettingKey, DeviceSettingsSnapshot, DeviceSettingsValues, Ki
 
 import { deviceSettingKeys } from '@proj-airi/kiosk-proactive'
 import { Button, Checkbox, Input } from '@proj-airi/ui'
-import { computed, ref, watch } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import DeviceSettingsVoiceVadEditor from './deviceSettingsVoiceVadEditor.vue'
 
-const props = defineProps<{ snapshot: DeviceSettingsSnapshot, mode: 'admin' | 'local', saving: boolean }>()
+const props = defineProps<{ snapshot: DeviceSettingsSnapshot, mode: 'admin' | 'local', saving: boolean, activeOrderingSiteId?: string }>()
 const emit = defineEmits<{
-  save: [change: { version: number, overrides: Partial<DeviceSettingsValues>, localControls: DeviceSettingKey[], clearLocalOverrides: DeviceSettingKey[] }]
+  save: [change: { version: number, overrides: Partial<DeviceSettingsValues> }]
+  dirty: [changed: boolean]
   reload: []
 }>()
 const { t } = useI18n()
-const overrides = ref<Partial<DeviceSettingsValues>>({})
-const localControls = ref<DeviceSettingKey[]>([])
-const clearLocalOverrides = ref<DeviceSettingKey[]>([])
+const values = shallowRef<DeviceSettingsValues>({ ...props.snapshot.effective })
 const options: Partial<Record<DeviceSettingKey, string[]>> = {
+  serviceMode: ['kiosk', 'table-service'],
+  backgroundSpeechMode: ['off', 'observe', 'enforce'],
   triggerMode: ['attention', 'presence', 'mixed'],
   mediaCaptureMode: ['off', 'snapshot', 'triggered', 'continuous'],
   performanceProfile: ['constrained', 'balanced', 'high'],
   presenceVisionMode: ['face_only', 'pose_only', 'pose_plus_conditional_face'],
 }
-const genericSettingKeys = deviceSettingKeys.filter(key => key !== 'voiceVadSettings')
-const voiceVadOverride = computed(() => overrides.value.voiceVadSettings)
+const savedOrderingSiteId = computed(() => props.snapshot.effective.orderingServiceId || props.snapshot.orderingSites?.[0]?.id)
+const activeOrderingSiteTitle = computed(() => props.snapshot.orderingSites?.find(site => site.id === props.activeOrderingSiteId)?.title ?? props.activeOrderingSiteId)
+// Service mode still belongs to the owned Menu. Background speech is a
+// Server-resolved decision policy and applies independently to the PB service.
+const genericSettingKeys = deviceSettingKeys.filter(key => !['voiceVadSettings', 'orderingServiceId', 'serviceMode'].includes(key))
+// Store only edited fields plus existing device choices. Saving an unrelated
+// field must not freeze every inherited Site default into a device override.
+const overrides = computed<Partial<DeviceSettingsValues>>(() => ({
+  ...props.snapshot.settings.overrides,
+  ...Object.fromEntries(deviceSettingKeys
+    .filter(key => JSON.stringify(values.value[key]) !== JSON.stringify(props.snapshot.effective[key]))
+    .map(key => [key, values.value[key]])),
+}))
 watch(() => props.snapshot, (snapshot) => {
-  overrides.value = { ...(props.mode === 'admin' ? snapshot.settings.overrides : snapshot.settings.localOverrides) }
-  localControls.value = [...snapshot.settings.localControls]
-  clearLocalOverrides.value = []
+  values.value = { ...snapshot.effective }
 }, { immediate: true })
 
-function locked(key: DeviceSettingKey) {
-  return props.saving || (props.mode === 'local' && !props.snapshot.settings.localControls.includes(key))
-}
-
-function toggleOverride(key: DeviceSettingKey, enabled: boolean) {
-  if (enabled)
-    overrides.value = { ...overrides.value, [key]: props.snapshot.effective[key] }
-  else
-    delete overrides.value[key]
-}
+// A remote refresh must never replace an operator's unsaved draft.
+watch(() => JSON.stringify(values.value) !== JSON.stringify(props.snapshot.effective), changed => emit('dirty', changed), { flush: 'sync' })
 
 function setValue(key: DeviceSettingKey, value: string | number | boolean | undefined) {
   const parsed = typeof props.snapshot.defaults[key] === 'number' ? Number(value) : value
-  overrides.value = { ...overrides.value, [key]: parsed }
-}
-
-function delegate(key: DeviceSettingKey, enabled: boolean) {
-  localControls.value = enabled ? [...localControls.value, key] : localControls.value.filter(item => item !== key)
-}
-
-function toggleVoiceVadOverride(enabled: boolean) {
-  if (enabled) {
-    overrides.value = {
-      ...overrides.value,
-      voiceVadSettings: { ...props.snapshot.effective.voiceVadSettings },
-    }
-  }
-  else {
-    delete overrides.value.voiceVadSettings
-  }
+  values.value = { ...values.value, [key]: parsed }
 }
 
 function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
-  overrides.value = { ...overrides.value, voiceVadSettings: settings }
+  values.value = { ...values.value, voiceVadSettings: settings }
 }
 </script>
 
 <template>
-  <form :class="['flex flex-col gap-4']" @submit.prevent="emit('save', { version: snapshot.settings.version, overrides, localControls, clearLocalOverrides })">
+  <form :class="['flex flex-col gap-4']" @submit.prevent="emit('save', { version: snapshot.settings.version, overrides })">
     <p>{{ t('deviceSettings.description') }}</p>
+    <label :class="['flex flex-col gap-2 rounded-lg border p-3']">
+      {{ t('deviceSettings.orderingSite') }}
+      <select :aria-label="t('deviceSettings.orderingSite')" :value="values.orderingServiceId ?? ''" :disabled="saving" :class="['rounded border bg-transparent p-2']" @change="setValue('orderingServiceId', ($event.target as HTMLSelectElement).value)">
+        <option value="">{{ t('deviceSettings.defaultOrderingSite') }}</option>
+        <option v-for="site in snapshot.orderingSites ?? []" :key="site.id" :value="site.id">{{ site.title }}</option>
+      </select>
+      <small>{{ t('deviceSettings.orderingSiteHint') }}</small>
+      <small v-if="activeOrderingSiteId">{{ t('deviceSettings.activeOrderingSite', { name: activeOrderingSiteTitle }) }}</small>
+      <small v-if="activeOrderingSiteId && savedOrderingSiteId !== activeOrderingSiteId" role="status">{{ t('deviceSettings.pendingOrderingSite') }}</small>
+    </label>
     <div v-for="key in genericSettingKeys" :key="key" :class="['flex flex-wrap items-center gap-3 rounded-lg border p-3']">
       <span :class="['min-w-48 font-medium']">{{ t(`deviceSettings.fields.${key}`) }}</span>
-      <p v-if="key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled' || key === 'conversationDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
+      <p v-if="key === 'textOnlyMode' || key === 'performanceProfile' || key === 'faceDetectionConfidence' || key === 'voiceDiagnosticsEnabled' || key === 'conversationDiagnosticsEnabled'" :class="['m-0 basis-full text-xs text-slate-600 dark:text-slate-300']">
         {{ t(`deviceSettings.fieldDescriptions.${key}`) }}
       </p>
-      <label :class="['flex items-center gap-2']">
-        <Checkbox :model-value="overrides[key] !== undefined" :disabled="locked(key)" @update:model-value="toggleOverride(key, $event)" />
-        {{ t('deviceSettings.override') }}
-      </label>
       <select
         v-if="options[key]"
         :aria-label="t(`deviceSettings.fields.${key}`)"
-        :value="overrides[key] ?? snapshot.effective[key]"
-        :disabled="locked(key) || overrides[key] === undefined"
+        :value="values[key]"
+        :disabled="saving"
         :class="['rounded border bg-transparent p-2']"
         @change="setValue(key, ($event.target as HTMLSelectElement).value)"
       >
@@ -95,51 +87,37 @@ function setVoiceVadSettings(settings: KioskVoiceVadSettings) {
       <Checkbox
         v-else-if="typeof snapshot.defaults[key] === 'boolean'"
         :aria-label="t(`deviceSettings.fields.${key}`)"
-        :model-value="Boolean(overrides[key] ?? snapshot.effective[key])"
-        :disabled="locked(key) || overrides[key] === undefined"
+        :model-value="Boolean(values[key])"
+        :disabled="saving"
         @update:model-value="setValue(key, $event)"
       />
       <Input
         v-else
         :aria-label="t(`deviceSettings.fields.${key}`)"
-        :model-value="Number(overrides[key] ?? snapshot.effective[key])"
+        :model-value="Number(values[key])"
         type="number"
         step="any"
-        :disabled="locked(key) || overrides[key] === undefined"
+        :disabled="saving"
         @update:model-value="setValue(key, $event)"
       />
       <span :class="['text-xs opacity-70']">{{ t('deviceSettings.effective') }}: {{ snapshot.effective[key] }}</span>
-      <label v-if="mode === 'admin'" :class="['flex items-center gap-2']">
-        <Checkbox :model-value="localControls.includes(key)" :disabled="saving" @update:model-value="delegate(key, $event)" />
-        {{ t('deviceSettings.delegate') }}
-      </label>
-      <label v-if="mode === 'admin' && snapshot.settings.localOverrides[key] !== undefined" :class="['flex items-center gap-2']">
-        <Checkbox :model-value="clearLocalOverrides.includes(key)" :disabled="saving" @update:model-value="clearLocalOverrides = $event ? [...clearLocalOverrides, key] : clearLocalOverrides.filter(item => item !== key)" />
-        {{ t('deviceSettings.revoke') }}
-      </label>
-      <span v-if="mode === 'local' && locked(key)">{{ t('deviceSettings.locked') }}</span>
     </div>
     <DeviceSettingsVoiceVadEditor
-      :delegate-enabled="localControls.includes('voiceVadSettings')"
       :effective="snapshot.effective.voiceVadSettings"
-      :has-local-override="snapshot.settings.localOverrides.voiceVadSettings !== undefined"
-      :locked="locked('voiceVadSettings')"
-      :mode="mode"
-      :override="voiceVadOverride"
-      :override-enabled="voiceVadOverride !== undefined"
-      :saving="saving"
-      @delegate="delegate('voiceVadSettings', $event)"
-      @revoke="clearLocalOverrides = $event ? [...clearLocalOverrides, 'voiceVadSettings'] : clearLocalOverrides.filter(item => item !== 'voiceVadSettings')"
-      @toggle-override="toggleVoiceVadOverride"
+      :locked="saving"
+      :settings="values.voiceVadSettings"
       @update="setVoiceVadSettings"
     />
-    <div :class="['flex gap-3']">
-      <Button type="submit" :disabled="saving">
-        {{ t('deviceSettings.save') }}
-      </Button>
-      <Button type="button" variant="secondary" :disabled="saving" @click="emit('reload')">
-        {{ t('deviceSettings.reload') }}
-      </Button>
+    <div :class="['sticky bottom-0 z-10 rounded-lg border bg-white p-3 dark:bg-slate-900']">
+      <slot name="status" />
+      <div :class="['flex gap-3']">
+        <Button type="submit" :disabled="saving">
+          {{ t('deviceSettings.save') }}
+        </Button>
+        <Button type="button" variant="secondary" :disabled="saving" @click="emit('reload')">
+          {{ t('deviceSettings.reload') }}
+        </Button>
+      </div>
     </div>
   </form>
 </template>

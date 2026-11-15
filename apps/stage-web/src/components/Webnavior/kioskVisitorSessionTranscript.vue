@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { KioskInteractionEntry, KioskVisitorSessionDetail, KioskVisitorSessionSummary } from '../../composables/useKioskManagement'
 
+import { findTranscriptRecording } from '@proj-airi/stage-shared/interaction-media'
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { Button } from '@proj-airi/ui'
 import { computed, onUnmounted, shallowRef } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import KioskVisitorSessionMedia from './kioskVisitorSessionMedia.vue'
 
@@ -15,6 +17,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   delete: [visitorSessionId: string]
 }>()
+const { t } = useI18n()
 const audioSources = shallowRef<Record<string, string>>({})
 const loadingAudioEntryId = shallowRef<string>()
 const videoSources = shallowRef<Record<string, string>>({})
@@ -23,12 +26,12 @@ const imageSources = shallowRef<Record<string, string>>({})
 const loadingImageEntryId = shallowRef<string>()
 const conversationEntries = computed(() => {
   const entries = props.detail?.entries ?? []
-  return entries.filter((entry, index) => {
+  return entries.filter((entry) => {
     if (entry.kind === 'asr_transcript' || entry.kind === 'assistant_text')
       return true
     // A voice turn is persisted both as ASR evidence and as the LLM's user
     // message. Keep the transcription as the single customer-visible row.
-    return entry.kind === 'user_text' && !entries.slice(0, index).some(previous => previous.kind === 'asr_transcript' && previous.content === entry.content)
+    return entry.kind === 'user_text' && (entry.metadata.utteranceId === undefined || !entries.some(previous => previous.kind === 'asr_transcript' && previous.metadata.utteranceId === entry.metadata.utteranceId))
   })
 })
 const activityEntries = computed(() => props.detail?.entries.filter(entry => entry.kind === 'service_event' || entry.kind === 'order_result') ?? [])
@@ -72,18 +75,7 @@ function formatContent(entry: KioskInteractionEntry) {
 function audioForEntry(entry: KioskInteractionEntry) {
   if (entry.kind !== 'asr_transcript')
     return
-  const entries = props.detail?.entries ?? []
-  const index = entries.findIndex(item => item.id === entry.id)
-  const activity = entries.slice(0, index).reverse().find(item => item.kind === 'service_event' && item.content === 'customer_activity' && item.metadata.source === 'voice_input')
-  const linkedRecording = props.detail?.media.find(item => item.kind === 'audio_recording' && item.interactionEntryId === activity?.id)
-  if (linkedRecording)
-    return linkedRecording
-
-  // Sessions collected before evidence links were introduced still retain
-  // their WAV files. Present those recordings in the same chronological order
-  // as ASR turns so operators do not lose access to already-collected POC data.
-  const transcriptIndex = entries.filter(item => item.kind === 'asr_transcript').findIndex(item => item.id === entry.id)
-  return props.detail?.media.filter(item => item.kind === 'audio_recording')[transcriptIndex]
+  return findTranscriptRecording(entry.id, props.detail?.media ?? [])
 }
 
 function videoForEntry(entry: KioskInteractionEntry) {
@@ -181,6 +173,9 @@ onUnmounted(() => Object.values(imageSources.value).forEach(source => URL.revoke
               {{ loadingAudioEntryId === entry.id ? '載入錄音中…' : '聽顧客原始語音' }}
             </button>
             <audio v-else-if="audioSources[entry.id]" :src="audioSources[entry.id]" controls autoplay :class="['mt-3 w-full']" />
+            <p v-if="entry.kind === 'asr_transcript' && !audioForEntry(entry)" :class="['mt-2 text-xs text-slate-500']">
+              {{ t('stage.kiosk.media-unlinked') }}
+            </p>
           </li>
         </ol>
       </section>
