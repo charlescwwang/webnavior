@@ -15,6 +15,7 @@
     "directory": "packages/stage-shared"
   },
   "exports": {
+    "./order-evidence": "./src/orderEvidence.ts",
     "./pb-journey": "./src/pbJourney.ts",
     "./pb-checkout": "./src/pbCheckout.ts",
     "./interaction-media": "./src/interactionMedia.ts",

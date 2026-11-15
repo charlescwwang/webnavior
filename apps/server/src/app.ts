@@ -43,6 +43,7 @@ import { createNodeWebSocket } from '@hono/node-ws'
 import { httpInstrumentationMiddleware } from '@hono/otel'
 import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
 import { kioskCharacterPackageLimits } from '@proj-airi/stage-shared/kiosk-character-package'
+import { orderEvidenceMaxRequestBytes } from '@proj-airi/stage-shared/order-evidence'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
@@ -84,6 +85,7 @@ import { createFluxRoutes } from './routes/flux'
 import { createKioskRoutes } from './routes/kiosk'
 import { createKioskCharacterAssetRoutes } from './routes/kiosk/character-assets'
 import { loadLocalAdminPin } from './routes/kiosk/localAdmin'
+import { createOrderEvidenceRoutes } from './routes/kiosk/orderEvidence'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -105,6 +107,7 @@ import { createKioskService } from './services/domain/kiosk'
 import { createKioskAudioGateway } from './services/domain/kiosk-audio'
 import { createKioskCharacterAssetService } from './services/domain/kiosk-character-assets'
 import { createKioskMediaService } from './services/domain/kiosk-media'
+import { createOrderEvidenceService } from './services/domain/kiosk-order-evidence'
 import { createKioskSystemOneService } from './services/domain/kiosk-system-one'
 import { startKioskRetentionSweep } from './services/domain/kiosk/retention-sweep'
 import { createConcurrencyLedger, createConfigSyncSubscriber, createLlmRouterService } from './services/domain/llm-router'
@@ -302,6 +305,7 @@ export async function buildApp(deps: AppDeps) {
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 })
   const characterAssetBodyLimit = bodyLimit({ maxSize: 64 * 1024 * 1024 })
   const characterPackageBodyLimit = bodyLimit({ maxSize: kioskCharacterPackageLimits.archiveBytes + 1024 * 1024 })
+  const orderEvidenceBodyLimit = bodyLimit({ maxSize: orderEvidenceMaxRequestBytes })
   const kioskMediaBodyLimit = bodyLimit({ maxSize: 32 * 1024 * 1024 })
   const kioskAudioBodyLimit = bodyLimit({
     maxSize: kioskAudioLimits.requestBytes,
@@ -319,6 +323,8 @@ export async function buildApp(deps: AppDeps) {
         return characterAssetBodyLimit(c, next)
       if (/^\/api\/kiosk\/visitor-sessions\/[^/]+\/media$/.test(c.req.path))
         return kioskMediaBodyLimit(c, next)
+      if (c.req.method === 'POST' && c.req.path === '/api/kiosk/order-evidence')
+        return orderEvidenceBodyLimit(c, next)
       if (c.req.path === '/api/kiosk/audio/transcriptions')
         return kioskAudioBodyLimit(c, next)
       return defaultBodyLimit(c, next)
@@ -426,6 +432,7 @@ export async function buildApp(deps: AppDeps) {
      * is omitted in production even if the configuration flag is mistakenly
      * set, while a real device always authenticates with its opaque cookie.
      */
+    .route('/api/kiosk', createOrderEvidenceRoutes(createOrderEvidenceService(deps.db, join(deps.env.WEBNAVIOR_KIOSK_ASSET_DIR, 'order-evidence')), deps.kioskService))
     .route('/api/kiosk', createKioskRoutes({
       audioGateway: createKioskAudioGateway({
         configKV: deps.configKV,

@@ -351,6 +351,13 @@
       "when": 1794556800000,
       "tag": "0049_webnavior_chat_response_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1794736800000,
+      "tag": "0050_order_evidence_archive",
+      "breakpoints": true
     }
   ]
 }
