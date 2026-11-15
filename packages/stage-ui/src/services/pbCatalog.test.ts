@@ -16,6 +16,18 @@ function fixture(day: number) {
   return { menu: { menuCategories: categories, defaultPickUpDate: `2026-11-0${day + 1}`, defaultPickUpTime: '11:30' }, responses }
 }
 
+// Report: this chat, Nov14 full Host replay; detail reads lost a supplied combo description.
+it('retains merchant descriptions while leaving null or absent descriptions unknown', async () => {
+  const data = fixture(0)
+  const category: CatalogGateway['category'] = async ({ categoryId }) => {
+    const result = data.responses.get(categoryId)!
+    return { ...result, products: result.products.map((item, index) => ({ ...item, description: index === 0 ? '水餃12顆 + 蛋花湯' : null })) }
+  }
+  const result = await readCatalog({ menu: async () => data.menu, category, attributes: async () => ({}) }, { scope: 'local-audit' })
+  expect(result.products[0].description).toBe('水餃12顆 + 蛋花湯')
+  expect(result.products[1]).not.toHaveProperty('description')
+})
+
 it('uses the same reader for entirely new daily names, IDs, categories and more than three products', async () => {
   let data = fixture(0)
   const category = vi.fn<CatalogGateway['category']>(async ({ categoryId }) => data.responses.get(categoryId))

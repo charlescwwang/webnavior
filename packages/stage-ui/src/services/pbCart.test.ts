@@ -2,13 +2,17 @@ import type { CartGateway, CartSnapshot } from './pbCart'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { createCartOperations, readCartPage } from './pbCart'
+import { createCartOperations, readCartPage, verifyCartRowEdit } from './pbCart'
 
 function setup() {
   let cart: CartSnapshot = { context: { orderRef: 'order', date: 'today', time: 'noon', manualRevision: 0 }, lines: [{ ref: 'old', productRef: 'p-old', name: '原餐', quantity: 1, unitPrice: 17, configuration: 'original' }], subtotal: 17 }
   const gateway: CartGateway = {
     canEdit: vi.fn(() => true),
     read: vi.fn(async () => structuredClone(cart)),
+    clear: vi.fn(async (_before, onDispatch) => {
+      onDispatch()
+      cart = { ...cart, lines: [], subtotal: 0 }
+    }),
     prepare: vi.fn(async ({ quantity }) => ({ productRef: 'p-new', name: '當日新品', unitPrice: 23, configuration: 'plain', commit: vi.fn(async (onDispatch: () => void) => {
       onDispatch()
       cart.lines.push({ ref: 'new', productRef: 'p-new', name: '當日新品', quantity, unitPrice: 23, configuration: 'plain' })
@@ -31,6 +35,90 @@ function setup() {
 }
 
 describe('pb cart operations', () => {
+  it('allows equivalent row identities only within the admitted group and verifies every field', async () => {
+    const { gateway } = setup()
+    const initial = await gateway.read()
+    const before = { ...initial, subtotal: 34, lines: [...initial.lines, { ...initial.lines[0], ref: 'second' }] }
+    const after = { ...before, subtotal: 17, lines: [before.lines[1]] }
+    expect(verifyCartRowEdit(before, after, 'second', 0, ['old', 'second'])).toBe(true)
+    expect(verifyCartRowEdit(before, after, 'second', 0)).toBe(false)
+    expect(verifyCartRowEdit(before, { ...after, subtotal: 18 }, 'second', 0, ['old', 'second'])).toBe(false)
+    expect(verifyCartRowEdit(before, { ...after, context: { ...after.context, manualRevision: 1 } }, 'second', 0, ['old', 'second'])).toBe(false)
+  })
+
+  it('continues a group edit when the native page removes another indistinguishable admitted row', async () => {
+    const { operations, gateway, change } = setup()
+    const before = await gateway.read()
+    change({ ...before, subtotal: 34, lines: [...before.lines, { ...before.lines[0], ref: 'second' }] })
+    const remove = gateway.remove
+    gateway.remove = vi.fn(async (_ref, dispatch) => remove('old', dispatch))
+    const cart = await operations.observe()
+    expect(await operations.execute({ action: 'quantity', version: cart.version, lineRef: 'old', lineRefs: ['old', 'second'], quantity: 3, note: '' })).toMatchObject({ status: 'verified' })
+    expect((await gateway.read()).lines.map(line => [line.ref, line.quantity])).toEqual([['second', 3]])
+    expect((await gateway.read()).subtotal).toBe(51)
+  })
+  // Report: this chat, Nov14; PB repeated additions remain separate rows.
+  it('replaces two servings across equivalent rows while retaining the other serving', async () => {
+    const { operations, gateway, change } = setup()
+    const before = await gateway.read()
+    change({ ...before, lines: [{ ...before.lines[0], quantity: 1 }, { ...before.lines[0], ref: 'second', quantity: 2 }], subtotal: 51 })
+    const cart = await operations.observe()
+    const result = await operations.execute({ action: 'replace', version: cart.version, lineRef: 'old', lineRefs: ['old', 'second'], retainQuantity: 1, productRef: 'p-new', quantity: 2, unitPrice: 23, note: '', selection: { version: 'config', variantRef: '', choices: [] } })
+    expect(result.status).toBe('verified')
+    expect((await gateway.read()).lines.map(line => [line.ref, line.quantity])).toEqual([['old', 1], ['new', 2]])
+    expect((await gateway.read()).subtotal).toBe(63)
+  })
+
+  it('does not group different per-serving extras for a replacement', async () => {
+    const { operations, gateway, change } = setup()
+    const before = await gateway.read()
+    change({ ...before, lines: [...before.lines, { ...before.lines[0], ref: 'extra', configuration: 'extra-two' }], subtotal: 34 })
+    const cart = await operations.observe()
+    expect(await operations.execute({ action: 'replace', version: cart.version, lineRef: 'old', lineRefs: ['old', 'extra'], retainQuantity: 1, productRef: 'p-new', quantity: 1, unitPrice: 23, note: '', selection: { version: 'config', variantRef: '', choices: [] } })).toMatchObject({ status: 'rejected' })
+    expect(gateway.prepare).not.toHaveBeenCalled()
+  })
+  // Report: this chat, Nov11; ending PB reception must clear unfinished cart items.
+  it('clears the entire freshly read cart once and verifies it is empty', async () => {
+    const { operations, gateway, change } = setup()
+    const original = await gateway.read()
+    change({ ...original, subtotal: 34, lines: [...original.lines, { ...original.lines[0], ref: 'same-looking-row' }] })
+    expect(await operations.clear()).toMatchObject({ ok: true, status: 'verified', cart: { lines: [], subtotal: 0 } })
+    expect(gateway.clear).toHaveBeenCalledOnce()
+    expect(gateway.remove).not.toHaveBeenCalled()
+    expect((await operations.observe()).lines).toEqual([])
+  })
+
+  it('does not click clear when the current cart is already empty', async () => {
+    const { operations, gateway, change } = setup()
+    change({ ...await gateway.read(), lines: [], subtotal: 0 })
+    expect(await operations.clear()).toMatchObject({ ok: true, status: 'verified', cart: { lines: [], subtotal: 0 } })
+    expect(gateway.clear).not.toHaveBeenCalled()
+  })
+
+  it.each(['rows-remain', 'subtotal-remains', 'read-fails'])('blocks further cart work when accepted clear cannot be verified (%s)', async (failure) => {
+    const { operations, gateway, change } = setup()
+    gateway.clear = vi.fn(async (_before, onDispatch) => {
+      onDispatch()
+      if (failure === 'subtotal-remains')
+        change({ ...await gateway.read(), lines: [] })
+      if (failure === 'read-fails')
+        gateway.read = vi.fn(async () => { throw new Error('cart read unavailable') })
+    })
+    expect(await operations.clear()).toMatchObject({ ok: false, status: 'unknown' })
+    expect(operations.canRecover()).toBe(false)
+    expect(await operations.clear()).toMatchObject({ ok: false, status: 'unknown' })
+    expect(gateway.clear).toHaveBeenCalledOnce()
+  })
+
+  it('keeps a rejected clear retryable when no merchant action was dispatched', async () => {
+    const { operations, gateway } = setup()
+    gateway.clear = vi.fn(async () => {
+      throw new Error('button disabled')
+    })
+    expect(await operations.clear()).toMatchObject({ ok: false, status: 'rejected' })
+    expect(operations.canRecover()).toBe(true)
+    expect((await operations.observe()).lines).toHaveLength(1)
+  })
   // Report: output/playwright/pb-electron/restored-S13-nov4-replacement-sequence.json.
   it.each([true, false])('keeps repeated same-serving additions editable when native identity is proven (%s)', async (editable) => {
     const { operations, gateway, change } = setup()
@@ -86,7 +174,7 @@ describe('pb cart operations', () => {
     const result = await operations.execute({ action, version: cart.version, lineRef: 'old', lineRefs: ['old', 'second'], quantity, note: '' })
     expect(result).toMatchObject({ ok: true, status: 'verified', cart: { subtotal: action === 'quantity' ? quantity * 17 + 46 : 46 } })
     expect((await operations.observe()).lines).toEqual(action === 'quantity' ? [{ ...original, quantity }, { ref: 'unrelated', productRef: 'p-other', name: '其他餐', quantity: 2, unitPrice: 23, configuration: 'other' }] : [{ ref: 'unrelated', productRef: 'p-other', name: '其他餐', quantity: 2, unitPrice: 23, configuration: 'other' }])
-    expect(gateway.remove).toHaveBeenCalledWith('second', expect.any(Function))
+    expect(gateway.remove).toHaveBeenCalledWith('second', expect.any(Function), ['old', 'second'])
     expect(gateway.remove).not.toHaveBeenCalledWith('unrelated', expect.anything())
     if (action === 'quantity') {
       // Setting 17 to 13 first would make two identical native rows; redundant
@@ -142,7 +230,7 @@ describe('pb cart operations', () => {
     const observed = await operations.observe()
     const result = await operations.execute({ action: 'replace', version: observed.version, lineRef: 'old', productRef: 'p-old', quantity: 1, retainQuantity: 2, unitPrice: 22, note: '', selection: { version: 'config', variantRef: '', choices: [{ ref: 'rice-choice', quantity: 1 }] } })
     expect(result).toMatchObject({ ok: true, status: 'verified', cart: { subtotal: 56, lines: [{ ref: 'old', quantity: 2 }, { ref: 'rice', quantity: 1, description: '白飯 ×1' }] } })
-    expect(gateway.setQuantity).toHaveBeenCalledWith('old', 2, expect.any(Function))
+    expect(gateway.setQuantity).toHaveBeenCalledWith('old', 2, expect.any(Function), ['old'])
     expect(gateway.remove).not.toHaveBeenCalled()
   })
 
@@ -170,6 +258,7 @@ describe('pb cart operations', () => {
     const result = await operations.execute({ action: 'replace', version: cart.version, lineRef: 'old', productRef: 'p-old', quantity: incoming, retainQuantity: retained, unitPrice: 17, note: '', selection: { version: 'config', variantRef: '', choices: [] } })
     expect(result).toMatchObject({ ok: true, status: 'verified', cart: { subtotal: final * 17, lines: [{ ref: 'old', quantity: final }] } })
     expect(result.customerMessage).toContain('已調整為')
+    expect(result.customerMessage).not.toContain('尚未送出訂單')
     expect(commit).not.toHaveBeenCalled()
     expect(gateway.remove).not.toHaveBeenCalled()
     expect(gateway.setQuantity).toHaveBeenCalledOnce()
@@ -264,6 +353,7 @@ describe('pb cart operations', () => {
     let current: CartSnapshot = { context: { orderRef: 'decimal', date: 'today', time: 'noon', manualRevision: 0 }, lines: [{ ref: 'decimal', productRef: 'today', name: '每日商品', quantity: 2, unitPrice: 0.1, configuration: '' }], subtotal: 0.2 }
     const gateway: CartGateway = {
       canEdit: () => true,
+      clear: async () => { throw new Error('unused') },
       read: async () => current,
       prepare: async () => { throw new Error('unused') },
       remove: async () => { throw new Error('unused') },
@@ -289,7 +379,7 @@ describe('pb cart operations', () => {
     const cart = await operations.observe()
     const result = await operations.execute({ action: 'replace', selection: { version: 'config', variantRef: '', choices: [] }, version: cart.version, lineRef: 'old', productRef: 'p-new', quantity: 1, unitPrice: 23, note: '' })
     expect(result).toMatchObject({ ok: true, cart: { subtotal: 23, lines: [{ ref: 'new', name: '當日新品' }] } })
-    expect(gateway.remove).toHaveBeenCalledWith('old', expect.any(Function))
+    expect(gateway.remove).toHaveBeenCalledWith('old', expect.any(Function), ['old'])
   })
 
   it('preserves the original line when the replacement add cannot be verified', async () => {
@@ -384,14 +474,15 @@ describe('pb empty order lifecycle', () => {
     expect(() => readCartPage({ order: null, details: [{ id: 1 }], subtotal: 0 }, pickup, 0)).toThrow()
     expect(() => readCartPage({ subtotal: 0 }, pickup, 0)).toThrow()
   })
-  it.each(['created-order', 'changed-pickup', 'changed-manual'])('verifies first add while protecting context: %s', async (transition) => {
-    let cart: CartSnapshot = { lines: [], subtotal: 0, context: { ...pickup, manualRevision: 0 } }
+  it.each(['created-order', 'changed-pickup', 'changed-manual', 'changed-table'])('verifies first add while protecting context: %s', async (transition) => {
+    let cart: CartSnapshot = { lines: [], subtotal: 0, context: { ...pickup, manualRevision: 0, tableName: 'A1 桌' } }
     const operations = createCartOperations({
       canEdit: () => true,
+      clear: async () => { throw new Error('unused') },
       read: async () => structuredClone(cart),
       prepare: async () => ({ productRef: 'p-new', name: '新品', unitPrice: 10, configuration: '', commit: async (onDispatch) => {
         onDispatch()
-        cart = { lines: [{ ref: 'new', productRef: 'p-new', name: '新品', unitPrice: 10, quantity: 1, configuration: '' }], subtotal: 10, context: { ...pickup, orderRef: 'created', manualRevision: transition === 'changed-manual' ? 1 : 0, ...(transition === 'changed-pickup' ? { time: 'later' } : {}) } }
+        cart = { lines: [{ ref: 'new', productRef: 'p-new', name: '新品', unitPrice: 10, quantity: 1, configuration: '' }], subtotal: 10, context: { ...pickup, orderRef: 'created', tableName: transition === 'changed-table' ? 'B1 吧檯' : 'A1 桌', manualRevision: transition === 'changed-manual' ? 1 : 0, ...(transition === 'changed-pickup' ? { time: 'later' } : {}) } }
       } }),
       remove: async () => { throw new Error('unused') },
       setQuantity: async () => { throw new Error('unused') },

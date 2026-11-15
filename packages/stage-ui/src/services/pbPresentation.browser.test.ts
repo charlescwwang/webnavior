@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { page } from 'vitest/browser'
 
 import { createPresentation } from './pbPresentation'
 
@@ -17,7 +18,127 @@ function setup() {
   return { presentation, target }
 }
 
+// Report: this chat, Nov14; customer input cancelled introductions instead of being locked.
+it('blocks real customer clicks throughout an introduction and releases after failure', async () => {
+  const { presentation, target } = setup()
+  let clicks = 0
+  target.addEventListener('click', () => clicks++)
+  const gate = Promise.withResolvers<void>()
+  const pending = presentation.introduce(async () => gate.promise)
+  try {
+    await page.getByRole('button', { name: '每日新餐' }).click()
+    expect(clicks).toBe(0)
+    // Native scripted operations remain available; only customer input is locked.
+    target.click()
+    expect(clicks).toBe(1)
+  }
+  finally {
+    gate.reject(new Error('presentation stopped'))
+    await expect(pending).rejects.toThrow('presentation stopped')
+  }
+  await page.getByRole('button', { name: '每日新餐' }).click()
+  expect(clicks).toBe(2)
+})
+
+it('does not let an old introduction cleanup unlock its replacement', async () => {
+  const { presentation, target } = setup()
+  let clicks = 0
+  target.addEventListener('click', () => clicks++)
+  const old = Promise.withResolvers<void>()
+  const next = Promise.withResolvers<void>()
+  const first = presentation.introduce(async () => old.promise)
+  presentation.cancel()
+  const second = presentation.introduce(async () => next.promise)
+  try {
+    old.resolve()
+    await first
+    await page.getByRole('button', { name: '每日新餐' }).click()
+    expect(clicks).toBe(0)
+  }
+  finally {
+    next.resolve()
+    await second
+  }
+  await page.getByRole('button', { name: '每日新餐' }).click()
+  expect(clicks).toBe(1)
+})
+
+// Report: this chat, Nov14 built Host; an offscreen meal was rejected before viewport movement finished.
+it('does not mistake a stable offscreen rectangle for completed viewport movement', async () => {
+  const { presentation, target } = setup()
+  target.style.position = 'fixed'
+  target.style.top = '150vh'
+  const pending = presentation.show([{ ref: 'late-layout', name: '每日新餐' }], target)
+  await expect.poll(() => document.querySelector<HTMLElement>('[data-webnavior-presentation]')?.dataset.phase).toBe('scrolling')
+  // Use real DOM layout and time: the website settles its target after the
+  // initial stationary interval, without replacing browser platform methods.
+  await new Promise(resolve => setTimeout(resolve, 240))
+  target.style.top = '100px'
+  expect(await pending).toMatchObject({ cue: 'shown' })
+})
+
+// Report: this chat, Nov11; reception reset should be masked instead of slowly guided.
+it('keeps a loading cover across merchant navigation until the maintenance work settles', async () => {
+  const { presentation, target } = setup()
+  let finish = () => {}
+  const work = new Promise<void>(resolve => finish = resolve)
+  const pending = presentation.cover(async () => work)
+  const cover = document.querySelector<HTMLElement>('[data-webnavior-maintenance]')!
+  expect(cover).not.toBeNull()
+  expect(presentation.isCovered()).toBe(true)
+  expect(getComputedStyle(cover).backgroundColor).toBe('rgb(248, 250, 252)')
+  const rect = target.getBoundingClientRect()
+  expect(document.elementFromPoint(rect.left + 20, rect.top + 20)).toBe(target)
+  document.dispatchEvent(new Event('inertia:start'))
+  expect(cover.isConnected).toBe(true)
+  finish()
+  await pending
+  expect(presentation.isCovered()).toBe(false)
+  expect(document.querySelector('[data-webnavior-maintenance]')).toBeNull()
+})
+
+it('removes the maintenance cover after a failed reset without hiding its error', async () => {
+  const { presentation } = setup()
+  await expect(presentation.cover(async () => {
+    throw new Error('clear result unknown')
+  })).rejects.toThrow('clear result unknown')
+  expect(presentation.isCovered()).toBe(false)
+  expect(document.querySelector('[data-webnavior-maintenance]')).toBeNull()
+})
+
 describe('isolated PB visual cue', () => {
+  // Report: this chat, Nov12; the item frame lingered after the native tap.
+  it('retires the tap cue promptly while native verification is still pending', async () => {
+    const { presentation, target } = setup()
+    let finish = () => {}
+    let clicked = false
+    let settled = false
+    const verification = new Promise<void>(resolve => finish = resolve)
+    const pending = presentation.show([], target, true, [], {
+      label: '開啟每日新餐',
+      dispatch: async (onPress) => {
+        onPress()
+        target.click()
+        clicked = true
+        await verification
+        settled = true
+      },
+    })
+    try {
+      await expect.poll(() => clicked).toBe(true)
+      const overlay = document.querySelector<HTMLElement>('[data-webnavior-presentation]')!
+      await expect.poll(() => getComputedStyle(overlay).display, { timeout: 600 }).toBe('none')
+      expect(settled).toBe(false)
+      // Retiring the visual must not cancel or replay the accepted operation.
+      expect(overlay.dataset.phase).toBe('waiting')
+    }
+    finally {
+      finish()
+      expect(await pending).toMatchObject({ cue: 'shown' })
+    }
+    expect(settled).toBe(true)
+  })
+
   it('moves to the real card and shows a press without ever clicking it', async () => {
     const { presentation, target } = setup()
     let clicks = 0
@@ -27,6 +148,7 @@ describe('isolated PB visual cue', () => {
     expect(clicks).toBe(0)
     const overlay = document.querySelector<HTMLElement>('[data-webnavior-presentation]')!
     expect(overlay).not.toBeNull()
+    expect(getComputedStyle(overlay).display).not.toBe('none')
     expect(getComputedStyle(overlay).pointerEvents).toBe('none')
     const rect = target.getBoundingClientRect()
     expect(document.elementFromPoint(rect.left + 20, rect.top + 20)).toBe(target)

@@ -3,6 +3,7 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { CheckoutSnapshot } from '../domain/checkout-flow'
 
+import { invoiceCode } from '@proj-airi/stage-shared/invoice-input'
 import { computed, shallowRef, useTemplateRef, watch } from 'vue'
 
 const props = defineProps<{ checkout: CheckoutSnapshot, total: string, locked?: boolean }>()
@@ -26,7 +27,7 @@ watch([input, () => props.checkout, () => props.locked], ([field, , locked]) => 
 const code = shallowRef('')
 const method = computed(() => props.checkout.invoiceMethod === 'citizen' || props.checkout.invoiceMethod === 'donation' ? props.checkout.invoiceMethod : 'carrier')
 const title = computed(() => ({ carrier: '手機條碼', citizen: '自然人憑證條碼', donation: '捐贈碼' })[method.value])
-const valid = computed(() => ({ carrier: /^\/[0-9A-Z+.-]{7}$/, citizen: /^[A-Z]{2}\d{14}$/, donation: /^\d{3,7}$/ })[method.value].test(code.value.trim().toUpperCase()))
+const valid = computed(() => method.value === 'donation' ? /^\d{3,7}$/.test(code.value.trim()) : invoiceCode(method.value, code.value) !== undefined)
 watch([method, () => props.checkout.carrierCode, () => props.checkout.citizenCode, () => props.checkout.donationCode], ([selected, carrier, citizen, donation]) => {
   code.value = ({ carrier, citizen, donation })[selected] ?? ''
 }, { immediate: true })

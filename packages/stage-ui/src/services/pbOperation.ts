@@ -97,7 +97,7 @@ export function createOperation(input: {
       }
       catch (error) {
         step.reason = errorMessageFrom(error) ?? '目前操作未完成。'
-        step.state = dispatched && effect === 'cart' ? 'unknown' : input.signal.aborted ? 'cancelled' : 'failed'
+        step.state = dispatched && (effect === 'cart' || effect === 'order') ? 'unknown' : input.signal.aborted ? 'cancelled' : 'failed'
         throw error
       }
       finally {

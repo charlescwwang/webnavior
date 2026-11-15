@@ -2,20 +2,23 @@ import type { ServiceConnection, ServiceTool, ToolExecution } from '@proj-airi/s
 
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
-import { parse } from 'valibot'
-import { readonly, shallowRef, toRaw } from 'vue'
+import { pbSubmissionDispatchSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { menuEntryReceiptSchema, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
+import { parse, safeParse } from 'valibot'
+import { readonly, shallowRef, toRaw, watch } from 'vue'
 
 import { connectWindow } from './interactiveServiceWindowConnection'
 
 export type ServiceAvailability = 'idle' | 'loading' | 'ready' | 'unavailable'
 
-/** Owns exactly one iframe binding. Switching documents aborts pending RPC, never retries writes. */
+/** Owns one document binding; only correlated native entry/submission acknowledgements cross navigation. Never retries writes. */
 export function createInteractiveServiceClient() {
   const availability = shallowRef<ServiceAvailability>('idle')
   const tools = shallowRef<readonly ServiceTool[]>([])
   const error = shallowRef<string>()
   const unavailableReason = shallowRef<'connection-failed'>()
   const completionRevision = shallowRef(0)
+  const editorRetired = shallowRef(false)
   const listeners = new Set<(event: ToolExecution) => void>()
   let connection: ServiceConnection | undefined
   let binding: { connectionId: string, documentId: string, toolsRevision: number } | undefined
@@ -24,6 +27,7 @@ export function createInteractiveServiceClient() {
   let activeConnect: (() => ServiceConnection) | undefined
   let failedBinding: typeof binding
   let recovery: Promise<void> | undefined
+  let navigating = false
   const unsettled = new Set<string>()
 
   function publish(event: ToolExecution) {
@@ -35,6 +39,8 @@ export function createInteractiveServiceClient() {
     connection = undefined
     binding = undefined
     readiness = undefined
+    navigating = false
+    editorRetired.value = false
     tools.value = []
     error.value = undefined
     unavailableReason.value = undefined
@@ -106,6 +112,7 @@ export function createInteractiveServiceClient() {
   async function execute(tool: ServiceTool, input: Record<string, unknown>, signal?: AbortSignal) {
     const current = connection
     const currentBinding = binding
+    const issuedUrl = activeUrl
     if (!current || !currentBinding || availability.value !== 'ready')
       throw new Error(error.value ?? '互動服務尚未連線。')
     // Public descriptors are readonly Vue views; compare the underlying identity
@@ -126,13 +133,39 @@ export function createInteractiveServiceClient() {
         name: tool.name,
         input: serializedInput,
       }, signal ? AbortSignal.any([signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000)))
-      if (connection !== current || response.connectionId !== currentBinding.connectionId || response.documentId !== currentBinding.documentId || response.operationId !== operationId)
+      if (response.connectionId !== currentBinding.connectionId || response.documentId !== currentBinding.documentId || response.operationId !== operationId)
         throw new Error('工具回應不屬於目前頁面。')
+      if (connection !== current || navigating) {
+        const journey = issuedUrl ? readPbJourney(issuedUrl) : undefined
+        const entry = safeParse(menuEntryReceiptSchema, response.result)
+        const submission = safeParse(pbSubmissionDispatchSchema, response.result)
+        const submitted = journey && tool.name === 'browser_order_submit' && submission.success && submission.output.confirmationToken === serializedInput.confirmationToken && issuedUrl === activeUrl
+        // Only PB's bounded entry/submission acknowledgement may settle across
+        // rediscovery. It cannot complete another write, restore old handles or
+        // authorize any action in the replacement document.
+        if (!submitted && (tool.name !== 'browser_start_ordering' || !issuedUrl || issuedUrl !== activeUrl
+          || journey?.tablePath !== new URL(issuedUrl).pathname
+          || !entry.success || entry.output.selectedTable !== serializedInput.name)) {
+          throw new Error('工具回應不屬於目前頁面。')
+        }
+      }
       const result = response.result
       unsettled.delete(operationId)
       if (result && typeof result === 'object' && 'interaction' in result && result.interaction && typeof result.interaction === 'object' && 'status' in result.interaction && result.interaction.status === 'completed')
         completionRevision.value++
+      // Record the correlated result before retirement clears the Host's
+      // active-operation owners; the next reception must not inherit that work.
       publish({ ...correlation, phase: 'resolved', tool, input, result })
+      const submission = safeParse(pbSubmissionDispatchSchema, result)
+      if (connection === current && issuedUrl && readPbJourney(issuedUrl)
+        && tool.name === 'browser_order_submit' && submission.success && submission.output.confirmationToken === serializedInput.confirmationToken) {
+        // SPA submission may never emit a document-loading event. The editor
+        // is still retired: no cart/reset command belongs on its result page.
+        // A new reception reloads the configured entry; native unknown-write
+        // markers remain independent and cannot be cleared by detaching here.
+        activate(undefined)
+        editorRetired.value = true
+      }
       return result
     }
     catch (caught) {
@@ -156,8 +189,16 @@ export function createInteractiveServiceClient() {
     activate: (serviceUrl?: string, frameWindow?: Window | null) => activate(serviceUrl, serviceUrl && frameWindow ? () => connectWindow(serviceUrl, frameWindow) : undefined),
     /** Uses the same ownership/recovery coordinator with a trusted native transport. */
     activateTransport: (serviceUrl: string, connect: () => ServiceConnection) => activate(serviceUrl, connect),
+    /** Revokes tools during native navigation; only a correlated entry/submission acknowledgement may still settle. */
+    beginNavigation: () => {
+      navigating = true
+      tools.value = []
+      availability.value = 'loading'
+    },
     availability: readonly(availability),
     completionRevision: readonly(completionRevision),
+    /** A dispatched order retired its editor; manual result UI stays usable and reception may restart. */
+    editorRetired: readonly(editorRetired),
     error: readonly(error),
     unavailableReason: readonly(unavailableReason),
     tools: readonly(tools),
@@ -181,8 +222,30 @@ export function createInteractiveServiceClient() {
       }
       finally { recovery = undefined }
     },
-    waitUntilReady: async () => {
-      await readiness
+    waitUntilReady: async (signal?: AbortSignal) => {
+      // beginNavigation invalidates the old ready promise before the replacement
+      // transport exists. Follow observable readiness across that gap, bounded
+      // by the caller's reception lifetime and the menu-load timeout.
+      const waiting = AbortSignal.any([AbortSignal.timeout(15_000), ...(signal ? [signal] : [])])
+      waiting.throwIfAborted()
+      if (availability.value === 'loading') {
+        const pending = Promise.withResolvers<void>()
+        const stop = watch(availability, (state) => {
+          if (state === 'ready')
+            pending.resolve()
+          else if (state !== 'loading')
+            pending.reject(new Error(error.value ?? '互動服務頁面已切換。'))
+        })
+        const abort = () => pending.reject(waiting.reason)
+        waiting.addEventListener('abort', abort, { once: true })
+        try {
+          await pending.promise
+        }
+        finally {
+          stop()
+          waiting.removeEventListener('abort', abort)
+        }
+      }
       if (availability.value === 'unavailable')
         throw new Error(error.value)
     },

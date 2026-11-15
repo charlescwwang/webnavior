@@ -1,13 +1,11 @@
+import type { ProductConfiguration, ProductSelection } from '@proj-airi/stage-shared/product-configuration'
 import type { ServiceAction, ServiceStep } from '@proj-airi/stage-shared/service-operation'
 
 import type { CartLine } from './pbCart'
 import type { createOperation } from './pbOperation'
-import type { ProductConfiguration, ProductSelection } from './pbProduct'
 
 import { resolveSelection } from './pbProduct'
 
-const menuPath = '/order/store/1kgJeql/pick_up/menu'
-const cartPath = '/order/store/1kgJeql/pick_up/orders/create'
 const searchSelector = 'input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]'
 const noteSelector = 'input[placeholder="商品有特殊需求，請在此備註"]'
 
@@ -42,7 +40,8 @@ function canEdit(lines: readonly CartLine[], refs: readonly string[]) {
     if (peers.length === 1)
       return true
     const key = detailsKey(target)
-    return key !== undefined && peers.every(peer => peer.ref === target.ref || (detailsKey(peer) !== undefined && detailsKey(peer) !== key))
+    return key !== undefined && peers.every(peer => peer.ref === target.ref || (detailsKey(peer) !== undefined && (detailsKey(peer) !== key
+      || (refs.includes(peer.ref) && peer.productRef === target.productRef && peer.configuration === target.configuration && peer.note === target.note))))
   })
 }
 
@@ -79,6 +78,13 @@ function fill(element: HTMLInputElement, value: string) {
  * revokes its binding instead of replaying a possibly accepted write.
  */
 export function createControls(operation: ReturnType<typeof createOperation>, signal: AbortSignal) {
+  // The service approves origin/store/flow before constructing controls. Tests
+  // use loopback documents with the same finite journey paths.
+  const match = location.pathname.match(/^(\/order\/store\/[^/]+\/(?:pick_up|internal_use)\/)(?:menu(?:\/select-table)?|orders\/create)$/)
+  if (!match)
+    throw new Error('PB control journey is unavailable.')
+  const menuPath = `${match[1]}menu`
+  const cartPath = `${match[1]}orders/create`
   async function ready(check: () => boolean, accepted = false) {
     const deadline = performance.now() + 5000
     while (!check()) {
@@ -88,7 +94,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     }
   }
   async function act(action: ServiceAction, label: string, effect: ServiceStep['effect'], locate: () => HTMLElement | undefined, dispatch: (target: HTMLElement) => void, check: () => boolean, target?: ServiceStep['target']) {
-    await operation.run(action, label, effect, locate, async () => dispatch(locate()!), async () => ready(check, effect === 'cart'), { target })
+    await operation.run(action, label, effect, locate, async () => dispatch(locate()!), async () => ready(check, effect === 'cart' || effect === 'order'), { target })
   }
   const dialog = () => unique([...document.querySelectorAll<HTMLElement>('[role="dialog"]')].filter(element => element.querySelector('.menu-dialog') || element.matches('.menu-dialog')))
   const productDialog = (name: string) => {
@@ -106,13 +112,45 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
     if (locate())
       await act('notice', '關閉營業公告', 'draft', locate, target => target.click(), () => !locate())
   }
-  async function search(query: string) {
+  async function search(query: string, rendered: () => boolean = () => true) {
     await navigate(menuPath)
     await dismissAnnouncement()
     await close()
-    await act('search', '搜尋餐點', 'draft', () => unique(document.querySelectorAll<HTMLInputElement>(searchSelector)), target => fill(target as HTMLInputElement, query), () => unique(document.querySelectorAll<HTMLInputElement>(searchSelector))?.value === query, { kind: 'field', ref: 'menu-search' })
+    let searchStarted = false
+    const loading = new MutationObserver(() => {
+      if (document.querySelector('.menu-search-meta')?.textContent?.includes('搜尋中'))
+        searchStarted = true
+    })
+    // The merchant updates cards asynchronously. Callers presenting catalog
+    // facts must verify those actual cards, not just our synchronous input value.
+    try {
+      await act('search', '搜尋餐點', 'draft', () => unique(document.querySelectorAll<HTMLInputElement>(searchSelector)), (target) => {
+        loading.observe(document.body, { childList: true, subtree: true, characterData: true })
+        fill(target as HTMLInputElement, query)
+      }, () => {
+        if (unique(document.querySelectorAll<HTMLInputElement>(searchSelector))?.value !== query || !rendered())
+          return false
+        if (!query.trim())
+          return true
+        // NOTICE: PB Show-D_rzU06X.js (observed 2026-11-11) debounces Ge by
+        // 250 ms, then sets me while loading ALL categories. Observe that native
+        // loading cycle rather than sleeping: a cached search can finish between
+        // polls, while the old result count remains visible before Ge starts.
+        // Source: https://app.esgpb.com/order/build/assets/Show-D_rzU06X.js
+        if (!searchStarted)
+          return false
+        const count = unique(document.querySelectorAll<HTMLElement>('.menu-search-meta'))?.textContent?.trim().match(/^共找到\s*(\d+)\s*項$/)
+        const cards = [...document.querySelectorAll<HTMLElement>('main [role="button"] h4, main button h4')].filter(heading => heading.getClientRects().length)
+        return !!count && Number(count[1]) === cards.length
+      }, { kind: 'field', ref: 'menu-search' })
+    }
+    finally {
+      loading.disconnect()
+    }
   }
-  async function navigate(path: typeof menuPath | typeof cartPath) {
+  async function navigate(path: string) {
+    if (path !== menuPath && path !== cartPath)
+      throw new Error('PB control navigation is outside the approved journey.')
     await dismissAnnouncement()
     if (location.pathname === path)
       return
@@ -122,7 +160,7 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
         if (!cart)
           return false
         if (element instanceof HTMLAnchorElement)
-          return new URL(element.href).pathname === menuPath && element.textContent?.trim() === '繼續點餐'
+          return new URL(element.href).origin === location.origin && new URL(element.href).pathname === menuPath && ['繼續點餐', '加點'].includes(element.textContent?.trim() ?? '')
         // Removing the last line replaces the continue link with PB's empty
         // cart button. Use that actual control, never the unrelated account links.
         return element instanceof HTMLButtonElement && element.textContent?.trim() === '立即點餐' && !cart.querySelector('.produce-item') && cart.textContent?.includes('購物車是空的') === true
@@ -219,20 +257,28 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       }
     }, { deferredDispatch: true, target: { kind: 'product', ref: productRef } })
   }
-  async function edit(lines: readonly CartLine[], ref: string, amount: number | undefined, beforeDispatch: () => Promise<void>, verify: () => Promise<boolean>, onDispatch: () => void = () => {}) {
+  async function edit(lines: readonly CartLine[], ref: string, amount: number | undefined, beforeDispatch: () => Promise<void>, verify: () => Promise<boolean>, onDispatch: () => void = () => {}, equivalentRefs: readonly string[] = []) {
     const line = lines.find(line => line.ref === ref)
-    if (!line || !canEdit(lines, [ref]))
+    const admitted = equivalentRefs.length ? equivalentRefs : [ref]
+    if (!line || !canEdit(lines, admitted))
       throw new Error('購物車行無法由完整配置唯一對應，尚未操作。')
     const needsDetails = lines.filter(candidate => sameVisibleBase(candidate, line)).length > 1
     await close()
     await navigate(cartPath)
-    const row = () => unique([...document.querySelectorAll<HTMLElement>('.order-create .produce-item')].filter((element) => {
-      const name = element.querySelector('h3')?.childNodes[0]?.textContent?.trim()
-      const price = element.querySelector('h3 span')?.textContent?.match(/\$([\d,.]+)/)?.[1]
-      return price !== undefined && sameVisibleBase({ name: name ?? '', quantity: Number(element.querySelector<HTMLInputElement>('input[type="number"]')?.value), unitPrice: Number(price.replaceAll(',', '')) }, line) && (!needsDetails || renderedDetails(element) === detailsKey(line))
-    }))
-    // Both the complete source and the rendered details must identify one row.
-    // DOM order and partly rendered duplicate rows never provide a vendor ID.
+    const row = () => {
+      const matches = [...document.querySelectorAll<HTMLElement>('.order-create .produce-item')].filter((element) => {
+        const name = element.querySelector('h3')?.childNodes[0]?.textContent?.trim()
+        const price = element.querySelector('h3 span')?.textContent?.match(/\$([\d,.]+)/)?.[1]
+        return price !== undefined && sameVisibleBase({ name: name ?? '', quantity: Number(element.querySelector<HTMLInputElement>('input[type="number"]')?.value), unitPrice: Number(price.replaceAll(',', '')) }, line) && (!needsDetails || renderedDetails(element) === detailsKey(line))
+      }).filter(element => element.getClientRects().length)
+      if (matches.length === 1)
+        return matches[0]
+      // DOM order does not identify a vendor row. Within an explicitly admitted
+      // group, identical rows are interchangeable; full-cart readback determines
+      // the actual affected identity. Never extend this to another configuration.
+      const peers = lines.filter(candidate => sameVisibleBase(candidate, line) && detailsKey(candidate) === detailsKey(line))
+      return equivalentRefs.length && matches.length === peers.length && peers.every(peer => admitted.includes(peer.ref)) ? matches[0] : undefined
+    }
     const locate = () => {
       const current = row()
       if (!current)
@@ -260,5 +306,29 @@ export function createControls(operation: ReturnType<typeof createOperation>, si
       }
     }, { deferredDispatch: true, target: { kind: 'cart_line', ref: line.ref } })
   }
-  return { act, ready, canEdit, search, open, close, navigate, prepare, add, edit, note: setNote }
+  async function clearCart(beforeDispatch: () => Promise<void>, verify: () => Promise<boolean>, onDispatch: () => void) {
+    await close()
+    await navigate(cartPath)
+    // PB Create-CX03t3FJ.js (2026-11-11) binds this exact cart-header button
+    // to X('all'), DELETE details/all. Account/coupon clear controls cannot win.
+    const locate = () => unique([...document.querySelectorAll<HTMLButtonElement>('.order-create button')].filter(button => button.textContent?.trim() === '清空'))
+    await operation.run('remove', '清空未結帳餐點', 'cart', locate, async (accept) => {
+      const expected = locate()
+      await beforeDispatch()
+      const target = locate()
+      if (!target || target !== expected || target.matches(':disabled, [aria-disabled="true"]'))
+        throw new Error('清空按鈕已變更或尚不可操作，尚未清空。')
+      accept()
+      onDispatch()
+      target.click()
+    }, async () => {
+      const deadline = performance.now() + 8000
+      while (!await verify() || document.querySelectorAll('.order-create .produce-item').length) {
+        if (performance.now() >= deadline)
+          throw new Error('PB 清空結果尚未確認。')
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+    }, { deferredDispatch: true, target: { kind: 'field', ref: 'cart-clear' } })
+  }
+  return { act, ready, canEdit, search, open, close, navigate, prepare, add, edit, clearCart, note: setNote }
 }

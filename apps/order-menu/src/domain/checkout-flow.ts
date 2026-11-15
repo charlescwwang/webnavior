@@ -1,5 +1,7 @@
 import type { PaymentStatus } from '../../../order-menu-server/src/domain/contracts'
 
+import { invoiceCode } from '@proj-airi/stage-shared/invoice-input'
+
 export type CheckoutStage = 'invoice' | 'membership' | 'payment' | 'tax-id'
 export type InvoiceMethod = 'carrier' | 'citizen' | 'donation' | 'tax-id'
 
@@ -101,9 +103,9 @@ export function confirmInvoiceDetails(checkout: CheckoutSnapshot, method: 'carri
   if (checkout.stage !== 'invoice')
     throw new Error('請返回發票資料再選擇。')
   const code = value.trim().toUpperCase()
-  if (method === 'carrier' && !/^\/[0-9A-Z+.-]{7}$/.test(code))
+  if (method === 'carrier' && !invoiceCode(method, code))
     throw new Error('手機條碼需為 / 開頭，共 8 碼。')
-  if (method === 'citizen' && !/^[A-Z]{2}\d{14}$/.test(code))
+  if (method === 'citizen' && !invoiceCode(method, code))
     throw new Error('自然人憑證條碼需為 2 碼英文字母及 14 碼數字。')
   if (method === 'donation' && !/^\d{3,7}$/.test(code))
     throw new Error('請輸入 3 至 7 碼捐贈碼。')

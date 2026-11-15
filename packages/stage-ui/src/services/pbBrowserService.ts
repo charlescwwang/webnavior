@@ -5,26 +5,38 @@ import type { RouteName } from './pbRoutes'
 
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryRequestSchema, executionRequestSchema, inspectionRequestSchema } from '@proj-airi/stage-shared/interactive-service'
-import { array, boolean, integer, isValiError, looseObject, maxLength, maxValue, minLength, minValue, number, optional, parse, picklist, pipe, strictObject, string } from 'valibot'
+import { pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { isPbJourneyPage, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
+import { describePbMeal, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { browserPresentationInputSchema, browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
+import { array, boolean, integer, isValiError, literal, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, picklist, pipe, strictObject, string, unknown } from 'valibot'
 
-import { createCartOperations, describeCartLines, readCartPage } from './pbCart'
+import { createCartOperations, describeCartLines, readCartPage, verifyCartRowEdit } from './pbCart'
 import { readCatalog as collectCatalog } from './pbCatalog'
+import { createCheckout } from './pbCheckout'
 import { createControls } from './pbControls'
+import { installInvoiceInput } from './pbInvoiceInput'
 import { createOperation } from './pbOperation'
 import { createPresentation } from './pbPresentation'
 import { prepareAddition, resolveSelection } from './pbProduct'
 import { resolveRoute } from './pbRoutes'
+import { installTablePicker } from './pbTablePicker'
 
 function describeProducts(products: readonly { name: string, price?: number }[]) {
   // An omitted price means the configuration still needs a separate lookup.
-  return `目前查到：${products.map(product => `${product.name}${product.price === undefined ? '' : `，單份 ${product.price} 元`}`).join('；')}。`
+  return `目前查到：${products.map(product => `${pbProductName(product.name)}${product.price === undefined ? '' : `，單份 ${product.price} 元`}`).join('；')}。`
 }
 
 /** Owns PB's bounded operations and document journal independently of its transport. */
 export function createPbService() {
+  const entry = location.href
+  const approvedJourney = readPbJourney(entry)
+  if (!approvedJourney)
+    throw new Error('PB service journey has not been approved.')
+  const journey = approvedJourney
   /** SPA navigation keeps this listener alive; every admission must recheck scope. */
   function assertScope() {
-    if (location.origin !== 'https://app.esgpb.com' || !['/order/store/1kgJeql/pick_up/menu', '/order/store/1kgJeql/pick_up/orders/create'].includes(location.pathname))
+    if (!isPbJourneyPage(entry, location.href))
       throw new Error('目前已離開這家店的點餐菜單，請返回菜單後重新確認需求。')
   }
 
@@ -34,11 +46,41 @@ export function createPbService() {
   document.documentElement.setAttribute('data-webnavior-pb-bridge', 'ready')
   const documentId = crypto.randomUUID()
   const presentation = createPresentation()
+  const invoiceInput = installInvoiceInput()
   const text = pipe(string(), maxLength(200))
   const quantity = pipe(number(), integer(), minValue(1), maxValue(99))
   const selectionSchema = strictObject({ version: text, variantRef: text, choices: array(strictObject({ ref: text, quantity })) })
   const selectionInputSchema = { type: 'object', properties: { version: { type: 'string', description: 'Copy the selected product configuration version exactly. This is separate from cart.version.' }, variantRef: { type: 'string' }, choices: { type: 'array', description: 'Options for ONE serving. Omit refused/unrequested options; use [] for none. Never multiply option quantities by the meal quantity.', items: { type: 'object', properties: { ref: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 99, description: 'Count of this option PER SERVING, within the observed option/group maximum. Two meals each with one option: top-level quantity=2, this quantity=1, not 2.' } }, required: ['ref', 'quantity'], additionalProperties: false } } }, required: ['version', 'variantRef', 'choices'], additionalProperties: false }
-  const baseUrl = new URL('/order/store/1kgJeql/pick_up/', location.origin)
+  const baseUrl = new URL(journey.basePath, journey.origin)
+  const tablePicker = journey.tablePath
+    ? installTablePicker(journey.tablePath, async () => {
+        assertScope()
+        // The rendered SelectTable document already owns this list. Re-fetching
+        // it for every context/selection blocks voice on an unrelated HTTP read.
+        // Unlike menu/cart SPA snapshots, this metadata is usable only while its
+        // exact component and document URL still match the visible table page.
+        const pages = [...document.querySelectorAll('[data-page]')]
+        const serialized = pages.length === 1 ? pages[0].getAttribute('data-page') : undefined
+        if (!serialized)
+          throw new Error('桌號頁資料尚未就緒，請重新載入選桌頁。')
+        const page = parse(looseObject({
+          component: literal('Menu/SelectTable'),
+          url: string(),
+          props: looseObject({ auth: optional(looseObject({ user: optional(unknown()) })), buyer: optional(looseObject({ type: string() })), diningTables: array(looseObject({ name: text })) }),
+        }), JSON.parse(serialized))
+        if (location.pathname !== journey.tablePath || new URL(page.url, location.origin).href !== location.href)
+          throw new Error('桌號資料與目前頁面不符，請重新載入選桌頁。')
+        if (!page.props.auth?.user && page.props.buyer?.type !== 'cookie')
+          throw new Error('PB requires manual sign-in.', { cause: 'sign-in-required' })
+        return page.props.diningTables.map(table => table.name)
+      })
+    : undefined
+  // Enhancement failure leaves PB's original dropdown available for manual use.
+  void tablePicker?.choices().catch(() => console.info('PB table enhancement is unavailable.'))
+  window.addEventListener('pagehide', () => {
+    invoiceInput.dispose()
+    tablePicker?.dispose()
+  }, { once: true })
   const blockedKey = `webnavior:pb:cart-pending:${baseUrl.pathname}`
   let writeMarker: string | undefined
   let currentControls: ReturnType<typeof createControls> | undefined
@@ -48,12 +90,20 @@ export function createPbService() {
   let queuedCount = 0
   let executingName: string | undefined
   let manualRevision = 0
+  const canSubmit = journey.origin === 'http://127.0.0.1:5188'
+  const checkout = createCheckout(readCart, () => manualRevision, () => {
+    writeMarker = `order:${crypto.randomUUID()}`
+    localStorage.setItem(blockedKey, writeMarker)
+  }, () => {
+    if (writeMarker && localStorage.getItem(blockedKey) === writeMarker)
+      localStorage.removeItem(blockedKey)
+  }, canSubmit)
   let controlRevision = 0
-  const controlTools = new Set(['browser_cart_review', 'browser_search', 'browser_open_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset'])
+  const controlTools = new Set(['browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_order_submit'])
   let activeVisual: AbortController | undefined
   for (const eventName of ['pointerdown', 'keydown', 'wheel']) {
     document.addEventListener(eventName, (event) => {
-      if (event.isTrusted) {
+      if (event.isTrusted && !presentation.isCovered() && !invoiceInput.owns(event)) {
         manualRevision++
         controlRevision++
         activeVisual?.abort()
@@ -72,15 +122,27 @@ export function createPbService() {
   // explicit in the model schema so an otherwise valid plan cannot mix them.
   const cartVersion = { type: 'string', description: 'Copy cart.version exactly from the latest browser_cart_get result. Never use selection.version or a product configuration version here.' }
   const tools: ToolDescriptor[] = [
-    { name: 'browser_present', description: 'Menu information only, never a review of ordered quantities or cart subtotal (use browser_cart_review for that). Present explicitly selected current catalog refs after interpreting the whole menu request, including exclusions. Returns a customer receipt for only those products. [] cancels visuals and is not evidence of no matches. Never clicks or changes cart.', inputSchema: { type: 'object', properties: { productRefs: { type: 'array', items: { type: 'string' }, maxItems: 10 } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
-    { name: 'browser_cart_get', description: 'Read planning data before a cart edit: current cart/version and optional product references. includeCatalog=true is internal planning data, not a customer cart-review receipt. For 核對、我點了什麼、目前訂單、還不要送 use browser_cart_review instead. This does not submit an order.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_checkout_prepare', description: 'Read actual invoice/notification fields and prepare one expiring confirmation. No submission.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false } },
+    { name: 'browser_invoice_select', description: 'Select one actually offered native invoice method. No order submission.', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['none', 'carrier', 'citizen', 'tax', 'donation'] } }, required: ['method'], additionalProperties: false } },
+    { name: 'browser_notification_phone', description: 'Fill only the notification phone draft. No invoice carrier, email, submission or payment.', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^\\d{10,15}$' } }, required: ['phone'], additionalProperties: false } },
+    { name: 'browser_order_submit', description: 'Host-only: consume a native confirmation token after the customer answers the matching final summary. Never a Main tool.', inputSchema: { type: 'object', properties: { confirmationToken: { type: 'string' } }, required: ['confirmationToken'], additionalProperties: false } },
+    { name: 'browser_close_product', description: 'Close the current unadded product selection without changing the cart.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false } },
+    ...(tablePicker
+      ? [
+          { name: 'browser_table_select', description: 'Select exactly one currently offered dining table by name. Selection only; use browser_start_ordering when the customer asks to enter the menu. Never infer a customer choice from the initial website default.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 } }, required: ['name'], additionalProperties: false } },
+          { name: 'browser_start_ordering', description: 'Select the customer-specified table and press the actual Start ordering button to enter its menu. name must be a current tableChoices name explicitly requested by the customer or the verified selectedTable. Ask which table if neither exists. forReset is only for Host reception cleanup behind its cover. This does not add food, submit an order or pay. New navigation must read back the table/cart before ordering.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 }, forReset: { type: 'boolean' } }, required: ['name'], additionalProperties: false } },
+        ]
+      : []),
+    { name: 'browser_present', description: 'Present exact current catalog refs, never cart quantities or subtotal. Default mode=recommendation presents at most three in the supplied ranking order; use it for named selections and ordinary recommendations. other-recommendations requests a different batch and shares the three-item limit; only that mode permits Host exclusion of the last introduced batch. mode=information is only for explicit named comparisons/menu information and allows up to ten. The full requested ref list is validated first; limiting is not evidence of absent products. If the prior search hides any selected product, clears the native search and verifies ALL selected cards before speaking. [] cancels visuals only; browser_search query="" clears the search. Never changes cart or turns a website page.', inputSchema: { type: 'object', properties: { deferVisual: { type: 'boolean', description: 'Host reserves validated dishes for reply-time cues; no frame or scroll until speech or visible reply starts.' }, productRefs: { type: 'array', items: { type: 'string' }, maxItems: 100 }, mode: { type: 'string', enum: ['recommendation', 'other-recommendations', 'information'], description: 'Defaults to recommendation (three). other-recommendations is only for explicitly requesting a different recommendation batch. Information is only for explicit customer-requested comparisons or factual lists.' } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_cart_get', description: 'Read planning data before a cart edit: current cart/version and optional product references. includeCatalog=true is internal planning data, not a customer cart-review receipt. forAdmission=true is Host-only reception preparation, including a fresh cart read on the table page. For 核對、我點了什麼、目前訂單、還不要送 use browser_cart_review instead. This does not submit an order.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' }, forAdmission: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_return_menu', description: 'Return to the full actual menu, clear website search and unfinished selection, and verify the cart is unchanged. Does not increase servings, clear cart items, submit or pay.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_review', description: 'Open the actual cart for review and read back the CURRENT ORDER, quantities, options, notes and actual PB subtotal as a customer receipt. Use for 核對一下、我點了什麼、確認目前訂單、先不要送. This is read-only: it neither presents menu unit prices as an order nor changes or submits anything. No parameters.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
-    { name: 'browser_product_get', description: 'For an order naming exact products, call this FIRST with those names; no prior browser_observe or browser_present is needed. Reads complete fresh configurations for 1–10 exact product names in one batch, returns cart.version, and already presents the matched products. Do not repeat browser_present before adding them. Copy each configuration.version and option refs; never guess. Read-only.', inputSchema: { type: 'object', properties: { names: { type: 'array', items: { type: 'string', maxLength: 200 }, minItems: 1, maxItems: 10 } }, required: ['names'], additionalProperties: false }, annotations: { readOnlyHint: true } },
-    { name: 'browser_cart_add', description: 'Add the exact observed PB product and quantity. Requires the current cart version and freshly observed unit price. Each call adds ONE configuration and ONE shared per-serving note. Split different notes into separate calls: two meals, one note A and one note B, means quantity=1/note=A then quantity=1/note=B; never quantity=2/note="one A, one B". Use only customer-requested notes without meal-count narration. selection must explicitly contain version, variantRef and choices (use [] for no options); copy the observed configuration version, not cart.version. selection.choices quantities and unitPrice are PER SERVING, including paid options; top-level quantity is the number of meals. Never multiply per-serving options or unitPrice by meal quantity. Never choose a mandatory option for the customer. Never use for price inquiries.', inputSchema: { type: 'object', properties: { version: cartVersion, productRef: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 99 }, unitPrice: { type: 'number', minimum: 0 }, note: { type: 'string', maxLength: 200 }, selection: selectionInputSchema }, required: ['version', 'productRef', 'quantity', 'unitPrice', 'note', 'selection'], additionalProperties: false } },
+    { name: 'browser_product_get', description: 'For an order naming exact products, call this FIRST with those names; no prior browser_observe or browser_present is needed. Reads complete fresh configurations for 1–10 exact product names in one batch, returns cart.version, without presenting cards or opening a product window. Use browser_present separately when a customer asks to see the items. Copy each configuration.version and option refs; never guess. Read-only.', inputSchema: { type: 'object', properties: { names: { type: 'array', items: { type: 'string', maxLength: 200 }, minItems: 1, maxItems: 10 } }, required: ['names'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_cart_add', description: 'Add the exact observed PB product and quantity. Requires the current cart version and freshly observed unit price. Each call adds ONE configuration and ONE shared per-serving note. Split different notes into separate calls: two meals, one note A and one note B, means quantity=1/note=A then quantity=1/note=B; never quantity=2/note="one A, one B". Use only customer-requested notes without meal-count narration. selection must explicitly contain version, variantRef and choices (use [] for no options); copy the observed configuration version, not cart.version. selection.choices quantities and unitPrice are PER SERVING, including paid options; top-level quantity is the number of meals. Never multiply per-serving options or unitPrice by meal quantity. Never choose a mandatory option for the customer. Never use for price inquiries.', inputSchema: { type: 'object', properties: { version: cartVersion, copySourceRef: { type: 'string' }, productRef: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 99 }, unitPrice: { type: 'number', minimum: 0 }, note: { type: 'string', maxLength: 200 }, selection: selectionInputSchema }, required: ['version', 'productRef', 'quantity', 'unitPrice', 'note', 'selection'], additionalProperties: false } },
     { name: 'browser_cart_quantity', description: 'Set one row quantity, or provide lineRefs (including lineRef) for equivalent split rows with identical product/configuration/unit price. With lineRefs, quantity is the GROUP FINAL TOTAL: native controls retain that total and remove redundant rows after verifying each step. Preserve all other configurations and notes. Requires current cart version and lineRef. Inspect all matching rows and their options. When lineRefs is omitted, for a requested product/configuration total subtract the quantities of matching rows retained by this call; quantity is then the selected row final count, not the entire product total. Native rendered rows must also be distinguishable by name/quantity/unit price; identical visual signatures stop without guessing. Identical product/configuration rows may be adjusted through one row while preserving the others. Different configurations require an unambiguous customer target; never choose the first.', inputSchema: { type: 'object', properties: { version: cartVersion, lineRef: { type: 'string' }, lineRefs: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 2000, uniqueItems: true }, quantity: { type: 'integer', minimum: 1, maximum: 99 } }, required: ['version', 'lineRef', 'quantity'], additionalProperties: false } },
     { name: 'browser_cart_remove', description: 'Remove one exact observed PB cart line, or provide lineRefs including lineRef to remove an entire equivalent group (same product/configuration/unit price), with current version. Each native control effect is verified. Does not clear other lines or submit an order.', inputSchema: { type: 'object', properties: { version: cartVersion, lineRef: { type: 'string' }, lineRefs: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 2000, uniqueItems: true } }, required: ['version', 'lineRef'], additionalProperties: false } },
-    { name: 'browser_cart_replace', description: 'Replace all or part of an observed cart line with an explicitly selected product/configuration. A unique same-price identical configuration compiles to one quantity edit of retainQuantity + quantity, never add/remove; duplicate configuration rows require grouped browser_cart_quantity instead. retainQuantity is the number of original servings to KEEP (default 0; strictly less than original quantity). quantity is the number of NEW servings, not the final combined total. For changing one of three meals to rice use quantity=1, retainQuantity=2 and the rice selection. This tool verifies the new servings before reducing/removing the original row; do not simulate replacement with separate add/remove calls. Requires latest version, original lineRef and replacement productRef/price/quantity.', inputSchema: { type: 'object', properties: { version: cartVersion, lineRef: { type: 'string' }, retainQuantity: { type: 'integer', minimum: 0, maximum: 98 }, productRef: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 99 }, unitPrice: { type: 'number', minimum: 0 }, note: { type: 'string', maxLength: 200 }, selection: selectionInputSchema }, required: ['version', 'lineRef', 'productRef', 'quantity', 'unitPrice', 'note', 'selection'], additionalProperties: false } },
-    { name: 'browser_customer_reset', description: 'Host-only customer lifecycle reset. Discards unsubmitted product/search drafts, preserves merchant cart and login. Not an Agent tool.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
+    { name: 'browser_cart_replace', description: 'Replace all or part of an observed cart line or explicit equivalent lineRefs group with an explicitly selected product/configuration. A unique same-price identical configuration compiles to one quantity edit of retainQuantity + quantity, never add/remove; duplicate configuration rows require grouped browser_cart_quantity instead. retainQuantity is the number of original servings to KEEP (default 0; strictly less than the source group total). quantity is the number of NEW servings, not the final combined total. For changing one of three meals to rice use quantity=1, retainQuantity=2 and the rice selection. This tool verifies the new servings before reducing/removing the original row; do not simulate replacement with separate add/remove calls. Requires latest version, original lineRef and replacement productRef/price/quantity.', inputSchema: { type: 'object', properties: { version: cartVersion, lineRef: { type: 'string' }, lineRefs: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 2000, uniqueItems: true }, retainQuantity: { type: 'integer', minimum: 0, maximum: 197999 }, productRef: { type: 'string' }, quantity: { type: 'integer', minimum: 1, maximum: 99 }, unitPrice: { type: 'number', minimum: 0 }, note: { type: 'string', maxLength: 200 }, selection: selectionInputSchema }, required: ['version', 'lineRef', 'productRef', 'quantity', 'unitPrice', 'note', 'selection'], additionalProperties: false } },
+    { name: 'browser_customer_reset', description: 'Host-only customer lifecycle end. Clears unsubmitted cart rows through the native PB clear button and verifies empty before resetting drafts/search; preserves shared login. Not an Agent tool.', inputSchema: { type: 'object', properties: {}, additionalProperties: false } },
     { name: 'browser_recovery_context', description: 'Host-only fresh browser recovery and retry state. Not an Agent tool.', inputSchema: { type: 'object', properties: {}, additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_observe', description: 'Read actual PB products and prices. purpose=information for menu inquiries; purpose=choose_product to ask which actual product the customer wants when they only say a broad term such as one bento. Set includeDescriptions for ingredients/comparisons. Owned Menu/POS tools are unavailable.', inputSchema: { type: 'object', properties: { includeDescriptions: { type: 'boolean' }, purpose: { type: 'string', enum: ['information', 'choose_product'] } }, required: ['includeDescriptions', 'purpose'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_search', description: 'Type a product query into the real PB search field and read back results. This only filters the visible menu; it does not order anything.', inputSchema: { type: 'object', properties: { query: { type: 'string', maxLength: 200 } }, required: ['query'], additionalProperties: false } },
@@ -107,22 +169,49 @@ export function createPbService() {
       catalogScope: 'Currently rendered search results only; an absent item is not proof the store never sells it.',
       ...(includeDraft ? { search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '' } : {}),
       productDialog: [...document.querySelectorAll('[role="dialog"]')].filter(element => element.getClientRects().length > 0).map(element => ({ name: element.querySelector('h1')?.textContent?.trim(), ...(includeDraft ? { note: element.querySelector<HTMLInputElement>('input[placeholder="商品有特殊需求，請在此備註"]')?.value } : {}) })),
+      page: location.pathname === journey.tablePath ? 'table' : location.pathname === journey.cartPath ? 'cart' : 'menu',
       checkoutAvailable: false,
     }
   }
 
   async function pageProps(suffix: string, signal?: AbortSignal) {
     const url = new URL(suffix, baseUrl)
-    const response = await fetch(url, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) })
+    const menu = url.pathname === journey.menuPath
+    const component = menu ? 'Menu/Show' : 'Order/Create'
+    const fields = ['auth', 'buyer', 'storeHash', 'flowType', 'diningTable', ...(menu ? ['defaultPickUpDate', 'defaultPickUpTime'] : ['order', 'details', 'subtotal'])]
+    const pages = [...document.querySelectorAll('[data-page]')]
+    if (pages.length !== 1)
+      throw new Error('PB 頁面資料尚未就緒，請重新載入後再試。')
+    const { version } = parse(looseObject({ version: nullable(string()) }), JSON.parse(pages[0].getAttribute('data-page')!))
+    // PB already serves Inertia partial reads. Fetch only live facts, not the
+    // large HTML/dev scripts; never merge missing fields with an old DOM/cart.
+    // The document's asset version is a protocol token, not freshness evidence.
+    // https://inertiajs.com/docs/v3/core-concepts/the-protocol
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'Accept': 'text/html, application/xhtml+xml',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-Inertia': 'true',
+        ...(version === null ? {} : { 'X-Inertia-Version': version }),
+        'X-Inertia-Partial-Component': component,
+        'X-Inertia-Partial-Data': fields.join(','),
+      },
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000),
+    })
+    if (response.status === 409)
+      throw new Error('PB 頁面已更新，請重新載入後再試。')
     if (!response.ok || response.url !== url.href)
       throw new Error('PB page is unavailable or requires sign-in.')
-    const html = new DOMParser().parseFromString(await response.text(), 'text/html')
-    const serialized = html.querySelector('[data-page]')?.getAttribute('data-page')
-    if (!serialized)
-      throw new Error('PB page shape changed.')
-    const { props } = JSON.parse(serialized)
-    if (!props.auth?.user)
-      throw new Error('PB requires manual sign-in.')
+    if (response.headers.get('X-Inertia') !== 'true')
+      throw new Error('PB 資料回應格式已變更，請重新載入後再試。')
+    const page = parse(looseObject({ component: literal(component), url: string(), props: looseObject({ storeHash: literal(journey.store), flowType: literal(journey.flow), auth: optional(looseObject({ user: optional(unknown()) })), buyer: optional(looseObject({ type: string() })) }) }), await response.json())
+    if (new URL(page.url, location.origin).href !== url.href)
+      throw new Error('PB 資料與目前店家頁面不符，尚未操作。')
+    assertScope()
+    const { props } = page
+    if (!props.auth?.user && (journey.buyer !== 'guest' || props.buyer?.type !== 'cookie'))
+      throw new Error('PB requires manual sign-in.', { cause: 'sign-in-required' })
     return props
   }
 
@@ -132,7 +221,7 @@ export function createPbService() {
       menu: async () => {
         const props = await pageProps(`menu${location.search}`, signal)
         const pickup = parse(looseObject({ defaultPickUpDate: string(), defaultPickUpTime: string() }), props)
-        const url = vendorRoute('shopping.menu.categories', ['1kgJeql', 'pick_up'])
+        const url = vendorRoute('shopping.menu.categories', [journey.store, journey.flow])
         url.search = new URLSearchParams({ pickUpDate: pickup.defaultPickUpDate, pickUpTime: pickup.defaultPickUpTime }).toString()
         const response = await fetch(url, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) })
         if (!response.ok)
@@ -148,7 +237,7 @@ export function createPbService() {
         return response.json()
       },
       attributes: async (id) => {
-        const response = await fetch(vendorRoute('shopping.getAttrByProduct', ['1kgJeql', 'pick_up', String(id)]), { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) })
+        const response = await fetch(vendorRoute('shopping.getAttrByProduct', [journey.store, journey.flow, String(id)]), { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) })
         if (!response.ok)
           throw new Error('PB 商品規格讀取失敗。')
         return response.json()
@@ -165,7 +254,11 @@ export function createPbService() {
       ? parse(looseObject({ defaultPickUpDate: string(), defaultPickUpTime: string() }), await pageProps(`menu${location.search}`))
       : { defaultPickUpDate: '', defaultPickUpTime: '' }
     const cart = readCartPage(props, { date: pickup.defaultPickUpDate, time: pickup.defaultPickUpTime }, manualRevision)
-    return { ...cart, pickup: { date: cart.context.date, time: cart.context.time } }
+    // Reception preparation reads the old cart before the next table is
+    // selected. Ordering on menu/cart still requires PB's verified table.
+    if (location.pathname !== journey.tablePath && journey.flow === 'internal_use' && !cart.context.tableName)
+      throw new Error('目前尚未核實內用桌號，請先選桌再開始點餐。')
+    return { ...cart, tableName: cart.context.tableName, pickup: { date: cart.context.date, time: cart.context.time } }
   }
 
   function vendorRoute(name: RouteName, parameters: string[]) {
@@ -203,26 +296,40 @@ export function createPbService() {
     localStorage.setItem(blockedKey, writeMarker)
   }
 
-  async function editLine(ref: string, amount: number | undefined, onDispatch: () => void) {
+  async function editLine(ref: string, amount: number | undefined, onDispatch: () => void, equivalentRefs: readonly string[] = []) {
     const controls = currentControls
     const before = await readCart()
     const target = before.lines.find(line => line.ref === ref)
-    if (!controls || !target || !controls.canEdit(before.lines, [ref]))
+    if (!controls || !target || !controls.canEdit(before.lines, equivalentRefs.length ? equivalentRefs : [ref]))
       throw new Error('購物車行無法唯一對應畫面，尚未操作。')
     await controls.edit(before.lines, ref, amount, async () => {
       if (JSON.stringify(await readCart()) !== JSON.stringify(before))
         throw new Error('移動期間購物車已變更，尚未操作。')
     }, async () => {
       const current = await readCart()
-      return amount === undefined ? !current.lines.some(line => line.ref === ref) : current.lines.find(line => line.ref === ref)?.quantity === amount
+      return verifyCartRowEdit(before, current, ref, amount ?? 0, equivalentRefs)
     }, () => {
       beginWrite()
       onDispatch()
-    })
+    }, equivalentRefs)
   }
 
   const cartOperations = createCartOperations({
     read: readCart,
+    clear: async (before, onDispatch) => {
+      if (!currentControls)
+        throw new Error('缺少目前購物車畫面，尚未清空。')
+      await currentControls.clearCart(async () => {
+        if (JSON.stringify(await readCart()) !== JSON.stringify(before))
+          throw new Error('移動期間購物車已變更，尚未清空。')
+      }, async () => {
+        const after = await readCart()
+        return !after.lines.length && after.subtotal === 0
+      }, () => {
+        beginWrite()
+        onDispatch()
+      })
+    },
     canEdit: (cart, ref) => Boolean(currentControls?.canEdit(cart.lines, [ref])),
     prepare: async ({ productRef, quantity: amount, note, selection }) => {
       const [products, cart] = await Promise.all([readCatalog([productRef]), readCart()])
@@ -256,8 +363,8 @@ export function createPbService() {
         onDispatch()
       }) }
     },
-    setQuantity: (ref, amount, onDispatch) => editLine(ref, amount, onDispatch),
-    remove: (ref, onDispatch) => editLine(ref, undefined, onDispatch),
+    setQuantity: (ref, amount, onDispatch, equivalentRefs) => editLine(ref, amount, onDispatch, equivalentRefs),
+    remove: (ref, onDispatch, equivalentRefs) => editLine(ref, undefined, onDispatch, equivalentRefs),
   })
 
   /** Reads live site state without navigation; account fields never leave this document. */
@@ -272,8 +379,8 @@ export function createPbService() {
     return { source: 'browser', documentId, contextKey, canRetry }
   }
 
-  /** A catalog ref may target a card only when both current identities are unique. */
-  async function presentProducts(refs: readonly string[], press = false) {
+  /** Presents fresh facts only after every selected ref has a unique rendered card. */
+  async function presentProducts(refs: readonly string[], press = false, limit = 10, deferVisual = false) {
     if (activeVisual?.signal.aborted)
       return { products: [], cue: 'cancelled' as const }
     if (!refs.length) {
@@ -284,14 +391,18 @@ export function createPbService() {
     const catalog = await readCatalog(undefined, false, activeVisual?.signal)
     if (revision !== presentation.revision())
       return { products: [], cue: 'cancelled' as const }
-    const products = catalog.filter(product => refs.includes(product.ref)).slice(0, 10)
-    if (products.length !== new Set(refs).size) {
+    const matched = catalog.filter(product => refs.includes(product.ref))
+    if (matched.length !== new Set(refs).size) {
       presentation.cancel()
       // No partial presentation can prove the requested filter. Preserve the
       // fresh identity mapping so Main can repair names or stale refs instead
       // of interpreting an empty cue as no matching products.
       return { products: [], cue: 'cleared' as const, unresolvedProductRefs: refs.filter(ref => !catalog.some(product => product.ref === ref)), availableProducts: catalog.map(product => ({ ref: product.ref, name: product.name })) }
     }
+    // Validate all requested identities before limiting a recommendation. Keep
+    // Main's ranking order; catalog order must not silently choose the batch.
+    const byRef = new Map(matched.map(product => [product.ref, product]))
+    const products = [...new Set(refs)].slice(0, limit).map(ref => byRef.get(ref)!)
     const evidence = products.map(product => ({ ref: product.ref, name: product.name, ...(product.kind === 'product' && product.priceType === 1 ? { price: product.price } : {}) }))
     const cardFor = (name: string) => {
       if (catalog.filter(product => product.name === name).length !== 1)
@@ -299,12 +410,32 @@ export function createPbService() {
       const headings = [...document.querySelectorAll<HTMLElement>('main [role="button"] h4, main button h4')].filter(element => element.textContent?.trim() === name && element.getClientRects().length > 0)
       return headings.length === 1 ? headings[0].closest<HTMLElement>('button, [role="button"]') ?? undefined : undefined
     }
-    const target = cardFor(products[0].name)
-    const related = products.flatMap((product) => {
-      const card = cardFor(product.name)
-      return card ? [card] : []
+    if (location.pathname !== journey.menuPath || products.some(product => !cardFor(product.name))) {
+      // Catalog reads do not change PB's old search. Reveal through its real
+      // controls, then await every selected card, including later comparison
+      // subjects. Showing just the first card cannot prove a synchronized batch.
+      if (!currentControls)
+        throw new Error('目前無法同步菜單畫面，請確認後再試。')
+      await currentControls.search('', () => products.every(product => Boolean(cardFor(product.name))))
+    }
+    if (activeVisual?.signal.aborted)
+      return { products: [], cue: 'cancelled' as const }
+    if (deferVisual)
+      return { products: evidence, cue: 'prepared' as const }
+    // Each spoken dish owns its own label, scroll and frame. Passing all names
+    // to the first card makes off-screen recommendations appear unpresented.
+    return presentation.introduce(async () => {
+      let durationMs = 0
+      for (let index = 0; index < evidence.length; index++) {
+        const shown = await presentation.show([evidence[index]], cardFor(products[index].name), press, [], undefined, evidence.length > 1 ? 1000 : 0)
+        durationMs += shown.durationMs ?? 0
+        if (shown.cue === 'target-unavailable')
+          throw new Error('餐點資料已查到，但目前無法同步顯示要介紹的品項；請確認畫面後再繼續。')
+        if (shown.cue !== 'shown' || activeVisual?.signal.aborted)
+          return { products: [], cue: 'cancelled' as const }
+      }
+      return { products: evidence, cue: 'shown' as const, durationMs }
     })
-    return presentation.show(evidence, target, press, related)
   }
 
   async function execute(name: string, input: Record<string, unknown>, operationId: string, admittedControlRevision: number) {
@@ -313,6 +444,16 @@ export function createPbService() {
     if (admittedControlRevision !== controlRevision)
       controller.abort()
     const operation = createOperation({ documentId, operationId, signal: controller.signal, follow: async (target, label, dispatch, prepare) => {
+      if (name === 'browser_customer_reset') {
+        invoiceInput.reset()
+        checkout.reset()
+        // Reception maintenance runs behind a loading cover. Skip illustrative
+        // travel/dwell only; dispatch still performs all ownership, visibility,
+        // hit-target and fresh-cart checks, then verifies the actual effect.
+        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
+        await dispatch()
+        return true
+      }
       if (activeVisual !== controller)
         activeVisual?.abort()
       activeVisual = controller
@@ -323,7 +464,9 @@ export function createPbService() {
     currentControls = controls
 
     try {
-      const result = await executeAction()
+      const result = name === 'browser_customer_reset'
+        ? await presentation.cover(executeAction)
+        : await executeAction()
       return { ...result, execution: operation.snapshot() }
     }
     catch (error) {
@@ -332,6 +475,11 @@ export function createPbService() {
       // customer operation. It supplies no product facts or write evidence.
       if (name === 'browser_present' && controller.signal.aborted)
         return { ok: true, source: 'browser', presentation: { products: [], cue: 'cancelled' }, dataOnly: true, execution }
+      // Passive card framing cannot change a cart. An unavailable target is
+      // a known display failure, even when no control step was needed; do not
+      // turn it into a transport failure or an unknown merchant operation.
+      if (name === 'browser_present')
+        return { ok: false, source: 'browser', status: 'rejected', effect: 'none', execution, error: errorMessageFrom(error), customerMessage: '餐點資料已查到，但暫時無法在畫面標示；可以繼續點餐。' }
       if (!execution.steps.length)
         throw error
       const uncertain = execution.steps.some(step => step.state === 'unknown')
@@ -347,30 +495,120 @@ export function createPbService() {
         assertScope()
       }
       catch (error) { return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: errorMessageFrom(error) ?? '請返回點餐菜單。' } }
+      if (location.pathname === journey.tablePath) {
+        if (name === 'browser_recovery_context')
+          return recoveryContext()
+        const tableChoices = await tablePicker!.choices()
+        const tap = async (target: HTMLElement, label: string, press: () => void) => {
+          // Restart keeps customer controls covered. Only this Host-only entry
+          // skips the illustrative hand; the table picker still verifies the
+          // actual current selection and presses PB's real Start button once.
+          if (name === 'browser_start_ordering' && input.forReset === true) {
+            controller.signal.throwIfAborted()
+            press()
+            return
+          }
+          let dispatched = false
+          const result = await presentation.show([], target, true, [], { label, dispatch: async (onPress) => {
+            controller.signal.throwIfAborted()
+            onPress()
+            press()
+            dispatched = true
+          } })
+          // PB may navigate immediately after Start and retire its hand. The
+          // menu-ready check owns completion after a real click was dispatched.
+          if (!dispatched && result.cue !== 'shown')
+            throw new Error('桌號選擇已中止，請再告訴我您的桌號或選擇櫃台自取。')
+        }
+
+        if (name === 'browser_start_ordering') {
+          const selectedTable = await tablePicker!.start(parse(strictObject({ name: text, forReset: optional(boolean()) }), input).name, controller.signal, tap)
+          return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable, customerMessage: '正在準備菜單。' }
+        }
+        const selectedTable = name === 'browser_table_select' ? await tablePicker!.choose(parse(strictObject({ name: text }), input).name, controller.signal, tap) : tablePicker!.selection()
+        // Only the Host's preparation/review/reset requests may inspect a
+        // previous cart before admission. Ordinary table context stays free
+        // of prior customer data; a table page alone never proves emptiness.
+        const admission = name === 'browser_cart_get' && input.forAdmission === true
+          ? { cart: await cartOperations.observe() }
+          : {}
+        return { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」，或點畫面的開始點餐按鈕。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
+      }
+      if (name === 'browser_table_select' || name === 'browser_start_ordering')
+        return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前不在選桌頁，尚未更換桌號。' }
+      if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_set_note', 'browser_return_menu'].includes(name))
+        invoiceInput.leave()
       let customerMessage: string | undefined
       let includeDescriptions = true
       let purpose: 'information' | 'choose_product' = 'information'
       let productCue: Awaited<ReturnType<typeof presentProducts>> | undefined
       if (name === 'browser_present') {
-        const { productRefs } = parse(strictObject({ productRefs: pipe(array(text), maxLength(10)) }), input)
-        const selected = await presentProducts(productRefs)
+        const { productRefs, mode, deferVisual } = parse(browserPresentationInputSchema, input)
+        const limit = mode === 'information' ? 10 : browserRecommendationLimit
+        if (mode === 'information' && new Set(productRefs).size > limit)
+          return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, explanation: '明確資訊查詢每次最多呈現 10 項。請保留顧客原本查詢範圍，分批查證與呈現，不把前 10 項當成完整答案。這次尚未呈現任何品項。' }
+        const selected = await presentProducts(productRefs, false, limit, deferVisual)
         if ('unresolvedProductRefs' in selected)
           return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, presentation: { products: [], cue: selected.cue }, unresolvedProductRefs: selected.unresolvedProductRefs, products: selected.availableProducts, explanation: 'productRefs 必須複製當前 products 的 ref 欄位，不能填商品名稱。這次尚未呈現任何餐點，也未變更購物車；不是查無商品。請保留顧客完整篩選條件，依這份新鮮對照使用 ref 重新呼叫 browser_present。' }
-        return { ok: true, source: 'browser', presentation: selected, ...(selected.products.length ? { customerMessage: describeProducts(selected.products) } : { dataOnly: true }) }
+        return { ok: true, source: 'browser', presentation: selected, mode, presentationLimit: limit, selectionTruncated: selected.products.length < new Set(productRefs).size, ...(selected.products.length ? { customerMessage: describeProducts(selected.products) } : { dataOnly: true }) }
+      }
+      if (name === 'browser_close_product') {
+        parse(strictObject({}), input)
+        await controls.close()
+        return { ok: true, source: 'browser', status: 'verified', effect: 'none', customerMessage: '已取消這次選餐，購物車內容保持不變。' }
+      }
+      if (name === 'browser_return_menu') {
+        parse(strictObject({}), input)
+        const before = await readCart()
+        await controls.close()
+        await controls.navigate(journey.menuPath)
+        const catalog = await readCatalog(undefined, false)
+        await controls.search('', () => catalog.every(product => observe().products.some(visible => visible.name === product.name)))
+        presentation.cancel()
+        const after = await readCart()
+        if (JSON.stringify(before) !== JSON.stringify(after))
+          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '已返回菜單，但購物車內容有變動，請先重新核對。' }
+        return { ok: true, source: 'browser', status: 'verified', effect: 'none', page: 'menu', cart: await cartOperations.observe(), customerMessage: '已清除搜尋，回到完整菜單。想點哪道餐點？也可以請我推薦。' }
       }
       if (name === 'browser_cart_get' || name === 'browser_cart_review') {
         let includeCatalog = false
         if (name === 'browser_cart_get')
-          includeCatalog = parse(strictObject({ includeCatalog: boolean() }), input).includeCatalog
+          includeCatalog = parse(strictObject({ includeCatalog: boolean(), forAdmission: optional(boolean()) }), input).includeCatalog
         else
           parse(strictObject({}), input)
         const [products, observed] = await Promise.all([includeCatalog ? readCatalog() : undefined, cartOperations.observe()])
         let cart = observed
         if (name === 'browser_cart_review' && cart.lines.length) {
-          await controls.navigate('/order/store/1kgJeql/pick_up/orders/create')
+          await controls.navigate(journey.cartPath)
           cart = await cartOperations.observe()
+          await checkout.reveal(controls)
         }
-        return { ok: true, source: 'browser', cart, ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元，尚未送出訂單。` : '購物車目前沒有餐點。' }) }
+        const productDialog = observe().productDialog.flatMap(dialog => dialog.name ? [{ name: dialog.name }] : [])
+        const checkoutState = checkout.read()
+        return { ok: true, source: 'browser', menuReady: location.pathname === journey.menuPath && observe().products.length > 0, itemSelectionOpen: productDialog.length > 0, productDialog, search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '', page: location.pathname === journey.cartPath ? 'cart' : 'menu', cart, ...(checkoutState ? { checkout: checkoutState } : {}), ...(products ? { products, dataOnly: true } : { customerMessage: cart.lines.length ? `目前購物車：${describeCartLines(cart.lines)}。小計 ${cart.subtotal} 元。` : '購物車目前沒有餐點。' }) }
+      }
+      else if (name === 'browser_checkout_prepare' || name === 'browser_invoice_select' || name === 'browser_notification_phone' || name === 'browser_order_submit') {
+        if (localStorage.getItem(blockedKey))
+          return { ok: false, source: 'browser', status: 'unknown', effect: 'none', customerMessage: '先前操作仍在確認，請先查看目前訂單畫面，避免重複送出。' }
+        if (name === 'browser_order_submit') {
+          const { confirmationToken } = parse(strictObject({ confirmationToken: text }), input)
+          await checkout.submit(confirmationToken, controls)
+          return { ok: true, source: 'browser', code: 'order-submission-starting', effect: 'pending', confirmationToken, customerMessage: '已按下送出訂單，請依畫面確認訂單結果及後續付款步驟。' }
+        }
+        await controls.navigate(journey.cartPath)
+        await checkout.reveal(controls)
+        let state
+        if (name === 'browser_invoice_select') {
+          state = await checkout.choose(parse(strictObject({ method: pbInvoiceMethodSchema }), input).method, controls)
+        }
+        else if (name === 'browser_notification_phone') {
+          state = await checkout.phone(parse(strictObject({ phone: text }), input).phone, controls)
+        }
+        else {
+          parse(strictObject({}), input)
+          state = await checkout.prepare()
+        }
+        return { ok: true, source: 'browser', page: 'cart', dataOnly: true, cart: await cartOperations.observe(), checkout: state }
       }
       else if (name === 'browser_product_get') {
         const { names } = parse(strictObject({ names: pipe(array(text), minLength(1), maxLength(10)) }), input)
@@ -386,15 +624,15 @@ export function createPbService() {
         const products = fresh.filter(product => references.includes(product.ref))
         if (products.length !== references.length || products.some(product => !names.includes(product.name)))
           throw new Error('讀取期間菜單已變更，請重新確認商品。')
-        return { ok: true, source: 'browser', dataOnly: true, products, cart: await cartOperations.observe(), presentation: await presentProducts(references) }
+        return { ok: true, source: 'browser', dataOnly: true, products, cart: await cartOperations.observe() }
       }
       else if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(name)) {
         if (localStorage.getItem(blockedKey))
           return { ok: false, source: 'browser', status: 'unknown', customerMessage: '先前購物車操作的結果尚未確認，請先確認購物車；已暫停新的代操作。' }
         const fields = name === 'browser_cart_replace'
-          ? parse(strictObject({ version: text, lineRef: text, retainQuantity: optional(pipe(number(), integer(), minValue(0), maxValue(98))), productRef: text, quantity, unitPrice: pipe(number(), minValue(0)), note: text, selection: selectionSchema }), input)
+          ? parse(strictObject({ version: text, lineRef: text, lineRefs: optional(pipe(array(text), minLength(1), maxLength(2_000))), retainQuantity: optional(pipe(number(), integer(), minValue(0), maxValue(197999))), productRef: text, quantity, unitPrice: pipe(number(), minValue(0)), note: text, selection: selectionSchema }), input)
           : name === 'browser_cart_add'
-            ? parse(strictObject({ version: text, productRef: text, quantity, unitPrice: pipe(number(), minValue(0)), note: text, selection: selectionSchema }), input)
+            ? parse(strictObject({ version: text, copySourceRef: optional(text), productRef: text, quantity, unitPrice: pipe(number(), minValue(0)), note: text, selection: selectionSchema }), input)
             : name === 'browser_cart_quantity'
               ? parse(strictObject({ version: text, lineRef: text, lineRefs: optional(pipe(array(text), minLength(1), maxLength(2_000))), quantity }), input)
               : parse(strictObject({ version: text, lineRef: text, lineRefs: optional(pipe(array(text), minLength(1), maxLength(2_000))) }), input)
@@ -414,7 +652,7 @@ export function createPbService() {
         // replaces this world, the new document must retain the recovery block.
           let displayUpdated = false
           try {
-            await controls.navigate('/order/store/1kgJeql/pick_up/menu')
+            await controls.navigate(journey.menuPath)
             await controls.ready(() => {
               const totals = [...document.querySelectorAll('span.text-xl.font-bold.ms-2')]
               return Boolean(document.querySelector('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')) && (result.cart!.subtotal === 0 && !result.cart!.lines.length ? totals.length === 0 : totals.length === 1 && Number(totals[0].textContent?.replace(/[^\d.]/g, '')) === result.cart!.subtotal)
@@ -442,22 +680,29 @@ export function createPbService() {
         parse(strictObject({}), input)
         if (localStorage.getItem(blockedKey) || !cartOperations.canRecover() || [...(active?.operations.entries() ?? [])].some(([id, operation]) => id !== operationId && operation.status !== 'settled'))
           throw new Error('先前操作尚未確認，請先由工作人員查看購物車。')
-        const before = await readCart()
-        // Only PB's product draft may be closed. Never click a generic confirmation
-        // or navigate/reload: that could change the active shared-account order.
+        const cleared = await cartOperations.clear()
+        if (!cleared.ok)
+          return { ...cleared, source: 'browser' }
+        // Clear is verified independently from returning to the menu. If later
+        // navigation fails, an empty-cart retry will not click clear a second time.
+        localStorage.removeItem(blockedKey)
+        writeMarker = undefined
+        // Only PB's product draft may be closed; generic confirmations and
+        // order submission controls never belong to the customer-reset flow.
         // PB puts role=dialog on el-overlay-dialog, outside .menu-dialog.
         // Identify the product by its observed note field or inner product class.
         const drafts = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].filter(element => element.getClientRects().length > 0 && (element.querySelector('.menu-dialog') || element.querySelector('input[placeholder="商品有特殊需求，請在此備註"]')))
-        await controls.navigate('/order/store/1kgJeql/pick_up/menu')
+        await controls.navigate(journey.menuPath)
         await controls.close()
         await controls.search('')
         const search = document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')!
-        if (drafts.some(dialog => dialog.getClientRects().length > 0) || search.value !== '' || JSON.stringify(await readCart()) !== JSON.stringify(before))
+        const after = await readCart()
+        if (drafts.some(dialog => dialog.getClientRects().length > 0) || search.value !== '' || after.lines.length || after.subtotal !== 0)
           throw new Error('換客期間的商品視窗或購物車尚未確認，請工作人員查看。')
         // Revoke prior cart versions/retry digests without replacing this PB document.
         // The Host then revokes its connection and visitor consent independently.
         manualRevision++
-        return { ok: true, source: 'browser', status: 'customer-reset', cartPreserved: true, documentId }
+        return { ok: true, source: 'browser', status: 'customer-reset', cartCleared: true, documentId }
       }
       else if (name === 'browser_recovery_context') {
         parse(strictObject({}), input)
@@ -478,8 +723,19 @@ export function createPbService() {
       }
       else if (name === 'browser_search') {
         const { query } = parse(strictObject({ query: text }), input)
-        await controls.navigate('/order/store/1kgJeql/pick_up/menu')
-        await controls.search(query)
+        presentation.cancel()
+        if (query.trim()) {
+          await controls.search(query)
+        }
+        else {
+          // Clearing recommendations means the full current menu, not a stale
+          // filtered render whose input happens to have been emptied already.
+          const catalog = await readCatalog(undefined, false)
+          await controls.search('', () => {
+            const visible = observe().products.map(product => product.name)
+            return catalog.every(product => visible.includes(product.name))
+          })
+        }
       }
       else if (name === 'browser_open_product') {
         const { name: productName } = parse(strictObject({ name: text }), input)
@@ -498,9 +754,12 @@ export function createPbService() {
         const total = Math.round(selected.unitPrice * 100) * amount / 100
         const options = selected.choices.map((choice) => {
           const option = configuration.groups.flatMap(group => group.choices).find(option => option.ref === choice.ref)!
-          return `${option.name} 每個 ${choice.unitPrice} 元、每份 ${choice.quantity} 個`
-        }).join('、')
-        return { ok: true, source: 'browser', effect: 'none', unitPrice: selected.unitPrice, total, presentation: await presentProducts([productRef]), customerMessage: `${product.name}${options ? `（基本單價 ${configuration.unitPrice} 元；${options}）` : ''}，單份 ${selected.unitPrice} 元，${amount} 份合計 ${total} 元。本次僅查價，尚未加入購物車。` }
+          return { name: option.name, quantity: choice.quantity, unitPrice: option.unitPrice }
+        })
+        // A configured quote must retain the base/add-on prices; otherwise a
+        // correct combined total still cannot answer what the extra costs.
+        const breakdown = options.length ? `基本單價 ${configuration.unitPrice} 元；加購：${options.map(option => `${option.name} 每個 ${option.unitPrice} 元、每份 ${option.quantity} 個`).join('；')}。` : ''
+        return { ok: true, source: 'browser', effect: 'none', unitPrice: selected.unitPrice, total, presentation: await presentProducts([productRef]), customerMessage: `${pbProductName(product.name)} ${amount} 份。${breakdown}單份 ${selected.unitPrice} 元，合計 ${total} 元。本次僅查價，尚未加入購物車。` }
       }
       else if (name === 'browser_quote') {
         const { name: productName, quantity } = parse(strictObject({ name: text, quantity: pipe(number(), integer(), minValue(1), maxValue(99)) }), input)
@@ -509,7 +768,7 @@ export function createPbService() {
         if (!product || product.kind !== 'product' || product.priceType !== 1 || !Number.isFinite(product.price))
           throw new Error('No unambiguous visible price for this exact product; search or clarify first.')
         productCue = await presentProducts([product.ref])
-        customerMessage = `${product.name}單份 ${product.price} 元，${quantity} 份合計 ${Math.round(product.price * 100) * quantity / 100} 元，未含另外加購。`
+        customerMessage = `${describePbMeal({ name: product.name, quantity, unitPrice: product.price, options: [] })}，單份 ${product.price} 元，合計 ${Math.round(product.price * 100) * quantity / 100} 元，未含另外加購。`
       }
       else if (name === 'browser_set_note') {
         const { note } = parse(strictObject({ note: text }), input)
@@ -524,18 +783,26 @@ export function createPbService() {
         const products = await readCatalog()
         snapshot.products = products.map(product => ({ ref: product.ref, name: product.name, price: product.kind === 'product' && product.priceType === 1 ? product.price : undefined, details: snapshot.products.find(visible => visible.name === product.name)?.details ?? '' }))
         if (purpose === 'choose_product')
-          productCue = await presentProducts(products.slice(0, 10).map(product => product.ref))
+          productCue = await presentProducts(products.slice(0, browserRecommendationLimit).map(product => product.ref))
         snapshot.catalogScope = 'Fresh PB product lists for the current pickup time; product groups and required variants need separate configuration.'
+        if (purpose === 'choose_product') {
+          snapshot.products = snapshot.products.slice(0, browserRecommendationLimit)
+          snapshot.catalogScope = 'A bounded spoken choice batch from the current pickup catalog; this is not a vendor website page or the entire menu.'
+        }
       }
       if (!includeDescriptions)
         snapshot.products = snapshot.products.map(product => ({ ...product, details: '' }))
       if ((name === 'browser_observe' && purpose === 'choose_product') || name === 'browser_search') {
         customerMessage = snapshot.products.length
           ? describeProducts(snapshot.products)
-          : '目前搜尋結果沒有符合的餐點，請問您指的是哪一道？'
+          : '目前搜尋沒有找到這道餐點。可以換一道餐點，或說「回到菜單」看全部餐點。'
         if (purpose === 'choose_product' && snapshot.products.length)
-          customerMessage = `請問您要${snapshot.products.map(product => product.name).join('、')}，哪一項？`
+          customerMessage = `請問您要${snapshot.products.map(product => pbProductName(product.name)).join('、')}，哪一項？`
+        if (name === 'browser_search' && typeof input.query === 'string' && !input.query.trim())
+          customerMessage = '已清除搜尋，回到目前完整菜單。您可以看看其他餐點，或告訴我想找什麼。'
       }
+      if (name === 'browser_search' && snapshot.products.length === 0)
+        return { ok: true, ...snapshot, status: 'clarification', effect: 'none', search: input.query, customerMessage }
       return { ok: true, ...snapshot, ...(name === 'browser_observe' && purpose === 'information' ? { dataOnly: true } : {}), ...(productCue ? { presentation: productCue } : {}), ...(name === 'browser_search' ? { search: input.query } : {}), ...(customerMessage ? { customerMessage } : {}) }
     }
   }
@@ -551,7 +818,7 @@ export function createPbService() {
     const revision = presentation.revision()
     const admittedControlRevision = controlRevision
     if (request.name === 'browser_present') {
-      const { productRefs } = parse(strictObject({ productRefs: pipe(array(text), maxLength(10)) }), request.input)
+      const { productRefs } = parse(browserPresentationInputSchema, request.input)
       if (!productRefs.length) {
         // Explicit takeover/reset cancels the visual owner immediately. An
         // accepted cart dispatch still settles through its verification owner.
@@ -616,9 +883,16 @@ export function createPbService() {
         throw new Error('Prototype operation limit reached; stop this experiment.')
       // Cart writes classify failures inside their coordinator after dispatch.
       // Exceptions here are argument/preparation failures before any cart write.
-      const result = enqueue(request, active).catch(error => ['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(request.name) && isValiError(error)
-        ? { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, error: errorMessageFrom(error) ?? 'PB arguments were rejected.', explanation: '工具參數未符合 schema，尚未派送購物車寫入。請修正參數：version 使用最新 cart.version，selection.version 使用所選 product.configurations 的 version；不得省略規格版本。只修正本輪原需求，不改選商品或規格。' }
-        : { ok: false, source: 'browser', error: errorMessageFrom(error) ?? 'PB operation was rejected.' })
+      const result = enqueue(request, active).catch((error) => {
+        // Only pageProps produces this cause after reading the current vendor
+        // auth state. Do not infer login loss from arbitrary English error text
+        // or reclassify a coordinator's unknown/partial cart-write receipt.
+        if (error instanceof Error && error.cause === 'sign-in-required')
+          return { ok: false, source: 'browser', status: 'rejected', effect: 'none', code: 'sign-in-required', error: error.message }
+        if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(request.name) && isValiError(error))
+          return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, error: errorMessageFrom(error) ?? 'PB arguments were rejected.', explanation: '工具參數未符合 schema，尚未派送購物車寫入。請修正參數：version 使用最新 cart.version，selection.version 使用所選 product.configurations 的 version；不得省略規格版本。只修正本輪原需求，不改選商品或規格。' }
+        return { ok: false, source: 'browser', error: errorMessageFrom(error) ?? 'PB operation was rejected.' }
+      })
       operation = { name: request.name, fingerprint, result, status: 'pending' }
       active.operations.set(request.operationId, operation)
       const accepted = operation

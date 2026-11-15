@@ -10,7 +10,8 @@ function travelDuration(distance: number) {
 
 /**
  * Owns one visual cue in the vendor document. It never clicks, fills or writes.
- * Trusted input/navigation revoke visual work; already dispatched cart work is
+ * Trusted input revokes operation cues; introductions temporarily lock input.
+ * Navigation revokes visual work; already dispatched cart work is
  * owned by the cart coordinator and must still settle independently.
  */
 export function createPresentation() {
@@ -18,6 +19,10 @@ export function createPresentation() {
   let active: AbortController | undefined
   let root: HTMLElement | undefined
   let currentHand: HTMLElement | undefined
+  // Reception maintenance spans SPA navigation; ordinary cue cancellation must
+  // not expose the intermediate cart. Its caller owns cleanup in finally.
+  let maintenance: HTMLElement | undefined
+  let introduction: symbol | undefined
   let position = { x: 32, y: 64 }
   function retire(preserveRoot: boolean) {
     // A new step can supersede a moving cue. Continue from its rendered location,
@@ -36,15 +41,24 @@ export function createPresentation() {
     }
   }
   function cancel() {
+    introduction = undefined
     retire(false)
   }
   const input = (event: Event) => {
-    if (event.isTrusted)
+    if (!event.isTrusted)
+      return
+    if (introduction) {
+      // Keep native controls hit-testable for our scroll/actionability checks.
+      // Capture only real customer input before PB or its takeover handler sees it.
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+    else if (['pointerdown', 'keydown', 'wheel'].includes(event.type)) {
       cancel()
+    }
   }
-  document.addEventListener('pointerdown', input, { capture: true })
-  document.addEventListener('keydown', input, { capture: true })
-  document.addEventListener('wheel', input, { capture: true, passive: true })
+  for (const event of ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'keydown', 'keyup', 'wheel', 'touchstart', 'touchmove', 'touchend'])
+    window.addEventListener(event, input, { capture: true, passive: false })
   document.addEventListener('inertia:start', cancel)
   window.addEventListener('pagehide', cancel)
   document.addEventListener('visibilitychange', () => {
@@ -55,7 +69,58 @@ export function createPresentation() {
   return {
     cancel,
     revision: () => revision,
-    async show(products: ProductPresentation['products'], target?: HTMLElement, press = false, related: HTMLElement[] = [], control?: { label: string, dispatch: (onPress: () => void) => Promise<void>, prepare?: () => Promise<void> }): Promise<ProductPresentation> {
+    isCovered: () => Boolean(maintenance),
+    /** Locks one introduction batch, including movement between dishes; cancel releases it immediately. */
+    async introduce<T>(work: () => Promise<T>): Promise<T> {
+      const owner = Symbol('introduction')
+      introduction = owner
+      try {
+        return await work()
+      }
+      finally {
+        // A cancelled batch may settle after a replacement starts.
+        if (introduction === owner)
+          introduction = undefined
+      }
+    },
+    /** Masks fast lifecycle controls while leaving native actionability checks intact. */
+    async cover<T>(work: () => Promise<T>): Promise<T> {
+      cancel()
+      const container = document.createElement('div')
+      container.dataset.webnaviorMaintenance = 'true'
+      container.setAttribute('aria-hidden', 'true')
+      container.style.cssText = 'position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:rgb(248,250,252);display:grid;place-items:center;'
+      const shadow = container.attachShadow({ mode: 'closed' })
+      const style = document.createElement('style')
+      style.textContent = '.spinner{width:48px;height:48px;border:5px solid #d8e6e7;border-top-color:#287a7c;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spinner{animation:none}}'
+      const spinner = document.createElement('div')
+      spinner.className = 'spinner'
+      shadow.append(style, spinner)
+      maintenance = container
+      document.documentElement.append(container)
+      // The cover is pointer-transparent so our hit tests still see PB's real
+      // controls/overlays. Capture trusted input instead: customers must not
+      // unknowingly click a covered cart, while programmatic native clicks run.
+      const blockInput = (event: Event) => {
+        if (event.isTrusted) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+        }
+      }
+      const events = ['pointerdown', 'click', 'keydown', 'wheel']
+      for (const event of events)
+        document.addEventListener(event, blockInput, { capture: true, passive: false })
+      try {
+        return await work()
+      }
+      finally {
+        for (const event of events)
+          document.removeEventListener(event, blockInput, { capture: true })
+        container.remove()
+        maintenance = undefined
+      }
+    },
+    async show(products: ProductPresentation['products'], target?: HTMLElement, press = false, related: HTMLElement[] = [], control?: { label: string, dispatch: (onPress: () => void) => Promise<void>, prepare?: () => Promise<void> }, holdMs = 0): Promise<ProductPresentation> {
       const startedAt = performance.now()
       const previous = root
       retire(true)
@@ -90,6 +155,7 @@ export function createPresentation() {
       const container = document.createElement('div')
       container.dataset.webnaviorPresentation = 'true'
       container.dataset.mode = control ? 'operation' : 'presentation'
+      container.dataset.productNames = JSON.stringify(products.map(product => product.name))
       container.dataset.phase = 'moving'
       container.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;'
       const shadow = container.attachShadow({ mode: 'closed' })
@@ -143,7 +209,14 @@ export function createPresentation() {
         layout.disconnect()
       }, { once: true })
       const before = target.getBoundingClientRect()
-      const hit = document.elementFromPoint(Math.max(0, Math.min(innerWidth - 1, before.left + before.width / 2)), Math.max(0, Math.min(innerHeight - 1, before.top + before.height / 2)))
+      const x = Math.max(0, Math.min(innerWidth - 1, before.left + before.width / 2))
+      const y = Math.max(0, Math.min(innerHeight - 1, before.top + before.height / 2))
+      let hit = document.elementFromPoint(x, y)
+      const targetRoot = target.getRootNode()
+      // The large table buttons live in our shadow root. A hit on their host
+      // is not an overlay; resolve inside it before deciding to scroll again.
+      if (targetRoot instanceof ShadowRoot && hit === targetRoot.host)
+        hit = targetRoot.elementFromPoint(x, y)
       // A sticky header can cover an otherwise viewport-visible control.
       // Center it before actionability checks; unknown overlays still block.
       if (before.top < 0 || before.bottom > innerHeight || before.left < 0 || before.right > innerWidth || !hit || !target.contains(hit)) {
@@ -170,10 +243,13 @@ export function createPresentation() {
         let stable = 0
         for (let elapsed = 0; elapsed < 1200 && !signal.aborted; elapsed += 60) {
           await wait(60)
-          const top = target.getBoundingClientRect().top
+          const bounds = target.getBoundingClientRect()
+          const top = bounds.top
           stable = Math.abs(top - last) < 0.5 ? stable + 1 : 0
           last = top
-          if (stable >= 2)
+          // Smooth scrolling or an asynchronous layout may not have started
+          // yet. A stationary offscreen target is not a completed arrival.
+          if (stable >= 2 && bounds.bottom > 0 && bounds.top < innerHeight)
             break
         }
         gesture.cancel()
@@ -213,6 +289,11 @@ export function createPresentation() {
           release = wait(reduced ? 0 : pace.pressMs).then(() => {
             hand.style.transform = ''
             container.dataset.phase = 'waiting'
+            // A dispatched tap has finished visually even if native readback
+            // is pending. Hide its frame/hand without aborting verification or
+            // changing the operation's ownership revision. Discovery cues stay.
+            if (control)
+              container.hidden = true
           })
         }
         if (!signal.aborted) {
@@ -232,6 +313,8 @@ export function createPresentation() {
           await release
         }
       }
+      if (!press && holdMs > 0)
+        await wait(holdMs)
       container.dataset.phase = 'settled'
       // A visible frame expires independently; it is never a durable target.
       if (!signal.aborted) {

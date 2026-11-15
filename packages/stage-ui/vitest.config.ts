@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { cwd } from 'node:process'
+import { cwd, env } from 'node:process'
 
 import Vue from '@vitejs/plugin-vue'
 import Info from 'unplugin-info/vite'
@@ -42,7 +42,7 @@ export default defineConfig(({ mode }) => {
               // Cross-origin fixtures swap localhost and 127.0.0.1; avoid an
               // IPv6-only localhost listener refusing their IPv4 requests.
               api: { host: '127.0.0.1' },
-              provider: playwright(),
+              provider: playwright({ launchOptions: { channel: env.VITEST_BROWSER_CHANNEL } }),
               instances: [
                 { browser: 'chromium' },
               ],

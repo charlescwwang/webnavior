@@ -3,6 +3,26 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createControls } from './pbControls'
 import { createOperation } from './pbOperation'
 
+// Report: this chat, Nov14; manual PB additions can create identical rows.
+it('edits indistinguishable rows only as an explicitly admitted equivalent group', async () => {
+  history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+  document.body.innerHTML = `<main class="order-create">${['a', 'b'].map(id => `<div class="produce-item" data-row="${id}"><h3>水餃 <span>$80</span></h3><div class="product-attr"><div><div class="ml-4"><span>水餃X2</span></div></div><div class="ml-4"></div></div><input type="number" value="1"><button class="is-circle">刪除</button></div>`).join('')}</main>`
+  for (const button of Array.from(document.querySelectorAll('button')))
+    button.addEventListener('click', () => button.closest('.produce-item')!.remove())
+  const lines = ['a', 'b'].map(ref => ({ ref, productRef: 'dumplings', name: '水餃', quantity: 1, unitPrice: 80, configuration: 'extra-two', options: [{ name: '水餃', quantity: 2 }], note: '' }))
+  const controller = new AbortController()
+  const operation = createOperation({ documentId: 'equivalent', operationId: 'remove', signal: controller.signal, follow: async (_target, _label, dispatch) => {
+    await dispatch()
+    return true
+  } })
+  const controls = createControls(operation, controller.signal)
+  expect(controls.canEdit(lines, ['a'])).toBe(false)
+  expect(controls.canEdit(lines, ['a', 'b'])).toBe(true)
+  expect(controls.canEdit([lines[0], { ...lines[1], configuration: 'another' }], ['a', 'b'])).toBe(false)
+  await controls.edit(lines, 'b', undefined, async () => {}, async () => document.querySelectorAll('.produce-item').length === 1, () => {}, ['a', 'b'])
+  expect(document.querySelectorAll('.produce-item').length).toBe(1)
+})
+
 const initialUrl = location.href
 afterEach(() => {
   history.replaceState({}, '', initialUrl)
@@ -32,6 +52,77 @@ function setup() {
   const selection = { version: 'today', variantRef: '', choices: [{ ref: 'a-1', quantity: 1 }] }
   return { controls, operation, controller, configuration, selection }
 }
+
+// Report: this chat, Nov12; cart 加點 navigates, while 新增/＋ changes servings.
+it('uses the guest journey 加點 link without pressing quantity controls or clearing search', async () => {
+  history.replaceState({}, '', '/order/store/1kAMNok/internal_use/orders/create')
+  document.body.innerHTML = '<main class="order-create"><button id="plus">新增</button><a href="/order/store/1kAMNok/internal_use/menu">加點</a></main>'
+  const plus = vi.fn()
+  document.querySelector('#plus')!.addEventListener('click', plus)
+  document.querySelector('a')!.addEventListener('click', (event) => {
+    event.preventDefault()
+    history.pushState({}, '', '/order/store/1kAMNok/internal_use/menu')
+    document.body.innerHTML = '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐" value="雞腿">'
+  })
+  const controller = new AbortController()
+  const operation = createOperation({ documentId: 'guest', operationId: 'return', signal: controller.signal, follow: async (_target, _label, dispatch) => {
+    await dispatch()
+    return true
+  } })
+  const controls = createControls(operation, controller.signal)
+  await controls.navigate('/order/store/1kAMNok/internal_use/menu')
+  expect(plus).not.toHaveBeenCalled()
+  expect(document.querySelector<HTMLInputElement>('input')!.value).toBe('雞腿')
+  expect(operation.snapshot().steps).toMatchObject([{ action: 'navigate', effect: 'navigation', state: 'completed' }])
+  await expect(controls.navigate('/order/store/other/internal_use/menu')).rejects.toThrow('approved journey')
+})
+
+// Report: this chat, Nov11; PB cart's native 清空 must be used at reception end.
+it.each([false, true])('clears only the native cart button after fresh preflight (changed=%s)', async (changed) => {
+  const { controls, operation } = setup()
+  history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+  document.body.innerHTML = '<button id="unrelated">清空</button><main class="order-create"><button id="clear-cart">清空</button><div class="produce-item">原餐</div></main>'
+  const unrelated = vi.fn()
+  document.querySelector('#unrelated')!.addEventListener('click', unrelated)
+  const cleared = vi.fn(() => document.querySelector('.produce-item')!.remove())
+  document.querySelector('#clear-cart')!.addEventListener('click', cleared)
+  const accepted = vi.fn()
+  const run = controls.clearCart(async () => {
+    if (changed)
+      throw new Error('cart changed')
+  }, async () => !document.querySelector('.produce-item'), accepted)
+  if (changed) {
+    await expect(run).rejects.toThrow('cart changed')
+    expect(cleared).not.toHaveBeenCalled()
+    expect(accepted).not.toHaveBeenCalled()
+  }
+  else {
+    await run
+    expect(cleared).toHaveBeenCalledOnce()
+    expect(accepted).toHaveBeenCalledOnce()
+    expect(operation.snapshot().steps[0]).toMatchObject({ effect: 'cart', state: 'completed', target: { ref: 'cart-clear' } })
+  }
+  expect(unrelated).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov11; a new query could read the previous filter's cards.
+it.each([0, 80])('waits for PB search debounce, loading and its rendered result count (load=%s ms)', async (loadMs) => {
+  const { controls, operation } = setup()
+  document.body.insertAdjacentHTML('afterbegin', '<input placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"><div class="menu-search-meta">共找到 1 項</div>')
+  document.querySelector('input')!.addEventListener('input', () => {
+    setTimeout(() => {
+      document.querySelector('.menu-search-meta')!.textContent = '搜尋中...'
+      setTimeout(() => {
+        document.querySelector('main')!.innerHTML = '<button><h4>雞腿便當</h4></button><button><h4>烤雞腿便當</h4></button>'
+        document.querySelector('.menu-search-meta')!.textContent = '共找到 2 項'
+      }, loadMs)
+    }, 250)
+  })
+  await controls.search('雞腿')
+  expect([...document.querySelectorAll('main h4')].map(heading => heading.textContent)).toEqual(['雞腿便當', '烤雞腿便當'])
+  expect(operation.snapshot().steps[0]?.state).toBe('completed')
+})
+
 it('opens the actual daily item, fills each-serving options, meal quantity and note, then commits exactly once', async () => {
   const { controls, operation, configuration, selection } = setup()
   await controls.prepare('每日新品', 'daily-ref', configuration, selection, 2, '飯少')
@@ -62,7 +153,7 @@ it('does not choose the first same-name option when the vendor duplicates a grou
   await expect(controls.prepare('每日新品', 'daily-ref', configuration, selection, 1, '')).rejects.toThrow('無法確認')
   expect(document.querySelector<HTMLInputElement>('.product-item input')!.value).toBe('0')
 })
-it('visits only the native cart, edits the unique line once and returns through the native menu link', async () => {
+it.each([false, true])('visits the native cart and returns whether the optional store announcement exists (notice=%s)', async (announcement) => {
   const { controls, operation } = setup()
   let amount = 1
   document.body.insertAdjacentHTML('beforeend', '<button id="cart">$10 去結算</button>')
@@ -81,16 +172,18 @@ it('visits only the native cart, edits the unique line once and returns through 
   })
   // Report: this chat, Nov1 live PB; returning to menu reopened the store
   // announcement over the cart footer. It must be dismissed by its real control.
-  const overlay = document.createElement('div')
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:white'
-  overlay.innerHTML = '<button>我知道了，開始點餐</button>'
-  overlay.querySelector('button')!.addEventListener('click', () => overlay.remove())
-  document.body.append(overlay)
+  if (announcement) {
+    const overlay = document.createElement('div')
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:white'
+    overlay.innerHTML = '<button>我知道了，開始點餐</button>'
+    overlay.querySelector('button')!.addEventListener('click', () => overlay.remove())
+    document.body.append(overlay)
+  }
   await controls.edit([{ ref: 'line', name: '每日新品', quantity: 1, unitPrice: 10, productRef: 'daily', configuration: '' }], 'line', 2, async () => {}, async () => amount === 2)
   expect(amount).toBe(2)
   await controls.navigate('/order/store/1kgJeql/pick_up/menu')
   expect(location.pathname.endsWith('/menu')).toBe(true)
-  expect(operation.snapshot().steps.map(step => step.action)).toEqual(['notice', 'navigate', 'quantity', 'navigate'])
+  expect(operation.snapshot().steps.map(step => step.action)).toEqual(announcement ? ['notice', 'navigate', 'quantity', 'navigate'] : ['navigate', 'quantity', 'navigate'])
 })
 
 // Report: docs/plans/2026-10-28-windows-kiosk-electron.md, S04/S09/S12.
