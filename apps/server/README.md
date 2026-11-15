@@ -33,6 +33,32 @@ than requiring historic intent labels. Saved policy overrides must be reviewed
 separately; changing the source default does not migrate persisted prompts.
 
 
+## Order business evidence (staged)
+
+The device-authenticated `/api/kiosk/order-evidence/operations` and
+`/api/kiosk/order-evidence` POST routes register original operation ownership and
+save sanitized JSON with an immutable SHA-256 manifest. The GET route at
+`/api/kiosk/order-evidence/:evidenceId` reads only that device's archive and records
+access. Apply migration `0050_order_evidence_archive` before using these routes.
+Content lives privately under `WEBNAVIOR_KIOSK_ASSET_DIR/order-evidence`; it is
+not a public asset, model context, or merchant acceptance proof.
+
+Collection requires an explicitly enabled Site row in `order_evidence_policies`.
+No Sites are automatically enrolled. The policy/version and optional consent
+reference are captured at operation registration. Research evidence retains ten
+UTC calendar years from its first capture, clamping leap day; retransmission does
+not extend it. Operational visitor expiry and deletion do not cascade to this
+archive. Original registered operations may upload after their visitor closes,
+but cannot reopen visitor access or act on a newer visitor.
+
+This module does not provide the operator enrollment UI, archive deletion,
+backup/restore service, merchant polling, or complete Electron capture integration.
+A local disk plus a retention timestamp is not a ten-year backup guarantee.
+Run the isolated PostgreSQL tests with `ORDER_EVIDENCE_TEST_DATABASE_URL` pointing
+to a dedicated test database; tests use and clean a random schema and temporary
+private directory. They do not substitute for forced-process-crash or Windows
+power-loss acceptance.
+
 Development Kiosk enrollment uses a 30-day HttpOnly, SameSite=Lax device cookie
 (Secure on HTTPS). The development route remains disabled in production, and
 every authenticated request still checks server-side device/credential revocation.
@@ -40,13 +66,52 @@ Visitor/admin sessions and vendor login expiry are separate policies.
 
 OpenAI-compatible Chat Provider profiles expose a response mode: `auto` retains
 the requesting endpoint's behavior, `json` requests a complete response, and
-`sse` verifies streaming support and lets Kiosk display reply deltas. Changing
+`sse` verifies streaming support and receives incremental model output. Changing
 the mode revokes verification; verify/save, then explicitly apply to Kiosk.
 Apply migration `0049_webnavior_chat_response_mode` before running this version.
 JSON-only provider replies still finish the Kiosk event stream with a final
 result. Internal JSON decision calls remain JSON in every mode; partial tool
 arguments are never dispatched. SSE improves progressive presentation, not a
-guarantee of faster model inference. No mode is automatically published.
+guarantee of faster model inference. The actual Kiosk shows a content-free
+`reply-progress` event on the first text/tool output while keeping operation
+drafts out of customer dialogue. It displays the verified final result once;
+this is not token-by-token customer answer presentation. JSON fallback does not
+invent a generation-progress event. No mode is automatically published.
+
+Native OpenAI Main chat profiles use `kind: openai-responses`, separately from
+Chat Completions compatible providers. Model discovery still reads `/models`;
+verification posts to `/responses` with `store: false` and a 2048-token output
+budget that includes reasoning tokens, without forcing model-specific reasoning
+effort settings. Native verification uses the profile’s configured timeout
+(including 60 seconds when selected). Both JSON and SSE verification require
+a completed response with nonempty assistant text; partial, failed, or
+reasoning-only output is not accepted. These profiles preserve `auto`/`json`/`sse`
+and compile `apiFormat: openai-responses` for the router. They are restricted
+to chat and reject the local `enableThinking` switch; no `chat_template_kwargs`
+is sent. Changing protocol or response mode requires verification again before
+applying. The connection kind is a text column, so this addition needs no new
+migration. See the [Responses API reference](https://developers.openai.com/api/reference/resources/responses/methods/create)
+and [streaming event reference](https://developers.openai.com/api/reference/resources/responses/streaming-events).
+
+The native gateway keeps its internal Chat Completions contract and translates
+function calls/results by `call_id`. Opaque native `responses_output` items are
+stored only on the Server's corresponding tool batch and replayed in that task's
+continuation, including encrypted reasoning needed by stateless reasoning
+models. They are neither customer SSE data nor history for a new customer
+request. Native calls use `store:false`; no local template parameters are sent.
+Failed, incomplete, or truncated replies cannot dispatch unfinished tools or
+become a completed Kiosk turn. Neither this adapter nor generation progress adds
+a semantic verification model or an extra model round.
+
+For isolated model comparisons, an upstream may explicitly pin
+`reasoningEffort: 'none'`. The router applies this only to native Responses
+requests, after merging caller parameters; it does not change Chat Completions
+or an unrelated fallback upstream. This is a runtime configuration contract,
+not an administrator profile setting or a new default. Kiosk
+`main_round_metrics` records provider-reported `reasoningTokens` for JSON and SSE
+when available, including zero. Missing usage stays absent rather than being
+reported as zero; use the actual usage to distinguish a verified non-reasoning
+run from a configuration-only claim.
 
 ## How To Use It
 
@@ -452,51 +517,35 @@ processor, rather than being mislabeled as uncertain read-only requests. The
 original read-only boundary still wins, and no finite label consumes a ticket.
 
 PB follow-up admission keeps the exact current customer utterance separate from
-Host-verified original requests and question answers in `storeFacts`. Both purpose
-classification and quantity extraction receive that evidence. The latest-turn
-identity check remains exact; clients must not concatenate prior dialogue into
-`effect.transcript`. A short option answer may complete an existing purchase,
-but an unanswered recommendation is not purchase consent.
+original requests and bound question answers. Clients must not concatenate prior
+dialogue into `effect.transcript`. A short option answer may complete an existing
+purchase, but an unanswered recommendation is not purchase consent.
 
 PB cart-plan admission uses device-authenticated
 `POST /api/kiosk/visitor-sessions/:id/browser-plan`. A proposal must match a
 Server-issued Main tool call (complete arguments/current user entry/read-only
-policy), or a Server-recorded bounded Jev add intent plus its closed literal slot
-compiler. A transaction locks the visitor row, verifies the latest demand, and
-persists one-use consumption before the browser acts. Client interaction metadata
-cannot create Server authority; its schema discards those reserved fields.
-Exact additions compiled by the finite literal path and ordinary explicit single-row
-edits retain plan-only admission. Main-authored additions (including blank notes),
-contextual row references, multi-row totals/groups and existing-configuration replacements also
-receive bounded read-only semantic verification after the one-use claim. It
-receives the fresh read-only cart snapshot (including an explicitly empty cart)
-and this same utterance’s verified completed effects,
-checks the selected configuration and independently extracts the requested count
-scope. Missing cart evidence remains unknown; a proposed action cannot invent
-existing meals. Existing-cart checks use Main to classify the complete request rather than
-letting preservation compete with real additions or replacements. Only a proposed
-quantity set equal to the observed selected count, with current cart evidence and
-no earlier completed effect in that demand, can independently resolve to
-`PRESERVE`. This result authorizes no write: Host obtains a fresh owned cart
-review instead. Other changes retain ordinary purpose/configuration/count checks.
-Existing-cart checks also avoid
-letting a confident finite quantity label redirect a configuration replacement; code subtracts retained rows when the count refers to an entire product or
-configuration. Quantity-only extraction separates selected-row, matching-configuration
-and whole-product scope, using observed scope totals without proposed quantities.
-It does not request editable-note or diagnostic prose fields; configuration consent
-and unique structured counts remain mandatory. An impossible single-row total
-returns the complete grouped-tool argument requirements before any write.
-A new user entry or customer boundary invalidates a delayed
-verification result. Semantic checks have a 30-second per-request cap, bounded
-output, and independent replacement incoming/outgoing meal counts. Option totals for additions and replacements
-follow the separately validated per-serving configuration. Addition extraction
-returns the original complete groups; code subtracts only verified additions with
-the exact Host serving identity and note from this same turn. Opaque serving keys
-and completion counters are excluded from model input; unknown completion cannot
-authorize replay. failures remain non-authorizing.
-`browser_semantic_decision` events record bounded outcomes and duration to distinguish
-model failures from browser execution. A rejected or lost claim cannot authorize replay. Fresh
-browser/cart identity and full-effect readback remain separate requirements.
+policy), or a Server-recorded Jev intent and its deterministic finite-slot
+compiler. The Server uses immutable published aliases for either source. A
+transaction locks the visitor row, verifies the latest demand and persists
+one-use consumption before returning `ALLOW` with `admission: "issued-plan"`.
+Client interaction metadata cannot manufacture this authority. Changed arguments,
+read-only calls, newer customer turns and repeated/lost claims remain refused.
+
+Main and Jev operations are not reclassified by another semantic model after
+selection. `/browser-plan` makes zero additional Main or Jev calls, including
+customizations, notes, contextual references and mixed operations. The Host and
+native browser still check exact current configuration, price, ownership,
+version, targets and merchant readback. An issued plan authorizes an attempt;
+it does not establish merchant success. First-time question understanding remains
+in `/browser-answer`; it is not a second judgment of a selected operation.
+Its optional `decisionSource` selects `main` (also the default) or `system-one`.
+A Main handoff never invokes Jev. An unresolved initial answer is one complete
+choice question, not separate relation/selection decisions; a confident finite
+choice is returned directly. The Host consumes an already selected fast-path
+answer with its original question binding instead of calling this endpoint again.
+The planless `/browser-effect` endpoint returns authenticated diagnostic `410`
+without a model call or write authority. The retired effect-judgment evaluator
+and its duplicate semantic tests have been removed.
 
 Main Agent continuations retain the completed tool exchanges of the current
 customer request, paired by `toolCallId` within that latest user turn. Each result
@@ -672,9 +721,8 @@ PB public business tools are admitted against their issued meal names,
 configuration descriptions and counts, then compiled native effects. Batch
 members consume separate one-use claim keys; other visitor sessions cannot reuse
 them. Finite edits/batches keep their selected operation type, and aliases come
-from the visitor's immutable published service binding. Configured Main writes
-retain the independent semantic checks after claim; public names do not bypass
-those checks. Qualified public information reads can finish without a forced
+from the visitor's immutable published service binding. Configured Main writes retain deterministic argument and current-state checks
+after claim, without another model judgment. Qualified public information reads can finish without a forced
 presentation/write; customer-facing facts still come from verified receipts.
 Successful menu searches continue through a presentation or question tool when
 available. Questions must use `ask_customer_question` so the Host records the
@@ -688,8 +736,8 @@ purchase or turn an information query into an order.
 
 Public PB plan matching also checks per-serving dumpling pieces, explicitly
 copied cart customization, and same-product option patches against their fresh
-source labels. Independent quantity extraction receives original per-serving
-options/notes, keeping preserved content separate from new additions. Opt-in
+source labels. The selected model supplies requested quantities; deterministic
+compilation retains the selected counts and per-serving configuration. Opt-in
 `customizationReplay.test.ts` exercises fixed synthetic cases with real Main/Jev
 via `PB_CUSTOMIZATION_MAIN_URL` / `PB_CUSTOMIZATION_JEV_URL`; it neither reads
 customer history nor submits merchant orders. `PB_CUSTOMIZATION_MAIN_MODEL`
@@ -749,3 +797,24 @@ private table-hold requests require an enrolled device. Configure the Menu with
 this same-origin endpoint so the HttpOnly device cookie keeps its existing
 `/api/kiosk` scope. Catalog queries and continuation capabilities retain their
 own public access policy. The proxy never retries a write after a lost response.
+
+
+The opt-in `src/scripts/cartGoalReplay.ts` compares wording and offered public
+cart tools against a fixed synthetic cart using the selected local PB-test qwen36
+profile, or an explicitly named verified chat profile via `PB_CART_GOAL_PROFILE_ID`.
+It refuses a different database or unsupported connection, writes private
+`/tmp/pb-cart-goal-*.json` traces, and never invokes Jev, merchant HTTP, or browser
+operations. Run from this app with `PB_CART_GOAL_REPLAY=1`; use
+`PB_CART_GOAL_VARIANTS=current` for the baseline and
+`PB_CART_GOAL_REPEATS=3` for bounded repetitions. Native OpenAI profiles use the
+production Responses adapter and opaque tool-round continuation without changing
+the active profile; use `PB_CART_GOAL_MAX_TOKENS=4096` to allow reasoning within
+the bounded output budget. Set a unique `PB_CART_GOAL_REPORT` to preserve earlier
+results. For a non-reasoning native comparison, explicitly set
+`PB_CART_GOAL_REASONING_EFFORT=none`; each native round must report exactly zero
+reasoning tokens or the run fails. Reports retain provider usage per round, so
+an omitted setting is not mistaken for disabled reasoning. This benchmark
+override does not alter the saved profile or the Kiosk runtime.
+The source-of-truth plan records
+variant definitions and results. Synthetic tool loops do not certify live UI,
+streaming, or full-context accuracy; experimental descriptions are not deployed.

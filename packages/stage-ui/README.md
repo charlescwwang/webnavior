@@ -25,15 +25,21 @@ PB. `browser_table_select` selects only; `browser_start_ordering` selects the
 explicitly requested table and presses PB's Start button. A later voice turn may
 reuse the current rendered `selectedTable`, including PB's default, only after a customer Start request. This is context, not purchase consent. Menu entry
 does not establish cart ownership; the new page must read back table/cart.
+Host-only recovery distinguishes `canRetry` from `canReset`. Explicit reset may discard a retired document’s UUID cart marker only through native clear and fresh empty-cart verification. It never repeats the old purchase, unlocks a current uncertain write, or adopts an `order:` submission or `reset:` uncertain-clear marker, including after reload. A failed clear before dispatch retains retry eligibility; an uncertain dispatched clear retains the write barrier. Empty table-entry resets do not require menu navigation.
+
 Host-only `browser_cart_get forAdmission=true` also reads a versioned cart on
 the table page for reception preparation. Ordinary table reads omit that cart.
+A first-time PB guest may receive the exact missing-table Error/403 response
+until Start; only on the table page this returns `cartAdmission: after-table-entry`
+without a cart snapshot. It does not establish emptiness or ownership. The Host
+allows table entry only and retries admission before exposing menu operations.
 For an explicit reception reset with unfinished items, the Host may enter through
 the existing selected-table Start control with `forReset=true`, skipping the hand
 animation while customer controls remain covered; this grants no order submission.
 Failed enhancement leaves the original dropdown available.
 The common service client accepts a correlated `browser_start_ordering`
 menu-entry acknowledgement across a rebind to this same configured PB service.
-It can also settle a private submission dispatch acknowledgement across a result
+It can also settle a private typed submission result across a result
 navigation bound to the exact same operation and reviewed store journey. Neither
 exception restores old descriptors, replays a write or certifies payment.
 Caller cancellation still cancels the entry wait.
@@ -42,9 +48,18 @@ Caller cancellation still cancels the entry wait.
 order notes and website totals. It owns one expiring submission ticket bound to
 the fresh cart, form and manual-interaction revision. Public invoice/phone steps
 do not submit. The private submission control is enabled only for the owned
-loopback fixture; merchant result responses remain unverified. Only that
-fixture's observed order identity and amount can release the matching pending
-write marker. Unknown effects keep it; result pages expose no payment controls.
+loopback fixture; one manual merchant LINE Pay result has been observed, but
+merchant native submission acceptance is not yet verified. Result acceptance
+binds the unique Inertia page's component, store, flow, URL, order hash and
+accepted status. Merchant acceptance is distinct from total consistency: an
+amount mismatch reports `accepted/conflict`, while an exact total with detail
+comparison still unavailable reports `accepted/unavailable`. The displayed
+number is separate from the order hash. Receipts contain no confirmation token.
+Only the enabled fixture releases its matching marker after established-order
+evidence; pending and unknown keep it. Result pages expose no payment controls.
+The staged parser and RPC result do not yet provide an independent observer
+when full navigation destroys the old execute promise; that requires the
+host-owned pre-dispatch intent and durable evidence lifecycle.
 Native navigation calls `beginNavigation()` to revoke tools while retaining the
 entry acknowledgement's wait. "Entering" acknowledges the accepted click, not a
 loaded menu. Loading UI and fresh discovery continue until native readiness.
@@ -55,6 +70,12 @@ reuse the retired document's resolved readiness promise.
 validates scanner text and consumes Enter without submitting. Blur, navigation
 and reception reset revoke input ownership; typing elsewhere retains manual
 takeover protection. It adds no notification-phone or Email filling tool.
+
+Checkout cart edits keep the current cart page; a quantity/removal operation
+must not detour through the menu and recreate invoice/contact fields. Passive
+reply/TTS product cues set `preservePage: true`: they may frame cards already
+available on the menu, but cannot navigate or clear a search. An explicit
+customer-requested product presentation retains its existing reveal behavior.
 
 ## Shared interaction feedback
 
@@ -199,14 +220,19 @@ but unverified clearing retains the same unknown-write barrier as ordinary edits
 This is a lifecycle action, not a model-advertised cart tool. `browser_customer_reset`
 then resets product/search drafts in the same document and returns `cartCleared:true`;
 login remains independent from unfinished order rows. Reception reset uses
-immediate scrolling/dispatch without guided-hand timing, retaining all operation
-checks. `pbPresentation.cover()` owns the opaque loading scope and trusted-input
+immediate scrolling/dispatch without guided-hand timing. Only this private reset
+may run while the Host hides the native view; document ownership, cancellation,
+target actionability and cart verification still apply. Customer operations
+continue to require a visible document. `pbPresentation.cover()` owns the opaque loading scope and trusted-input
 blocking; it survives ordinary cue/navigation cancellation and always cleans up
 when work settles. The hit tests remain pointer-transparent to this cover, so
 other merchant overlays still block dispatch. The Host supplies the localized
 loading announcement; normal customer-facing controls retain their guided pace.
 
 Each control is rechecked for identity, visibility, enabled state and occlusion.
+Menu/cart navigation and clearing wait for their unique rendered controls;
+fresh HTTP data alone does not prove those buttons have appeared. These waits
+do not repeat a click or loosen the final cart preflight.
 Accepted merchant work still settles after cancellation; pre-dispatch takeover
 cannot click. Step receipts carry observation refs, relative ready/dispatch/finish
 times (including first target arrival) and failure reasons. A verified cart result is retained when only return
@@ -219,7 +245,16 @@ cancellation cannot resurrect an older queued cue.
 
 `services/pbPresentation` renders pointer-transparent cues in the same isolated
 PB document. The hand retains its position across short movements, follows the
-executor's actual target and dispatches at its press. It remeasures scrolling and
+executor's actual target and dispatches at its press. Its pointer-transparent
+manual popover occupies the top layer above product dialogs. Quantity changes
+click the native input's scoped plus/minus buttons one step at a time (including
+per-serving extras and cart rows), awaiting each displayed value before the next
+click. Plain numeric controls without a stepper retain native input/change events;
+missing or disabled stepper buttons never fall back to writing their input.
+Cart preflight runs before the first click; accepted effects still settle after
+takeover, and subsequent clicks stop. Live row ownership prevents an intermediate
+count from selecting another identical meal; ambiguous replacements stop.
+It remeasures scrolling and
 cancels on trusted input/navigation/hidden documents. Before a product batch is
 spoken, `pbBrowserService` verifies every selected card. If an old search hides
 any subject it clears the real search, waits for all selected cards and then
@@ -312,3 +347,8 @@ Shared `ChatHistory` offers an optional `after-message` slot with `message` and
 `index`. Kiosk uses it for the originating customer request's visual state;
 ordering/correlation remains the host's responsibility. Other chat hosts retain
 their existing message and scroll behavior.
+
+PB order submission has two native buttons: opening `確認訂單` is a draft action;
+only its `確定` button starts the external dispatch barrier. Cart, form and manual
+revision are rechecked between them. Submission remains enabled only for the
+owned loopback fixture until merchant result acceptance has been verified.

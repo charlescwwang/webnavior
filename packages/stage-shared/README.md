@@ -211,6 +211,8 @@ Offered payment labels are independent of phase-specific allowed operations.
 maximum upload chunk duration and request-byte ceiling. It describes transport,
 not Site VAD segmentation or authorization to execute an utterance.
 
+Browser recovery separates `canRetry` (replay eligibility) from `canReset` (explicit unfinished-cart discard). Pending submissions and uncertain clear markers remain isolated across document reloads; neither flag grants a model permission to reset.
+
 The same subpath exports service-recovery result/progress contracts, read-only
 service-clarification schema, domain-version/question correlation and shared time
 ceilings. `SERVICE_RECOVERY_PROGRESS` start is only provider work notification;

@@ -38,6 +38,11 @@ release. It does not include the pet desktop's windows, widgets or game engine.
   its next placement loads the configured entry even when the new Host reuses
   the same service/revision. An old SPA menu/checkout URL is never adopted as
   the new entry; vendor cookies and unfinished cart data remain intact.
+- Private reception cleanup keeps the hidden website rendering during its Start
+  and reset calls, so PB's outgoing loading mask can finish before target checks.
+  It restores the prior background-throttling setting on success or failure,
+  including overlapping maintenance calls. The native view remains hidden;
+  ordinary customer calls do not change rendering policy or bypass hit tests.
 - Keeps host/device cookies separate from vendor service login partitions.
   Service identity plus origin select the vendor store inside this installation.
   Vendor account-based carts may still be shared upstream; test that separately.
@@ -80,6 +85,18 @@ remote Host UI. Login remains in the same dedicated partition. The cart adapter
 can normalize an identical single-row, same-price replacement to its equivalent
 quantity change; it does not add then delete duplicate meals. Ambiguous groups
 and changed prices remain blocked.
+
+## Windows remote build and launch
+
+For a clean Windows 10/11 machine, use [the Windows bootstrap and remote connection guide](../../scripts/windows/README.md).
+`scripts/windows/kiosk.cmd` provides Setup, Build, Tunnel, Doctor, Start and Smoke.
+It installs verified private Node/Electron runtimes and pinned pnpm, builds the
+native PB bundle plus main/preload, and keeps all model credentials on the remote
+Ubuntu server. Connection settings are in ignored `kiosk.windows.local.json`;
+Windows device enrollment and vendor login belong to its new local profile.
+The SSH default preserves the current loopback origin and forwards the owned test
+site too. Linux clean-dependency build and PowerShell boundary tests are verified;
+Windows installation, hardware and full customer acceptance remain to be run there.
 
 ## Run locally
 
@@ -267,3 +284,19 @@ no native audio SDK or microphone assumption is introduced here.
 
 The plan, remaining confirmation/account policies and Windows acceptance are in
 [`docs/plans/2026-10-28-windows-kiosk-electron.md`](../../docs/plans/2026-10-28-windows-kiosk-electron.md).
+
+
+### Order evidence queue implementation status
+
+`src/main/orderEvidenceSpool.ts` is a tested private filesystem component for
+already registered, sanitized order evidence. It commits file and directory
+flushes before enqueue returns, recovers pending records after restart, isolates
+corrupt records during upload, and removes a record only after an exact durable
+Server ACK. It never submits a merchant order or adopts a newer visitor.
+
+This module is not yet instantiated in the Desktop capture lifecycle. The full
+capture/operation registration/upload pipeline, offline unassociated evidence,
+full-document navigation observation, capacity policy, backups and Windows
+power-loss behavior remain outside the completed runtime scope. See the leading
+implementation status in `docs/plans/2026-10-28-windows-kiosk-electron.md`; unit
+filesystem tests are not whole-system archival acceptance.

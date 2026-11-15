@@ -37,7 +37,7 @@ Ctrl+C。不安裝新套件，沿用此專案已安裝的 Order Menu Vite。不�
   對齊既有執行器。圖示使用 Iconify 的 `ep`（Element Plus）圖庫，存成本機檔案。
 - `.dialog-footer` 中的份數輸入與唯一加入按鈕、原站備註 `input` 的 placeholder。
 - 購物車 `.order-create .produce-item` 的名稱／單價／份數、選項／備註與
-  `button.is-circle` 刪除控制。刪除最後一行仍保留 draft order context，避免原有
+  編輯／刪除兩顆 `button.is-circle` 控制；原生移除使用份數 0，避免混淆兩顆按鈕。刪除最後一行仍保留 draft order context，避免原有
   核對器誤判為別人的購物車。
 - 五種發票選項、原站 radio 值、載具／憑證欄位位於所選 `.el-radio` 之內，讓既有
   scanner adapter 可接管。Enter 不送單；通知手機或 Email 擇一。只做本地格式檢查。
@@ -48,7 +48,7 @@ Ctrl+C。不安裝新套件，沿用此專案已安裝的 Order Menu Vite。不�
 水餃基本每份 8 顆／64 元，可額外加 0–100 顆，每顆 8 元；份數與加顆分開計價。
 原站只有雞腿／排骨兩張商品照片，照片、封面與標誌都已複製到本機。
 
-資料來源為 `vendorCatalog.json`，目前版號 `pb-1kgJeql-2026-11-15-v4`。菜單快照沿用v3；
+資料來源為 `vendorCatalog.json`，目前版號 `pb-1kgJeql-2026-11-15-v5`。菜單快照沿用v3；
 v4修正送出後的草稿生命週期：已送出的訂單保留在orders，不再當作下一位空購物車的
 草稿；新加入餐點才建立新的草稿身份。商家後續API欄位與未驗證範圍見
 [結帳及資料保存規劃](../../docs/plans/2026-10-28-windows-kiosk-electron.md)。此前再核對
@@ -56,10 +56,23 @@ v4修正送出後的草稿生命週期：已送出的訂單保留在orders，不
 畫面看到的 116／128 元不同。以此版快照為準，不在每次載入時跟隨原站更新。
 更新 fixture 時必須更新版號，避免不同菜單版本的測試結果混在一起。
 
-原站付款及完成頁需要先送正式訂單才能查看，本次未送正式訂單，因此這兩個階段
-仍是明確標示的模擬流程。LINE Pay／信用卡可選成功、失敗、取消或結果不明，
-不使用真實登入、卡號、發票驗證、付款 callback、POS 或商家訂單 API。
-不是原站全後端、逐像素還原或所有瀏覽器版本的相容承諾。
+11/15 已用實際商家訂單核對送單後的 `Order/ChoosePayment`（待付款20）與
+LINE Pay 付款後 `Order/Show`（接單製作50），包含取餐編號、付款方式、餐點明細、
+通知及發票業務欄位。v5 使用相同 `/orders/{hash}/choosePayment` 路由，
+訂單 hash 與畫面編號分開；付款成功不再直接當成餐點完成70。
+唯讀 Inertia 回應補上 `order/details/invoices/times/actions`、通知手機／信箱及
+發票類型與輸入值；未選用的專用欄位為 null。原始真實資料不放進版本庫，
+本機只產生 TEST 訂單與發票，沒有任何認證權杖。
+
+付款入口沿用商家 `/order/linepay/redirect/{hash}/LinePay` 及
+`/order/ecpay/redirect/{hash}/Credit` 的本機路徑；之後呈現本機模擬授權，
+可選成功、失敗、取消或結果不明。真實LINE Pay每次跳轉未完整捕捉，
+信用卡、商家退款、未付款取消79亦尚未取得實際訂單樣本。
+放棄付款的確認步驟依同版公開前端復刻；未付款取消不同於付款嘗試取消或退款。
+不連金流、不寄通知、不開發票，不是原站所有後端及所有分支的等價承諾。
+
+本機會話資料格式升為2、sessionStorage使用 `pb-order-lab:v2`；舊格式不遷移，
+請以新的測試接待／瀏覽器設定檔驗證。舊v1備份不會被自動覆寫或刪除。
 
 ## 2026-11-14 營業期間實站行為比對
 
@@ -79,8 +92,8 @@ v4修正送出後的草稿生命週期：已送出的訂單保留在orders，不
 這些是逐項操作與資料核對，**不是整站等價證明**。實站網路延遲、處理遮罩、滾動時
 自動切換分類、瀏覽器返回快取、跨裝置／商家 cookie、斷線與逾時等競態，不能由本機
 的簡化流程代替驗收。實站的初始空選單載入狀態也確實存在，本機較快載入不能證明
-Host 已處理完實站載入競態。完成頁、付款、正式通知／發票及送出訂單後的狀態仍未
-比對，只能在本機測模擬流程；切換環境必須開始新接待，不能沿用原有文件或工具綁定。
+Host 已處理完實站載入競態。11/15已補核對一筆LINE Pay付款後的訂單與發票；其他金流、退款、通知行為與最終送達仍未
+比對，只能在本機測模擬分支；切換環境必須開始新接待，不能沿用原有文件或工具綁定。
 
 ## 隨機 ID、瀏覽器與時間
 
@@ -141,3 +154,14 @@ catalog、cart、route parser，不重寫解析器。瀏覽器相容測試直接
 另經實際手動 DOM 加入建立兩列完全相同的加量水餃，使用原生執行器部分換餐，
 核對留下的水餃加量及測試後原有購物車／金額不變；不以直接修改測試state代替操作。
 未執行全專案 typecheck；沒有 commit 或部署。
+
+原生重開回歸測試 `nativeReset.test.js` 隨上述 `PB_LAB_URL` 整合測試執行，只接受精確的本機5188網址。使用獨立Chromium驗證空／非空購物車的舊待確認紀錄、清空前失敗可再試、已派送但結果不明即使重新載入仍持續攔截，以及送單待確認紀錄不得被重開解除。它不操作商家或操作者登入。
+
+`nativeCheckout.test.js` uses the same opt-in `PB_LAB_URL` boundary and separate
+Chromium sessions. It checks that passive speech cues preserve checkout/search,
+explicit product presentation can still reveal cards, and all five invoice
+methods survive a focused-field cart quantity edit. It validates notification
+input, total and a final local confirmation token without submitting an order.
+
+送出前另有與 PB 實站核對過的「確認訂單」視窗：取消不建立訂單，確定才寫入本機
+測試訂單。原生執行器在第二個按鈕前再次核對資料，開視窗本身不算送單。

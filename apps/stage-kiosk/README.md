@@ -258,7 +258,7 @@ cart tools; menu location does not prevent cart edits. Startup cart preparation
 runs on the table page through a Host-only fresh cart read, before exposing
 Start. An unowned cart or failed preparation shows an explicit preparation
 panel and Restart action instead of a blank native region. Same-reception
-ownership survives normal menu/cart navigation. Explicit Restart from table
+ownership survives normal menu/cart navigation. Browser recovery reports purchase-retry admission separately from explicit cart-reset admission (`canRetry` / `canReset`). A prior document’s cart marker can be retired only by a customer-requested clear with a fresh empty-cart readback; current uncertain writes and order-submission and uncertain-clear (`reset:`) markers stay blocked across reloads. Reset failures display localized customer guidance, with internal details in diagnostics. Explicit Restart from table
 entry verifies settled work; an empty cart needs only an entry reload, while
 an occupied cart enters through PB's actual selected-table Start control under
 the maintenance cover and then clears/verifies its real cart before reloading.
@@ -333,9 +333,12 @@ one-use and invalidated by any cart/form/manual-interaction change.
 Automated submission is currently enabled only for the approved owned fixture
 at `127.0.0.1:5188`. The merchant result/navigation flow remains unverified and
 uses manual submission guidance. A native dispatch acknowledgement is not proof
-of payment. Only the owned fixture's observed result-page order ID and matching
-amount release that same operation's pending marker; unknown effects retain it.
-The matched acknowledgement retires the editor tools even after SPA navigation;
+of payment. The owned fixture now returns a typed pending/accepted/unknown/rejected result.
+Accepted merchant creation is separate from amount/detail consistency: a known
+created order with a conflicting total remains accepted and requires review,
+while unknown effects retain the pending marker. Line equivalence and a lost
+full-navigation promise observer are not yet implemented.
+The correlated typed result retires the editor tools even after SPA navigation;
 a reception restart reloads the configured table entry instead of invoking old
 cart controls on the result page. Late replies cannot retire replacement tools.
 Result pages gain no automation privileges. This does not certify merchant
@@ -1624,9 +1627,12 @@ replay an uncertain write. Administrator microphone tests remain independent.
 
 An admitted PB cart retains its current visitor in memory for the reception;
 storage eviction alone does not interrupt active ordering. After reload or at a
-new reception, an unknown nonempty cart still requires review. Moving that first
-check fully into pre-opening preparation remains pending; the host does not infer
-that the physical customer changed from page or speech changes.
+new reception, an unknown nonempty cart still requires review. Initial preparation
+checks before exposing ordering controls, including on the table page when PB
+allows it. For PB’s exact first-visit missing-table response, only table selection
+and Start remain available; no cart ownership is granted, and the menu must pass
+a fresh check before ordering. The host does not infer that the physical customer
+changed from page or speech changes.
 
 Proactive recommendation invitations have their own structured question receipts.
 They survive idle within the same order, renew a per-decision answer ticket, and
@@ -1712,3 +1718,9 @@ question presentation or speech playback. A disconnected browser cannot prove
 release; restart the session to replace that document rather than unlocking on
 a timer. This control currently applies to Main Agent tasks; Fast Path retains
 its existing execution flow.
+
+Checkout invitation, cart review, invoice choice and final submission questions
+remain bound to reception, document, observed cart and expiry. Unrelated menu
+configuration updates do not invalidate these cart questions. Product/purchase
+questions still validate their original product evidence; final submission also
+rechecks the native form and one-use confirmation token.
