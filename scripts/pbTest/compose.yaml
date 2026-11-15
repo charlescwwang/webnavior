@@ -1,0 +1,34 @@
+name: webnavior-pb-test
+services:
+  db:
+    image: postgres:16-alpine
+    pull_policy: never
+    environment:
+      POSTGRES_DB: webnavior_pb_test
+      POSTGRES_USER: pb_test
+      POSTGRES_PASSWORD: ${PB_TEST_DATABASE_PASSWORD:?Run the PB test manager setup first}
+    ports:
+      - '127.0.0.1:15434:5432'
+    volumes:
+      - pb_database:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U pb_test -d webnavior_pb_test']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    pull_policy: never
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '127.0.0.1:16379:6379'
+    volumes:
+      - pb_redis:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  pb_database:
+  pb_redis:

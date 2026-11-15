@@ -502,6 +502,10 @@ try {
       return client.execute(client.tools.value.find(tool => tool.name === name), input)
     }, { url: clientModuleUrl, name, input })
     const before = await readCart()
+    // Reception reset now clears the whole cart. This draft-only probe must
+    // start empty so it cannot erase pre-existing merchant rows.
+    if (before.lines.length || before.subtotal !== 0)
+      throw new Error('Draft-reset acceptance requires an initially empty PB cart.')
     const facts = await call('browser_cart_get', { includeCatalog: true })
     const product = facts.products.find(product => product.kind === 'product')
     await call('browser_search', { query: product.name })
@@ -512,7 +516,7 @@ try {
     const receipt = await call('browser_customer_reset', {})
     const draft = await embeddedPage.evaluate(() => ({ visibleProductDrafts: [...document.querySelectorAll('[role="dialog"]')].filter(dialog => dialog.getClientRects().length > 0 && dialog.querySelector('input[placeholder="商品有特殊需求，請在此備註"]')).length, searchEmpty: document.querySelector('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value === '' }))
     const result = { receipt, draft, cartPreserved: JSON.stringify(await readCart()) === JSON.stringify(before), submittedOrder: false }
-    result.passed = receipt.ok === true && draft.visibleProductDrafts === 0 && draft.searchEmpty && result.cartPreserved
+    result.passed = receipt.ok === true && receipt.cartCleared === true && draft.visibleProductDrafts === 0 && draft.searchEmpty && result.cartPreserved
     console.info('Draft reset acceptance:', JSON.stringify(result))
     await writeFile(resolve(outputDirectory, 'draft-reset-cases.json'), JSON.stringify(result, null, 2))
     if (!result.passed)
@@ -520,6 +524,10 @@ try {
   }
   if (process.argv.includes('--handoff-cases')) {
     const originalBaseline = await readCart()
+    // Only this probe's known seed may be deleted by the reception-end policy.
+    // An operator's existing cart is never authorization to clear it for testing.
+    if (originalBaseline.lines.length || originalBaseline.subtotal !== 0)
+      throw new Error('Handoff acceptance requires an initially empty PB cart.')
     let baseline = originalBaseline
     const call = (name, input) => page.evaluate(async ({ url, name, input }) => {
       const { interactiveServiceClient: client } = await import(url)
@@ -531,8 +539,8 @@ try {
       throw new Error('Handoff acceptance needs a separate current test product.')
     let seedRow
     if (!baseline.lines.length) {
-      // A known isolated first-customer item creates the nonempty handoff
-      // condition. It is removed only after both observed snapshots agree.
+      // A known isolated first-customer item exercises automatic native clear
+      // when the real Host ends reception.
       const seed = facts.products.find(candidate => candidate.ref !== product.ref && candidate.kind === 'product' && candidate.priceType === 1 && candidate.configurations.length === 1)
       if (!seed)
         throw new Error('No separate product for a reversible handoff baseline.')
@@ -594,42 +602,36 @@ try {
       const draftPreserved = await embeddedPage.evaluate(() => [...document.querySelectorAll('[role="dialog"]')].some(dialog => dialog.getClientRects().length > 0 && dialog.querySelector('input[placeholder="商品有特殊需求，請在此備註"]')) || document.querySelector('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value !== '')
       if (draftPreserved)
         throw new Error('The previous customer product/search draft survived reset.')
+      const empty = await readCart()
+      if (empty.lines.length || empty.subtotal !== 0)
+        throw new Error('Reception end did not clear the previous customer test item.')
+      seedRow = undefined
+      baseline = empty
+      const resetWrites = requests.slice(requestIndex).filter(request => ['POST', 'PUT', 'DELETE'].includes(request.method))
+      if (resetWrites.length !== 1 || resetWrites[0].method !== 'DELETE' || !resetWrites[0].path.endsWith('/details/all'))
+        throw new Error('Reception end must produce exactly one native clear-all effect.')
       const assent = await utterance('對')
       if (assent.answers.length || assent.pending?.questionId === oldQuestion || JSON.stringify(await readCart()) !== JSON.stringify(baseline))
         throw new Error('New customer inherited the old confirmation.')
-      const refused = await utterance(`${product.name}一份。`)
-      if (!refused.actual?.includes('交接') || !refused.receipts.some(receipt => receipt.payload.customerBoundary === 'review-required') || JSON.stringify(await readCart()) !== JSON.stringify(baseline))
-        throw new Error('A nonempty previous cart did not block new-customer writes.')
-      const modelReceipts = JSON.stringify(refused.receipts)
-      if (baseline.lines.some(line => modelReceipts.includes(`"ref":"${line.id}"`)))
-        throw new Error('Previous customer cart references reached the new Agent.')
       const query = await utterance(`${product.name}兩份多少錢？`)
       if (!query.actual?.includes(`合計 ${Math.round(product.price * 100) * 2 / 100} 元`) || JSON.stringify(await readCart()) !== JSON.stringify(baseline))
-        throw new Error('Read-only menu queries stopped working while handoff was pending.')
+        throw new Error('New customer menu query changed the empty cart.')
       const earlyWrites = requests.slice(requestIndex).filter(request => ['POST', 'PUT', 'DELETE'].includes(request.method)).length
-      if (earlyWrites)
-        throw new Error('A new customer caused a PB write before staff review.')
-      await staffReviewForTest()
+      if (earlyWrites !== resetWrites.length)
+        throw new Error('New customer assent/query caused an unauthorized PB write.')
       const added = await utterance(`${product.name}一份。`)
       expectedAdded = await readCart()
       const rows = expectedAdded.lines.filter(line => !baseline.lines.some(original => original.id === line.id))
       if (rows.length !== 1 || rows[0].name !== product.name || rows[0].quantity !== 1 || rows[0].unitPrice !== product.price || expectedAdded.subtotal !== baseline.subtotal + product.price || !baseline.lines.every(original => expectedAdded.lines.some(line => JSON.stringify(line) === JSON.stringify(original))) || !added.receipts.some(receipt => receipt.name === 'browser_cart_add' && receipt.payload.status === 'verified'))
-        throw new Error('Staff-reviewed same-cart resume did not produce exactly one requested effect.')
+        throw new Error('New customer did not produce exactly one requested effect after reception reset.')
       knownRow = rows[0]
       const current = await call('browser_cart_get', { includeCatalog: false })
       const removed = await call('browser_cart_remove', { version: current.cart.version, lineRef: String(knownRow.id) })
       if (removed.status !== 'verified' || JSON.stringify(await readCart()) !== JSON.stringify(baseline))
         throw new Error('Cannot verify isolated handoff test row cleanup.')
       knownRow = undefined
-      if (seedRow) {
-        const state = await call('browser_cart_get', { includeCatalog: false })
-        const cleaned = await call('browser_cart_remove', { version: state.cart.version, lineRef: seedRow.ref })
-        if (cleaned.status !== 'verified' || JSON.stringify(await readCart()) !== JSON.stringify(originalBaseline))
-          throw new Error('Cannot verify the isolated first-customer test item cleanup.')
-        seedRow = undefined
-      }
-      await writeFile(resolve(outputDirectory, 'handoff-cases.json'), JSON.stringify({ passed: true, steps, loginPreserved, earlyVendorWrites: earlyWrites, operatorSessionFixture: true, pinAuthenticationUnderTest: false, cartPreserved: true, submittedOrder: false }, null, 2))
-      console.info('PASS: actual customer reset retained login, revoked old consent, redacted prior cart, blocked writes, allowed queries and resumed only after explicit staff review; original cart preserved.')
+      await writeFile(resolve(outputDirectory, 'handoff-cases.json'), JSON.stringify({ passed: true, steps, loginPreserved, earlyVendorWrites: earlyWrites, operatorSessionFixture: true, pinAuthenticationUnderTest: false, cartClearedAtReceptionEnd: true, originalEmptyCartRestored: true, submittedOrder: false }, null, 2))
+      console.info('PASS: actual customer reset cleared its isolated prior cart, retained login, revoked old consent and allowed the new customer to order; original empty cart restored.')
     }
     catch (error) {
       console.info('Handoff original failure:', String(error))

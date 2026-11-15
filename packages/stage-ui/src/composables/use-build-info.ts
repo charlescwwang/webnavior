@@ -10,6 +10,9 @@ export function useBuildInfo() {
 
   return {
     version: isStageWeb() ? `${version} (${abbreviatedSha})` : version,
+    // Embed the publication identity in this bundle. A runtime version fetch
+    // describes the server's latest release, not necessarily this loaded page.
+    release: import.meta.env.VITE_RELEASE_ID?.trim() || `${abbreviatedSha}@${buildTime.toISOString()}`,
     commit: abbreviatedSha,
     branch,
     builtOn: buildTime.toISOString(),

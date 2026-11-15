@@ -1,0 +1,690 @@
+{
+  "version": 1,
+  "source": {
+    "ref": "b1a7f5b8ddcb1a5785ebe67d1b307a6347c32bd2",
+    "file": "apps/order-menu/src/evaluation/conversationMatrix.ts",
+    "coreCases": 112,
+    "coreUserTurns": 286
+  },
+  "merchant": "https://app.esgpb.com/order/store/1kgJeql/pick_up/menu",
+  "scope": "Basic PB text/simulated-ASR acceptance uses single dishes, quantity questions, and one sentence with two or three meals. Historical supplemental mixed-intent cases are deferred and opt-in only. Gold fields never enter model requests.",
+  "cases": [
+    {
+      "id": "A01-single-item",
+      "title": "單品與份數一次說齊",
+      "suite": "basic",
+      "steps": [
+        {
+          "text": "我要炸雞腿便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ],
+          "forbid": "不加料"
+        }
+      ]
+    },
+    {
+      "id": "A02-ask-quantity",
+      "title": "只說品項，補問份數後才加入",
+      "suite": "basic",
+      "steps": [
+        {
+          "text": "我要炸排骨便當。",
+          "reply": "幾份",
+          "lines": []
+        },
+        {
+          "text": "一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A03-two-items",
+      "title": "一句點兩樣餐點",
+      "suite": "basic",
+      "steps": [
+        {
+          "text": "我要炸雞腿便當一份、炸排骨便當兩份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            },
+            {
+              "name": "炸排骨便當",
+              "quantity": 2,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "A04-three-items",
+      "title": "一句點三樣餐點",
+      "suite": "basic",
+      "steps": [
+        {
+          "text": "我要炸雞腿便當一份、炸排骨便當一份、老董紅燒牛肉麵一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            },
+            {
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            },
+            {
+              "name": "老董紅燒牛肉麵",
+              "quantity": 1,
+              "unitPrice": 200,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "B01-budget-context",
+      "title": "百元預算改價位並保留後續條件",
+      "masterIds": [
+        "C04-F1",
+        "C04-A1",
+        "C05-F2"
+      ],
+      "steps": [
+        {
+          "text": "一百元以內可以吃什麼？先不要加餐點。",
+          "lines": [],
+          "maxShownPrice": 100
+        },
+        {
+          "text": "改成一百五十元以下，可以推薦什麼？",
+          "lines": [],
+          "maxShownPrice": 150
+        },
+        {
+          "text": "還有其他一百五十元以下的嗎？",
+          "lines": [],
+          "maxShownPrice": 150,
+          "novel": true
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B02-price-then-purchase",
+      "title": "查兩份價錢不購買，下一句明確購買一份",
+      "masterIds": [
+        "C03-A1",
+        "C15-F3"
+      ],
+      "steps": [
+        {
+          "text": "炸雞腿便當兩份多少錢？只問價格，不要加入。",
+          "lines": [],
+          "reply": "260"
+        },
+        {
+          "text": "現在我要炸雞腿便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B03-mixed-price-purchase",
+      "title": "同句買雞腿、查水餃價，兩項需求均須完成",
+      "masterIds": [
+        "M05"
+      ],
+      "steps": [
+        {
+          "text": "炸雞腿便當一份幫我點，周氏水餃(最低8顆)兩份多少錢？水餃先不要加。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ],
+          "reply": "128"
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B04-total-repeat",
+      "title": "總數修改與重申不可變成追加",
+      "masterIds": [
+        "C12-F1",
+        "C12-A1"
+      ],
+      "steps": [
+        {
+          "text": "我要炸雞腿便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        },
+        {
+          "text": "炸雞腿便當總共兩份就好。",
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 2,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        },
+        {
+          "text": "是總共兩份，不是再加兩份。",
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 2,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B05-add-versus-total",
+      "title": "再加兩份應成三份",
+      "masterIds": [
+        "C12-F2"
+      ],
+      "steps": [
+        {
+          "text": "我要炸雞腿便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        },
+        {
+          "text": "再加兩份炸雞腿便當。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 3,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B06-remove-one-preserve-other",
+      "title": "只取消排骨，保留雞腿",
+      "masterIds": [
+        "C13-F1",
+        "C13-A1"
+      ],
+      "steps": [
+        {
+          "text": "炸雞腿便當一份，炸排骨便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            },
+            {
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        },
+        {
+          "text": "只取消炸排骨便當，炸雞腿便當留著。",
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B07-missing-then-valid",
+      "title": "指定不存在餐點不得替換，接續有效新需求",
+      "masterIds": [
+        "C02-F3",
+        "C02-A1"
+      ],
+      "steps": [
+        {
+          "text": "我要鱔魚意麵一份。",
+          "lines": [],
+          "reply": "沒有|未提供|未販售|查不到|沒有找到",
+          "forbid": "已加入|您是指"
+        },
+        {
+          "text": "那改點炸雞腿便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B08-bare-yes-not-consent",
+      "title": "比較候選後只說好，不授權購買",
+      "masterIds": [
+        "C07-A1",
+        "C11-A1"
+      ],
+      "steps": [
+        {
+          "text": "炸雞腿便當和炸排骨便當你推薦哪個？先不要加。",
+          "lines": [],
+          "needsPresentation": true
+        },
+        {
+          "text": "好",
+          "lines": []
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B09-presented-second",
+      "title": "第二項以本輪實際呈現排序為準",
+      "masterIds": [
+        "C11-F1",
+        "M12"
+      ],
+      "steps": [
+        {
+          "text": "請推薦三道餐點，先不要加。",
+          "lines": [],
+          "needsPresentation": true,
+          "rememberShown": true
+        },
+        {
+          "text": "第二項兩份。",
+          "autoConfirm": true,
+          "fromShown": {
+            "index": 1,
+            "quantity": 2
+          },
+          "confirmProduct": true
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B10-interleaved-requests",
+      "title": "份數草稿中先加另一餐，再明確續點原餐",
+      "masterIds": [
+        "C10-F2"
+      ],
+      "steps": [
+        {
+          "text": "我要炸雞腿便當。",
+          "lines": [],
+          "reply": "幾份"
+        },
+        {
+          "text": "先幫我點炸排骨便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        },
+        {
+          "text": "剛才炸雞腿便當也要兩份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸排骨便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            },
+            {
+              "name": "炸雞腿便當",
+              "quantity": 2,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "mappingNote": "原餐以完整名稱重述；不等同省略名稱的草稿恢復已驗收。",
+      "suite": "deferred"
+    },
+    {
+      "id": "B11-out-of-range-correction",
+      "title": "一百份不得截成一份，更正兩份可繼續",
+      "masterIds": [
+        "C08-F2",
+        "C08-A1",
+        "C16-F3"
+      ],
+      "steps": [
+        {
+          "text": "我要一百份炸雞腿便當。",
+          "lines": [],
+          "forbid": "已加入"
+        },
+        {
+          "text": "更正，只要兩份炸雞腿便當。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 2,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B12-unknown-ingredient",
+      "title": "未提供的成分資訊不得保證",
+      "masterIds": [
+        "C06-A1"
+      ],
+      "steps": [
+        {
+          "text": "有保證完全不含花生的餐點嗎？先不要點餐。",
+          "lines": [],
+          "reply": "無法|不能|不確定|確認|沒有提供|還沒辦法",
+          "forbid": "可以放心|絕對不含|確定不含"
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B13-price-detour",
+      "title": "追問份數中插入價格，再回答份數",
+      "masterIds": [
+        "C09-F3"
+      ],
+      "steps": [
+        {
+          "text": "我要炸雞腿便當。",
+          "lines": [],
+          "reply": "幾份"
+        },
+        {
+          "text": "這一份多少錢？先只問價錢。",
+          "lines": [],
+          "reply": "130"
+        },
+        {
+          "text": "兩份",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 2,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ],
+          "confirmProduct": true
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B14-new-customer-isolation",
+      "title": "新客清空前客測試購物車及歷史指代",
+      "masterIds": [
+        "C14-A2",
+        "C16-A2"
+      ],
+      "steps": [
+        {
+          "text": "我要炸雞腿便當一份。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        },
+        {
+          "action": "new-customer"
+        },
+        {
+          "text": "我剛才點了什麼？",
+          "lines": [],
+          "forbid": "炸雞腿便當"
+        }
+      ],
+      "suite": "deferred"
+    },
+    {
+      "id": "B15-requested-note",
+      "title": "備註保存，不宣稱廚房已完成客製",
+      "masterIds": [
+        "C09-F3"
+      ],
+      "steps": [
+        {
+          "text": "炸雞腿便當一份，請幫我備註「不要蔥」。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "不要蔥",
+              "options": []
+            }
+          ],
+          "forbid": "保證不含|已經去蔥"
+        },
+        {
+          "text": "幫我核對餐點和備註，不要送單。",
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "不要蔥",
+              "options": []
+            }
+          ],
+          "reply": "不要蔥"
+        }
+      ],
+      "mappingNote": "PB 支援備註；不同於 master 不支援客製時的原版同意規則。",
+      "suite": "deferred"
+    },
+    {
+      "id": "B16-distinct-notes",
+      "title": "同品項正常／不要蔥兩種備註分開",
+      "masterIds": [
+        "M10",
+        "C09-F2"
+      ],
+      "steps": [
+        {
+          "text": "炸雞腿便當兩份，一份備註不要蔥，另一份不用備註。",
+          "autoConfirm": true,
+          "lines": [
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "不要蔥",
+              "options": []
+            },
+            {
+              "name": "炸雞腿便當",
+              "quantity": 1,
+              "unitPrice": 130,
+              "note": "",
+              "options": []
+            }
+          ]
+        }
+      ],
+      "mappingNote": "以 PB 真實備註替代 master 辣度 fixture；不代表多組必選選項已實機驗收。",
+      "suite": "deferred"
+    },
+    {
+      "id": "P01-dumpling-basic",
+      "title": "水餃基本份量用顆數表達",
+      "suite": "wording",
+      "steps": [
+        {
+          "text": "我要周氏水餃一份。",
+          "confirmProduct": true,
+          "autoConfirm": true,
+          "reply": "每份 8 顆",
+          "forbid": "最低|不加料",
+          "lines": [
+            {
+              "name": "周氏水餃(最低8顆)",
+              "spokenName": "周氏水餃",
+              "quantity": 1,
+              "unitPrice": 64,
+              "note": "",
+              "options": []
+            }
+          ],
+          "declineExtras": true
+        }
+      ]
+    },
+    {
+      "id": "P02-dumpling-extra",
+      "title": "水餃加量後的顆數與份數",
+      "suite": "wording",
+      "steps": [
+        {
+          "text": "我要周氏水餃兩份，每份加兩顆水餃。",
+          "confirmProduct": true,
+          "autoConfirm": true,
+          "reply": "每份 10 顆",
+          "forbid": "最低|不加料",
+          "lines": [
+            {
+              "name": "周氏水餃(最低8顆)",
+              "spokenName": "周氏水餃",
+              "quantity": 2,
+              "unitPrice": 80,
+              "note": "",
+              "options": [
+                {
+                  "name": "水餃",
+                  "quantity": 2
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "defaultSuite": "basic"
+}
