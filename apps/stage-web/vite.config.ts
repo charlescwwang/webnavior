@@ -181,6 +181,10 @@ export default defineConfig({
       ? []
       : [VitePWA({
           registerType: 'prompt',
+          // The edge may cache /sw.js for hours even when a browser requests
+          // revalidation. A new URL per build also upgrades existing registrations
+          // at the same root scope without relying on an edge-cache purge.
+          filename: `webnavior-sw-${Date.now()}.js`,
           includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
           manifest: {
             name: 'Webnavior',
@@ -212,6 +216,13 @@ export default defineConfig({
           },
           workbox: {
             maximumFileSizeToCacheInBytes: 64 * 1024 * 1024,
+            // Admin/auth navigation needs current routes even for previously signed-in
+            // browsers. Activate the new worker without forcing an in-progress
+            // Kiosk to reload; its separate SPA remains outside this worker's routing.
+            skipWaiting: true,
+            clientsClaim: true,
+            navigateFallback: null,
+            globIgnores: ['**/index.html'],
             navigateFallbackDenylist: [
               /^\/?$/,
               /^\/docs\//,
