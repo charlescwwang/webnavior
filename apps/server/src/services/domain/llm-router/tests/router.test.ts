@@ -94,7 +94,7 @@ function makeConfigKV(config: RouterConfig | null): ConfigKVService {
 }
 
 function makeConfig(opts: {
-  upstreams?: Array<{ baseURL: string, cachePrompt?: boolean, enableThinking?: boolean, responseMode?: ChatResponseMode, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
+  upstreams?: Array<{ baseURL: string, apiFormat?: 'openai-responses', reasoningEffort?: 'none', cachePrompt?: boolean, enableThinking?: boolean, responseMode?: ChatResponseMode, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
   fallbackHttpCodes?: number[]
   fullChainTimeoutMs?: number
 }): { config: RouterConfig, ciphertextByKey: Map<string, string>, crypto: ReturnType<typeof createEnvelopeCrypto> } {
@@ -105,6 +105,8 @@ function makeConfig(opts: {
   const upstreams = opts.upstreams ?? [{ baseURL: 'https://up-a.example/v1', keyIds: ['kA1'] }]
   const upstreamConfigs = upstreams.map(u => ({
     baseURL: u.baseURL,
+    apiFormat: u.apiFormat,
+    reasoningEffort: u.reasoningEffort,
     cachePrompt: u.cachePrompt,
     enableThinking: u.enableThinking,
     responseMode: u.responseMode,
@@ -157,6 +159,61 @@ function failResponse(status: number, body: object = { error: 'bad' }) {
 }
 
 describe('createLlmRouterService', () => {
+  it('pins configured native reasoning effort without mutating caller or fallback policy', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', reasoningEffort: 'none', keyIds: ['native'] },
+      { baseURL: 'https://legacy.example/v1', keyIds: ['legacy'] },
+    ] })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(failResponse(429)).mockResolvedValueOnce(happyResponse({ choices: [] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parse(llmRouterConfigSchema, config)), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const body = { messages: [], reasoning: { effort: 'high', summary: 'auto' } }
+    await router.route({ modelName: 'openai/gpt-5-mini', body })
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body)).reasoning).toEqual({ effort: 'none', summary: 'auto' })
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]!.body)).reasoning).toEqual({ effort: 'high', summary: 'auto' })
+    expect(body.reasoning.effort).toBe('high')
+  })
+
+  it.each([undefined, 'openai-responses'] as const)('leaves omitted effort policy unchanged for %s', async (apiFormat) => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://native.example/v1', apiFormat, keyIds: ['native'] }] })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(happyResponse({ id: 'resp_1', model: 'native', status: 'completed', output: [] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parse(llmRouterConfigSchema, config)), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [] } })
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))).not.toHaveProperty('reasoning')
+  })
+
+  it('does not apply the native effort policy to a legacy Chat upstream', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://legacy.example/v1', reasoningEffort: 'none', keyIds: ['legacy'] }] })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(happyResponse({ choices: [] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parse(llmRouterConfigSchema, config)), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [] } })
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))).not.toHaveProperty('reasoning')
+  })
+
+  it('routes native Responses and preserves non-2xx fallback to the legacy protocol', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://api.openai.example/v1', apiFormat: 'openai-responses', keyIds: ['native'] },
+      { baseURL: 'https://legacy.example/v1', keyIds: ['legacy'] },
+    ] })
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(failResponse(429))
+      .mockResolvedValueOnce(happyResponse({ choices: [] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parse(llmRouterConfigSchema, config)), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [{ role: 'user', content: 'hi' }], temperature: 0.4, max_tokens: 100 } })
+    expect(fetchImpl.mock.calls[0]![0]).toBe('https://api.openai.example/v1/responses')
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))).toMatchObject({ store: false, max_output_tokens: 100, input: [{ role: 'user', content: 'hi' }] })
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body)).temperature).toBeUndefined()
+    expect(fetchImpl.mock.calls[1]![0]).toBe('https://legacy.example/v1/chat/completions')
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]!.body)).temperature).toBe(0.4)
+  })
+
+  it('translates native completed JSON on the actual router path', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['native'] }] })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(happyResponse({ id: 'resp_1', model: 'native', status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'hello' }] }] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parse(llmRouterConfigSchema, config)), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const response = await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [], stream: false } })
+    expect(await response.json()).toHaveProperty('choices.0.message.content', 'hello')
+  })
+
   afterEach(() => {
     vi.restoreAllMocks()
   })

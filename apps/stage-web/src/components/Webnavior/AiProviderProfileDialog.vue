@@ -128,6 +128,11 @@ function changeKind() {
     form.baseURL = 'http://localhost:8080/v1'
     form.name = '本機 llama.cpp'
   }
+  else if (form.kind === 'openai-responses') {
+    form.baseURL = 'https://api.openai.com/v1'
+    form.name = 'OpenAI'
+    form.enableThinking = false
+  }
   else {
     form.baseURL = ''
     form.name = ''
@@ -179,6 +184,7 @@ function verifyAndSaveProfile() {
     baseURL: form.baseURL.trim(),
     kind: form.kind,
     ...(props.capability === 'chat' && form.kind === 'openai-compatible' ? { enableThinking: form.enableThinking, responseMode: form.responseMode } : {}),
+    ...(props.capability === 'chat' && form.kind === 'openai-responses' ? { responseMode: form.responseMode } : {}),
     ...(form.modelId.trim() ? { modelId: form.modelId.trim() } : {}),
     name: form.name.trim(),
     ...(form.plaintextKey.trim() ? { plaintextKey: form.plaintextKey.trim() } : {}),
@@ -225,7 +231,7 @@ function verifyAndSaveProfile() {
                 <p :class="['mb-0 mt-1 break-all text-sm text-slate-600 dark:text-slate-300']">
                   {{ profile.kind }} · {{ profile.baseURL }} · {{ profile.modelId ?? '尚未選擇模型' }}
                 </p>
-                <p v-if="profile.capability === 'chat' && profile.kind === 'openai-compatible'" :class="['mb-0 mt-2 text-sm text-cyan-800 dark:text-cyan-200']">
+                <p v-if="profile.capability === 'chat' && (profile.kind === 'openai-compatible' || profile.kind === 'openai-responses')" :class="['mb-0 mt-2 text-sm text-cyan-800 dark:text-cyan-200']">
                   {{ t('settings.kiosk-chat-response.title') }}：{{ t(`settings.kiosk-chat-response.${profile.responseMode}`) }}
                 </p>
               </div>
@@ -268,9 +274,13 @@ function verifyAndSaveProfile() {
               <option value="ollama">Ollama</option>
               <option value="llama-cpp">llama.cpp（啟用 Prompt Cache）</option>
               <option value="openai-compatible">OpenAI-compatible</option>
+              <option v-if="props.capability === 'chat'" value="openai-responses">{{ t('settings.kiosk-openai.title') }}</option>
             </select>
           </label>
-          <label v-if="props.capability === 'chat' && form.kind === 'openai-compatible'" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+          <p v-if="form.kind === 'openai-responses'" :class="['m-0 text-xs leading-5 text-slate-500 dark:text-slate-400']">
+            {{ t('settings.kiosk-openai.description') }}
+          </p>
+          <label v-if="props.capability === 'chat' && (form.kind === 'openai-compatible' || form.kind === 'openai-responses')" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
             {{ t('settings.kiosk-chat-response.title') }}
             <select v-model="form.responseMode" :aria-label="t('settings.kiosk-chat-response.title')" :disabled="props.busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']">
               <option value="auto">{{ t('settings.kiosk-chat-response.auto') }}</option>

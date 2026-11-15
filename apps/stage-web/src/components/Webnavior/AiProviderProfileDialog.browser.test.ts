@@ -78,3 +78,25 @@ it('allows selecting SSE before creating an OpenAI-compatible provider', async (
   }
   finally { screen.unmount() }
 })
+
+// Report: this chat, Nov15 — native OpenAI and the existing compatible connection must coexist.
+it('creates a native OpenAI Responses provider with SSE and without local thinking settings', async () => {
+  const onVerifyAndSave = vi.fn()
+  const screen = render(AiProviderProfileDialog, {
+    props: { busy: false, capability: 'chat', open: true, profiles: [], discoverModels: async () => ({ catalogAvailable: true, models: [{ id: 'test-openai' }] }), onVerifyAndSave },
+    global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { settings } } })] },
+  })
+  try {
+    await screen.getByRole('button', { name: '新增對話 LLM Provider', exact: true }).click()
+    await screen.getByRole('combobox', { name: 'Provider 類型', exact: true }).selectOptions('openai-responses')
+    await expect.element(screen.getByRole('textbox', { name: 'Base URL', exact: true })).toHaveValue('https://api.openai.com/v1')
+    await expect.element(screen.getByRole('checkbox')).not.toBeInTheDocument()
+    await screen.getByRole('combobox', { name: '對話回應方式', exact: true }).selectOptions('sse')
+    await screen.getByRole('button', { name: '測試連線與讀取模型', exact: true }).click()
+    await screen.getByRole('combobox', { name: '模型', exact: true }).selectOptions('test-openai')
+    await screen.getByRole('button', { name: '驗證並儲存 Provider', exact: true }).click()
+    expect(onVerifyAndSave).toHaveBeenCalledWith('chat', expect.objectContaining({ kind: 'openai-responses', responseMode: 'sse', baseURL: 'https://api.openai.com/v1', modelId: 'test-openai' }), undefined)
+    expect(onVerifyAndSave.mock.calls[0]?.[1]).not.toHaveProperty('enableThinking')
+  }
+  finally { screen.unmount() }
+})

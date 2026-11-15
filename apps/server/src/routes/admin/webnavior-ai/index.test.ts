@@ -38,7 +38,7 @@ describe('admin Webnavior AI routes', () => {
     expect(verifyProfile).toHaveBeenCalledWith('chat', 'RB_zw84In0eWFofqtM-9K')
   })
 
-  it('uses verify-and-save before it creates a Provider profile', async () => {
+  it.each(['llama-cpp', 'openai-responses'] as const)('uses verify-and-save before creating a %s Provider profile', async (kind) => {
     const verifyAndCreateProfile = vi.fn(async () => ({ id: 'new-profile' }))
     const app = new Hono<HonoEnv>()
       .use('*', async (c, next) => {
@@ -64,13 +64,49 @@ describe('admin Webnavior AI routes', () => {
       }))
 
     const response = await app.request('/capabilities/chat/providers/verify-and-save', {
-      body: JSON.stringify({ baseURL: 'https://models.example/v1', kind: 'llama-cpp', modelId: 'gemma4:26b', name: '主要模型', timeoutMs: 60_000 }),
+      body: JSON.stringify({ baseURL: 'https://models.example/v1', kind, modelId: 'gemma4:26b', name: '主要模型', timeoutMs: 60_000 }),
       headers: { 'Content-Type': 'application/json' },
       method: 'POST',
     })
 
     expect(response.status).toBe(201)
-    expect(verifyAndCreateProfile).toHaveBeenCalledWith('chat', expect.objectContaining({ kind: 'llama-cpp', modelId: 'gemma4:26b', timeoutMs: 60_000 }))
+    expect(verifyAndCreateProfile).toHaveBeenCalledWith('chat', expect.objectContaining({ kind, modelId: 'gemma4:26b', timeoutMs: 60_000 }))
+  })
+
+  it.each(['vision', 'asr', 'tts'] as const)('rejects native Responses for %s at the admin boundary', async (capability) => {
+    const verifyAndCreateProfile = vi.fn(async () => ({ id: 'new-profile' }))
+    const app = new Hono<HonoEnv>()
+      .use('*', async (c, next) => {
+        c.set('user', { id: 'admin-1', role: 'admin' } as HonoEnv['Variables']['user'])
+        await next()
+      })
+      .route('/', createAdminWebnaviorAiRoutes({
+        runtimeService: { applyBindings: async () => ({ appliedCapabilities: [] }), modelFor: async () => undefined },
+        service: {
+          createProfile: vi.fn(),
+          deleteProfile: vi.fn(),
+          listProfiles: vi.fn(),
+          listSelections: vi.fn(),
+          refreshProfileModels: vi.fn(),
+          selectProfile: vi.fn(),
+          testProviderConnection: vi.fn(),
+          updateProfile: vi.fn(),
+          verifyAndCreateProfile: verifyAndCreateProfile as any,
+          verifyAndUpdateProfile: vi.fn(),
+          verifyProfile: vi.fn(),
+        },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), routing: async () => 'direct' as const, maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+      }))
+
+    app.onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'internal' }, 500))
+    const response = await app.request(`/capabilities/${capability}/providers/verify-and-save`, {
+      body: JSON.stringify({ baseURL: 'https://models.example/v1', kind: 'openai-responses', modelId: 'gemma4:26b', name: '主要模型', timeoutMs: 60_000 }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    })
+
+    expect(response.status).toBe(400)
+    expect(verifyAndCreateProfile).not.toHaveBeenCalled()
   })
 
   it('routes System One profile edits and deletion to the domain service', async () => {

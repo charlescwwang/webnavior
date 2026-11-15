@@ -1706,4 +1706,7 @@ kiosk-chat-response:
   auto: 沿用目前方式
   json: 一次回傳（JSON）
   sse: 串流回傳（SSE）
-  description: SSE 可逐步顯示模型回覆；JSON 等完整回覆。變更後請驗證並儲存，再套用到 Kiosk。
+  description: SSE 持續接收模型輸出並顯示生成進度；點餐結果仍在核實後顯示。JSON 等完整回覆。變更後請驗證並儲存，再套用到 Kiosk。
+kiosk-openai:
+  title: OpenAI 原生 API（Responses）
+  description: 使用 OpenAI Responses API 處理對話與工具呼叫；不影響 System One 快速決策的來源。金鑰需要 Responses 寫入權限；讀取模型清單另需 Models 讀取權限。

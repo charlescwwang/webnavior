@@ -3,6 +3,7 @@ import type { ChatResponseMode } from '@proj-airi/stage-shared/ai-provider'
 import type { WebnaviorAiCapability, WebnaviorAiConnectionKind } from '../../../schemas/webnavior-ai'
 
 import { createBadGatewayError, createGatewayTimeoutError, createServiceUnavailableError } from '../../../utils/error'
+import { validateProviderProfile } from './profilePolicy'
 
 const transparentPixelDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLzWQAAAABJRU5ErkJggg=='
 
@@ -13,6 +14,7 @@ export interface ProviderProfileVerificationInput {
   enableThinking?: boolean
   responseMode?: ChatResponseMode
   modelId: string
+  timeoutMs: number
   plaintextKey?: string
   voice?: string
   speed?: number
@@ -24,6 +26,7 @@ export interface ProviderProfileVerificationInput {
  * because a listed model may not implement speech or vision.
  */
 export async function verifyProviderProfile(input: ProviderProfileVerificationInput, fetchImpl: typeof fetch) {
+  validateProviderProfile(input.capability, input)
   const baseURL = input.baseURL.replace(/\/+$/u, '')
   const headers = {
     'Content-Type': 'application/json',
@@ -55,6 +58,51 @@ export async function verifyProviderProfile(input: ProviderProfileVerificationIn
     }, fetchImpl)
     if ((await response.arrayBuffer()).byteLength === 0)
       throw createBadGatewayError('TTS Provider 未回傳可播放的語音資料。')
+    return
+  }
+
+  if (input.kind === 'openai-responses') {
+    const stream = input.responseMode === 'sse'
+    // Reasoning consumes the same output budget as visible text. Keep enough
+    // room for a short answer without imposing model-specific effort settings.
+    const response = await request(`${baseURL}/responses`, {
+      body: JSON.stringify({ model: input.modelId, input: 'Reply with OK.', store: false, max_output_tokens: 2048, stream }),
+      headers,
+      method: 'POST',
+      signal: AbortSignal.timeout(input.timeoutMs),
+    }, fetchImpl)
+    if (!stream) {
+      const payload: unknown = await response.json().catch(() => null)
+      if (!completedResponse(payload))
+        throw createBadGatewayError('OpenAI Responses 未回傳完整的文字測試結果。')
+      return
+    }
+    if (!response.headers.get('content-type')?.includes('text/event-stream'))
+      throw createBadGatewayError('此 Provider 未回傳 SSE，請確認支援串流或改選 JSON。')
+    // Deltas and HTTP 200 do not prove completion. Responses has its own terminal
+    // events; a Chat Completions [DONE] marker cannot verify this protocol.
+    let completed = false
+    for (const event of (await response.text()).split(/\r?\n\r?\n/)) {
+      const data = event.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+      if (!data)
+        continue
+      let payload: { type?: string, response?: unknown }
+      try {
+        payload = JSON.parse(data)
+      }
+      catch {
+        throw createBadGatewayError('OpenAI Responses 回傳無效 SSE 資料。')
+      }
+      if (!payload || ['error', 'response.failed', 'response.incomplete'].includes(payload.type ?? ''))
+        throw createBadGatewayError('OpenAI Responses 串流測試未成功完成。')
+      if (payload.type === 'response.completed') {
+        if (!completedResponse(payload.response))
+          throw createBadGatewayError('OpenAI Responses 未回傳完整的文字測試結果。')
+        completed = true
+      }
+    }
+    if (!completed)
+      throw createBadGatewayError('OpenAI Responses 未回傳完整的 SSE 測試結果。')
     return
   }
 
@@ -146,4 +194,12 @@ function silentWav() {
 function writeAscii(view: DataView, offset: number, text: string) {
   for (let index = 0; index < text.length; index++)
     view.setUint8(offset + index, text.charCodeAt(index))
+}
+
+/** Require a terminal response and usable assistant text, including after reasoning-only output. */
+function completedResponse(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || !('status' in value) || value.status !== 'completed' || !('output' in value) || !Array.isArray(value.output))
+    return false
+  return value.output.some(item => item?.type === 'message' && Array.isArray(item.content)
+    && item.content.some((part: { type?: unknown, text?: unknown }) => part?.type === 'output_text' && typeof part.text === 'string' && part.text.trim().length > 0))
 }

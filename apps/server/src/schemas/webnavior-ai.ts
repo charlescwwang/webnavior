@@ -7,7 +7,7 @@ import { boolean, check, doublePrecision, index, integer, jsonb, pgTable, text, 
 import { nanoid } from '../utils/id'
 
 /** A Server-managed protocol family for one capability-specific provider profile. */
-export type WebnaviorAiConnectionKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
+export type WebnaviorAiConnectionKind = 'llama-cpp' | 'ollama' | 'openai-compatible' | 'openai-responses'
 /** AI responsibilities managed centrally for all Webnavior Kiosks. */
 export type WebnaviorAiCapability = 'chat' | 'vision' | 'asr' | 'tts'
 /** A Jev-wire-compatible System One server implementation. */

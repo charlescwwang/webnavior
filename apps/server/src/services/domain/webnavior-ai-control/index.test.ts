@@ -26,6 +26,46 @@ describe('webnavior AI capability Provider profiles', () => {
     })
   })
 
+  it('persists native response modes and invalidates verification on transport changes', async () => {
+    fetchImpl.mockResolvedValue(Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }))
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'reasoning', name: 'Native', timeoutMs: 5000 }
+    const profile = await service.verifyAndCreateProfile('chat', { ...input, responseMode: 'json' })
+    expect(profile.responseMode).toBe('json')
+    expect(profile.enableThinking).toBe(false)
+    const updated = await service.updateProfile('chat', profile.id, { ...input, responseMode: 'sse' })
+    expect(updated.responseMode).toBe('sse')
+    expect(updated.verifiedAt).toBeNull()
+  })
+
+  it('forwards native verification timeout through new, saved, and edited profiles', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    fetchImpl.mockImplementation(async () => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }))
+    try {
+      const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'reasoning', name: 'Native', timeoutMs: 60_000 }
+      const profile = await service.verifyAndCreateProfile('chat', input)
+      expect(timeout).toHaveBeenLastCalledWith(60_000)
+      await service.verifyProfile('chat', profile.id)
+      expect(timeout).toHaveBeenLastCalledWith(60_000)
+      await service.verifyAndUpdateProfile('chat', profile.id, { ...input, timeoutMs: 35_000 })
+      expect(timeout).toHaveBeenLastCalledWith(35_000)
+    }
+    finally {
+      timeout.mockRestore()
+    }
+  })
+
+  it.each(['vision', 'asr', 'tts'] as const)('rejects native Responses for %s before persistence or verification', async (capability) => {
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, name: 'Native', modelId: 'reasoning', timeoutMs: 5000 }
+    await expect(service.createProfile(capability, input)).rejects.toThrow()
+    await expect(service.verifyAndCreateProfile(capability, input)).rejects.toThrow()
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(await service.listProfiles()).toEqual([])
+  })
+
+  it('rejects the unsupported thinking toggle for native Responses', async () => {
+    await expect(service.createProfile('chat', { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses', name: 'Native', timeoutMs: 5000, enableThinking: true })).rejects.toThrow()
+  })
+
   it('verifies, persists and revalidates an explicit SSE/JSON chat choice', async () => {
     fetchImpl.mockImplementation(async (_url, init) => {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined

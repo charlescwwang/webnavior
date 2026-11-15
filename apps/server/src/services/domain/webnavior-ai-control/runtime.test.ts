@@ -35,6 +35,12 @@ describe('webnavior AI runtime compiler', () => {
         const endpoint = String(url)
         if (endpoint.endsWith('/chat/completions') && init?.body && JSON.parse(String(init.body)).stream === true)
           return new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+        if (endpoint.endsWith('/responses')) {
+          const result = { status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }
+          return JSON.parse(String(init?.body)).stream
+            ? new Response(`data: ${JSON.stringify({ type: 'response.completed', response: result })}\n\n`, { headers: { 'Content-Type': 'text/event-stream' } })
+            : Response.json(result)
+        }
         if (endpoint.endsWith('/models')) {
           return new Response(JSON.stringify({ data: [
             { id: 'chat-model' },
@@ -70,6 +76,15 @@ describe('webnavior AI runtime compiler', () => {
     await control.selectProfile('chat', profile.id)
     await runtime.applyBindings()
     expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({ llm: { models: { 'webnavior/chat': { upstreams: [{ responseMode }] } } } })
+  })
+
+  it.each(['auto', 'json', 'sse'] as const)('compiles native Responses %s without local thinking parameters', async (responseMode) => {
+    const profile = await control.verifyAndCreateProfile('chat', { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses', modelId: 'chat-model', name: 'Native', timeoutMs: 7500, responseMode })
+    await control.selectProfile('chat', profile.id)
+    await runtime.applyBindings()
+    expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({ llm: { models: { 'webnavior/chat': { upstreams: [{ apiFormat: 'openai-responses', responseMode }] } } } })
+    expect(JSON.stringify(store.get('LLM_ROUTER_CONFIG'))).not.toContain('enableThinking')
+    expect(JSON.stringify(store.get('LLM_ROUTER_CONFIG'))).not.toContain('chat_template')
   })
 
   it('rebuilds Kiosk runtime only from active, verified capability profiles', async () => {

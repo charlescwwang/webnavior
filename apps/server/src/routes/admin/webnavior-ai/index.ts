@@ -12,13 +12,14 @@ import { boolean, maxLength, maxValue, minValue, nonEmpty, number, object, optio
 
 import { adminGuard } from '../../../middlewares/admin-guard'
 import { authGuard } from '../../../middlewares/auth'
+import { validateProviderProfile } from '../../../services/domain/webnavior-ai-control/profilePolicy'
 import { createBadRequestError } from '../../../utils/error'
 
 const providerProfileSchema = object({
   enableThinking: optional(boolean(), false),
   responseMode: optional(chatResponseModeSchema, 'auto'),
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
-  kind: picklist(['llama-cpp', 'ollama', 'openai-compatible']),
+  kind: picklist(['llama-cpp', 'ollama', 'openai-compatible', 'openai-responses']),
   modelId: optional(pipe(string(), maxLength(300))),
   name: pipe(string(), nonEmpty('name is required'), maxLength(120)),
   plaintextKey: optional(pipe(string(), maxLength(8192))),
@@ -96,31 +97,37 @@ export function createAdminWebnaviorAiRoutes(deps: {
     .post('/capabilities/:capability/providers', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, providerProfileSchema)
+      validateProviderProfile(capability, input)
       return c.json(await service.createProfile(capability, input), 201)
     })
     .post('/capabilities/:capability/providers/models:discover', async (c) => {
-      parseCapability(c.req.param('capability'))
+      const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, providerProfileSchema)
+      validateProviderProfile(capability, input)
       return c.json(await service.testProviderConnection(input))
     })
     .post('/capabilities/:capability/providers/:profileId/models:discover', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, providerProfileSchema)
+      validateProviderProfile(capability, input)
       return c.json(await service.testProviderConnection(input, { capability, id: c.req.param('profileId') }))
     })
     .post('/capabilities/:capability/providers/verify-and-save', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, providerProfileSchema)
+      validateProviderProfile(capability, input)
       return c.json(await service.verifyAndCreateProfile(capability, input), 201)
     })
     .post('/capabilities/:capability/providers/:profileId/verify-and-save', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, providerProfileSchema)
+      validateProviderProfile(capability, input)
       return c.json(await service.verifyAndUpdateProfile(capability, c.req.param('profileId'), input))
     })
     .patch('/capabilities/:capability/providers/:profileId', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, updateProviderProfileSchema)
+      validateProviderProfile(capability, input)
       return c.json(await service.updateProfile(capability, c.req.param('profileId'), input))
     })
     .delete('/capabilities/:capability/providers/:profileId', async (c) => {

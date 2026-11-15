@@ -58,7 +58,7 @@ function activeProfile(capability: AiCapability) {
       <div v-if="activeProfile(capability.id)" :class="['rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-50']">
         <span :class="['font-semibold']">目前啟用：</span>
         {{ activeProfile(capability.id)?.name }} · {{ activeProfile(capability.id)?.modelId }}
-        <p v-if="capability.id === 'chat' && activeProfile(capability.id)?.kind === 'openai-compatible'" :class="['mb-0 mt-2']">
+        <p v-if="capability.id === 'chat' && (activeProfile(capability.id)?.kind === 'openai-compatible' || activeProfile(capability.id)?.kind === 'openai-responses')" :class="['mb-0 mt-2']">
           {{ t('settings.kiosk-chat-response.title') }}：{{ t(`settings.kiosk-chat-response.${activeProfile(capability.id)?.responseMode}`) }}
         </p>
       </div>

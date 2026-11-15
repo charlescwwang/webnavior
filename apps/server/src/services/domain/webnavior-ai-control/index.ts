@@ -9,6 +9,7 @@ import { asc, eq } from 'drizzle-orm'
 
 import { createBadRequestError, createConflictError, createNotFoundError } from '../../../utils/error'
 import { discoverModels, probeModelCatalog } from './discover-models'
+import { validateProviderProfile } from './profilePolicy'
 import { verifyProviderProfile } from './verify-provider-profile'
 
 import * as schema from '../../../schemas'
@@ -76,6 +77,7 @@ export function createWebnaviorAiControlService(options: {
   }
 
   async function createProfile(capability: WebnaviorAiCapability, input: AiProviderProfileInput) {
+    validateProviderProfile(capability, input)
     const [profile] = await options.db.insert(schema.webnaviorAiProviderProfiles).values({
       baseURL: input.baseURL,
       capability,
@@ -83,7 +85,7 @@ export function createWebnaviorAiControlService(options: {
       modelId: input.modelId?.trim() || null,
       name: input.name,
       enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
-      responseMode: capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto',
+      responseMode: capability === 'chat' && (input.kind === 'openai-compatible' || input.kind === 'openai-responses') ? input.responseMode ?? 'auto' : 'auto',
       timeoutMs: input.timeoutMs,
       voice: capability === 'tts' ? input.voice?.trim() || null : null,
       speed: capability === 'tts' && input.kind === 'openai-compatible' ? input.speed ?? 1 : null,
@@ -104,6 +106,7 @@ export function createWebnaviorAiControlService(options: {
   }
 
   async function updateProfile(capability: WebnaviorAiCapability, profileId: string, input: AiProviderProfileInput & { clearApiKey?: boolean }) {
+    validateProviderProfile(capability, input)
     const current = await findProfile(capability, profileId)
     if (input.clearApiKey && input.plaintextKey?.trim())
       throw createBadRequestError('不能同時清除與設定 API Key。', 'WEBNAVIOR_AI_PROVIDER_PROFILE_KEY_CONFLICT')
@@ -120,8 +123,8 @@ export function createWebnaviorAiControlService(options: {
     // Migrated null and explicit 1 both mean standard speed. A name-only edit
     // must not revoke an existing verification because the new field was unset.
     const speedChanged = (current.speed ?? 1) !== (selectedSpeed ?? 1)
-    const selectedResponseMode = capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto'
-    const requiresRevalidation = current.responseMode !== selectedResponseMode || sourceChanged || current.modelId !== selectedModelId || apiKeyCiphertext !== current.apiKeyCiphertext || current.voice !== selectedVoice || speedChanged || current.enableThinking !== (input.enableThinking ?? false)
+    const selectedResponseMode = capability === 'chat' && (input.kind === 'openai-compatible' || input.kind === 'openai-responses') ? input.responseMode ?? 'auto' : 'auto'
+    const requiresRevalidation = current.responseMode !== selectedResponseMode || sourceChanged || current.modelId !== selectedModelId || apiKeyCiphertext !== current.apiKeyCiphertext || current.voice !== selectedVoice || speedChanged || current.enableThinking !== (capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false))
     const [updated] = await options.db.update(schema.webnaviorAiProviderProfiles).set({
       apiKeyCiphertext,
       baseURL: input.baseURL,
@@ -131,7 +134,7 @@ export function createWebnaviorAiControlService(options: {
       modelId: selectedModelId,
       name: input.name,
       enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
-      responseMode: capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto',
+      responseMode: capability === 'chat' && (input.kind === 'openai-compatible' || input.kind === 'openai-responses') ? input.responseMode ?? 'auto' : 'auto',
       timeoutMs: input.timeoutMs,
       voice: selectedVoice,
       speed: selectedSpeed,
@@ -234,7 +237,7 @@ export function createWebnaviorAiControlService(options: {
         modelId,
         name: input.name,
         enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
-        responseMode: capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto',
+        responseMode: capability === 'chat' && (input.kind === 'openai-compatible' || input.kind === 'openai-responses') ? input.responseMode ?? 'auto' : 'auto',
         timeoutMs: input.timeoutMs,
         verifiedAt: new Date(),
         voice: capability === 'tts' ? input.voice?.trim() || null : null,
@@ -248,8 +251,10 @@ export function createWebnaviorAiControlService(options: {
   }
 
   async function verifyInput(capability: WebnaviorAiCapability, input: AiProviderProfileInput, modelId: string, plaintextKey?: string) {
+    validateProviderProfile(capability, input)
     await verifyProviderProfile({
       baseURL: input.baseURL,
+      timeoutMs: input.timeoutMs,
       capability,
       enableThinking: input.enableThinking ?? false,
       responseMode: input.responseMode ?? 'auto',
@@ -263,6 +268,7 @@ export function createWebnaviorAiControlService(options: {
 
   async function verifyProfile(capability: WebnaviorAiCapability, profileId: string) {
     const profile = await findProfile(capability, profileId)
+    validateProviderProfile(capability, profile)
     if (!profile.modelId || !profile.discoveredModels.some(model => model.id === profile.modelId)) {
       throw createBadRequestError('請先讀取模型清單並選擇此 Provider 的模型，再進行驗證。', 'WEBNAVIOR_AI_PROVIDER_PROFILE_MODEL_REQUIRED')
     }
@@ -270,6 +276,7 @@ export function createWebnaviorAiControlService(options: {
     try {
       await verifyProviderProfile({
         baseURL: profile.baseURL,
+        timeoutMs: profile.timeoutMs,
         capability,
         enableThinking: profile.enableThinking,
         responseMode: profile.responseMode,

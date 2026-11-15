@@ -8,6 +8,7 @@ import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
 import type { ConfigKVService, LlmRouterConfig } from '../../adapters/config-kv'
 
 import { createBadRequestError } from '../../../utils/error'
+import { validateProviderProfile } from './profilePolicy'
 
 const RUNTIME_MODEL_NAMES = {
   asr: 'webnavior:asr',
@@ -52,6 +53,7 @@ export function createWebnaviorAiRuntimeService(options: {
 
     try {
       for (const profile of byCapability.values()) {
+        validateProviderProfile(profile.capability, profile)
         if (!profile.verifiedAt || !profile.modelId || !profile.discoveredModels.some(model => model.id === profile.modelId)) {
           throw createBadRequestError(
             `「${profile.name}」尚未通過目前模型的驗證，請重新讀取、驗證後再套用。`,
@@ -129,6 +131,7 @@ function applyLlmProfile(
       baseURL: profile.baseURL,
       cachePrompt: profile.kind === 'llama-cpp',
       ...(profile.capability === 'chat' && profile.kind === 'openai-compatible' ? { enableThinking: profile.enableThinking, responseMode: profile.responseMode } : {}),
+      ...(profile.kind === 'openai-responses' ? { apiFormat: 'openai-responses' as const, responseMode: profile.responseMode } : {}),
       ...(profile.kind === 'ollama' ? { ollamaKeepAlive: -1 } : {}),
       headerTemplate: key ? 'Bearer {KEY}' : '',
       keys: [{

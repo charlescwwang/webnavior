@@ -27,6 +27,7 @@ import { getAdapter } from '../../adapters/tts'
 import { createConfigLoader } from './config-loader'
 import { mapUpstreamError } from './error-mapping'
 import { createKeyRotator } from './key-rotator'
+import { buildResponsesRequest, translateResponsesResponse } from './responses'
 
 const UPSTREAM_BODY_SNIPPET_MAX = 256
 
@@ -247,7 +248,8 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         }
 
         const effectiveModel = upstream.overrideModel ?? req.modelName
-        const body = JSON.stringify({
+        const nativeResponses = upstream.apiFormat === 'openai-responses'
+        const requestBody = {
           ...req.body,
           // Only adapt requests that asked for streaming. Internal JSON-only
           // decisions must retain their parser even when the chat profile uses SSE.
@@ -266,8 +268,17 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
                 enable_thinking: upstream.enableThinking,
               } }
             : {}),
+          // Upstream-owned policy wins over caller preference on native Responses
+          // only, and cannot leak into a later Chat fallback attempt.
+          ...(nativeResponses && upstream.reasoningEffort !== undefined
+            ? { reasoning: {
+                ...(req.body.reasoning as Record<string, unknown> | undefined),
+                effort: upstream.reasoningEffort,
+              } }
+            : {}),
           model: effectiveModel,
-        })
+        }
+        const body = JSON.stringify(nativeResponses ? buildResponsesRequest(requestBody, effectiveModel) : requestBody)
 
         // NOTICE:
         // We compose two AbortSignals — per-attempt timeout and the caller's
@@ -290,19 +301,34 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
             req.abortSignal.addEventListener('abort', callerOnAbort, { once: true })
         }
 
+        const cleanupAttempt = () => {
+          clearTimeout(timeoutHandle)
+          req.abortSignal?.removeEventListener('abort', callerOnAbort)
+        }
+        let streamOwnsCleanup = false
         let response: Response
         try {
-          response = await fetchImpl(`${upstream.baseURL.replace(/\/+$/, '')}/chat/completions`, {
+          const endpoint = nativeResponses ? 'responses' : 'chat/completions'
+          response = await fetchImpl(`${upstream.baseURL.replace(/\/+$/, '')}/${endpoint}`, {
             method: 'POST',
             headers,
             body,
             signal: attemptCtrl.signal,
           })
+          if (nativeResponses && response.ok) {
+            // Native streaming owns the timeout/disconnect listener until body close,
+            // not merely receipt of the HTTP headers.
+            streamOwnsCleanup = response.headers.get('content-type')?.includes('text/event-stream') === true
+            response = await translateResponsesResponse(response, requestBody.stream === true, attemptCtrl.signal, streamOwnsCleanup ? cleanupAttempt : undefined)
+          }
+        }
+        catch (error) {
+          cleanupAttempt()
+          throw error
         }
         finally {
-          clearTimeout(timeoutHandle)
-          if (req.abortSignal != null)
-            req.abortSignal.removeEventListener('abort', callerOnAbort)
+          if (!streamOwnsCleanup)
+            cleanupAttempt()
         }
 
         if (response.ok) {

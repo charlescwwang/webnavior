@@ -6,7 +6,7 @@ import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
 import { readonly, shallowRef } from 'vue'
 
 export type AiCapability = 'chat' | 'vision' | 'asr' | 'tts'
-export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
+export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible' | 'openai-responses'
 export type SystemOneImplementation = 'dasein' | 'lookski' | 'slm' | 'openai-decisions'
 
 export interface AiProviderProfile {

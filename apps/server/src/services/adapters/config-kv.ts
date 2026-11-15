@@ -41,6 +41,10 @@ export const keyEntrySchema = object({
 })
 
 export const llmUpstreamSchema = object({
+  /** Omitted selects the existing Chat Completions protocol. */
+  apiFormat: optional(picklist(['openai-responses'])),
+  /** Native non-reasoning benchmark policy; omitted preserves the caller/provider default. */
+  reasoningEffort: optional(picklist(['none'])),
   /** Optional model-template policy; absence leaves the provider default unchanged. */
   enableThinking: optional(boolean()),
   /** A JSON-only provider can serve a streaming Kiosk through a final event. */

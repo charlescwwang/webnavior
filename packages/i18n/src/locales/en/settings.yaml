@@ -1778,4 +1778,7 @@ kiosk-chat-response:
   auto: Keep current behavior
   json: Complete response (JSON)
   sse: Streaming response (SSE)
-  description: SSE displays replies progressively; JSON waits for completion. Verify and save changes, then apply to Kiosk.
+  description: SSE receives model output progressively and shows generation progress; ordering results appear after verification. JSON waits for completion. Verify and save changes, then apply to Kiosk.
+kiosk-openai:
+  title: OpenAI native API (Responses)
+  description: Uses the OpenAI Responses API for chat and function calls, independently of System One. The key needs Responses write access; model discovery also needs Models read access.
