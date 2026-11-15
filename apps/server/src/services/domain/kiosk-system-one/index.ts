@@ -7,6 +7,7 @@ import { asc, eq } from 'drizzle-orm'
 
 import { createBadRequestError, createConflictError, createNotFoundError } from '../../../utils/error'
 import { defaultDecisionInstruction } from '../kiosk-interaction-decision/prompt'
+import { createDecisionsRequest, readDecisions } from './decisions'
 import { createChoiceRequest, readChoice } from './slm'
 
 import * as schema from '../../../schemas'
@@ -55,7 +56,7 @@ export interface SystemOnePolicyInput {
 
 /** Correlates one provider round trip without including credential headers. */
 export type SystemOneTrace = { requestId: string, endpoint: string } & (
-  | { phase: 'request', payload: { state: string, questions: Record<string, SystemOneQuestion> } | ReturnType<typeof createChoiceRequest>['body'] }
+  | { phase: 'request', payload: { state: string, questions: Record<string, SystemOneQuestion> } | ReturnType<typeof createChoiceRequest>['body'] | ReturnType<typeof createDecisionsRequest> }
   | { phase: 'response', status: number, durationMs: number, payload: unknown }
   | { phase: 'failed', durationMs: number, error: string }
 )
@@ -98,6 +99,8 @@ export function createKioskSystemOneService(options: {
   }
 
   async function save(input: SystemOneProfileInput) {
+    if (input.implementation === 'openai-decisions' && !input.plaintextKey?.trim())
+      throw createBadRequestError('新增 OpenAI Decisions 設定時請填寫 API Key。', 'KIOSK_SYSTEM_ONE_KEY_REQUIRED')
     let created: schema.KioskSystemOneProfile
     try {
       [created] = await options.db.insert(schema.kioskSystemOneProfiles).values({
@@ -125,7 +128,7 @@ export function createKioskSystemOneService(options: {
    * lookski reports `model_id`. SLM discovers /models; readiness is separate.
    */
   async function inspectRuntimeModel(input: Pick<SystemOneProfileInput, 'baseURL' | 'implementation' | 'timeoutMs' | 'plaintextKey'>): Promise<SystemOneRuntimeModel> {
-    const endpoint = new URL(input.implementation === 'slm' ? 'models' : 'health', `${input.baseURL.replace(/\/+$/u, '')}/`)
+    const endpoint = new URL(['slm', 'openai-decisions'].includes(input.implementation) ? 'models' : 'health', `${input.baseURL.replace(/\/+$/u, '')}/`)
     let response: Response
     try {
       response = await fetchImpl(endpoint, { signal: AbortSignal.timeout(input.timeoutMs), ...(input.plaintextKey?.trim() ? { headers: { Authorization: `Bearer ${input.plaintextKey.trim()}` } } : {}) })
@@ -137,11 +140,11 @@ export function createKioskSystemOneService(options: {
       throw createBadRequestError('System One health endpoint 拒絕請求。', 'KIOSK_SYSTEM_ONE_HEALTH_REJECTED')
 
     const payload: unknown = await response.json().catch(() => null)
-    if (input.implementation === 'slm') {
+    if (input.implementation === 'slm' || input.implementation === 'openai-decisions') {
       const data = payload && typeof payload === 'object' && 'data' in payload ? payload.data : undefined
-      const modelIds = Array.isArray(data) ? data.flatMap(model => model && typeof model === 'object' && 'id' in model && typeof model.id === 'string' && model.id.trim() ? [model.id] : []) : []
+      const modelIds = Array.isArray(data) ? data.flatMap(model => model && typeof model === 'object' && 'id' in model && typeof model.id === 'string' && model.id.trim() && (input.implementation !== 'openai-decisions' || /^gpt-6-luna(?:-|$)/.test(model.id)) ? [model.id] : []) : []
       if (!modelIds.length)
-        throw createBadRequestError('SLM models endpoint 未回傳可選模型。', 'KIOSK_SYSTEM_ONE_HEALTH_INVALID')
+        throw createBadRequestError('模型清單未回傳此決策來源支援的模型；也可手動填寫模型識別後驗證。', 'KIOSK_SYSTEM_ONE_HEALTH_INVALID')
       return { modelId: modelIds[0]!, modelIds }
     }
     const modelKey = input.implementation === 'dasein' ? 'model' : 'model_id'
@@ -207,11 +210,12 @@ export function createKioskSystemOneService(options: {
   async function readiness(profileId: string) {
     const profile = await find(profileId)
     try {
-      const body = profile.implementation === 'slm'
+      const finite = profile.implementation === 'slm' || profile.implementation === 'openai-decisions'
+      const body = finite
         ? await invoke(profile, 'Connection check. Choose READY.', { ready: { type: 'choice', instructions: 'For this connection check select READY.', criteria: { READY: 'The required answer for this connection check.', NOT_READY: 'Any other answer.' } } })
         : await invoke(profile, 'ready', { ready: { type: 'noul', instructions: 'Is the System One model ready?' } })
       const ready = body.answers?.ready
-      if (!ready || (profile.implementation === 'slm' && (typeof ready !== 'object' || !('choice' in ready) || ready.choice !== 'READY')))
+      if (!ready || (finite && (typeof ready !== 'object' || !('choice' in ready) || ready.choice !== 'READY')))
         throw new Error('System One response did not contain the readiness answer')
       const [updated] = await options.db.update(schema.kioskSystemOneProfiles).set({ lastCheckedAt: new Date(), lastCheckError: null, verifiedAt: new Date() }).where(eq(schema.kioskSystemOneProfiles.id, profile.id)).returning()
       return publicProfile(updated)
@@ -247,11 +251,19 @@ export function createKioskSystemOneService(options: {
     return Boolean(profile)
   }
 
-  async function maxActionCandidates() {
+  async function maxActionCandidates(): Promise<number> {
     const profile = await options.db.query.kioskSystemOneProfiles.findFirst({ where: eq(schema.kioskSystemOneProfiles.isActive, true) })
-    // Flat diagnostic replays retain their engine ceiling. Runtime staged
-    // routing preserves all issued candidates and bounds each question to six.
-    return profile?.implementation === 'lookski' ? 22 : 253
+    // Direct routing reserves four choices for handoff/background/greeting/
+    // incomplete speech. Preserve each engine's existing total choice ceiling.
+    if (profile?.implementation === 'slm')
+      return 253
+    return profile?.implementation === 'openai-decisions' ? 251 : profile?.implementation === 'lookski' ? 18 : 249
+  }
+  async function routing(): Promise<'direct' | 'staged'> {
+    const profile = await options.db.query.kioskSystemOneProfiles.findFirst({ where: eq(schema.kioskSystemOneProfiles.isActive, true) })
+    // SLM's one-letter protocol is outside this refactor; its bounded tree
+    // does not impose a six-choice constraint on Jev or OpenAI Decisions.
+    return profile?.implementation === 'slm' ? 'staged' : 'direct'
   }
   async function activate(profileId: string) {
     const profile = await find(profileId)
@@ -272,13 +284,14 @@ export function createKioskSystemOneService(options: {
     if (profile.implementation === 'slm' && entries.length !== 1)
       throw new Error('SLM requires one staged question per request')
     const choiceRequest = profile.implementation === 'slm' ? createChoiceRequest(profile.modelId, state, entries[0]![1]) : undefined
-    const endpoint = new URL(choiceRequest ? 'chat/completions' : 'v1/systemone', `${profile.baseURL.replace(/\/+$/, '')}/`)
+    const decisionsRequest = profile.implementation === 'openai-decisions' ? createDecisionsRequest(profile.modelId, state, questions) : undefined
+    const endpoint = new URL(decisionsRequest ? 'decisions' : choiceRequest ? 'chat/completions' : 'v1/systemone', `${profile.baseURL.replace(/\/+$/, '')}/`)
     const correlation = { requestId: crypto.randomUUID(), endpoint: `${endpoint.origin}${endpoint.pathname}` }
     const startedAt = performance.now()
     let responseRecorded = false
     const key = decryptKey(profile)
     try {
-      const payload = choiceRequest?.body ?? { state, questions }
+      const payload = decisionsRequest ?? choiceRequest?.body ?? { state, questions }
       // This is the fully assembled provider body, including dialogue and
       // policy, not the smaller browser request. URL credentials/headers stay
       // outside the diagnostic envelope.
@@ -302,6 +315,8 @@ export function createKioskSystemOneService(options: {
         throw new Error(`System One returned HTTP ${response.status}`)
       if (parseError)
         throw parseError
+      if (decisionsRequest)
+        return readDecisions(responsePayload, decisionsRequest)
       if (choiceRequest)
         return { selectionMode: 'unscored', answers: { [entries[0]![0]]: { choice: readChoice(responsePayload, choiceRequest) } } }
       // Untrusted Jev payloads cannot opt into SLM's unscored-selection policy.
@@ -322,7 +337,7 @@ export function createKioskSystemOneService(options: {
       verifiedAt: null,
     }).where(eq(schema.kioskSystemOneProfiles.id, profileId))
   }
-  return { activate, deactivate, decide, delete: remove, getPolicy, inspectRuntimeModel, isEnabled, list, maxActionCandidates, readiness, save, savePolicy, update }
+  return { activate, deactivate, decide, delete: remove, getPolicy, inspectRuntimeModel, isEnabled, list, maxActionCandidates, readiness, routing, save, savePolicy, update }
 
   function decryptKey(profile: schema.KioskSystemOneProfile) {
     return profile.apiKeyCiphertext

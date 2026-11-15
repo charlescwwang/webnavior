@@ -1,3 +1,5 @@
+import type { ChatResponseMode } from '@proj-airi/stage-shared/ai-provider'
+
 import type { Database } from '../../../libs/db'
 import type { WebnaviorAiCapability, WebnaviorAiConnectionKind } from '../../../schemas/webnavior-ai'
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
@@ -17,11 +19,13 @@ export interface AiProviderProfileInput {
   baseURL: string
   kind: WebnaviorAiConnectionKind
   enableThinking?: boolean
+  responseMode?: ChatResponseMode
   modelId?: string
   name: string
   plaintextKey?: string
   timeoutMs: number
   voice?: string
+  speed?: number
 }
 
 /** A browser-safe Provider record. It deliberately excludes ciphertext. */
@@ -79,8 +83,10 @@ export function createWebnaviorAiControlService(options: {
       modelId: input.modelId?.trim() || null,
       name: input.name,
       enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
+      responseMode: capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto',
       timeoutMs: input.timeoutMs,
       voice: capability === 'tts' ? input.voice?.trim() || null : null,
+      speed: capability === 'tts' && input.kind === 'openai-compatible' ? input.speed ?? 1 : null,
     }).returning()
 
     if (!input.plaintextKey?.trim())
@@ -110,7 +116,12 @@ export function createWebnaviorAiControlService(options: {
     const sourceChanged = current.baseURL !== input.baseURL || current.kind !== input.kind
     const selectedModelId = input.modelId?.trim() || null
     const selectedVoice = capability === 'tts' ? input.voice?.trim() || null : null
-    const requiresRevalidation = sourceChanged || current.modelId !== selectedModelId || apiKeyCiphertext !== current.apiKeyCiphertext || current.voice !== selectedVoice || current.enableThinking !== (input.enableThinking ?? false)
+    const selectedSpeed = capability === 'tts' && input.kind === 'openai-compatible' ? input.speed ?? 1 : null
+    // Migrated null and explicit 1 both mean standard speed. A name-only edit
+    // must not revoke an existing verification because the new field was unset.
+    const speedChanged = (current.speed ?? 1) !== (selectedSpeed ?? 1)
+    const selectedResponseMode = capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto'
+    const requiresRevalidation = current.responseMode !== selectedResponseMode || sourceChanged || current.modelId !== selectedModelId || apiKeyCiphertext !== current.apiKeyCiphertext || current.voice !== selectedVoice || speedChanged || current.enableThinking !== (input.enableThinking ?? false)
     const [updated] = await options.db.update(schema.webnaviorAiProviderProfiles).set({
       apiKeyCiphertext,
       baseURL: input.baseURL,
@@ -120,8 +131,10 @@ export function createWebnaviorAiControlService(options: {
       modelId: selectedModelId,
       name: input.name,
       enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
+      responseMode: capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto',
       timeoutMs: input.timeoutMs,
       voice: selectedVoice,
+      speed: selectedSpeed,
     }).where(eq(schema.webnaviorAiProviderProfiles.id, current.id)).returning()
     return toManagedProfile(updated)
   }
@@ -221,9 +234,11 @@ export function createWebnaviorAiControlService(options: {
         modelId,
         name: input.name,
         enableThinking: capability === 'chat' && input.kind === 'openai-compatible' && (input.enableThinking ?? false),
+        responseMode: capability === 'chat' && input.kind === 'openai-compatible' ? input.responseMode ?? 'auto' : 'auto',
         timeoutMs: input.timeoutMs,
         verifiedAt: new Date(),
         voice: capability === 'tts' ? input.voice?.trim() || null : null,
+        speed: capability === 'tts' && input.kind === 'openai-compatible' ? input.speed ?? 1 : null,
       }).where(eq(schema.webnaviorAiProviderProfiles.id, current.id)).returning()
       return toManagedProfile(verified)
     }
@@ -237,10 +252,12 @@ export function createWebnaviorAiControlService(options: {
       baseURL: input.baseURL,
       capability,
       enableThinking: input.enableThinking ?? false,
+      responseMode: input.responseMode ?? 'auto',
       kind: input.kind,
       modelId,
       ...(plaintextKey ? { plaintextKey } : {}),
       ...(capability === 'tts' && input.voice?.trim() ? { voice: input.voice.trim() } : {}),
+      ...(capability === 'tts' && input.kind === 'openai-compatible' ? { speed: input.speed ?? 1 } : {}),
     }, fetchImpl)
   }
 
@@ -255,10 +272,12 @@ export function createWebnaviorAiControlService(options: {
         baseURL: profile.baseURL,
         capability,
         enableThinking: profile.enableThinking,
+        responseMode: profile.responseMode,
         kind: profile.kind,
         modelId: profile.modelId,
         ...(key ? { plaintextKey: key.toString('utf8') } : {}),
         ...(profile.voice ? { voice: profile.voice } : {}),
+        ...(capability === 'tts' && profile.kind === 'openai-compatible' ? { speed: profile.speed ?? 1 } : {}),
       }, fetchImpl)
       const [updated] = await options.db.update(schema.webnaviorAiProviderProfiles).set({
         lastVerificationError: null,

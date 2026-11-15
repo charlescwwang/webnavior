@@ -6,6 +6,7 @@ import type { WebnaviorAiControlService } from '../../../services/domain/webnavi
 import type { WebnaviorAiRuntimeService } from '../../../services/domain/webnavior-ai-control/runtime'
 import type { HonoEnv } from '../../../types/hono'
 
+import { chatResponseModeSchema } from '@proj-airi/stage-shared/ai-provider'
 import { Hono } from 'hono'
 import { boolean, maxLength, maxValue, minValue, nonEmpty, number, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
@@ -15,6 +16,7 @@ import { createBadRequestError } from '../../../utils/error'
 
 const providerProfileSchema = object({
   enableThinking: optional(boolean(), false),
+  responseMode: optional(chatResponseModeSchema, 'auto'),
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
   kind: picklist(['llama-cpp', 'ollama', 'openai-compatible']),
   modelId: optional(pipe(string(), maxLength(300))),
@@ -22,6 +24,7 @@ const providerProfileSchema = object({
   plaintextKey: optional(pipe(string(), maxLength(8192))),
   timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
   voice: optional(pipe(string(), maxLength(200))),
+  speed: optional(pipe(number(), minValue(0.25), maxValue(4))),
 })
 
 const updateProviderProfileSchema = object({
@@ -35,7 +38,7 @@ const selectionSchema = object({
 
 const systemOneProfileSchema = object({
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
-  implementation: picklist(['dasein', 'lookski', 'slm']),
+  implementation: picklist(['dasein', 'lookski', 'slm', 'openai-decisions']),
   modelId: pipe(string(), nonEmpty('modelId is required'), maxLength(300)),
   name: pipe(string(), nonEmpty('name is required'), maxLength(120)),
   plaintextKey: optional(pipe(string(), maxLength(8192))),
@@ -44,7 +47,7 @@ const systemOneProfileSchema = object({
 
 const systemOneRuntimeModelSchema = object({
   baseURL: pipe(string(), url('baseURL must be a valid URL'), maxLength(500)),
-  implementation: picklist(['dasein', 'lookski', 'slm']),
+  implementation: picklist(['dasein', 'lookski', 'slm', 'openai-decisions']),
   plaintextKey: optional(pipe(string(), maxLength(8192))),
   timeoutMs: pipe(number(), minValue(1000), maxValue(60_000)),
 })

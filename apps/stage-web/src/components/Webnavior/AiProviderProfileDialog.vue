@@ -6,11 +6,13 @@ import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } f
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-type AiProviderProfileForm = Omit<AiProviderProfileInput, 'enableThinking' | 'modelId' | 'plaintextKey' | 'voice'> & {
+type AiProviderProfileForm = Omit<AiProviderProfileInput, 'responseMode' | 'enableThinking' | 'modelId' | 'plaintextKey' | 'voice' | 'speed'> & {
+  responseMode: NonNullable<AiProviderProfileInput['responseMode']>
   enableThinking: boolean
   modelId: string
   plaintextKey: string
   voice: string
+  speed: number
 }
 
 const props = defineProps<{
@@ -37,17 +39,21 @@ const form = reactive<AiProviderProfileForm>({
   baseURL: 'http://localhost:11434/v1',
   kind: 'ollama',
   enableThinking: false,
+  responseMode: 'auto',
   modelId: '',
   name: '本機 Ollama',
   plaintextKey: '',
   timeoutMs: 30_000,
   voice: '',
+  speed: 1,
 })
 
 function defaultTimeoutMs() {
   return props.capability === 'chat' ? 60_000 : 30_000
 }
 
+const speedAvailable = computed(() => props.capability === 'tts' && form.kind === 'openai-compatible')
+const speedValid = computed(() => !speedAvailable.value || (Number.isFinite(form.speed) && form.speed >= 0.25 && form.speed <= 4))
 const timeoutMaximum = computed(() => props.capability === 'chat' ? 60_000 : 30_000)
 const capabilityTitles: Partial<Record<AiCapability, string>> = {
   asr: '語音辨識 ASR',
@@ -85,12 +91,14 @@ function openEditor(profile: AiProviderProfile) {
   editingProfile.value = profile
   form.baseURL = profile.baseURL
   form.enableThinking = profile.enableThinking
+  form.responseMode = profile.responseMode
   form.kind = profile.kind
   form.modelId = profile.modelId ?? ''
   form.name = profile.name
   form.plaintextKey = ''
   form.timeoutMs = profile.timeoutMs
   form.voice = profile.voice ?? ''
+  form.speed = profile.speed ?? 1
   modelCatalog.value = undefined
   testedConnectionSignature.value = undefined
   showForm.value = true
@@ -99,12 +107,14 @@ function openEditor(profile: AiProviderProfile) {
 function resetForm() {
   form.baseURL = 'http://localhost:11434/v1'
   form.enableThinking = false
+  form.responseMode = 'auto'
   form.kind = 'ollama'
   form.modelId = ''
   form.name = '本機 Ollama'
   form.plaintextKey = ''
   form.timeoutMs = defaultTimeoutMs()
   form.voice = ''
+  form.speed = 1
   modelCatalog.value = undefined
   testedConnectionSignature.value = undefined
 }
@@ -163,17 +173,18 @@ async function testConnection() {
 }
 
 function verifyAndSaveProfile() {
-  if (!props.capability || !form.name.trim() || !form.baseURL.trim())
+  if (!props.capability || !form.name.trim() || !form.baseURL.trim() || !speedValid.value)
     return
   const input: AiProviderProfileInput = {
     baseURL: form.baseURL.trim(),
     kind: form.kind,
-    ...(props.capability === 'chat' && form.kind === 'openai-compatible' ? { enableThinking: form.enableThinking } : {}),
+    ...(props.capability === 'chat' && form.kind === 'openai-compatible' ? { enableThinking: form.enableThinking, responseMode: form.responseMode } : {}),
     ...(form.modelId.trim() ? { modelId: form.modelId.trim() } : {}),
     name: form.name.trim(),
     ...(form.plaintextKey.trim() ? { plaintextKey: form.plaintextKey.trim() } : {}),
     timeoutMs: form.timeoutMs,
     ...(props.capability === 'tts' && form.voice.trim() ? { voice: form.voice.trim() } : {}),
+    ...(speedAvailable.value ? { speed: form.speed } : {}),
   }
   emit('verifyAndSave', props.capability, input, editingProfile.value?.id)
 }
@@ -213,6 +224,9 @@ function verifyAndSaveProfile() {
                 </h3>
                 <p :class="['mb-0 mt-1 break-all text-sm text-slate-600 dark:text-slate-300']">
                   {{ profile.kind }} · {{ profile.baseURL }} · {{ profile.modelId ?? '尚未選擇模型' }}
+                </p>
+                <p v-if="profile.capability === 'chat' && profile.kind === 'openai-compatible'" :class="['mb-0 mt-2 text-sm text-cyan-800 dark:text-cyan-200']">
+                  {{ t('settings.kiosk-chat-response.title') }}：{{ t(`settings.kiosk-chat-response.${profile.responseMode}`) }}
                 </p>
               </div>
               <span :class="[profile.id === props.selectedProfileId ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' : profile.verifiedAt ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-100' : 'bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100', 'rounded-full px-3 py-1 text-xs font-semibold']">
@@ -255,6 +269,15 @@ function verifyAndSaveProfile() {
               <option value="llama-cpp">llama.cpp（啟用 Prompt Cache）</option>
               <option value="openai-compatible">OpenAI-compatible</option>
             </select>
+          </label>
+          <label v-if="props.capability === 'chat' && form.kind === 'openai-compatible'" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+            {{ t('settings.kiosk-chat-response.title') }}
+            <select v-model="form.responseMode" :aria-label="t('settings.kiosk-chat-response.title')" :disabled="props.busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']">
+              <option value="auto">{{ t('settings.kiosk-chat-response.auto') }}</option>
+              <option value="json">{{ t('settings.kiosk-chat-response.json') }}</option>
+              <option value="sse">{{ t('settings.kiosk-chat-response.sse') }}</option>
+            </select>
+            <p :class="['m-0 text-xs leading-5 text-slate-500 dark:text-slate-400']">{{ t('settings.kiosk-chat-response.description') }}</p>
           </label>
           <label :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
             顯示名稱
@@ -299,10 +322,15 @@ function verifyAndSaveProfile() {
             Voice ID（選填）
             <Input v-model="form.voice" :disabled="props.busy" placeholder="預設 zh-TW-HsiaoChenNeural" />
           </label>
+          <label v-if="speedAvailable" :class="['flex flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-200']">
+            {{ t('settings.kiosk-tts-speed.title') }}
+            <Input v-model.number="form.speed" :disabled="props.busy" type="number" min="0.25" max="4" step="0.05" />
+            <span :class="['text-xs leading-5 text-slate-500 dark:text-slate-400']">{{ t('settings.kiosk-tts-speed.description') }}</span>
+          </label>
           <Button :disabled="props.busy || !form.name.trim() || !form.baseURL.trim()" @click="testConnection">
             測試連線與讀取模型
           </Button>
-          <Button :disabled="props.busy || !form.name.trim() || !form.baseURL.trim() || !form.modelId || !hasTestedConnection" @click="verifyAndSaveProfile">
+          <Button :disabled="props.busy || !form.name.trim() || !form.baseURL.trim() || !form.modelId || !hasTestedConnection || !speedValid" @click="verifyAndSaveProfile">
             驗證並儲存 Provider
           </Button>
         </section>

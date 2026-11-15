@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createAdminWebnaviorAiRoutes } from '.'
+import { ApiError } from '../../../utils/error'
 
 describe('admin Webnavior AI routes', () => {
   it('passes a Provider ID unchanged when verifying a saved profile', async () => {
@@ -28,7 +29,7 @@ describe('admin Webnavior AI routes', () => {
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: verifyProfile as any,
         },
-        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), routing: async () => 'direct' as const, maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
       }))
 
     const response = await app.request('/capabilities/chat/providers/RB_zw84In0eWFofqtM-9K/verify', { method: 'POST' })
@@ -59,7 +60,7 @@ describe('admin Webnavior AI routes', () => {
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: vi.fn(),
         },
-        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel: vi.fn(), list: vi.fn(async () => []), routing: async () => 'direct' as const, maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
       }))
 
     const response = await app.request('/capabilities/chat/providers/verify-and-save', {
@@ -98,7 +99,7 @@ describe('admin Webnavior AI routes', () => {
           verifyAndUpdateProfile: vi.fn(),
           verifyProfile: vi.fn(),
         },
-        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate, decide: vi.fn(), delete: remove, getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel, list: vi.fn(async () => []), maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy, update },
+        systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate, decide: vi.fn(), delete: remove, getPolicy: vi.fn(async () => ({ decisionInstruction: '', defaultDecisionInstruction: 'default', storeInstruction: '', updatedAt: null })), inspectRuntimeModel, list: vi.fn(async () => []), routing: async () => 'direct' as const, maxActionCandidates: vi.fn(async () => 253 as const), readiness: vi.fn(), save: vi.fn(), savePolicy, update },
       }))
 
     const updateResponse = await app.request('/system-one/profiles/system-one-1', {
@@ -144,5 +145,47 @@ describe('admin Webnavior AI routes', () => {
     })
     expect(slmModels.status).toBe(200)
     expect(inspectRuntimeModel).toHaveBeenCalledWith({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', timeoutMs: 5000, plaintextKey: 'private-inspection-key' })
+    const decisionsUpdate = await app.request('/system-one/profiles/system-one-1', {
+      body: JSON.stringify({ baseURL: 'https://api.openai.com/v1', implementation: 'openai-decisions', modelId: 'gpt-6-luna', name: 'OpenAI Decisions', timeoutMs: 5000, plaintextKey: 'synthetic-only' }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'PATCH',
+    })
+    expect(decisionsUpdate.status).toBe(200)
+    expect(update).toHaveBeenCalledWith('system-one-1', expect.objectContaining({ implementation: 'openai-decisions', modelId: 'gpt-6-luna', plaintextKey: 'synthetic-only' }))
   })
+})
+
+it.each([0, 0.24, 4.01, '1.2'])('rejects invalid TTS synthesis speed %s before touching the provider', async (speed) => {
+  const createProfile = vi.fn()
+  const app = new Hono<HonoEnv>()
+    .use('*', async (c, next) => {
+      c.set('user', { id: 'admin-speed', role: 'admin' } as HonoEnv['Variables']['user'])
+      await next()
+    })
+    .route('/', createAdminWebnaviorAiRoutes({
+      runtimeService: { applyBindings: async () => ({ appliedCapabilities: [] }), modelFor: async () => undefined },
+      service: {
+        createProfile,
+        deleteProfile: vi.fn(),
+        listProfiles: vi.fn(),
+        listSelections: vi.fn(),
+        refreshProfileModels: vi.fn(),
+        selectProfile: vi.fn(),
+        testProviderConnection: vi.fn(),
+        updateProfile: vi.fn(),
+        verifyAndCreateProfile: vi.fn(),
+        verifyAndUpdateProfile: vi.fn(),
+        verifyProfile: vi.fn(),
+      },
+      systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(), inspectRuntimeModel: vi.fn(), list: vi.fn(), routing: async () => 'direct' as const, maxActionCandidates: vi.fn(), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+    }))
+  // Mount the same ApiError status mapping as the production application.
+  app.onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'internal' }, 500))
+  const response = await app.request('/capabilities/tts/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ baseURL: 'https://tts.example/v1', kind: 'openai-compatible', name: 'TTS', timeoutMs: 5000, speed }),
+  })
+  expect(response.status).toBe(400)
+  expect(createProfile).not.toHaveBeenCalled()
 })

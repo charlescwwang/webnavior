@@ -1,3 +1,5 @@
+import type { ChatResponseMode } from '@proj-airi/stage-shared/ai-provider'
+
 import { errorMessageFrom } from '@moeru/std'
 import { authedFetch } from '@proj-airi/stage-ui/libs/auth-fetch'
 import { SERVER_URL } from '@proj-airi/stage-ui/libs/server'
@@ -5,9 +7,10 @@ import { readonly, shallowRef } from 'vue'
 
 export type AiCapability = 'chat' | 'vision' | 'asr' | 'tts'
 export type AiProviderKind = 'llama-cpp' | 'ollama' | 'openai-compatible'
-export type SystemOneImplementation = 'dasein' | 'lookski' | 'slm'
+export type SystemOneImplementation = 'dasein' | 'lookski' | 'slm' | 'openai-decisions'
 
 export interface AiProviderProfile {
+  responseMode: ChatResponseMode
   enableThinking: boolean
   baseURL: string
   capability: AiCapability
@@ -22,6 +25,7 @@ export interface AiProviderProfile {
   timeoutMs: number
   verifiedAt: string | null
   voice: string | null
+  speed: number | null
 }
 
 export interface AiCapabilitySelection {
@@ -31,6 +35,7 @@ export interface AiCapabilitySelection {
 }
 
 export interface AiProviderProfileInput {
+  responseMode?: ChatResponseMode
   enableThinking?: boolean
   baseURL: string
   clearApiKey?: boolean
@@ -40,6 +45,7 @@ export interface AiProviderProfileInput {
   plaintextKey?: string
   timeoutMs: number
   voice?: string
+  speed?: number
 }
 
 /** Result of the optional Provider model-catalog probe. */

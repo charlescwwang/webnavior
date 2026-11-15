@@ -1,6 +1,7 @@
 import type { Buffer } from 'node:buffer'
 
 import type { Counter } from '@opentelemetry/api'
+import type { ChatResponseMode } from '@proj-airi/stage-shared/ai-provider'
 import type Redis from 'ioredis'
 
 import type { GatewayMetrics } from '../../../../otel'
@@ -93,7 +94,7 @@ function makeConfigKV(config: RouterConfig | null): ConfigKVService {
 }
 
 function makeConfig(opts: {
-  upstreams?: Array<{ baseURL: string, cachePrompt?: boolean, enableThinking?: boolean, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
+  upstreams?: Array<{ baseURL: string, cachePrompt?: boolean, enableThinking?: boolean, responseMode?: ChatResponseMode, keyIds: string[], overrideModel?: string, timeoutMs?: number }>
   fallbackHttpCodes?: number[]
   fullChainTimeoutMs?: number
 }): { config: RouterConfig, ciphertextByKey: Map<string, string>, crypto: ReturnType<typeof createEnvelopeCrypto> } {
@@ -106,6 +107,7 @@ function makeConfig(opts: {
     baseURL: u.baseURL,
     cachePrompt: u.cachePrompt,
     enableThinking: u.enableThinking,
+    responseMode: u.responseMode,
     overrideModel: u.overrideModel,
     headerTemplate: 'Bearer {KEY}',
     timeoutMs: u.timeoutMs,
@@ -328,6 +330,23 @@ describe('createLlmRouterService', () => {
     const calls = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls
     const init = calls[0][1] as { body: string }
     expect(JSON.parse(init.body)).toMatchObject({ cache_prompt: true })
+  })
+
+  it.each(['auto', 'json', 'sse'] as const)('honors %s response mode without changing tool continuation arguments', async (responseMode) => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://models.example/v1', responseMode, keyIds: ['k1'] }] })
+    const fetchImpl = vi.fn<typeof fetch>(async () => happyResponse({ choices: [] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(parse(llmRouterConfigSchema, config)), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [{ role: 'tool', content: 'cart', tool_call_id: 'call-1' }], stream: true, stream_options: { include_usage: true } } })
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body))
+    expect(body.stream).toBe(responseMode !== 'json')
+    expect(body.messages[0].tool_call_id).toBe('call-1')
+    if (responseMode === 'json')
+      expect(body.stream_options).toBeUndefined()
+    else
+      expect(body.stream_options).toEqual({ include_usage: true })
+
+    await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [{ role: 'user', content: 'JSON decision' }], stream: false } })
+    expect(JSON.parse(String(fetchImpl.mock.calls[1][1]?.body)).stream).toBe(false)
   })
 
   it.each([true, false])('sends the provider thinking choice on tool continuations: %s', async (enableThinking) => {

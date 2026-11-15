@@ -2,6 +2,7 @@ import type { Database } from '../../../libs/db'
 
 import { Buffer } from 'node:buffer'
 
+import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createWebnaviorAiControlService } from '.'
@@ -23,6 +24,26 @@ describe('webnavior AI capability Provider profiles', () => {
       envelopeCrypto: createEnvelopeCrypto({ masterKey: Buffer.alloc(32, 7) }),
       fetchImpl,
     })
+  })
+
+  it('verifies, persists and revalidates an explicit SSE/JSON chat choice', async () => {
+    fetchImpl.mockImplementation(async (_url, init) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (body?.stream)
+        return new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+      return Response.json({ choices: [{ message: { content: 'OK' } }] })
+    })
+    const input = { baseURL: 'https://models.example/v1', kind: 'openai-compatible' as const, modelId: 'chat', name: 'Chat', timeoutMs: 5000 }
+    const profile = await service.verifyAndCreateProfile('chat', { ...input, responseMode: 'sse' })
+    expect(profile.responseMode).toBe('sse')
+    expect(profile.verifiedAt).toBeTruthy()
+    expect((await service.listProfiles())[0].responseMode).toBe('sse')
+    const changed = await service.updateProfile('chat', profile.id, { ...input, responseMode: 'json' })
+    expect(changed.verifiedAt).toBeNull()
+    const verified = await service.verifyProfile('chat', profile.id)
+    expect(verified.responseMode).toBe('json')
+    expect(verified.verifiedAt).toBeTruthy()
+    expect(JSON.parse(String(fetchImpl.mock.calls.at(-1)?.[1]?.body)).stream).not.toBe(true)
   })
 
   it('persists and verifies the thinking choice when editing an OpenAI-compatible chat provider', async () => {
@@ -173,5 +194,32 @@ describe('webnavior AI capability Provider profiles', () => {
     await service.selectProfile('chat', profile.id)
 
     await expect(service.deleteProfile('chat', profile.id)).rejects.toThrow('此 Provider 目前正在使用')
+  })
+  it('persists admin TTS speed and uses the selected speed for verification and edits', async () => {
+    fetchImpl.mockImplementation(async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'Content-Type': 'audio/mpeg' } }))
+    const input = { baseURL: 'https://tts.example/v1', kind: 'openai-compatible' as const, modelId: 'tts', name: 'Speed test', timeoutMs: 5000, speed: 1.25 }
+    const profile = await service.verifyAndCreateProfile('tts', input)
+    expect(profile.speed).toBe(1.25)
+    expect(JSON.parse(String(fetchImpl.mock.calls[0]![1]?.body)).speed).toBe(1.25)
+    const updated = await service.verifyAndUpdateProfile('tts', profile.id, { ...input, speed: 0.85 })
+    expect(updated.speed).toBe(0.85)
+    const saved = await service.listProfiles()
+    expect(saved.find(row => row.id === profile.id)?.speed).toBe(0.85)
+    expect(JSON.parse(String(fetchImpl.mock.calls[1]![1]?.body)).speed).toBe(0.85)
+  })
+
+  // Report: this chat Nov10 — migrated null speed means the already-verified 1x policy.
+  it('keeps an existing TTS verification when saving its unchanged default speed', async () => {
+    fetchImpl.mockImplementation(async () => new Response(new Uint8Array([1]), { headers: { 'Content-Type': 'audio/mpeg' } }))
+    const input = { baseURL: 'https://tts.example/v1', kind: 'openai-compatible' as const, modelId: 'tts', voice: 'existing-voice', name: 'Existing TTS', timeoutMs: 5000 }
+    const profile = await service.verifyAndCreateProfile('tts', input)
+    // This is the persisted shape of a previously verified profile after 0047.
+    await db.update(schema.webnaviorAiProviderProfiles).set({ speed: null }).where(eq(schema.webnaviorAiProviderProfiles.id, profile.id))
+    const renamed = await service.updateProfile('tts', profile.id, { ...input, name: 'Renamed TTS', speed: 1 })
+    expect(renamed.verifiedAt).toEqual(profile.verifiedAt)
+    await expect(service.selectProfile('tts', profile.id)).resolves.toMatchObject({ capability: 'tts', providerProfileId: profile.id })
+    const changed = await service.updateProfile('tts', profile.id, { ...input, speed: 0.85 })
+    expect(changed.verifiedAt).toBeNull()
+    await expect(service.selectProfile('tts', profile.id)).rejects.toThrow('只能啟用已通過驗證')
   })
 })

@@ -1,7 +1,8 @@
+import type { ChatResponseMode } from '@proj-airi/stage-shared/ai-provider'
 import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
 
-import { relations } from 'drizzle-orm'
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
+import { relations, sql } from 'drizzle-orm'
+import { boolean, check, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core'
 
 import { nanoid } from '../utils/id'
 
@@ -10,7 +11,7 @@ export type WebnaviorAiConnectionKind = 'llama-cpp' | 'ollama' | 'openai-compati
 /** AI responsibilities managed centrally for all Webnavior Kiosks. */
 export type WebnaviorAiCapability = 'chat' | 'vision' | 'asr' | 'tts'
 /** A Jev-wire-compatible System One server implementation. */
-export type KioskSystemOneImplementation = 'dasein' | 'lookski' | 'slm'
+export type KioskSystemOneImplementation = 'dasein' | 'lookski' | 'slm' | 'openai-decisions'
 
 /** A cached model record discovered from an upstream's catalog. */
 export interface WebnaviorAiDiscoveredModel {
@@ -29,8 +30,12 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
   modelId: text('model_id'),
   /** Chat OpenAI-compatible profiles only; forwarded to the model chat template. */
   enableThinking: boolean('enable_thinking').notNull().default(false),
+  /** Chat only; auto preserves the requesting endpoint's current transport. */
+  responseMode: text('response_mode').$type<ChatResponseMode>().notNull().default('auto'),
   /** TTS only; omitted for every other capability. */
   voice: text('voice'),
+  /** OpenAI-compatible TTS synthesis multiplier; null uses the standard1x speed. */
+  speed: doublePrecision('speed'),
   discoveredModels: jsonb('discovered_models').$type<WebnaviorAiDiscoveredModel[]>().notNull().default([]),
   discoveredAt: timestamp('discovered_at'),
   lastCheckedAt: timestamp('last_checked_at'),
@@ -40,6 +45,8 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 }, table => [
+  check('webnavior_ai_provider_profiles_response_mode', sql`${table.responseMode} IN ('auto', 'json', 'sse')`),
+  check('webnavior_ai_provider_profiles_speed_range', sql`${table.speed} IS NULL OR (${table.speed} >= 0.25 AND ${table.speed} <= 4)`),
   uniqueIndex('webnavior_ai_provider_profiles_capability_name_uidx').on(table.capability, table.name),
   index('webnavior_ai_provider_profiles_capability_idx').on(table.capability),
 ])

@@ -18,6 +18,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 
 function implementationLabel(implementation: SystemOneImplementation) {
+  if (implementation === 'openai-decisions')
+    return 'OpenAI Decisions'
   if (implementation === 'slm')
     return t('stage.system-one.slm-label')
   return implementation === 'dasein' ? 'Dasein open-jev' : 'lookski/openjev'

@@ -31,8 +31,10 @@ describe('webnavior AI runtime compiler', () => {
     control = createWebnaviorAiControlService({
       db,
       envelopeCrypto,
-      fetchImpl: vi.fn(async (url) => {
+      fetchImpl: vi.fn(async (url, init) => {
         const endpoint = String(url)
+        if (endpoint.endsWith('/chat/completions') && init?.body && JSON.parse(String(init.body)).stream === true)
+          return new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
         if (endpoint.endsWith('/models')) {
           return new Response(JSON.stringify({ data: [
             { id: 'chat-model' },
@@ -56,6 +58,20 @@ describe('webnavior AI runtime compiler', () => {
     })
   })
 
+  it.each(['auto', 'json', 'sse'] as const)('compiles the saved %s chat response policy on apply', async (responseMode) => {
+    const profile = await control.verifyAndCreateProfile('chat', {
+      baseURL: 'https://models.example/v1',
+      kind: 'openai-compatible',
+      modelId: 'chat-model',
+      name: 'Chat',
+      timeoutMs: 7500,
+      responseMode,
+    })
+    await control.selectProfile('chat', profile.id)
+    await runtime.applyBindings()
+    expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({ llm: { models: { 'webnavior/chat': { upstreams: [{ responseMode }] } } } })
+  })
+
   it('rebuilds Kiosk runtime only from active, verified capability profiles', async () => {
     const capabilities: WebnaviorAiCapability[] = ['chat', 'vision', 'asr', 'tts']
     for (const capability of capabilities) {
@@ -66,7 +82,7 @@ describe('webnavior AI runtime compiler', () => {
         name: `${capability} 主要 Provider`,
         plaintextKey: 'server-secret',
         timeoutMs: 7500,
-        ...(capability === 'tts' ? { voice: 'zh-TW-Test' } : {}),
+        ...(capability === 'tts' ? { voice: 'zh-TW-Test', speed: 1.25 } : {}),
       })
       await control.refreshProfileModels(capability, profile.id)
       await control.verifyProfile(capability, profile.id)
@@ -90,7 +106,7 @@ describe('webnavior AI runtime compiler', () => {
     })
     expect(store.get('WEBNAVIOR_AUDIO_CONFIG')).toMatchObject({
       asr: { modelName: 'webnavior:asr', upstreamModel: 'asr-model' },
-      tts: { modelName: 'webnavior:tts', upstreamModel: 'tts-model', voice: 'zh-TW-Test' },
+      tts: { modelName: 'webnavior:tts', upstreamModel: 'tts-model', voice: 'zh-TW-Test', speed: 1.25 },
     })
   })
 

@@ -1,3 +1,5 @@
+import type { ChatResponseMode } from '@proj-airi/stage-shared/ai-provider'
+
 import type { WebnaviorAiCapability, WebnaviorAiConnectionKind } from '../../../schemas/webnavior-ai'
 
 import { createBadGatewayError, createGatewayTimeoutError, createServiceUnavailableError } from '../../../utils/error'
@@ -9,9 +11,11 @@ export interface ProviderProfileVerificationInput {
   capability: WebnaviorAiCapability
   kind: WebnaviorAiConnectionKind
   enableThinking?: boolean
+  responseMode?: ChatResponseMode
   modelId: string
   plaintextKey?: string
   voice?: string
+  speed?: number
 }
 
 /**
@@ -44,7 +48,7 @@ export async function verifyProviderProfile(input: ProviderProfileVerificationIn
 
   if (input.capability === 'tts') {
     const response = await request(`${baseURL}/audio/speech`, {
-      body: JSON.stringify({ input: '連線測試。', model: input.modelId, response_format: 'mp3', voice: input.voice ?? 'zh-TW-HsiaoChenNeural' }),
+      body: JSON.stringify({ input: '連線測試。', model: input.modelId, response_format: 'mp3', voice: input.voice ?? 'zh-TW-HsiaoChenNeural', ...(input.speed !== undefined ? { speed: input.speed } : {}) }),
       headers,
       method: 'POST',
       signal: AbortSignal.timeout(15_000),
@@ -57,14 +61,49 @@ export async function verifyProviderProfile(input: ProviderProfileVerificationIn
   const content = input.capability === 'vision'
     ? [{ type: 'text', text: 'Reply with OK.' }, { type: 'image_url', image_url: { url: transparentPixelDataUrl } }]
     : 'Reply with OK.'
+  const verifySse = input.capability === 'chat' && input.kind === 'openai-compatible' && input.responseMode === 'sse'
   const response = await request(`${baseURL}/chat/completions`, {
-    body: JSON.stringify({ max_tokens: 4, messages: [{ content, role: 'user' }], model: input.modelId, ...(input.capability === 'chat' && input.kind === 'openai-compatible'
+    body: JSON.stringify({ max_tokens: 4, messages: [{ content, role: 'user' }], model: input.modelId, ...(verifySse ? { stream: true } : {}), ...(input.capability === 'chat' && input.kind === 'openai-compatible'
       ? { chat_template_kwargs: { enable_thinking: input.enableThinking ?? false } }
       : {}) }),
     headers,
     method: 'POST',
     signal: AbortSignal.timeout(15_000),
   }, fetchImpl)
+  if (verifySse) {
+    if (!response.headers.get('content-type')?.includes('text/event-stream'))
+      throw createBadGatewayError('此 Provider 未回傳 SSE，請確認支援串流或改選 JSON。')
+    // The four-token probe is deliberately consumed to completion. A 200 SSE
+    // header alone cannot verify a provider that fails midway or emits no choices.
+    const events = (await response.text()).split(/\r?\n\r?\n/)
+    let receivedChoice = false
+    let completed = false
+    for (const event of events) {
+      const data = event.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+      if (!data)
+        continue
+      if (data === '[DONE]') {
+        completed = true
+        break
+      }
+      let payload: { choices?: Array<{ delta?: unknown, finish_reason?: unknown }>, error?: unknown }
+      try {
+        payload = JSON.parse(data)
+      }
+      catch {
+        throw createBadGatewayError('LLM Provider 回傳無效 SSE 資料。')
+      }
+      if (!payload || payload.error)
+        throw createBadGatewayError('LLM Provider 串流測試失敗。')
+      if (Array.isArray(payload.choices)) {
+        receivedChoice ||= payload.choices.some(choice => choice.delta && typeof choice.delta === 'object')
+        completed ||= payload.choices.some(choice => typeof choice.finish_reason === 'string')
+      }
+    }
+    if (!receivedChoice || !completed)
+      throw createBadGatewayError('LLM Provider 未回傳完整的 SSE 測試結果。')
+    return
+  }
   const payload = await response.json().catch(() => null) as { choices?: unknown } | null
   if (!Array.isArray(payload?.choices) || payload.choices.length === 0)
     throw createBadGatewayError(input.capability === 'vision' ? 'VLM Provider 未回傳視覺測試結果。' : 'LLM Provider 未回傳文字測試結果。')

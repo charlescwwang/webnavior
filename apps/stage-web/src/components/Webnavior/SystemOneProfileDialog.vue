@@ -3,7 +3,7 @@ import type { SystemOneProfile, SystemOneProfileInput, SystemOneRuntimeModel } f
 
 import { Button, Input } from '@proj-airi/ui'
 import { DialogContent, DialogOverlay, DialogPortal, DialogRoot, DialogTitle } from 'reka-ui'
-import { reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 type ProfileForm = SystemOneProfileInput & { plaintextKey: string }
@@ -28,12 +28,24 @@ function createForm(): ProfileForm {
 
 const form = reactive(createForm())
 const runtimeModel = shallowRef<SystemOneRuntimeModel>()
+const isDecisions = computed(() => form.implementation === 'openai-decisions')
+const isModelCatalog = computed(() => isDecisions.value || form.implementation === 'slm')
 
 function changeImplementation() {
   runtimeModel.value = undefined
   form.modelId = ''
-  if (['店內 Dasein', '店內 lookski', '店內 SLM', t('stage.system-one.slm-profile-name')].includes(form.name))
-    form.name = form.implementation === 'slm' ? t('stage.system-one.slm-profile-name') : form.implementation === 'lookski' ? '店內 lookski' : '店內 Dasein'
+  if (['店內 Dasein', '店內 lookski', '店內 SLM', t('stage.system-one.slm-profile-name'), 'OpenAI Decisions'].includes(form.name)) {
+    const names = { 'dasein': '店內 Dasein', 'lookski': '店內 lookski', 'slm': t('stage.system-one.slm-profile-name'), 'openai-decisions': 'OpenAI Decisions' }
+    form.name = names[form.implementation]
+  }
+  if (isDecisions.value) {
+    if (['http://localhost:8000', 'http://127.0.0.1:12434/engines/v1'].includes(form.baseURL))
+      form.baseURL = 'https://api.openai.com/v1'
+    form.modelId = 'gpt-6-luna'
+    return
+  }
+  if (form.baseURL === 'https://api.openai.com/v1')
+    form.baseURL = 'http://localhost:8000'
   if (form.implementation === 'slm' && form.baseURL === 'http://localhost:8000') {
     form.baseURL = 'http://127.0.0.1:12434/engines/v1'
     form.timeoutMs = 30_000
@@ -54,7 +66,7 @@ watch(() => props.open, (open) => {
     ? { baseURL: props.profile.baseURL, implementation: props.profile.implementation, modelId: props.profile.modelId, name: props.profile.name, plaintextKey: '', timeoutMs: props.profile.timeoutMs }
     : createForm())
   runtimeModel.value = undefined
-})
+}, { immediate: true })
 
 async function inspectModel() {
   if (!form.baseURL.trim())
@@ -116,20 +128,21 @@ function save() {
             <select v-model="form.implementation" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']" :disabled="props.busy" @change="changeImplementation">
               <option value="dasein">Dasein open-jev</option>
               <option value="lookski">lookski/openjev</option>
+              <option value="openai-decisions">OpenAI Decisions</option>
               <option value="slm">{{ t('stage.system-one.slm-option') }}</option>
             </select>
           </label>
           <label :class="['flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 sm:col-span-2']">
             System One Base URL
             <Input v-model="form.baseURL" :disabled="props.busy" type="url" placeholder="例如：http://127.0.0.1:8000" />
-            <span :class="['text-xs font-normal leading-5 text-slate-500 dark:text-slate-400']">{{ form.implementation === 'slm' ? t('stage.system-one.slm-base-url-hint') : '填 API Server 可連到的網址，不要加上 /v1/systemone。' }}</span>
+            <span :class="['text-xs font-normal leading-5 text-slate-500 dark:text-slate-400']">{{ isDecisions ? t('stage.system-one.decisions-base-url-hint') : form.implementation === 'slm' ? t('stage.system-one.slm-base-url-hint') : '填 API Server 可連到的網址，不要加上 /v1/systemone。' }}</span>
           </label>
           <label :class="['flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200']">
             決策逾時（毫秒）
             <Input v-model.number="form.timeoutMs" :disabled="props.busy" type="number" min="1000" max="60000" step="1000" />
           </label>
           <label :class="['flex flex-col gap-1.5 text-sm font-medium text-slate-700 dark:text-slate-200']">
-            API Key（選填）
+            {{ isDecisions ? t('stage.system-one.decisions-api-key') : 'API Key（選填）' }}
             <Input v-model="form.plaintextKey" :disabled="props.busy" type="password" autocomplete="new-password" :placeholder="props.profile?.hasApiKey ? '留白會保留現有 API Key' : '只有服務要求 Bearer Token 時才填'" />
           </label>
         </div>
@@ -137,14 +150,14 @@ function save() {
         <div :class="['mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800']">
           <div :class="['min-w-60 flex-1']">
             <p :class="['m-0 text-sm font-medium text-slate-700 dark:text-slate-200']">
-              {{ form.implementation === 'slm' ? t('stage.system-one.available-models') : '目前載入模型' }}
+              {{ isModelCatalog ? t('stage.system-one.available-models') : '目前載入模型' }}
             </p>
             <p :class="['mb-0 mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400']">
-              {{ form.implementation === 'slm' ? t('stage.system-one.discovery-hint') : 'Dasein 從 /health.model、lookski 從 /health.model_id 讀取服務啟動時固定的模型。' }}
+              {{ isDecisions ? t('stage.system-one.decisions-discovery-hint') : form.implementation === 'slm' ? t('stage.system-one.discovery-hint') : 'Dasein 從 /health.model、lookski 從 /health.model_id 讀取服務啟動時固定的模型。' }}
             </p>
           </div>
           <Button variant="secondary" :disabled="props.busy || !form.baseURL.trim()" @click="inspectModel">
-            {{ form.implementation === 'slm' ? t('stage.system-one.read-models') : '讀取目前模型' }}
+            {{ isModelCatalog ? t('stage.system-one.read-models') : '讀取目前模型' }}
           </Button>
           <p v-if="runtimeModel" :class="['m-0 text-sm text-emerald-700 dark:text-emerald-300']">
             偵測到：{{ runtimeModel.modelId }}
@@ -156,7 +169,7 @@ function save() {
           <select v-if="runtimeModel?.modelIds?.length" v-model="form.modelId" :disabled="props.busy" :class="['rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm dark:border-slate-700 dark:bg-slate-950']">
             <option v-for="modelId in runtimeModel.modelIds" :key="modelId" :value="modelId">{{ modelId }}</option>
           </select>
-          <Input v-model="form.modelId" :disabled="props.busy" placeholder="請先讀取目前模型" />
+          <Input v-else v-model="form.modelId" :disabled="props.busy" :placeholder="isDecisions ? 'gpt-6-luna' : '請先讀取目前模型'" />
         </label>
 
         <div :class="['mt-5 flex flex-wrap justify-end gap-2']">

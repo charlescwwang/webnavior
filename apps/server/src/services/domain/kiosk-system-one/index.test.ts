@@ -43,6 +43,35 @@ describe('kiosk System One profiles', () => {
     expect(await service.isEnabled()).toBe(false)
   })
 
+  it('verifies and activates OpenAI Decisions with a native request and an encrypted key', async () => {
+    const profile = await service.save({ baseURL: 'https://api.openai.com/v1', implementation: 'openai-decisions', modelId: 'gpt-6-luna', name: 'OpenAI Decisions', plaintextKey: 'private-test-key', timeoutMs: 5000 })
+    fetchImpl.mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body))
+      return Response.json({ model: 'gpt-6-luna', answers: body.questions.map((question: { name: string, choices: { value: string }[] }) => ({ name: question.name, type: 'choice', choice: question.choices[0].value, confidence: 0.9, probabilities: question.choices.map((choice, index) => ({ value: choice.value, probability: index === 0 ? 0.95 : 0.05 / (question.choices.length - 1) })) })) })
+    })
+    await expect(service.activate(profile.id)).rejects.toThrow('readiness')
+    expect(await service.readiness(profile.id)).toMatchObject({ verifiedAt: expect.any(Date), hasApiKey: true })
+    await service.activate(profile.id)
+    expect(await service.routing()).toBe('direct')
+    expect(await service.maxActionCandidates()).toBe(251)
+    const result = await service.decide('開始點餐，畫面B3。', { action: { type: 'choice', instructions: '選完整效果', criteria: { start: '沿用B3開始', HANDOFF: '需要助手' } } })
+    expect(result.answers?.action).toMatchObject({ choice: 'start', confidence: 0.9 })
+    expect(String(fetchImpl.mock.lastCall?.[0])).toBe('https://api.openai.com/v1/decisions')
+    expect(fetchImpl.mock.lastCall?.[1]?.headers).toMatchObject({ Authorization: 'Bearer private-test-key' })
+    expect(JSON.parse(String(fetchImpl.mock.lastCall?.[1]?.body))).toMatchObject({ model: 'gpt-6-luna', input: '開始點餐，畫面B3。' })
+    expect(await service.list()).not.toContainEqual(expect.objectContaining({ plaintextKey: 'private-test-key' }))
+    fetchImpl.mockResolvedValueOnce(Response.json({ answers: [{ name: 'action', type: 'refusal' }] }))
+    await expect(service.decide('開始', { action: { type: 'choice', instructions: '選', criteria: ['start', 'HANDOFF'] } })).rejects.toThrow()
+    expect(await db.query.kioskSystemOneProfiles.findFirst()).toMatchObject({ isActive: true, verifiedAt: null })
+  })
+
+  it('discovers only Decisions-supported model IDs without claiming readiness', async () => {
+    fetchImpl.mockResolvedValueOnce(Response.json({ data: [{ id: 'gpt-6-luna' }, { id: 'gpt-6-luna-2026-11-01' }, { id: 'another-chat-model' }] }))
+    expect(await service.inspectRuntimeModel({ baseURL: 'https://api.openai.com/v1', implementation: 'openai-decisions', timeoutMs: 5000, plaintextKey: 'private' })).toEqual({ modelId: 'gpt-6-luna', modelIds: ['gpt-6-luna', 'gpt-6-luna-2026-11-01'] })
+    expect(String(fetchImpl.mock.lastCall?.[0])).toBe('https://api.openai.com/v1/models')
+    expect(await service.isEnabled()).toBe(false)
+  })
+
   it('verifies and selects an SLM through the normal profile lifecycle without manufacturing confidence', async () => {
     const profile = await service.save({ baseURL: 'http://127.0.0.1:12434/engines/v1', implementation: 'slm', modelId: 'local-qwen', name: 'SLM', plaintextKey: 'private', timeoutMs: 5000 })
     fetchImpl.mockImplementation(async () => Response.json({ choices: [{ finish_reason: 'length', message: { content: 'A' } }] }))

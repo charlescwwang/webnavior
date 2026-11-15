@@ -249,6 +249,11 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         const effectiveModel = upstream.overrideModel ?? req.modelName
         const body = JSON.stringify({
           ...req.body,
+          // Only adapt requests that asked for streaming. Internal JSON-only
+          // decisions must retain their parser even when the chat profile uses SSE.
+          ...(req.body.stream === true && upstream.responseMode === 'json'
+            ? { stream: false, stream_options: undefined }
+            : {}),
           ...(upstream.cachePrompt ? { cache_prompt: true } : {}),
           // Apply residency per upstream attempt, not to the shared request;
           // falling back to another provider must not inherit Ollama policy.

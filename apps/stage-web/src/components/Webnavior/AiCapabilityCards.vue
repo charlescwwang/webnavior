@@ -3,6 +3,7 @@ import type { AiCapability, AiCapabilitySelection, AiProviderProfile } from '../
 
 import { Button } from '@proj-airi/ui'
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   busy: boolean
@@ -10,7 +11,7 @@ const props = defineProps<{
   selections: readonly AiCapabilitySelection[]
 }>()
 const emit = defineEmits<{ configure: [capability: AiCapability] }>()
-
+const { t } = useI18n()
 const capabilities: Array<{ description: string, id: AiCapability, title: string }> = [
   { id: 'chat', title: '對話 LLM', description: '處理顧客對話、點餐與工具操作。' },
   { id: 'vision', title: '視覺 VLM', description: '處理主動招呼或現場視覺理解。' },
@@ -57,6 +58,9 @@ function activeProfile(capability: AiCapability) {
       <div v-if="activeProfile(capability.id)" :class="['rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-50']">
         <span :class="['font-semibold']">目前啟用：</span>
         {{ activeProfile(capability.id)?.name }} · {{ activeProfile(capability.id)?.modelId }}
+        <p v-if="capability.id === 'chat' && activeProfile(capability.id)?.kind === 'openai-compatible'" :class="['mb-0 mt-2']">
+          {{ t('settings.kiosk-chat-response.title') }}：{{ t(`settings.kiosk-chat-response.${activeProfile(capability.id)?.responseMode}`) }}
+        </p>
       </div>
       <div v-else :class="['rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:bg-amber-950/40 dark:text-amber-50']">
         尚未啟用 Provider。
