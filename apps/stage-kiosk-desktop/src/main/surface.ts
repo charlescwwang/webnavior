@@ -4,7 +4,7 @@ import type { BrowserWindow, Event, WebContentsWillNavigateEventParams, WebConte
 import { createHash } from 'node:crypto'
 
 import { executionResultSchema } from '@proj-airi/stage-shared/interactive-service'
-import { pbSubmissionDispatchSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, menuEntryReceiptSchema, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
 import { WebContentsView } from 'electron'
 import { safeParse } from 'valibot'
@@ -28,6 +28,7 @@ export class ServiceSurface {
   private serviceEntry?: string
   private desiredVisible = false
   private removeDownloadGuard?: () => void
+  private maintenanceRenders = new Map<WebContentsView, { users: number, throttled: boolean }>()
 
   constructor(private readonly window: BrowserWindow, private readonly onActivity: (activity: DesktopSurfaceActivity) => void, private readonly serviceScript: string, private readonly onNavigation: (navigation: DesktopSurfaceNavigation) => void) {}
 
@@ -155,6 +156,40 @@ export class ServiceSurface {
 
   /** Relays bounded operations only to this host's current approved native document. */
   async invoke(input: DesktopServiceRequest): Promise<unknown> {
+    const command = input.command
+    const maintenance = command.kind === 'execute'
+      && (command.request.name === 'browser_customer_reset' || (command.request.name === 'browser_start_ordering' && command.request.input.forReset === true))
+    if (!maintenance)
+      return this.invokeCurrent(input)
+    const view = this.view
+    if (!view || !this.active || input.serviceId !== this.active.serviceId || input.documentKey !== this.active.documentKey)
+      throw new Error('Native service document ownership changed.')
+    // PB's SSR leave mask needs rendering frames to release Start. Hiding the
+    // view pauses those frames, so private reception maintenance temporarily
+    // keeps rendering alive without showing or forcibly clicking through it.
+    // Restore the prior setting after the last overlapping maintenance call,
+    // including rejection/navigation. Normal customer calls never acquire it.
+    // https://www.electronjs.org/docs/latest/api/web-contents#contentssetbackgroundthrottlingallowed
+    let rendering = this.maintenanceRenders.get(view)
+    if (!rendering) {
+      rendering = { users: 0, throttled: view.webContents.getBackgroundThrottling() }
+      this.maintenanceRenders.set(view, rendering)
+      view.webContents.setBackgroundThrottling(false)
+    }
+    rendering.users++
+    try {
+      return await this.invokeCurrent(input)
+    }
+    finally {
+      if (--rendering.users === 0) {
+        this.maintenanceRenders.delete(view)
+        if (!view.webContents.isDestroyed())
+          view.webContents.setBackgroundThrottling(rendering.throttled)
+      }
+    }
+  }
+
+  private async invokeCurrent(input: DesktopServiceRequest): Promise<unknown> {
     const view = this.view
     if (!view || !this.active || input.serviceId !== this.active.serviceId || input.documentKey !== this.active.documentKey)
       throw new Error('Native service document ownership changed.')
@@ -182,14 +217,14 @@ export class ServiceSurface {
       // an accepted click into a rejection. This proves no cart/order effect.
       // Every other stale-document result, especially a cart write, still fails.
       const receipt = safeParse(executionResultSchema, result)
-      const submission = receipt.success && safeParse(pbSubmissionDispatchSchema, receipt.output.result)
+      const submission = receipt.success && safeParse(pbSubmissionResultSchema, receipt.output.result)
       // Inertia/history navigation can replace the cart URL without starting a
       // new document. The last full-navigation target is stale in that case;
       // use the committed current URL, retaining every receipt/owner check.
       const submissionTarget = this.navigation === generation ? view.webContents.getURL() : this.navigationTarget
       if (kind === 'execute' && request.name === 'browser_order_submit' && receipt.success
         && receipt.output.connectionId === request.connectionId && receipt.output.documentId === request.documentId && receipt.output.operationId === request.operationId
-        && submission && submission.success && submission.output.confirmationToken === request.input.confirmationToken
+        && submission && submission.success
         && beforeUrl.pathname === before?.cartPath && submissionTarget && isPbOrderResultUrl(entry, submissionTarget)
         && this.view === view && this.hostGeneration === hostGeneration && this.active?.serviceId === input.serviceId && this.active?.documentKey === input.documentKey) {
         // This acknowledges one native click, not merchant acceptance/payment.

@@ -125,7 +125,7 @@ describe('pb cart operations', () => {
     gateway.canEdit = vi.fn(() => editable)
     let nextRef = 0
     const committed = vi.fn()
-    gateway.prepare = vi.fn(async ({ quantity }) => ({ productRef: 'p-new', name: '當日新品', unitPrice: 23, configuration: 'plain', commit: async (onDispatch) => {
+    gateway.prepare = vi.fn(async ({ quantity }) => ({ productRef: 'p-new', name: '當日新品', unitPrice: 23, configuration: 'plain', commit: async (onDispatch: () => void) => {
       onDispatch()
       committed()
       const before = await gateway.read()
@@ -190,7 +190,7 @@ describe('pb cart operations', () => {
     state.subtotal = 238
     change(state)
     const remove = gateway.remove
-    gateway.remove = vi.fn(async (...args) => {
+    gateway.remove = vi.fn(async (...args: Parameters<CartGateway['remove']>) => {
       await remove(...args)
       state.context.manualRevision++
     })
@@ -222,7 +222,7 @@ describe('pb cart operations', () => {
     state.lines[0].quantity = 3
     state.subtotal = 51
     change(state)
-    gateway.prepare = vi.fn(async ({ quantity }) => ({ productRef: 'p-old', name: '原餐', unitPrice: 22, configuration: 'rice', description: '白飯 ×1', commit: async (onDispatch) => {
+    gateway.prepare = vi.fn(async ({ quantity }) => ({ productRef: 'p-old', name: '原餐', unitPrice: 22, configuration: 'rice', description: '白飯 ×1', commit: async (onDispatch: () => void) => {
       onDispatch()
       state.lines.push({ ref: 'rice', productRef: 'p-old', name: '原餐', quantity, unitPrice: 22, configuration: 'rice', description: '白飯 ×1' })
       state.subtotal += quantity * 22
@@ -317,6 +317,27 @@ describe('pb cart operations', () => {
     expect(remove).toMatchObject({ ok: true, cart: { subtotal: 17, lines: [{ ref: 'old', quantity: 1 }] } })
   })
 
+  // Report: this chat, Nov15; a first pork add was mislabeled unknown before any UI step.
+  it.each(['pickup', 'manual', 'table'] as const)('reports a stale %s context as no effect and allows a separately refreshed proposal', async (changeKind) => {
+    const { operations, gateway, change } = setup()
+    const observed = await operations.observe()
+    const current = await gateway.read()
+    if (changeKind === 'pickup')
+      current.context.time = 'later'
+    if (changeKind === 'manual')
+      current.context.manualRevision++
+    if (changeKind === 'table')
+      current.context.tableName = 'B3 桌'
+    change(current)
+    const input = { action: 'add' as const, selection: { version: 'config', variantRef: '', choices: [] }, version: observed.version, productRef: 'p-new', quantity: 1, note: '', unitPrice: 23 }
+    expect(await operations.execute(input)).toMatchObject({ ok: false, status: 'rejected', effect: 'none', reason: 'stale-cart' })
+    expect(gateway.prepare).not.toHaveBeenCalled()
+    expect(operations.canRecover()).toBe(true)
+    const refreshed = await operations.observe()
+    expect(await operations.execute({ ...input, version: refreshed.version })).toMatchObject({ ok: true, status: 'verified' })
+    expect(gateway.prepare).toHaveBeenCalledExactlyOnceWith({ productRef: 'p-new', quantity: 1, note: '', selection: input.selection })
+  })
+
   it('refuses a stale cart before dispatch', async () => {
     const { operations, gateway, change } = setup()
     const observed = await operations.observe()
@@ -399,7 +420,7 @@ describe('pb cart operations', () => {
     const cart = await operations.observe()
     const input = { action: 'replace' as const, selection: { version: 'config', variantRef: '', choices: [] }, version: cart.version, lineRef: 'old', productRef: 'p-new', quantity: 1, unitPrice: 23, note: '' }
     const result = await operations.execute(input)
-    expect(result).toMatchObject({ ok: false, status: 'unknown', partial: true, verifiedAddition: { subtotal: 40 } })
+    expect(result).toMatchObject({ ok: false, status: 'unknown', effect: 'unknown', partial: true, verifiedAddition: { subtotal: 40 } })
     expect(result.customerMessage).toContain('新餐已確認加入')
     expect((await operations.observe()).lines.map(line => line.ref)).toEqual(['old', 'new'])
     expect(await operations.execute(input)).toMatchObject({ status: 'unknown' })
@@ -480,7 +501,7 @@ describe('pb empty order lifecycle', () => {
       canEdit: () => true,
       clear: async () => { throw new Error('unused') },
       read: async () => structuredClone(cart),
-      prepare: async () => ({ productRef: 'p-new', name: '新品', unitPrice: 10, configuration: '', commit: async (onDispatch) => {
+      prepare: async () => ({ productRef: 'p-new', name: '新品', unitPrice: 10, configuration: '', commit: async (onDispatch: () => void) => {
         onDispatch()
         cart = { lines: [{ ref: 'new', productRef: 'p-new', name: '新品', unitPrice: 10, quantity: 1, configuration: '' }], subtotal: 10, context: { ...pickup, orderRef: 'created', tableName: transition === 'changed-table' ? 'B1 吧檯' : 'A1 桌', manualRevision: transition === 'changed-manual' ? 1 : 0, ...(transition === 'changed-pickup' ? { time: 'later' } : {}) } }
       } }),

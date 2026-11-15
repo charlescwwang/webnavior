@@ -2,7 +2,7 @@ import type { ServiceConnection, ServiceTool, ToolExecution } from '@proj-airi/s
 
 import { errorMessageFrom } from '@moeru/std'
 import { discoveryResultSchema, executionResultSchema, inspectionResultSchema } from '@proj-airi/stage-shared/interactive-service'
-import { pbSubmissionDispatchSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
 import { parse, safeParse } from 'valibot'
 import { readonly, shallowRef, toRaw, watch } from 'vue'
@@ -138,8 +138,8 @@ export function createInteractiveServiceClient() {
       if (connection !== current || navigating) {
         const journey = issuedUrl ? readPbJourney(issuedUrl) : undefined
         const entry = safeParse(menuEntryReceiptSchema, response.result)
-        const submission = safeParse(pbSubmissionDispatchSchema, response.result)
-        const submitted = journey && tool.name === 'browser_order_submit' && submission.success && submission.output.confirmationToken === serializedInput.confirmationToken && issuedUrl === activeUrl
+        const submission = safeParse(pbSubmissionResultSchema, response.result)
+        const submitted = journey && tool.name === 'browser_order_submit' && submission.success && issuedUrl === activeUrl
         // Only PB's bounded entry/submission acknowledgement may settle across
         // rediscovery. It cannot complete another write, restore old handles or
         // authorize any action in the replacement document.
@@ -156,9 +156,9 @@ export function createInteractiveServiceClient() {
       // Record the correlated result before retirement clears the Host's
       // active-operation owners; the next reception must not inherit that work.
       publish({ ...correlation, phase: 'resolved', tool, input, result })
-      const submission = safeParse(pbSubmissionDispatchSchema, result)
+      const submission = safeParse(pbSubmissionResultSchema, result)
       if (connection === current && issuedUrl && readPbJourney(issuedUrl)
-        && tool.name === 'browser_order_submit' && submission.success && submission.output.confirmationToken === serializedInput.confirmationToken) {
+        && tool.name === 'browser_order_submit' && submission.success) {
         // SPA submission may never emit a document-loading event. The editor
         // is still retired: no cart/reset command belongs on its result page.
         // A new reception reloads the configured entry; native unknown-write

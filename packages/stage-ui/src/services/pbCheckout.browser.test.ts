@@ -12,14 +12,20 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-function setup() {
+function setup(result = { hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 64 }) {
   history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/create')
   document.body.innerHTML = `<section class="order-create"><label><input type="radio" name="invoice" value="5" checked>無載具</label><label><input type="radio" name="invoice" value="3">手機載具</label><input placeholder="請輸入共8碼編號"><div class="el-form-item"><label>手機號碼</label><input type="email"></div><div class="el-form-item"><label>E-mail</label><input type="email"></div></section><p>總金額<span>$64</span></p><button>送出訂單</button>`
   const clicked = vi.fn()
   document.querySelector('button')!.addEventListener('click', () => {
-    clicked()
-    document.body.innerHTML = '<dl><dt>訂單編號</dt><dd>TEST-123</dd><dt>付款金額</dt><dd>NT$64</dd></dl>'
-    history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/TEST-123/payment')
+    document.body.insertAdjacentHTML('beforeend', '<div role="dialog" aria-label="確認訂單"><div class="el-message-box__message">訂單送出後將無法修改，請確認所有資訊是否正確。</div><button>取消</button><button>確定</button></div>')
+    document.querySelectorAll('[role="dialog"] button')[1].addEventListener('click', () => {
+      clicked()
+      document.body.innerHTML = '<p>取餐編號：TEST-0001</p>'
+      history.replaceState({}, '', '/order/store/1kgJeql/internal_use/orders/TEST-123/choosePayment')
+      const root = document.createElement('div')
+      root.setAttribute('data-page', JSON.stringify({ component: 'Order/ChoosePayment', url: location.pathname, props: { storeHash: '1kgJeql', flowType: 'internal_use', order: result } }))
+      document.body.append(root)
+    })
   })
   const cart: CartSnapshot = { lines: [{ ref: '1', productRef: 'p-2589', name: '周氏水餃(最低8顆)', quantity: 1, unitPrice: 64, configuration: '', options: [] }], subtotal: 64, context: { date: '2026-11-15', time: '12:00', manualRevision: 0, tableName: 'A3' } }
   let revision = 0
@@ -48,11 +54,33 @@ it('fills the labeled notification phone, preserves email, and dispatches a conf
   const prepared = await checkout.prepare()
   expect(prepared.ready).toBe(true)
   expect(prepared.confirmationToken).toBeTypeOf('string')
-  await checkout.submit(prepared.confirmationToken!, controls)
+  const result = await checkout.submit(prepared.confirmationToken!, controls)
+  expect(result).toMatchObject({ status: 'accepted', effect: 'applied', order: { hash: 'TEST-123', number: 'TEST-0001' } })
+  expect(result).not.toHaveProperty('confirmationToken')
   expect(clicked).toHaveBeenCalledOnce()
   expect(dispatched).toHaveBeenCalledOnce()
   expect(accepted).toHaveBeenCalledOnce()
   await expect(checkout.submit(prepared.confirmationToken!, controls)).rejects.toThrow('核對')
+  expect(clicked).toHaveBeenCalledOnce()
+})
+
+// Report: this chat, Nov15 actual result identifies hash and display number separately.
+it.each([{ hash: 'OTHER', number: 'TEST-0001', status: 20, totalmoney: 64 }, { hash: 'TEST-123', number: 'TEST-0001', status: 10, totalmoney: 64 }])('does not acknowledge an unrelated, draft or wrong-total result: %o', async (result) => {
+  const { checkout, controls, accepted, dispatched } = setup(result)
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  await checkout.submit(prepared.confirmationToken!, controls)
+  expect(dispatched).toHaveBeenCalledOnce()
+  expect(accepted).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov15; recording defects must not erase an established order.
+it('reports merchant acceptance with an amount conflict rather than returning pending or replaying', async () => {
+  const { checkout, controls, accepted, clicked } = setup({ hash: 'TEST-123', number: 'TEST-0001', status: 20, totalmoney: 1 })
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  expect(await checkout.submit(prepared.confirmationToken!, controls)).toMatchObject({ status: 'accepted', consistency: 'conflict', reason: 'amount-mismatch', order: { total: 1 } })
+  expect(accepted).toHaveBeenCalledOnce()
   expect(clicked).toHaveBeenCalledOnce()
 })
 
@@ -108,4 +136,15 @@ it('does not enable vendor submission before its result flow has been verified',
   expect(prepared.confirmationToken).toBeUndefined()
   await expect(checkout.submit('invented', controls)).rejects.toThrow('核對')
   expect(clicked).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov15 actual PB has a second confirmation before POST.
+it('rechecks the cart after opening confirmation and before the actual submission click', async () => {
+  const { checkout, controls, cart, clicked, dispatched } = setup()
+  await checkout.phone('0912345678', controls)
+  const prepared = await checkout.prepare()
+  document.querySelector('button')!.addEventListener('click', () => cart.lines[0].quantity = 2)
+  await expect(checkout.submit(prepared.confirmationToken!, controls)).rejects.toThrow('已變更')
+  expect(clicked).not.toHaveBeenCalled()
+  expect(dispatched).not.toHaveBeenCalled()
 })

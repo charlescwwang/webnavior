@@ -20,9 +20,9 @@ export function installInvoiceInput() {
       { method: 'carrier' as const, value: '3', placeholder: '請輸入共8碼編號' },
       { method: 'citizen' as const, value: '2', placeholder: '2碼英文字碼+14碼數字' },
     ]
-    const fields = methods.flatMap(({ method, value, placeholder }) => [...document.querySelectorAll<HTMLLabelElement>('.order-create label.el-radio')]
+    const fields = methods.flatMap(({ method, value, placeholder }) => Array.from(document.querySelectorAll<HTMLLabelElement>('.order-create label.el-radio'))
       .filter(label => label.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)?.checked)
-      .flatMap(label => [...label.querySelectorAll<HTMLInputElement>(`input[placeholder="${placeholder}"]`)].map(field => ({ field, method }))))
+      .flatMap(label => Array.from(label.querySelectorAll<HTMLInputElement>(`input[placeholder="${placeholder}"]`)).map(field => ({ field, method }))))
       .filter(({ field }) => field.isConnected && field.getClientRects().length && !field.disabled && !field.readOnly)
     return fields.length === 1 ? fields[0] : undefined
   }

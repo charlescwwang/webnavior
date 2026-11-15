@@ -20,7 +20,7 @@ describe('interactive service transport ownership', () => {
   it('retires cart tools after a same-document submission acknowledgement without treating it as payment', async () => {
     const first = connection('cart')
     first.discover = vi.fn(async request => ({ ...request, documentId: 'cart', toolsRevision: 1, tools: [{ name: 'browser_order_submit', description: '', inputSchema: { type: 'object' } }] }))
-    first.execute = vi.fn(async request => ({ connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { ok: true, source: 'browser', code: 'order-submission-starting', effect: 'pending', confirmationToken: 'once', customerMessage: '已按下送出訂單。' } }))
+    first.execute = vi.fn(async request => ({ connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { ok: true, source: 'browser', schemaVersion: 1, code: 'order-submission-result', dispatch: 'dispatched', status: 'pending', consistency: 'unavailable', reason: 'result-not-ready', effect: 'pending', customerMessage: '已按下送出訂單。' } }))
     const client = createInteractiveServiceClient()
     client.activateTransport('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table', () => first)
     await client.waitUntilReady()
@@ -43,22 +43,38 @@ describe('interactive service transport ownership', () => {
     expect(client.editorRetired.value).toBe(false)
   })
 
+  it('delivers an accepted merchant receipt before retiring the original editor without returning a confirmation token', async () => {
+    const first = connection('cart')
+    first.discover = vi.fn(async request => ({ ...request, documentId: 'cart', toolsRevision: 1, tools: [{ name: 'browser_order_submit', description: '', inputSchema: { type: 'object' } }] }))
+    first.execute = vi.fn(async request => ({ connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { schemaVersion: 1, ok: true, source: 'browser', code: 'order-submission-result', dispatch: 'dispatched', status: 'accepted', effect: 'applied', consistency: 'unavailable', reason: 'details-unverified', order: { hash: 'HASH', number: '4006', status: 20, total: 64 }, customerMessage: '訂單已送出。' } }))
+    const client = createInteractiveServiceClient()
+    client.activateTransport('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/orders/create', () => first)
+    await client.waitUntilReady()
+    const events: unknown[] = []
+    client.onExecution(event => events.push(event.result))
+    const result = await client.execute(client.tools.value[0], { confirmationToken: 'once' })
+    expect(result).toMatchObject({ status: 'accepted', effect: 'applied', order: { hash: 'HASH' } })
+    expect(result).not.toHaveProperty('confirmationToken')
+    expect(events).toContain(result)
+    expect(client.editorRetired.value).toBe(true)
+  })
+
   // Report: this chat, Nov15: local submission changed URL before its dispatch receipt settled.
-  it.each(['matching', 'replacement', 'token', 'connectionId', 'documentId', 'operationId', 'service', 'cart-write'] as const)('settles only the original submission acknowledgement after navigation: %s', async (variant) => {
+  it.each(['matching', 'replacement', 'version', 'connectionId', 'documentId', 'operationId', 'service', 'cart-write'] as const)('settles only the original submission acknowledgement after navigation: %s', async (variant) => {
     const receipt = Promise.withResolvers<void>()
     const first = connection('cart')
     const name = variant === 'cart-write' ? 'browser_cart_add' : 'browser_order_submit'
     first.discover = vi.fn(async request => ({ ...request, documentId: 'cart', toolsRevision: 1, tools: [{ name, description: '', inputSchema: { type: 'object' } }] }))
     first.execute = vi.fn(async (request) => {
       await receipt.promise
-      return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, ...(['connectionId', 'documentId', 'operationId'].includes(variant) ? { [variant]: 'other-operation' } : {}), result: { ok: true, source: 'browser', code: 'order-submission-starting', effect: 'pending', confirmationToken: variant === 'token' ? 'different' : 'once', customerMessage: '已按下送出訂單。' } }
+      return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, ...(['connectionId', 'documentId', 'operationId'].includes(variant) ? { [variant]: 'other-operation' } : {}), result: { ok: true, source: 'browser', schemaVersion: variant === 'version' ? 2 : 1, code: 'order-submission-result', dispatch: 'dispatched', status: 'pending', consistency: 'unavailable', reason: 'result-not-ready', effect: 'pending', customerMessage: '已按下送出訂單。' } }
     })
     const client = createInteractiveServiceClient()
     client.activateTransport('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table', () => first)
     await client.waitUntilReady()
     const stale = client.tools.value[0]
     const pending = client.execute(stale, { confirmationToken: 'once' })
-    const assertion = variant === 'matching' || variant === 'replacement' ? expect(pending).resolves.toMatchObject({ code: 'order-submission-starting', effect: 'pending' }) : expect(pending).rejects.toThrow()
+    const assertion = variant === 'matching' || variant === 'replacement' ? expect(pending).resolves.toMatchObject({ code: 'order-submission-result', effect: 'pending' }) : expect(pending).rejects.toThrow()
     client.beginNavigation()
     if (variant === 'service' || variant === 'replacement') {
       const origin = variant === 'service' ? 'https://app.esgpb.com' : 'http://127.0.0.1:5188'

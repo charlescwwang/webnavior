@@ -44,7 +44,7 @@ it('shows real table names and the current website default without starting auto
   setup()
   await picker!.choices()
   const shadow = document.querySelector('[data-webnavior-table-picker]')!.shadowRoot!
-  expect([...shadow.querySelectorAll('button')].map(button => button.textContent)).toEqual(['櫃台取餐', 'A1 桌', 'B1 吧檯'])
+  expect(Array.from(shadow.querySelectorAll('button')).map(button => button.textContent)).toEqual(['櫃台取餐', 'A1 桌', 'B1 吧檯'])
   expect(shadow.querySelector('[aria-pressed=true]')?.textContent).toBe('櫃台取餐')
   expect(shadow.textContent).not.toContain('qr_token')
 })
@@ -153,7 +153,7 @@ it('accepts a native dropdown choice and keeps the large-button selection in syn
   const { control } = setup()
   await picker!.choices()
   control.click()
-  const option = [...document.querySelectorAll<HTMLElement>('#tables [role=option]')].find(option => option.textContent === 'A1 桌')!
+  const option = Array.from(document.querySelectorAll<HTMLElement>('#tables [role=option]')).find(option => option.textContent === 'A1 桌')!
   option.click()
   await Promise.resolve()
   expect(picker!.selection()).toBe('A1 桌')

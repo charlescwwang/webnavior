@@ -216,3 +216,33 @@ it('keeps the hand visible during the actual scroll instead of appearing only af
     window.scrollTo({ top: 0, behavior: 'instant' })
   }
 })
+
+// Report: this chat, Nov15; the operation hand disappeared behind product modals.
+it('places the cue in the top layer above a modal without intercepting its real controls', async () => {
+  const { presentation, target } = setup()
+  const modal = document.createElement('dialog')
+  modal.append(target)
+  document.body.append(modal)
+  modal.showModal()
+  try {
+    expect(await presentation.show([], target, true, [], { label: '增加份數', dispatch: async (onPress) => {
+      const overlay = document.querySelector<HTMLElement>('[data-webnavior-presentation]')!
+      expect(getComputedStyle(overlay).display).not.toBe('none')
+      expect(overlay.matches(':popover-open')).toBe(true)
+      await page.screenshot({ path: '__screenshots__/pb-modal-hand.png' })
+      onPress()
+    } })).toMatchObject({ cue: 'shown' })
+    const overlay = document.querySelector<HTMLElement>('[data-webnavior-presentation]')!
+    // Chromium's open popover is above the previously opened modal top layer.
+    expect(overlay.matches(':popover-open')).toBe(true)
+    expect(getComputedStyle(overlay).pointerEvents).toBe('none')
+    const bounds = target.getBoundingClientRect()
+    expect(document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2)).toBe(target)
+    presentation.cancel()
+    expect(overlay.isConnected).toBe(false)
+    expect(modal.open).toBe(true)
+  }
+  finally {
+    modal.close()
+  }
+})

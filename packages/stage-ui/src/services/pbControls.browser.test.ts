@@ -7,8 +7,12 @@ import { createOperation } from './pbOperation'
 it('edits indistinguishable rows only as an explicitly admitted equivalent group', async () => {
   history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
   document.body.innerHTML = `<main class="order-create">${['a', 'b'].map(id => `<div class="produce-item" data-row="${id}"><h3>水餃 <span>$80</span></h3><div class="product-attr"><div><div class="ml-4"><span>水餃X2</span></div></div><div class="ml-4"></div></div><input type="number" value="1"><button class="is-circle">刪除</button></div>`).join('')}</main>`
-  for (const button of Array.from(document.querySelectorAll('button')))
-    button.addEventListener('click', () => button.closest('.produce-item')!.remove())
+  for (const input of Array.from(document.querySelectorAll('input'))) {
+    input.addEventListener('change', () => {
+      if (input.value === '0')
+        input.closest('.produce-item')!.remove()
+    })
+  }
   const lines = ['a', 'b'].map(ref => ({ ref, productRef: 'dumplings', name: '水餃', quantity: 1, unitPrice: 80, configuration: 'extra-two', options: [{ name: '水餃', quantity: 2 }], note: '' }))
   const controller = new AbortController()
   const operation = createOperation({ documentId: 'equivalent', operationId: 'remove', signal: controller.signal, follow: async (_target, _label, dispatch) => {
@@ -33,7 +37,7 @@ function setup() {
   document.body.innerHTML = '<main><button><h4>每日新品</h4></button></main>'
   document.querySelector('main button')!.addEventListener('click', () => {
     document.body.insertAdjacentHTML('beforeend', `<div role="dialog"><div class="menu-dialog"><h1>每日新品</h1><button class="el-dialog__headerbtn">關閉</button><div class="product-item"><h4>加購</h4><ul><li><div class="flex-col"><span>白飯 <span>$5</span></span></div><input type="number" min="0" max="2" value="0"></li></ul></div><input placeholder="商品有特殊需求，請在此備註"><div class="dialog-footer"><input type="number" min="1" max="99" value="1"><button>選好了 共計$10</button></div></div></div>`)
-    for (const input of document.querySelectorAll('input[type=number]')) {
+    for (const input of Array.from(document.querySelectorAll('input[type=number]'))) {
       input.addEventListener('change', () => {
         const option = Number(document.querySelector<HTMLInputElement>('.product-item input')!.value)
         const quantity = Number(document.querySelector<HTMLInputElement>('.dialog-footer input')!.value)
@@ -75,6 +79,45 @@ it('uses the guest journey 加點 link without pressing quantity controls or cle
   expect(document.querySelector<HTMLInputElement>('input')!.value).toBe('雞腿')
   expect(operation.snapshot().steps).toMatchObject([{ action: 'navigate', effect: 'navigation', state: 'completed' }])
   await expect(controls.navigate('/order/store/other/internal_use/menu')).rejects.toThrow('approved journey')
+})
+
+// Report: this chat, Nov15; the first clear after cold PB entry can precede its rendered controls.
+it('waits for the checkout link and cart clear button to render before one verified clear', async () => {
+  const { controls, operation } = setup()
+  const opened = vi.fn()
+  const cleared = vi.fn()
+  const accepted = vi.fn()
+  let clearTimer: ReturnType<typeof setTimeout> | undefined
+  const linkTimer = setTimeout(() => {
+    const link = document.createElement('button')
+    link.textContent = '$50 去結算'
+    link.addEventListener('click', () => {
+      opened()
+      history.pushState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+      document.body.innerHTML = '<main class="order-create"><div class="produce-item">魚丸湯</div></main>'
+      clearTimer = setTimeout(() => {
+        const clear = document.createElement('button')
+        clear.textContent = '清空'
+        clear.addEventListener('click', () => {
+          cleared()
+          document.querySelector('.produce-item')!.remove()
+        })
+        document.querySelector('.order-create')!.append(clear)
+      }, 80)
+    })
+    document.body.append(link)
+  }, 80)
+  try {
+    await controls.clearCart(async () => {}, async () => !document.querySelector('.produce-item'), accepted)
+  }
+  finally {
+    clearTimeout(linkTimer)
+    clearTimeout(clearTimer)
+  }
+  expect(opened).toHaveBeenCalledOnce()
+  expect(cleared).toHaveBeenCalledOnce()
+  expect(accepted).toHaveBeenCalledOnce()
+  expect(operation.snapshot().steps.map(step => step.state)).toEqual(['completed', 'completed'])
 })
 
 // Report: this chat, Nov11; PB cart's native 清空 must be used at reception end.
@@ -119,7 +162,7 @@ it.each([0, 80])('waits for PB search debounce, loading and its rendered result 
     }, 250)
   })
   await controls.search('雞腿')
-  expect([...document.querySelectorAll('main h4')].map(heading => heading.textContent)).toEqual(['雞腿便當', '烤雞腿便當'])
+  expect(Array.from(document.querySelectorAll('main h4')).map(heading => heading.textContent)).toEqual(['雞腿便當', '烤雞腿便當'])
   expect(operation.snapshot().steps[0]?.state).toBe('completed')
 })
 
@@ -193,9 +236,9 @@ it('selects the visible configuration by its observed price when product name an
   document.body.innerHTML = '<main class="order-create"><div class="produce-item"><h3>每日新品 <span>($10)</span></h3><input type="number" value="1"><button class="is-circle">刪除</button></div><div class="produce-item"><h3>每日新品 <span>($15)</span></h3><p>白飯 ×1</p><input type="number" value="1"><button class="is-circle">刪除</button></div></main>'
   const removed = vi.fn()
   const rows = document.querySelectorAll('.produce-item')
-  rows[1].querySelector('button')!.addEventListener('click', removed)
+  rows[1].querySelector('input')!.addEventListener('change', removed)
   const wrongRow = vi.fn()
-  rows[0].querySelector('button')!.addEventListener('click', wrongRow)
+  rows[0].querySelector('input')!.addEventListener('change', wrongRow)
   await controls.edit([{ ref: 'plain', name: '每日新品', productRef: 'daily', quantity: 1, unitPrice: 10, configuration: 'plain' }, { ref: 'rice', name: '每日新品', productRef: 'daily', quantity: 1, unitPrice: 15, configuration: 'rice', description: '白飯 ×1' }], 'rice', undefined, async () => {}, async () => removed.mock.calls.length === 1)
   expect(removed).toHaveBeenCalledTimes(1)
   expect(wrongRow).not.toHaveBeenCalled()
@@ -219,8 +262,8 @@ it('identifies equal-name/equal-count/equal-price rows by the complete rendered 
   const rows = document.querySelectorAll('.produce-item')
   const correct = vi.fn()
   const wrong = vi.fn()
-  rows[0].querySelector('button')!.addEventListener('click', wrong)
-  rows[1].querySelector('button')!.addEventListener('click', correct)
+  rows[0].querySelector('input')!.addEventListener('change', wrong)
+  rows[1].querySelector('input')!.addEventListener('change', correct)
   await controls.edit(['飯少少', '飯少'].map((note, index) => ({ ref: index ? 'exact-note' : 'other-note', name: '每日新品', productRef: 'daily', quantity: 1, unitPrice: 10, configuration: note, note, options: [] })), 'exact-note', undefined, async () => {}, async () => correct.mock.calls.length === 1)
   expect(correct).toHaveBeenCalledTimes(1)
   expect(wrong).not.toHaveBeenCalled()
@@ -233,8 +276,8 @@ it('distinguishes a free option from the plain configuration without relying on 
   const correct = vi.fn()
   const wrong = vi.fn()
   const rows = document.querySelectorAll('.produce-item')
-  rows[0].querySelector('button')!.addEventListener('click', wrong)
-  rows[1].querySelector('button')!.addEventListener('click', correct)
+  rows[0].querySelector('input')!.addEventListener('change', wrong)
+  rows[1].querySelector('input')!.addEventListener('change', correct)
   const base = { name: '每日新品', productRef: 'daily', quantity: 1, unitPrice: 10, note: '' }
   await controls.edit([{ ...base, ref: 'rice', configuration: 'rice', options: [{ name: '白飯', quantity: 1 }] }, { ...base, ref: 'plain', configuration: 'plain', options: [] }], 'plain', undefined, async () => {}, async () => correct.mock.calls.length === 1)
   expect(correct).toHaveBeenCalledTimes(1)
@@ -304,4 +347,138 @@ it('explicitly selects the requested mandatory radio instead of inheriting PB’
   await controls.prepare('每日新品', 'daily-ref', mandatory, { version: 'today', variantRef: '', choices: [{ ref: 'a-11', quantity: 1 }] }, 1, '')
   expect(document.querySelector<HTMLInputElement>('input[value="11"]')!.checked).toBe(true)
   expect(document.querySelector<HTMLInputElement>('input[value="10"]')!.checked).toBe(false)
+})
+
+// Report: this chat, Nov15 actual PB checkout has both Edit and Delete circles.
+it('removes the exact cart row through its supported zero quantity without confusing circular controls', async () => {
+  const { controls } = setup()
+  history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+  document.body.innerHTML = '<main class="order-create"><div class="produce-item"><h3>魚丸湯 <span>$50</span></h3><input type="number" min="0" value="2"><button class="is-circle">編輯</button><button class="is-circle">刪除</button></div></main>'
+  const clicked = vi.fn()
+  const changed = vi.fn()
+  document.querySelectorAll('button').forEach(button => button.addEventListener('click', clicked))
+  document.querySelector('input')!.addEventListener('change', (event) => {
+    changed((event.target as HTMLInputElement).value)
+    if ((event.target as HTMLInputElement).value === '0')
+      document.querySelector('.produce-item')!.remove()
+  })
+  await controls.edit([{ ref: 'fish', productRef: 'p-2595', name: '魚丸湯', quantity: 2, unitPrice: 50, configuration: '', options: [] }], 'fish', undefined, async () => {}, async () => !document.querySelector('.produce-item'))
+  expect(changed).toHaveBeenCalledWith('0')
+  expect(clicked).not.toHaveBeenCalled()
+  expect(document.querySelector('.produce-item')).toBeNull()
+})
+
+// Report: this chat, Nov15; quantity operations should point at and click native +/− controls.
+it('clicks the scoped native buttons for options and servings, waiting for each asynchronous update', async () => {
+  const { controls, configuration, selection, operation } = setup()
+  await controls.open('每日新品')
+  const clicks: string[] = []
+  for (const input of Array.from(document.querySelectorAll<HTMLInputElement>('input[type=number]'))) {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'el-input-number'
+    input.before(wrapper)
+    wrapper.append(input)
+    for (const [name, delta] of [['decrease', -1], ['increase', 1]] as const) {
+      const button = document.createElement('span')
+      button.className = `el-input-number__${name}`
+      button.setAttribute('role', 'button')
+      button.textContent = delta > 0 ? '+' : '−'
+      wrapper.append(button)
+      button.addEventListener('click', () => {
+        clicks.push(`${input.closest('.product-item') ? 'option' : 'servings'}:${delta}`)
+        setTimeout(() => {
+          input.value = String(Number(input.value) + delta)
+          input.dispatchEvent(new Event('change', { bubbles: true }))
+        }, 30)
+      })
+    }
+  }
+  await controls.prepare('每日新品', 'daily-ref', configuration, { ...selection, choices: [{ ref: 'a-1', quantity: 2 }] }, 3, '')
+  await controls.prepare('每日新品', 'daily-ref', configuration, selection, 1, '')
+  expect(clicks).toEqual(['option:1', 'option:1', 'servings:1', 'servings:1', 'option:-1', 'servings:-1', 'servings:-1'])
+  expect(document.querySelector<HTMLInputElement>('.dialog-footer input')!.value).toBe('1')
+  expect(operation.snapshot().steps.filter(step => step.action === 'quantity')).toHaveLength(4)
+})
+
+it('clicks cart quantity buttons through replaced rows, checks preflight once and verifies the final cart', async () => {
+  history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+  const clicks: number[] = []
+  const render = (quantity: number) => {
+    document.body.innerHTML = `<main class="order-create"><div class="produce-item"><h3>水餃 <span>$64</span></h3><div class="line-actions"><button aria-label="減少水餃份數">−</button><input type="number" min="0" value="${quantity}"><button aria-label="增加水餃份數">+</button></div></div></main>`
+    for (const [index, delta] of [[0, -1], [1, 1]]) {
+      document.querySelectorAll('button')[index].addEventListener('click', () => {
+        clicks.push(delta)
+        const input = document.querySelector('input')!
+        input.value = String(quantity + delta)
+        input.disabled = true
+        setTimeout(render, 30, quantity + delta)
+      })
+    }
+  }
+  render(1)
+  const controller = new AbortController()
+  const operation = createOperation({ documentId: 'cart', operationId: 'steps', signal: controller.signal, follow: async (target, _label, dispatch) => {
+    expect(target.tagName).toBe('BUTTON')
+    await dispatch()
+    return true
+  } })
+  const controls = createControls(operation, controller.signal)
+  const preflight = vi.fn(async () => {})
+  const dispatched = vi.fn()
+  const line = { ref: 'one', productRef: 'dumplings', name: '水餃', quantity: 1, unitPrice: 64, configuration: 'plain' }
+  await controls.edit([line], line.ref, 3, preflight, async () => document.querySelector<HTMLInputElement>('input')?.value === '3', dispatched)
+  await controls.edit([{ ...line, quantity: 3 }], line.ref, 1, preflight, async () => document.querySelector<HTMLInputElement>('input')?.value === '1', dispatched)
+  expect(clicks).toEqual([1, 1, -1, -1])
+  expect(preflight).toHaveBeenCalledTimes(2)
+  expect(dispatched).toHaveBeenCalledTimes(2)
+  expect(operation.snapshot().steps.every(step => step.state === 'completed')).toBe(true)
+})
+
+// Report: this chat, Nov15; native quantity buttons must not bypass takeover or disabled controls.
+it.each([false, true])('stops cart clicks after takeover and does not bypass a disabled stepper (disabled=%s)', async (disabled) => {
+  history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+  document.body.innerHTML = `<main class="order-create"><div class="produce-item"><h3>水餃 <span>$64</span></h3><div class="el-input-number"><span role="button" class="el-input-number__increase ${disabled ? 'is-disabled' : ''}">+</span><input type="number" min="0" value="1"></div></div></main>`
+  const controller = new AbortController()
+  const clicked = vi.fn(() => {
+    controller.abort()
+    setTimeout(() => document.querySelector<HTMLInputElement>('input')!.value = '2', 30)
+  })
+  document.querySelector('span[role=button]')!.addEventListener('click', clicked)
+  const operation = createOperation({ documentId: 'cart', operationId: 'takeover', signal: controller.signal, follow: async (_target, _label, dispatch) => {
+    await dispatch()
+    return true
+  } })
+  const controls = createControls(operation, controller.signal)
+  const dispatched = vi.fn()
+  const verify = vi.fn(async () => true)
+  await expect(controls.edit([{ ref: 'one', productRef: 'dumplings', name: '水餃', quantity: 1, unitPrice: 64, configuration: 'plain' }], 'one', 3, async () => {}, verify, dispatched)).rejects.toThrow()
+  expect(clicked).toHaveBeenCalledTimes(disabled ? 0 : 1)
+  expect(dispatched).toHaveBeenCalledTimes(disabled ? 0 : 1)
+  expect(verify).not.toHaveBeenCalled()
+  expect(document.querySelector<HTMLInputElement>('input')!.value).toBe(disabled ? '1' : '2')
+})
+
+it('keeps the original live cart row while its delayed count passes an identical peer count', async () => {
+  history.replaceState({}, '', '/order/store/1kgJeql/pick_up/orders/create')
+  document.body.innerHTML = `<main class="order-create">${[1, 2].map((quantity, index) => `<div class="produce-item" data-row="${index}"><h3>水餃 <span>$64</span></h3><div class="product-attr"><div><div class="ml-4"></div></div><div class="ml-4"></div></div><div class="el-input-number"><span role="button" class="el-input-number__increase">+</span><input type="number" min="0" value="${quantity}"></div></div>`).join('')}</main>`
+  const clicks: string[] = []
+  for (const row of Array.from(document.querySelectorAll<HTMLElement>('.produce-item'))) {
+    row.querySelector('span[role=button]')!.addEventListener('click', () => {
+      clicks.push(row.dataset.row!)
+      setTimeout(() => {
+        const input = row.querySelector('input')!
+        input.value = String(Number(input.value) + 1)
+      }, 60)
+    })
+  }
+  const controller = new AbortController()
+  const operation = createOperation({ documentId: 'peers', operationId: 'steps', signal: controller.signal, follow: async (_target, _label, dispatch) => {
+    await dispatch()
+    return true
+  } })
+  const controls = createControls(operation, controller.signal)
+  const lines = [1, 2].map((quantity, index) => ({ ref: String(index), productRef: 'dumplings', name: '水餃', quantity, unitPrice: 64, configuration: 'plain', options: [], note: '' }))
+  await controls.edit(lines, '0', 3, async () => {}, async () => document.querySelector<HTMLInputElement>('input')?.value === '3')
+  expect(clicks).toEqual(['0', '0'])
+  expect(Array.from(document.querySelectorAll('input')).map(input => input.value)).toEqual(['3', '2'])
 })

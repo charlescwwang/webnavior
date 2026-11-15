@@ -157,10 +157,14 @@ export function createPresentation() {
       container.dataset.mode = control ? 'operation' : 'presentation'
       container.dataset.productNames = JSON.stringify(products.map(product => product.name))
       container.dataset.phase = 'moving'
-      container.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;'
+      // A dialog's top layer outranks every document z-index. A manual,
+      // pointer-transparent popover keeps the cue above the active PB modal
+      // without moving or modifying the merchant's controls.
+      container.popover = 'manual'
+      container.style.cssText = 'position:fixed;inset:0;width:auto;height:auto;margin:0;padding:0;border:0;overflow:visible;background:transparent;pointer-events:none;z-index:2147483647;'
       const shadow = container.attachShadow({ mode: 'closed' })
       const style = document.createElement('style')
-      style.textContent = ':host{pointer-events:none!important} .frame{position:fixed;box-sizing:border-box;border:4px solid #ec7a13;border-radius:16px;box-shadow:0 0 0 5px #fff9,0 0 24px #ed8c3280} .hand{position:fixed;font-size:44px;line-height:1;filter:drop-shadow(0 3px 3px #0008);transform-origin:30% 20%} .label{position:fixed;max-width:75vw;padding:6px 12px;border-radius:10px;background:#31291f;color:white;font:600 16px sans-serif}'
+      style.textContent = ':host{pointer-events:none!important} :host::backdrop{pointer-events:none;background:transparent} .frame{position:fixed;box-sizing:border-box;border:4px solid #ec7a13;border-radius:16px;box-shadow:0 0 0 5px #fff9,0 0 24px #ed8c3280} .hand{position:fixed;font-size:44px;line-height:1;filter:drop-shadow(0 3px 3px #0008);transform-origin:30% 20%} .label{position:fixed;max-width:75vw;padding:6px 12px;border-radius:10px;background:#31291f;color:white;font:600 16px sans-serif}'
       const frames = [target, ...related.filter(element => element !== target)].map((element) => {
         const frame = document.createElement('div')
         frame.className = 'frame'
@@ -177,6 +181,7 @@ export function createPresentation() {
       label.textContent = control?.label ?? products.map(product => product.name).join('、')
       shadow.append(style, ...frames.map(({ frame }) => frame), hand, label)
       document.documentElement.append(container)
+      container.showPopover()
       root = container
       previous?.remove()
       const measure = () => {

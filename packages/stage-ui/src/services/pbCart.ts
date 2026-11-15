@@ -141,7 +141,7 @@ export function createCartOperations(gateway: CartGateway) {
     },
     async execute(input: { action: 'add' | 'quantity' | 'remove' | 'replace', version: string, productRef?: string, lineRef?: string, lineRefs?: string[], quantity: number, note: string, unitPrice?: number, selection?: ProductSelection, retainQuantity?: number }) {
       if (busy || uncertain)
-        return { ok: false, status: uncertain ? 'unknown' : 'rejected', customerMessage: '先前操作尚未確認，請先確認購物車，暫停新的代操作。' }
+        return { ok: false, status: uncertain ? 'unknown' : 'rejected', effect: uncertain ? 'unknown' : 'none', customerMessage: '先前操作尚未確認，請先確認購物車，暫停新的代操作。' }
       busy = true
       let dispatched = false
       let verifiedAddition: CartSnapshot | undefined
@@ -149,8 +149,12 @@ export function createCartOperations(gateway: CartGateway) {
         if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 99)
           throw new Error('數量必須介於 1 到 99。')
         const before = await gateway.read()
-        if (!advertised || advertised.version !== input.version || advertised.key !== fingerprint(before))
-          throw new Error('購物車已變更，請重新讀取後再確認操作。')
+        if (!advertised || advertised.version !== input.version || advertised.key !== fingerprint(before)) {
+          // A changed pickup/table/manual generation is stale admission, not
+          // an unknown merchant effect. The Host must refresh and revalidate
+          // the same request; this coordinator never retries it automatically.
+          return { ok: false, status: 'rejected', effect: 'none', reason: 'stale-cart', customerMessage: '購物車資料已更新，這次尚未變更餐點。' }
+        }
         const requestedLine = before.lines.find(line => line.ref === input.lineRef)
         let target = requestedLine
         // A partial replacement keeps this many servings in the original
@@ -361,7 +365,7 @@ export function createCartOperations(gateway: CartGateway) {
           : dispatched
             ? '這次購物車操作的結果尚未確認，請查看購物車；系統已暫停新的代操作。'
             : `這次沒有變更購物車：${errorMessageFrom(error) ?? '請重新確認目前餐點與購物車。'}`
-        return { ok: false, status: dispatched ? 'unknown' : 'rejected', error: errorMessageFrom(error) ?? 'PB operation failed.', ...(verifiedAddition ? { partial: true, verifiedAddition } : {}), customerMessage }
+        return { ok: false, status: dispatched ? 'unknown' : 'rejected', effect: dispatched ? 'unknown' : 'none', error: errorMessageFrom(error) ?? 'PB operation failed.', ...(verifiedAddition ? { partial: true, verifiedAddition } : {}), customerMessage }
       }
       finally { busy = false }
     },

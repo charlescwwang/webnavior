@@ -9,7 +9,7 @@ import { pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { isPbJourneyPage, readPbJourney } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { browserPresentationInputSchema, browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
-import { array, boolean, integer, isValiError, literal, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, picklist, pipe, strictObject, string, unknown } from 'valibot'
+import { array, boolean, integer, isValiError, literal, looseObject, maxLength, maxValue, minLength, minValue, nullable, number, optional, parse, picklist, pipe, safeParse, strictObject, string, unknown } from 'valibot'
 
 import { createCartOperations, describeCartLines, readCartPage, verifyCartRowEdit } from './pbCart'
 import { readCatalog as collectCatalog } from './pbCatalog'
@@ -59,7 +59,7 @@ export function createPbService() {
         // it for every context/selection blocks voice on an unrelated HTTP read.
         // Unlike menu/cart SPA snapshots, this metadata is usable only while its
         // exact component and document URL still match the visible table page.
-        const pages = [...document.querySelectorAll('[data-page]')]
+        const pages = Array.from(document.querySelectorAll('[data-page]'))
         const serialized = pages.length === 1 ? pages[0].getAttribute('data-page') : undefined
         if (!serialized)
           throw new Error('桌號頁資料尚未就緒，請重新載入選桌頁。')
@@ -133,7 +133,7 @@ export function createPbService() {
           { name: 'browser_start_ordering', description: 'Select the customer-specified table and press the actual Start ordering button to enter its menu. name must be a current tableChoices name explicitly requested by the customer or the verified selectedTable. Ask which table if neither exists. forReset is only for Host reception cleanup behind its cover. This does not add food, submit an order or pay. New navigation must read back the table/cart before ordering.', inputSchema: { type: 'object', properties: { name: { type: 'string', maxLength: 200 }, forReset: { type: 'boolean' } }, required: ['name'], additionalProperties: false } },
         ]
       : []),
-    { name: 'browser_present', description: 'Present exact current catalog refs, never cart quantities or subtotal. Default mode=recommendation presents at most three in the supplied ranking order; use it for named selections and ordinary recommendations. other-recommendations requests a different batch and shares the three-item limit; only that mode permits Host exclusion of the last introduced batch. mode=information is only for explicit named comparisons/menu information and allows up to ten. The full requested ref list is validated first; limiting is not evidence of absent products. If the prior search hides any selected product, clears the native search and verifies ALL selected cards before speaking. [] cancels visuals only; browser_search query="" clears the search. Never changes cart or turns a website page.', inputSchema: { type: 'object', properties: { deferVisual: { type: 'boolean', description: 'Host reserves validated dishes for reply-time cues; no frame or scroll until speech or visible reply starts.' }, productRefs: { type: 'array', items: { type: 'string' }, maxItems: 100 }, mode: { type: 'string', enum: ['recommendation', 'other-recommendations', 'information'], description: 'Defaults to recommendation (three). other-recommendations is only for explicitly requesting a different recommendation batch. Information is only for explicit customer-requested comparisons or factual lists.' } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
+    { name: 'browser_present', description: 'Present exact current catalog refs, never cart quantities or subtotal. Default mode=recommendation presents at most three in the supplied ranking order; use it for named selections and ordinary recommendations. other-recommendations requests a different batch and shares the three-item limit; only that mode permits Host exclusion of the last introduced batch. mode=information is only for explicit named comparisons/menu information and allows up to ten. The full requested ref list is validated first; limiting is not evidence of absent products. If the prior search hides any selected product, clears the native search and verifies ALL selected cards before speaking. [] cancels visuals only; browser_search query="" clears the search. Never changes cart. Explicit presentation may return to the menu; preservePage=true keeps both the page and search unchanged.', inputSchema: { type: 'object', properties: { preservePage: { type: 'boolean', description: 'Host speech cue only: keep the current page and search unchanged; skip framing if the cards are not already visible.' }, deferVisual: { type: 'boolean', description: 'Host reserves validated dishes for reply-time cues; no frame or scroll until speech or visible reply starts.' }, productRefs: { type: 'array', items: { type: 'string' }, maxItems: 100 }, mode: { type: 'string', enum: ['recommendation', 'other-recommendations', 'information'], description: 'Defaults to recommendation (three). other-recommendations is only for explicitly requesting a different recommendation batch. Information is only for explicit customer-requested comparisons or factual lists.' } }, required: ['productRefs'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_get', description: 'Read planning data before a cart edit: current cart/version and optional product references. includeCatalog=true is internal planning data, not a customer cart-review receipt. forAdmission=true is Host-only reception preparation, including a fresh cart read on the table page. For 核對、我點了什麼、目前訂單、還不要送 use browser_cart_review instead. This does not submit an order.', inputSchema: { type: 'object', properties: { includeCatalog: { type: 'boolean' }, forAdmission: { type: 'boolean' } }, required: ['includeCatalog'], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_return_menu', description: 'Return to the full actual menu, clear website search and unfinished selection, and verify the cart is unchanged. Does not increase servings, clear cart items, submit or pay.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
     { name: 'browser_cart_review', description: 'Open the actual cart for review and read back the CURRENT ORDER, quantities, options, notes and actual PB subtotal as a customer receipt. Use for 核對一下、我點了什麼、確認目前訂單、先不要送. This is read-only: it neither presents menu unit prices as an order nor changes or submits anything. No parameters.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false }, annotations: { readOnlyHint: true } },
@@ -159,7 +159,7 @@ export function createPbService() {
       url: location.href,
       // Card text is PB's rendered price/description evidence. Keep it with its
       // heading; a bare product name cannot support a price comparison.
-      products: [...document.querySelectorAll('main [role="button"] h4, main button h4')].filter(element => element.getClientRects().length > 0).map((element) => {
+      products: Array.from(document.querySelectorAll('main [role="button"] h4, main button h4')).filter(element => element.getClientRects().length > 0).map((element) => {
         const details = element.closest<HTMLElement>('button, [role="button"]')?.textContent?.trim() ?? ''
         // Only an unambiguous single displayed price is a fixed-price quote.
         // Ranges, discounts with two amounts, and missing prices need clarification.
@@ -168,7 +168,7 @@ export function createPbService() {
       }),
       catalogScope: 'Currently rendered search results only; an absent item is not proof the store never sells it.',
       ...(includeDraft ? { search: document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value ?? '' } : {}),
-      productDialog: [...document.querySelectorAll('[role="dialog"]')].filter(element => element.getClientRects().length > 0).map(element => ({ name: element.querySelector('h1')?.textContent?.trim(), ...(includeDraft ? { note: element.querySelector<HTMLInputElement>('input[placeholder="商品有特殊需求，請在此備註"]')?.value } : {}) })),
+      productDialog: Array.from(document.querySelectorAll('[role="dialog"]')).filter(element => element.getClientRects().length > 0).map(element => ({ name: element.querySelector('h1')?.textContent?.trim(), ...(includeDraft ? { note: element.querySelector<HTMLInputElement>('input[placeholder="商品有特殊需求，請在此備註"]')?.value } : {}) })),
       page: location.pathname === journey.tablePath ? 'table' : location.pathname === journey.cartPath ? 'cart' : 'menu',
       checkoutAvailable: false,
     }
@@ -179,7 +179,7 @@ export function createPbService() {
     const menu = url.pathname === journey.menuPath
     const component = menu ? 'Menu/Show' : 'Order/Create'
     const fields = ['auth', 'buyer', 'storeHash', 'flowType', 'diningTable', ...(menu ? ['defaultPickUpDate', 'defaultPickUpTime'] : ['order', 'details', 'subtotal'])]
-    const pages = [...document.querySelectorAll('[data-page]')]
+    const pages = Array.from(document.querySelectorAll('[data-page]'))
     if (pages.length !== 1)
       throw new Error('PB 頁面資料尚未就緒，請重新載入後再試。')
     const { version } = parse(looseObject({ version: nullable(string()) }), JSON.parse(pages[0].getAttribute('data-page')!))
@@ -205,7 +205,13 @@ export function createPbService() {
       throw new Error('PB page is unavailable or requires sign-in.')
     if (response.headers.get('X-Inertia') !== 'true')
       throw new Error('PB 資料回應格式已變更，請重新載入後再試。')
-    const page = parse(looseObject({ component: literal(component), url: string(), props: looseObject({ storeHash: literal(journey.store), flowType: literal(journey.flow), auth: optional(looseObject({ user: optional(unknown()) })), buyer: optional(looseObject({ type: string() })) }) }), await response.json())
+    const raw: unknown = await response.json()
+    const tableRequired = safeParse(looseObject({ component: literal('Error'), url: string(), props: looseObject({ code: literal(403), message: literal('請掃描桌上 QR Code 點餐') }) }), raw)
+    // A fresh PB guest has no server-side dining table until Start. This exact
+    // response defers admission; it provides no evidence that the cart is empty.
+    if (!menu && location.pathname === journey.tablePath && tableRequired.success && new URL(tableRequired.output.url, location.origin).href === url.href)
+      throw new Error('PB requires table entry before cart inspection.', { cause: 'pb-table-entry-required' })
+    const page = parse(looseObject({ component: literal(component), url: string(), props: looseObject({ storeHash: literal(journey.store), flowType: literal(journey.flow), auth: optional(looseObject({ user: optional(unknown()) })), buyer: optional(looseObject({ type: string() })) }) }), raw)
     if (new URL(page.url, location.origin).href !== url.href)
       throw new Error('PB 資料與目前店家頁面不符，尚未操作。')
     assertScope()
@@ -279,18 +285,26 @@ export function createPbService() {
         break
       default: throw new Error('PB route is not an approved cart operation.')
     }
-    return resolveRoute(name, parameters, new URL(suffix, baseUrl), [...document.scripts].map(script => script.textContent ?? ''))
+    return resolveRoute(name, parameters, new URL(suffix, baseUrl), Array.from(document.scripts).map(script => script.textContent ?? ''))
   }
 
-  function beginWrite() {
+  function beginWrite(kind: 'cart' | 'reset' = 'cart') {
   // This is the final synchronous boundary before a vendor request.
   // A customer can navigate during the preceding asynchronous preparation.
     assertScope()
-    if (writeMarker && localStorage.getItem(blockedKey) === writeMarker)
+    if (writeMarker && localStorage.getItem(blockedKey) === writeMarker) {
+      // Clearing can complete after its response is lost. Once dispatched,
+      // distinguish it from the old add/edit marker even after document reload,
+      // so another Restart cannot clear a later customer's cart a second time.
+      if (kind === 'reset' && !writeMarker.startsWith('reset:')) {
+        writeMarker = `reset:${crypto.randomUUID()}`
+        localStorage.setItem(blockedKey, writeMarker)
+      }
       return
+    }
     if (localStorage.getItem(blockedKey))
       throw new Error('先前購物車操作尚未確認。')
-    writeMarker = crypto.randomUUID()
+    writeMarker = kind === 'reset' ? `reset:${crypto.randomUUID()}` : crypto.randomUUID()
     // Persist before dispatch so reload/restart cannot erase an unknown write.
     // No customer data, cookie, or credential is stored here.
     localStorage.setItem(blockedKey, writeMarker)
@@ -326,7 +340,7 @@ export function createPbService() {
         const after = await readCart()
         return !after.lines.length && after.subtotal === 0
       }, () => {
-        beginWrite()
+        beginWrite('reset')
         onDispatch()
       })
     },
@@ -367,6 +381,18 @@ export function createPbService() {
     remove: (ref, onDispatch, equivalentRefs) => editLine(ref, undefined, onDispatch, equivalentRefs),
   })
 
+  /** A retired cart write can be discarded explicitly, never replayed or mistaken for a pending submission. */
+  function canResetCart(operationId?: string) {
+    const marker = localStorage.getItem(blockedKey)
+    // Add/edit markers are UUIDs. `order:` and `reset:` remain barriers after
+    // reload: neither a late submission nor a late clear may be replayed.
+    // Only a different, retired document's cart marker may be reconciled by
+    // clear + fresh readback. Current-document uncertain writes stay blocked.
+    const retiredCart = marker !== null && marker !== writeMarker && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(marker)
+    return (!marker || retiredCart) && cartOperations.canRecover()
+      && ![...(active?.operations.entries() ?? [])].some(([id, operation]) => id !== operationId && operation.name !== 'browser_recovery_context' && operation.status === 'pending')
+  }
+
   /** Reads live site state without navigation; account fields never leave this document. */
   async function recoveryContext() {
     const [products, cart] = await Promise.all([readCatalog(), readCart()])
@@ -375,18 +401,22 @@ export function createPbService() {
     const state = { manualRevision, products, cart, visible: observe(true) }
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(state)))
     const contextKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
-    const canRetry = !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_recovery_context' && operation.status !== 'settled')
-    return { source: 'browser', documentId, contextKey, canRetry }
+    const canRetry = !localStorage.getItem(blockedKey) && cartOperations.canRecover() && ![...(active?.operations.values() ?? [])].some(operation => operation.name !== 'browser_recovery_context' && operation.status === 'pending')
+    return { source: 'browser', documentId, contextKey, canRetry, canReset: canResetCart() }
   }
 
   /** Presents fresh facts only after every selected ref has a unique rendered card. */
-  async function presentProducts(refs: readonly string[], press = false, limit = 10, deferVisual = false) {
+  async function presentProducts(refs: readonly string[], press = false, limit = 10, deferVisual = false, preservePage = false) {
     if (activeVisual?.signal.aborted)
       return { products: [], cue: 'cancelled' as const }
     if (!refs.length) {
       presentation.cancel()
       return { products: [], cue: 'cleared' as const }
     }
+    // Replies also mention dishes on cart/invoice pages. Their optional speech
+    // cues must never navigate or clear a customer's search to find a card.
+    if (preservePage && location.pathname !== journey.menuPath)
+      return { products: [], cue: 'cancelled' as const }
     const revision = presentation.revision()
     const catalog = await readCatalog(undefined, false, activeVisual?.signal)
     if (revision !== presentation.revision())
@@ -407,10 +437,12 @@ export function createPbService() {
     const cardFor = (name: string) => {
       if (catalog.filter(product => product.name === name).length !== 1)
         return undefined
-      const headings = [...document.querySelectorAll<HTMLElement>('main [role="button"] h4, main button h4')].filter(element => element.textContent?.trim() === name && element.getClientRects().length > 0)
+      const headings = Array.from(document.querySelectorAll<HTMLElement>('main [role="button"] h4, main button h4')).filter(element => element.textContent?.trim() === name && element.getClientRects().length > 0)
       return headings.length === 1 ? headings[0].closest<HTMLElement>('button, [role="button"]') ?? undefined : undefined
     }
     if (location.pathname !== journey.menuPath || products.some(product => !cardFor(product.name))) {
+      if (preservePage)
+        return { products: [], cue: 'cancelled' as const }
       // Catalog reads do not change PB's old search. Reveal through its real
       // controls, then await every selected card, including later comparison
       // subjects. Showing just the first card cannot prove a synchronized batch.
@@ -443,12 +475,16 @@ export function createPbService() {
     activeVisual = controller
     if (admittedControlRevision !== controlRevision)
       controller.abort()
-    const operation = createOperation({ documentId, operationId, signal: controller.signal, follow: async (target, label, dispatch, prepare) => {
+    // Host hides the vendor view while retiring a reception. Only its private
+    // reset may operate behind that cover; ordinary customer actions still
+    // require visibility. Document binding, cancellation, target checks and
+    // merchant readback remain mandatory for both paths.
+    const operation = createOperation({ documentId, operationId, signal: controller.signal, allowHidden: name === 'browser_customer_reset', follow: async (target, label, dispatch, prepare) => {
       if (name === 'browser_customer_reset') {
         invoiceInput.reset()
         checkout.reset()
         // Reception maintenance runs behind a loading cover. Skip illustrative
-        // travel/dwell only; dispatch still performs all ownership, visibility,
+        // travel/dwell only; dispatch still performs all ownership,
         // hit-target and fresh-cart checks, then verifies the actual effect.
         target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' })
         await dispatch()
@@ -495,7 +531,7 @@ export function createPbService() {
         assertScope()
       }
       catch (error) { return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: errorMessageFrom(error) ?? '請返回點餐菜單。' } }
-      if (location.pathname === journey.tablePath) {
+      if (location.pathname === journey.tablePath && name !== 'browser_customer_reset') {
         if (name === 'browser_recovery_context')
           return recoveryContext()
         const tableChoices = await tablePicker!.choices()
@@ -529,9 +565,17 @@ export function createPbService() {
         // Only the Host's preparation/review/reset requests may inspect a
         // previous cart before admission. Ordinary table context stays free
         // of prior customer data; a table page alone never proves emptiness.
-        const admission = name === 'browser_cart_get' && input.forAdmission === true
-          ? { cart: await cartOperations.observe() }
-          : {}
+        let admission: Record<string, unknown> = {}
+        if (name === 'browser_cart_get' && input.forAdmission === true) {
+          try {
+            admission = { cart: await cartOperations.observe() }
+          }
+          catch (error) {
+            if (!(error instanceof Error) || error.cause !== 'pb-table-entry-required')
+              throw error
+            admission = { cartAdmission: 'after-table-entry' }
+          }
+        }
         return { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', effect: 'none', tableChoices, ...(selectedTable ? { selectedTable } : {}), ...admission, customerMessage: selectedTable ? `已選擇${selectedTable}，請說「開始點餐」，或點畫面的開始點餐按鈕。` : '內用請先找到座位，再回來告訴我您的桌號；外帶可以選櫃台自取。這裡沒有外送服務。' }
       }
       if (name === 'browser_table_select' || name === 'browser_start_ordering')
@@ -543,11 +587,11 @@ export function createPbService() {
       let purpose: 'information' | 'choose_product' = 'information'
       let productCue: Awaited<ReturnType<typeof presentProducts>> | undefined
       if (name === 'browser_present') {
-        const { productRefs, mode, deferVisual } = parse(browserPresentationInputSchema, input)
+        const { productRefs, mode, deferVisual, preservePage } = parse(browserPresentationInputSchema, input)
         const limit = mode === 'information' ? 10 : browserRecommendationLimit
         if (mode === 'information' && new Set(productRefs).size > limit)
           return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, explanation: '明確資訊查詢每次最多呈現 10 項。請保留顧客原本查詢範圍，分批查證與呈現，不把前 10 項當成完整答案。這次尚未呈現任何品項。' }
-        const selected = await presentProducts(productRefs, false, limit, deferVisual)
+        const selected = await presentProducts(productRefs, false, limit, deferVisual, preservePage)
         if ('unresolvedProductRefs' in selected)
           return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, presentation: { products: [], cue: selected.cue }, unresolvedProductRefs: selected.unresolvedProductRefs, products: selected.availableProducts, explanation: 'productRefs 必須複製當前 products 的 ref 欄位，不能填商品名稱。這次尚未呈現任何餐點，也未變更購物車；不是查無商品。請保留顧客完整篩選條件，依這份新鮮對照使用 ref 重新呼叫 browser_present。' }
         return { ok: true, source: 'browser', presentation: selected, mode, presentationLimit: limit, selectionTruncated: selected.products.length < new Set(productRefs).size, ...(selected.products.length ? { customerMessage: describeProducts(selected.products) } : { dataOnly: true }) }
@@ -592,8 +636,7 @@ export function createPbService() {
           return { ok: false, source: 'browser', status: 'unknown', effect: 'none', customerMessage: '先前操作仍在確認，請先查看目前訂單畫面，避免重複送出。' }
         if (name === 'browser_order_submit') {
           const { confirmationToken } = parse(strictObject({ confirmationToken: text }), input)
-          await checkout.submit(confirmationToken, controls)
-          return { ok: true, source: 'browser', code: 'order-submission-starting', effect: 'pending', confirmationToken, customerMessage: '已按下送出訂單，請依畫面確認訂單結果及後續付款步驟。' }
+          return checkout.submit(confirmationToken, controls)
         }
         await controls.navigate(journey.cartPath)
         await checkout.reveal(controls)
@@ -636,6 +679,7 @@ export function createPbService() {
             : name === 'browser_cart_quantity'
               ? parse(strictObject({ version: text, lineRef: text, lineRefs: optional(pipe(array(text), minLength(1), maxLength(2_000))), quantity }), input)
               : parse(strictObject({ version: text, lineRef: text, lineRefs: optional(pipe(array(text), minLength(1), maxLength(2_000))) }), input)
+        const returnToCart = location.pathname === journey.cartPath
         const action = name === 'browser_cart_replace' ? 'replace' : name === 'browser_cart_add' ? 'add' : name === 'browser_cart_quantity' ? 'quantity' : 'remove'
         const beforeCart = 'lineRef' in fields ? await readCart() : undefined
         const priorLine = beforeCart?.lines.find(line => 'lineRef' in fields && line.ref === fields.lineRef)
@@ -652,9 +696,14 @@ export function createPbService() {
         // replaces this world, the new document must retain the recovery block.
           let displayUpdated = false
           try {
-            await controls.navigate(journey.menuPath)
+            // Editing on checkout must not detour through the menu: PB rebuilds
+            // invoice/contact drafts when checkout is entered again. The cart
+            // coordinator already verified the edited row and fresh server cart.
+            await controls.navigate(returnToCart ? journey.cartPath : journey.menuPath)
             await controls.ready(() => {
-              const totals = [...document.querySelectorAll('span.text-xl.font-bold.ms-2')]
+              if (returnToCart)
+                return Boolean(document.querySelector('.order-create'))
+              const totals = Array.from(document.querySelectorAll('span.text-xl.font-bold.ms-2'))
               return Boolean(document.querySelector('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')) && (result.cart!.subtotal === 0 && !result.cart!.lines.length ? totals.length === 0 : totals.length === 1 && Number(totals[0].textContent?.replace(/[^\d.]/g, '')) === result.cart!.subtotal)
             }, true)
             displayUpdated = true
@@ -678,26 +727,43 @@ export function createPbService() {
       else if (name === 'browser_customer_reset') {
         presentation.cancel()
         parse(strictObject({}), input)
-        if (localStorage.getItem(blockedKey) || !cartOperations.canRecover() || [...(active?.operations.entries() ?? [])].some(([id, operation]) => id !== operationId && operation.status !== 'settled'))
+        if (!canResetCart(operationId))
           throw new Error('先前操作尚未確認，請先由工作人員查看購物車。')
+        // The customer's explicit Restart replaces the old cart intent with
+        // discard. Retain its marker through clear/readback, including failure;
+        // no previous add/edit is repeated and order markers are never adopted.
+        const priorWriteMarker = writeMarker
+        writeMarker = localStorage.getItem(blockedKey) ?? undefined
         const cleared = await cartOperations.clear()
-        if (!cleared.ok)
+        if (!cleared.ok) {
+          // A missing/disabled clear control dispatched nothing. Keep the old
+          // marker, but do not turn its adoption into a new uncertain write.
+          if (cleared.status !== 'unknown')
+            writeMarker = priorWriteMarker
           return { ...cleared, source: 'browser' }
+        }
         // Clear is verified independently from returning to the menu. If later
         // navigation fails, an empty-cart retry will not click clear a second time.
-        localStorage.removeItem(blockedKey)
+        const remainingMarker = localStorage.getItem(blockedKey)
+        if (remainingMarker && remainingMarker !== writeMarker)
+          throw new Error('其他點餐畫面的操作仍在確認，請由工作人員查看。')
+        if (remainingMarker)
+          localStorage.removeItem(blockedKey)
         writeMarker = undefined
         // Only PB's product draft may be closed; generic confirmations and
         // order submission controls never belong to the customer-reset flow.
         // PB puts role=dialog on el-overlay-dialog, outside .menu-dialog.
         // Identify the product by its observed note field or inner product class.
-        const drafts = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')].filter(element => element.getClientRects().length > 0 && (element.querySelector('.menu-dialog') || element.querySelector('input[placeholder="商品有特殊需求，請在此備註"]')))
-        await controls.navigate(journey.menuPath)
-        await controls.close()
-        await controls.search('')
-        const search = document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')!
+        const drafts = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).filter(element => element.getClientRects().length > 0 && (element.querySelector('.menu-dialog') || element.querySelector('input[placeholder="商品有特殊需求，請在此備註"]')))
+        const atTable = location.pathname === journey.tablePath
+        if (!atTable) {
+          await controls.navigate(journey.menuPath)
+          await controls.close()
+          await controls.search('')
+        }
+        const search = document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')
         const after = await readCart()
-        if (drafts.some(dialog => dialog.getClientRects().length > 0) || search.value !== '' || after.lines.length || after.subtotal !== 0)
+        if (drafts.some(dialog => dialog.getClientRects().length > 0) || (!atTable && search?.value !== '') || after.lines.length || after.subtotal !== 0)
           throw new Error('換客期間的商品視窗或購物車尚未確認，請工作人員查看。')
         // Revoke prior cart versions/retry digests without replacing this PB document.
         // The Host then revokes its connection and visitor consent independently.

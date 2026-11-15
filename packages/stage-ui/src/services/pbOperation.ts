@@ -10,6 +10,8 @@ export function createOperation(input: {
   documentId: string
   operationId: string
   signal: AbortSignal
+  /** Host reception cleanup runs behind its cover; customer operations require a visible page. */
+  allowHidden?: boolean
   follow: (target: HTMLElement, label: string, dispatch: (onPress?: () => void) => Promise<void>, prepare: () => Promise<void>) => Promise<boolean>
 }) {
   const started = performance.now()
@@ -18,7 +20,7 @@ export function createOperation(input: {
   const assertCurrent = () => {
     if (input.signal.aborted)
       throw new Error('操作已由使用者接手，尚未派送下一步。')
-    if (document.visibilityState === 'hidden')
+    if (document.visibilityState === 'hidden' && !input.allowHidden)
       throw new Error('操作畫面已隱藏，尚未派送下一步。')
   }
   return {

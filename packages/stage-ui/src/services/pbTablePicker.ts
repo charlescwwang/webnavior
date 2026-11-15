@@ -20,7 +20,7 @@ export function installTablePicker(path: string, read: () => Promise<readonly st
 
   const visible = (element: Element) => element.isConnected && element.getClientRects().length > 0
   function selector() {
-    const candidates = [...document.querySelectorAll<HTMLElement>('.table-row__select [role="combobox"]')].filter(visible)
+    const candidates = Array.from(document.querySelectorAll<HTMLElement>('.table-row__select [role="combobox"]')).filter(visible)
     return location.pathname === path && candidates.length === 1 ? candidates[0] : undefined
   }
   function assertCurrent(revision: number) {
@@ -89,7 +89,7 @@ export function installTablePicker(path: string, read: () => Promise<readonly st
   async function choose(requestedName: string, signal?: AbortSignal, tap?: TableTap) {
     if (tap) {
       const name = resolveTableName(requestedName, await choices())
-      const button = [...host?.shadowRoot?.querySelectorAll('button') ?? []].find(button => button.textContent === name)
+      const button = Array.from(host?.shadowRoot?.querySelectorAll('button') ?? []).find(button => button.textContent === name)
       if (!name || !button)
         throw new Error('The requested table is not currently offered.')
       let applied: Promise<string> | undefined
@@ -131,7 +131,7 @@ export function installTablePicker(path: string, read: () => Promise<readonly st
         ensureCurrent()
         if (selector() !== control)
           throw new Error('PB table selector was replaced.')
-        const matches = [...document.getElementById(listId)?.querySelectorAll<HTMLElement>('[role="option"]') ?? []].filter(element => visible(element) && element.textContent?.trim() === name && element.getAttribute('aria-disabled') !== 'true')
+        const matches = Array.from(document.getElementById(listId)?.querySelectorAll<HTMLElement>('[role="option"]') ?? []).filter(element => visible(element) && element.textContent?.trim() === name && element.getAttribute('aria-disabled') !== 'true')
         if (matches.length > 1)
           throw new Error('PB table option is ambiguous.')
         option = matches[0]
@@ -150,7 +150,7 @@ export function installTablePicker(path: string, read: () => Promise<readonly st
         await new Promise(resolve => setTimeout(resolve, 25))
       }
       selected = name
-      for (const button of host?.shadowRoot?.querySelectorAll('button') ?? [])
+      for (const button of Array.from(host?.shadowRoot?.querySelectorAll('button') ?? []))
         button.setAttribute('aria-pressed', String(button.textContent === name))
       return name
     }
@@ -162,7 +162,7 @@ export function installTablePicker(path: string, read: () => Promise<readonly st
     // This is the visible website selection, including its default. It is
     // context, never consent to order; only a customer Start request enters menu.
     selected = visibleName && names.includes(visibleName) ? visibleName : undefined
-    for (const button of host?.shadowRoot?.querySelectorAll('button') ?? [])
+    for (const button of Array.from(host?.shadowRoot?.querySelectorAll('button') ?? []))
       button.setAttribute('aria-pressed', String(button.textContent === selected))
     return selected
   }
@@ -178,7 +178,7 @@ export function installTablePicker(path: string, read: () => Promise<readonly st
     signal?.throwIfAborted()
     if (selection() !== name)
       throw new Error('桌號已變更，請重新確認。')
-    const buttons = [...document.querySelectorAll<HTMLButtonElement>('button')].filter(button => visible(button) && button.textContent?.trim() === '開始點餐')
+    const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button')).filter(button => visible(button) && button.textContent?.trim() === '開始點餐')
     const button = buttons.length === 1 ? buttons[0] : undefined
     if (!button || button.matches(':disabled, [aria-disabled="true"]'))
       throw new Error('目前無法操作「開始點餐」，請確認畫面後再試。')
