@@ -8,6 +8,16 @@ import { serviceOperationSchema } from './serviceOperation'
 /** Browser-neutral contract for an approved Kiosk iframe; domain IDs remain opaque. */
 export const interactiveServiceChannel = 'airi:interactive-service:v1'
 
+/** A browser-confirmed login requirement before dispatch; it never describes an uncertain write. */
+export const browserSignInRequiredSchema = strictObject({
+  ok: literal(false),
+  source: literal('browser'),
+  status: literal('rejected'),
+  effect: literal('none'),
+  code: literal('sign-in-required'),
+  error: string(),
+})
+
 const id = pipe(string(), check(value => value.length > 0 && value.length <= 200))
 
 /** Host-only browser retry evidence; the key binds fresh site state to one document. */
@@ -91,7 +101,11 @@ export type ExecutionResult = InferOutput<typeof executionResultSchema>
 export type InspectionRequest = InferOutput<typeof inspectionRequestSchema>
 export type InspectionResult = InferOutput<typeof inspectionResultSchema>
 
-/** One disposable transport lifetime; disposal revokes waits, never replays calls. */
+/**
+ * One disposable transport lifetime; disposal revokes admission and ordinary
+ * waits, never replays calls. Native menu entry may settle its already-issued
+ * acknowledgement after disposal, while caller cancellation remains authoritative.
+ */
 export interface ServiceConnection {
   signal: AbortSignal
   discover: (request: DiscoveryRequest, signal: AbortSignal) => Promise<unknown>

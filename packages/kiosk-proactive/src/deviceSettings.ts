@@ -1,3 +1,5 @@
+import type { BackgroundSpeechMode, ServiceMode } from '../../stage-shared/src/kioskServiceMode'
+import type { OrderingSite } from '../../stage-shared/src/orderingSites'
 import type { KioskInteractionSettings } from './types'
 
 import { defaultKioskInteractionSettings } from './interaction-settings'
@@ -24,6 +26,12 @@ export const defaultKioskVoiceVadSettings: KioskVoiceVadSettings = {
 
 /** Operational policy shared by Server, management UI, and the device runtime. */
 export interface DeviceSettingsValues {
+  /** Published merchant ID; an empty value selects the Profile default on the next round. */
+  orderingServiceId?: string
+  serviceMode: ServiceMode
+  backgroundSpeechMode: BackgroundSpeechMode
+  /** Allows this device to use text input regardless of its shared voice-only Profile. */
+  textOnlyMode: boolean
   observationEnabled: boolean
   greetingEnabled: boolean
   reminderEnabled: boolean
@@ -53,6 +61,10 @@ export interface DeviceSettingsValues {
 
 /** Stable allowlist; unknown fields must be rejected at the Server boundary. */
 export const deviceSettingKeys = [
+  'orderingServiceId',
+  'serviceMode',
+  'backgroundSpeechMode',
+  'textOnlyMode',
   'observationEnabled',
   'greetingEnabled',
   'reminderEnabled',
@@ -78,16 +90,16 @@ export const deviceSettingKeys = [
 
 export type DeviceSettingKey = typeof deviceSettingKeys[number]
 
-/** Admin and local overrides are separate so revocation can discard local values. */
+/** One revisioned device policy shared by the management and on-device editors. */
 export interface DeviceSettings {
   version: number
-  localControls: DeviceSettingKey[]
   overrides: Partial<DeviceSettingsValues>
-  localOverrides: Partial<DeviceSettingsValues>
 }
 
 /** Snapshot read at a revision; writes compare the revision and never silently merge. */
 export interface DeviceSettingsSnapshot {
+  /** Server-approved choices; browsers cannot save an arbitrary page URL. */
+  orderingSites?: OrderingSite[]
   deviceId: string
   settings: DeviceSettings
   defaults: DeviceSettingsValues
@@ -96,20 +108,20 @@ export interface DeviceSettingsSnapshot {
 
 export const defaultDeviceSettings: DeviceSettings = {
   version: 1,
-  localControls: [],
   overrides: {},
-  localOverrides: {},
 }
 
 /** Birth policy for newly enrolled devices; existing saved overrides remain authoritative. */
 export const newDeviceSettings: DeviceSettings = {
   version: 1,
-  localControls: ['observationEnabled', 'greetingEnabled', 'reminderEnabled', 'triggerMode', 'voiceDiagnosticsEnabled'],
   overrides: { observationEnabled: true, greetingEnabled: true, reminderEnabled: true, triggerMode: 'mixed', voiceDiagnosticsEnabled: true },
-  localOverrides: {},
 }
 
 export const defaultDeviceSettingsValues: DeviceSettingsValues = {
+  orderingServiceId: '',
+  serviceMode: 'kiosk',
+  backgroundSpeechMode: 'off',
+  textOnlyMode: false,
   observationEnabled: false,
   greetingEnabled: false,
   reminderEnabled: false,
@@ -133,11 +145,9 @@ export const defaultDeviceSettingsValues: DeviceSettingsValues = {
   conversationDiagnosticsEnabled: false,
 }
 
-/** Site defaults < administrator device overrides < explicitly delegated local overrides. */
+/** Both editors write the same device overrides, which take precedence over Site defaults. */
 export function resolveDeviceSettings(defaults: DeviceSettingsValues, settings: DeviceSettings): DeviceSettingsValues {
-  const delegated = Object.fromEntries(Object.entries(settings.localOverrides)
-    .filter(([key]) => settings.localControls.includes(key as DeviceSettingKey)))
-  return { ...defaults, ...settings.overrides, ...delegated }
+  return { ...defaults, ...settings.overrides }
 }
 
 /** Projects Server-owned device values onto the existing local observation state machine. */

@@ -15,9 +15,20 @@
     "directory": "packages/stage-shared"
   },
   "exports": {
+    "./pb-journey": "./src/pbJourney.ts",
+    "./pb-checkout": "./src/pbCheckout.ts",
+    "./interaction-media": "./src/interactionMedia.ts",
+    "./invoice-input": "./src/invoiceInput.ts",
+    "./ai-provider": "./src/aiProvider.ts",
+    "./table-names": "./src/tableNames.ts",
+    "./ordering-tools": "./src/orderingTools.ts",
+    "./browser-conversation": "./src/browserConversation.ts",
+    "./product-configuration": "./src/productConfiguration.ts",
+    "./kiosk-character-package": "./src/kioskCharacterPackage.ts",
     "./product-discovery": "./src/productDiscovery.ts",
     "./service-operation": "./src/serviceOperation.ts",
     "./product-presentation": "./src/productPresentation.ts",
+    "./pb-menu-presentation": "./src/pbMenuPresentation.ts",
     "./ordering-slots": "./src/orderingSlots.ts",
     ".": "./src/index.ts",
     "./auth": "./src/auth/index.ts",
@@ -30,10 +41,12 @@
     "./webgpu": "./src/webgpu/index.ts",
     "./webmcp": "./src/webmcp.ts",
     "./interactive-service": "./src/interactiveService.ts",
+    "./ordering-sites": "./src/orderingSites.ts",
     "./kiosk-conversation": "./src/kioskConversation.ts",
     "./kiosk-audio": "./src/kioskAudio.ts",
     "./kiosk-desktop": "./src/kioskDesktop.ts",
-    "./interaction-lifecycle": "./src/interactionLifecycle.ts"
+    "./interaction-lifecycle": "./src/interactionLifecycle.ts",
+    "./kiosk-service-mode": "./src/kioskServiceMode.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

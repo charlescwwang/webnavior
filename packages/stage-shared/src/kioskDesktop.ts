@@ -22,9 +22,10 @@ export const desktopSurfaceRequestSchema = strictObject({
   bounds: surfaceBoundsSchema,
   visible: boolean(),
 })
+/** Placement can remain loading during website-initiated navigation; only current-document readiness reveals it. */
 export const desktopSurfaceResultSchema = object({
   sequence: number(),
-  state: picklist(['visible', 'hidden', 'failed', 'superseded']),
+  state: picklist(['visible', 'hidden', 'loading', 'failed', 'superseded']),
 })
 export type DesktopSurfaceRequest = InferOutput<typeof desktopSurfaceRequestSchema>
 export type DesktopSurfaceResult = InferOutput<typeof desktopSurfaceResultSchema>
@@ -32,6 +33,13 @@ export type SurfaceBounds = InferOutput<typeof surfaceBoundsSchema>
 export const desktopSurfaceActivitySchema = pick(desktopSurfaceRequestSchema, ['serviceId', 'documentKey'])
 /** Activity identifies its service document without carrying typed keys or personal input. */
 export type DesktopSurfaceActivity = InferOutput<typeof desktopSurfaceActivitySchema>
+export const desktopSurfaceNavigationSchema = object({
+  ...desktopSurfaceActivitySchema.entries,
+  revision: pipe(number(), integer(), minValue(1)),
+  state: picklist(['loading', 'ready', 'failed']),
+})
+/** Full-document navigation only; no merchant URL, scan value or credentials are broadcast. */
+export type DesktopSurfaceNavigation = InferOutput<typeof desktopSurfaceNavigationSchema>
 
 /** Narrow preload capability: only a registered host surface, never raw Electron or JavaScript. */
 export interface KioskDesktopBridge {
@@ -39,10 +47,12 @@ export interface KioskDesktopBridge {
   updateSurface: (input: Omit<DesktopSurfaceRequest, 'sequence'>) => Promise<DesktopSurfaceResult>
   invokeService: (input: DesktopServiceRequest) => Promise<unknown>
   onActivity: (listener: (activity: DesktopSurfaceActivity) => void) => () => void
+  onNavigation: (listener: (navigation: DesktopSurfaceNavigation) => void) => () => void
 }
 
 export const updateDesktopSurface = defineInvokeEventa<DesktopSurfaceResult, DesktopSurfaceRequest>('airi:kiosk:desktop:surface:v1')
 export const desktopSurfaceActivity = defineEventa<DesktopSurfaceActivity>('airi:kiosk:desktop:activity:v1')
+export const desktopSurfaceNavigation = defineEventa<DesktopSurfaceNavigation>('airi:kiosk:desktop:navigation:v1')
 
 declare global {
   interface Window {

@@ -2,6 +2,11 @@ import type { InferOutput } from 'valibot'
 
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, strictObject, string } from 'valibot'
 
+/** Normalizes ordering currency markers before customer speech synthesis. */
+export function normalizeOrderingPrices(text: string): string {
+  return text.replace(/(?:NTD|TWD|NT(?:\s{0,4}[$＄])?|[$＄])\s{0,4}(\d+(?:,\d{3})*(?:\.\d+)?)(?:\s{0,4}元)?/giu, '$1元')
+}
+
 const id = pipe(string(), minLength(1), maxLength(200))
 const label = pipe(string(), maxLength(500))
 const revision = pipe(number(), integer(), minValue(0))

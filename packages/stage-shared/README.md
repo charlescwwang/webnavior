@@ -5,6 +5,71 @@ instead of a renderer or Electron entrypoint when consuming a neutral contract.
 Resolve these subpaths through the package's `exports`. A Vite prefix alias to
 `src/` bypasses that map and breaks subpaths whose public and file names differ.
 
+`ai-provider` exports the neutral `ChatResponseMode` contract and validation
+schema for Provider settings and upstream policy. It does not own credentials,
+network parsing, runtime selection or Kiosk presentation.
+
+## External ordering conversation
+
+`pb-journey` owns the reviewed PB origin/store/flow policies shared by native
+admission and the page adapter. Table/menu/cart pages share the canonical menu
+owner key, preserving existing member-site ownership. `invoice-input` shares
+the owned Menu's carrier/citizen format checks with PB; format acceptance does
+not certify a government identifier or authorize order submission.
+
+`interaction-media` matches audio only to one explicit transcript entry ID;
+never use collection position, timestamps or the preceding activity as a join.
+The caller must supply one visitor session's media. Ambiguous/missing links
+return no match; retained originals remain independently inspectable.
+
+`@proj-airi/stage-shared/browser-conversation` owns the external-ordering
+conversation projection and model-facing PB tool guidance. It carries the current
+catalog/configurations, owned cart, provided slots, unfinished dishes, pending
+question and phase tool scope; it never grants write authority. Separate draft
+lines preserve per-serving options and notes; nullable fields do not become
+default quantities. Public business tools accept names and counts; Host resolves
+native references and versions. Complete explicit purchases do not require a
+second add confirmation. `answeredQuestion.answer` keeps the actual customer
+reply; `selectedChoice` separately describes its resolved option. The current
+utterance stays unchanged; prior verified questions/answers supply context, not
+a fabricated combined user turn. The Host refreshes facts before every model round.
+The model view states `currentActivity` in plain language and combines unfinished
+items into `pendingItems`; it does not expose Host phase codes or question tickets.
+It also carries the verified page role, current table name and offered table
+names. Before table entry, no cart is supplied or assumed empty; only table
+selection and conversation tools are admitted. Native navigation events carry
+service/document ownership and monotonic revisions, never merchant URLs or input.
+`customizationAvailability` distinguishes `none`, `available`, and `not_verified`;
+an empty selected-options array is never evidence that the merchant has no options.
+`ordering-tools` owns the 17 model-facing operation descriptions, JSON schemas,
+native receipt-name mapping and page/task/cart filter. Public model projections
+omit native product/row/option IDs and versions, retaining names, configuration
+choices, quantities and website prices. `table-names` resolves A3/A03 to one
+actual offered table and refuses ambiguous equivalent choices. Native transport
+validation remains in the owning adapter. Model-only receipts use `outcome` and
+`cartEffect` with relevant repair facts; technical status envelopes and private
+question tickets remain internal.
+Durable receipts, Jev admission and Host ownership checks retain their contracts.
+`pb-checkout` owns the neutral rendered invoice/contact snapshot and native
+submission-dispatch acknowledgement. Public projections omit the confirmation
+token; a dispatch is distinct from merchant acceptance and payment. The three
+public checkout draft/guidance tools are limited to an editable cart/checkout
+context, and native submission is never a Main capability. `pb-journey` permits
+a correlated dispatch acknowledgement to retire into a same-store order-result
+URL without granting tools on that result page.
+`ordering-sites` also owns optional published `catalogLabels` and `labelCatalog`:
+discovery aliases/categories join only to unique exact current product names.
+They never change merchant identity, price, options or supply facts. Shared aliases
+remain ambiguous; label changes follow the Host's merchant/customer lifecycle.
+Server replaces bridge implementation prose with this contract and makes version
+non-emptiness explicit; native argument and execution validation still apply. Use it for external
+ordering adapters; the owned Menu retains `kiosk-conversation` and its own phases.
+
+`@proj-airi/stage-shared/product-configuration` owns the neutral configuration
+schema and selection types used by PB's adapter and conversation projection.
+`stage-ui/services/pbProduct` retains configuration discovery, price calculation
+and native preparation, rather than owning types needed by the neutral layer.
+
 ## Product discovery
 
 `@proj-airi/stage-shared/product-discovery` owns literal catalog-fragment
@@ -12,6 +77,12 @@ discovery shared by the menu and external-service confirmation flows. It uses
 observed names, merchant aliases and optional category labels; a discovered
 fragment narrows candidate questions and never grants item identity or write
 authority.
+
+`productMentions` resolves full literal names and configured aliases. A shorter
+label contained in a more specific mention does not introduce another dish
+(A套餐 does not also select a dish with alias 套餐). Independent mentions and
+identical shared aliases retain all targets; intent and purchase consent remain
+the decision/execution flow's responsibility.
 
 ## Visible service operations
 
@@ -23,13 +94,44 @@ model plans or purchase authorization.
 
 ## Ordering presentation
 
+`@proj-airi/stage-shared/pb-menu-presentation` formats customer confirmations,
+quotes and cart readback for the approved PB store. Empty customization is omitted;
+actual options and notes remain. The observed 周氏水餃 item uses a spoken short
+name and per-serving piece count only when its 64-dollar/eight-piece base and
+8-dollar extra dumplings match the verified price. Changed/unknown configurations
+retain serving units without inventing pieces. Original names/refs/selections remain
+unchanged for discovery, native controls and write authorization. This store-specific
+policy is not a general parser for minimum notices on other ordering sites.
+The same module converts explicit dumpling `piecesPerServing` into extras from
+the confirmed eight-piece base; live option limits/prices remain executor-owned.
+Its closed literal parser is shared by Jev compilation and Server plan admission,
+so incomplete/mixed speech does not gain write coverage from a numeric match.
+The Host recognizes this exact spoken name only when it identifies one current
+product; collisions stay ambiguous. This does not supply a missing serving count
+or bypass required option and price validation.
+
 `@proj-airi/stage-shared/product-presentation` owns the validated ephemeral
 product cue contract and the original Menu cursor timing policy; PB uses shorter control-following steps.
+It also owns PB's default three-product recommendation limit and the shared
+presentation input parser used by native queue admission, execution and Host
+deduplication. The existing tool uses `recommendation` for selected dishes and
+ordinary recommendations, `other-recommendations` only for requesting a different
+batch, and `information` for passive facts. Only `other-recommendations` excludes
+the last introduced batch; matching named dishes remain eligible for a new search.
+Explicit information comparisons retain a separate ten-product
+presentation budget; requested identities must be validated before limiting.
 References, names and observed prices are browser facts, never purchase consent.
 `@proj-airi/stage-shared/ordering-slots` owns the existing local serving-number
 parser used by both finite candidate compilers; it does not classify intent.
 
 ## Interactive-service lifecycle
+
+`@proj-airi/stage-shared/pb-journey` also admits the explicit offline simulator
+at `http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table`.
+Only that origin/store/flow and its menu/cart/table pages are approved; this does
+not allow other loopback ports or switching a merchant binding to the simulator.
+See [`PB test site`](../../test-sites/pb-order-lab/README.md) for its captured
+catalog, simulated API boundary, and production-executor compatibility check.
 
 `@proj-airi/stage-shared/interaction-lifecycle` owns the iframe completion envelope
 and `readInteractionLifecycle` validation shared by the owned menu, Stage Web and
@@ -75,6 +177,19 @@ Recovery requires every lost operation to be settled and the binding to have no
 pending calls. Discovery of a new document cannot validate an old operation.
 This contract provides no ordering authorization or arbitrary browser control;
 the service runtime validates its tools and domain rules.
+`browserSignInRequiredSchema` validates only a browser-confirmed rejection with
+no effect before dispatch. It lets the host display a login prompt without
+matching free-form error text or reclassifying an unknown cart write.
+
+## Portable Kiosk characters
+
+`@proj-airi/stage-shared/kiosk-character-package` owns the portable character
+manifest v1, character-field whitelist, motion slots and transfer byte budgets.
+It is neutral to Server/browser runtimes and contains no file IO or ZIP engine.
+Use it for character backup/import, not for whole-Site replication or credentials.
+The manifest carries relative binary paths and hashes; API import results carry
+new destination-owned asset IDs. Merchant URLs and device/provider policy are
+outside this contract.
 
 ## Kiosk conversation facts
 

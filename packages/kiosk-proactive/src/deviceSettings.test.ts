@@ -4,12 +4,14 @@ import { defaultDeviceSettings, defaultDeviceSettingsValues, observationSettings
 import { needsKioskObservation } from './interaction-settings'
 
 describe('server device policy projection', () => {
-  it('discards undelegated local values and projects camera decisions from the resolved policy', () => {
+  it('defaults to paid Kiosk with background classification off', () => {
+    expect(defaultDeviceSettingsValues.serviceMode).toBe('kiosk')
+    expect(defaultDeviceSettingsValues.backgroundSpeechMode).toBe('off')
+  })
+  it('projects the shared device override policy onto camera decisions', () => {
     const effective = resolveDeviceSettings(defaultDeviceSettingsValues, {
       ...defaultDeviceSettings,
       overrides: { observationEnabled: true, greetingEnabled: true },
-      localOverrides: { observationEnabled: false, proactiveVlmEnabled: true },
-      localControls: [],
     })
     expect(effective.observationEnabled).toBe(true)
     expect(effective.proactiveVlmEnabled).toBe(false)
