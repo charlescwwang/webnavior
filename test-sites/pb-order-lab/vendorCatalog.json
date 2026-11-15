@@ -1,0 +1,205 @@
+{
+  "observedAt": "2026-11-13",
+  "source": "https://app.esgpb.com/order/store/1kgJeql/internal_use/",
+  "categories": [
+    {
+      "id": 443,
+      "name": "便當",
+      "count": 4
+    },
+    {
+      "id": 456,
+      "name": "麵食・水餃・湯品",
+      "count": 7
+    },
+    {
+      "id": 479,
+      "name": "套餐",
+      "count": 2
+    }
+  ],
+  "products": [
+    {
+      "id": 2503,
+      "name": "炸雞腿便當",
+      "price": 130,
+      "price_type": 1,
+      "description": "嚴選大份量厚實雞腿，以獨家特調香料醃漬入味，裹上薄脆金黃麵衣高溫油炸，緊緊鎖住鮮美肉汁。外皮酥脆卡滋、肉質軟嫩多汁，搭配淋上古早味肉燥滷汁的香Q白飯，以及四道現炒時令家常配菜，份量扎實、飽足感十足，是午晚餐與商務訂餐的超人氣首選。",
+      "image_url": "https://app.esgpb.com/order/storage/img/products/159/2503/6ae1ba6c5a8e1.jpg",
+      "categoryId": 443,
+      "attributes": []
+    },
+    {
+      "id": 2504,
+      "name": "炸排骨便當",
+      "price": 130,
+      "price_type": 1,
+      "description": "嚴選優質厚切帶骨豬里肌排，經拍打斷筋後以蒜香、五香及甘醇醬油悉心醃漬入味。裹上薄粉高溫酥炸，完美鎖住鮮甜肉汁，外層微酥金黃、肉質紮實柔嫩，骨邊肉越嚼越香。搭配淋上香濃紅蔥肉燥的香Q白飯，以及四道經典現炒家常菜與爽脆醃物，份量紮實、鹹香下飯，是日常午晚餐與會議團訂的必點人氣王。",
+      "image_url": "https://app.esgpb.com/order/storage/img/products/159/2504/6ae1bb544b577.jpg",
+      "categoryId": 443,
+      "attributes": []
+    },
+    {
+      "id": 2585,
+      "name": "三杯雞便當",
+      "price": 110,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 443,
+      "attributes": []
+    },
+    {
+      "id": 2588,
+      "name": "港式油雞腿便當",
+      "price": 120,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 443,
+      "attributes": []
+    },
+    {
+      "id": 2589,
+      "name": "周氏水餃(最低8顆)",
+      "price": 64,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": {
+        "加量": [
+          {
+            "id": 774,
+            "organization_id": 159,
+            "attr_group_id": 256,
+            "attr_item_id": 844,
+            "from_id": null,
+            "name": "水餃",
+            "sort": 1,
+            "created_at": "2026-10-28 17:04:13",
+            "updated_at": "2026-11-05 21:45:38",
+            "deleted_at": null,
+            "pivot": {
+              "product_id": 2589,
+              "attr_id": 774
+            },
+            "attr_group": {
+              "id": 256,
+              "organization_id": 159,
+              "from_id": null,
+              "name": "加量",
+              "required": false,
+              "amount": 100,
+              "sort": 1,
+              "created_at": "2026-10-28 17:04:01",
+              "updated_at": "2026-11-05 21:45:26"
+            },
+            "attr_item": {
+              "id": 844,
+              "organization_id": 159,
+              "from_id": null,
+              "name": "水餃",
+              "unit": "顆",
+              "price": 8,
+              "created_at": "2026-11-05 21:45:02",
+              "updated_at": "2026-11-05 21:45:08",
+              "deleted_at": null,
+              "attr_item_stocks": [
+                {
+                  "id": 699,
+                  "organization_id": 159,
+                  "attr_item_id": 844,
+                  "stocks": 1,
+                  "created_at": "2026-11-05T13:45:02.000000Z",
+                  "updated_at": "2026-11-05T13:45:02.000000Z"
+                }
+              ]
+            },
+            "ingredient_calories": []
+          }
+        ]
+      }
+    },
+    {
+      "id": 2590,
+      "name": "老董紅燒牛肉麵",
+      "price": 200,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": []
+    },
+    {
+      "id": 2591,
+      "name": "椒香麻辣牛肉麵",
+      "price": 200,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": []
+    },
+    {
+      "id": 2592,
+      "name": "牛肉湯餃(10顆)",
+      "price": 110,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": []
+    },
+    {
+      "id": 2593,
+      "name": "紅燒牛肉湯(無肉)",
+      "price": 80,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": []
+    },
+    {
+      "id": 2594,
+      "name": "蛋花湯",
+      "price": 40,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": []
+    },
+    {
+      "id": 2595,
+      "name": "魚丸湯",
+      "price": 50,
+      "price_type": 1,
+      "description": null,
+      "image_url": null,
+      "categoryId": 456,
+      "attributes": []
+    },
+    {
+      "id": 2596,
+      "name": "A套餐",
+      "price": 136,
+      "price_type": 1,
+      "description": "水餃12顆 + 蛋花湯",
+      "image_url": null,
+      "categoryId": 479,
+      "attributes": []
+    },
+    {
+      "id": 2597,
+      "name": "B 套餐",
+      "price": 150,
+      "price_type": 1,
+      "description": "三杯雞飯+ 蛋花湯",
+      "image_url": null,
+      "categoryId": 479,
+      "attributes": []
+    }
+  ]
+}

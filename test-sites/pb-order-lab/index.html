@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="周氏蝦捲點餐流程測試站，全天開放，付款與發票皆為模擬。">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:*; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <title>周氏蝦捲AI創新店｜點餐測試站</title>
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <aside class="test-banner">測試環境・24 小時開放・不會扣款或傳送店家訂單 <button id="open-tools" data-testid="open-tools">測試工具</button></aside>
+  <header><a href="/" class="brand"><img src="/assets/logo.png" alt="PB點餐標誌"><strong>周氏蝦捲AI創新店-智慧販售點</strong></a><span class="location">台南市歸仁區十五路5號</span><button id="history" data-testid="order-history">點餐紀錄</button></header>
+  <div class="cover"><img src="/assets/store-cover.png" alt="商家圖片"><div class="cover-message"><strong>準備中!</strong><span>未正式營運</span><small>☆ 敬請期待 ☆</small></div></div>
+  <div id="storage-warning" role="alert" hidden></div>
+  <main id="app"></main>
+  <div id="modal-root"></div>
+  <footer>Powered by ESGPB 撇步 · 本機流程模擬 · 菜單快照 2026-11-13</footer>
+  <output id="notice" aria-live="polite"></output>
+</body>
+</html>
