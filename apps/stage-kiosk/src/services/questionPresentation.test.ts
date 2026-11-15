@@ -7,12 +7,51 @@ import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 import { createInvitationWindow, createMenuReplyWindow, operationReplyFrom, questionReceiptFrom, replyFromConversation, replyFromOperation, replyFromReceipt, replyWithQuestion } from './questionPresentation'
 
+// Report: this chat, Nov15: 一份水餃有幾顆 was replaced by a missing-description disclaimer.
+it('answers known dumpling serving facts even when the merchant description is empty', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('get_menu_item_details', { ok: true, source: 'browser', dataOnly: true, products: [{ name: '周氏水餃(最低8顆)', description: '', price: 64 }] })
+  const reply = menu.reply()
+  expect(reply).toContain('8顆')
+  expect(reply).toContain('64元')
+  expect(reply).not.toContain('網站未提供餐點內容')
+  expect(reply).not.toContain('想點哪道')
+})
+
+it('reads back the verified cart including dumplings per serving before checkout', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('list_cart_items', { ok: true, source: 'browser', dataOnly: true, cart: { subtotal: 64, lines: [{ name: '周氏水餃(最低8顆)', quantity: 1, unitPrice: 64, options: [] }] } })
+  expect(menu.reply()).toContain('每份 8 顆，1 份')
+  expect(menu.reply()).toContain('64元')
+})
+
+// Report: this chat, Nov14 full Host replay; Jev abstention hid add tools from Main.
+it('lets Main independently resolve a PB handoff while preserving explicit read-only restrictions', () => {
+  expect(conversationDecisionStateFrom({ phase: 'ordering' }, { reason: 'UNCERTAIN_OPERATION' }, 'browser')).not.toHaveProperty('readOnly')
+  expect(conversationDecisionStateFrom({ phase: 'ordering', readOnly: true }, { reason: 'UNCERTAIN_OPERATION' }, 'browser')).toHaveProperty('readOnly', true)
+  expect(conversationDecisionStateFrom({ phase: 'ordering' }, { reason: 'MENU_QUERY' }, 'browser')).toHaveProperty('readOnly', true)
+  expect(conversationDecisionStateFrom({ phase: 'customer_entry' }, { reason: 'UNCERTAIN_OPERATION' }, 'browser')).toHaveProperty('readOnly', true)
+})
+
 it('does not present internal browser catalog preparation as completion of an order request', () => {
   const menu = createMenuReplyWindow()
   menu.record('browser_cart_get', { ok: true, source: 'browser', dataOnly: true, customerMessage: '尚未加購的資料準備。' })
   expect(menu.hasReceipts()).toBe(false)
   const result = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['browser_cart_get'], answer: '已加入兩份。' }, { menu, failureMessage: '未完成。' })
   expect(result.content).not.toContain('已加入')
+})
+
+it('retains a verified lookup after a known presentation failure without claiming an unknown cart operation', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('get_menu_item_details', { ok: true, source: 'browser', dataOnly: true, products: [{ name: 'A套餐', description: '水餃12顆 + 蛋花湯', price: 136 }] })
+  menu.record('point_to_menu_items', { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '暫時無法在畫面標示餐點。' })
+  const result = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', agentMode: 'active', requestedTools: ['get_menu_item_details', 'point_to_menu_items'] }, { menu, failureMessage: '我還沒確認這次操作的結果。' })
+  expect(result.role).toBe('assistant')
+  expect(result.content).toContain('水餃12顆 + 蛋花湯')
+  expect(result.content).toContain('暫時無法在畫面標示餐點')
+  expect(result.content).not.toContain('還沒確認')
+  const write = replyFromConversation({ status: 'incomplete', reason: 'tool-rejected', agentMode: 'active', requestedTools: ['add_items_to_cart', 'point_to_menu_items'] }, { menu, failureMessage: '我還沒確認這次操作的結果。' })
+  expect(write.content).toContain('還沒確認')
 })
 
 // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct29 cancellation -> takeout.
@@ -403,6 +442,16 @@ it('renders a typed hearing check without inventing fulfillment or payment facts
   expect(reply.content).not.toContain('刷卡')
 })
 
+// Report: live PB flow comparison in this chat, Nov11; Host confirmation uses
+// the same verified-effect/refusal receipts as native cart tools.
+it('keeps the Host confirmed-add outcome under the same cart receipt policy', () => {
+  const replies = createMenuReplyWindow()
+  replies.record('browser_confirm_add', { source: 'browser', ok: true, status: 'verified', effectMessage: '已加入便當一份。', customerMessage: '已加入便當一份，小計130元。' })
+  expect(replies.browserOutcome()).toBe('已加入便當一份，小計130元。')
+  replies.record('browser_confirm_add', { source: 'browser', ok: false, status: 'rejected', customerMessage: '購物車已變更，尚未再次加入。' })
+  expect(replies.browserOutcome()).toBe('已加入便當一份。 購物車已變更，尚未再次加入。')
+})
+
 // Report: this chat, 2026-10-29; a repeated stale write hid the preceding successful quantity change.
 it('preserves verified PB effects when a later write is rejected without presenting an old cart as current', () => {
   const replies = createMenuReplyWindow()
@@ -428,4 +477,95 @@ it('retains a verified configured-price receipt as menu evidence without inventi
   expect(menu.hasReceipts()).toBe(true)
   expect(menu.reply()).toBe(message)
   expect(menu.browserOutcome()).toBeUndefined()
+})
+
+it('offers one verified next step without stacking a second question or implying order submission', () => {
+  const receipt = { ok: true, source: 'browser', status: 'verified', customerMessage: '已加入雞腿飯兩份。', nextActions: ['view-cart', 'choose-item'] }
+  // A final presenter binds the checkout question after verifying the current
+  // cart. Formatting an intermediate tool receipt must not ask it early.
+  expect(operationReplyFrom(receipt)).toBe('已加入雞腿飯兩份。')
+  expect(operationReplyFrom({ ...receipt, customerMessage: '已加入雞腿飯。還要什麼？' })).toBe('已加入雞腿飯。還要什麼？')
+  expect(operationReplyFrom({ ...receipt, customerMessage: '請問要幾份？', pendingCustomerChoice: { question: '請問要幾份？' } })).toBe('請問要幾份？')
+})
+
+it('answers a public detail read using website prices and drops preparation text once an actual presentation follows', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('get_menu_item_details', { ok: true, source: 'browser', dataOnly: true, products: [{ name: '雞腿飯', configurations: [{ name: '大份', unitPrice: 130 }, { name: '小份', unitPrice: 100 }] }] })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['get_menu_item_details'], answer: '雞腿飯只要1元，已加入。' }, { menu, failureMessage: '未完成' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('大份130元、小份100元')
+  expect(reply.content).not.toContain('只要1元')
+  expect(reply.content).not.toContain('已加入')
+  menu.record('point_to_menu_items', { ok: true, source: 'browser', customerMessage: '這是雞腿飯。' })
+  expect(menu.reply()).toBe('這是雞腿飯。')
+})
+it('reads a cart total directly from the website without recalculating it or claiming an opened window', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('list_cart_items', { ok: true, source: 'browser', dataOnly: true, cart: { lines: [{ name: '雞腿飯', quantity: 2 }], subtotal: 199 } })
+  expect(menu.reply()).toContain('網站小計199元')
+  expect(menu.reply()).not.toContain('已打開')
+})
+
+it('speaks the website option description instead of the private cart configuration fingerprint', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('list_cart_items', { ok: true, source: 'browser', dataOnly: true, cart: { lines: [{ name: '雞腿飯', quantity: 1, configuration: '{"private-option-id":123}', description: '加蛋 ×1' }], subtotal: 120 } })
+  expect(menu.reply()).toContain('加蛋 ×1')
+  expect(menu.reply()).not.toContain('private-option-id')
+})
+
+// Report: this chat, Nov14; local session CX4pdljsMeNnROLq_EyRU, entries90–106 (no public URL).
+it('answers the opened A套餐 from its current website detail receipt instead of the no-evidence fallback', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('open_menu_item_details', { ok: true, source: 'browser', products: [{ name: '炸雞腿便當', price: 130, details: '無關餐點' }, { name: 'A套餐', price: 136, details: 'A套餐水餃12顆 + 蛋花湯$136' }], productDialog: [{ name: 'A套餐' }] })
+  expect(menu.hasReceipts()).toBe(true)
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['open_menu_item_details'], answer: 'A套餐含龍蝦，1元。' }, { menu, requireMenuRead: true, failureMessage: '查詢未完成。' })
+  expect(reply.role).toBe('assistant')
+  expect(reply.content).toContain('水餃12顆 + 蛋花湯')
+  expect(reply.content).toContain('136')
+  expect(reply.content).not.toContain('炸雞腿')
+  expect(reply.content).not.toContain('龍蝦')
+  expect(reply.content).not.toContain('目前沒有可驗證')
+})
+
+it('retains website contents in an explicit detail lookup rather than answering only the price', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('get_menu_item_details', { ok: true, source: 'browser', dataOnly: true, products: [{ name: 'B套餐', price: 150, details: '水餃10顆 + 牛肉湯' }] })
+  expect(menu.reply()).toContain('水餃10顆 + 牛肉湯')
+  expect(menu.reply()).toContain('150元')
+})
+
+it.each([
+  { ok: false, source: 'browser', products: [{ name: 'A套餐', details: '水餃12顆 + 蛋花湯', price: 136 }], productDialog: [{ name: 'A套餐' }] },
+  { ok: true, source: 'browser', products: [{ name: 'A套餐', details: '水餃12顆 + 蛋花湯', price: 136 }], productDialog: [] },
+  { ok: true, source: 'browser', products: [{ name: 'B套餐', details: '其他套餐', price: 150 }], productDialog: [{ name: 'A套餐' }] },
+])('does not use unrelated or unsuccessful dialog data as evidence: %j', (receipt) => {
+  const menu = createMenuReplyWindow()
+  menu.record('open_menu_item_details', receipt)
+  expect(menu.hasReceipts()).toBe(false)
+})
+
+// Report: this chat; a real pending question is a valid pause, not an execution failure.
+it.each(['ADD_ITEM', 'REMOVE_ITEM', 'SET_QUANTITY'].flatMap(intent => ['completed', 'incomplete'].map(status => ({ intent, status: status as 'completed' | 'incomplete' }))))('presents the current Host question without an internal limit error ($intent, $status)', ({ intent, status }) => {
+  const question = { questionId: 'live-question', purpose: intent === 'REMOVE_ITEM' ? 'browser-service-question' : 'browser-order-quantity', question: intent === 'REMOVE_ITEM' ? '購物車裡哪一道餐點要刪除？' : '請問炸排骨便當要幾份？', expiresAt: Date.now() + 30000, choices: [{ id: 'cancel', description: '取消選餐' }] }
+  const result = replyFromConversation({ status, reason: status === 'incomplete' ? 'tool-limit' : undefined, agentMode: 'active', requestedTools: ['ask_customer_question'] }, { menu: createMenuReplyWindow(), question, handoff: { intent }, failureMessage: '內部執行上限。' })
+  expect(result).toEqual({ role: 'assistant', content: question.question })
+})
+
+// Report: this chat; customer recovery must preserve facts without showing internal errors.
+it.each(['tool-limit', 'duplicate-tool-call', 'tool-rejected', 'provider-error'] as const)('offers browser ordering recovery after %s instead of a purple error', (reason) => {
+  const result = replyFromConversation({ status: 'incomplete', reason, agentMode: 'active', requestedTools: ['get_menu_item_details'], answer: '已加入三份，總共999元。' }, { menu: createMenuReplyWindow(), failureMessage: '內部執行上限與工具錯誤', browserRecovery: { operationAttempted: false, page: 'menu' } })
+  expect(result.role).toBe('assistant')
+  expect(result.content).toContain('直接在畫面選餐')
+  expect(result.content).not.toContain('內部執行上限')
+  expect(result.content).not.toContain('已加入')
+  expect(result.content).not.toContain('999')
+})
+
+it('requires cart review after an attempted browser effect without claiming success or inviting replay', () => {
+  const result = replyFromConversation({ status: 'incomplete', reason: 'tool-limit', agentMode: 'active', requestedTools: ['add_items_to_cart'] }, { menu: createMenuReplyWindow(), handoff: { intent: 'ADD_ITEM' }, failureMessage: '內部上限', browserRecovery: { operationAttempted: true, page: 'menu' } })
+  expect(result.role).toBe('assistant')
+  expect(result.content).toContain('核對')
+  expect(result.content).toContain('避免重複操作')
+  expect(result.content).not.toContain('已加入')
+  expect(result.content).not.toContain('重新點一次')
 })

@@ -9,7 +9,8 @@ import KioskStandby from '../components/kioskStandby.vue'
 
 import { useKioskCharacterAsset } from '../composables/useKioskCharacterAsset'
 import { useKioskDeviceRegistration } from '../composables/useKioskDeviceRegistration'
-import { applyKioskProfile } from '../composables/useKioskInteractiveServices'
+import { applyKioskProfile, queueOrderingSite } from '../composables/useKioskInteractiveServices'
+import { useKioskTextOnlyMode } from '../composables/useKioskTextOnlyMode'
 import { waitForKioskRuntime } from '../services/kiosk-runtime-initialization'
 
 const {
@@ -21,7 +22,7 @@ const {
   proactiveVlmEnabled,
   performanceProfile,
   profile,
-  refreshSettings,
+  applySavedSettings,
   registerDevelopmentDevice,
   state,
   voiceVadSettings,
@@ -31,9 +32,9 @@ const isDraftPreview = computed(() => route.query.preview === 'webnavior')
 const kioskCharacterAsset = useKioskCharacterAsset()
 const profileReady = shallowRef(false)
 const profileSyncError = shallowRef<string>()
-const voiceConversationOnly = computed(() => Boolean(
-  profile.value?.snapshot.voiceConversationOnly,
-))
+const textOnlyMode = useKioskTextOnlyMode(() => Boolean(deviceSettings.value?.effective.textOnlyMode)
+  || !profile.value?.snapshot.voiceConversationOnly)
+const voiceConversationOnly = computed(() => !textOnlyMode.value)
 function kioskAssetUrl(asset: { id: string, sha256: string }) {
   const baseUrl = (import.meta.env.VITE_API_SERVER_URL ?? 'http://localhost:5168').replace(/\/$/, '')
   return `${baseUrl}/assets/kiosk/${encodeURIComponent(asset.id)}?v=${encodeURIComponent(asset.sha256)}`
@@ -61,6 +62,14 @@ onMounted(async () => {
   await bootstrap()
 })
 
+watch(deviceSettings, (snapshot) => {
+  if (!snapshot || !profile.value)
+    return
+  const id = snapshot.effective.orderingServiceId
+  const site = id ? snapshot.orderingSites?.find(site => site.id === id) : snapshot.orderingSites?.[0]
+  queueOrderingSite(site)
+})
+
 watch(profile, async (assignedProfile) => {
   profileReady.value = false
   profileSyncError.value = undefined
@@ -68,7 +77,7 @@ watch(profile, async (assignedProfile) => {
     return
 
   try {
-    applyKioskProfile(assignedProfile)
+    applyKioskProfile(assignedProfile, deviceSettings.value?.effective.orderingServiceId)
     await kioskCharacterAsset.apply(assignedProfile)
     profileReady.value = true
   }
@@ -81,7 +90,7 @@ watch(profile, async (assignedProfile) => {
 
 <template>
   <KioskDraftPreview v-if="isDraftPreview" />
-  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :device="device" :greeting-phrases="profile.snapshot.greetingPhrases" :device-settings="deviceSettings?.effective" :idle-animation="idleAnimation" :motion-animations="motionAnimations" :scene-background-url="sceneBackgroundUrl" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-settings="voiceVadSettings" @device-settings-updated="refreshSettings" />
+  <KioskScene v-else-if="state === 'registered' && device && profile && profileReady" :device="device" :greeting-phrases="profile.snapshot.greetingPhrases" :device-settings="deviceSettings?.effective" :idle-animation="idleAnimation" :motion-animations="motionAnimations" :scene-background-url="sceneBackgroundUrl" :media-capture-mode="mediaCaptureMode" :performance-profile="performanceProfile" :proactive-vlm-enabled="proactiveVlmEnabled" :voice-conversation-only="voiceConversationOnly" :voice-vad-settings="voiceVadSettings" @device-settings-updated="applySavedSettings" />
   <main v-else-if="state === 'registered' && device && profileSyncError" :class="['grid h-dvh place-items-center bg-slate-950 p-6 text-center text-slate-200']">
     <div :class="['max-w-xl space-y-3']">
       <h1 :class="['text-2xl font-semibold']">

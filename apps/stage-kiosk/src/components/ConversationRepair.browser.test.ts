@@ -138,3 +138,15 @@ it('clicks retry through production admission and clarification, then accepts th
   await expect.element(screen.getByText(/已將水餃加入購物車/)).toBeVisible()
   queue.reset()
 })
+
+// Report: this chat; a terminal PB failure needs usable customer guidance, not internal limit prose.
+it('renders PB recovery guidance in the formal conversation without internal errors or invented success', async () => {
+  const presented = replyFromConversation({ status: 'incomplete', reason: 'tool-limit', agentMode: 'active', requestedTools: ['list_menu_items'], answer: '已加入三份，共999元。' }, { menu: createMenuReplyWindow(), failureMessage: '助手已達本次處理上限', browserRecovery: { operationAttempted: false, page: 'menu' } })
+  expect(presented.role).toBe('assistant')
+  expect(presented.recovery).toBe(true)
+  const screen = render(KioskConversation, { props: { assistantPresence: { mode: 'listening', title: '點餐', description: '請點餐' }, fontSize: 20, messages: [{ role: 'user', content: '有什麼湯？' }, { role: 'assistant', content: presented.content, slices: [], tool_results: [] }], sending: false, voiceConversationOnly: false }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: stageMessages } } })] } })
+  await expect.element(screen.getByText(/您可以直接在畫面選餐，完成後.*購物車核對。/)).toBeVisible()
+  await expect.element(screen.getByText('助手已達本次處理上限')).not.toBeInTheDocument()
+  await expect.element(screen.getByText('已加入三份，共999元。')).not.toBeInTheDocument()
+  await expect.element(screen.getByRole('button', { name: '再試一次' })).not.toBeInTheDocument()
+})

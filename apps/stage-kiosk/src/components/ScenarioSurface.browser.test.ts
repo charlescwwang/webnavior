@@ -26,11 +26,19 @@ it('revokes assistant handles on same-service reload and unmount without blockin
   expect(frame?.getAttribute('allow')).toContain('geolocation')
   expect(frame?.getAttribute('sandbox')).toBeNull()
   await expect.poll(() => interactiveServiceClient.availability.value).not.toBe('idle')
+  // A customer may have navigated within the entry document. Reload must use
+  // deployment configuration, not retain that customer's current location.
+  frame!.contentWindow!.location.hash = 'previous-customer-menu'
+  await expect.poll(() => frame!.contentWindow!.location.hash).toBe('#previous-customer-menu')
 
   scenarioRegistry.reloadActive()
   expect(interactiveServiceClient.availability.value).toBe('idle')
   expect(interactiveServiceClient.tools.value).toEqual([])
   await expect.poll(() => interactiveServiceClient.availability.value).not.toBe('idle')
+  const replacement = screen.container.querySelector('iframe')
+  expect(replacement).not.toBe(frame)
+  expect(replacement?.src).toBe(new URL('/favicon.ico', location.origin).href)
+  expect(replacement?.contentWindow?.location.hash).toBe('')
 
   screen.unmount()
   expect(interactiveServiceClient.availability.value).toBe('idle')

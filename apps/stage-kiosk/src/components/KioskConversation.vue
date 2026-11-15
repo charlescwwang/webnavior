@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
+import type { CustomerRequestStatus } from '../services/conversationMessages'
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 import type { KioskAssistantPresenceMode } from './KioskAssistantPresence.vue'
 
 import { ChatHistory } from '@proj-airi/stage-ui/components'
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { computed, nextTick, onScopeDispose, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -13,6 +14,7 @@ import KioskAssistantPresence from './KioskAssistantPresence.vue'
 import KioskOrderToolStatus from './KioskOrderToolStatus.vue'
 import KioskTextConsole from './kioskTextConsole.vue'
 
+import { groupConversationMessages } from '../services/conversationMessages'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
 
@@ -30,6 +32,7 @@ const props = defineProps<{
   fastPathSimulationTiming?: FastPathTiming
   fontSize: number
   messages: readonly ChatHistoryItem[]
+  requestStatuses?: Readonly<Record<number, CustomerRequestStatus>>
   pendingTranscript?: string
   retryAvailable?: boolean
   sending: boolean
@@ -44,44 +47,52 @@ const emit = defineEmits<{
   retryMessage: []
   recoverService: []
   simulateAsr: [transcript: string]
+  textConsoleFloating: [floating: boolean]
 }>()
 
 const { t } = useI18n()
 const assistantLabel = 'Webnavior'
 // The unfinished assistant message is display-only. KioskScene moves it into
 // durable conversation history only after the Server emits turn-finished.
-const historyMessages = computed<ChatHistoryItem[]>(() => [
+const historyMessages = computed<ChatHistoryItem[]>(() => groupConversationMessages([
   ...props.messages,
   ...(props.streamingAssistantMessage ? [props.streamingAssistantMessage] : []),
-].map((message): ChatHistoryItem => {
+]).map((message): ChatHistoryItem => {
   // Presentation owns a copy: ASR, model history and tool payloads remain the
   // original evidence even when their visible text uses Taiwan Traditional.
   if (message.role === 'assistant') {
     return {
       ...message,
       content: typeof message.content === 'string'
-        ? toTaiwanTraditionalChinese(message.content)
-        : message.content?.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(part.text) } : part),
-      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toTaiwanTraditionalChinese(slice.text) } : slice),
+        ? toOrderingTraditionalChinese(message.content)
+        : message.content?.map(part => part.type === 'text' ? { ...part, text: toOrderingTraditionalChinese(part.text) } : part),
+      slices: message.slices.map(slice => slice.type === 'text' ? { ...slice, text: toOrderingTraditionalChinese(slice.text) } : slice),
     }
   }
   if (message.role === 'user') {
     return {
       ...message,
       content: typeof message.content === 'string'
-        ? toTaiwanTraditionalChinese(message.content)
-        : message.content.map(part => part.type === 'text' ? { ...part, text: toTaiwanTraditionalChinese(part.text) } : part),
+        ? toOrderingTraditionalChinese(message.content)
+        : message.content.map(part => part.type === 'text' ? { ...part, text: toOrderingTraditionalChinese(part.text) } : part),
     }
   }
   if (message.role === 'error')
-    return { ...message, content: toTaiwanTraditionalChinese(message.content) }
+    return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
 }))
+function requestStatus(message: ChatHistoryItem) {
+  const id = message.role === 'user' ? message.id?.match(/^utterance:(\d+):user$/)?.[1] : undefined
+  return id ? props.requestStatuses?.[Number(id)] : undefined
+}
+
 // Tool discovery describes assistant control, not whether the embedded menu
 // loaded successfully. Keep the service usable while that capability is absent.
 const serviceStatus = computed(() => {
   if (props.serviceRecoveryBlocked)
     return t('stage.kiosk-agent.service-unavailable')
+  if (interactiveServiceClient.editorRetired.value)
+    return undefined
   if (!scenarioRegistry.activeScenario.value || interactiveServiceClient.availability.value === 'ready')
     return undefined
   return t(interactiveServiceClient.availability.value === 'unavailable'
@@ -94,9 +105,8 @@ const orderToolCallRenderers = computed(() => Object.fromEntries(
 const chatHistory = useTemplateRef<InstanceType<typeof ChatHistory>>('chatHistory')
 let lateTailFollow: ReturnType<typeof setTimeout> | undefined
 
-// Kiosk status rows live beside ChatHistory so they remain visible while a
-// reply is pending. Keep the transcript at its live edge when either the
-// message list or that adjacent status changes.
+// Request status lives below each customer message; adjacent recognition and
+// tool progress still share the same viewport-follow policy.
 function followLatestMessage() {
   if (lateTailFollow)
     clearTimeout(lateTailFollow)
@@ -112,7 +122,7 @@ function followLatestMessage() {
   lateTailFollow = setTimeout(() => chatHistory.value?.scrollToBottom(), 300)
 }
 
-watch([historyMessages, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post' })
+watch([historyMessages, () => props.requestStatuses, () => props.activityStatus, () => props.pendingTranscript], followLatestMessage, { flush: 'post' })
 onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 </script>
 
@@ -125,9 +135,9 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <div class="message-history">
       <KioskAssistantPresence
         v-if="historyMessages.length === 0 && !props.pendingTranscript"
-        :description="toTaiwanTraditionalChinese(props.assistantPresence.description)"
+        :description="toOrderingTraditionalChinese(props.assistantPresence.description)"
         :mode="props.assistantPresence.mode"
-        :title="toTaiwanTraditionalChinese(props.assistantPresence.title)"
+        :title="toOrderingTraditionalChinese(props.assistantPresence.title)"
       />
       <!-- The kiosk owns a separate status row; ChatHistory's empty streaming
            placeholder would otherwise render only the assistant name. -->
@@ -136,27 +146,32 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
         ref="chatHistory"
         :messages="historyMessages"
         :assistant-label="assistantLabel"
+        :error-label="assistantLabel"
         :sending="false"
         :tool-call-renderers="orderToolCallRenderers"
         auto-scroll="follow-latest"
         variant="mobile"
-      />
+      >
+        <template #after-message="{ message }">
+          <span v-if="requestStatus(message) && requestStatus(message) !== 'failed'" :class="['request-status', `is-${requestStatus(message)}`]" role="status">{{ t(`stage.kiosk.request-status.${requestStatus(message)}`) }}</span>
+        </template>
+      </ChatHistory>
     </div>
 
     <div v-if="props.pendingTranscript || props.activityStatus || props.activitySteps?.length || props.executionDurationMs !== undefined || props.retryAvailable" class="conversation-progress">
       <div v-if="props.pendingTranscript" class="pending-transcript" role="status" aria-live="polite">
         <span class="i-solar:microphone-3-bold h-4 w-4" aria-hidden="true" />
-        <span>{{ toTaiwanTraditionalChinese(props.pendingTranscript) }}</span>
+        <span>{{ toOrderingTraditionalChinese(props.pendingTranscript) }}</span>
       </div>
       <div v-if="props.activityStatus" class="assistant-activity" role="status" aria-live="polite">
         <span class="activity-orb" aria-hidden="true" />
-        <span>{{ toTaiwanTraditionalChinese(props.activityStatus) }}</span>
+        <span>{{ toOrderingTraditionalChinese(props.activityStatus) }}</span>
         <span class="activity-dots" aria-hidden="true"><i /><i /><i /></span>
       </div>
       <ol v-if="props.activitySteps?.length" class="assistant-activity-steps" aria-label="本次處理進度">
         <li v-for="step in props.activitySteps" :key="step.toolName" :class="['assistant-activity-step', `is-${step.state}`]">
           <span class="activity-step-marker" aria-hidden="true" />
-          <span>{{ toTaiwanTraditionalChinese(step.label) }}</span>
+          <span>{{ toOrderingTraditionalChinese(step.label) }}</span>
         </li>
       </ol>
       <output v-if="props.executionDurationMs !== undefined" class="conversation-execution-duration" aria-label="本輪對話處理耗時">
@@ -176,13 +191,15 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
     <KioskTextConsole
       v-else
       :dock-target="props.textConsoleTarget"
+      :native-popup="Boolean(props.textConsoleTarget)"
       :status="props.fastPathSimulationStatus"
       :trace="props.fastPathSimulationTrace"
       :timing="props.fastPathSimulationTiming"
       @simulate="emit('simulateAsr', $event)"
+      @floating-change="emit('textConsoleFloating', $event)"
     />
     <p v-if="serviceStatus" class="service-status" role="status">
-      {{ toTaiwanTraditionalChinese(serviceStatus) }}
+      {{ toOrderingTraditionalChinese(serviceStatus) }}
       <button
         v-if="props.serviceRecoveryBlocked || interactiveServiceClient.availability.value === 'unavailable'"
         type="button"
@@ -203,7 +220,11 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
 .message-history :deep(.ph-no-capture) { max-width: min(78%, 42rem); }
 .message-history :deep([data-chat-message-bubble]) { box-sizing: border-box; max-width: 100%; border-width: 2px; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 34%); }
 .message-history :deep([data-chat-message-role='assistant']), .message-history :deep([data-chat-message-role='error']) { justify-content: flex-start; }
-.message-history :deep([data-chat-message-role='user']) { justify-content: flex-end; }
+.message-history :deep([data-chat-message-role='user']) { justify-content: flex-end; flex-wrap: wrap; }
+.request-status { flex-basis: 100%; text-align: right; padding: .2rem .3rem; color: #b9f5ec; font-size: .75rem; }
+.request-status.is-processing { font-weight: 800; }
+.request-status.is-failed { color: #ffdbad; }
+.message-history :deep([data-chat-message-bubble]) { user-select: text; }
 .message-history :deep(.markdown-content), .message-history :deep(.markdown-content *) { font-size: var(--conversation-font-size) !important; line-height: 1.45 !important; }
 .message-history :deep(.markdown-content p) { margin: 0; }
 .message-history :deep(.markdown-content p + p) { margin-top: .55em; }

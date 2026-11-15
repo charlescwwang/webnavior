@@ -23,7 +23,42 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
-  information-unavailable: 目前網頁資料不足以確認這項條件，我可以幫您介紹已提供的餐點資訊。
+  media-unlinked: "錄音尚未上傳或缺少可核實的對應關係，請查看下方原始錄音清單。"
+  media-audio-list: "原始錄音清單（不依時間推定逐字稿）"
+  media-play: "播放原始錄音"
+  request-status:
+    queued: "等待處理"
+    processing: "處理中"
+    review: "請看回覆繼續操作"
+    completed: "已完成"
+    cancelled: "已取消"
+    failed: "未完成，請查看回覆"
+  voice-debug:
+    tts-overlap: "TTS播放期間偵測到聲音，請核對是否回音或插話"
+    speech-start: "VAD偵測到說話"
+    speech-end: "VAD語音段結束"
+    blocked: "本段未進入點餐"
+    tts: "測試語音播放"
+    interrupted: "測試語音已被插話中斷"
+    mode-admin: "管理員音訊測試"
+    mode-text: "文字模式"
+    mode-customer: "顧客語音點餐"
+    microphone-on: "收音管線已啟動"
+    microphone-off: "收音管線未啟動"
+    text-mode: "文字模式不啟用顧客麥克風"
+    admin-paused: "管理頁開啟，顧客收件已暫停"
+    reception-reset: "接待結束或重置中，暫停收件"
+    preparing: "點餐頁面或購物車準備中，暫停收件"
+    presence-required: "目前未符合現場顧客收音條件"
+    admin-title: "麥克風、語音回音與插話測試"
+    admin-enable: "啟用管理員音訊測試"
+    admin-description: "僅在此管理頁收音及顯示辨識結果，不加入顧客對話、不操作餐點。關閉管理頁即停止測試。"
+    play-test: "播放語音並測試插話"
+    test-text: "這是麥克風與語音回音測試，您可以現在插話。"
+  information-unavailable: 這項資訊我目前查不到，請現場人員幫您確認。
+  checkout-guidance:
+    empty: 購物車目前沒有餐點。選好餐點後，再依點餐網頁的提示結帳。
+    ready: 請先核對畫面上的餐點、份數與金額，再依點餐網頁的提示完成結帳。
   product-presentation:
     title: 正在介紹的餐點
     completed: 已核對完成
@@ -31,10 +66,14 @@ kiosk:
     price: '{price} 元起'
     capability-unavailable: 目前點餐服務未提供 Jev 候選介面，已交給 AI 助手處理。
   cart-handoff:
-    reset-description: 結束本次接待並清除未送出的草稿，保留網站購物車與共用登入。未完成餐點須由現場人員確認交接後，才能讓下一位客人代操作。
+    checking: 正在準備點餐
+    preparation-title: 請先處理未完成的點餐
+    preparation-failed: 點餐尚未準備完成
+    preparation-guidance: 請先依下方畫面處理，再繼續點餐；也可以請工作人員協助。
+    reset-description: 結束本次接待時，會自動清空網站內未結帳的餐點與未送出的草稿，保留共用登入。確認購物車已空後，才會開始下一位接待。
     title: 外站購物車交接
-    required: 目前有尚未完成交接的餐點，已暫停代操作。仍可查詢菜單或直接操作畫面，請由現場人員確認後繼續。
-    explanation: 只在確認仍為同一筆餐點時恢復；開始新客人不會清空舊餐點，也不會解除結果不明的操作。
+    required: 購物車裡還有未完成的餐點。要重新點餐，請按「重新開始／新訂單」，系統會先清空購物車。
+    explanation: 要接續同一筆餐點，請先檢視並確認；結束接待會自動清空未結帳餐點。先前操作結果不明時，仍須先確認狀態。
     prepare: 準備本次接待
     inspect: 檢視目前購物車
     total: '目前小計：{amount} 元'
@@ -43,8 +82,38 @@ kiosk:
     changed: 畫面或接待已變更，請重新檢視。
     unknown: 先前操作結果尚未確認，不能以交接確認解除暫停。
     failed: 無法確認購物車，請稍後重新檢視。
+  native-view-loading: 載入中…
   native-view-failed: 服務畫面暫時無法載入，請工作人員檢查連線後重新開啟。
   service-editor-description: 設定機台要顯示的網站，儲存後需發布。管理頁預覽不代表登入或助手操作已可用，請在機台驗證。
+  restart-order: 重新開始／新訂單
+  restarting-order: 正在準備新訂單，請稍候…
+  release:
+    loaded: 目前載入版本
+    recover: 修復後台快取
+  presence-diagnostics:
+    camera: 相機
+    session: 接待
+  service-fault:
+    title: 服務暫停
+    spoken: 偵測到特殊情況，已為您通知服務人員。
+    description: 目前餐點會保留。請由服務人員輸入 PIN 後繼續，或清除目前內容並開始新訂單。
+    unlock: 服務人員 PIN 解鎖
+    restart: 清除內容，開始新訂單
+  asr-awaiting-decision: 語音辨識（確認中）
+  admin-access:
+    trigger: 連點五下以開啟管理員模式
+    mode: 管理員模式
+    title: 輸入 PIN
+    description: 請使用下方數字鍵盤輸入管理員 PIN。
+    pin-label: 管理員 PIN
+    keypad: PIN 數字鍵盤
+    clear: 清除
+    backspace: 刪除一碼
+    cancel: 取消
+    continue: 繼續
+    verification-failed: 無法驗證 PIN，請確認連線或請管理人員檢查 Server PIN 設定。
+    rate-limited: PIN 嘗試次數過多，請稍候一分鐘再試。
+    incorrect-pin: PIN 不正確，請再試一次。
   service-recovery:
     browser-unavailable: 目前無法取得完整點餐網頁資料，尚未執行操作，請稍後重試或直接使用畫面。
     queued: 已收到，正在等待前一項處理完成…
@@ -54,13 +123,56 @@ kiosk:
     ignored: 這句沒有進行點餐操作。
     uncertain: 剛才沒有理解清楚，請再說一次您的需求。
     failed: 目前暫時無法確認，請再試一次或使用畫面操作。
-  voice-presence-ignored: 未確認現場有人，已忽略語音
+  voice-presence-ignored: 語音放行檢查未通過，已忽略
+  voice-capturing: 已偵測到語音，等待句尾
+  voice-blocked: 已收到語音，尚未送出 ASR
+  voice-block-reasons:
+    observation_disabled: 未啟用視覺觀測
+    fresh_person: 已取得有效人物觀測
+    not_observing: 相機尚未進行人物推論
+    no_person: 尚無符合放行條件的人物觀測
+    low_quality: 人物偵測品質未達放行門檻
+    outside_zone: 人物偵測位置未在設定範圍內
+    stale: 有效人物觀測已過期
+    no_candidate: 起話時未建立可送出的語音候選
+    queue_full: 語音處理佇列已滿
+    empty_audio: 完整語句未包含音訊樣本
+    capture_stopped: 收音已停止或重新啟動
+    incomplete_segment: 前一段語音未形成完整語句
+  voice-stages:
+    speech_start: 檢查位置：VAD 起話
+    speech_end: 檢查位置：VAD 完整語句
+    before_asr: 檢查位置：ASR 送出前
+    after_asr: 檢查位置：ASR 回傳後
+    capture: 檢查位置：收音生命週期
+  character-editor:
+    builtin: 目前使用 Kiosk 內建角色，尚未指定店別專用模型。
+    card-package: 請選擇含 VRM 或 Live2D 模型的 AIRI 角色卡 ZIP，會一併匯入姓名、個性、情境與系統指示。
+    publish-hint: 上傳只會更新目前編輯的草稿；請儲存並發布到此店別，再於沒有進行中操作時重新開啟 Kiosk，套用人物與動作。
+  character-package:
+    title: 角色套件搬移
+    description: 一次打包角色人設、招呼設定、虛擬模型、動作與背景，方便備份或套用到其他店別。
+    download: 下載角色套件
+    upload: 上傳角色套件 ZIP
+    imported: 角色套件已帶入目前草稿，請檢查後儲存並發布。
+    select-site: 請先選擇店別。
+    invalid-size: 角色套件必須是 1 byte 至 120 MB 的 ZIP 檔案。
+    too-large: 角色套件超過伺服器允許的上傳容量。
+    request-failed: 角色套件處理失敗，請稍後重試。
+    download-failed: 角色套件下載失敗。
+    import-failed: 角色套件匯入失敗，原有草稿未變更。
+    hint: 下載包含目前尚未儲存的角色編輯。ZIP 上限 120 MB；匯入會取代目前編輯的角色設定，請確認後儲存並發布。目標店別的點餐網址、營運指示與系統設定會保留。
   text-console:
     title: 文字輸入與 Trace
+    float: 浮動視窗
+    popup-failed: 無法開啟浮動視窗，目前仍可在此輸入文字。請按「浮動視窗」重試。
     reset: 重設位置
     collapse: 收合
     expand: 展開
   wait:
+    answer-executing: 正在接續您的選擇…
+    answer-done: 已確認您的選擇。
+    answer-error: 請核對目前畫面後再繼續。
     recognizing: 正在辨識您的需求…
     confirming: 正在確認您的需求…
     operating: 正在依照您的需求操作畫面…
@@ -122,6 +234,14 @@ kiosk:
     vlm-prompt-hint: 依現場影像及此指引生成開場台詞。修改後需儲存並發布。
 customer-session:
   completion:
+    table-number: 桌號
+    total: 總計
+    pickup-number: 取餐號碼
+    survey-switch-title: 完成後問卷
+    survey-switch-label: 顯示完成後問卷
+    survey-switch-description: 套用於此瀏覽器，重新整理後保留。關閉只隱藏問卷，訂單完成資訊仍會顯示。
+    order-number: POS 訂單編號
+    pickup-unavailable: 目前未提供取餐號碼，請向門市人員確認取餐資訊。
     title: 訂單已送出
     description: 感謝您的點餐，我們已完成本次訂單流程。
     simulated-notice: 此為模擬訂單，尚未傳送至 POS 系統。
@@ -130,12 +250,12 @@ customer-session:
     qr-alt: 問卷 QR Code
     qr-loading: 正在準備問卷 QR Code…
     qr-error: 問卷 QR Code 暫時無法產生。
-    order-title: 把訂單帶到手機
-    order-description: 先掃訂單接續碼，入座後再掃桌碼並確認送餐桌號。
-    order-qr-alt: 訂單接續 QR Code
-    order-qr-loading: 正在準備訂單接續碼…
-    order-qr-error: 訂單接續碼暫時無法產生，請使用下方連結。
-    order-link: 在電腦開啟訂單接續頁
+    order-title: 把訂單資訊帶著走
+    order-description: 怕忘記取餐號碼？掃描 QR Code，在手機查看取餐號碼與訂單資訊。
+    order-qr-alt: 訂單資訊 QR Code
+    order-qr-loading: 正在準備訂單資訊 QR Code…
+    order-qr-error: 訂單資訊 QR Code 暫時無法產生，請使用下方連結。
+    order-link: 開啟訂單資訊
   idle-confirmation:
     title: 要繼續目前操作嗎？
     description: 目前的對話與選擇都會保留。您可以繼續操作，或清除內容後重新開始。
@@ -246,24 +366,88 @@ kiosk-agent:
   manual-control: 已交還螢幕操作，已完成的變更仍保留，後續操作已停止。
   timeout: 助手等待模型回覆逾時，請先確認畫面上的操作結果再重試。
   provider-error: 助手無法連線至模型或取得回覆，請稍後再試。
-  tool-rejected: 點餐系統未接受這次操作，請確認畫面後再繼續。
-  tool-limit: 助手已達本次處理上限，請確認畫面上已完成的步驟後再繼續。
+  tool-rejected: 我還沒確認這次操作的結果，請先看一下畫面，再告訴我需要調整的餐點。
+  sign-in-required: 點餐網站尚未登入或登入已失效，請先在此機台的點餐網頁完成登入，再重新提出需求。
+  tool-limit: 這次還有步驟尚未完成，請告訴我接下來想處理哪一項。
   duplicate-tool-call: 助手重複要求同一操作，已停止以避免重複執行，請確認畫面。
   session-error: 無法建立交談，請確認 Kiosk 連線狀態。
   no-reply: 這次回覆尚未完成，請再試一次。
   result-unknown: 暫時無法確認這次操作結果，請先確認畫面目前呈現的菜單、購物車或訂單。
   reply-incomplete: 這句回覆尚未完成，請再試一次或重新說明您的需求。
+  utterance-deferred: 剛才這句尚未完成處理。請稍後再試一次，或使用螢幕操作。
+  utterance-failed: 語音處理中斷，已保留您剛才說的內容。請先確認購物車或訂單，再由服務人員協助，避免重複操作。
+  voice-presence-lost: 剛才的詢問尚未完成，目前無法確認您仍在互動區域。請站在鏡頭前再說一次，或使用螢幕操作。
+  decision-failed: 這次處理失敗，尚未執行操作。您想重新提出哪項需求？
+  greeting-reply: 您好，想點什麼餐點？
+  queued-expired: 這句等待太久，尚未執行，您要重新提出哪項需求？
+  queued-cancelled: 這句尚未執行，已取消。
+  unstarted-replaced: 已停止先前尚未執行的處理，改為處理這次需求。
+  unstarted-combined: 已收到補充，將合併處理尚未執行的需求。
+  meaning-unresolved: 目前仍無法理解這項需求，尚未執行操作，您可以直接使用畫面選餐。
   decision-uncertain: 剛才沒有理解清楚，請再說一次您的需求。
 
 system-one:
+  decisions-base-url-hint: '填 API 根網址，通常是 https://api.openai.com/v1，不加 /decisions。'
+  decisions-api-key: 'OpenAI API Key（新增時必填）'
+  decisions-discovery-hint: '可手動填模型識別，或讀取支援的模型清單。儲存後執行驗證，確認此金鑰能呼叫 Decisions。'
   slm-profile-name: '店內 SLM'
   slm-label: 'SLM（實測，OpenAI 相容）'
   slm-option: 'SLM（實測，OpenAI 相容／Docker Model Runner）'
-  model-setup-hint: '選擇決策引擎與模型，再儲存並執行 readiness。SLM 只回傳單一選項，沒有推論文字或工具權限。'
+  model-setup-hint: '選擇決策來源與模型，再儲存並驗證連線。OpenAI Decisions 使用獨立決策 API；金鑰只儲存在後端。'
   slm-base-url-hint: '填 OpenAI 相容 API 根網址；本機 Docker Model Runner 通常是 http://127.0.0.1:12434/engines/v1，不加 /chat/completions。'
   available-models: '可用模型'
   read-models: '讀取可用模型'
   discovery-hint: '從 /models 讀取可用模型；選定後的 readiness 會實際呼叫此模型。清單不代表已載入。'
-  panel-description: '可選擇 Dasein open-jev、lookski/openjev 或 SLM 作為 Kiosk Fast Path。共用服務入場、需求與操作分層；SLM 只輸出單一選項。readiness 以真實決策確認部署可用，語意效果另需實測。'
-  policy-description: 'Jev 與 SLM 共用分層判斷：先區分服務、招呼、背景與不確定，再判斷需求及小組操作。候選、確認、付款與 WebMCP 執行資格由程式控制；複雜需求保留整句轉交 Main Agent。'
-  policy-hint: '自訂提示與店家補充套用在服務入場後的需求判斷，不會擴大第一層服務範圍或操作權限。舊自訂內容會保留；還原為系統預設後儲存，可使用目前較精簡的提示。'
+  panel-description: '選擇 Jev 或 OpenAI Decisions 作為快速決策來源，直接依目前狀態選擇可用動作；不確定交給主要助手。SLM 保留既有接法。'
+  policy-description: 'Jev 與 OpenAI Decisions 直接比較本次可用的完整動作。程式核對對象、份數、有效問題與執行結果；查詢不代表購買，多項需求不能只完成其中一部分。'
+  policy-hint: '提示詞協助理解顧客語意，不會擴大操作權限。背景音判斷在各設備另外設定；主要助手的模型設定維持獨立。'
+kiosk-devices:
+  title: Kiosk 設備
+  description: 查看各場域的設備，依建立時間、名稱或場域排序，並開啟個別裝置設定。
+  site: 場域
+  all-sites: 全部場域
+  sort: 排列方式
+  sort-created: 建立時間
+  sort-name: 裝置名稱
+  sort-site: 場域名稱
+  newest-first: 最新建立在前
+  oldest-first: 最早建立在前
+  ascending: 名稱正序
+  descending: 名稱倒序
+  refresh: 重新整理
+  list: Kiosk 設備清單
+  device-count: '設備清單（{count} 台）'
+  select-visible: 全選目前清單
+  loading: 正在載入設備…
+  load-failed: 無法載入設備清單，請重新整理後再試。
+  save-failed: 無法儲存設定，請確認連線與操作權限。
+  select-device: '選取 {site} 的 {name}'
+  created: 建立於
+  registration: '註冊方式：{method}'
+  disabled: 已停用
+  disable: 停用
+  enable: 啟用
+  delete: 刪除
+  empty: 此範圍尚未註冊 Kiosk 設備。
+  selected-count: '已選取 {count} 台設備'
+  disable-count: '停用已選取的 {count} 台'
+  delete-count: '刪除已停用的 {count} 台'
+  selected-devices: 選取的設備
+  confirm-disable: '停用 {count} 台 Kiosk 設備？'
+  confirm-enable: '啟用 {count} 台 Kiosk 設備？'
+  confirm-delete: '刪除 {count} 台 Kiosk 設備？'
+  describe-disable: '將停用「{name}」並撤銷瀏覽器憑證。各台分別處理，成功的操作不會因其他設備失敗而回復。'
+  describe-enable: '將恢復「{name}」原本的瀏覽器憑證。'
+  describe-delete: '只刪除已停用的「{name}」；既有訪客紀錄、逐字稿與媒體會保留。各台分別處理，成功的操作不會因其他設備失敗而回復。'
+  action-result: '{action}結果：成功 {succeeded} 台、未完成 {failed} 台。'
+  cancel: 取消
+  confirm: 確認
+  processing: 處理中…
+  settings-title: '裝置設定：{name}'
+  settings-description: '所屬場域：{site}。裝置設定只影響這台設備。'
+  close-settings: 關閉裝置設定
+  close: 關閉
+  retention-title: 場域的互動連結期限
+  retention-description: '此期限套用到「{site}」所有裝置的新會話。到期只解除前台連結，對話與已錄製的媒體仍會保留。'
+  retention-days: 前台連結天數
+  retention-saved: 場域互動連結期限已更新，新會話會套用此設定。

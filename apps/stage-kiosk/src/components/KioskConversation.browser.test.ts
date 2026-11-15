@@ -34,7 +34,7 @@ it('presents conversation text in Taiwan Traditional without rewriting source me
   await expect.element(screen.getByText('我要一碗牛肉麵', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('請確認這份訂單。', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('暫時無法連線，請稍後再試。', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢選單。', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單。', { exact: true })).toBeVisible()
   expect(messages[0]?.content).toBe('我要一碗牛肉面')
   expect(messages[1]?.content).toBe('请确认这份订单。')
   expect(streaming.content).toBe('正在查询菜单。')
@@ -47,7 +47,7 @@ it('presents pending recognition and processing text in Traditional Chinese', as
     global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] },
   })
   await expect.element(screen.getByText('請幫我推薦', { exact: true })).toBeVisible()
-  await expect.element(screen.getByText('正在查詢選單', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await expect.element(screen.getByText('確認訂單', { exact: true })).toBeVisible()
 })
 
@@ -59,7 +59,7 @@ it('keeps only the simulated ASR input in text mode and forwards its transcript'
   })
   expect(document.querySelectorAll('textarea')).toHaveLength(1)
   expect(screen.container.querySelector('[aria-label="送出訊息"]')).toBeNull()
-  await expect.element(screen.getByText('正在查詢選單', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('正在查詢菜單', { exact: true })).toBeVisible()
   await screen.getByRole('textbox').fill('我想吃面，一碗')
   await screen.getByRole('button', { name: '模擬辨識並執行' }).click()
   expect(onSimulateAsr).toHaveBeenCalledOnce()
@@ -127,4 +127,46 @@ it('describes missing assistant control without presenting the service as broken
   const message = 'Assistant controls unavailable. Use the service screen directly.'
   await expect.element(screen.getByText(message)).toBeVisible()
   expect(screen.container.querySelector('.service-status')?.textContent).not.toContain('WebMCP')
+})
+
+// Report: Nov14 user request; a slow answer must stay below its own customer message.
+it('shows request status in the conversation and groups a late reply before the interruption', async () => {
+  const messages: ChatHistoryItem[] = [
+    { role: 'user', id: 'utterance:1:user', content: '先看雞腿飯' },
+    { role: 'user', id: 'utterance:2:user', content: '再看湯' },
+    { role: 'assistant', id: 'utterance:2:reply:a', content: '目前有蛋花湯。', slices: [], tool_results: [] },
+    { role: 'assistant', id: 'utterance:1:reply:a', content: '雞腿飯在這裡。', slices: [], tool_results: [] },
+  ]
+  const screen = render(KioskConversation, { props: { ...props, messages, voiceConversationOnly: true, requestStatuses: { 1: 'completed', 2: 'processing' } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', messages: { 'zh-TW': { stage: { kiosk: { 'request-status': { completed: '已完成', processing: '處理中' } } } } } })] } })
+  await expect.element(screen.getByText('處理中', { exact: true })).toBeVisible()
+  const rows = [...screen.container.querySelectorAll('[data-chat-message-key]')]
+  expect(rows.map(row => row.getAttribute('data-chat-message-key'))).toEqual(['utterance:1:user', 'utterance:1:reply:a', 'utterance:2:user', 'utterance:2:reply:a'])
+  expect(rows[0].textContent).toContain('已完成')
+  expect(rows[2].textContent).toContain('處理中')
+  expect(messages[1].content).toBe('再看湯')
+})
+
+it('distinguishes a running microphone from reception-blocked voice input in diagnostics', async () => {
+  const labels = { 'mode-customer': '顧客語音點餐', 'microphone-on': '收音管線已啟動', 'reception-reset': '接待重置中，暫停收件', 'blocked': '本段未進入點餐' }
+  const screen = render(KioskVoiceDiagnostics, { props: { entries: [{ id: 1, status: 'blocked', reason: 'reception-reset' }], microphone: true, capturing: true, probability: 0.8, blockedReason: 'reception-reset', mode: 'customer' }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', missingWarn: false, messages: { 'zh-TW': { stage: { kiosk: { 'voice-debug': labels } } } } })] } })
+  expect(screen.container.textContent).toContain('收音管線已啟動')
+  expect(screen.container.textContent).toContain('VAD ● 80%')
+  expect(screen.container.textContent).toContain('接待重置中，暫停收件')
+  await expect.element(screen.getByText('本段未進入點餐', { exact: true })).toBeVisible()
+})
+
+// Report: this chat, 2026-11-14 — correct 虱目魚 input was displayed as 蝨目魚.
+it('preserves Taiwanese dish spelling in both customer and assistant bubbles', async () => {
+  const screen = render(KioskConversation, { props: { ...props, voiceConversationOnly: true, messages: [
+    { role: 'user', content: '我要虱目魚' },
+    { role: 'assistant', content: '有虱目魚湯。', slices: [], tool_results: [] },
+  ] }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: {} })] } })
+  await expect.element(screen.getByText('我要虱目魚', { exact: true })).toBeVisible()
+  await expect.element(screen.getByText('有虱目魚湯。', { exact: true })).toBeVisible()
+})
+
+// Report: this chat, 2026-11-14 — failed labels duplicated an unhelpful tool error.
+it('does not add a technical failure badge below a customer request', () => {
+  const screen = render(KioskConversation, { props: { ...props, messages: [{ role: 'user', id: 'utterance:1:user', content: '回菜單' }], requestStatuses: { 1: 'failed' } }, global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: {} })] } })
+  expect(screen.container.querySelector('.request-status')).toBeNull()
 })

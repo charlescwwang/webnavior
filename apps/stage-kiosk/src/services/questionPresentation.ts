@@ -1,9 +1,97 @@
+import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { ConversationContext, ServiceClarification } from '@proj-airi/stage-shared/kiosk-conversation'
 
 import type { KioskDecisionState, KioskInteractionDecision, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { ConversationTurnResult } from '../composables/useKioskInteractionRecording'
 
 import { replyFromContext, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
+import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
+import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
+
+/** Customer recovery uses verified progress only; it never completes or replays an order. */
+export function browserRecoveryReply(input: { operationAttempted: boolean, page?: BrowserConversation['page'], verifiedMessage?: string }) {
+  const messages = orderingMessages['zh-Hant'].recovery
+  const guidance = input.operationAttempted ? messages.review : input.page ? messages[input.page] : messages.unavailable
+  return { role: 'assistant' as const, recovery: true as const, content: [...new Set([input.verifiedMessage, guidance].filter(Boolean))].join(' ') }
+}
+
+/** Formats current website facts without adopting generated claims or claiming an order effect. */
+function browserReadSummary(name: string, payload: Record<string, unknown>) {
+  if (payload.ok !== true || payload.source !== 'browser')
+    return
+  const openedDetails = nativeOrderingToolName(name) === 'browser_open_product'
+  if (!openedDetails && payload.dataOnly !== true)
+    return
+  if (name === 'list_cart_items' && payload.cart && typeof payload.cart === 'object') {
+    const cart = payload.cart as Record<string, unknown>
+    if (!Array.isArray(cart.lines))
+      return
+    const lines = cart.lines.flatMap((line) => {
+      if (!line || typeof line !== 'object' || typeof line.name !== 'string' || typeof line.quantity !== 'number')
+        return []
+      if (typeof line.unitPrice === 'number') {
+        const options = Array.isArray(line.options) && line.options.every((option: { name?: unknown, quantity?: unknown }) => option && typeof option.name === 'string' && typeof option.quantity === 'number') ? line.options : undefined
+        return [describePbMeal({ name: line.name, quantity: line.quantity, unitPrice: line.unitPrice, options, description: typeof line.description === 'string' ? line.description : undefined, note: typeof line.note === 'string' ? line.note : undefined })]
+      }
+      return [`${line.name}${line.description ? `（${line.description}）` : ''}${line.note ? `，備註${line.note}` : ''} ${line.quantity}份`]
+    })
+    return lines.length ? `購物車裡有：${lines.join('、')}。${typeof cart.subtotal === 'number' ? `網站小計${cart.subtotal}元。` : ''}要看購物車核對，還是修改餐點？` : '購物車目前沒有餐點。想點哪一道？'
+  }
+  if ((!openedDetails && !['list_menu_items', 'get_menu_item_details'].includes(name)) || !Array.isArray(payload.products))
+    return
+  // Opening a dialog returns the whole rendered catalog as well. Only the
+  // exact dish confirmed in this receipt's dialog can answer this detail query.
+  const dialogNames = new Set(Array.isArray(payload.productDialog) ? payload.productDialog.flatMap(dialog => dialog && typeof dialog === 'object' && typeof dialog.name === 'string' ? [dialog.name] : []) : [])
+  const queriedProducts = openedDetails
+    ? payload.products.filter(product => product && typeof product === 'object' && dialogNames.has(product.name))
+    : payload.products
+  if (openedDetails && !queriedProducts.length)
+    return
+  const includeDetails = openedDetails || name === 'get_menu_item_details'
+  const products = queriedProducts.slice(0, 10).flatMap((product) => {
+    if (!product || typeof product !== 'object' || typeof product.name !== 'string')
+      return []
+    const specs: string[] = []
+    if (Array.isArray(product.configurations)) {
+      for (const spec of product.configurations) {
+        if (!spec || typeof spec !== 'object' || typeof spec.unitPrice !== 'number')
+          continue
+        const label = typeof spec.name === 'string' && spec.name && spec.name !== product.name ? spec.name : '單份'
+        specs.push(`${label}${spec.unitPrice}元`)
+      }
+    }
+    // Verified configuration prices take precedence over a catalog/base price.
+    // Missing prices are reported as unknown, never derived from another dish.
+    let price = '價格尚未確認'
+    if (specs.length)
+      price = specs.join('、')
+    else if (typeof product.price === 'number')
+      price = `單份${product.price}元`
+    let details = ''
+    if (includeDetails) {
+      // Prefer the merchant API's description; rendered card text is the
+      // alternate evidence when the API omits it, and may repeat name/price.
+      if (typeof product.description === 'string' && product.description.trim())
+        details = product.description.trim()
+      else if (typeof product.details === 'string')
+        details = product.details.trim()
+    }
+    // Card text often repeats its dish name and base price. Keep the website's
+    // contents, but report the verified price once through the price field above.
+    if (details.startsWith(product.name))
+      details = details.slice(product.name.length).trim()
+    if (typeof product.price === 'number' && details.endsWith(`$${product.price}`))
+      details = details.slice(0, -`$${product.price}`.length).trim()
+    const servingPrice = typeof product.price === 'number' ? product.price : undefined
+    const serving = pbBasicServing(product.name, servingPrice)
+    const contents = includeDetails ? [serving, details].filter(Boolean).join('；') : ''
+    return [`${pbProductName(product.name)}：${contents ? `${contents}；` : ''}${price}`]
+  })
+  const nextStep = includeDetails ? '' : '想看哪道餐點，或要點幾份？'
+  return products.length ? `${products.join('；')}。${queriedProducts.length > 10 ? '目前先列出前十道。' : ''}${nextStep}` : '目前條件下沒有符合的餐點，可以告訴我想調整的條件。'
+}
 
 /**
  * Menu facts are rendered from this turn's read receipts, never generated prose.
@@ -17,9 +105,14 @@ export function createMenuReplyWindow() {
   let reads = 0
   let cartReply: string | undefined
   let browserOutcome: string | undefined
+  let publicReadReply: string | undefined
+  let presentationFailure: string | undefined
+  let cartChange: unknown
   const browserEffects = new Set<string>()
   return {
     record(name: string, result: unknown) {
+      const publicName = name
+      name = nativeOrderingToolName(name)
       if (typeof result === 'string') {
         try {
           result = JSON.parse(result)
@@ -29,11 +122,20 @@ export function createMenuReplyWindow() {
       if (!result || typeof result !== 'object')
         return
       const payload = result as Record<string, unknown>
-      if (name.startsWith('browser_cart_') && payload.source === 'browser' && typeof payload.customerMessage === 'string') {
+      if (['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add', 'browser_question_answer'].includes(name))
+        cartChange = payload.ok === true && payload.status === 'verified' ? payload : undefined
+      if (name === 'browser_present') {
+        if (payload.ok === false && payload.source === 'browser' && payload.status === 'rejected' && payload.effect === 'none')
+          presentationFailure = operationReplyFrom(payload)
+        else if (payload.ok === true)
+          presentationFailure = undefined
+      }
+      publicReadReply = browserReadSummary(publicName, payload) ?? publicReadReply
+      if ((name.startsWith('browser_cart_') || name === 'browser_confirm_add' || name === 'browser_question_answer') && payload.source === 'browser' && typeof payload.customerMessage === 'string') {
         if (payload.status === 'verified' || payload.status === 'preserved') {
           if (payload.status === 'verified' && typeof payload.effectMessage === 'string')
             browserEffects.add(payload.effectMessage)
-          browserOutcome = payload.customerMessage
+          browserOutcome = operationReplyFrom(payload)
         }
         else if (['unknown', 'rejected', 'clarification'].includes(String(payload.status))) {
           // A later refusal cannot erase an earlier verified effect. State
@@ -114,12 +216,14 @@ export function createMenuReplyWindow() {
       }
       return tools[intent]?.some(name => operations.has(name)) === true
     },
-    hasReceipts: () => reads > 0 || cartReply !== undefined,
+    hasReceipts: () => reads > 0 || cartReply !== undefined || publicReadReply !== undefined,
     browserOutcome: () => browserOutcome,
+    cartChange: () => cartChange,
+    presentationFailure: () => presentationFailure,
     reply() {
       // Without evidence, generated dish claims cannot become customer dialogue.
       if (!reads)
-        return cartReply ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。'
+        return cartReply ?? publicReadReply ?? '目前沒有可驗證的餐點查詢結果，請告訴我想找的餐點或條件，或使用畫面選餐。'
       const prices = reads > 1 && items.size > 1
         ? ` 單份基本售價：${[...items.values()].slice(0, 6).map(item => `${item.name} NT$${item.price}`).join('、')}。`
         : ''
@@ -131,7 +235,7 @@ export function createMenuReplyWindow() {
 /**
  * Resolves one Agent task for display: classified service prose stays natural, while
  * commerce attempts use current-turn receipts even if the model claims success.
- * Transport failures without receipts are errors, never a fabricated menu reply.
+ * External-page failures use manual continuation guidance; missing receipts never establish success.
  */
 export function replyFromConversation(result: ConversationTurnResult, options: {
   menu: ReturnType<typeof createMenuReplyWindow>
@@ -146,12 +250,19 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   context?: ConversationContext
   /** Fresh host phase; invalid ordering must not be narrated as an empty menu. */
   customerEntry?: { phase: KioskDecisionState['phase'] | undefined, prompt: string }
-}): { role: 'assistant' | 'error', content: string, clarification?: true } {
+  /** External-page recovery keeps failures in diagnostics and guides manual continuation. */
+  browserRecovery?: { operationAttempted: boolean, page?: BrowserConversation['page'] }
+}): { role: 'assistant' | 'error', content: string, clarification?: true, recovery?: true } {
   // Entry must still be complete when the reply arrives: a session reset
   // cannot expose an earlier menu receipt or let a stale task bypass phone choice.
   const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
   if (options.customerEntry?.phase === 'customer_entry' && (entryRequired || options.requireMenuRead))
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
+  // The caller revalidated this question from a receipt issued in this turn.
+  // Waiting for its answer pauses the demand; it need not have changed the cart.
+  // Preserve that boundary even if a later model step exhausted its budget.
+  if (options.question && options.question.expiresAt > Date.now() && result.reason !== 'manual-control')
+    return { role: 'assistant', content: replyWithQuestion(options.outcome ?? '', options.question) }
   // A history lookup supplies conversation context, not a new commerce result.
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
   // A completed no-tool draft cannot establish facts or operation success.
@@ -163,7 +274,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     : undefined
   const unresolved = clarification
     ? { role: 'assistant' as const, content: clarification.content, clarification: true as const }
-    : { role: 'error' as const, content: options.failureMessage }
+    : options.browserRecovery ? browserRecoveryReply({ ...options.browserRecovery, verifiedMessage: options.menu.hasReceipts() ? options.menu.reply() : undefined }) : { role: 'error' as const, content: options.failureMessage }
   // A true menu receipt cannot complete a known mutation task. Preserve the
   // requested effect even when Main chooses a factual but unrelated lookup.
   const intent = options.handoff?.intent ?? ''
@@ -180,6 +291,12 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
     return unresolved
   const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
   if (result.status !== 'completed') {
+    const passiveOnly = result.requestedTools.every(name => name === 'list_cart_items' || ['browser_observe', 'browser_product_get', 'browser_present'].includes(nativeOrderingToolName(name)))
+    const displayFailure = options.menu.presentationFailure()
+    if (result.reason === 'tool-rejected' && passiveOnly && displayFailure && !operationRequired)
+      return { role: 'assistant' as const, content: [receiptReply, displayFailure].filter(Boolean).join(' ') }
+    if (options.browserRecovery)
+      return browserRecoveryReply({ ...options.browserRecovery, verifiedMessage: receiptReply || undefined })
     return receiptReply
       ? { role: 'assistant' as const, content: `${receiptReply} ${options.failureMessage}` }
       : { role: 'error' as const, content: options.failureMessage }
@@ -196,7 +313,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   if (!receiptReply && !commerceAttempted && !options.requireMenuRead && !options.serviceReply)
     return unresolved
   const content = receiptReply || (commerceAttempted || options.requireMenuRead ? options.menu.reply() : result.answer)
-  return content ? { role: 'assistant' as const, content } : { role: 'error' as const, content: options.failureMessage }
+  return content ? { role: 'assistant' as const, content } : unresolved
 }
 
 /** Retains host invitation history for this order; service questions always take foreground priority. */
@@ -281,7 +398,20 @@ export function operationReplyFrom(result: unknown): string | undefined {
   if (!result || typeof result !== 'object')
     return undefined
   const message = (result as Record<string, unknown>).customerMessage
-  return typeof message === 'string' && message.trim() ? message : undefined
+  return typeof message === 'string' && message.trim() ? guidedBrowserReply(result as Record<string, unknown>, message) : undefined
+}
+
+/** Adds a single navigation offer at the final presentation boundary, never per tool layer. */
+function guidedBrowserReply(payload: Record<string, unknown>, message: string) {
+  if (payload.source !== 'browser' || payload.pendingCustomerChoice || /[？?]|可以繼續|您可以說/.test(message) || !Array.isArray(payload.nextActions))
+    return message
+  if (payload.nextActions.includes('review-checkout'))
+    return `${message} 請先核對餐點；確認後可在畫面繼續結帳，也可以告訴我要修改什麼。`
+  if (payload.nextActions.includes('view-cart'))
+    return message
+  if (payload.nextActions.includes('choose-item'))
+    return `${message} 想點哪一道？也可以一起告訴我份數。`
+  return message
 }
 
 /** Only explicit tool receipts can create question context; free assistant text cannot. */

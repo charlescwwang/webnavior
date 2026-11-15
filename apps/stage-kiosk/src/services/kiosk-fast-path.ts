@@ -9,6 +9,7 @@ import { errorMessageFrom } from '@moeru/std'
 import { handoffSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
 import { parse } from 'valibot'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { priceClarification } from '../../../order-menu/src/domain/pricing'
 import { normalizeTranscript } from '../../../server/src/services/domain/kiosk-interaction-decision/context'
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
@@ -144,7 +145,23 @@ const executeToolName = 'kiosk_fast_path_execute'
  * the visible menu. The model only receives candidate IDs and descriptions;
  * input arguments always come back from the browser-produced candidate set.
  */
-export async function runFastPath(input: {
+export async function runFastPath(input: Parameters<typeof resolveFastPath>[0]): Promise<FastPathResult> {
+  const result = await resolveFastPath(input)
+  if (!input.source)
+    return result
+  const rejected = result.kind === 'EXECUTION_FAILED' && !result.uncertain && result.result && typeof result.result === 'object' && 'effect' in result.result && result.result.effect === 'none'
+  const unavailable = result.kind === 'UNAVAILABLE' && !['UNCERTAIN_RECIPIENT', 'UNCERTAIN_GREETING', 'UNCERTAIN_SERVICE_REQUEST'].includes(result.reason ?? '')
+  if (!rejected && !unavailable)
+    return result
+  if (input.isCurrent?.() === false)
+    return { kind: 'DEFERRED', decisionState: result.decisionState }
+  // A compiler/decision failure or a proven no-effect rejection cannot end a
+  // PB service request. Main re-reads current facts and validates its own plan.
+  // Unknown/partial effects never enter this handoff, so they cannot be replayed.
+  return { kind: 'NEEDS_ASSISTANT', reason: 'UNCERTAIN_OPERATION', decisionState: result.decisionState, ...(result.browserContextError ? { browserContextError: result.browserContextError } : {}) }
+}
+
+async function resolveFastPath(input: {
   /** Uncached server activation check before any candidate or direct action. */
   isEnabled: () => Promise<boolean>
   activeRequest?: { stage: 'starting' | 'thinking' | 'tool_requested' | 'mutating', text: string }
@@ -351,6 +368,12 @@ export async function runFastPath(input: {
       return { kind: 'CLARIFICATION', prompt: question.question, question, decisionState }
     }
     if (decision.kind === 'INCOMPLETE') {
+      if (input.source) {
+        // PB asks the customer to restate the request. No fragment is carried
+        // into another utterance, and no tool or Main call is needed.
+        input.session?.discard()
+        return { kind: 'CLARIFICATION', prompt: orderingMessages['zh-Hant'].incompleteRequest, decisionState }
+      }
       input.session?.retain(input.transcript, decisionState)
       return { ...decision, ...(decisionState ? { decisionState } : {}) }
     }
@@ -385,8 +408,13 @@ export async function runFastPath(input: {
         return { kind: 'CLARIFICATION', prompt: priceClarification, decisionState }
       spent = decision.modelQuestions === undefined ? undefined : spent + decision.modelQuestions
       input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource: 'system-one', transcript: input.transcript })
-      if (decision.kind === 'INCOMPLETE')
+      if (decision.kind === 'INCOMPLETE') {
+        if (input.source) {
+          input.session?.discard()
+          return { kind: 'CLARIFICATION', prompt: orderingMessages['zh-Hant'].incompleteRequest, decisionState }
+        }
         input.session?.retain(input.transcript, decisionState)
+      }
       if (decision.kind === 'CONTINUE_INCOMPLETE' || decision.kind === 'CLARIFICATION')
         return { kind: 'UNAVAILABLE', decisionState }
     }
@@ -442,8 +470,18 @@ export async function runFastPath(input: {
     let result = await (input.source?.execute ?? ((args: Record<string, unknown>) => input.webMcp.execute(executeTool!, args)))({ candidateId: action.id, ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}), ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}), ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}) })
     executionStarted = false
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, executionResult: result, transcript: input.transcript })
-    if (input.source && result && typeof result === 'object' && 'status' in result && result.status === 'clarification' && 'customerMessage' in result && typeof result.customerMessage === 'string')
-      return { kind: 'CLARIFICATION', prompt: result.customerMessage, decisionState }
+    // A recommendation can finish with both dish evidence and a question.
+    // Keep that receipt on the normal presentation path: converting it to a
+    // bare clarification loses question validation and reply-time visual cues.
+    const presentationQuestion = result && typeof result === 'object' && 'presentation' in result && 'pendingCustomerChoice' in result ? presentedQuestionFrom(result.pendingCustomerChoice) : undefined
+    if (input.source && !presentationQuestion && result && typeof result === 'object' && 'status' in result && result.status === 'clarification' && 'customerMessage' in result && typeof result.customerMessage === 'string') {
+      await notifyExecuted(result)
+      return { kind: 'CLARIFICATION', prompt: result.customerMessage, ...('pendingCustomerChoice' in result ? { question: presentedQuestionFrom(result.pendingCustomerChoice) } : {}), decisionState }
+    }
+    // Native receipt loss/partial writes can resolve normally rather than
+    // throw. Preserve that uncertainty; it is not a confirmed no-effect refusal.
+    if (result && typeof result === 'object' && (('status' in result && result.status === 'unknown') || ('effect' in result && (result.effect === 'unknown' || result.effect === 'partial')) || ('partial' in result && result.partial === true)))
+      return { kind: 'EXECUTION_FAILED', uncertain: true, result, decisionState }
     if (result && typeof result === 'object' && 'ok' in result && result.ok === false)
       return { kind: 'EXECUTION_FAILED', uncertain: false, result, decisionState }
     decisionState = completedReadState(decisionState, result)
@@ -577,7 +615,7 @@ export function refreshConversationState(context: ConversationContext, task?: Ki
   }
 }
 
-export function conversationDecisionStateFrom(value: unknown, decision?: Pick<FastPathDecision, 'reason' | 'recovery'> & { handoff?: ConversationHandoff }): KioskConversationDecisionState | undefined {
+export function conversationDecisionStateFrom(value: unknown, decision?: Pick<FastPathDecision, 'reason' | 'recovery'> & { handoff?: ConversationHandoff }, source: 'owned-menu' | 'browser' = 'owned-menu'): KioskConversationDecisionState | undefined {
   const state = decisionStateFrom(value)
   if (!state)
     return undefined
@@ -608,10 +646,15 @@ export function conversationDecisionStateFrom(value: unknown, decision?: Pick<Fa
   // Service admission says this utterance deserves a response, not which
   // mutation it authorizes. A resolved effect/target handoff retains its own
   // tool restrictions; otherwise uncertainty stays read-only in every phase.
-  const protectedUncertainty = uncertainMeaning && !decision?.handoff
+  // PB Main receives the original request and independently validates every
+  // cart proposal. Jev abstention cannot turn that request into information-only
+  // authority or hide all edit tools. Explicit read-only/query restrictions
+  // remain below; the owned Menu and customer-entry policies stay unchanged.
+  const protectedUncertainty = uncertainMeaning && !decision?.handoff && (source !== 'browser' || state.phase === 'customer_entry')
   const readOnly = decision?.recovery?.readOnly === true || protectedUncertainty || ['GENERAL_QUESTION', 'MENU_QUERY', 'UNSUPPORTED_FILTER', 'UNCERTAIN_FILTER', 'UNRESOLVED_FILTER', 'UNSUPPORTED_PRICE'].includes(decision?.reason ?? '')
   return {
     phase: state.phase,
+    ...(state.tableSelection && typeof state.tableSelection === 'object' ? { tableSelection: state.tableSelection as FastPathDecisionState['tableSelection'] } : {}),
     ...(state.revisions ? { revisions: state.revisions } : {}),
     ...(decision?.reason === 'GENERAL_QUESTION' ? { serviceReply: true } : {}),
     ...(state.serviceClarification ? { serviceClarification: state.serviceClarification } : {}),
@@ -651,6 +694,8 @@ function decisionStateFrom(value: unknown) {
   const waitingFor = presentedQuestionFrom(state.waitingFor)
   return {
     phase: state.phase,
+    ...(state.tableSelection && typeof state.tableSelection === 'object' ? { tableSelection: state.tableSelection as FastPathDecisionState['tableSelection'] } : {}),
+    ...(state.menuSearch && typeof state.menuSearch === 'object' && 'query' in state.menuSearch && typeof state.menuSearch.query === 'string' ? { menuSearch: { query: state.menuSearch.query } } : {}),
     ...(state.requiresPlanner === true ? { requiresPlanner: true } : {}),
     ...(state.serviceClarification && typeof state.serviceClarification === 'object' ? { serviceClarification: state.serviceClarification as ServiceClarification } : {}),
     ...(state.requireMenuRead === true ? { requireMenuRead: true } : {}),

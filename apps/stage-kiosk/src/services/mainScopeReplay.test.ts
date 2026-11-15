@@ -52,7 +52,7 @@ describe.skipIf(!enabled)('live Main Agent menu query scope through the real Kio
       },
     }
     const db = await mockDB(schema)
-    app = createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: gateway, runtimeModelPolicy: { modelFor: async () => model }, systemOne: { isEnabled: async () => true, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction, storeInstruction: '', updatedAt: null }), decide: async (state, questions) => {
+    app = createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: gateway, runtimeModelPolicy: { modelFor: async () => model }, systemOne: { isEnabled: async () => true, routing: async () => 'staged' as const, maxActionCandidates: async () => 22 as const, getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction, storeInstruction: '', updatedAt: null }), decide: async (state, questions) => {
       if (recordedPhoneSkip)
         return questions.service ? { answers: { service: { choice: 'REQUEST', confidence: 0.7406 } } } : { answers: { phone: { choice: 'SKIP', confidence: 0.4977 } } }
       const response = await fetch('http://projev.aikcitri.qzz.io/v1/systemone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state, questions }), signal: AbortSignal.timeout(30_000) })

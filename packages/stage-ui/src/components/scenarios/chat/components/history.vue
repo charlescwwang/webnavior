@@ -161,6 +161,7 @@ function emitToolCallRerun(
           @copy="emitCopyMessage(message, index)"
           @delete="emitDeleteMessage(message, index)"
         />
+        <slot name="after-message" :message="message" :index="index" />
       </div>
     </template>
   </div>

@@ -59,7 +59,7 @@ async function inspect() {
   busy.value = true
   error.value = undefined
   try {
-    const cart = readCart(await props.bridge.execute(tool, { includeCatalog: false }))
+    const cart = readCart(await props.bridge.execute(tool, { includeCatalog: false, forAdmission: true }))
     if (ticket !== generation || !props.authorized || props.bridge.getDocumentId() !== documentId)
       return
     review.value = { ...cart, owner, serviceUrl, documentId }
@@ -83,7 +83,7 @@ async function resume() {
     const status = parse(looseObject({ canRetry: boolean() }), await props.bridge.execute(recovery, {}))
     if (!status.canRetry)
       throw new Error(t('stage.kiosk.cart-handoff.unknown'))
-    const fresh = await props.bridge.execute(read, { includeCatalog: false })
+    const fresh = await props.bridge.execute(read, { includeCatalog: false, forAdmission: true })
     if (ticket !== generation || !props.authorized || props.operationPending || props.owner !== current.owner || props.serviceUrl !== current.serviceUrl || props.bridge.getDocumentId() !== current.documentId)
       throw new Error(t('stage.kiosk.cart-handoff.changed'))
     props.gate.resume(current.owner, current.serviceUrl, current.version, fresh)

@@ -1,10 +1,12 @@
 import type { KioskCustomerSessionOptions } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 
 import { useKioskCustomerSession as useSharedKioskCustomerSession } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
+import { nextTick } from 'vue'
 
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { resetConversationService } from '../services/kioskConversationRetry'
 import { scenarioRegistry } from '../services/scenario-registry'
+import { applyPendingOrderingSite, hasPendingOrderingSite } from './useKioskInteractiveServices'
 
 export type { AnonymousKioskCustomer, KioskCustomerSessionState } from '@proj-airi/stage-ui/composables/use-kiosk-customer-session'
 
@@ -22,9 +24,22 @@ export function useKioskCustomerSession(options: KioskCustomerSessionHostOptions
     resetPolicy: 'confirmed-completion',
     idleTimeoutMs: 180_000,
     resetInteractiveSurface: async () => {
-      if (await resetConversationService(interactiveServiceClient) === 'reload')
+      await resetConversationService(interactiveServiceClient)
+      const changingSite = hasPendingOrderingSite()
+      // Native reset verifies the old cart in its existing document. The next
+      // customer must still enter through the configured select-table URL;
+      // retaining that document would leave them on the previous menu page.
+      if (!changingSite)
         await scenarioRegistry.reloadActive()
       await options.endVisitorSession?.()
+      if (changingSite) {
+        // Revoke the old visitor before changing the published binding. PB's
+        // reset has already cleared its unfinished cart, retained login and
+        // checked pending work before this site switch.
+        applyPendingOrderingSite()
+        await nextTick()
+        await scenarioRegistry.reloadActive()
+      }
       options.resetConversation?.()
     },
   })

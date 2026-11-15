@@ -1,14 +1,15 @@
 import type { DeviceSettingsSnapshot, KioskVoiceVadSettings, PresenceState } from '@proj-airi/kiosk-proactive'
 import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
+import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
 
 import type { AnswerDecision, BrowserAnswer, BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 
-import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { normalizeOrderingPrices, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 
 import { decisionQuestionBudget } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 
@@ -63,7 +64,8 @@ export interface KioskProfile {
     }
     greetingPrompt: string
     greetingPhrases?: readonly string[]
-    interactiveService: { description: string, id: string, title: string, url: string }
+    orderingSites?: readonly OrderingSite[]
+    interactiveService: OrderingSite
     surveyUrl: string
     version: 1
     voiceConversationOnly: boolean
@@ -142,6 +144,16 @@ export function fetchDeviceSettings(signal?: AbortSignal) {
   return request<DeviceSettingsSnapshot>('/api/kiosk/settings', { signal })
 }
 
+/** Exchanges the operator PIN for an HttpOnly grant scoped to this enrolled device. */
+export function unlockKioskAdmin(pin: string, signal?: AbortSignal) {
+  return request<{ expiresAt: number }>('/api/kiosk/admin/session', { method: 'POST', body: JSON.stringify({ pin }), signal })
+}
+
+/** Revokes this browser's local settings grant when the operator closes the panel. */
+export function lockKioskAdmin() {
+  return request<{ locked: boolean }>('/api/kiosk/admin/session', { method: 'DELETE' })
+}
+
 /** Enrolls this browser as a development kiosk when the Server explicitly permits it. */
 export async function registerDevelopmentKiosk(registrationCode: string) {
   return await request<{ device: KioskDevice }>('/api/kiosk/development/register', {
@@ -150,9 +162,14 @@ export async function registerDevelopmentKiosk(registrationCode: string) {
   })
 }
 
+// Bookkeeping sits outside the model task deadline. Bound these waits too,
+// including response bodies, without automatically retrying uncertain writes.
+const visitorRequestTimeoutMs = 15_000
+
 /** Starts one durable visitor interaction using this device's assigned Profile. */
 export async function startKioskVisitorSession(serviceId: string) {
   return await request<{ session: KioskVisitorSession }>('/api/kiosk/visitor-sessions', {
+    signal: AbortSignal.timeout(visitorRequestTimeoutMs),
     method: 'POST',
     body: JSON.stringify({ serviceId }),
   })
@@ -181,6 +198,7 @@ export async function appendKioskInteraction(input: {
   visitorSessionId: string
 }) {
   return await request<{ entry: { id: string } }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/entries`, {
+    signal: AbortSignal.timeout(visitorRequestTimeoutMs),
     method: 'POST',
     body: JSON.stringify({ content: input.content, kind: input.kind, metadata: input.metadata ?? {} }),
   })
@@ -189,7 +207,7 @@ export async function appendKioskInteraction(input: {
 /** Reads a bounded page of text from the authenticated visitor's own session. */
 export async function fetchKioskSessionHistory(input: { before?: number, visitorSessionId: string }) {
   const cursor = input.before === undefined ? '' : `?before=${input.before}`
-  return await request<{ entries: Array<{ content: string, index: number, role: 'assistant' | 'user' }>, nextBefore?: number, total: number }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/history${cursor}`)
+  return await request<{ entries: Array<{ content: string, index: number, role: 'assistant' | 'user' }>, nextBefore?: number, total: number }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/history${cursor}`, { signal: AbortSignal.timeout(visitorRequestTimeoutMs) })
 }
 
 /** Records the terminal reason for a visitor interaction. */
@@ -198,6 +216,7 @@ export async function endKioskVisitorSession(input: {
   visitorSessionId: string
 }) {
   return await request<{ session: KioskVisitorSession }>(`/api/kiosk/visitor-sessions/${input.visitorSessionId}/end`, {
+    signal: AbortSignal.timeout(visitorRequestTimeoutMs),
     method: 'POST',
     body: JSON.stringify({ state: input.state }),
   })
@@ -401,7 +420,7 @@ export async function uploadKioskVisitorMedia(input: {
 /** Requests speech with Taiwan Traditional text, using the Site's private model/voice policy. */
 export async function synthesizeKioskSpeech(input: { locale: string, text: string, signal?: AbortSignal }) {
   const response = await requestAudio('/api/kiosk/audio/speech', {
-    body: JSON.stringify({ locale: input.locale, text: toTaiwanTraditionalChinese(input.text) }),
+    body: JSON.stringify({ locale: input.locale, text: toOrderingTraditionalChinese(normalizeOrderingPrices(input.text)) }),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
     signal: input.signal,

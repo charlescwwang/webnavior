@@ -1,4 +1,4 @@
-import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
+import type { ServiceTool, ToolExecution } from '@proj-airi/stage-shared/interactive-service'
 
 import type { BrowserEffect, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 
@@ -8,6 +8,7 @@ import { readonly, shallowRef } from 'vue'
 import { createBrowserCartSession } from './browserCartSession'
 import { beginBrowserCartTask, executeBrowserCartTool, executeBrowserReply } from './browserCartTask'
 import { createBrowserDialogue } from './browserDialogue'
+import { createBrowserPresentation } from './browserPresentation'
 
 const disposals: Array<() => void> = []
 const allow = { decide: vi.fn<(proposal: BrowserEffect) => Promise<EffectDecision>>(async () => ({ choice: 'ALLOW', provider: 'main' })), isCurrent: () => true }
@@ -155,7 +156,7 @@ it('supplies observed configurations and permits a semantically resolved cart ta
   Object.assign(facts.cart.lines[1], { productRef: 'p-1', configuration: 'plain', description: '', note: '' })
   const remove = { ...tool, name: 'browser_cart_remove' }
   expect(await executeBrowserCartTool(client, remove, { lineRef: 'original' })).toMatchObject({ status: 'verified' })
-  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ cartTarget: { selected: { name: '原餐', quantity: 1, description: '白飯 ×1', note: '' }, others: [{ name: '原餐', quantity: 2, description: '', note: '', sameConfiguration: false }] } }), expect.anything())
+  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ cartTarget: { selected: { name: '原餐', quantity: 1, description: '白飯 ×1', configuration: '白飯 ×1', note: '' }, others: [{ name: '原餐', quantity: 2, description: '', configuration: '', note: '', sameConfiguration: false }] } }), expect.anything())
   expect(client.execute).toHaveBeenLastCalledWith(remove, { lineRef: 'original' })
 })
 
@@ -175,7 +176,7 @@ it('presents a verified equivalent row group as one total rather than a single i
   facts.cart.lines.push({ ref: 'second', name: '原餐', quantity: 13 })
   Object.assign(facts.cart.lines[1], { productRef: 'p-1', configuration: 'plain', unitPrice: 10 })
   expect(await executeBrowserCartTool(client, { ...tool, name: 'browser_cart_quantity' }, { lineRef: 'original', lineRefs: ['original', 'second'], quantity: 5 })).toMatchObject({ status: 'verified' })
-  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ cartTarget: { selected: { name: '原餐', quantity: 30, description: '', note: '' }, others: [], groupSize: 2 }, deltas: [{ name: '原餐', kind: 'cart_line', mode: 'set', quantity: 5 }] }), expect.anything())
+  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ cartTarget: { selected: { name: '原餐', quantity: 30, description: '', configuration: '', note: '' }, others: [], groupSize: 2 }, deltas: [{ name: '原餐', kind: 'cart_line', mode: 'set', quantity: 5 }] }), expect.anything())
 })
 
 // Report: output/playwright/pb-electron/restored-S04-nov4-group-required-ref.json.
@@ -322,6 +323,44 @@ it('returns exact named product configurations instead of asking a redundant bro
   expect(dialogue.hasPending()).toBe(false)
 })
 
+// Report: this chat, Nov11; spoken product choices must match the actual PB screen.
+it.each(['browser_clarify_product', 'browser_product_get'])('withholds %s choices when their native presentation is cancelled', async (name) => {
+  const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'document', answer: async () => ({ kind: 'UNCERTAIN', provider: 'unavailable' }) })
+  disposals.push(beginBrowserCartTask('我要一份雞腿', { ...allow, dialogue }))
+  const context: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const tool = { ...context, name }
+  const present = { ...context, name: 'browser_present' }
+  const products = [{ ref: 'chicken', name: '雞腿便當', price: 100, configurations: [{ version: 'fresh', variantRef: '', name: '', unitPrice: 100, groups: [] }] }]
+  const execute = vi.fn(async (current: ServiceTool) => {
+    if (current.name === context.name)
+      return { products, cart: { version: 'current', lines: [], subtotal: 0 } }
+    if (current.name === 'browser_product_get')
+      return { ok: true, source: 'browser', status: 'clarification', effect: 'none' }
+    return { ok: true, source: 'browser', presentation: { products: [], cue: 'cancelled' } }
+  })
+  const client = { tools: readonly(shallowRef([context, tool, present])), execute }
+  const result = await executeBrowserCartTool(client, tool, name === 'browser_product_get' ? { names: ['雞腿'] } : { query: '雞腿' })
+  expect(result).toMatchObject({ ok: false, status: 'rejected', effect: 'none' })
+  expect(result).not.toHaveProperty('pendingCustomerChoice')
+  expect(execute).toHaveBeenCalledWith(present, { productRefs: ['chicken'], mode: 'information' })
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+// Report: this chat, Nov11; clearing recommendations must retire their old question.
+it('retires the old product question after a successful search without changing the cart', async () => {
+  const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'document', answer: async () => ({ kind: 'UNCERTAIN', provider: 'unavailable' }) })
+  const products = [{ ref: 'chicken', name: '雞腿便當', price: 100, configurations: [{ version: 'fresh', variantRef: '', name: '', unitPrice: 100, groups: [] }] }]
+  dialogue.presentProducts({ products, cart: { version: 'current', lines: [], subtotal: 0 } }, '雞腿', '我要雞腿')
+  expect(dialogue.hasPending()).toBe(true)
+  disposals.push(beginBrowserCartTask('這些都不要，先看全部', { ...allow, dialogue }))
+  const search: ServiceTool = { name: 'browser_search', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const execute = vi.fn(async () => ({ ok: true, source: 'browser', search: '', customerMessage: '已清除搜尋，回到目前完整菜單。' }))
+  const client = { tools: readonly(shallowRef([search])), execute }
+  expect(await executeBrowserCartTool(client, search, { query: '' })).toMatchObject({ ok: true, search: '' })
+  expect(execute).toHaveBeenCalledExactlyOnceWith(search, { query: '' })
+  expect(dialogue.hasPending()).toBe(false)
+})
+
 // Report: docs/plans/2026-10-28-windows-kiosk-electron.md, Nov2 S01/S11 baseline.
 it.each(['先不要排骨，還有什麼？', '有完全不含花生的便當嗎？', '那熱量最低的是哪個？'])('does not present an unfiltered PB catalog as a verified answer to %s', async (text) => {
   disposals.push(beginBrowserCartTask(text, allow))
@@ -428,4 +467,39 @@ it.each([false, true])('keeps dedicated cart review behind visitor ownership wit
   if (owned)
     expect(client.execute).toHaveBeenNthCalledWith(2, review, {})
   expect(decide).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov15; searching 雞腿 found two dishes, but the Host dropped a previously recommended match.
+it.each(['recommendation', 'other-recommendations'])('preserves named matches unless the model requests other recommendations: %s', async (mode) => {
+  const read: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
+  const present = { ...read, name: 'browser_present' }
+  const listeners = new Set<(event: ToolExecution) => void>()
+  let sequence = 0
+  const execute = vi.fn(async (tool: ServiceTool, input: Record<string, unknown>) => {
+    const operationId = String(++sequence)
+    const refs = input.productRefs as string[]
+    const event = { tool, input, operationId, documentId: 'page', connectionId: 'connection' }
+    listeners.forEach(listener => listener({ ...event, phase: 'called' }))
+    const result = { ok: true, source: 'browser', customerMessage: refs.join('、'), presentation: { cue: 'shown', products: refs.map(ref => ({ ref, name: ref, price: 10 })) } }
+    listeners.forEach(listener => listener({ ...event, phase: 'resolved', result }))
+    return result
+  })
+  const client = { tools: readonly(shallowRef([read, present])), execute, availability: shallowRef<'ready'>('ready'), getDocumentId: () => 'page', onExecution: (listener: (event: ToolExecution) => void) => {
+    listeners.add(listener)
+    return () => listeners.delete(listener)
+  } }
+  const presentation = createBrowserPresentation(client, () => 'visitor')
+  const release = beginBrowserCartTask('其他推薦', { ...allow, presentation })
+  try {
+    await executeBrowserCartTool(client, present, { productRefs: ['甲餐', '乙餐'] })
+    const refs = mode === 'other-recommendations' ? ['丙餐'] : ['乙餐', '丙餐']
+    expect(await executeBrowserCartTool(client, present, { productRefs: ['乙餐', '丙餐'], mode })).toMatchObject({ customerMessage: refs.join('、'), presentation: { products: refs.map(ref => ({ ref })) } })
+    expect(execute).toHaveBeenLastCalledWith(present, { productRefs: refs, mode, deferVisual: true })
+    expect(await executeBrowserCartTool(client, present, { productRefs: ['丙餐'], mode: 'other-recommendations' })).toMatchObject({ dataOnly: true })
+    expect(execute).toHaveBeenCalledTimes(2)
+  }
+  finally {
+    release()
+    presentation.dispose()
+  }
 })

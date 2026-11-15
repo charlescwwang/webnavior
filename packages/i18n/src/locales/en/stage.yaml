@@ -23,7 +23,42 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
-  information-unavailable: The current page does not provide enough information to verify that condition. I can describe the available menu information.
+  media-unlinked: "Audio has not arrived or has no verified transcript link. See the original recordings below."
+  media-audio-list: "Original recordings (timestamps do not establish transcript links)"
+  media-play: "Play original recording"
+  request-status:
+    queued: "Waiting"
+    processing: "Processing"
+    review: "See reply to continue"
+    completed: "Completed"
+    cancelled: "Cancelled"
+    failed: "Incomplete; see reply"
+  voice-debug:
+    tts-overlap: "Sound detected during TTS; check for echo or interruption"
+    speech-start: "VAD speech started"
+    speech-end: "VAD speech ended"
+    blocked: "Not admitted to ordering"
+    tts: "Test speech playback"
+    interrupted: "Test speech interrupted"
+    mode-admin: "Operator audio test"
+    mode-text: "Text mode"
+    mode-customer: "Customer voice ordering"
+    microphone-on: "Capture pipeline running"
+    microphone-off: "Capture pipeline stopped"
+    text-mode: "Customer microphone disabled in text mode"
+    admin-paused: "Customer input paused while operator settings are open"
+    reception-reset: "Reception ending or resetting; input paused"
+    preparing: "Ordering page or cart preparation in progress; input paused"
+    presence-required: "Customer presence requirements are not met"
+    admin-title: "Microphone, echo and interruption test"
+    admin-enable: "Enable operator audio test"
+    admin-description: "Recognizes audio in this panel only. Does not add customer messages or operate the order. Closing settings stops the test."
+    play-test: "Play speech and test interruption"
+    test-text: "This is the microphone and echo test. You can interrupt me now."
+  information-unavailable: I could not find that information. Please ask a staff member to check it for you.
+  checkout-guidance:
+    empty: Your cart is empty. Choose your items, then follow the ordering page to check out.
+    ready: Please check the items, quantities and amount on screen, then follow the ordering page to check out. No order or payment has been submitted.
   product-presentation:
     title: Featured products
     completed: Change verified
@@ -31,10 +66,10 @@ kiosk:
     price: 'From {price}'
     capability-unavailable: This ordering service has no Jev candidate interface. Handed to the assistant.
   cart-handoff:
-    reset-description: End this reception and discard unsubmitted drafts. The website cart and shared login remain; unfinished items require staff review before another customer can change them.
+    reset-description: Ending this reception automatically clears unsubmitted cart items and drafts while keeping the shared login. The next reception starts only after the cart is confirmed empty.
     title: External cart handoff
-    required: An unfinished cart needs staff review before assisted changes can continue. Menu queries and manual use remain available.
-    explanation: Resume only after confirming this is the same in-progress cart. A new visitor never clears old items or unlocks an uncertain operation.
+    required: There are unfinished items in the cart. Choose Restart / New order to clear them and start ordering again.
+    explanation: Review and confirm before continuing the same cart. Ending reception automatically clears unsubmitted items. Uncertain prior operations still require checking first.
     prepare: Prepare this visitor session
     inspect: Review current cart
     total: 'Current subtotal: {amount}'
@@ -43,8 +78,38 @@ kiosk:
     changed: The page or visitor changed. Review the cart again.
     unknown: A previous operation is uncertain. Handoff review cannot unlock it.
     failed: Cannot verify the cart. Review it again later.
+  native-view-loading: Loading…
   native-view-failed: The service screen could not load. Ask staff to check the connection and reopen it.
   service-editor-description: Choose the website shown on the kiosk, then publish the saved experience. An admin preview does not verify login or assistant controls; check those on the device.
+  restart-order: Restart / New order
+  restarting-order: Preparing a new order. Please wait…
+  release:
+    loaded: Loaded version
+    recover: Repair admin cache
+  presence-diagnostics:
+    camera: Camera
+    session: Session
+  service-fault:
+    title: Service paused
+    spoken: An unexpected situation was detected. Staff have been notified for you.
+    description: Your items are retained. A staff member can enter the PIN to continue, or you can clear this order and start a new one.
+    unlock: Staff PIN unlock
+    restart: Clear contents and start a new order
+  asr-awaiting-decision: Speech recognized (confirming)
+  admin-access:
+    trigger: Tap five times to open administrator mode
+    mode: Administrator mode
+    title: Enter PIN
+    description: Enter the administrator PIN using the number pad below.
+    pin-label: Administrator PIN
+    keypad: PIN number pad
+    clear: Clear
+    backspace: Delete last digit
+    cancel: Cancel
+    continue: Continue
+    verification-failed: Could not verify the PIN. Check the connection or ask an administrator to check the Server PIN configuration.
+    rate-limited: Too many PIN attempts. Wait one minute before trying again.
+    incorrect-pin: Incorrect PIN. Please try again.
   service-recovery:
     browser-unavailable: The ordering page data is unavailable. No action was taken. Please retry later or use the screen.
     queued: Received. Waiting for the previous request to finish…
@@ -54,13 +119,56 @@ kiosk:
     ignored: No ordering action was taken for this message.
     uncertain: Please rephrase your request or use the screen.
     failed: Unable to confirm right now. Please try again or use the screen.
-  voice-presence-ignored: Ignored because local presence is unavailable
+  voice-presence-ignored: Voice admission check failed; result ignored
+  voice-capturing: Speech detected; waiting for the end
+  voice-blocked: Audio received; not sent to ASR
+  voice-block-reasons:
+    observation_disabled: Visual observation is disabled
+    fresh_person: Fresh valid person observation
+    not_observing: Camera inference has not started
+    no_person: No observation meets voice admission conditions yet
+    low_quality: Person detection quality is below the admission threshold
+    outside_zone: Detected person is outside the configured zone
+    stale: Valid person observation has expired
+    no_candidate: No voice candidate was created at speech start
+    queue_full: Voice processing queue is full
+    empty_audio: Final utterance contains no audio samples
+    capture_stopped: Microphone capture stopped or restarted
+    incomplete_segment: Previous speech did not form a complete segment
+  voice-stages:
+    speech_start: 'Check: VAD speech start'
+    speech_end: 'Check: VAD complete segment'
+    before_asr: 'Check: before ASR upload'
+    after_asr: 'Check: after ASR response'
+    capture: 'Check: capture lifecycle'
+  character-editor:
+    builtin: Using the built-in Kiosk character. No site-specific model is assigned.
+    card-package: Choose an AIRI character-card ZIP containing a VRM or Live2D model. Its name, personality, scenario and system instructions will be imported too.
+    publish-hint: Uploading updates only the draft you are editing. Save and publish it to this site, then reopen an idle Kiosk to apply the character and motions.
+  character-package:
+    title: Portable character package
+    description: Bundle persona, greetings, avatar, motions and background for backup or reuse at another Site.
+    download: Download character package
+    upload: Upload character package ZIP
+    imported: Character package loaded into this draft. Review, save and publish to apply.
+    select-site: Select a Site first.
+    invalid-size: Character packages must be ZIP files between 1 byte and 120 MB.
+    too-large: This character package exceeds the server upload limit.
+    request-failed: Character package processing failed. Try again later.
+    download-failed: Could not download the character package.
+    import-failed: Character package import failed. Your draft is unchanged.
+    hint: Downloads include unsaved character edits. ZIP limit is 120 MB. Import replaces the character fields in this editor; review, save and publish to apply. The destination merchant URLs, operating instructions and system settings are preserved.
   text-console:
     title: Text input and trace
+    float: Float window
+    popup-failed: Could not open the floating window. You can still type here. Select Float window to try again.
     reset: Reset position
     collapse: Collapse
     expand: Expand
   wait:
+    answer-executing: Applying your answer…
+    answer-done: Your choice has been checked.
+    answer-error: Please check the current screen before continuing.
     recognizing: Understanding your request…
     confirming: Checking your request…
     operating: Working on your request on screen…
@@ -122,6 +230,14 @@ kiosk:
     vlm-prompt-hint: Generates an opening from the current image and this guidance. Save and publish changes.
 customer-session:
   completion:
+    table-number: Table
+    total: Total
+    pickup-number: Pickup number
+    survey-switch-title: Post-order survey
+    survey-switch-label: Show post-order survey
+    survey-switch-description: Saved for this browser across reloads. Turning this off hides only the survey; order completion details remain visible.
+    order-number: POS order number
+    pickup-unavailable: No pickup number was provided. Please confirm collection details with staff.
     title: Order submitted
     description: Thank you for your order. This order flow is complete.
     simulated-notice: This is a simulated order and has not been sent to the POS system.
@@ -130,12 +246,12 @@ customer-session:
     qr-alt: Survey QR code
     qr-loading: Preparing the survey QR code…
     qr-error: The survey QR code could not be generated right now.
-    order-title: Take your order to your phone
-    order-description: Scan this order code first, then scan your table code and confirm the delivery table.
-    order-qr-alt: Order continuation QR code
-    order-qr-loading: Preparing the order code…
-    order-qr-error: The order code could not be generated. Please use the link below.
-    order-link: Open the order continuation page on this computer
+    order-title: Take your order details with you
+    order-description: Worried about forgetting your pickup number? Scan to view your pickup number and order details on your phone.
+    order-qr-alt: Order details QR code
+    order-qr-loading: Preparing your order details QR code…
+    order-qr-error: The order details QR code could not be generated. Please use the link below.
+    order-link: Open order details
   idle-confirmation:
     title: Would you like to continue?
     description: Your current conversation and selections are still here. Choose continue to keep going, or clear the current content and start over.
@@ -246,24 +362,88 @@ kiosk-agent:
   manual-control: Manual controls are ready. Completed changes are kept; remaining operations have stopped.
   timeout: The assistant took too long to respond. Check the screen before trying again.
   provider-error: The assistant could not reach the model or receive its reply. Please try again later.
-  tool-rejected: The ordering system did not accept this operation. Check the screen before continuing.
-  tool-limit: The assistant reached its processing limit. Check the completed steps on screen before continuing.
+  tool-rejected: I have not confirmed the result yet. Please check the screen and tell me what needs adjusting.
+  sign-in-required: The ordering website is signed out or its login has expired. Sign in on this kiosk's ordering page, then ask again.
+  tool-limit: Some steps are still unfinished. Please tell me what you would like to do next.
   duplicate-tool-call: The assistant requested a duplicate operation. It was stopped to avoid executing it twice. Please check the screen.
   session-error: The conversation could not be started. Please check the kiosk connection.
   no-reply: I couldn’t finish the reply this time. Please try again.
   result-unknown: The operation result is uncertain. Please check the menu, cart or order currently shown.
   reply-incomplete: This reply is incomplete. Please try again or explain your request.
+  utterance-deferred: Your last request has not completed. Try again shortly, or use the screen.
+  utterance-failed: Voice processing stopped. Your words have been retained. Check the cart or order before asking staff for help to avoid duplicate operations.
+  voice-presence-lost: Your request was not completed because your presence in the interaction area could not be confirmed. Stand in front of the camera and try again, or use the screen.
+  decision-failed: Processing failed before any action was performed. What would you like to request again?
+  greeting-reply: Hello, what would you like to order?
+  queued-expired: This request waited too long and was not executed. What would you like to request again?
+  queued-cancelled: This request was cancelled before execution.
+  unstarted-replaced: The previous request was stopped before execution. Processing your new request.
+  unstarted-combined: Your additional request was received and will be handled with the pending request.
+  meaning-unresolved: I still could not understand this request. No action was performed. You can order using the screen.
   decision-uncertain: I couldn’t understand your request. Please say it again.
 
 system-one:
+  decisions-base-url-hint: 'Use the API root, usually https://api.openai.com/v1, without /decisions.'
+  decisions-api-key: 'OpenAI API key (required for a new profile)'
+  decisions-discovery-hint: 'Enter a model ID or discover supported models. Save and verify to check this key can call Decisions.'
   slm-profile-name: 'Local SLM'
   slm-label: 'SLM (field test, OpenAI compatible)'
   slm-option: 'SLM (field test, OpenAI compatible / Docker Model Runner)'
-  model-setup-hint: 'Choose an engine and model, save, then run readiness. SLM returns one choice without reasoning text or tool authority.'
+  model-setup-hint: 'Choose a decision source and model, save, then verify. OpenAI Decisions uses its native API; credentials stay on the server.'
   slm-base-url-hint: 'Use the OpenAI-compatible API root. Local Docker Model Runner usually uses http://127.0.0.1:12434/engines/v1 without /chat/completions.'
   available-models: 'Available models'
   read-models: 'Read available models'
   discovery-hint: 'Read available IDs from /models. Readiness calls the selected model. Discovery does not mean the model is loaded.'
-  panel-description: 'Choose Dasein open-jev, lookski/openjev or SLM for Kiosk Fast Path. They share staged admission, demand and operation selection. SLM returns one choice. Readiness checks connectivity with a real decision; semantic quality requires separate testing.'
-  policy-description: 'Jev and SLM first separate service, greeting, background and uncertainty, then select demand and operation groups. The application owns candidates, confirmation, payment and WebMCP authorization. Complex requests reach Main intact.'
-  policy-hint: 'Custom instructions apply to demand interpretation after admission. They cannot expand service scope or operation authority. Existing custom text is preserved; restore and save the default to use the concise current policy.'
+  panel-description: 'Choose Jev or OpenAI Decisions to select complete actions from current facts. Uncertain requests reach the main assistant. SLM retains its existing integration.'
+  policy-description: 'Jev and OpenAI Decisions compare current complete actions directly. The application validates targets, quantities, live questions and results. Queries do not authorize purchases; partial fulfillment is not completion.'
+  policy-hint: 'Instructions guide meaning, not operation authority. Background speech is configured per device. Main assistant settings remain independent.'
+kiosk-devices:
+  title: Kiosk devices
+  description: Browse devices across sites, sort by creation time, name or site, and open individual device settings.
+  site: Site
+  all-sites: All sites
+  sort: Sort by
+  sort-created: Creation time
+  sort-name: Device name
+  sort-site: Site name
+  newest-first: Newest first
+  oldest-first: Oldest first
+  ascending: Name ascending
+  descending: Name descending
+  refresh: Refresh
+  list: Kiosk device list
+  device-count: 'Devices ({count})'
+  select-visible: Select all visible devices
+  loading: Loading devices…
+  load-failed: Could not load devices. Refresh and try again.
+  save-failed: Could not save settings. Check your connection and permissions.
+  select-device: 'Select {name} at {site}'
+  created: Created
+  registration: 'Registration: {method}'
+  disabled: Disabled
+  disable: Disable
+  enable: Enable
+  delete: Delete
+  empty: No Kiosk devices are registered in this view.
+  selected-count: '{count} devices selected'
+  disable-count: 'Disable {count} selected devices'
+  delete-count: 'Delete {count} disabled devices'
+  selected-devices: selected devices
+  confirm-disable: 'Disable {count} Kiosk devices?'
+  confirm-enable: 'Enable {count} Kiosk devices?'
+  confirm-delete: 'Delete {count} Kiosk devices?'
+  describe-disable: 'Disable {name} and revoke browser credentials. Each device is handled separately; another failure will not undo completed actions.'
+  describe-enable: 'Restore the original browser credentials for {name}.'
+  describe-delete: 'Remove only disabled devices in {name}. Visitor records, transcripts and media are retained. Another failure will not undo completed actions.'
+  action-result: '{action}: {succeeded} completed, {failed} not completed.'
+  cancel: Cancel
+  confirm: Confirm
+  processing: Processing…
+  settings-title: 'Device settings: {name}'
+  settings-description: 'Site: {site}. Device settings affect this device only.'
+  close-settings: Close device settings
+  close: Close
+  retention-title: Site interaction link duration
+  retention-description: 'This duration applies to new sessions on every device at {site}. Expiry removes frontend links; transcripts and recorded media are retained.'
+  retention-days: Frontend link days
+  retention-saved: Site interaction link duration updated for new sessions.

@@ -1,13 +1,69 @@
 import { expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
 import { page } from 'vitest/browser'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, nextTick, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 
 import zhHant from '../../../../packages/i18n/src/locales/zh-Hant/stage.yaml'
 import KioskTextConsole from './kioskTextConsole.vue'
 
 import '@unocss/reset/tailwind.css'
+
+// User request (2026-11-11): native PB text entry should float like master.
+it('moves one live console into its popup, retaining input, updates and submission ownership', async () => {
+  await page.viewport(1000, 800)
+  const onSimulate = vi.fn()
+  const onFloatingChange = vi.fn()
+  const trace = shallowRef('first trace')
+  const screen = render(defineComponent({ setup: () => () => h('main', [
+    h(KioskTextConsole, { dockTarget: '#popup-fallback', nativePopup: true, trace: trace.value, onSimulate, onFloatingChange }),
+    h('div', { id: 'popup-fallback' }),
+  ]) }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
+  let popup: Window | null = null
+  try {
+    await expect.poll(() => onFloatingChange.mock.calls.at(-1)?.[0]).toBe(true)
+    popup = window.open('', 'airi-kiosk-text-console')
+    expect(popup).not.toBeNull()
+    const panel = popup!.document.querySelector<HTMLElement>('section[aria-label="文字輸入與 Trace"]')!
+    const input = popup!.document.querySelector<HTMLTextAreaElement>('textarea')!
+    expect(panel.parentElement).toBe(popup!.document.body)
+    expect(document.querySelector('textarea')).toBeNull()
+    await expect.poll(() => getComputedStyle(panel).position).toBe('relative')
+    expect(getComputedStyle(panel.querySelector('.console-handle')!).getPropertyValue('-webkit-app-region')).toBe('drag')
+    input.value = '雞腿便當一份'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    popup!.document.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click()
+    await nextTick()
+    expect(input.value).toBe('雞腿便當一份')
+    expect(getComputedStyle(panel.querySelector('.console-content')!).display).toBe('none')
+    popup!.document.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click()
+    trace.value = 'second trace'
+    await nextTick()
+    expect(panel.querySelector('pre')!.textContent).toBe('second trace')
+    popup!.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    expect(onSimulate).toHaveBeenCalledTimes(1)
+    expect(onSimulate).toHaveBeenCalledWith('雞腿便當一份')
+    await nextTick()
+    expect(input.value).toBe('')
+    input.value = '保留草稿'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    popup!.close()
+    await expect.poll(() => onFloatingChange.mock.calls.at(-1)?.[0]).toBe(false)
+    await expect.element(page.getByRole('textbox')).toHaveValue('保留草稿')
+    await page.getByRole('button', { name: '浮動視窗', exact: true }).click()
+    await expect.poll(() => onFloatingChange.mock.calls.at(-1)?.[0]).toBe(true)
+    popup = window.open('', 'airi-kiosk-text-console')
+    expect(popup!.document.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('保留草稿')
+    screen.unmount()
+    await expect.poll(() => popup!.closed).toBe(true)
+  }
+  finally {
+    screen.unmount()
+    popup?.close()
+  }
+})
 
 it('floats outside the conversation, drags by its header and stays inside the viewport', async () => {
   await page.viewport(1000, 800)

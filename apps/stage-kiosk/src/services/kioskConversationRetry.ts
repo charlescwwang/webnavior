@@ -2,7 +2,9 @@ import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/service
 
 import { browserRecoveryContextSchema } from '@proj-airi/stage-shared/interactive-service'
 import { conversationContextSchema, serviceContextKey } from '@proj-airi/stage-shared/kiosk-conversation'
-import { literal, looseObject, parse, string } from 'valibot'
+import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
+import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
+import { array, literal, looseObject, optional, parse, picklist, safeParse, string, unknown } from 'valibot'
 
 import { conversationDecisionStateFrom } from './kiosk-fast-path'
 
@@ -23,7 +25,7 @@ const retrySafeToolNames = new Set([
  * payment action can create a duplicate customer operation.
  */
 export function isKioskConversationRetrySafeTool(toolName: string, input?: Record<string, unknown>) {
-  return retrySafeToolNames.has(toolName) || (toolName === 'menu_get' && input?.display === false)
+  return retrySafeToolNames.has(nativeOrderingToolName(toolName)) || (toolName === 'menu_get' && input?.display === false)
 }
 
 /** Original intent context is retained for correlation, never as reusable operation authority. */
@@ -140,20 +142,66 @@ export async function recoverConversationService(client: Pick<ReturnType<typeof 
   }
 }
 
-/** Ends browser draft authority while retaining the vendor document and shared login. */
+/** Ends browser reception only after native cart clearing; retains the document and shared login. */
 export async function resetConversationService(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute' | 'refresh' | 'waitUntilReady' | 'getDocumentId'>) {
   if (!client.tools.value.some(tool => tool.name === 'browser_recovery_context'))
     return 'reload' as const
-  const tool = client.tools.value.find(tool => tool.name === 'browser_customer_reset')
-  if (!tool)
+  if (!client.tools.value.some(tool => tool.name === 'browser_customer_reset'))
     throw new Error('Browser service does not support a verified customer reset.')
+  const reader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
+  if (reader) {
+    const current = parse(looseObject({ ok: literal(true), page: string(), selectedTable: optional(string()), cart: looseObject({ lines: array(unknown()) }) }), await client.execute(reader, { includeCatalog: false, forAdmission: true }))
+    if (current.page === 'table') {
+      // Even an empty cart cannot dismiss an unresolved dispatched operation.
+      await readConversationRetryContext(client)
+      // A verified empty table cart needs no hidden Start or fake reset receipt.
+      // The lifecycle still retires this visitor and reloads the table entry.
+      if (!current.cart.lines.length)
+        return 'reload' as const
+      const start = client.tools.value.find(tool => tool.name === 'browser_start_ordering')
+      if (!start || !current.selectedTable)
+        throw new Error('請先選擇桌號或櫃台取餐，才能清除未完成的購物車。')
+      // Explicit Restart authorizes clearing the unfinished cart. Enter through
+      // the real selected-table button to reach PB's clear control, without
+      // choosing a different table or issuing a merchant order.
+      const started = parse(menuEntryReceiptSchema, await client.execute(start, { name: current.selectedTable, forReset: true }))
+      if (started.selectedTable !== current.selectedTable)
+        throw new Error('清理購物車前的選桌狀態已變更。')
+      const deadline = Date.now() + 15_000
+      while (true) {
+        await client.waitUntilReady()
+        const freshReader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
+        if (!freshReader)
+          throw new Error('清理購物車前的讀取功能尚未就緒。')
+        // A ready transport may still be the table document while PB awaits
+        // its Start request. Read-only polling waits for the actual SPA route;
+        // it never repeats Start or a cart effect.
+        const menu = parse(looseObject({ ok: literal(true), page: picklist(['table', 'menu']), cart: looseObject({ tableName: optional(string()) }) }), await client.execute(freshReader, { includeCatalog: false, forAdmission: true }))
+        if (menu.page === 'menu') {
+          if (menu.cart.tableName !== current.selectedTable)
+            throw new Error('清理購物車前的桌號尚未確認。')
+          break
+        }
+        if (Date.now() >= deadline)
+          throw new Error('網站尚未完成切換，請稍後再按重新開始。')
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+    }
+  }
   // End the advertised visual owner before admitting the reset's control
   // revision. Accepted commerce still settles through the document FIFO.
   const visual = client.tools.value.find(tool => tool.name === 'browser_present')
   if (visual)
     await client.execute(visual, { productRefs: [] })
   const documentId = client.getDocumentId()
-  const result = parse(looseObject({ ok: literal(true), status: literal('customer-reset'), cartPreserved: literal(true), documentId: string() }), await client.execute(tool, {}))
+  const tool = client.tools.value.find(tool => tool.name === 'browser_customer_reset')
+  if (!tool)
+    throw new Error('Browser reset control changed during preparation.')
+  const raw = await client.execute(tool, {})
+  const failure = safeParse(looseObject({ ok: literal(false), customerMessage: string() }), raw)
+  if (failure.success)
+    throw new Error(failure.output.customerMessage)
+  const result = parse(looseObject({ ok: literal(true), status: literal('customer-reset'), cartCleared: literal(true), documentId: string() }), raw)
   if (!documentId || result.documentId !== documentId || client.getDocumentId() !== documentId)
     throw new Error('Browser document changed during customer reset.')
   client.refresh()

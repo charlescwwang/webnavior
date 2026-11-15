@@ -62,3 +62,11 @@ it('independently toggles diagnostic overlays and restores browser preferences o
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.presence', exact: true })).toHaveAttribute('aria-checked', 'true')
   await expect.element(reopened.getByRole('switch', { name: 'deviceSettings.localDiagnostics.decision', exact: true })).toHaveAttribute('aria-checked', 'true')
 })
+
+it('keeps operator speech playback disabled until its separate microphone test is enabled', async () => {
+  const labels = { 'admin-title': '音訊測試', 'admin-enable': '啟用音訊測試', 'admin-description': '管理頁專用', 'play-test': '播放測試' }
+  const screen = render(KioskAdminPanel, { props: { sessionEnding: false, textOnlyMode: true, cameraPreviewEnabled: false, conversationFontSize: 20, paused: false, decisionDiagnosticsEnabled: false, idleDiagnosticsEnabled: false, presenceDiagnosticsEnabled: false }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-TW', messages: { 'zh-TW': { stage: { kiosk: { 'voice-debug': labels } } } } })] } })
+  await expect.element(screen.getByRole('button', { name: '播放測試' })).toBeDisabled()
+  await screen.getByRole('switch', { name: '啟用音訊測試' }).click()
+  await expect.element(screen.getByRole('button', { name: '播放測試' })).toBeEnabled()
+})

@@ -7,11 +7,14 @@ import type { KioskReplyFailureReason } from '../../../server/src/services/domai
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
 import type { KioskAgentInteractionMode, KioskConversationDecisionState, KioskInteractionEntryKind, KioskToolDefinition } from '../services/kiosk-device'
 
+import { browserToolResult } from '@proj-airi/stage-shared/browser-conversation'
+import { browserSignInRequiredSchema } from '@proj-airi/stage-shared/interactive-service'
 import { serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
-import { productPresentationSchema } from '@proj-airi/stage-shared/product-presentation'
+import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
+import { browserPresentationInputSchema, productPresentationSchema } from '@proj-airi/stage-shared/product-presentation'
 import { executeTool } from '@xsai/shared-chat'
 import { rawTool } from '@xsai/tool'
-import { array, maxLength, minLength, pipe, safeParse, strictObject, string } from 'valibot'
+import { safeParse } from 'valibot'
 import { readonly, shallowRef } from 'vue'
 
 import { appendKioskInteraction, endKioskVisitorSession, fetchKioskSessionHistory, recordKioskOrderResult, sendKioskAssistantAction, startKioskVisitorSession, streamKioskConversationMessage } from '../services/kiosk-device'
@@ -24,7 +27,7 @@ export interface ConversationTurnResult {
   /** Tools submitted for execution in this turn, including rejected attempts; never historical receipts. */
   requestedTools: string[]
   status: 'completed' | 'incomplete' | 'failed'
-  reason?: KioskReplyFailureReason | 'context-unavailable' | 'service-unavailable' | 'tool-rejected' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
+  reason?: KioskReplyFailureReason | 'context-unavailable' | 'service-unavailable' | 'tool-rejected' | 'sign-in-required' | 'tool-limit' | 'duplicate-tool-call' | 'session-error' | 'manual-control'
 }
 
 interface ConversationPresentationCallbacks {
@@ -36,7 +39,9 @@ interface ConversationPresentationCallbacks {
   utteranceId?: number
   decisionState?: KioskConversationDecisionState
   /** Refreshes tools before each model round; owned Menu also supplies its current decision state. */
-  prepareRound?: () => Promise<{ decisionState?: KioskConversationDecisionState, tools: Tool[] }>
+  prepareRound?: (signal: AbortSignal) => Promise<{ decisionState?: KioskConversationDecisionState, tools: Tool[] }>
+  /** Host-owned literal answer; preparation is read-only, execution follows durable user recording. */
+  prepareQuestionAnswer?: () => Promise<(() => Promise<unknown>) | undefined>
   onAssistantDelta?: (text: string) => void
   onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
   onToolRequested?: (toolName: string) => void
@@ -65,6 +70,9 @@ export function useKioskInteractionRecording() {
     // releasing the UI before its receipt would allow conflicting cart writes.
     activeControl.controller.abort()
   }
+  // A reset retires starts/ends as well as model work. Late callbacks may
+  // finish server-side cleanup, but cannot adopt or clear another reception.
+  let lifecycle = 0
   let pendingStart: Promise<string | undefined> | undefined
   let pendingAppend: Promise<unknown> = Promise.resolve()
 
@@ -74,21 +82,31 @@ export function useKioskInteractionRecording() {
     if (pendingStart)
       return await pendingStart
 
+    const generation = lifecycle
     pendingStart = (async () => {
       starting.value = true
       error.value = undefined
       try {
         const { session } = await startKioskVisitorSession(serviceId)
+        if (generation !== lifecycle) {
+          // The server created this retired session after local reset. Close
+          // that exact ID; never read the replacement's current ID here.
+          await endKioskVisitorSession({ visitorSessionId: session.id, state: 'cancelled' }).catch(() => undefined)
+          return undefined
+        }
         visitorSessionId.value = session.id
         return session.id
       }
       catch {
-        error.value = '無法建立互動會話，請確認 kiosk 已取得發布設定。'
+        if (generation === lifecycle)
+          error.value = '無法建立互動會話，請確認 kiosk 已取得發布設定。'
         return undefined
       }
       finally {
-        starting.value = false
-        pendingStart = undefined
+        if (generation === lifecycle) {
+          starting.value = false
+          pendingStart = undefined
+        }
       }
     })()
     return await pendingStart
@@ -99,6 +117,7 @@ export function useKioskInteractionRecording() {
       return
 
     const sessionId = visitorSessionId.value
+    const generation = lifecycle
     const save = async () => {
       try {
         const { entry } = await appendKioskInteraction({
@@ -110,7 +129,8 @@ export function useKioskInteractionRecording() {
         return entry
       }
       catch {
-        error.value = '互動資料暫時無法保存。'
+        if (generation === lifecycle && visitorSessionId.value === sessionId)
+          error.value = '互動資料暫時無法保存。'
       }
     }
     const nextAppend = pendingAppend.then(save, save)
@@ -118,16 +138,46 @@ export function useKioskInteractionRecording() {
     return await nextAppend
   }
 
+  // This map belongs to one reception. Multiple routes can record the same
+  // utterance, but its audio must link to exactly one durable transcript entry.
+  const transcripts = new Map<number, Promise<{ entry: Awaited<ReturnType<typeof appendKioskInteraction>>['entry'], visitorSessionId: string } | undefined>>()
+  function recordTranscript(input: { id: number, text: string, source: 'asr' | 'simulation' }) {
+    const existing = transcripts.get(input.id)
+    if (existing)
+      return existing
+    const sessionId = visitorSessionId.value
+    const generation = lifecycle
+    const pending = (async () => {
+      if (!sessionId)
+        return
+      const entry = await append('asr_transcript', input.text, { utteranceId: input.id, source: input.source })
+      if (entry && generation === lifecycle && visitorSessionId.value === sessionId)
+        return { entry, visitorSessionId: sessionId }
+    })()
+    transcripts.set(input.id, pending)
+    return pending
+  }
+
   async function end(state: 'completed' | 'cancelled' | 'idle') {
-    if (!visitorSessionId.value)
+    const sessionId = visitorSessionId.value
+    const generation = ++lifecycle
+    transcripts.clear()
+    // Old appends retain their captured session, but cannot serialize the next
+    // reception behind a provider/network acknowledgement that may never arrive.
+    pendingAppend = Promise.resolve()
+    activeControl?.controller.abort()
+    visitorSessionId.value = undefined
+    pendingStart = undefined
+    starting.value = false
+    if (!sessionId)
       return
 
     try {
-      await endKioskVisitorSession({ visitorSessionId: visitorSessionId.value, state })
-      visitorSessionId.value = undefined
+      await endKioskVisitorSession({ visitorSessionId: sessionId, state })
     }
     catch {
-      error.value = '互動會話暫時無法結束。'
+      if (generation === lifecycle && !visitorSessionId.value)
+        error.value = '互動會話暫時無法結束。'
     }
   }
 
@@ -168,7 +218,7 @@ export function useKioskInteractionRecording() {
         agentMode,
         requestedTools: [...requestedTools],
         reason,
-        status: requestedTools.length === 0 && ['provider-error', 'timeout', 'context-unavailable', 'service-unavailable'].includes(reason) ? 'failed' : 'incomplete',
+        status: requestedTools.length === 0 && ['provider-error', 'timeout', 'context-unavailable', 'service-unavailable', 'session-error'].includes(reason) ? 'failed' : 'incomplete',
       }
     }
 
@@ -195,12 +245,17 @@ export function useKioskInteractionRecording() {
       let toolsForTurn = [...tools, historyTool]
       let toolDefinitions: KioskToolDefinition[] = []
       let decisionState = callbacks.decisionState
+      // One deadline covers the entire Agent task, not a fresh budget per
+      // continuation. It cancels model transport only, never an accepted POS
+      // effect; browser tools settle through their own result boundary.
+      deadline = AbortSignal.timeout(Math.min(serviceRecoveryLimits.turnMs, Math.max(1, callbacks.budgetMs ?? serviceRecoveryLimits.turnMs)))
+      const signal = AbortSignal.any([control.controller.signal, deadline, ...(callbacks.signal ? [callbacks.signal] : [])])
       // The callback crosses the Menu IO seam. Replace facts/tool scope, never
       // accumulate snapshots or overwrite immutable read-only task authority.
       const prepareRound = async () => {
         stage = 'context'
         if (callbacks.prepareRound) {
-          const current = await callbacks.prepareRound()
+          const current = await callbacks.prepareRound(signal)
           decisionState = current.decisionState
           metricTaskId = current.decisionState?.context?.taskId ?? metricTaskId
           toolsForTurn = [...current.tools, ...(!historyExhausted ? [historyTool] : [])]
@@ -209,11 +264,6 @@ export function useKioskInteractionRecording() {
         toolDefinitions = toolsForTurn.map(tool => ({ function: tool.function, type: 'function' }))
         stage = 'model'
       }
-      // One deadline covers the entire Agent task, not a fresh budget per
-      // continuation. It cancels model transport only, never an accepted POS
-      // effect; browser tools settle through their own result boundary.
-      deadline = AbortSignal.timeout(Math.min(serviceRecoveryLimits.turnMs, Math.max(1, callbacks.budgetMs ?? serviceRecoveryLimits.turnMs)))
-      const signal = AbortSignal.any([control.controller.signal, deadline, ...(callbacks.signal ? [callbacks.signal] : [])])
       if (control.manual)
         return unfinished('manual-control')
       const seenCalls = new Set<string>()
@@ -227,8 +277,43 @@ export function useKioskInteractionRecording() {
       await prepareRound()
       if (signal.aborted)
         return unfinished('timeout')
+      let customerRecorded = false
+      const questionAnswer = await callbacks.prepareQuestionAnswer?.()
+      if (questionAnswer) {
+        // This is an application operation, never an invented model tool call.
+        // No fallback/retry follows recording: a failed or changed binding must
+        // produce its own receipt rather than duplicate the customer utterance.
+        const entry = await append('user_text', content, { source: 'host_question_answer', utteranceId: callbacks.utteranceId })
+        if (!entry || signal.aborted || visitorSessionId.value !== sessionId)
+          return unfinished(signal.aborted ? 'timeout' : 'session-error')
+        const name = 'browser_question_answer'
+        stage = 'tool'
+        requestedTools.push(name)
+        callbacks.onToolRequested?.(name)
+        callbacks.onToolActivity?.(name, 'executing')
+        const result = await questionAnswer()
+        const serialized = JSON.stringify(result)
+        const rejected = result !== null && typeof result === 'object' && 'ok' in result && result.ok === false
+        await append('tool_result', serialized, { name, source: 'host_question_answer' })
+        callbacks.onToolResult?.(name, serialized)
+        callbacks.onToolActivity?.(name, rejected ? 'error' : 'done')
+        if (control.manual)
+          return unfinished('manual-control')
+        if (signal.aborted)
+          return unfinished('timeout')
+        if (rejected)
+          return unfinished('tool-rejected')
+        if (!result || typeof result !== 'object' || !('needsAssistant' in result) || result.needsAssistant !== true)
+          return { agentMode, requestedTools, status: 'completed' }
+        // This count was recorded and consumed, but options/notes remain. Keep
+        // the same Host task and refresh its resolved slots for Main.
+        customerRecorded = true
+        await prepareRound()
+      }
       rounds++
-      let response = await streamKioskConversationMessage({ content, utteranceId: callbacks.utteranceId, ...(decisionState ? { decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+      let response = await streamKioskConversationMessage({ ...(!customerRecorded ? { content, utteranceId: callbacks.utteranceId } : {}), ...(decisionState ? { decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+        if (signal.aborted || visitorSessionId.value !== sessionId)
+          return
         if (event.type === 'turn-failed')
           transportReason = event.reason
         if (event.type === 'turn-started')
@@ -256,6 +341,9 @@ export function useKioskInteractionRecording() {
           break
         const toolResults = []
         let batchRejected = false
+        let batchSignInRequired = false
+        let browserQuestionIssued = false
+        let browserReplyReady = false
         // A model batch can mix reads and writes. Serial execution prevents
         // cart/checkout writes from racing one another or their preceding read.
         for (const toolCall of response.toolCalls) {
@@ -266,8 +354,27 @@ export function useKioskInteractionRecording() {
           if (seenCalls.has(toolCall.id))
             return unfinished('duplicate-tool-call')
           seenCalls.add(toolCall.id)
-          if (!toolsForTurn.some(tool => tool.function.name === toolCall.function.name))
-            return unfinished('tool-rejected')
+          if (batchRejected) {
+            // A later tool in the same model response cannot run after a failed
+            // or unsettled operation. Persist a no-dispatch result for its ID.
+            toolResults.push({ content: JSON.stringify({ ok: false, source: 'host', status: 'rejected', effect: 'none', dataOnly: true, reason: 'prior-tool-not-completed' }), name: toolCall.function.name, toolCallId: toolCall.id })
+            continue
+          }
+          if (browserQuestionIssued || browserReplyReady) {
+            // A pending field ends this turn. A parallel plan cannot answer it
+            // or replace its receipt before the customer has responded.
+            toolResults.push({ content: JSON.stringify({ ok: true, dataOnly: true, ...(browserQuestionIssued ? { waitingForCustomer: true } : { customerReplyAlreadyReady: true }) }), name: toolCall.function.name, toolCallId: toolCall.id })
+            continue
+          }
+          if (!toolsForTurn.some(tool => tool.function.name === toolCall.function.name)) {
+            if (!toolsForTurn.some(tool => nativeOrderingToolName(tool.function.name).startsWith('browser_')))
+              return unfinished('tool-rejected')
+            // The tool was never dispatched. Return the actual allowed names
+            // so Main can correct its call without guessing a native alias.
+            toolResults.push({ name: toolCall.function.name, toolCallId: toolCall.id, content: JSON.stringify({ ok: false, source: 'host', status: 'proposal_rejected', effect: 'none', dataOnly: true, code: 'TOOL_NOT_AVAILABLE', availableTools: toolsForTurn.map(tool => tool.function.name) }) })
+            batchRejected = true
+            continue
+          }
           requestedTools.push(toolCall.function.name)
           stage = 'tool'
           callbacks.onToolActivity?.(toolCall.function.name, 'executing')
@@ -275,7 +382,17 @@ export function useKioskInteractionRecording() {
             break
           if (signal.aborted)
             return callbacks.signal?.aborted ? undefined : unfinished('timeout')
-          let recommendationRead = ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)
+          let recommendationRead = ['menu_recommend', 'menu_show_recommendations'].includes(nativeOrderingToolName(toolCall.function.name))
+          if (nativeOrderingToolName(toolCall.function.name) === 'browser_present') {
+            try {
+              const args = JSON.parse(toolCall.function.arguments)
+              const publicCall = toolCall.function.name === 'point_to_menu_items'
+              const subjects = publicCall ? args?.names : args?.productRefs
+              const purpose = publicCall ? args?.purpose : args?.mode
+              recommendationRead = purpose !== 'information' && Array.isArray(subjects) && subjects.length > 0
+            }
+            catch { /* Malformed calls still use the ordinary tool validator. */ }
+          }
           if (recommendationPresented && toolCall.function.name === 'menu_get') {
             try {
               const args = JSON.parse(toolCall.function.arguments)
@@ -304,13 +421,19 @@ export function useKioskInteractionRecording() {
           try {
             const payload = JSON.parse(content)
             rejected ||= payload?.ok === false
+            const outcome = browserToolResult(toolCall.function.name, payload).outcome
+            browserQuestionIssued ||= nativeOrderingToolName(toolCall.function.name).startsWith('browser_') && outcome === 'awaiting_customer_answer'
+            browserReplyReady ||= outcome === 'customer_reply_ready'
+            batchSignInRequired ||= nativeOrderingToolName(toolCall.function.name).startsWith('browser_') && safeParse(browserSignInRequiredSchema, payload).success
             const presentation = safeParse(productPresentationSchema, payload?.presentation)
-            if (!rejected && payload?.ok === true && payload.source === 'browser' && payload.status === 'verified' && ['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(toolCall.function.name) && presentation.success && presentation.output.cue === 'shown')
+            if (!rejected && payload?.ok === true && payload.source === 'browser' && payload.status === 'verified' && ['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_confirm_add'].includes(nativeOrderingToolName(toolCall.function.name)) && presentation.success && presentation.output.cue === 'shown')
               lastBrowserWritePresentation = presentation.output
             browserFailureReceipt = payload?.source === 'browser' && payload?.ok === false
               && ['unknown', 'rejected'].includes(payload.status) && typeof payload.customerMessage === 'string'
-              && toolCall.function.name.startsWith('browser_cart_')
-            if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(toolCall.function.name)))
+              && (nativeOrderingToolName(toolCall.function.name).startsWith('browser_cart_') || toolCall.function.name === 'browser_confirm_add')
+            if (!rejected && payload?.dataOnly !== true && Array.isArray(payload?.items) && (payload?.presentation?.kind === 'recommendation' || ['menu_recommend', 'menu_show_recommendations'].includes(nativeOrderingToolName(toolCall.function.name))))
+              recommendationPresented = true
+            if (!rejected && recommendationRead && payload?.ok === true && payload.source === 'browser' && payload.dataOnly !== true && presentation.success && presentation.output.products.length)
               recommendationPresented = true
           }
           catch {
@@ -340,13 +463,15 @@ export function useKioskInteractionRecording() {
           return unfinished('timeout')
         // Scope is unresolved: publish the owned question without another model
         // continuation that could replace it with a guessed search or answer.
-        const scopeQuestion = toolResults.some((result) => {
+        const scopeQuestion = browserQuestionIssued || browserReplyReady || toolResults.some((result) => {
           try {
             const payload = JSON.parse(result.content)
             const purpose = payload?.pendingCustomerChoice?.purpose
-            return (result.name.startsWith('browser_') && payload?.source === 'browser' && ['browser-product-choice', 'browser-confirm-add'].includes(purpose))
+            return (nativeOrderingToolName(result.name).startsWith('browser_') && payload?.source === 'browser' && ['browser-product-choice', 'browser-order-quantity', 'browser-order-slot', 'browser-confirm-add', 'browser-service-question'].includes(purpose) && payload.dataOnly !== true)
+              || (nativeOrderingToolName(result.name) === 'browser_respond' && payload?.ok === true && payload.source === 'browser' && payload.effect === 'none'
+                && ((payload.customerBoundary === 'review-required' && payload.status === 'clarification') || payload.status === 'checkout-guidance'))
               || purpose === 'menu-query-scope' || (result.name === 'menu_confirm_item' && purpose === 'confirm-meal')
-              || ((result.name.startsWith('browser_cart_') || result.name === 'browser_product_get') && payload?.source === 'browser' && payload.status === 'clarification' && payload.effect === 'none')
+              || ((nativeOrderingToolName(result.name).startsWith('browser_cart_') || ['browser_product_get', 'browser_clarify_product', 'browser_search'].includes(nativeOrderingToolName(result.name))) && payload?.source === 'browser' && payload.status === 'clarification' && payload.effect === 'none' && payload.dataOnly !== true)
           }
           catch { return false }
         })
@@ -355,12 +480,27 @@ export function useKioskInteractionRecording() {
             await append('tool_result', result.content, { name: result.name })
           return { agentMode, requestedTools, status: 'completed' }
         }
-        if (batchRejected) {
+        const undispatchedCall = toolResults.some((result) => {
+          try {
+            return JSON.parse(result.content)?.code === 'TOOL_NOT_AVAILABLE'
+          }
+          catch { return false }
+        })
+        const canCorrectCall = undispatchedCall && correctionBatches < 2 && toolResults.every((result) => {
+          try {
+            const payload = JSON.parse(result.content)
+            return payload.effect === 'none' || (payload.ok === true && payload.dataOnly === true)
+          }
+          catch { return false }
+        })
+        if (canCorrectCall)
+          correctionBatches++
+        if (batchRejected && !canCorrectCall) {
           // Rejection is final for this task. Persist its receipts without
           // another model call that would log an unexecuted follow-up demand.
           for (const result of toolResults)
             await append('tool_result', result.content, { name: result.name })
-          return unfinished('tool-rejected')
+          return unfinished(batchSignInRequired ? 'sign-in-required' : 'tool-rejected')
         }
         if (callbacks.isRequestComplete?.()) {
           // Persist every result before ending the loop. This shortcut requires
@@ -372,7 +512,7 @@ export function useKioskInteractionRecording() {
         if (correctionBatches < 2 && toolResults.length && toolResults.every((result) => {
           try {
             const payload = JSON.parse(result.content)
-            return result.name.startsWith('browser_cart_') && payload?.source === 'browser' && payload.ok === true && payload.status === 'proposal_rejected' && payload.effect === 'none' && payload.dataOnly === true
+            return nativeOrderingToolName(result.name).startsWith('browser_cart_') && payload?.source === 'browser' && payload.ok === true && payload.status === 'proposal_rejected' && payload.effect === 'none' && payload.dataOnly === true
           }
           catch { return false }
         })) {
@@ -387,6 +527,8 @@ export function useKioskInteractionRecording() {
         const continuationTools = recommendationPresented ? toolDefinitions.filter(tool => !['menu_recommend', 'menu_show_recommendations'].includes(tool.function.name)) : toolDefinitions
         rounds++
         response = await streamKioskConversationMessage({ signal, toolResults, ...(decisionState ? { decisionState } : {}), tools: continuationTools, visitorSessionId: sessionId }, (event) => {
+          if (signal.aborted || visitorSessionId.value !== sessionId)
+            return
           if (event.type === 'turn-failed')
             transportReason = event.reason
           if (event.type === 'turn-started')
@@ -410,11 +552,14 @@ export function useKioskInteractionRecording() {
         // malformed calls keep the ordinary budget failure below.
         const shown = new Set(lastBrowserWritePresentation.products.flatMap(product => [product.ref, product.name]))
         const redundant = response.toolCalls.every((call) => {
-          if (seenCalls.has(call.id) || call.function.name !== 'browser_present' || !toolsForTurn.some(tool => tool.function.name === call.function.name))
+          if (seenCalls.has(call.id) || nativeOrderingToolName(call.function.name) !== 'browser_present' || !toolsForTurn.some(tool => tool.function.name === call.function.name))
             return false
           try {
-            const args = safeParse(strictObject({ productRefs: pipe(array(string()), minLength(1), maxLength(10)) }), JSON.parse(call.function.arguments))
-            return args.success && args.output.productRefs.every(ref => shown.has(ref))
+            const input = JSON.parse(call.function.arguments)
+            if (call.function.name === 'point_to_menu_items')
+              return input?.purpose === 'information' && Array.isArray(input?.names) && input.names.length > 0 && input.names.every((name: unknown) => typeof name === 'string' && shown.has(name))
+            const args = safeParse(browserPresentationInputSchema, input)
+            return args.success && args.output.productRefs.length > 0 && args.output.productRefs.every(ref => shown.has(ref))
           }
           catch { return false }
         })
@@ -494,6 +639,7 @@ export function useKioskInteractionRecording() {
     end,
     error: readonly(error),
     recordOrderResult,
+    recordTranscript,
     requestManualControl,
     controlState: readonly(controlState),
     runAssistantAction,

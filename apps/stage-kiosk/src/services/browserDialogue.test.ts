@@ -6,27 +6,427 @@ import type { AnswerDecision, BrowserAnswer, BrowserEffect, EffectDecision } fro
 import { afterEach, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
-import { beginBrowserCartTask, executeBrowserCartTool, executeBrowserReply } from './browserCartTask'
+import { createBrowserCartSession } from './browserCartSession'
+import { beginBrowserCartTask, executeBrowserCartTool, executeBrowserConfirmedAddition, executeBrowserOrderDraft, executeBrowserQuantityQuestion, executeBrowserReply, prepareBrowserQuestionAnswer, readBrowserConversation } from './browserCartTask'
 import { createBrowserDialogue } from './browserDialogue'
 
 const release: Array<() => void> = []
 afterEach(() => release.splice(0).forEach(dispose => dispose()))
 
-function setup() {
+const modelTools = ['browser_observe', 'browser_cart_get', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_ask_quantity', 'browser_confirm_add', 'browser_respond']
+
+// Report: this chat, Nov15 — complete item/count answers must not ask to add again.
+it.each(['complete', 'quantity-answer'] as const)('adds a validated %s order draft without a second confirmation', async (mode) => {
+  const { begin, client, add, dialogue } = setup()
+  begin(mode === 'complete' ? '我要乙餐一份' : '我要乙餐')
+  const result = await executeBrowserOrderDraft(client, { lines: [{ productRef: 'p-1', evidence: mode === 'complete' ? '我要乙餐一份' : '乙餐', quantity: mode === 'complete' ? 1 : null, choices: [], askGroups: [], note: '' }] })
+  let completed = result
+  if (mode === 'quantity-answer') {
+    expect(result).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-slot' } })
+    begin('一份')
+    const answer = await prepareBrowserQuestionAnswer(client)
+    expect(answer).toBeTypeOf('function')
+    completed = await answer!()
+  }
+  expect(completed).toMatchObject({ ok: true, status: 'verified' })
+  expect(completed).not.toHaveProperty('pendingCustomerChoice')
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+it('still admits a completed draft independently and refuses omitted customer conditions', async () => {
+  const { begin, client, add, decide } = setup()
+  begin('我要乙餐一份，飯少')
+  decide.mockResolvedValueOnce({ choice: 'REVISE', provider: 'main' })
+  const result = await executeBrowserOrderDraft(client, { lines: [{ productRef: 'p-1', evidence: '乙餐一份', quantity: 1, choices: [], askGroups: [], note: '' }] })
+  expect(result).toMatchObject({ status: 'proposal_rejected', effect: 'none' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
+  expect(decide).toHaveBeenCalledWith(expect.objectContaining({ transcript: '我要乙餐一份，飯少' }), expect.anything())
+})
+
+// Report: fixed live PB cases in this chat, Nov11; Main asked quantity again
+// after 「炸雞腿便當一份」 and selected a quantity question for recommendations.
+it.each(['我要乙餐一份', '推薦什麼餐點？'])('does not expose a quantity question without a missing known target slot: %s', async (text) => {
+  const { begin, client } = setup()
+  begin(text)
+  const context = await readBrowserConversation(client, 'known-fields', modelTools)
+  expect(context.allowedToolNames).not.toContain('browser_ask_quantity')
+})
+
+it('exposes a quantity question only for a named target whose count is missing', async () => {
+  const { begin, client } = setup()
+  begin('我要乙餐')
+  const context = await readBrowserConversation(client, 'missing-count', modelTools)
+  expect(context.allowedToolNames).toContain('browser_ask_quantity')
+})
+
+// Adapted from master apps/order-menu/src/asrNameDiagnosis.test.ts and shared-alias controls.
+it('uses published aliases only as formal-name confirmation candidates and preserves shared ambiguity', () => {
+  const { facts } = setup()
+  const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer: async () => ({ kind: 'UNCERTAIN', provider: 'main' }), catalogLabels: () => [{ name: '甲餐', aliases: ['招牌'], category: '套餐' }, { name: '乙餐', aliases: ['招牌', '店家別稱'], category: '套餐' }] })
+  const shared = dialogue.presentProducts(facts, '招牌', '我要招牌一份')
+  expect(shared).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-product-choice' }, presentationRefs: ['p-0', 'p-1'] })
+  const unique = dialogue.presentProducts(facts, '店家別稱', '我要店家別稱')
+  expect(unique).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('乙餐') }, presentationRefs: ['p-1'] })
+  expect(unique).not.toHaveProperty('confirmedAddition')
+})
+
+it('does not reuse configured labels after a product rename or interpret a category as an exact purchase', () => {
+  const { facts } = setup()
+  const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer: async () => ({ kind: 'UNCERTAIN', provider: 'main' }), catalogLabels: () => [{ name: '昨日餐點', aliases: ['招牌'], category: '套餐' }] })
+  expect(dialogue.presentProducts(facts, '招牌', '我要招牌')).toMatchObject({ customerMessage: expect.stringContaining('沒有找到') })
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+// Adapted from master's categoryQueries and shared menu/filter regression cases.
+it('projects labels to Main and displays current category refs instead of searching for an absent literal label', async () => {
+  const { facts, client, dialogue, present, decide } = setup()
+  const catalogLabels = () => [{ name: '甲餐', aliases: ['招牌'], category: '主食' }, { name: '乙餐', aliases: ['第二餐'], category: '主食' }]
+  release.push(beginBrowserCartTask('主食有哪些？', { dialogue, decide, isCurrent: () => true, catalogLabels }))
+  const context = await readBrowserConversation(client, 'labels', modelTools)
+  expect(context.catalog.products[0]).toMatchObject({ aliases: ['招牌'], category: '主食', price: 10 })
+  const search = { ...present, name: 'browser_search' }
+  const result = await executeBrowserCartTool(client, search, { query: '主食' })
+  expect(result).toMatchObject({ presentation: { cue: 'shown', products: [{ ref: 'p-0' }, { ref: 'p-1' }] } })
+  expect(client.execute).toHaveBeenCalledWith(present, { productRefs: ['p-0', 'p-1'], mode: 'information' })
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_search')).toBe(false)
+  expect(facts.cart.lines).toHaveLength(0)
+})
+
+it('does not convert a model-picked recommendation into a customer product choice', async () => {
+  const { begin, client, dialogue, present } = setup()
+  begin('推薦什麼？')
+  expect(await executeBrowserQuantityQuestion(client, { productRef: 'p-1' })).toMatchObject({ dataOnly: true, status: 'proposal_rejected' })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === present.name)).toHaveLength(0)
+})
+
+it('refreshes the pending quantity and catalog before Main without consuming the customer answer', async () => {
+  const { dialogue, facts, begin, client, answer } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  begin('兩份')
+  const context = await readBrowserConversation(client, 'turn-1', modelTools)
+  expect(context).toMatchObject({ phase: 'collecting_quantity', sourceUtterance: '兩份', draft: { name: '乙餐', missing: ['quantity', 'configuration', 'confirmation'] }, waitingFor: { purpose: 'browser-order-quantity' }, catalog: { complete: true } })
+  expect(context.allowedToolNames).toContain('browser_cart_get')
+  expect(context.allowedToolNames).not.toContain('browser_cart_add')
+  expect(context.catalog.products[1].configurations?.[0].version).toBe('config-1')
+  expect(answer).not.toHaveBeenCalled()
+  expect(dialogue.hasPending()).toBe(true)
+})
+
+it('rejects an empty configuration version before semantic admission or native dispatch', async () => {
+  const { begin, client, add, decide } = setup()
+  begin('我要乙餐一份')
+  expect(await executeBrowserCartTool(client, add, { version: 'cart', productRef: 'p-1', quantity: 1, unitPrice: 11, note: '', selection: { version: '', variantRef: '', choices: [] } })).toMatchObject({ status: 'proposal_rejected', dataOnly: true })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
+  expect(decide).not.toHaveBeenCalled()
+})
+
+it('returns fresh state for a stale parallel plan after this turn verified a write', async () => {
+  const { begin, client, facts, add, decide } = setup()
+  begin('我要甲餐一份、乙餐一份')
+  await executeBrowserCartTool(client, add, { version: 'cart', productRef: 'p-0', quantity: 1, unitPrice: 10, note: '', selection: { version: 'config-0', variantRef: '', choices: [] } })
+  facts.cart.version = 'after-add'
+  decide.mockClear()
+  expect(await executeBrowserCartTool(client, add, { version: 'cart', productRef: 'p-1', quantity: 1, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } })).toMatchObject({ status: 'proposal_rejected', dataOnly: true, requiredAction: 'add', cart: { version: 'after-add' } })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+  expect(decide).not.toHaveBeenCalled()
+})
+
+it('makes the complete quantity answer executable without asking for a second confirmation', async () => {
+  const { dialogue, facts, begin, client, context: cart, add, answer } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  begin('兩份')
+  await executeBrowserCartTool(client, cart, { includeCatalog: true })
+  const collected = await readBrowserConversation(client, 'quantity-turn', modelTools)
+  expect(collected).toMatchObject({ phase: 'ready_to_add', draft: { productRef: 'p-1', quantity: 2, missing: [] } })
+  expect(collected.waitingFor).toBeUndefined()
+  expect(collected.allowedToolNames).toContain('browser_confirm_add')
+  await executeBrowserCartTool(client, add, { version: 'cart', productRef: 'p-1', quantity: 2, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+  expect(answer).not.toHaveBeenCalled()
+})
+
+it('retires an old question when fresh cart evidence changes before the next model round', async () => {
+  const { dialogue, facts, begin, client } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  facts.cart.version = 'changed'
+  begin('兩份')
+  const context = await readBrowserConversation(client, 'new-turn', modelTools)
+  expect(context).toMatchObject({ phase: 'browsing', cart: { version: 'changed' } })
+  expect(context.waitingFor).toBeUndefined()
+  expect(context.draft).toBeUndefined()
+})
+
+it('keeps a previous visitor cart out of the model snapshot and removes write tools', async () => {
+  const { facts, client, dialogue, decide } = setup()
+  client.execute.mockResolvedValueOnce({ ...facts, cart: { version: 'other-cart', subtotal: 20, lines: [{ ref: 'line-old', name: '上一位的餐', quantity: 2, unitPrice: 10 }] } })
+  const gate = createBrowserCartSession({ getItem: () => JSON.stringify({ owner: 'previous' }), setItem: vi.fn() })
+  release.push(beginBrowserCartTask('推薦什麼', { dialogue, decide, isCurrent: () => true, cartSession: { gate, owner: () => 'current', serviceUrl: () => 'https://app.esgpb.com/menu', message: '請現場人員確認。' } }))
+  const context = await readBrowserConversation(client, 'owned-turn', modelTools)
+  expect(context.phase).toBe('review_required')
+  expect(context.cart).toBeUndefined()
+  expect(JSON.stringify(context)).not.toContain('上一位的餐')
+  expect(context.allowedToolNames).not.toContain('browser_cart_add')
+})
+
+it('does not turn a sign-in requirement into an empty cart or an empty complete catalog', async () => {
+  const { client, begin } = setup()
+  begin('推薦什麼')
+  client.execute.mockResolvedValueOnce({ ok: false, source: 'browser', status: 'rejected', effect: 'none', code: 'sign-in-required', error: 'PB requires manual sign-in.' })
+  const context = await readBrowserConversation(client, 'sign-in', modelTools)
+  expect(context).toMatchObject({ phase: 'sign_in_required', catalog: { complete: false } })
+  expect(context.cart).toBeUndefined()
+  expect(context.allowedToolNames).not.toContain('browser_confirm_add')
+})
+
+it('gives Main a table task without inventing cart facts or exposing meal tools', async () => {
+  const { client, begin } = setup()
+  begin('我要雞腿飯一份')
+  const pending = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'A1 桌', 'B1 吧檯'], customerMessage: '請先選桌並開始點餐。' }
+  client.execute.mockResolvedValue(pending)
+  const context = await readBrowserConversation(client, 'table-task', modelTools)
+  expect(context.phase).toBe('selecting_table')
+  expect(context.page).toBe('table')
+  expect(context.tableChoices).toEqual(pending.tableChoices)
+  expect(context.cart).toBeUndefined()
+  expect(context.catalog.complete).toBe(false)
+  expect(context.allowedToolNames).toEqual(['browser_cart_get', 'browser_respond'])
+  expect(await executeBrowserReply(client, 'checkout-guidance')).toMatchObject({ code: 'table-selection-required', customerMessage: pending.customerMessage })
+  expect(client.execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
+})
+
+// Report: this chat, Nov12; 「我要坐a4」 and 「A4」 only repeated the generic
+// table question even though the current table list proves that A4 is absent.
+it.each(['我要坐a4', 'A4', '我要 A 四桌'])('explains an unavailable table without replacing it with another choice: %s', async (utterance) => {
+  const { client, begin, context } = setup()
+  begin(utterance)
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'A1 桌', 'A3 桌'], selectedTable: 'A3 桌', customerMessage: '請告訴我您的桌號。' })
+  await readBrowserConversation(client, 'unknown-table', ['browser_cart_get', 'browser_table_select', 'browser_start_ordering', 'browser_respond'])
+  expect(await executeBrowserReply(client, 'clarification')).toMatchObject({ customerMessage: expect.stringContaining('沒有「A4」這個桌號') })
+  for (const name of ['browser_table_select', 'browser_start_ordering']) {
+    expect(await executeBrowserCartTool(client, { ...context, name }, { name: 'A3 桌' })).toMatchObject({ customerMessage: expect.stringContaining('沒有「A4」這個桌號'), effect: 'none' })
+  }
+  expect(client.execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
+})
+
+// Report: this chat; customers must be able to enter the menu using voice.
+it('returns the fresh touched table for Main to correct a stale Start proposal without asking the customer again', async () => {
+  const { client, begin, context } = setup()
+  begin('開始點餐')
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'B3 吧檯'], selectedTable: 'B3 吧檯', customerMessage: '使用目前選擇開始點餐嗎？' })
+  const result = await executeBrowserCartTool(client, { ...context, name: 'browser_start_ordering' }, { name: '櫃台取餐' })
+  expect(result).toMatchObject({ ok: true, status: 'proposal_rejected', effect: 'none', dataOnly: true, selectedTable: 'B3 吧檯' })
+  expect(client.execute.mock.calls.every(([tool]) => tool.name === 'browser_cart_get')).toBe(true)
+})
+
+it.each([
+  ['開始點餐', undefined, '櫃台取餐', false],
+  ['我要 A1 桌，開始點餐', undefined, 'A1 桌', true],
+  ['我要 A 一桌，開始點餐', undefined, 'A1 桌', true],
+  ['我要 A10 桌，開始點餐', undefined, 'A1 桌', false],
+  ['開始點餐', 'A1 桌', 'A1 桌', true],
+  ['我要櫃台取餐，開始點餐', undefined, '櫃台取餐', true],
+] as const)('admits menu entry only for an explicit or verified table: %s / %s / %s', async (utterance, selectedTable, name, allowed) => {
+  const { client, begin, context } = setup()
+  begin(utterance)
+  const start = { ...context, name: 'browser_start_ordering' }
+  const entry = { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'A1 桌'], selectedTable, customerMessage: '請先選桌。' }
+  client.execute.mockImplementation(async tool => tool.name === 'browser_cart_get' ? entry : { ok: true, code: 'table-entry-starting' })
+  const state = await readBrowserConversation(client, 'table-start', ['browser_cart_get', 'browser_table_select', 'browser_start_ordering', 'browser_cart_add'])
+  expect(state.selectedTable).toBe(selectedTable)
+  expect(state.allowedToolNames).toEqual(['browser_cart_get', 'browser_table_select', 'browser_start_ordering'])
+  const result = await executeBrowserCartTool(client, start, { name })
+  expect(result).toMatchObject(allowed ? { code: 'table-entry-starting' } : { status: 'clarification', effect: 'none' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(allowed ? 1 : 0)
+})
+
+it.each(['開始點餐', '好', '好的，開始點餐', '對', '櫃台取餐，開始點餐', '開始點餐，還要乙餐一份'])('ends only a fully covered standalone entry request: %s', async (utterance) => {
+  const { client, context, dialogue, decide } = setup()
+  const complete = vi.fn()
+  release.push(beginBrowserCartTask(utterance, { dialogue, decide, isCurrent: () => true, onRequestComplete: complete }))
+  client.execute.mockImplementation(async tool => tool.name === 'browser_cart_get'
+    ? { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐'], selectedTable: '櫃台取餐', customerMessage: '請開始點餐。' }
+    : { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: '櫃台取餐', customerMessage: '正在進入菜單。' })
+  expect(await executeBrowserCartTool(client, { ...context, name: 'browser_start_ordering' }, { name: '櫃台取餐' })).toMatchObject({ code: 'table-entry-starting' })
+  expect(complete).toHaveBeenCalledTimes(utterance === '開始點餐，還要乙餐一份' ? 0 : 1)
+})
+
+it('treats 加點 as navigation and retires an old quantity question without dispatching a cart write', async () => {
+  const { client, begin, dialogue, facts, context, decide } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  begin('我要加點')
+  const navigation = { ...context, name: 'browser_return_menu' }
+  const original = client.execute.getMockImplementation()!
+  client.execute.mockImplementation((tool, input) => tool.name === navigation.name
+    ? Promise.resolve({ ok: true, source: 'browser', page: 'menu', effect: 'none', cart: facts.cart })
+    : original(tool, input))
+  expect(await executeBrowserCartTool(client, navigation, {})).toMatchObject({ page: 'menu', effect: 'none' })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(client.execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_cart_get', 'browser_return_menu'])
+  expect(decide).not.toHaveBeenCalled()
+})
+
+function setup(labels: { name: string, aliases: string[], category: string }[] = []) {
   const state = { owner: 'customer', document: 'document' }
   const answer = vi.fn<(input: BrowserAnswer) => Promise<AnswerDecision>>(async () => ({ kind: 'ANSWER', choiceId: 'product:2', provider: 'system-one' }))
-  const dialogue = createBrowserDialogue({ owner: () => state.owner, documentId: () => state.document, answer })
+  const dialogue = createBrowserDialogue({ owner: () => state.owner, documentId: () => state.document, answer, catalogLabels: () => labels })
   const cartLines: CartLine[] = []
   const facts = { ok: true, source: 'browser', dataOnly: true, cart: { version: 'cart', lines: cartLines }, products: ['甲餐', '乙餐'].map((name, index) => ({ ref: `p-${index}`, name, price: 10 + index, configurations: [{ version: `config-${index}`, variantRef: '', name, unitPrice: 10 + index, groups: [] }] })) }
   const context: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const add = { ...context, name: 'browser_cart_add' }
   const clarify = { ...context, name: 'browser_clarify_product' }
-  const execute = vi.fn(async (tool: ServiceTool): Promise<unknown> => tool.name === context.name ? facts : { ok: true, source: 'browser', status: 'verified', cart: { version: 'after-add' } })
-  const client = { tools: readonly(shallowRef([context, add, clarify, { ...context, name: 'browser_product_get' }])), execute }
+  const present = { ...context, name: 'browser_present' }
+  const execute = vi.fn(async (tool: ServiceTool, input: Record<string, unknown>): Promise<unknown> => {
+    if (tool.name === context.name)
+      return facts
+    if (tool.name === present.name)
+      return { ok: true, source: 'browser', presentation: { cue: 'shown', products: facts.products.filter(product => Array.isArray(input.productRefs) && input.productRefs.includes(product.ref)).map(({ ref, name, price }) => ({ ref, name, price })) } }
+    return { ok: true, source: 'browser', status: 'verified', cart: { version: 'after-add' } }
+  })
+  const client = { tools: readonly(shallowRef([context, add, clarify, present, { ...context, name: 'browser_product_get' }])), execute }
   const decide = vi.fn<(proposal: BrowserEffect) => Promise<EffectDecision>>(async () => ({ choice: 'ALLOW', provider: 'main' }))
-  const begin = (text: string) => release.push(beginBrowserCartTask(text, { dialogue, decide, isCurrent: () => true }))
-  return { state, answer, dialogue, facts, client, context, add, clarify, begin, decide }
+  const onRequestComplete = vi.fn()
+  const begin = (text: string, jev = false) => release.push(beginBrowserCartTask(text, { ...(jev ? { intentSource: 'jev' as const } : {}), dialogue, decide, onRequestComplete, isCurrent: () => true }))
+  return { state, answer, dialogue, facts, client, context, add, clarify, present, begin, decide, onRequestComplete }
 }
+
+// Report: this chat, Nov11; Main reissued the alias question after 對, then tried
+// to add one invented serving after 是 without consuming the pending question.
+it.each(['browser_clarify_product', 'browser_product_get', 'browser_cart_add'])('resolves the pending product answer before Main can bypass it with %s', async (name) => {
+  const { dialogue, facts, answer, client, context, begin } = setup()
+  dialogue.presentProducts(facts, '乙餐', '我想吃乙餐')
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'product:1', provider: 'main' })
+  begin('對')
+  const result = await executeBrowserCartTool(client, { ...context, name }, { query: '乙餐', names: ['乙餐'], quantity: 1 })
+  expect(result).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity', question: '請問「乙餐」要幾份？' } })
+  expect(answer).toHaveBeenCalledOnce()
+  expect(client.execute.mock.calls.every(([tool]) => [context.name, 'browser_present'].includes(tool.name))).toBe(true)
+  expect(client.execute.mock.calls.find(([tool]) => tool.name === 'browser_present')?.[1]).toEqual({ productRefs: ['p-1'], mode: 'information' })
+  expect(dialogue.hasPending()).toBe(true)
+})
+
+it('collects a missing serving count and admits the complete purchase without another question', async () => {
+  const { dialogue, facts, client, context, add, begin, answer } = setup()
+  begin('我想吃乙餐')
+  expect(await executeBrowserQuantityQuestion(client, { productRef: 'p-1' })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity' } })
+  begin('兩份')
+  const selected = await executeBrowserCartTool(client, context, { includeCatalog: true })
+  expect(selected).toMatchObject({ selectedProduct: { name: '乙餐' }, requestedQuantity: 2, originalRequest: '我想吃乙餐' })
+  expect(answer).not.toHaveBeenCalled()
+  const proposal = { version: 'cart', productRef: 'p-1', quantity: 1, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } }
+  expect(await executeBrowserCartTool(client, add, proposal)).toMatchObject({ status: 'proposal_rejected', requestedQuantity: 2 })
+  expect(await executeBrowserCartTool(client, add, { ...proposal, quantity: 2 })).toMatchObject({ status: 'verified' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+  expect(dialogue.hasPending()).toBe(false)
+  expect(facts.cart.lines).toHaveLength(0)
+})
+
+it('asks for quantity instead of accepting a model default after a named purchase request', async () => {
+  const { client, add, begin } = setup()
+  begin('我想吃乙餐')
+  expect(await executeBrowserCartTool(client, add, { version: 'cart', productRef: 'p-1', quantity: 1, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity' } })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
+})
+
+it('does not turn a yes to a quantity question into one serving', async () => {
+  const { dialogue, facts, begin, client, context, answer } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我想吃乙餐')
+  answer.mockResolvedValueOnce({ kind: 'UNCERTAIN', provider: 'main' })
+  begin('對')
+  expect(await executeBrowserCartTool(client, context, { includeCatalog: true })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity' } })
+})
+
+it('rejects a numeric slot if the cart changes before it is consumed', async () => {
+  const { dialogue, facts } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我想吃乙餐')
+  const result = await dialogue.answer(facts, '兩份', async () => ({ ...facts, cart: { ...facts.cart, version: 'changed' } }), () => true)
+  expect(result).toMatchObject({ kind: 'receipt', result: { ok: false, status: 'rejected' } })
+})
+
+// Report: live Main replay in this chat, Nov11; selection.version was repeatedly
+// omitted while regenerating a fully confirmed proposal, exhausting the tool budget.
+it('executes the saved complete confirmation without asking Main to rebuild internal versions', async () => {
+  const { dialogue, facts, client, context, add, begin, answer, onRequestComplete } = setup()
+  const proposal = { version: 'cart', productRef: 'p-1', quantity: 2, unitPrice: 11, note: '飯少', selection: { version: 'config-1', variantRef: '', choices: [] } }
+  dialogue.presentAddition(facts, proposal)
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'confirm', provider: 'main' })
+  begin('對')
+  expect(await executeBrowserCartTool(client, context, { includeCatalog: true })).toHaveProperty('confirmedAddition')
+  expect(await executeBrowserConfirmedAddition(client)).toMatchObject({ status: 'verified' })
+  expect(client.execute).toHaveBeenLastCalledWith(add, proposal)
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+  expect(onRequestComplete).toHaveBeenCalledOnce()
+})
+
+// Report: live Main/Jev comparison in this chat, Nov11; Main attached a cart
+// version to the argument-free confirmation command after customer assent.
+it('executes only the saved proposal when a model attaches unrelated confirmation arguments', async () => {
+  const { dialogue, facts, client, context, add, begin, answer } = setup()
+  const proposal = { version: 'cart', productRef: 'p-1', quantity: 2, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } }
+  dialogue.presentAddition(facts, proposal)
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'confirm', provider: 'main' })
+  begin('對')
+  await executeBrowserCartTool(client, context, { includeCatalog: true })
+  // Invoke the public JS boundary as a model runtime does: excess fields must
+  // neither replace sealed values nor become a second source of write authority.
+  expect(await Reflect.apply(executeBrowserConfirmedAddition, undefined, [client, { version: 'invented', quantity: 99 }])).toMatchObject({ status: 'verified' })
+  expect(client.execute).toHaveBeenLastCalledWith(add, proposal)
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+})
+
+it('does not authorize a confirmation command from model arguments without customer assent', async () => {
+  const { client, add, begin } = setup()
+  begin('我要乙餐兩份')
+  expect(await Reflect.apply(executeBrowserConfirmedAddition, undefined, [client, { version: 'cart', productRef: 'p-1', quantity: 2 }])).toMatchObject({ ok: false, status: 'rejected', effect: 'none' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
+})
+
+// Report: this chat, Nov11; 我想吃虱目魚 became an unrelated full-menu choice.
+it('reports an absent requested product without replacing it with unrelated menu candidates', () => {
+  const { dialogue, facts } = setup()
+  dialogue.presentProducts(facts, '餐', '餐一份')
+  const result = dialogue.presentProducts(facts, '虱目魚', '我想吃虱目魚')
+  expect(result.customerMessage).toContain('沒有找到「虱目魚」')
+  expect(result.customerMessage).not.toContain('甲餐')
+  expect(result.customerMessage).not.toContain('乙餐')
+  expect(result).not.toHaveProperty('pendingCustomerChoice')
+  expect(result).not.toHaveProperty('presentationRefs')
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+it('does not substitute other bentos when only a generic meal suffix matches the missing dish', () => {
+  const { dialogue, facts } = setup()
+  facts.products[0].name = '雞腿便當'
+  facts.products[1].name = '排骨便當'
+  const result = dialogue.presentProducts(facts, '虱目魚便當', '我想吃虱目魚便當')
+  expect(result.customerMessage).toContain('沒有找到「虱目魚便當」')
+  expect(result.customerMessage).not.toContain('雞腿')
+  expect(result.customerMessage).not.toContain('排骨')
+  expect(result).not.toHaveProperty('pendingCustomerChoice')
+})
+
+it('does not claim a product is absent just because its configuration is unavailable for spoken selection', () => {
+  const { dialogue, facts } = setup()
+  facts.products[0].name = '虱目魚便當'
+  facts.products[0].configurations = []
+  const result = dialogue.presentProducts(facts, '虱目魚', '我想吃虱目魚')
+  expect(result.customerMessage).toContain('虱目魚')
+  expect(result.customerMessage).not.toContain('沒有找到')
+  expect(result).not.toHaveProperty('pendingCustomerChoice')
+  expect(result).not.toHaveProperty('presentationRefs')
+})
+
+it('keeps a multi-name lookup miss instead of offering the entire catalog as a substitute', async () => {
+  const { client, context, begin, dialogue } = setup()
+  const lookup = { ...context, name: 'browser_product_get' }
+  const missing = { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '目前完整分類資料沒有找到「虱目魚」，請確認名稱。' }
+  client.execute.mockResolvedValueOnce(missing)
+  begin('甲餐和虱目魚各一份')
+  expect(await executeBrowserCartTool(client, lookup, { names: ['甲餐', '虱目魚'] })).toEqual(missing)
+  expect(client.execute).toHaveBeenCalledOnce()
+  expect(dialogue.hasPending()).toBe(false)
+})
 
 // Report: docs/plans/2026-10-28-windows-kiosk-electron.md, Nov2 S04/S12.
 it('passes admitted current-cart labels to the answer resolver without sending executable row identities', async () => {
@@ -74,24 +474,18 @@ it.each(['CLARIFY', 'READ_ONLY', 'REVISE'] as const)('does not turn a %s proposa
   }
 })
 
-it('selects the original second product, presents a full proposal, and adds only after its one-use confirmation', async () => {
-  const { client, context, add, clarify, facts, begin, answer, decide } = setup()
+it('selects the original second product and admits its requested count once without another confirmation', async () => {
+  const { client, context, add, clarify, facts, begin, decide } = setup()
   begin('餐一份')
   expect(await executeBrowserCartTool(client, clarify, { query: '餐' })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-product-choice' } })
   facts.products.reverse()
   begin('第二個')
   expect(await executeBrowserCartTool(client, context, { includeCatalog: true })).toMatchObject({ selectedProduct: { productRef: 'p-1', name: '乙餐' } })
   const proposal = { version: 'cart', productRef: 'p-1', quantity: 1, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } }
-  expect(await executeBrowserCartTool(client, add, proposal)).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-confirm-add', question: expect.stringContaining('乙餐 1 份') } })
-  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
-  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'confirm', provider: 'system-one' })
-  begin('對')
-  expect(await executeBrowserCartTool(client, context, { includeCatalog: true })).toMatchObject({ confirmedAddition: { productRef: 'p-1', quantity: 1 } })
-  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
   expect(await executeBrowserCartTool(client, add, { ...proposal, quantity: 2 })).toMatchObject({ status: 'proposal_rejected', effect: 'none' })
   expect(await executeBrowserCartTool(client, add, proposal)).toMatchObject({ status: 'verified' })
   expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
-  expect(decide).not.toHaveBeenCalled()
+  expect(decide).toHaveBeenCalledOnce()
   facts.cart.version = 'after-add'
   begin('對')
   expect(await executeBrowserCartTool(client, context, { includeCatalog: true })).not.toHaveProperty('confirmedAddition')
@@ -167,8 +561,8 @@ it.each(['stale-version', 'wrong-price', 'missing-selection'])('returns a repair
   const input = { version: 'cart', productRef: 'p-1', quantity: 1, unitPrice: invalid === 'wrong-price' ? 99 : 11, note: '', ...(invalid === 'missing-selection' ? {} : { selection: { version: invalid === 'stale-version' ? 'cart' : 'config-1', variantRef: '', choices: [] } }) }
   expect(await executeBrowserCartTool(client, add, input)).toMatchObject({ status: 'proposal_rejected', effect: 'none', dataOnly: true })
   expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
-  expect(await executeBrowserCartTool(client, add, { ...input, unitPrice: 11, selection: { version: 'config-1', variantRef: '', choices: [] } })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-confirm-add' }, effect: 'none' })
-  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
+  expect(await executeBrowserCartTool(client, add, { ...input, unitPrice: 11, selection: { version: 'config-1', variantRef: '', choices: [] } })).toMatchObject({ status: 'verified' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
 })
 
 // Report: this chat, Nov1 v2; a genuinely uncertain Jev operation was mislabeled
@@ -228,17 +622,189 @@ it('asks only about the independently checked replacement product without writin
 
 // Report: S13-nov4-review-2 took exact product lookup instead of the existing clarification tool.
 it('converts an unresolved exact lookup into related current-product confirmation without a write', async () => {
-  const { facts, dialogue, client, context, begin, decide } = setup()
+  const { facts, dialogue, client, context, present, begin, decide } = setup()
   facts.products[0].name = '青醬雞肉便當'
   facts.products[1].name = '香煎鱈魚便當'
   const lookup = { ...context, name: 'browser_product_get' }
-  client.execute.mockImplementation(async tool => tool.name === lookup.name ? { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '正式名稱未找到' } : facts)
+  const execute = client.execute.getMockImplementation()!
+  client.execute.mockImplementation(async (tool, input) => tool.name === lookup.name ? { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '正式名稱未找到' } : execute(tool, input))
   begin('香煎鱈魚飯一份')
   const result = await executeBrowserCartTool(client, lookup, { names: ['香煎鱈魚飯'] })
   expect(result).toMatchObject({ effect: 'none', presentationRefs: ['p-1'], pendingCustomerChoice: expect.objectContaining({ purpose: 'browser-product-choice' }) })
   expect(result).toHaveProperty('customerMessage', expect.stringContaining('香煎鱈魚便當'))
   expect(result).toHaveProperty('customerMessage', expect.not.stringContaining('青醬雞肉便當'))
-  expect(client.execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_product_get', 'browser_cart_get'])
+  expect(client.execute.mock.calls.map(([tool]) => tool.name)).toEqual(['browser_product_get', 'browser_cart_get', present.name])
   expect(decide).not.toHaveBeenCalled()
   expect(dialogue.hasPending()).toBe(true)
+})
+
+// Report: this chat, Nov12 live S01/S02; the new draft accepted only the original request, not its bound quantity answer.
+it('keeps quantity-answer evidence separate from the original request when collecting a selected dish', async () => {
+  const { dialogue, facts, begin, client, context, add, decide } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  begin('兩份')
+  await executeBrowserCartTool(client, context, { includeCatalog: true })
+  const completed = await executeBrowserOrderDraft(client, { lines: [{ productRef: 'p-1', evidence: '兩份', quantity: 2, choices: [], askGroups: [], note: '' }] })
+  expect(completed, JSON.stringify({ completed, checks: decide.mock.calls })).toMatchObject({ ok: true, status: 'verified' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
+})
+
+// Report: this chat, 2026-11-14 — exact named replies repeated the same product question.
+it('consumes an exact product-name reply once without calling a model to choose again', async () => {
+  const { dialogue, facts, answer } = setup()
+  dialogue.presentProducts(facts, '餐', '我要餐一份')
+  expect(await dialogue.answer(facts, '乙餐', async () => facts, () => true)).toMatchObject({ kind: 'product', product: { name: '乙餐' }, request: '我要餐一份' })
+  expect(answer).not.toHaveBeenCalled()
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+// Report: this chat, 2026-11-14 — 排骨便當 fell back to every bento because 便當 was the longest contiguous match.
+it('keeps a distinctive contained dish name instead of broadening to all bentos', () => {
+  const { dialogue, facts } = setup()
+  facts.products[0].name = '炸雞腿便當'
+  facts.products[1].name = '炸排骨便當'
+  facts.products[0].configurations[0].name = '炸雞腿便當'
+  facts.products[1].configurations[0].name = '炸排骨便當'
+  expect(dialogue.presentProducts(facts, '排骨便當', '我要一份排骨便當')).toMatchObject({ presentationRefs: ['p-1'], customerMessage: expect.stringContaining('炸排骨便當') })
+})
+
+// Report: this chat, 2026-11-14 — delivery and takeaway must not be confused with missing tables.
+it.each(['我要外帶', '我要自取', '我要外送'])('handles the actual table-page service request: %s', async (utterance) => {
+  const { client, begin, context } = setup()
+  begin(utterance)
+  const native = { ...context, name: 'browser_table_select' }
+  client.execute.mockImplementation(async tool => tool.name === 'browser_cart_get'
+    ? { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'B3 吧檯'], customerMessage: '請選桌。' }
+    : { ok: true, source: 'browser', selectedTable: '櫃台取餐' })
+  const result = await executeBrowserCartTool(client, native, { name: '櫃台取餐' })
+  if (utterance === '我要外送') {
+    expect(result).toMatchObject({ customerMessage: expect.stringContaining('沒有外送') })
+    expect(client.execute.mock.calls.filter(([tool]) => tool.name === native.name)).toHaveLength(0)
+  }
+  else {
+    expect(result).toMatchObject({ selectedTable: '櫃台取餐' })
+    expect(client.execute.mock.calls.filter(([tool]) => tool.name === native.name)).toHaveLength(1)
+  }
+})
+
+// Report: this chat, 2026-11-14 — a missing quantity is a question, not a rejected cart write.
+it('can ask quantity for an explicit named item without granting cart-write authority', async () => {
+  const { client, dialogue, decide } = setup()
+  release.push(beginBrowserCartTask('乙餐', { dialogue, decide, readOnly: true, clarifyOrder: true, isCurrent: () => true }))
+  expect(await executeBrowserQuantityQuestion(client, { productRef: 'p-1' })).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity' } })
+  expect(decide).not.toHaveBeenCalled()
+})
+
+// Report: this chat, 2026-11-14 — a fully specified purchase looped after the official-name answer.
+it('completes an original quantity plus exact named choice once, even when the short reply was routed read-only', async () => {
+  const labels = [{ name: '炸排骨便當', aliases: ['排骨便當'], category: '' }]
+  const { client, facts, dialogue, decide } = setup(labels)
+  facts.products[1].name = '炸排骨便當'
+  facts.products[1].configurations[0].name = '炸排骨便當'
+  dialogue.presentProducts(facts, '排骨便當', '我要一份排骨便當')
+  release.push(beginBrowserCartTask('炸排骨便當', { dialogue, decide, readOnly: true, isCurrent: () => true, catalogLabels: () => labels }))
+  const complete = await prepareBrowserQuestionAnswer(client)
+  expect(complete).toBeTypeOf('function')
+  expect(await complete!()).toMatchObject({ ok: true, status: 'verified' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
+  expect(client.execute.mock.calls.find(([tool]) => tool.name === 'browser_cart_add')?.[1]).toMatchObject({ productRef: 'p-1', quantity: 1 })
+  expect(await complete!()).toMatchObject({ ok: false, effect: 'none' })
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
+  expect(decide).not.toHaveBeenCalled()
+})
+
+// Report: this chat, 2026-11-14 — entering a menu produced status prose but no ordering guidance.
+it('waits for the native menu before replacing the entry acknowledgement with ordering guidance', async () => {
+  const { client, begin, context } = setup()
+  begin('開始點餐')
+  let entered = false
+  client.execute.mockImplementation(async tool => tool.name === 'browser_cart_get'
+    ? entered ? { ok: true, source: 'browser', page: 'menu', menuReady: true, cart: { tableName: 'A2' } } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
+    : { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A2', customerMessage: '正在準備菜單。' })
+  const ready = Promise.withResolvers<void>()
+  const waitUntilReady = vi.fn(() => ready.promise)
+  const settled = vi.fn()
+  const pending = executeBrowserCartTool({ ...client, waitUntilReady }, { ...context, name: 'browser_start_ordering' }, { name: 'A2' }).then((result) => {
+    settled()
+    return result
+  })
+  await vi.waitFor(() => expect(waitUntilReady).toHaveBeenCalledOnce())
+  expect(settled).not.toHaveBeenCalled()
+  entered = true
+  ready.resolve()
+  expect(await pending).toMatchObject({ customerMessage: expect.stringContaining('菜單準備好了，想吃什麼') })
+})
+
+// Report: this chat, 2026-11-14 — finite cancellation closed PB but left the Host's quantity question alive.
+it('retires the pending question and abandoned search when the finite close tool is selected', async () => {
+  const { client, dialogue, facts, begin, context } = setup()
+  dialogue.presentQuantity(facts, 'p-1', '我要乙餐')
+  begin('不要了')
+  const close = { ...context, name: 'browser_close_product' }
+  const search = { ...context, name: 'browser_search' }
+  const native = client.execute.getMockImplementation()!
+  client.execute.mockImplementation((tool, input) => [close.name, search.name].includes(tool.name)
+    ? Promise.resolve({ ok: true, source: 'browser', effect: 'none', customerMessage: '已回到完整菜單。' })
+    : native(tool, input))
+  const bound = { tools: readonly(shallowRef([...client.tools.value, close, search])), execute: client.execute }
+  expect(await executeBrowserCartTool(bound, close, {})).toMatchObject({ ok: true })
+  expect(dialogue.hasPending()).toBe(false)
+  expect(client.execute.mock.calls.find(([tool]) => tool.name === search.name)?.[1]).toEqual({ query: '' })
+  expect(client.execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_remove')).toBe(false)
+})
+
+// Report: this chat, 2026-11-14 — returning to menu should end the navigation demand, including ASR punctuation.
+it.each(['回到菜單', '請幫我回到菜單。'])('finishes a verified standalone menu return without another menu listing: %s', async (text) => {
+  const { client, context, onRequestComplete, begin } = setup()
+  begin(text, true)
+  expect(await executeBrowserCartTool(client, { ...context, name: 'browser_return_menu' }, {})).toMatchObject({ ok: true })
+  expect(onRequestComplete).toHaveBeenCalledOnce()
+})
+
+// Report: this chat, Nov14 — Jev-selected answers are semantic, not a literal phrase whitelist.
+it('executes a Jev-selected semantic confirmation using the sealed meal exactly once', async () => {
+  const { dialogue, facts, answer, client, begin } = setup()
+  dialogue.presentAddition(facts, { productRef: 'p-1', quantity: 1, unitPrice: 11, note: '', selection: { version: 'config-1', variantRef: '', choices: [] } })
+  answer.mockResolvedValue({ kind: 'ANSWER', choiceId: 'confirm', provider: 'system-one' })
+  begin('那就幫我放進去吧', true)
+  const prepared = await prepareBrowserQuestionAnswer(client)
+  expect(prepared).toBeTypeOf('function')
+  expect(await prepared!()).toMatchObject({ status: 'verified' })
+  expect(answer).toHaveBeenCalledOnce()
+  expect(client.execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
+  expect(dialogue.hasPending()).toBe(false)
+})
+
+// Report: this chat, Nov14; document ready was announced while the menu was blank.
+it('does not announce menu ready when the replacement document has no menu evidence', async () => {
+  const { client, begin, context } = setup()
+  begin('開始點餐')
+  let entered = false
+  client.execute.mockImplementation(async (tool) => {
+    if (tool.name === 'browser_cart_get')
+      return entered ? { ok: true, source: 'browser', page: 'table' } : { ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['A2'], selectedTable: 'A2', customerMessage: '請開始。' }
+    entered = true
+    return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'A2', customerMessage: '正在準備菜單。' }
+  })
+  const result = await executeBrowserCartTool({ ...client, waitUntilReady: async () => {} }, { ...context, name: 'browser_start_ordering' }, { name: 'A2' })
+  expect(result).toMatchObject({ ok: false, effect: 'none' })
+  expect(result).not.toMatchObject({ customerMessage: expect.stringContaining('菜單準備好了') })
+})
+
+// Cross-tool audit: refusing a write proposed for a price inquiry is not a new customer question.
+it.each(['draft', 'confirm'])('keeps a read-only %s refusal available for model correction instead of issuing a question', async (operation) => {
+  const { client, dialogue, decide } = setup()
+  release.push(beginBrowserCartTask('甲餐一份多少錢', { readOnly: true, dialogue, decide, isCurrent: () => true }))
+  const result = operation === 'draft' ? await executeBrowserOrderDraft(client, {}) : await executeBrowserConfirmedAddition(client)
+  expect(result).toMatchObject({ ok: true, status: 'proposal_rejected', effect: 'none', dataOnly: true })
+  expect(result).not.toHaveProperty('pendingCustomerChoice')
+  expect(client.execute).not.toHaveBeenCalled()
+})
+
+it('returns a real waiting state when a reply is guarded by the current table page', async () => {
+  const { client, begin } = setup()
+  begin('a9')
+  client.execute.mockResolvedValue({ ok: true, source: 'browser', page: 'table', code: 'table-selection-required', tableChoices: ['櫃台取餐', 'A1 桌'], selectedTable: 'A1 桌', customerMessage: '目前選擇A1 桌。' })
+  await readBrowserConversation(client, 'table-reply', ['reply_to_customer'])
+  expect(await executeBrowserReply(client, 'clarification')).toMatchObject({ status: 'clarification', effect: 'none', customerMessage: expect.stringContaining('A9') })
 })

@@ -6,7 +6,8 @@ Use it for customer-facing horizontal or vertical kiosk displays. Do not use it 
 
 Chinese conversation text, recognized-speech display, status messages and diagnostic
 transcript headings use the shared OpenCC Taiwan Traditional converter. Speech
-synthesis receives the same converted text. Presentation uses copies: original
+synthesis receives the same converted text. Ordering copy keeps 菜單 and 虱目魚
+instead of OpenCC's generic word substitutions. Presentation uses copies: original
 ASR, model history, tool arguments/results and raw diagnostic traces remain
 unchanged for decisions and troubleshooting. Text typed into the simulation
 input is also submitted unchanged. This normalizes Chinese writing; it does
@@ -92,6 +93,275 @@ model rounds and tool count; these include context/tool waiting but exclude TTS.
 Server separately records provider round sizes/latency/usage. Neither metric
 stores the prompt or implies successful POS submission.
 
+External PB does not expose the owned Menu's `kiosk_conversation_context`.
+The Server now selects one fixed workflow skill from the verified page and
+pending task. Selecting a table never fabricates an empty cart: meal tools stay
+hidden until the native menu/cart can be checked. On the RD table page, customers
+can use large buttons or name an offered table. They can say「A1 桌，開始點餐」
+in one turn, or name the table first and then say「開始點餐」. After a valid
+selection, the reply explicitly asks the customer to say「開始點餐」or press
+the Start button; the table selection alone does not enter the menu. It does not
+repeat the initial instruction to find a seat and supply a table number. Host admits entry
+only for an explicitly named or native-verified selection; an unchosen default
+cannot authorize entry. Native Start opens the menu, never submits an order.
+If a single explicit table code is absent from the current choices, Host replies
+that the table does not exist and refuses a substitute selection or Start.
+Jev/Decisions receives `selecting_table`, all actual table choices and the latest
+visible selection as facts, without inventing a question the assistant never
+asked. Ordinary actions use one direct choice request, with an optional recipient
+check controlled by the Server-resolved device setting. A uniquely compiled
+table action can be selected directly; absent or ambiguous codes still require
+explanation or Main clarification. Unique dish-content reads and opening an
+item window are separate candidates; neither authorizes buying that dish.
+Full-document navigation revokes the previous transport and rediscovers tools;
+it is not recorded as customer input or permission to replay a write.
+An already-issued Start request may settle through that navigation with its
+correlated, table-matched menu-entry acknowledgement. Disposed transports admit
+no further calls; cancellation by the customer still ends the wait. A standalone
+「開始點餐」waits for the replacement menu and then gives ordering guidance,
+without making another Main round using retired table tools. Requests also naming food are not marked fully covered.
+Native navigation emits `navigating` separately from `unavailable`: the Host
+revokes tools until the real menu is ready. A small neutral loading indicator
+appears after 700ms; short navigations show no interstitial. No merchant branding
+or full-screen illustration is added. A slow
+PB page load does not turn a previously acknowledged Start into a rejected call.
+
+The selected Chat profile's SSE mode streams transport events, but the Kiosk
+currently uses assistant deltas only for progress. Customer text and TTS wait
+for the completed tool loop and receipt validation; this is not word-by-word
+reply display. Internal service-admission decisions keep JSON responses.
+A current admitted request receives a non-operational clarification if its
+independent review fails; cancelled or unknown/background speech does not gain
+tool authority. Jev receives the actual visible product dialog separately from
+cart contents, so closing a viewed dish cannot imply deleting a purchased meal.
+
+Final detail replies retain the website's meal contents as well as verified
+prices. An `open_menu_item_details` receipt may include the whole rendered
+catalog; only products matching that receipt's current `productDialog` are
+used to answer. A successful detail window must not become a no-query fallback,
+and failed or unrelated dialog data does not establish meal facts.
+
+The public tool registry owns names and JSON parameter schemas. The compiler
+exhaustively handles every registry key; new keys require an execution branch.
+Host receipts, Server repair routing and model hints translate native operations
+through that registry. Public recommendation arguments are `names` / `purpose`,
+whereas private presentation uses `productRefs` / `mode`. Readable cart targeting
+uses the complete option summary (up to 2000 characters), never its fingerprint.
+Unique published aliases are resolved consistently; shared aliases stay ambiguous.
+
+A single recommended dish includes a bound one-serving offer. Assent to that
+explicit offer (or an explicit serving-count answer) adds the complete meal once;
+multiple recommendations ask which dish to order, with choices limited to the
+actual presentation receipt and its order. The selected dish then asks for its
+serving count; a simple complete answer adds once without an extra confirmation
+or Main round. Original recommendation speech is retained separately from this
+bound selection intent; required customization still goes through clarification.
+Optional add-on groups do not block an accepted base serving: fresh configuration
+validation keeps their selection empty and executes the sealed serving once.
+Required groups become durable draft slots without re-asking product/count.
+When unparsed notes or options need Main, the consumed selection survives only
+within the same utterance ID, question deadline and unchanged visitor/document/
+cart/configuration binding. Main receives the actual original request and bound
+count, retains the unresolved conditions, and still needs independent admission.
+The current customer transcript remains immutable; prior request/answers travel
+as separate evidence rather than being pasted into a new customer utterance.
+Recommendation receipts with questions stay on the normal validated reply path
+so text/playback-driven highlighting is preserved. A recommendation alone is
+never purchase consent. Pending questions remain visible to Jev even while a
+keyword search is active; unsupported wording is resolved semantically or sent
+to Main. Public tool receipts retain the same question IDs as native receipts.
+
+Complete customer-evidenced order drafts execute immediately after the last
+required field is answered; they do not issue a second add confirmation.
+Successful cart receipts omit routine "尚未送出訂單" disclaimers. At final reply
+presentation, `checkoutInvitation.ts` reads back the same verified nonempty cart
+and asks "要結帳嗎？" once. This does not interrupt a multi-tool turn. Yes opens
+the native cart for review, no keeps ordering; neither submits or pays. Unknown,
+partial, stale or still-incomplete operations never produce this invitation.
+The presenter records its structured question as `browser_question_presented`,
+so later semantic answers use its exact ID rather than guessing from prose.
+
+Cart 加點 uses `browser_return_menu`, preserving the order and retiring pending
+draft questions and website search. Existing-row 增加份數 remains a final-total quantity change.
+The Host now uses the same concept: before every Main round it reads fresh PB
+facts internally and replaces `browserContext` with the current catalog and
+configurations, owned cart, provided fields, unfinished dish, pending question
+and phase-legal tools. The Server presents this as a plain-language
+`currentActivity`, one `pendingItems` list and the actual `currentQuestion`;
+Host phase codes and private question tickets stay internal. Model-only tool
+results use `outcome`/`cartEffect` with relevant facts and repair reasons instead
+of technical status envelopes or execution traces. This does
+not consume an answer or claim that a dish is displayed. Closed pending answers are consumed by the Host only after canonical user recording.
+Public `list_cart_items` stays a pure read. An answered count with unresolved
+options continues in the same Main task, with the original request and resolved
+fields, without duplicating the customer record. Otherwise the model can act
+on the fresh projection without an extra preparation call. Visitor dialogue
+uses the same bounded history as the owned Menu;
+past raw tool payloads are retained for audit rather than replayed as fresh facts.
+Closed literal answers to current draft count fields, complete confirmation and
+cancellation can run as Host operations after durable user recording, without
+another Main selection round. Preparation never consumes the question; execution
+rechecks native bindings and saves the receipt as `browser_question_answer`.
+These turns report zero Main model rounds, not a fabricated model tool call.
+Other answers, corrections and new requests retain the normal planner path.
+Jev is an optional admission/intent path, not the owner of PB cart or dialogue state.
+Quantity questions are offered only for a known target with a missing count;
+literal serving extraction masks product names such as 三杯雞 and excludes
+party-size/add-on units. These fields never establish purchase consent.
+
+PB Main receives 17 business operations from `stage-shared/ordering-tools`,
+executed by `services/browserOrderingTools.ts`. Models supply meal names,
+configuration names, option names and serving counts. Host resolves current
+native IDs, versions and website prices; these are omitted from public model
+projections. `add_items_to_cart` takes additional servings;
+`set_cart_item_quantity` takes the final total; removal and replacement are
+separate actions. Batch inputs are validated before the first mutation, and
+later failures retain prior verified receipts. Model tools do not submit orders,
+payments, arbitrary browser commands or multi-item price calculations.
+
+The public vocabulary and parameter schemas are owned by `ordering-tools`;
+`browserOrderingTools` compiles them to the existing private `browser_*` site
+executor. Native names are not additional model choices. Tool recognition,
+result projection and continuation policy must use that same mapping. An
+unavailable model call is never dispatched as a native alias: only a proven
+no-effect correction may return to Main, with current allowed names.
+
+PB completion follows current-turn evidence: a validated question waits for the
+customer; missing options continue the same task; missing/failed native write
+receipts remain unknown and stop a batch. Definite pre-effect decision failures
+handoff to Main. A final provider/site failure gives normal customer guidance
+for continuing on screen or reviewing the cart, retaining the failure internally.
+This guidance never marks an order successful or retries an uncertain write.
+
+
+For the approved eight-piece dumpling product, `piecesPerServing` supplies the
+total pieces in each serving; Host derives the extra option count and current
+website price. `quantity` always counts meals. An explicit `copyFrom` preserves
+a uniquely identified cart meal's options and note. Same-product replacements
+patch only specified options (`quantity: 0` removes one), note or pieces; other
+customization stays intact. Different-product replacements start from that new
+product's configuration. Equivalent split rows can be adjusted/replaced together;
+different options, notes or prices require a specific target. Complete literal
+piece-and-serving requests have a compiled Jev candidate; mixed/uncertain
+customization remains with Main.
+
+`list_menu_items`, `get_menu_item_details` and `list_cart_items` only read facts;
+they do not consume pending answers or present cards. `ask_customer_question`
+uses a bounded purpose and Host-generated question; `reply_to_customer` takes a
+reply type, not arbitrary text. Simple explicit purchases and no-option quantity
+answers add directly. Bare assent to a recommendation still asks purchase/count.
+Declining cancel-and-search restores the previous question. Complex draft state
+remains Host-owned and is not public native `browser_order_draft` permission.
+
+Page/task/cart filtering is `availableOrderingTools`. Table selection exposes no
+cart tools; menu location does not prevent cart edits. Startup cart preparation
+runs on the table page through a Host-only fresh cart read, before exposing
+Start. An unowned cart or failed preparation shows an explicit preparation
+panel and Restart action instead of a blank native region. Same-reception
+ownership survives normal menu/cart navigation. Explicit Restart from table
+entry verifies settled work; an empty cart needs only an entry reload, while
+an occupied cart enters through PB's actual selected-table Start control under
+the maintenance cover and then clears/verifies its real cart before reloading.
+Ordinary table context never exposes prior cart contents to the models.
+A3/A03 resolve to the one actual current table.
+Native dropdown clicks synchronize the large selector; a website default alone
+is not customer consent.
+
+Jev finite candidates cover simple unique additions/aliases, missing quantities,
+current finite answers, table selection/start, cart review/return, simple unique
+row edits/removal and random recommendations of up to three real items.
+Uncompiled/uncertain requests go to Main. The real wording endpoint timed out;
+no measured new Jev accuracy is claimed. The opt-in comparison harness is
+`apps/server/src/services/domain/kiosk-interaction-decision/pbToolWording.test.ts`
+with `JEV_TOOL_WORDING_URL`. No new live accuracy/performance result is claimed.
+
+`recommendationSession.ts` owns reception/category price scope and additive
+name exclusions. `list_menu_items.criteria` patches the state; `allowedTerms`
+relaxes only specified exclusions. A price-range question clears only price on
+an accepted yes; no retains it. Names are not allergy/ingredient guarantees.
+Jev recommendations use this same pool. Separate semantic candidates distinguish
+ordinary recommendations from other recommendations that exclude the last shown
+batch; replay uses the actual batch. Observed name fragments constrain display
+references and are sent as possible catalog evidence; they never become aliases
+or authorize a cart write. Candidates list the actual proposed dishes. More than
+three explicitly matched dishes require Main rather than silent truncation. Simple complete additions of up to three no-option meals
+can form one finite candidate; incomplete batches go intact to Main.
+
+Customer messages appear on final recognition, with per-request visual status.
+`conversationMessages.ts` groups late replies under their originating utterance;
+it does not reorder durable/model history. Original speech links to the exact
+once-only transcript entry and captured visitor session. Closing a reception
+detaches its append chain as well as model work, so late acknowledgements cannot
+block new records or set the new session's error state. No timestamp/order joins
+are used for audio; unlinked retained files remain available in Admin.
+
+The yellow voice panel reports microphone/VAD/ASR, blocking reasons and TTS overlap.
+Kiosk Admin has a separate microphone/TTS/interruption test switch, also usable in
+text mode. Its cancellable audio lifecycle never enqueues ordering work or adds
+customer dialogue. Closing Admin stops this test. Physical microphone/echo and
+full Kiosk/merchant acceptance remain separate validation requirements.
+
+Server plan admission binds public tool arguments to the compiled native effect,
+including one-use slots for each batch item. Finite cart edits record their own
+authority and native operation names. Published aliases are scoped to the session's
+immutable service binding. A batch stays in one Host task so later steps retain
+earlier receipts. Read-only public facts can finish with a website-derived summary;
+a subsequent actual presentation replaces preparation prose. Cart configuration
+parameters use the readable option description, while native fingerprints remain
+private. Searching another dish while waiting for quantity asks to cancel first.
+
+Tool `nextActions` describe available navigation only. A single final renderer
+adds one next-step offer if no live question/guidance already exists. Partial or
+unknown receipts do not suggest checkout; no extra Main polishing round is added.
+
+Service questions also offer semantic information choices for the actual cart,
+plus a new-request handoff for other demands. Jev can answer a serving-content
+question through a fresh detail read without accepting checkout or changing the
+cart; the obsolete service offer is retired. Known PB dumpling facts are included in
+detail reads, recommendations and quantity questions even when the merchant's
+description field is empty; one serving keeps the verified eight-piece default.
+
+On the cart page, `continue_checkout`, `choose_invoice_method` and
+`set_invoice_notification_phone` expose the next actual checkout steps. Cart
+review reads the dishes/servings/website amount before asking for confirmation;
+its assent advances to invoice choices, never submission. Codes/email may be
+entered on the website; phone drafts must match the current customer text.
+The final submission question includes meals/options/notes, website total,
+table, invoice and notification details. Its native token is private, expiring,
+one-use and invalidated by any cart/form/manual-interaction change.
+
+Automated submission is currently enabled only for the approved owned fixture
+at `127.0.0.1:5188`. The merchant result/navigation flow remains unverified and
+uses manual submission guidance. A native dispatch acknowledgement is not proof
+of payment. Only the owned fixture's observed result-page order ID and matching
+amount release that same operation's pending marker; unknown effects retain it.
+The matched acknowledgement retires the editor tools even after SPA navigation;
+a reception restart reloads the configured table entry instead of invoking old
+cart controls on the result page. Late replies cannot retire replacement tools.
+Result pages gain no automation privileges. This does not certify merchant
+submission/payment, post-payment completion or voice operation.
+
+Each published ordering site may carry `catalogLabels` configured in Admin's
+interactive-service editor: exact current product name, aliases and category.
+Only a unique exact name in the fresh catalog receives those discovery labels.
+Absent, renamed or duplicate-name products receive none. Main and Jev see the
+labels; shared aliases still require formal-name clarification, never an arbitrary
+purchase. Label/category searches present verified native refs and clear stale
+native text filters instead of searching PB for an alias it does not know.
+Labels cannot override price/options/availability or establish ingredient/allergen
+facts. Changing published labels uses the same customer-reset barrier as changing
+the merchant. Existing profiles need no migration; publish after saving edits.
+Recommendation rotation also uses Host state: only a successfully shown native
+recommendation batch is remembered for the current visitor/document. Only
+`purpose=other-recommendations` excludes that batch; ordinary `recommendation`
+preserves the supplied refs, including previously introduced named matches.
+`information` remains passive. These are purposes of the existing
+`point_to_menu_items` tool, not additional tools. Host never invents replacement
+products. Informational speech cues do not rotate that history.
+
+Full production, speech/hardware and arbitrary compound-correction acceptance
+requires separate validation; the live menu may lack multiple required groups.
+
 ## Verified conversation replies and retries
 
 Non-operation answers use the Server's finite `respond_to_customer` tool and a
@@ -118,8 +388,9 @@ independent interpretation; simple finite-compiled additions keep their fast pat
 Host compiles current literal slots; requests beyond its complete compiler
 coverage first pass independent recipient and service/background admission,
 then go intact to Main. Pending PB questions use the same admission path without
-reading or consuming their one-use answer during candidate discovery; only Main
-resolves that answer after admission. Main
+reading or consuming their one-use answer during candidate discovery. After
+admission and canonical recording, closed count/confirm/cancel answers can be
+resolved directly by the Host; semantic answers retain the Main/Jev resolver. Main
 supplies its recorded structured tool call. The Server matches the current canonical `user_text`, rejects read-only or
 changed proposals, and consumes the issued plan once under a database row lock.
 The Host still checks visitor ownership, ambiguity and fresh vendor versions;
@@ -567,27 +838,48 @@ an arbitrary same-named line cannot produce a vendor write; it is not a model ac
 `--addon-cases` uses the current paid option to verify one meal with one add-on,
 an explicit refusal of that add-on, and two meals each with one add-on. Every case
 checks the configured price, per-serving attributes, quantity and whole cart,
-then removes only its verified isolated row. `--draft-reset-cases` verifies that
-an open unsubmitted product note/search is cleared without changing the cart.
-`--handoff-cases` uses the real customer-restart UI with a pending confirmation
-and open product draft, then checks that the next visitor cannot inherit either
-or edit a previous nonempty cart. It verifies queries remain usable and resumes
-only through the real staff review/checkbox UI. Its local staff-session fixture
-is **not** a test of PIN authentication. An initially empty cart gets a known
-isolated first-customer row for the test, removed after verification. The artifacts
-are `addon-cases.json`, `draft-reset-cases.json` and `handoff-cases.json` under the
+then removes only its verified isolated row. `--draft-reset-cases` requires an
+initially empty cart and verifies that an open unsubmitted product note/search
+is cleared with an empty-cart receipt. `--handoff-cases` also refuses an initially
+nonempty cart. It creates one isolated first-customer row, uses the real
+customer-restart UI with a pending confirmation and open product draft, then
+verifies one native clear-all effect, empty cart, retained login and revoked
+old consent. The next customer can query and order normally; only its verified
+test row is removed afterward. Its local staff-session fixture is **not** a test
+of PIN authentication. These are real-merchant opt-in tests; the automatic reset
+policy itself is covered by the network-intercepted native fixture. Artifacts are
+`addon-cases.json`, `draft-reset-cases.json` and `handoff-cases.json` under the
 same output directory.
 
 PB now supplies a dedicated `FastPathSource` for Jev instead of advertising
 owned Menu tools or fabricated Menu revisions. Activation is checked per turn;
 missing candidate capability has its own diagnostic reason and does not imply
 Admin disabled Jev. Fresh catalog references and explicit simple serving slots
-can compile a single add through the existing `browserCartTask` gate. Before
+can compile a single add through the existing `browserCartTask` gate. Explicit
+additions require servings from the current request. Missing servings
+use a separate `intent:ask-quantity` candidate that asks the actual product's
+quantity without purchasing. A locally resolvable pending answer includes the
+actual issued question in its description, whether it concerns product choice or
+servings. `browserFastPathCandidates.test.ts` exercises the production generator
+against current catalog/cart facts and a real dialogue question; hand-written
+candidate probes do not establish application accuracy. Before
 its effect check, the admitted original utterance must be persisted as the
 current `user_text`, just as Main does; ASR diagnostics are not authorization
-evidence. Persistence failure prevents the effect check and write. Optional
-add-ons, mandatory/variable configurations, pending questions and compound demands
-continue through Main with the original utterance and existing validation.
+evidence. Persistence failure prevents the effect check and write. Requests
+without a complete supported candidate continue through Main with the original
+utterance and existing validation; uncovered options or compound demands are not
+silently reduced to a basic purchase.
+
+Both decision providers receive the observed menu/cart screen and matching cart
+row count. Cart edits prefer observed product references over display names;
+catalog labels are removed before numeric slot normalization, so names such as
+三杯雞 are not rewritten as quantities. Multi-item compilation uses the same
+catalog mention resolution as single-item lookup. Explicit unknown/partial
+native receipts remain uncertain execution results and never authorize replay.
+Cross-app wiring coverage lives in
+`apps/server/tests/integration/browserDecisionWiring.test.ts`: forced provider
+answers test production candidates through HTTP/continuations and back to Host
+dispatch. Those results measure wiring, not semantic model accuracy or native UI.
 
 Configured-price inquiries use read-only `browser_quote_selection` with fresh
 product/choice/configuration refs. `browser_quote` is base-only; if the utterance
@@ -600,18 +892,54 @@ Both routes use the shared PB visual runtime. Verified product refs drive a
 bounded summary above the native View plus product frames and an illustrative
 hand inside PB. Audio `playing` triggers an utterance-level cue; there are no
 invented word timestamps. The Host-only `browser_present` tool is excluded from
-Main. Cues never click/write and cannot establish purchase consent. Real input,
-new turns, navigation and customer reset cancel old presentation; accepted writes
+Main. Cues never click/write and cannot establish purchase consent. During an
+introduction batch, trusted customer touch, wheel and keyboard input is blocked
+through movement between dishes; the Host also ignores native takeover notices
+for that active batch. Finishing or failing the batch releases input. New turns,
+navigation and customer reset cancel old presentation; accepted writes
 still settle. A missing/ambiguous card shows a location limitation rather than
 invented coordinates. Reduced-motion users retain frames with no movement delay.
+This is the text/cue batch boundary, not verified full-TTS playback locking.
+
+The idle confirmation uses a separate finite Jev decision: continue, end, other,
+or uncertain. Only a current confident continue/end answer changes reception
+state. Other demands are neither sent to ordinary ordering nor retained for
+later execution. Input received during this question carries its original idle
+deadline and reception generation, so a subsequent touch cannot convert waiting
+speech into a meal operation. Disabled/unavailable Jev leaves the touch choices
+and countdown available; it does not guess an answer or hand speech to Main.
 
 PB has two independent lifecycles: shared account login and the active vendor
 order. An explicit `order:null` with zero subtotal and no details is an empty cart;
 missing or contradictory evidence is an error. The first add may establish a new
 order identity, but pickup/manual generation and the entire effect must still match.
-Ending a reception uses Host-only `browser_customer_reset`: close the product
-draft, clear search, verify the cart, then renew the Host connection in the same
-PB document. This tool is excluded from Main. It never reloads PB or clears its cart.
+Ending a reception uses Host-only `browser_customer_reset`: read the current
+cart, click PB's native cart-header **清空** once when rows remain, and verify
+both empty rows and zero subtotal. It then closes the product draft, clears
+search, returns to the menu and renews the Host connection in the same PB
+document to verify the result. The Host then reloads the configured entry URL
+(PB's select-table page), replacing the previous customer's document and tool
+handles while retaining the dedicated browser profile's login. A successful
+native reset alone does not prepare the next customer's entry screen.
+This applies to explicit new-order/reception actions and actual
+idle/completion end, not the continue-ordering dialog. Main cannot call this tool.
+The customer restart button waits for active website operations or a disconnected
+binding, rather than model thinking alone. Restart enters the reset state
+immediately and cancels the old reception's ASR/Jev/Main/TTS work; its audit entry
+captures the old visitor but does not delay reset on a network acknowledgement.
+Presentation cleanup belongs to the reset lifecycle, so a late audit or reset
+continuation cannot clear the next customer's conversation.
+Reception reset skips the illustrative hand's travel, dwell and press timing.
+An opaque loading cover masks native intermediate navigation while the Host
+announces that it is preparing a new order. Trusted input is blocked during this
+maintenance scope, but native target/occlusion, ownership and fresh-cart checks
+still run. The cover survives SPA navigation and is removed on success or failure.
+The store's **我知道了，開始點餐** announcement is optional: its exact visible
+control is handled only when present; it is not a mandatory step or a generic
+confirmation handler.
+The old visitor/chat closes only after reset succeeds. Pending/unknown effects
+block reset; an uncertain clear is never automatically replayed. A failed return
+to the menu can be retried against the already empty cart without another clear.
 Local ownership stores only an opaque visitor ID scoped to service origin/path.
 A fresh empty cart can transfer automatically; a previous/unowned nonempty cart
 blocks assisted changes and hides old lines from Agent. The PIN-protected admin
@@ -775,6 +1103,54 @@ copying another browser's cookies. See the [desktop README](../stage-kiosk-deskt
 for launch/security limits and the [Windows plan](../../docs/plans/2026-10-28-windows-kiosk-electron.md)
 for generic browser control and Agent integration milestones.
 
+Connected tool transport does not establish vendor authentication. If PB's fresh
+page data confirms no signed-in user, Kiosk displays a specific sign-in prompt
+instead of the generic operation rejection. Sign in inside Electron, then ask
+again; every new read checks current page state. A typed pre-dispatch receipt is
+required for this prompt, so arbitrary errors and uncertain cart writes retain
+their existing failure handling.
+
+PB recommendations and spoken product choices use batches of at most three,
+including Main-only operation and follow-up requests for other dishes. These
+are spoken choices, not previous/next pages on the PB website. Generic meal-name
+suffixes cannot replace an absent named dish with the whole catalog: report a
+current-pickup lookup miss first and stop; related literal-name candidates still
+require confirmation. Missing configuration is reported separately from absence.
+`browser_present` defaults to `mode=recommendation`; explicit customer-requested
+comparisons use `mode=information` (up to ten per call, with oversize requests
+rejected for splitting). One customer turn cannot emit successive recommendation
+batches. Recommendation tools first validate/reserve the exact cards without
+running the dish cues. Text mode starts single-dish cues after the reply is
+visible; voice mode starts them from playback segments, in mention order.
+Interrupted/old-visitor cues cannot resume, and only actually shown dishes enter
+recommendation history. Search recovery is offered from the native search field
+for Jev to interpret semantically, including an abandoned search with an old
+question. Low-confidence or different requests go to Main. Fixed no-argument
+tools always use Host-owned `{}`; model wrappers cannot change their action.
+
+New search criteria replace the prior browse filter. For rejection of the current
+recommendations (「這些都不要」), Main clears the search to show the full menu,
+without reading the entire menu aloud or dropping explicit dietary/budget needs.
+Search changes retire the previous product question; no cart lines are removed.
+Spoken product-choice questions, including aliases after an exact-name miss,
+require a successful native presentation with the same product refs/names/prices.
+Cancelled, missing or changed cards retire that question instead of leaving an
+invisible choice that a later ordinal could consume.
+
+A normal reception end clears unfinished merchant rows before the next visitor.
+An abrupt reload/crash may still leave a cart and its persisted visitor ownership.
+Direct acknowledgement/clarification/information-fallback replies
+read the cart before responding, so Main cannot skip the handoff gate by choosing
+`browser_respond` immediately. Unowned unfinished items yield a short staff-review
+message without exposing their contents, clearing them or adopting them. A failed
+read is not an empty cart; typed sign-in failures retain their login prompt.
+`browser_respond kind=checkout-guidance` checks ownership and reviews the actual
+cart. Adapters with verified checkout controls advance through the staged invoice
+flow above; other adapters give manual guidance (or report an empty cart). This
+reply does not itself authorize submission or payment. Guidance receipts end the turn without another Main
+continuation. Staff may use **Settings → External cart handoff** to review and
+resume the same in-progress cart; a new visitor does not authorize that transfer.
+
 Development device enrollment now sets a 30-day HttpOnly cookie so closing the
 desktop app does not discard enrollment. Server-side revocation still applies;
 this does not change visitor/admin session expiry or PB's own login policy.
@@ -848,9 +1224,9 @@ existing profiles receive Off when settings are next applied.
 Each customer starts an anonymous Kiosk session when they touch the screen, type a message, speak, or operate the menu. The owned Menu session controls that customer's conversation and cart. External PB retains its vendor cart separately:
 
 - After three minutes without activity, it asks whether to continue and starts a 15-second countdown. Showing the dialog does not clear anything. **繼續點餐** cancels that countdown and keeps the same session, conversation, cart and unfinished ordering requirement (including the selected meal, known quantity/options and pending question); it does not reload the menu or repeat the question. Only unanswered countdown expiry, confirmed order completion or explicitly starting a new order/reception clears that context and ends its durable visitor session. Pending AI/tool work and high-confidence engaged presence retain their existing idle-timer protection. Lookups and deferral do not reset context. Internal answer tickets remain short-lived and are renewed on the next decision turn; financial/destructive confirmation authority is not extended by continuing.
-- After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and owned Menu/order state are reset to clean standby. External PB uses the preserved-cart reset described above. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
+- After an order is confirmed accepted, the completion screen (with an optional survey QR Code) remains until dismissed or its countdown ends; then the customer conversation and owned Menu/order state are reset to clean standby. External PB uses the verified native clear/reset described above. Failed, rejected, uncertain or still-pending submissions do not trigger completion/reset.
 - The owned menu reports completion immediately after payment and accepted submission. Its transient order-continuation URL is displayed as a separate QR and desktop link alongside the configured reward/survey; the customer need not acknowledge the order QR before the reward appears. Only the non-personal order result enters the archive; the capability is cleared from host memory when the customer session ends.
-- In administrator mode, **結束目前接待** ends the current reception. For PB it discards only unsubmitted product/search drafts, renews the Host connection and preserves the vendor document, cart and shared login. Pending or unknown effects block this reset; no whole-cart clear is inferred.
+- In administrator mode, **結束目前接待** ends the current reception. For PB it clears unfinished cart rows with the native **清空** button, verifies empty, resets product/search drafts and renews the Host connection while retaining the vendor document/shared login. Pending or unknown effects block this reset, and failures retain the current reception.
 
 This is intentionally separate from AIRI's general chat history. Reception reset
 clears customer-visible state, while the restricted system archive retains the
@@ -871,8 +1247,13 @@ Jev/decision-transport failures also hand off, with available pending-question
 context and completed read receipts. Neither route resets the customer session,
 conversation, cart or unfinished speech. Main Agent must still establish intent
 and pass ordinary tool validation; fallback itself grants no operation authority.
-Semantic uncertainty, ignored/incomplete speech and clarification keep their
-existing policies. Browser execution failures are separate: unknown mutation
+The device's background filter controls whether IGNORE is available; off and
+observe cannot silently drop a request. In PB mode, incomplete speech produces
+a visible clarification asking the customer to state the full request, without
+retaining or joining speech fragments. A product-choice question keeps its
+original target query separate from the full customer request across a later
+quantity question. Answering the count completes a simple purchase once; any
+unparsed customization remains for further handling rather than being discarded. Browser execution failures are separate: unknown mutation
 results require checking the screen, never automatic replay. Activation changes
 take effect on the next turn without reload; existing in-flight work is not
 retroactively canceled. If Main Agent also fails, screen ordering remains the
@@ -987,14 +1368,31 @@ the same state through a host-only, read-only service tool. Tax IDs, carrier
 codes, and raw checkout objects are never included in that conversation hint;
 tool execution still checks the browser's live state.
 
+## Published character behavior
+
+Published character-card identity/personality and ongoing instructions apply to
+PB conversations as well as the owned Menu. VRM uses the existing external-TTS
+audio node; Live2D now attaches that same speech to the shared wLipSync engine.
+Stopping or replacing speech detaches only the mouth-analysis branch, preserving
+audible playback. Thinking expressions remain driven by actual pending work.
+PB cart acknowledgements require a correlated verified write receipt; product
+gestures require a validated nonempty `shown` presentation. Internal catalog
+reads, failed/unknown writes, repeated receipts and retired documents do not
+trigger those gestures. Model-specific expressions and physical output still
+require acceptance with the selected VRM/Live2D file and speech provider.
+
 ## Local diagnostic overlays
 
-In Electron text mode, the simulated-ASR input, timing and decision trace occupy
-a reserved row between the character/conversation and native PB website. The
-compact input and submit button stay outside the native site's rectangle;
-collapse the row to give PB more space. Long diagnostics scroll within the row.
-Laptop1080×833 and portrait1080×1920 input placement are covered by browser tests;
-the actual Windows display and scaling still require device acceptance.
+In Electron text mode, the same simulated-ASR input, timing and decision trace
+float in a frameless child window above the native PB website. Drag its title
+bar, collapse it, or choose **重設位置**. It retains the existing Vue subtree and
+submission handlers; it does not start another Kiosk or conversation session.
+Closing the popup returns the draft and trace to a compact reserved row; choose
+**浮動視窗** to reopen it. If opening is denied, that row remains usable and shows
+an error. The reserved row is released while floating. Host reload/shutdown
+closes its owned popup. Browser tests cover draft retention, submission and trace
+updates; the real Electron fixture covers ownership, native placement, input and
+permission boundaries. Physical Windows dragging/scaling still need acceptance.
 
 In browser text mode, these controls share a floating console. Drag its title
 bar with a mouse or touch, collapse it to keep
@@ -1116,22 +1514,22 @@ generated-text path and use the chat model when the policy is off.
 ### Per-device operational settings
 
 System administrators open **Devices → Device settings** in the Dashboard
-(`/admin/kiosk/devices`) to configure each registered Kiosk and delegate
-individual fields with **Allow local changes**. The Kiosk's **現場設定** page
-edits the same Server-owned policy; saving requires the device cookie and a
-signed-in system administrator or an administrator of that device's Site.
-The PIN alone cannot authorize a settings write.
+(`/admin/kiosk/devices`). The on-device settings and Dashboard edit the same
+revisioned override map; there is no per-field delegation or separate local map.
+Local writes require the enrolled device cookie and a Server-verified PIN grant.
+Dashboard writes retain account and Site role checks.
 
-Precedence is Site defaults, then administrator device overrides, then explicitly
-delegated local overrides. Site defaults cover camera capture (off, JPEG snapshot,
-event clip, or continuous video), VLM, performance, and VAD; observation,
-greetings, reminders, timing, detection zones, and the MediaPipe face-confidence
-threshold (`0.40`–`0.80`, default `0.60`) have shared defaults and can be overridden
-per device. Newly enrolled devices override observation, greetings, reminders
-and voice diagnostics to enabled, with greeting trigger `mixed` (any signal).
-Those five settings permit local adjustment from enrollment. Other fields remain
-locked unless delegated; existing saved device settings are unchanged. Old browser-local observation
-preferences are no longer authoritative and are not migrated automatically.
+Site defaults are overridden by saved device values. Both editors expose
+**純文字模式**: save to show the text composer and stop microphone capture on a
+voice-only Profile; turn it off to return to the Profile's voice mode. A Profile
+that already allows text keeps its text entry. Changing this setting does not
+reset the PB document, its login, or its cart. Devices refresh effective policy
+every 10 seconds and on focus, retaining the last acknowledged snapshot offline.
+A successful local save takes effect immediately; stale responses cannot undo it.
+
+PB service-mode and background-speech policy controls remain hidden until the
+native PB/Jev implementation supports them. They do not select PB dine-in,
+pickup or a table number. Those capabilities require separate vendor verification.
 
 The **Presence vision mode** setting is per-device and supports `face_only`
 (the legacy baseline), `pose_only`, and `pose_plus_conditional_face` (the
@@ -1139,15 +1537,10 @@ default). Pose modes use local Pose Lite for anonymous relative body-scale and
 movement evidence; conditional face checks run only for attention-capable
 greeting modes and never in the same inference callback as Pose.
 
-Removing delegation discards that local value permanently. Administrators may
-also clear an existing local override while keeping the field delegated. Every
-accepted write increments the device revision and records the operator and
-before/after values in the audit log. A stale form receives HTTP 409 and must be
-reloaded instead of silently overwriting another operator's changes.
-
-The active Kiosk refreshes effective settings every 15 seconds after the previous
-request finishes. Offline it retains the last snapshot; reconnection applies the
-current policy. Camera work is stopped and restarted when policy changes, and
+Every accepted write increments the device revision and records its principal
+and before/after values. HTTP 409 requires a reload; unsaved drafts are protected
+from background refreshes. The device retains its last snapshot while offline;
+reconnection applies the current policy. Camera work is stopped and restarted when policy changes, and
 the Server independently enforces recording and proactive-action permissions.
 Recording without observation does not start MediaPipe. These controls do not
 change browser camera/microphone permission or the existing local preview toggle.
@@ -1207,11 +1600,10 @@ as an upload-size refusal, separately from incomplete recognition/provider failu
 
 ### Local access
 
-The visitor experience does not display settings. Long-press the `AIRI 餐飲服務員` label for 1.2 seconds, then enter the PIN configured before starting the kiosk:
-
-```bash
-VITE_KIOSK_ADMIN_PIN='choose-a-private-pin' pnpm --filter @proj-airi/stage-kiosk run dev
-```
+Tap the settings label five times within two seconds, then enter the PIN on
+the on-screen keypad. Configure `KIOSK_ADMIN_PIN` or `KIOSK_ADMIN_PIN_FILE` on the
+Server; no PIN is embedded through a frontend `VITE_` variable. Closing the panel
+revokes the local grant. PB's native View hides while a host dialog owns input.
 
 Administrator mode can choose the microphone, adjust the locally stored customer conversation text size, enable or disable voice input, and pause the avatar for calibration. Published Site policy resolves the chat and audio models on the Server; provider credentials and API keys never enter the kiosk bundle or settings surface.
 
@@ -1220,6 +1612,21 @@ In Webnavior's published Kiosk Profile, **僅允許語音對話** hides the cust
 The Profile can also include an optional PNG, JPEG, or WebP **服務場景** image. It is served as an immutable versioned kiosk asset and appears behind the virtual service character after the Profile is published. When no image is configured, the kiosk deliberately uses its built-in counter scene, so a readable service setting does not require a background upload.
 
 The kiosk captures complete ASR utterances independently while model or browser work continues. Real speech and the simulated-ASR input enter the same bounded decision queue. Jev first filters background speech; an ignored utterance neither interrupts the spoken reply nor reaches Main Agent. A related follow-up may restart an Agent that has not yet requested a browser tool, preserving both user turns in the visitor session. Once a tool is requested, new speech waits for the definitive result and is re-evaluated against the latest menu/checkout state. The queue reserves speech order before ASR returns, and overload is shown rather than silently dropping a phrase. Ordering workflows remain responsible for explicit customer confirmation before submission. The local decision-flow diagnostic switch exposes a larger per-utterance decision inspector.
+
+Completion countdown and reception reset retire customer ASR reservations,
+Jev/Main decisions, streamed replies and TTS immediately. Text simulation is also
+closed during those phases. A canceled provider that ignores abort cannot hold
+up the next reception or clear its progress when it eventually returns. Visitor
+session start/end callbacks are bound to their lifecycle, so late responses cannot
+adopt or clear the replacement session. Dispatched browser writes still settle
+through the document's serialized operation queue; this is not permission to
+replay an uncertain write. Administrator microphone tests remain independent.
+
+An admitted PB cart retains its current visitor in memory for the reception;
+storage eviction alone does not interrupt active ordering. After reload or at a
+new reception, an unknown nonempty cart still requires review. Moving that first
+check fully into pre-opening preparation remains pending; the host does not infer
+that the physical customer changed from page or speech changes.
 
 Proactive recommendation invitations have their own structured question receipts.
 They survive idle within the same order, renew a per-decision answer ticket, and
@@ -1292,7 +1699,8 @@ An approved interactive service can optionally serve `/.well-known/webnavior-kio
 
 The manifest must be served with CORS allowing the kiosk origin to fetch it. Labels are display-only: each non-empty label is capped at 160 characters and malformed entries are ignored individually. New tools without an entry continue to work and display the generic progress message.
 
-`VITE_KIOSK_ADMIN_PIN` is an on-device guard against accidental customer access, not a replacement for server-side administrator authentication: Vite exposes `VITE_` values to the browser bundle. Production deployment should place provider credentials in a protected management service rather than relying on this PIN alone.
+Local administrator PIN verification is Server-owned, device-bound and rate
+limited. Provider credentials remain on the Server.
 
 During a bound Main Agent task, the ordering page temporarily locks customer
 controls and shows **Use manual controls**. Switching aborts model transport,

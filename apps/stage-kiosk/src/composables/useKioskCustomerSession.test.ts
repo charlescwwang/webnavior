@@ -8,7 +8,9 @@ import { effectScope, shallowRef } from 'vue'
 
 import { createPosSimulator } from '../../../order-menu-server/src/simulator'
 import { createMenuToolRuntime } from '../../../order-menu/src/webmcp'
+import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { useKioskCustomerSession } from './useKioskCustomerSession'
+import { kioskInteractionProfile, queueOrderingSite } from './useKioskInteractiveServices'
 
 const { reloadScenario } = vi.hoisted(() => ({
   reloadScenario: vi.fn(),
@@ -23,11 +25,65 @@ describe('useKioskCustomerSession', () => {
 
   afterEach(() => {
     scopes.splice(0).forEach(scope => scope.stop())
+    interactiveServiceClient.activate(undefined)
     vi.clearAllMocks()
     vi.useRealTimers()
   })
 
-  it('clears the customer conversation and reloads the independent interactive service', async () => {
+  // Report: this chat, Nov14; PB's successful in-document reset left the next customer on the menu.
+  it('reloads the configured entry after a native idle reset, before admitting the next customer', async () => {
+    vi.useFakeTimers()
+    const calls: string[] = []
+    interactiveServiceClient.activateTransport('https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table', () => {
+      const lifetime = new AbortController()
+      return {
+        signal: lifetime.signal,
+        dispose: reason => lifetime.abort(reason),
+        discover: async request => ({ ...request, documentId: 'native-document', toolsRevision: 1, tools: ['browser_recovery_context', 'browser_customer_reset'].map(name => ({ name, description: '', inputSchema: { type: 'object' } })) }),
+        inspect: async request => ({ connectionId: request.connectionId, documentId: request.documentId, pendingCount: 0, operations: [] }),
+        execute: async (request) => {
+          calls.push(request.name)
+          return { connectionId: request.connectionId, documentId: request.documentId, operationId: request.operationId, result: { ok: true, status: 'customer-reset', cartCleared: true, documentId: request.documentId } }
+        },
+      }
+    })
+    await interactiveServiceClient.waitUntilReady()
+    const chatSession = {
+      createSession: vi.fn().mockResolvedValueOnce('old-customer').mockResolvedValueOnce('standby').mockResolvedValueOnce('new-customer'),
+      deleteSession: vi.fn().mockResolvedValue(undefined),
+      initialize: vi.fn().mockResolvedValue(undefined),
+      setActiveSession: vi.fn(),
+    } as unknown as ReturnType<typeof useChatSessionStore>
+    reloadScenario.mockImplementationOnce(() => {
+      calls.push('reload-entry')
+      // ScenarioSurface revokes the old document synchronously on reload.
+      interactiveServiceClient.activate(undefined)
+    })
+    const scope = effectScope()
+    scopes.push(scope)
+    const session = scope.run(() => useKioskCustomerSession({
+      activeCardId: shallowRef('default'),
+      chatSession,
+      endVisitorSession: () => { calls.push('end-visitor') },
+      resetConversation: () => { calls.push('clear-conversation') },
+    }))!
+    await session.recordActivity()
+    const previousCustomer = session.customer.value?.sessionId
+    await vi.advanceTimersByTimeAsync(194_999)
+    expect(session.state.value).toBe('awaiting-idle-confirmation')
+    expect(calls).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(calls).toEqual(['browser_customer_reset', 'reload-entry', 'end-visitor', 'clear-conversation'])
+    expect(session.state.value).toBe('standby')
+    expect(interactiveServiceClient.getDocumentId()).toBeUndefined()
+    expect(interactiveServiceClient.tools.value).toEqual([])
+    await session.recordActivity()
+    expect(session.customer.value?.sessionId).toBeDefined()
+    expect(session.customer.value?.sessionId).not.toBe(previousCustomer)
+    expect(session.state.value).toBe('active')
+  })
+
+  it('clears the customer conversation and applies a queued published site only after closing the visitor', async () => {
     const chatSession = {
       createSession: vi.fn().mockResolvedValueOnce('customer-chat').mockResolvedValueOnce('standby-chat'),
       deleteSession: vi.fn().mockResolvedValue(undefined),
@@ -36,24 +92,38 @@ describe('useKioskCustomerSession', () => {
     } as unknown as ReturnType<typeof useChatSessionStore>
     const scope = effectScope()
     scopes.push(scope)
+    const originalProfile = kioskInteractionProfile.profile.value
+    const original = originalProfile.services[0]!
+    const nextSite = { id: 'next-published-site', title: 'Next published site', description: '', url: 'https://example.com/menu' }
+    const endVisitorSession = vi.fn(async () => {
+      expect(kioskInteractionProfile.profile.value).toBe(originalProfile)
+    })
     const session = scope.run(() => useKioskCustomerSession({
       activeCardId: shallowRef('default'),
       chatSession,
+      endVisitorSession,
     }))
     if (!session)
       throw new Error('Expected customer-session composable to initialize.')
 
     await session.recordActivity()
-    const ending = session.end('staff')
-    await ending
-
-    // The shared lifecycle awaits the host's iframe reset because a host may
-    // need to finish an asynchronous reload before creating the next session.
-    expect(reloadScenario).toHaveBeenCalledWith()
-    expect(chatSession.createSession).toHaveBeenCalledTimes(2)
-    expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
-    expect(session.customer.value).toBeUndefined()
-    expect(session.state.value).toBe('standby')
+    queueOrderingSite(nextSite)
+    expect(kioskInteractionProfile.profile.value).toBe(originalProfile)
+    try {
+      await session.end('staff')
+      expect(endVisitorSession).toHaveBeenCalledOnce()
+      expect(kioskInteractionProfile.profile.value.services[0]?.id).toBe(nextSite.id)
+      expect(kioskInteractionProfile.profile.value.services[0]?.serviceUrl).toBe(nextSite.url)
+      expect(reloadScenario).toHaveBeenCalledOnce()
+      expect(chatSession.createSession).toHaveBeenCalledTimes(2)
+      expect(chatSession.deleteSession).toHaveBeenCalledWith('customer-chat')
+      expect(session.customer.value).toBeUndefined()
+      expect(session.state.value).toBe('standby')
+    }
+    finally {
+      kioskInteractionProfile.profile.value = originalProfile
+      queueOrderingSite({ id: original.id, title: original.title, description: original.description, url: original.serviceUrl })
+    }
   })
 
   it('restores the active customer session when interactive reset fails', async () => {
@@ -66,9 +136,13 @@ describe('useKioskCustomerSession', () => {
     } as unknown as ReturnType<typeof useChatSessionStore>
     const scope = effectScope()
     scopes.push(scope)
+    const endVisitorSession = vi.fn()
+    const resetConversation = vi.fn()
     const session = scope.run(() => useKioskCustomerSession({
       activeCardId: shallowRef('default'),
       chatSession,
+      endVisitorSession,
+      resetConversation,
     }))
     if (!session)
       throw new Error('Expected customer-session composable to initialize.')
@@ -78,6 +152,9 @@ describe('useKioskCustomerSession', () => {
 
     expect(session.state.value).toBe('active')
     expect(session.customer.value?.sessionId).toBeTruthy()
+    expect(endVisitorSession).not.toHaveBeenCalled()
+    expect(resetConversation).not.toHaveBeenCalled()
+    expect(chatSession.deleteSession).not.toHaveBeenCalled()
   })
 
   it('keeps a session active while AIRI is waiting for a provider response', async () => {

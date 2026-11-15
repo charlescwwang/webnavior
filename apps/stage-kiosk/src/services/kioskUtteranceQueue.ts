@@ -40,6 +40,7 @@ export function createKioskUtteranceQueue(options: {
   /** Maximum ASR inactivity, and maximum wait after the whole transcript is ready. @default 15000 */
   maxWaitMs?: number
   now?: () => number
+  onReady?: (utterance: KioskUtterance) => void
   onDrop?: (utterance: KioskUtterance, reason: 'expired' | 'reset') => void
   onError?: (utterance: KioskUtterance, error: unknown) => void
   onState?: (state: { active?: KioskUtterance, pending: readonly KioskUtterance[] }) => void
@@ -52,7 +53,7 @@ export function createKioskUtteranceQueue(options: {
   const idleResolvers: Array<() => void> = []
   let activeController: AbortController | undefined
   let activeItem: PendingUtterance | undefined
-  let running = false
+  let activeRun: { generation: number } | undefined
   let generation = 0
   let nextId = 0
 
@@ -61,16 +62,21 @@ export function createKioskUtteranceQueue(options: {
   }
 
   async function drain() {
-    if (running)
+    if (activeRun)
       return
-    running = true
+    const run = { generation }
+    activeRun = run
     try {
       while (pending.length > 0) {
+        if (activeRun !== run)
+          return
         const item = pending.shift()!
-        const currentGeneration = generation
+        const currentGeneration = run.generation
         activeItem = item
         publish()
         const completed = await item.ready
+        if (activeRun !== run)
+          return
         if (!completed || currentGeneration !== generation) {
           activeItem = undefined
           publish()
@@ -91,19 +97,26 @@ export function createKioskUtteranceQueue(options: {
           await options.process(utterance, { isCurrent: () => currentGeneration === generation && !controller.signal.aborted, signal: controller.signal })
         }
         catch (error) {
-          options.onError?.(utterance, error)
+          if (activeRun === run)
+            options.onError?.(utterance, error)
         }
         finally {
-          activeController = undefined
-          activeItem = undefined
-          publish()
+          // Old providers may ignore abort. Their cleanup must not clear the
+          // next reception's active request or its visual progress.
+          if (activeRun === run) {
+            activeController = undefined
+            activeItem = undefined
+            publish()
+          }
         }
       }
     }
     finally {
-      running = false
-      for (const resolve of idleResolvers.splice(0))
-        resolve()
+      if (activeRun === run) {
+        activeRun = undefined
+        for (const resolve of idleResolvers.splice(0))
+          resolve()
+      }
     }
   }
 
@@ -147,7 +160,11 @@ export function createKioskUtteranceQueue(options: {
       signal: captureController.signal,
       markTranscriptionProgress,
       complete: (input) => {
+        if (settled)
+          return
         const text = input.text.trim()
+        if (text)
+          options.onReady?.({ ...utterance, ...input, text })
         settle(text ? { ...utterance, ...input, text } : undefined)
       },
       cancel: () => settle(),
@@ -168,6 +185,13 @@ export function createKioskUtteranceQueue(options: {
     generation++
     activeController?.abort()
     activeItem?.settle()
+    // Detach canceled decision work so the next reception can start at once.
+    // Dispatched browser writes remain serialized by their own document queue.
+    activeRun = undefined
+    activeController = undefined
+    activeItem = undefined
+    for (const resolve of idleResolvers.splice(0))
+      resolve()
     for (const item of pending.splice(0)) {
       item.settle()
       options.onDrop?.(item.utterance, 'reset')
@@ -176,7 +200,7 @@ export function createKioskUtteranceQueue(options: {
   }
 
   function idle() {
-    return running ? new Promise<void>(resolve => idleResolvers.push(resolve)) : Promise.resolve()
+    return activeRun ? new Promise<void>(resolve => idleResolvers.push(resolve)) : Promise.resolve()
   }
 
   return { idle, reserve, reset, submit }

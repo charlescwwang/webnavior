@@ -5,7 +5,14 @@ import type { DesktopServiceRequest, KioskDesktopBridge } from '@proj-airi/stage
 export function connectDesktop(bridge: Pick<KioskDesktopBridge, 'invokeService'>, binding: Pick<DesktopServiceRequest, 'serviceId' | 'documentKey'>): ServiceConnection {
   const lifetime = new AbortController()
   function request(command: DesktopServiceRequest['command'], signal: AbortSignal): Promise<unknown> {
-    const combined = AbortSignal.any([lifetime.signal, signal])
+    lifetime.signal.throwIfAborted()
+    // Start and submission deliberately retire their editor document. Keep only
+    // those already-issued requests alive until their bounded receipts arrive;
+    // caller cancellation still ends the wait. Native + shared client validate
+    // the exact correlation, destination and entry/submission acknowledgement,
+    // and a disposed connection cannot admit any further command.
+    const navigationReceipt = command.kind === 'execute' && ['browser_start_ordering', 'browser_order_submit'].includes(command.request.name)
+    const combined = navigationReceipt ? signal : AbortSignal.any([lifetime.signal, signal])
     combined.throwIfAborted()
     // Cancellation ends the local wait only. An accepted vendor operation may
     // still finish; the shared client records it as unsettled and must inspect.

@@ -69,3 +69,33 @@ it('plays a prepared long reply once without synthesizing duplicate trailing sen
   expect(synthesize).not.toHaveBeenCalled()
   expect(onPlaying).toHaveBeenCalledExactlyOnceWith(text, true)
 })
+
+// Report: this chat, Nov13; canceled synthesis can return after the next reception starts.
+it('discards late old synthesis without clearing or aborting the replacement speech', async () => {
+  let finishOld!: (audio: Blob) => void
+  let finishNew!: (audio: Blob) => void
+  let newSignal: AbortSignal | undefined
+  const onPlaying = vi.fn()
+  const onReady = vi.fn()
+  const player = createSpeechPlayer({ synthesize: ({ text, signal }) => new Promise<Blob>((resolve) => {
+    if (text === '舊回覆') {
+      finishOld = resolve
+    }
+    else {
+      newSignal = signal
+      finishNew = resolve
+    }
+  }), onPlaying, onReady, onSource: () => undefined })
+  const old = player.play({ text: '舊回覆', locale: 'zh-TW', signal: new AbortController().signal })
+  player.stop()
+  const next = player.play({ text: '新回覆', locale: 'zh-TW', signal: new AbortController().signal })
+  finishOld(silence())
+  expect(await old).toBe('cancelled')
+  expect(newSignal!.aborted).toBe(false)
+  expect(onReady).not.toHaveBeenCalled()
+  expect(onPlaying).not.toHaveBeenCalled()
+  player.stop()
+  expect(newSignal!.aborted).toBe(true)
+  finishNew(silence())
+  expect(await next).toBe('cancelled')
+})

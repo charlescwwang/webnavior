@@ -1,6 +1,9 @@
-import type { ProductSelection } from '@proj-airi/stage-ui/services/pbProduct'
+import type { ProductSelection } from '@proj-airi/stage-shared/product-configuration'
 
 import type { PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
+
+import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
 
 /** Literal product evidence used to keep spoken ordinals bound to their original list. */
 export interface QuestionProduct {
@@ -26,18 +29,39 @@ export interface AdditionProposal {
   unitPrice: number
   note: string
   optionSummary: string
+  options: { name: string, quantity: number }[]
   selection: ProductSelection
 }
 
+/** A single missing field in one Host-owned dish; IDs never come from the model. */
+export interface OrderSlot {
+  draftId: string
+  productRef: string
+  name: string
+  kind: 'quantity' | 'choice-quantity' | 'group'
+  groupRef?: string
+  choiceRef?: string
+  maximum: number
+  question: string
+  choices: PresentedQuestion['choices']
+}
+
+// orderSelection marks an issued "which dish do you want to order?" question.
+// It follows the selected product into the quantity ticket without rewriting
+// the original recommendation request; it never supplies a count or options.
 type Ticket = { binding: QuestionSnapshot, question: PresentedQuestion } & (
-  | { kind: 'product', products: QuestionProduct[], visible: QuestionProduct[], page: number, request: string }
+  | { kind: 'product', products: QuestionProduct[], visible: QuestionProduct[], page: number, request: string, query: string, orderSelection?: true }
   | { kind: 'addition', proposal: AdditionProposal }
+  | { kind: 'quantity', product: QuestionProduct, request: string, requestTarget?: string, orderSelection?: true }
+  | { kind: 'slot', slot: OrderSlot }
+  | { kind: 'order', proposals: AdditionProposal[] }
+  | { kind: 'service', purpose: string, name?: string, quantity?: number, query?: string, request: string, previous?: Ticket }
 )
 
 /**
- * Owns one presented, expiring, one-use browser question. Selection only resolves
- * a product; adding requires a separately presented complete confirmation. The
- * semantic answer resolver chooses IDs, never constructs executable arguments.
+ * Owns one presented, expiring, one-use browser question. Product selection
+ * alone never authorizes an add. A service offer may retain the serving count
+ * explicitly asked aloud; semantic answers choose IDs, never executable arguments.
  */
 export function createBrowserQuestionWindow(now = Date.now) {
   let ticket: Ticket | undefined
@@ -57,17 +81,57 @@ export function createBrowserQuestionWindow(now = Date.now) {
   return {
     /** A hint only; authority still requires pending(snapshot) to recheck freshness. */
     hasPending: () => ticket !== undefined,
-    presentProducts(snapshot: QuestionSnapshot, products: QuestionProduct[], request: string, page = 0) {
+    /** A different service request drops this offer, preserving any unfinished dish underneath. */
+    releaseService(snapshot: QuestionSnapshot, questionId: string) {
+      const pending = current(snapshot)
+      if (pending?.kind === 'service' && pending.question.questionId === questionId)
+        ticket = pending.previous
+    },
+    presentService(snapshot: QuestionSnapshot, input: { purpose: string, name?: string, quantity?: number, query?: string, request: string, question: string, choices: PresentedQuestion['choices'] }) {
+      const previous = current(snapshot)
+      if (previous?.kind === 'service')
+        return structuredClone(previous.question)
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-service-question', question: input.question, choices: input.choices, expiresAt: now() + 120_000 }
+      ticket = { kind: 'service', binding: structuredClone(snapshot), question, purpose: input.purpose, name: input.name, quantity: input.quantity, query: input.query, request: input.request, previous }
+      return structuredClone(question)
+    },
+    presentSlot(snapshot: QuestionSnapshot, slot: OrderSlot) {
+      const product = snapshot.products.find(product => product.productRef === slot.productRef)
+      if (!product)
+        throw new Error('Draft field requires a current product.')
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-order-slot', question: slot.question, expiresAt: now() + 120_000, choices: [...slot.choices, { id: 'cancel', description: '取消這批尚未加入的餐點，保留購物車。' }] }
+      ticket = { kind: 'slot', binding: structuredClone(snapshot), slot: structuredClone(slot), question }
+      return structuredClone(question)
+    },
+    presentOrder(snapshot: QuestionSnapshot, proposals: AdditionProposal[]) {
+      if (!proposals.length || proposals.length > 10 || proposals.some(proposal => !snapshot.products.some(product => product.productRef === proposal.productRef && product.name === proposal.productName && product.configurationVersion === proposal.selection.version) || !Number.isInteger(proposal.quantity) || proposal.quantity < 1 || proposal.quantity > 99 || !Number.isFinite(proposal.unitPrice) || proposal.unitPrice < 0))
+        throw new Error('Order confirmation requires complete current proposals.')
+      const lines = proposals.map(proposal => `${describePbMeal({ ...proposal, name: proposal.productName })}，單份 ${proposal.unitPrice} 元`)
+      const total = proposals.reduce((sum, proposal) => sum + Math.round(proposal.unitPrice * 100) * proposal.quantity, 0) / 100
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-confirm-add', question: `${lines.join('；')}。合計 ${total} 元，要幫您加入購物車嗎？`, expiresAt: now() + 120_000, choices: [{ id: 'confirm', description: `確認加入上述 ${proposals.length} 組完整餐點，合計 ${total} 元，不送單付款。` }, { id: 'cancel', description: '取消這批尚未加入的餐點，保留購物車。' }] }
+      if (question.question.length > 2000)
+        throw new Error('Order confirmation exceeds the presentation limit.')
+      ticket = { kind: 'order', binding: structuredClone(snapshot), proposals: structuredClone(proposals), question }
+      return structuredClone(question)
+    },
+    consumeSlotNumber(questionId: string, quantity: number, snapshot: QuestionSnapshot) {
+      const pending = current(snapshot)
+      if (!pending || pending.kind !== 'slot' || pending.slot.kind === 'group' || pending.question.questionId !== questionId || !Number.isInteger(quantity) || quantity < 1 || quantity > pending.slot.maximum)
+        return
+      ticket = undefined
+      return structuredClone(pending.slot)
+    },
+    presentProducts(snapshot: QuestionSnapshot, products: QuestionProduct[], request: string, page = 0, query = '', orderSelection?: true) {
       if (!products.length || new Set(products.map(product => product.productRef)).size !== products.length)
         throw new Error('Question requires distinct observed product references.')
       if (products.some(product => !snapshot.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product))))
         throw new Error('Question candidates must come from the current observation.')
-      // Keep the full discovered list. Bound each spoken page rather than
-      // treating a fixed first batch as the complete daily menu.
+      // These are spoken choice batches, not vendor pages. Keep all observed
+      // candidates while limiting what is read aloud, regardless of viewport.
       const pages: QuestionProduct[][] = [[]]
       for (const product of products) {
         const last = pages.at(-1)!
-        if (last.length && (last.length >= 8 || [...last, product].reduce((sum, item) => sum + item.name.length, 0) > 350))
+        if (last.length && (last.length >= browserRecommendationLimit || [...last, product].reduce((sum, item) => sum + item.name.length, 0) > 350))
           pages.push([])
         pages.at(-1)!.push(product)
       }
@@ -75,14 +139,15 @@ export function createBrowserQuestionWindow(now = Date.now) {
       if (!Number.isInteger(page) || !visible)
         throw new Error('Question page is outside the observed product list.')
       const navigation = [
-        ...(page > 0 ? [{ id: 'previous', description: '看上一頁選項，尚未加入餐點。' }] : []),
-        ...(page < pages.length - 1 ? [{ id: 'next', description: '看下一頁選項，尚未加入餐點。' }] : []),
+        ...(page > 0 ? [{ id: 'previous', description: '再聽前一組選項，只更新口頭選餐，不切換網站頁面、不加入餐點。' }] : []),
+        ...(page < pages.length - 1 ? [{ id: 'next', description: '再聽其他選項，只更新口頭選餐，不切換網站頁面、不加入餐點。' }] : []),
       ]
-      const pageMessage = pages.length > 1 ? `（第 ${page + 1} 頁，共 ${pages.length} 頁；可說下一頁或上一頁）` : ''
-      const wording = visible.length === 1 ? `您是指「${visible[0]!.name}」嗎？` : `請問您要${visible.map(product => product.name).join('、')}，哪一項？`
-      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-product-choice', question: `${wording}${pageMessage}`, expiresAt: now() + 120_000, choices: [...visible.map((product, index) => ({ id: `product:${index + 1}`, description: `本頁第 ${index + 1} 項「${product.name}」，單份基本售價 ${product.unitPrice} 元；只選品項，尚未加入。` })), ...navigation, { id: 'cancel', description: '取消這個尚未完成的選餐，不變更購物車。' }] }
+      const wording = orderSelection ? '您想點哪一道？' : visible.length === 1 ? `您是指「${pbProductName(visible[0]!.name)}」嗎？` : `請問您要${visible.map(product => pbProductName(product.name)).join('、')}，哪一項？`
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-product-choice', question: wording, expiresAt: now() + 120_000, choices: [...visible.map((product, index) => ({ id: `product:${index + 1}`, description: `這組第 ${index + 1} 項「${product.name}」，單份基本售價 ${product.unitPrice} 元；只選品項，尚未加入。` })), ...navigation, { id: 'cancel', description: '取消這個尚未完成的選餐，不變更購物車。' }] }
       // Copy at presentation: a later catalog reorder cannot redefine "second".
-      ticket = { kind: 'product', binding: structuredClone({ ...snapshot, products }), products: structuredClone(products), visible: structuredClone(visible), page, question, request }
+      // Keep the original query separately so choosing a product can resolve
+      // that target across later quantity questions without rewriting the request.
+      ticket = { kind: 'product', binding: structuredClone({ ...snapshot, products }), products: structuredClone(products), visible: structuredClone(visible), page, question, request, query, orderSelection }
       return structuredClone(question)
     },
     presentAddition(snapshot: QuestionSnapshot, proposal: AdditionProposal) {
@@ -90,9 +155,26 @@ export function createBrowserQuestionWindow(now = Date.now) {
       if (!product || product.name !== proposal.productName || !Number.isInteger(proposal.quantity) || proposal.quantity < 1 || proposal.quantity > 99 || !Number.isFinite(proposal.unitPrice) || proposal.unitPrice < 0)
         throw new Error('Confirmation requires a complete current product proposal.')
       const amount = Math.round(proposal.unitPrice * 100) * proposal.quantity / 100
-      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-confirm-add', question: `確認加入${proposal.productName} ${proposal.quantity} 份${proposal.optionSummary ? `（${proposal.optionSummary}）` : ''}，單份 ${proposal.unitPrice} 元，合計 ${amount} 元${proposal.note ? `，備註「${proposal.note}」` : ''}嗎？`, expiresAt: now() + 120_000, choices: [{ id: 'confirm', description: `確認現在加入這個完整設定的${proposal.productName} ${proposal.quantity} 份，合計 ${amount} 元；不送單付款。` }, { id: 'cancel', description: '先不加入這份餐點，保留原購物車。' }] }
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-confirm-add', question: `${describePbMeal({ ...proposal, name: proposal.productName })}，單份 ${proposal.unitPrice} 元，合計 ${amount} 元，要幫您加入購物車嗎？`, expiresAt: now() + 120_000, choices: [{ id: 'confirm', description: `確認現在加入這個完整設定的${pbProductName(proposal.productName)} ${proposal.quantity} 份，合計 ${amount} 元；不送單付款。` }, { id: 'cancel', description: '先不加入這份餐點，保留原購物車。' }] }
       ticket = { kind: 'addition', binding: structuredClone({ ...snapshot, products: [product] }), proposal: structuredClone(proposal), question }
       return structuredClone(question)
+    },
+    /** A missing serving count never becomes one; selection is retained without write authority. */
+    presentQuantity(snapshot: QuestionSnapshot, product: QuestionProduct, request: string, requestTarget?: string, orderSelection?: true) {
+      if (!snapshot.products.some(candidate => JSON.stringify(candidate) === JSON.stringify(product)))
+        throw new Error('Quantity question requires a current observed product.')
+      const serving = pbBasicServing(product.name, product.unitPrice)
+      const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-order-quantity', question: `${serving ? `${pbProductName(product.name)}${serving}。` : ''}請問「${pbProductName(product.name)}」要幾份？`, expiresAt: now() + 120_000, choices: [{ id: 'cancel', description: '取消這次尚未加入的餐點，保留購物車。' }] }
+      ticket = { kind: 'quantity', binding: structuredClone({ ...snapshot, products: [product] }), product: structuredClone(product), request, requestTarget, question, orderSelection }
+      return structuredClone(question)
+    },
+    /** Fills only the count; the task checks whether the resulting purchase is complete. */
+    consumeQuantity(questionId: string, quantity: number, snapshot: QuestionSnapshot) {
+      const pending = current(snapshot)
+      if (!pending || pending.kind !== 'quantity' || pending.question.questionId !== questionId || !Number.isInteger(quantity) || quantity < 1 || quantity > 99)
+        return
+      ticket = undefined
+      return { product: structuredClone(pending.product), request: pending.request, requestTarget: pending.requestTarget, quantity, orderSelection: pending.orderSelection }
     },
     pending(snapshot: QuestionSnapshot) {
       const pending = current(snapshot)
@@ -105,12 +187,23 @@ export function createBrowserQuestionWindow(now = Date.now) {
       // Revoke before returning a plan, so a duplicate answer cannot dispatch
       // another add while the first accepted operation is still in flight.
       ticket = undefined
+      if (pending.kind === 'service') {
+        if (choiceId === 'no')
+          ticket = pending.previous
+        return { kind: 'service' as const, purpose: pending.purpose, name: pending.name, quantity: pending.quantity, query: pending.query, request: pending.request, choiceId, question: pending.question.question, answer: pending.question.choices.find(choice => choice.id === choiceId)!.description }
+      }
       if (choiceId === 'cancel')
         return { kind: 'cancelled' as const }
+      if (pending.kind === 'quantity')
+        return { kind: 'invalid' as const }
+      if (pending.kind === 'slot')
+        return { kind: 'slot' as const, slot: structuredClone(pending.slot), choiceId }
+      if (pending.kind === 'order')
+        return { kind: 'order' as const, proposals: structuredClone(pending.proposals) }
       if (pending.kind === 'addition')
         return { kind: 'addition' as const, proposal: structuredClone(pending.proposal) }
       if (choiceId === 'next' || choiceId === 'previous')
-        return { kind: 'page' as const, products: structuredClone(pending.products), request: pending.request, page: pending.page + (choiceId === 'next' ? 1 : -1) }
+        return { kind: 'page' as const, products: structuredClone(pending.products), request: pending.request, query: pending.query, page: pending.page + (choiceId === 'next' ? 1 : -1) }
       const index = pending.question.choices.findIndex(choice => choice.id === choiceId)
       return { kind: 'product' as const, product: structuredClone(pending.visible[index]) }
     },

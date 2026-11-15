@@ -44,6 +44,7 @@ onUnmounted(() => {
 
 <template>
   <section :class="['scenario-surface', { 'has-presentation': props.presentation?.products.length }]" aria-label="互動服務畫面">
+    <slot name="preparation" />
     <BrowserProductPresentation v-if="props.presentation?.products.length" :presentation="props.presentation" />
     <CustomerPhoneModal v-if="customerEntry.pending.value" :listening="props.listening" :busy="customerEntry.busy.value" :error="customerEntry.error.value" @submit="customerEntry.submit" @skip="customerEntry.submit()" @activity="emit('activity')" />
     <NativeServiceSurface
@@ -56,6 +57,7 @@ onUnmounted(() => {
       :occluded="Boolean(props.occluded || customerEntry.pending.value)"
       @activity="emit('activity')"
       @ready="attachNative"
+      @navigating="interactiveServiceClient.beginNavigation()"
       @unavailable="interactiveServiceClient.activate(undefined)"
     />
     <iframe

@@ -1,30 +1,37 @@
 <script setup lang="ts">
 import type { KioskDevice } from '../services/kiosk-device'
 
+import { useBuildInfo } from '@proj-airi/stage-ui/composables/use-build-info'
 import { Checkbox, FieldRange } from '@proj-airi/ui'
 import { useI18n } from 'vue-i18n'
 
 import KioskCameraPreviewSettings from './KioskCameraPreviewSettings.vue'
 import MenuSimulationPanel from './menuSimulationPanel.vue'
 
+import { useFeedbackInvitationEnabled } from '../composables/useFeedbackInvitationSettings'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 
 const props = defineProps<{
   device?: KioskDevice
   sessionEnding: boolean
+  textOnlyMode?: boolean
 }>()
 
 const emit = defineEmits<{
   close: []
   endSession: []
   reload: []
+  testSpeech: []
 }>()
 
 const { t } = useI18n()
+const buildInfo = useBuildInfo()
 const development = import.meta.env.DEV
+const feedbackInvitationEnabled = useFeedbackInvitationEnabled()
 const decisionDiagnosticsEnabled = defineModel<boolean>('decisionDiagnosticsEnabled', { required: true })
 const idleDiagnosticsEnabled = defineModel<boolean>('idleDiagnosticsEnabled', { required: true })
 const presenceDiagnosticsEnabled = defineModel<boolean>('presenceDiagnosticsEnabled', { required: true })
+const voiceTestEnabled = defineModel<boolean>('voiceTestEnabled', { default: false })
 const paused = defineModel<boolean>('paused', { required: true })
 const cameraPreviewEnabled = defineModel<boolean>('cameraPreviewEnabled', { required: true })
 const conversationFontSize = defineModel<number>('conversationFontSize', { required: true })
@@ -45,6 +52,9 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
     </header>
 
     <div class="admin-content">
+      <p :class="['admin-note']" data-build-info>
+        {{ t('stage.kiosk.release.loaded') }}：{{ buildInfo.release }} · {{ buildInfo.builtOn }}
+      </p>
       <section v-if="props.device" class="admin-section">
         <h3>此 Kiosk 裝置</h3>
         <dl class="device-details">
@@ -97,8 +107,22 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
         </p>
       </section>
 
+      <section :class="['admin-section']">
+        <h3>{{ t('stage.kiosk.voice-debug.admin-title') }}</h3>
+        <label :class="['toggle-row']"><Checkbox v-model="voiceTestEnabled" :aria-label="t('stage.kiosk.voice-debug.admin-enable')" /><span>{{ t('stage.kiosk.voice-debug.admin-enable') }}</span></label>
+        <p>{{ t('stage.kiosk.voice-debug.admin-description') }}</p>
+        <button type="button" :disabled="!voiceTestEnabled" @click="emit('testSpeech')">
+          {{ t('stage.kiosk.voice-debug.play-test') }}
+        </button>
+      </section>
       <section class="admin-section">
         <h3>對話顯示</h3>
+        <p role="status">
+          {{ t('deviceSettings.conversationMode.label') }}：{{ t(props.textOnlyMode ? 'deviceSettings.conversationMode.text' : 'deviceSettings.conversationMode.voice') }}
+        </p>
+        <p :class="['session-description']">
+          {{ t('deviceSettings.conversationMode.description') }}
+        </p>
         <FieldRange
           v-model="conversationFontSize"
           :default-value="20"
@@ -140,8 +164,19 @@ const conversationFontSize = defineModel<number>('conversationFontSize', { requi
         </button>
       </section>
 
+      <section :class="['admin-section']">
+        <h3>{{ t('stage.customer-session.completion.survey-switch-title') }}</h3>
+        <label :class="['flex items-center gap-3']">
+          <Checkbox v-model="feedbackInvitationEnabled" :aria-label="t('stage.customer-session.completion.survey-switch-label')" />
+          {{ t('stage.customer-session.completion.survey-switch-label') }}
+        </label>
+        <p :class="['session-description']">
+          {{ t('stage.customer-session.completion.survey-switch-description') }}
+        </p>
+      </section>
+
       <p class="admin-note">
-        互動服務與完成後問卷請在 Webnavior 管理後台的「互動體驗」調整並發布；此頁只保留 Kiosk 現場設定。
+        互動服務與問卷網址請在 Webnavior 管理後台的「互動體驗」調整並發布；此頁只保留 Kiosk 現場設定。
       </p>
     </div>
   </section>

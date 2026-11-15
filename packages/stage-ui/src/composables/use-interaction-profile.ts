@@ -1,3 +1,5 @@
+import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
+
 import type { FeedbackInvitationSettings } from '../components/scenarios/feedback-invitation/settings'
 
 import { useLocalStorageManualReset } from '@proj-airi/stage-shared/composables'
@@ -29,6 +31,8 @@ export interface InteractionProfileService {
   description: string
   /** HTTP(S) page embedded by the host. */
   serviceUrl: string
+  /** Published discovery labels belonging only to this merchant binding. */
+  catalogLabels?: OrderingSite['catalogLabels']
 }
 
 export interface UseInteractionProfileOptions {

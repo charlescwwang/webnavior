@@ -203,3 +203,55 @@ it('aborts the active decision transport when the queue is reset', async () => {
   finish()
   await queue.idle()
 })
+
+// Report: this chat, Nov13; an old LLM may ignore cancellation after the next reception starts.
+it('starts the new reception without waiting for canceled work and ignores its late cleanup', async () => {
+  let finishOld!: () => void
+  let finishNew!: () => void
+  let oldTicket: { isCurrent: () => boolean } | undefined
+  const handled: string[] = []
+  const states: Array<{ active?: { text: string } }> = []
+  const queue = createKioskUtteranceQueue({ onState: state => states.push(state), process: async (utterance, ticket) => {
+    handled.push(utterance.text)
+    if (utterance.text === 'old') {
+      oldTicket = ticket
+      await new Promise<void>(resolve => finishOld = resolve)
+    }
+    else {
+      await new Promise<void>(resolve => finishNew = resolve)
+    }
+  } })
+  queue.submit({ source: 'simulation', text: 'old' })
+  await vi.waitFor(() => expect(handled).toEqual(['old']))
+  queue.reset()
+  queue.submit({ source: 'simulation', text: 'new' })
+  try {
+    await vi.waitFor(() => expect(handled).toEqual(['old', 'new']))
+    expect(oldTicket!.isCurrent()).toBe(false)
+    finishOld()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(states.at(-1)?.active?.text).toBe('new')
+  }
+  finally {
+    finishOld()
+    await vi.waitFor(() => expect(finishNew).toBeTypeOf('function'))
+    finishNew()
+    await queue.idle()
+  }
+})
+
+it('announces a completed later transcript while earlier work is still executing', async () => {
+  let release!: () => void
+  const onReady = vi.fn()
+  const queue = createKioskUtteranceQueue({ onReady, process: async () => new Promise<void>(resolve => release = resolve) })
+  queue.submit({ text: '第一句', source: 'simulation' })
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+  const next = queue.reserve('asr')
+  if (next.kind !== 'ACCEPTED')
+    throw new Error('Expected capacity.')
+  next.complete({ text: '第二句' })
+  expect(onReady).toHaveBeenCalledWith(expect.objectContaining({ text: '第二句', id: next.id }))
+  queue.reset()
+  release()
+})

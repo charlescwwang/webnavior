@@ -35,3 +35,29 @@ it('cancels the local wait without retrying an accepted native operation', async
   expect(() => connection.discover({ version: 1, connectionId: 'new', challenge: 'new' }, new AbortController().signal)).toThrow('document replaced')
   expect(invokeService).toHaveBeenCalledTimes(1)
 })
+
+// Report: this chat; PB Start changed documents and disposal rejected its valid receipt.
+it.each(['browser_start_ordering', 'browser_order_submit'])('lets an already issued %s acknowledgement settle after navigation disposes its connection', async (name) => {
+  const result = Promise.withResolvers<unknown>()
+  const invokeService = vi.fn(() => result.promise)
+  const connection = connectDesktop({ invokeService }, { serviceId: 'pb', documentKey: 'pb:1' })
+  const pending = connection.execute({ connectionId: 'connection', documentId: 'table', operationId: 'entry', toolsRevision: 1, name, input: name === 'browser_start_ordering' ? { name: 'B3 吧檯' } : { confirmationToken: 'one-use' } }, new AbortController().signal)
+  connection.dispose(new Error('document replaced'))
+  const acknowledgement = name === 'browser_start_ordering'
+    ? { code: 'table-entry-starting', selectedTable: 'B3 吧檯' }
+    : { ok: true, source: 'browser', code: 'order-submission-starting', effect: 'pending', confirmationToken: 'one-use', customerMessage: '已按下送出訂單。' }
+  result.resolve({ result: acknowledgement })
+  await expect(pending).resolves.toEqual({ result: acknowledgement })
+  expect(invokeService).toHaveBeenCalledOnce()
+  expect(() => connection.discover({ version: 1, connectionId: 'new', challenge: 'new' }, new AbortController().signal)).toThrow('document replaced')
+})
+
+it.each(['browser_start_ordering', 'browser_order_submit'])('still cancels a %s wait when the caller cancels its customer turn', async (name) => {
+  const result = Promise.withResolvers<unknown>()
+  const connection = connectDesktop({ invokeService: () => result.promise }, { serviceId: 'pb', documentKey: 'pb:1' })
+  const controller = new AbortController()
+  const pending = connection.execute({ connectionId: 'connection', documentId: 'table', operationId: 'entry', toolsRevision: 1, name, input: name === 'browser_start_ordering' ? { name: 'B3 吧檯' } : { confirmationToken: 'one-use' } }, controller.signal)
+  controller.abort(new Error('customer cancelled'))
+  await expect(pending).rejects.toThrow('customer cancelled')
+  result.resolve({})
+})

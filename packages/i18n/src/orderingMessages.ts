@@ -1,6 +1,9 @@
 /** Copy for the standalone ordering runtime, without loading a Vue i18n instance. */
 export const orderingMessages = {
   'zh-Hant': {
+    incompleteRequest: '請把需求說完整，例如想點哪道餐點、幾份。',
+    checkoutInvitation: { question: '要結帳嗎？', accept: '開啟購物車核對餐點，接著進行結帳；不送出訂單或付款。', decline: '繼續點餐，保留購物車裡的餐點。' },
+    recovery: { table: '請在畫面選擇桌號或櫃台自取，再點「開始點餐」。', menu: '您可以直接在畫面選餐，完成後打開購物車核對。', cart: '請在購物車畫面核對餐點與份數，也可以直接在畫面調整。', checkout: '請在畫面繼續填寫或修改結帳資料，需要協助時請洽現場人員。', review: '請先打開購物車，核對剛才調整的餐點與份數，避免重複操作；需要協助時請洽現場人員。', unavailable: '您可以先在畫面繼續點餐；如果畫面也無法操作，請洽現場人員。' },
     targetChoice: '請選擇其中一項：{items}。請說餐點名稱或第幾項，也可以說取消。',
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
     queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
@@ -10,6 +13,11 @@ export const orderingMessages = {
       donation: '略過，捐贈發票',
       taxIdLabel: '統一編號',
       taxIdPlaceholder: '請輸入統一編號',
+      carrierFormatError: '手機條碼需為 / 開頭，共 8 碼，請重新掃描。',
+      citizenFormatError: '自然人憑證需為 2 碼英文字母及 14 碼數字，請重新掃描。',
+      tablePickerTitle: '請選擇桌號',
+      tablePickerHint: '選好後，請點下方「開始點餐」。',
+      tablePickerFailed: '桌號選單已更新，請使用原本的選單確認桌號。',
     },
     continuation: {
       startTitle: '接續你的訂單',
@@ -75,6 +83,8 @@ export const orderingMessages = {
     inquiryCorrection: '了解，您是在詢問，沒有要點這道。',
   },
   'en': {
+    incompleteRequest: 'Please state your full request, such as which dish you want and how many servings.',
+    recovery: { table: 'Choose your table or counter pickup on screen, then press Start ordering.', menu: 'You can select dishes on screen, then open the cart to review them.', cart: 'Review the dishes and quantities in your cart. You can adjust them on screen.', checkout: 'Continue entering or updating checkout details on screen, or ask a staff member for help.', review: 'Open the cart and check the dishes and quantities before continuing to avoid repeating changes. Ask a staff member for help if needed.', unavailable: 'You can continue ordering on screen. If the screen is also unavailable, please ask a staff member for help.' },
     targetChoice: 'Choose one item: {items}. Say its name or position, or say cancel.',
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
     queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
@@ -84,6 +94,11 @@ export const orderingMessages = {
       donation: 'Skip and donate invoice',
       taxIdLabel: 'Business tax ID',
       taxIdPlaceholder: 'Enter your business tax ID',
+      carrierFormatError: 'The carrier barcode must start with / and contain 8 characters. Please scan again.',
+      citizenFormatError: 'The citizen certificate must contain 2 letters and 14 digits. Please scan again.',
+      tablePickerTitle: 'Choose your table',
+      tablePickerHint: 'After choosing, press Start ordering below.',
+      tablePickerFailed: 'The table selector changed. Please check your table using the original selector.',
     },
     continuation: {
       startTitle: 'Continue your order',

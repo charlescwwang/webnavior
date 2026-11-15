@@ -122,9 +122,9 @@ it('consumes a retry before the fresh snapshot returns so concurrent clicks cann
 describe('browser customer reset', () => {
   function setup() {
     const tools = ['browser_recovery_context', 'browser_customer_reset'].map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
-    return { tools: shallowRef(tools), execute: vi.fn(async () => ({ ok: true, status: 'customer-reset', cartPreserved: true, documentId: 'doc' })), refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: vi.fn(() => 'doc') }
+    return { tools: shallowRef(tools), execute: vi.fn(async (): Promise<unknown> => ({ ok: true, status: 'customer-reset', cartCleared: true, documentId: 'doc' })), refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: vi.fn(() => 'doc') }
   }
-  it('renews only a verified preserved document and never calls a vendor clear', async () => {
+  it('renews the retained document only after a verified empty-cart reset', async () => {
     const client = setup()
     expect(await resetConversationService(client)).toBe('preserved')
     expect(client.execute).toHaveBeenCalledExactlyOnceWith(client.tools.value[1], {})
@@ -141,12 +141,19 @@ describe('browser customer reset', () => {
   })
   it('keeps reset blocked on an unknown effect or document mismatch', async () => {
     const client = setup()
-    client.execute.mockResolvedValueOnce({ ok: false, status: 'unknown', cartPreserved: false, documentId: 'doc' })
+    client.execute.mockResolvedValueOnce({ ok: false, status: 'unknown', cartCleared: false, documentId: 'doc' })
     await expect(resetConversationService(client)).rejects.toThrow()
     expect(client.refresh).not.toHaveBeenCalled()
-    client.execute.mockResolvedValueOnce({ ok: true, status: 'customer-reset', cartPreserved: true, documentId: 'different' })
+    client.execute.mockResolvedValueOnce({ ok: true, status: 'customer-reset', cartCleared: true, documentId: 'different' })
     await expect(resetConversationService(client)).rejects.toThrow('document changed')
     expect(client.refresh).not.toHaveBeenCalled()
+  })
+  it('keeps the customer active with the native clear failure message', async () => {
+    const client = setup()
+    client.execute.mockResolvedValueOnce({ ok: false, status: 'unknown', customerMessage: '清空結果尚未確認，已暫停開始下一位接待。' })
+    await expect(resetConversationService(client)).rejects.toThrow('清空結果尚未確認，已暫停開始下一位接待。')
+    expect(client.refresh).not.toHaveBeenCalled()
+    expect(client.waitUntilReady).not.toHaveBeenCalled()
   })
   it('retains the owned Menu reload policy while refusing an unsupported browser reset', async () => {
     const client = setup()
@@ -156,6 +163,73 @@ describe('browser customer reset', () => {
     await expect(resetConversationService(client)).rejects.toThrow('does not support')
     expect(client.execute).not.toHaveBeenCalled()
   })
+})
+
+// Report: this chat, Nov15; a leftover cart must be handled before Start, and reset on the table page must work.
+it.each([false, true])('resets from table entry with an actually %s occupied cart', async (occupied) => {
+  const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  let documentId = 'table-document'
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === 'browser_recovery_context')
+      return { source: 'browser', documentId, contextKey: 'fresh', canRetry: true }
+    if (tool.name === 'browser_cart_get')
+      return { ok: true, page: documentId === 'table-document' ? 'table' : 'menu', selectedTable: 'B3 吧檯', cart: { tableName: 'B3 吧檯', version: 'fresh', lines: occupied ? [{}] : [] } }
+    if (tool.name === 'browser_start_ordering') {
+      documentId = 'menu-document'
+      return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'B3 吧檯', customerMessage: '正在準備菜單。' }
+    }
+    return { ok: true, status: 'customer-reset', cartCleared: true, documentId }
+  })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => documentId }
+  expect(await resetConversationService(client)).toBe(occupied ? 'preserved' : 'reload')
+  expect(execute).toHaveBeenCalledWith(tools[1], { includeCatalog: false, forAdmission: true })
+  if (occupied) {
+    expect(execute).toHaveBeenCalledWith(tools[2], { name: 'B3 吧檯', forReset: true })
+    expect(execute).toHaveBeenCalledWith(tools[3], {})
+    expect(client.refresh).toHaveBeenCalledOnce()
+  }
+  else {
+    expect(execute).not.toHaveBeenCalledWith(tools[2], expect.anything())
+    expect(execute).not.toHaveBeenCalledWith(tools[3], expect.anything())
+    expect(client.refresh).not.toHaveBeenCalled()
+  }
+})
+
+// Report: this chat, Nov15; early preparation must preserve unknown merchant-effect barriers.
+it('does not enter the menu or dismiss a table reset while a previous operation is unresolved', async () => {
+  const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  const execute = vi.fn(async (tool: ServiceTool) => tool.name === 'browser_cart_get'
+    ? { ok: true, page: 'table', selectedTable: 'B3 吧檯', cart: { lines: [] } }
+    : { source: 'browser', documentId: 'table', contextKey: 'unsettled', canRetry: false })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'table' }
+  await expect(resetConversationService(client)).rejects.toThrow('not settled')
+  expect(execute).not.toHaveBeenCalledWith(tools[2], expect.anything())
+  expect(execute).not.toHaveBeenCalledWith(tools[3], expect.anything())
+  expect(client.refresh).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov15; PB can acknowledge Start before its asynchronous SPA navigation commits.
+it('waits for the actual menu after a table Start acknowledgement before clearing the cart', async () => {
+  const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  let started = false
+  let pendingMenuReads = 0
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === 'browser_cart_get') {
+      const waiting = !started || pendingMenuReads++ === 0
+      return { ok: true, page: waiting ? 'table' : 'menu', selectedTable: 'B3 吧檯', cart: { tableName: 'B3 吧檯', lines: [{}] } }
+    }
+    if (tool.name === 'browser_recovery_context')
+      return { source: 'browser', documentId: 'spa-document', contextKey: 'fresh', canRetry: true }
+    if (tool.name === 'browser_start_ordering') {
+      started = true
+      return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'B3 吧檯', customerMessage: '正在準備菜單。' }
+    }
+    return { ok: true, status: 'customer-reset', cartCleared: true, documentId: 'spa-document' }
+  })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'spa-document' }
+  expect(await resetConversationService(client)).toBe('preserved')
+  expect(pendingMenuReads).toBe(2)
+  expect(execute).toHaveBeenLastCalledWith(tools[3], {})
 })
 
 // Report: this chat, Oct31 v2 actual Electron inquiry; valid execution evidence

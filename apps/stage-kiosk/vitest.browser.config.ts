@@ -1,6 +1,7 @@
 import { env } from 'node:process'
 
 import Vue from '@vitejs/plugin-vue'
+import Unocss from 'unocss/vite'
 import Info from 'unplugin-info/vite'
 import Yaml from 'unplugin-yaml/vite'
 
@@ -15,7 +16,7 @@ export default defineConfig({
   // Resolve from stage-ui, which owns OpenCC under pnpm's strict dependencies.
   optimizeDeps: { include: ['@proj-airi/stage-ui > opencc-js'] },
   // Shared components consume build metadata; use the same provider as Vite.
-  plugins: [Vue(), Info(), Yaml()],
+  plugins: [Vue(), Info(), Yaml(), Unocss()],
   test: {
     api: { host: '127.0.0.1' },
     include: ['src/**/*.browser.test.ts'],

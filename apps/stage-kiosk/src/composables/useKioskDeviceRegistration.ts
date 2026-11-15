@@ -3,13 +3,14 @@ import type { DeviceSettingsSnapshot, KioskVoiceVadSettings } from '@proj-airi/k
 import type { KioskDevice, KioskMediaCaptureMode, KioskPerformanceProfile, KioskProfile } from '../services/kiosk-device'
 
 import { defaultKioskVoiceVadSettings } from '@proj-airi/kiosk-proactive'
+import { useEventListener } from '@vueuse/core'
 import { onScopeDispose, readonly, shallowRef } from 'vue'
 
 import { fetchDeviceSettings, fetchKioskBootstrap, KioskDeviceRequestError, registerDevelopmentKiosk } from '../services/kiosk-device'
 
 export type KioskRegistrationState = 'checking' | 'registered' | 'unregistered' | 'registering' | 'error'
 
-const settingsSyncIntervalMs = 5 * 60 * 1_000
+const settingsSyncIntervalMs = 10_000
 
 /**
  * Owns the browser's kiosk enrollment state without exposing the device
@@ -30,8 +31,15 @@ export function useKioskDeviceRegistration() {
   let timer: ReturnType<typeof setTimeout> | undefined
   let disposed = false
   let controller: AbortController | undefined
+  let syncRevision = 0
 
   function applySettings(snapshot: DeviceSettingsSnapshot) {
+    if (disposed || snapshot.deviceId !== device.value?.id)
+      return
+    // Device versions are monotonic. Same-version snapshots still matter when
+    // Site defaults change, but an older response cannot undo a saved device edit.
+    if (deviceSettings.value && snapshot.settings.version < deviceSettings.value.settings.version)
+      return
     if (JSON.stringify(deviceSettings.value) === JSON.stringify(snapshot))
       return
     deviceSettings.value = snapshot
@@ -43,42 +51,65 @@ export function useKioskDeviceRegistration() {
 
   function scheduleSync() {
     clearTimeout(timer)
-    if (disposed)
+    if (disposed || state.value !== 'registered')
       return
-    // One in-flight request per mounted registration owner. Re-read effective
-    // values too: a Site default may change without changing device revision.
-    timer = setTimeout(async () => {
-      controller = new AbortController()
-      try {
-        const snapshot = await fetchDeviceSettings(controller.signal)
-        if (!disposed && snapshot.deviceId === device.value?.id)
-          applySettings(snapshot)
-      }
-      catch (exception) {
-        if (exception instanceof KioskDeviceRequestError && exception.status === 401) {
-          state.value = 'unregistered'
-          device.value = undefined
-          return
-        }
-        // Offline devices retain their last Server snapshot; API mutations and
-        // uploads are independently authorized against current Server policy.
-      }
-      finally {
-        if (device.value)
-          scheduleSync()
-      }
+    timer = setTimeout(() => {
+      // Offline devices keep their acknowledged mode. A failed read never
+      // fabricates a default or disables the following synchronization attempt.
+      void refreshSettings().catch(() => {})
     }, settingsSyncIntervalMs)
   }
 
-  /** Refreshes effective device policy immediately after an authenticated local write. */
+  /** Reads effective policy; a newer read or acknowledged save retires this response. */
   async function refreshSettings() {
-    const snapshot = await fetchDeviceSettings()
-    if (snapshot.deviceId === device.value?.id)
-      applySettings(snapshot)
+    if (disposed || state.value !== 'registered' || !device.value)
+      return
+    clearTimeout(timer)
+    controller?.abort()
+    const current = new AbortController()
+    controller = current
+    const revision = ++syncRevision
+    try {
+      const snapshot = await fetchDeviceSettings(current.signal)
+      if (!disposed && revision === syncRevision)
+        applySettings(snapshot)
+    }
+    catch (exception) {
+      if (disposed || current.signal.aborted || revision !== syncRevision)
+        return
+      if (exception instanceof KioskDeviceRequestError && exception.status === 401) {
+        state.value = 'unregistered'
+        device.value = undefined
+      }
+      throw exception
+    }
+    finally {
+      if (revision === syncRevision) {
+        controller = undefined
+        scheduleSync()
+      }
+    }
   }
+
+  /** Adopts the Server's successful save response without another fallible read. */
+  function applySavedSettings(snapshot: DeviceSettingsSnapshot) {
+    if (disposed || snapshot.deviceId !== device.value?.id)
+      return
+    ++syncRevision
+    controller?.abort()
+    controller = undefined
+    applySettings(snapshot)
+    scheduleSync()
+  }
+
+  useEventListener('focus', () => {
+    if (state.value === 'registered')
+      void refreshSettings().catch(() => {})
+  })
 
   onScopeDispose(() => {
     disposed = true
+    ++syncRevision
     clearTimeout(timer)
     controller?.abort()
   })
@@ -141,6 +172,7 @@ export function useKioskDeviceRegistration() {
     device: readonly(device),
     profile: readonly(profile),
     refreshSettings,
+    applySavedSettings,
     error: readonly(error),
     mediaCaptureMode: readonly(mediaCaptureMode),
     proactiveVlmEnabled: readonly(proactiveVlmEnabled),

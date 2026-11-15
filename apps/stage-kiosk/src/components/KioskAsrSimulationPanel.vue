@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FastPathTiming } from '../services/kiosk-fast-path'
 
-import { toTaiwanTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
+import { toOrderingTraditionalChinese } from '@proj-airi/stage-ui/libs/taiwan-traditional-chinese'
 import { BasicTextarea, Button } from '@proj-airi/ui'
 import { computed, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -26,15 +26,16 @@ watch(() => props.trace, () => {
     copyState.value = 'copy'
 })
 
-async function copyTrace() {
+async function copyTrace(event: MouseEvent) {
   const trace = props.trace
   if (!trace || copyState.value === 'copying')
     return
   copyState.value = 'copying'
   try {
-    // Reuse the native clipboard path used by the shared ContainerError panel.
-    // Copy the entire source, independent of the scrollable preview's height.
-    await navigator.clipboard.writeText(trace)
+    // Teleported controls can live in the focused text popup while their Vue
+    // closure still belongs to the unfocused host. Use the clicked document.
+    const clipboard = (event.currentTarget as HTMLElement | null)?.ownerDocument.defaultView?.navigator.clipboard ?? navigator.clipboard
+    await clipboard.writeText(trace)
     copyState.value = props.trace === trace ? 'copied' : 'copy'
   }
   catch {
@@ -71,10 +72,10 @@ function simulate() {
       </button>
     </form>
     <p v-if="props.status" class="simulation-status" role="status">
-      {{ toTaiwanTraditionalChinese(props.status) }}
+      {{ toOrderingTraditionalChinese(props.status) }}
     </p>
     <div v-if="props.timing" class="simulation-timing" aria-label="Jev 執行時間">
-      <p>計時語句：{{ toTaiwanTraditionalChinese(props.timing.transcript) }}</p>
+      <p>計時語句：{{ toOrderingTraditionalChinese(props.timing.transcript) }}</p>
       <p>Jev 請求等待：{{ (props.timing.requestDurationMs / 1000).toFixed(2) }} 秒</p>
       <p v-if="props.timing.firstResultDurationMs !== undefined">
         首個判斷回來：{{ (props.timing.firstResultDurationMs / 1000).toFixed(2) }} 秒

@@ -112,8 +112,11 @@ export function useKioskMediaCapture(getVisitorSessionId: () => string | undefin
     }
   }
 
-  function saveAudio(recording: Blob, interactionEntryId: string | undefined) {
-    save('audio_recording', recording, { endedAt: new Date(), interactionEntryId })
+  function saveAudio(recording: Blob, interactionEntryId: string | undefined, visitorSessionId = getVisitorSessionId()) {
+    // Missing transcript persistence must not turn an audio into another turn's evidence.
+    if (!interactionEntryId)
+      return
+    save('audio_recording', recording, { endedAt: new Date(), interactionEntryId }, visitorSessionId)
   }
 
   function stopContinuousCapture() {

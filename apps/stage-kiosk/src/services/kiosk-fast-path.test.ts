@@ -324,6 +324,18 @@ describe('kiosk System One fast path', () => {
     expect(onExecuted).not.toHaveBeenCalled()
     expect(execute).toHaveBeenCalledTimes(2)
   })
+
+  // Report: this chat; an explicit lost/partial receipt is not a confirmed refusal.
+  it.each([{ status: 'unknown' }, { effect: 'unknown' }, { effect: 'partial' }, { partial: true }])('keeps an unsettled native result uncertain: %j', async (receipt) => {
+    const execute = vi.fn(async (tool: ServiceTool) => tool.name === candidateTool.name
+      ? { phase: 'ordering', candidates: [{ id: 'intent:add-item', description: '加入已指定的餐點' }] }
+      : { ok: false, ...receipt, customerMessage: '操作結果仍待核對。' })
+    const onExecuted = vi.fn()
+    const result = await runFastPath({ isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item' }), onExecuted, transcript: '雞腿飯兩份', webMcp: { execute, tools: [candidateTool, executeTool] } })
+    expect(result).toMatchObject({ kind: 'EXECUTION_FAILED', uncertain: true })
+    expect(onExecuted).not.toHaveBeenCalled()
+    expect(execute).toHaveBeenCalledTimes(2)
+  })
   it('reroutes a new request once without cancelling an unfinished meal merely to query', async () => {
     const execute = vi.fn()
       .mockResolvedValueOnce({ phase: 'configuration', waitingFor: { questionId: 'q1', purpose: 'item-configuration', question: '辣度？', expiresAt: Date.now() + 30_000, choices: [] }, candidates: [{ id: 'configure:q1:cancel', description: '取消這筆需求' }] })
