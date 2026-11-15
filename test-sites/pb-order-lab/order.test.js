@@ -1,10 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { invoiceError, pay, selection, setCartQuantity, submit } from './order.js'
+
+import { abandonPayment, invoiceError, pay, selection, setCartQuantity, submit } from './order.js'
 
 const clock = { id: 'fixture-1', now: '2026-11-13T15:59:00.000Z' }
 const draft = () => ({ table: 'A1 桌', cart: [{ ...selection('dumplings', 2, 2, '不要醬'), lineId: 'line-1' }, { ...selection('egg-soup', 1), lineId: 'line-2' }], invoice: { type: 'none', code: '', phone: '0912345678', email: '' }, note: '一起出餐', orders: [], checkoutKey: 'checkout-1' })
 
 describe('frozen PB menu checkout', () => {
+  it('distinguishes abandoning an unpaid order from a failed attempt and a refund', () => {
+    const order = submit(draft(), clock)
+    pay(order, 'linepay', 'cancelled', clock)
+    expect(order.vendorStatus).toBe(20)
+    abandonPayment(order, clock)
+    expect(order.vendorStatus).toBe(79)
+    expect(order.hasRefundedPayment).toBe(false)
+    pay(order, 'linepay', 'succeeded', clock)
+    expect(order.payment.amount).toBe(0)
+    expect(order.status).toBe('cancelled')
+    const paid = submit(draft(), clock)
+    pay(paid, 'linepay', 'succeeded', clock)
+    expect(() => abandonPayment(paid, clock)).toThrow()
+  })
+  // Report: this chat, Nov15 — actual LINE Pay payment reached status50, not completed70.
+  it('retains business identity and represents paid preparation separately from fulfillment', () => {
+    const state = draft()
+    const order = submit(state, clock)
+    expect(order.number).not.toBe(order.orderId)
+    expect(order.vendorStatus).toBe(20)
+    expect(order.invoices).toEqual([])
+    pay(order, 'linepay', 'succeeded', { id: 'paid', now: '2026-11-15T10:13:00Z' })
+    expect(order.status).toBe('preparing')
+    expect(order.vendorStatus).toBe(50)
+    expect(order.payment.amount).toBe(200)
+    expect(order.invoices[0]).toMatchObject({ status: 20, order_id: order.vendorId })
+    expect(order.invoice.phone).toBe('0912345678')
+    expect(order.items[0].note).toBe('不要醬')
+  })
   // Report: this chat, Nov14 live PB cart: setting a configured row to 0 removes it.
   it('removes only the zero-quantity row and keeps the other row and invoice', () => {
     const state = draft()
@@ -94,7 +124,7 @@ describe('frozen PB menu checkout', () => {
   it.each(['linepay', 'card'])('simulates %s success once and freezes the paid amount', (method) => {
     const order = submit(draft(), clock)
     pay(order, method, 'succeeded', clock)
-    expect(order.status).toBe('completed')
+    expect(order.status).toBe('preparing')
     expect(order.payment.method).toBe(method)
     expect(order.payment.amount).toBe(200)
     expect(order.payment.paidAt).toBe(clock.now)
@@ -111,7 +141,7 @@ describe('frozen PB menu checkout', () => {
     pay(order, 'card', 'cancelled', clock)
     expect(order.payment.status).toBe('cancelled')
     pay(order, 'card', 'succeeded', clock)
-    expect(order.status).toBe('completed')
+    expect(order.status).toBe('preparing')
   })
 
   it('locks an uncertain outcome instead of claiming failure or retrying', () => {

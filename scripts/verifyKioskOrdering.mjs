@@ -14,29 +14,44 @@ import { chromium, _electron as electron } from 'playwright'
 // A temporary Electron profile enrolls its own test device; operator devices,
 // their credentials, settings, carts and browser storage are never reused.
 const scenario = process.env.PB_AUDIT_SCENARIO ?? 'full'
-assert(['full', 'cart-admission', 'checkout-flow', 'dumpling-assent', 'dumpling-follow-up', 'matched-recommendations', 'table-guidance', 'recommendation', 'recommendation-follow-up', 'search', 'cart', 'reset', 'idle', 'semantics', 'follow-up', 'stale-result'].includes(scenario))
+assert(['full', 'customization', 'pork-chicken', 'cart-admission', 'checkout-flow', 'dumpling-assent', 'dumpling-follow-up', 'matched-recommendations', 'table-guidance', 'recommendation', 'recommendation-follow-up', 'search', 'cart', 'reset', 'idle', 'semantics', 'follow-up', 'stale-result'].includes(scenario))
 const reportPath = process.env.PB_AUDIT_REPORT_PATH ?? '/tmp/pb-ordering-audit.json'
 const acceleratedIdle = process.env.PB_AUDIT_ACCELERATE_IDLE === '1'
+const retiredCartMarker = process.env.PB_AUDIT_RETIRED_CART_MARKER === '1'
+const restartButton = process.env.PB_AUDIT_RESTART_BUTTON ?? 'preparation'
+const startupMask = process.env.PB_AUDIT_STARTUP_MASK === '1'
+assert(['preparation', 'header'].includes(restartButton))
 assert(scenario !== 'idle' || !acceleratedIdle, 'Idle reply acceptance requires real time: browser-only clock acceleration invalidates server checkpoint and reception deadlines.')
 const runtime = process.env.ESGPB_ELECTRON_PATH
 const cdp = process.env.PB_AUDIT_CDP
 assert(runtime || cdp, 'Set ESGPB_ELECTRON_PATH or PB_AUDIT_CDP for an isolated test runtime.')
 if (cdp)
   assert.equal(new URL(cdp).hostname, '127.0.0.1', 'The audit CDP endpoint must be loopback-only.')
-const builtEntry = await readFile(resolve('pb-test.local/site/kiosk/index.html'), 'utf8')
+const hostUrl = new URL(process.env.PB_AUDIT_HOST_ORIGIN ?? 'http://127.0.0.1:15169')
+assert(['http:', 'https:'].includes(hostUrl.protocol) && ['127.0.0.1', 'localhost', '[::1]'].includes(hostUrl.hostname), 'The audit Host origin must be loopback-only.')
+assert(!hostUrl.username && !hostUrl.password && hostUrl.pathname === '/' && !hostUrl.search && !hostUrl.hash, 'PB_AUDIT_HOST_ORIGIN must contain only an origin.')
+const hostOrigin = hostUrl.origin
+const siteRoot = resolve(process.env.PB_AUDIT_SITE_ROOT ?? 'pb-test.local/site')
+const builtEntry = await readFile(resolve(siteRoot, 'kiosk/index.html'), 'utf8')
 const expectedEntry = builtEntry.match(/<script\s[^>]*type="module"[^>]*src="([^"]+)"/)?.[1]
 assert(expectedEntry, 'Built Kiosk entry script is missing.')
-const report = { runnerSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'), build: JSON.parse(await readFile(resolve('pb-test.local/built.json'), 'utf8')), hostEntrySha256: createHash('sha256').update(builtEntry).digest('hex'), fixture: 'pb-order-lab', host: 'built-kiosk', transport: cdp ? 'cdp' : 'electron-launcher', scenario, acceleratedIdle, steps: [], errors: [] }
+const report = { runnerSha256: createHash('sha256').update(await readFile(new URL(import.meta.url))).digest('hex'), build: JSON.parse(await readFile(resolve(siteRoot, '../built.json'), 'utf8')), hostEntrySha256: createHash('sha256').update(builtEntry).digest('hex'), hostOrigin, siteRoot, fixture: 'pb-order-lab', host: 'built-kiosk', transport: cdp ? 'cdp' : 'electron-launcher', scenario, acceleratedIdle, steps: [], errors: [] }
 report.sourceHashes = Object.fromEntries(await Promise.all([
   'packages/stage-shared/src/orderingTools.ts',
+  'packages/stage-shared/src/interactiveService.ts',
   'packages/stage-shared/src/productPresentation.ts',
   'packages/stage-shared/src/browserConversation.ts',
   'apps/server/src/services/domain/browser-ordering/index.ts',
+  'apps/server/src/services/domain/browser-ordering/skills/order/SKILL.md',
+  'apps/server/src/services/domain/browser-ordering/skills/cart/SKILL.md',
   'apps/stage-kiosk/src/services/browserPresentation.ts',
   'packages/stage-ui/src/services/pbBrowserService.ts',
+  'packages/stage-ui/src/services/pbOperation.ts',
+  'packages/stage-ui/src/services/pbControls.ts',
   'apps/stage-kiosk/src/services/browserOrderingTools.ts',
   'apps/stage-kiosk/src/services/browserFastPath.ts',
   'apps/stage-kiosk/src/services/browserDialogue.ts',
+  'apps/stage-kiosk/src/services/browserQuestionWindow.ts',
   'apps/stage-kiosk/src/services/browserCartTask.ts',
   'apps/stage-kiosk/src/services/browserCartSession.ts',
   'apps/stage-kiosk/src/services/kioskConversationRetry.ts',
@@ -68,12 +83,15 @@ let profiler
 let heapTimer
 let inspector
 try {
-  assert.equal((await fetch('http://127.0.0.1:15169/readyz')).status, 200)
+  assert.equal((await fetch(`${hostOrigin}/readyz`)).status, 200)
   assert.equal((await fetch('http://127.0.0.1:5188/')).status, 200)
   if (cdp) {
-    browser = await chromium.connectOverCDP(cdp)
+    // NOTICE: Playwright's default focus emulation makes hidden Electron views
+    // report visible and can hide reset failures. noDefaults preserves the
+    // app's actual visibility (playwright-core 1.60.0 coreBundle.js:36216).
+    browser = await chromium.connectOverCDP(cdp, { noDefaults: true })
     context = browser.contexts()[0]
-    host = context.pages().find(page => page.url().startsWith('http://127.0.0.1:15169/kiosk/'))
+    host = context.pages().find(page => page.url().startsWith(`${hostOrigin}/kiosk/`))
     assert(host, 'Expected a fresh, separately launched audit Kiosk.')
     // Refuse an existing enrolled operator profile before installing routes.
     await host.getByRole('button', { name: '建立測試設備', exact: true }).waitFor({ timeout: 30000 })
@@ -84,7 +102,7 @@ try {
       // Xvfb has no physical GPU. Use Electron's software WebGL for the actual
       // avatar import/preview instead of bypassing published-profile loading.
       args: [resolve('apps/stage-kiosk-desktop/out/main/index.js'), '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-      env: { ...process.env, KIOSK_DESKTOP_URL: 'http://127.0.0.1:15169/kiosk/', KIOSK_DESKTOP_WINDOWED: '1', KIOSK_DESKTOP_USER_DATA: profile },
+      env: { ...process.env, KIOSK_DESKTOP_URL: `${hostOrigin}/kiosk/`, KIOSK_DESKTOP_WINDOWED: '1', KIOSK_DESKTOP_USER_DATA: profile },
     })
     app.process().stderr?.on('data', chunk => report.stderr = ((report.stderr ?? '') + String(chunk)).slice(-16000))
     await app.evaluate(({ app }) => {
@@ -103,6 +121,12 @@ try {
       report.httpFailures.push({ path, status: response.status() })
       return
     }
+    if (/\/api\/kiosk\/visitor-sessions\/[^/]+\/browser-plan$/.test(path)) {
+      const body = await response.json().catch(() => undefined)
+      report.browserAdmissions ??= []
+      report.browserAdmissions.push({ choice: body?.choice, admission: body?.admission, provider: body?.provider, stages: body?.checks?.map(check => check.stage) })
+      return
+    }
     if (!['/api/kiosk/development/register', '/api/kiosk/bootstrap', '/api/kiosk/visitor-sessions'].includes(path))
       return
     const body = await response.json().catch(() => undefined)
@@ -115,6 +139,8 @@ try {
   })
   host.on('request', (request) => {
     const path = new URL(request.url()).pathname
+    if (/\/api\/kiosk\/visitor-sessions\/[^/]+\/browser-effect$/.test(path))
+      report.browserEffectRequests = (report.browserEffectRequests ?? 0) + 1
     if (/\/api\/kiosk\/visitor-sessions\/[^/]+\/browser-plan$/.test(path))
       report.browserPlanRequests = (report.browserPlanRequests ?? 0) + 1
     if (!/\/api\/kiosk\/visitor-sessions\/[^/]+\/messages$/.test(path) || request.method() !== 'POST')
@@ -249,6 +275,7 @@ try {
     await host.locator('.kiosk-conversation').waitFor({ timeout: 90000 })
   }
 
+  console.info('AUDIT: owned-site ready')
   // Electron teleports the real text console into an owned BrowserWindow.
   // Find that surface instead of inventing input in the Host document.
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -263,6 +290,7 @@ try {
     await new Promise(resolve => setTimeout(resolve, 100))
   }
   assert(consolePage, 'Expected the owned text console.')
+  console.info('AUDIT: text console ready')
   for (let attempt = 0; attempt < 100; attempt++) {
     native = context.pages().find(page => page.url().startsWith(scenario === 'checkout-flow' ? 'http://127.0.0.1:5188/order/' : 'https://app.esgpb.com/order/'))
     if (native)
@@ -273,9 +301,18 @@ try {
   native.on('crash', () => report.errors.push(['native renderer crashed', Date.now()]))
   native.on('close', () => report.errors.push(['native page closed']))
   native.on('requestfailed', request => report.errors.push(['native request failed', request.url(), request.failure()]))
-  await native.waitForFunction(() => Boolean(window.pbTest), { timeout: 30000 })
+  console.info('AUDIT: native surface located')
+  await native.waitForFunction(() => Boolean(window.pbTest), undefined, { timeout: 30000 })
+  if (scenario !== 'cart-admission') {
+    // A rendered PB document can precede Host discovery/admission. Sending at
+    // that point tests a disconnected startup, not the ordering scenario.
+    await native.waitForFunction(() => document.documentElement.getAttribute('data-webnavior-pb-bridge') === 'ready' && document.visibilityState === 'visible', undefined, { timeout: 30000 })
+    await host.locator('.ordering-preparation').waitFor({ state: 'hidden', timeout: 30000 })
+  }
+  console.info('AUDIT: fixture ready')
   assert.equal(await native.locator('script[src="/@vite/client"]').count(), 0)
   inspector = await context.newCDPSession(native)
+  console.info('AUDIT: native inspector attached')
   if (process.env.PB_AUDIT_HEAP === '1') {
     profiler = inspector
     await profiler.send('HeapProfiler.startSampling', { samplingInterval: 32768 })
@@ -296,7 +333,10 @@ try {
   const state = () => native.evaluate(() => window.pbTest.getState())
   async function send(text, verify) {
     const started = Date.now()
+    const mainRequestStart = report.modelContexts?.length ?? 0
+    const assistantStart = await host.locator('[data-chat-message-role="assistant"]').count()
     report.current = { text }
+    console.info(`AUDIT: send ${text}`)
     const before = await host.locator('.request-status').count()
     await consolePage.locator('textarea').first().fill(text)
     await consolePage.getByRole('button', { name: '模擬辨識並執行', exact: true }).click()
@@ -304,11 +344,14 @@ try {
       const statuses = [...document.querySelectorAll('.request-status')]
       return statuses.length > count && ['is-completed', 'is-failed', 'is-review', 'is-cancelled'].some(state => statuses.at(-1)?.classList.contains(state))
     }, before, { timeout: 120000 })
+    const requestCompletedMs = Date.now() - started
     const snapshot = await state()
     const textResult = await host.locator('.message-history').textContent()
+    const assistantMessages = host.locator('[data-chat-message-role="assistant"]')
+    const assistantReply = await assistantMessages.count() > assistantStart ? await assistantMessages.last().textContent() : ''
     // Capture the exact decision before assertions, so a failed effect retains
     // the same utterance's candidates/selection rather than the previous step.
-    const step = { text, requestCompletedMs: Date.now() - started, durationMs: Date.now() - started, path: new URL(native.url()).pathname, response: textResult.slice(-2000), cart: snapshot.cart, decision: await consolePage.locator('.simulation-status').textContent(), trace: await consolePage.locator('.simulation-trace pre').textContent().catch(() => undefined) }
+    const step = { text, requestCompletedMs, durationMs: Date.now() - started, path: new URL(native.url()).pathname, response: textResult.slice(-2000), assistantReply, mainPlannerRequests: (report.modelContexts?.length ?? 0) - mainRequestStart, cart: snapshot.cart, decision: await consolePage.locator('.simulation-status').textContent(), trace: await consolePage.locator('.simulation-trace pre').textContent().catch(() => undefined) }
     report.current = step
     // Recovery is a settled UI state, but it is not successful ordering. Capture
     // it immediately instead of waiting two minutes or counting it as success.
@@ -317,7 +360,7 @@ try {
     assert(!textResult.includes('助手已達本次處理上限'), 'Internal tool limit reached the customer.')
     assert(await host.locator('.request-status').last().evaluate(element => element.classList.contains('is-completed')), `Customer request failed: ${textResult.slice(-600)}`)
     report.current.cart = snapshot.cart
-    await verify(snapshot, textResult)
+    await verify(snapshot, assistantReply)
     step.durationMs = Date.now() - started
     report.steps.push(step)
     console.info(`PASS: ${text} (${Date.now() - started}ms)`)
@@ -371,14 +414,39 @@ try {
           localStorage.removeItem(key)
       }
     })
+    if (retiredCartMarker) {
+      await native.evaluate(() => {
+        const marker = 'webnavior:pb:cart-pending:/order/store/1kgJeql/internal_use/'
+        localStorage.setItem(marker, crypto.randomUUID())
+      })
+    }
     await host.reload()
     const preparation = host.locator('.ordering-preparation')
     await preparation.getByRole('heading', { name: '請先處理未完成的點餐', exact: true }).waitFor({ timeout: 30000 })
     assert.match(new URL(native.url()).pathname, /\/select-table$/, 'Unowned cart must be handled before the customer enters the menu.')
     assert.equal((await state()).cart.length, 1, 'Preparation must not silently erase an existing cart.')
+    const preparationVisibility = await native.evaluate(() => document.visibilityState)
+    if (cdp)
+      assert.equal(preparationVisibility, 'hidden', 'The restart regression must exercise the actual hidden native view, without focus emulation.')
+    if (startupMask) {
+      // PB's SSR leave transition needs two rendering frames before its mask
+      // stops intercepting Start. Hidden Electron views suspend those frames.
+      await native.evaluate(() => {
+        const mask = document.createElement('div')
+        mask.className = 'ssr-mask-leave-from ssr-mask-leave-active'
+        mask.dataset.auditStartupMask = 'true'
+        mask.style.cssText = 'position:fixed;inset:0;z-index:100000;background:white'
+        document.body.append(mask)
+        requestAnimationFrame(() => requestAnimationFrame(() => mask.remove()))
+      })
+      assert.equal(await native.locator('[data-audit-startup-mask]').count(), 1)
+    }
     assert(!(await host.locator('body').textContent()).includes('現在可以直接開口點餐'), 'Blocked preparation must not invite new ordering requests.')
-    report.steps.push({ text: 'startup-with-unowned-cart', path: new URL(native.url()).pathname, visiblePreparation: await preparation.textContent() })
-    await preparation.getByRole('button', { name: '重新開始／新訂單', exact: true }).click()
+    report.steps.push({ text: 'startup-with-unowned-cart', path: new URL(native.url()).pathname, visiblePreparation: await preparation.textContent(), nativeVisibility: preparationVisibility })
+    if (restartButton === 'header')
+      await host.locator('.customer-restart').click()
+    else
+      await preparation.getByRole('button', { name: '重新開始／新訂單', exact: true }).click()
     await host.waitForFunction(() => !document.querySelector('.ordering-preparation'), undefined, { timeout: 45000 })
     await native.waitForURL('**/menu/select-table')
     await native.waitForFunction(() => Boolean(window.pbTest))
@@ -393,7 +461,69 @@ try {
       assert.equal(snapshot.cart.length, 1)
       assert.equal(snapshot.cart[0].quantity, 1)
     })
-    report.cartAdmission = { handledBeforeEntry: true, explicitClear: true, nextReceptionCanOrder: true, submittedOrders: 0 }
+    if (retiredCartMarker) {
+      assert.equal(await native.evaluate(() => localStorage.getItem('webnavior:pb:cart-pending:/order/store/1kgJeql/internal_use/')), null, 'Only verified reset may retire the persisted cart marker.')
+    }
+    report.cartAdmission = { retiredCartMarker, restartButton, startupMask, handledBeforeEntry: true, explicitClear: true, nextReceptionCanOrder: true, submittedOrders: 0 }
+  }
+  if (scenario === 'pork-chicken') {
+    const variant = process.env.PB_AUDIT_PORK_CASE ?? 'context'
+    assert(['initial', 'context', 'correction'].includes(variant))
+    report.porkChicken = { variant }
+    const exactCart = (snapshot, pork, chicken) => {
+      const total = name => snapshot.cart.filter(line => line.name === name).reduce((sum, line) => sum + line.quantity, 0)
+      assert.equal(total('炸排骨便當'), pork)
+      assert.equal(total('炸雞腿便當'), chicken)
+      assert.equal(snapshot.cart.reduce((sum, line) => sum + line.quantity, 0), pork + chicken)
+      assert.equal(snapshot.cart.reduce((sum, line) => sum + line.subtotal, 0), (pork + chicken) * 130)
+      assert.equal(snapshot.orders.length, 0)
+    }
+    if (variant === 'initial') {
+      await send('炸排骨便當一份', snapshot => exactCart(snapshot, 1, 0))
+    }
+    else if (variant === 'context') {
+      await send('炸雞腿便當一份', snapshot => exactCart(snapshot, 0, 1))
+      await send('炸排骨便當呢？', snapshot => exactCart(snapshot, 0, 1))
+      await send('3份', snapshot => exactCart(snapshot, 3, 1))
+    }
+    else {
+      await send('炸雞腿便當三份', snapshot => exactCart(snapshot, 0, 3))
+      await send('我要炸排骨便當3份。炸雞腿只要1份。', snapshot => exactCart(snapshot, 3, 1))
+    }
+    report.porkChicken.finalCart = (await state()).cart
+  }
+  if (scenario === 'customization') {
+    const variant = process.env.PB_AUDIT_CUSTOMIZATION_CASE ?? 'all'
+    assert(['all', 'notes'].includes(variant))
+    report.customization = { variant }
+    // Configuration identity, not physical row count, owns the gold: PB may
+    // split or merge equal selections but must preserve add-ons and notes.
+    const exactConfigurations = (snapshot, dumplingCount, chickenNotes = []) => {
+      const groups = new Map()
+      for (const line of snapshot.cart) {
+        const key = JSON.stringify([line.name, line.extra, line.unitPrice, line.note ?? ''])
+        groups.set(key, (groups.get(key) ?? 0) + line.quantity)
+        assert.equal(line.subtotal, line.quantity * line.unitPrice)
+      }
+      const expected = new Map()
+      if (dumplingCount > 0)
+        expected.set(JSON.stringify(['周氏水餃(最低8顆)', 2, 80, '']), dumplingCount)
+      for (const note of chickenNotes) {
+        const key = JSON.stringify(['炸雞腿便當', 0, 130, note])
+        expected.set(key, (expected.get(key) ?? 0) + 1)
+      }
+      assert.deepEqual(groups, expected)
+      assert.equal(snapshot.cart.reduce((sum, line) => sum + line.subtotal, 0), dumplingCount * 80 + chickenNotes.length * 130)
+      assert.equal(snapshot.orders.length, 0)
+    }
+    if (variant === 'all') {
+      await send('我要周氏水餃每份十顆，兩份', snapshot => exactConfigurations(snapshot, 2))
+      await send('同樣的水餃再一份', snapshot => exactConfigurations(snapshot, 3))
+    }
+    const dumplingCount = variant === 'all' ? 3 : 0
+    await send('炸雞腿便當一份，請幫我備註「不要蔥」', snapshot => exactConfigurations(snapshot, dumplingCount, ['不要蔥']))
+    await send('再加炸雞腿便當一份，一般的，不用備註', snapshot => exactConfigurations(snapshot, dumplingCount, ['不要蔥', '']))
+    report.customization = { variant, ...(dumplingCount > 0 ? { dumplingPiecesPerServing: 10, dumplingServings: dumplingCount, dumplingUnitPrice: 80 } : {}), chickenNotes: ['不要蔥', ''], total: dumplingCount * 80 + 260, submitted: false }
   }
   if (scenario === 'semantics') {
     await send('炸排骨便當兩份一共多少錢？', snapshot => assert.equal(snapshot.cart.length, 0))
@@ -633,6 +763,15 @@ try {
     }
     report.dumplingAssent = { answer, basePieces: 8, quantity: 1, unitPrice: 64, mainPlannerRequests: (report.modelContexts?.length ?? 0) - beforeMain, browserPlanRequests: (report.browserPlanRequests ?? 0) - beforePlans }
     if (scenario === 'checkout-flow') {
+      // Report: Nov15, this chat. The actual invitation's short answer must
+      // open cart review without Main and reply-time framing must keep it there.
+      const beforeCheckoutMain = report.modelContexts?.length ?? 0
+      await send('好', async (snapshot) => {
+        assert.equal(snapshot.orders.length, 0)
+        assert.match(new URL(native.url()).pathname, /\/orders\/create$/)
+        assert.match(await host.locator('[data-chat-message-role="assistant"]').last().textContent(), /餐點、份數和金額正確嗎/)
+      })
+      report.checkoutInvitation = { openedCart: true, mainPlannerRequests: (report.modelContexts?.length ?? 0) - beforeCheckoutMain }
       for (const query of ['一份幾顆？', '一份水餃有幾顆？']) {
         await send(query, async (snapshot) => {
           assert.equal(snapshot.cart.length, 1)
@@ -643,21 +782,15 @@ try {
           assert.doesNotMatch(reply, /要結帳嗎|網站未提供餐點內容|要幾份/)
         })
       }
-      await send('結帳', async (snapshot) => {
+      const beforeCartConsentMain = report.modelContexts?.length ?? 0
+      await send('正確', async (snapshot) => {
         assert.equal(snapshot.orders.length, 0)
         assert.match(new URL(native.url()).pathname, /\/orders\/create$/)
-        const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
-        assert.match(reply, /周氏水餃/)
-        assert.match(reply, /8\s*顆/)
-        assert.match(reply, /64/)
-        assert.match(reply, /餐點、份數和金額正確嗎/)
-      })
-      await send('ok', async (snapshot) => {
-        assert.equal(snapshot.orders.length, 0)
         const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
         assert.match(reply, /發票要用哪種方式/)
         assert.doesNotMatch(reply, /餐點、份數和金額正確嗎/)
       })
+      report.cartConsent = { advancedToInvoiceChoices: true, mainPlannerRequests: (report.modelContexts?.length ?? 0) - beforeCartConsentMain }
       await send('我要用載具', async (snapshot) => {
         assert.equal(snapshot.orders.length, 0)
         assert.equal(await native.locator('input[type="radio"][value="3"]').isChecked(), true)
@@ -683,12 +816,16 @@ try {
         assert.equal(snapshot.orders.length, 1)
         assert.equal(snapshot.orders[0].items[0].quantity, 1)
         assert.equal(snapshot.orders[0].total, 64)
-        assert.match(new URL(native.url()).pathname, /\/orders\/[^/]+\/payment$/)
+        assert.match(new URL(native.url()).pathname, /\/orders\/[^/]+\/choosePayment$/)
         const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
-        assert.match(reply, /已按下送出訂單/)
+        assert.match(reply, /訂單已送出/)
         assert.doesNotMatch(reply, /已付款|付款成功/)
       })
-      report.checkoutSubmission = { nativeOrders: (await state()).orders.length, acknowledgedDispatchOnly: true, paymentOperated: false }
+      const ledger = await native.evaluate(() => fetch('/__lab/ledger').then(response => response.json()))
+      assert.equal(ledger.createdOrders, 1, 'The Server must observe exactly one newly committed fixture order.')
+      assert.equal(ledger.submissionRequests, 1, 'The fixture must observe exactly one submission transition, not merely one final order.')
+      assert.equal(ledger.duplicateSubmissions, 0)
+      report.checkoutSubmission = { nativeOrders: (await state()).orders.length, acceptedMerchantCreation: true, detailsVerified: false, paymentOperated: false, ledger }
     }
     else {
       await send('不要', (snapshot) => {
@@ -818,7 +955,7 @@ try {
     assert(closingVisitorSessionId)
     report.nativeHeapBeforeIdle = await inspector.send('Runtime.getHeapUsage')
     assert.equal(await native.evaluate(() => performance.getEntriesByType('resource').filter(entry => new URL(entry.name).pathname === '/@vite/client').length), 0)
-    const manualReset = scenario === 'cart-admission' || scenario === 'checkout-flow' || scenario === 'dumpling-follow-up' || scenario === 'dumpling-assent' || scenario === 'matched-recommendations' || scenario === 'table-guidance' || scenario === 'reset' || scenario === 'stale-result' || scenario === 'recommendation-follow-up'
+    const manualReset = scenario === 'follow-up' || scenario === 'customization' || scenario === 'pork-chicken' || scenario === 'cart-admission' || scenario === 'checkout-flow' || scenario === 'dumpling-follow-up' || scenario === 'dumpling-assent' || scenario === 'matched-recommendations' || scenario === 'table-guidance' || scenario === 'reset' || scenario === 'stale-result' || scenario === 'recommendation-follow-up'
     if (manualReset) {
       await host.locator('.customer-restart').click()
     }
@@ -888,9 +1025,27 @@ try {
       })
       report.checkoutSubmission.nextReceptionCanOrder = true
     }
+    else if (scenario === 'pork-chicken') {
+      await send('開始點餐', () => assert.match(new URL(native.url()).pathname, /\/menu$/))
+      await send('炸排骨便當一份', (snapshot) => {
+        assert.equal(snapshot.cart.length, 1)
+        assert.equal(snapshot.cart[0].name, '炸排骨便當')
+        assert.equal(snapshot.cart[0].quantity, 1)
+        assert.equal(snapshot.cart[0].unitPrice, 130)
+        assert.equal(snapshot.orders.length, 0)
+      })
+      report.porkChicken.nextReceptionCanOrder = true
+    }
     console.info(manualReset ? 'PASS: a fresh visitor can select A03 after restart without inheriting the old cart.' : 'PASS: a fresh visitor can select A03 after idle reset without inheriting the old cart.')
   }
   await host.screenshot({ path: '/tmp/pb-ordering-audit.png', timeout: 5000 }).catch(error => report.errors.push(['screenshot', error.message]))
+  assert.equal(report.browserEffectRequests ?? 0, 0, 'An issued operation must never request a second semantic effect judgment.')
+  for (const admission of report.browserAdmissions ?? []) {
+    if (admission.choice === 'ALLOW') {
+      assert.equal(admission.admission, 'issued-plan')
+      assert.deepEqual(admission.stages, ['effect'], 'Admission records exact plan matching only, not another purpose/model vote.')
+    }
+  }
   console.info('PASS: actual built Host → local API → configured Jev/Main → native fixture → dialogue.')
 }
 catch (error) {

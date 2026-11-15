@@ -1,5 +1,5 @@
 import { basePath, categories, products, revision } from './catalog.js'
-import { selection } from './order.js'
+import { createFixtureLedger } from './fixtureLedger.js'
 import { pageSnapshot } from './fixtureProtocol.js'
 
 /**
@@ -16,8 +16,10 @@ export function fixturePlugin() {
       server.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url, 'http://127.0.0.1:5188')
         const isState = url.pathname === '/__lab/state'
-        const isVendor = url.pathname.startsWith(`${basePath}/`) && (request.headers['x-inertia'] === 'true' || /\/(menu-categories|menu-category-items|getAttrByProduct\/\d+)$/.test(url.pathname))
-        if (!isState && !isVendor)
+        const isLedger = url.pathname === '/__lab/ledger'
+        const isFault = url.pathname === '/__lab/faults'
+        const isVendor = url.pathname.startsWith(`${basePath}/`) && (request.headers['x-inertia'] === 'true' || /\/(?:menu-categories|menu-category-items|getAttrByProduct\/\d+)$/.test(url.pathname))
+        if (!isState && !isVendor && !isLedger && !isFault)
           return next()
         const send = (status, value, headers = {}) => {
           response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers })
@@ -29,7 +31,7 @@ export function fixturePlugin() {
         let session = cookie && sessions.get(cookie)
         if (!session) {
           const id = crypto.randomUUID()
-          session = { revision: 0, state: null, touchedAt: Date.now() }
+          session = { revision: 0, state: null, touchedAt: Date.now(), ledger: createFixtureLedger() }
           sessions.set(id, session)
           response.setHeader('Set-Cookie', `pb_lab=${id}; HttpOnly; SameSite=Strict; Path=/`)
         }
@@ -39,41 +41,67 @@ export function fixturePlugin() {
           if (Date.now() - candidate.touchedAt > 86400000)
             sessions.delete(id)
         }
-        if (request.method === 'PUT' && isState) {
+        if (isFault && request.method === 'POST') {
           if (request.headers.origin !== url.origin)
-            return send(403, { error: 'Cross-origin fixture writes are rejected.' })
-          try {
-            let body = ''
-            for await (const part of request) {
-              body += part
-              if (body.length > 1_000_000)
-                return send(413, { error: 'Test session is too large; export and reset.' })
-            }
-            const input = JSON.parse(body)
-            if (input.revision !== session.revision)
-              return send(409, { error: '另一分頁已更新測試資料，請重新整理後核對。' })
-            const value = input.state
-            if (value.schemaVersion !== 1 || !Array.isArray(value.cart) || !Array.isArray(value.orders) || typeof value.checkoutKey !== 'string' || !value.invoice || typeof value.table !== 'string')
-              throw new Error('Invalid fixture session')
-            value.cart = value.cart.map(line => ({ ...selection(line.productId, line.quantity, line.extra, line.note), lineId: line.lineId, vendorLineId: line.vendorLineId }))
-            if (new Set(value.cart.map(line => line.vendorLineId)).size !== value.cart.length || value.cart.some(line => !Number.isSafeInteger(line.vendorLineId) || line.vendorLineId < 1))
-              throw new Error('Invalid fixture line identity')
-            session.state = value
-            session.revision++
-            return send(200, { revision: session.revision })
+            return send(403, { error: 'Cross-origin fixture faults are rejected.' })
+          let body = ''
+          for await (const part of request) {
+            body += part
+            if (body.length > 2048)
+              return send(413, { error: 'Fixture fault request is too large.' })
           }
-          catch { return send(400, { error: 'Invalid fixture session' }) }
+          try {
+            const result = session.ledger.armFault(JSON.parse(body))
+            return send(result.status, result.error ? { error: result.error } : { armed: true })
+          }
+          catch { return send(400, { error: 'Invalid fixture fault.' }) }
+        }
+        if (request.method === 'PUT' && isState) {
+          if (request.headers.origin !== url.origin) {
+            session.ledger.rejectWrite('cross-origin')
+            return send(403, { error: 'Cross-origin fixture writes are rejected.' })
+          }
+          let body = ''
+          for await (const part of request) {
+            body += part
+            if (body.length > 1_000_000) {
+              session.ledger.rejectWrite('body-limit')
+              return send(413, { error: 'Test session is too large; export and reset.' })
+            }
+          }
+          const result = session.ledger.write(body, session.state, session.revision)
+          if (result.status !== 200)
+            return send(result.status, { error: result.error })
+          session.state = result.state
+          session.revision = result.revision
+          // Commit first, then simulate a lost transport acknowledgement. This
+          // never replays the transition or suppresses its server ledger entry.
+          if (result.dropAck)
+            return response.destroy()
+          return send(200, { revision: session.revision })
         }
         if (request.method !== 'GET')
           return send(405, { error: 'Vendor writes are not exposed by this test server.' })
+        if (isLedger)
+          return send(200, session.ledger.snapshot())
+        if (isFault)
+          return send(405, { error: 'Arm fixture faults with a same-origin POST.' })
         if (isState)
-          return send(200, session)
+          return send(200, { revision: session.revision, state: session.state, touchedAt: session.touchedAt })
         if (!session.state)
           return send(409, { error: 'Open the test page first.' })
         if (request.headers['x-inertia'] === 'true') {
           if (request.headers['x-inertia-version'] && request.headers['x-inertia-version'] !== revision)
             return send(409, { error: 'Reload after fixture version change.' }, { 'X-Inertia-Location': url.href })
-          return send(200, pageSnapshot(session.state, request.url), { 'X-Inertia': 'true', Vary: 'X-Inertia' })
+          const page = pageSnapshot(session.state, request.url)
+          const fault = session.ledger.resultFault(url.pathname)
+          if (fault === 'malformed-json') {
+            response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Inertia': 'true' })
+            return response.end('{')
+          }
+          if (fault === 'missing-order')
+            delete page.props.order
+          return send(200, page, { 'X-Inertia': 'true', 'Vary': 'X-Inertia' })
         }
         if (url.pathname.endsWith('/menu-categories'))
           return send(200, { categories: categories.map(category => ({ ...category, id: Number(category.id) })) })

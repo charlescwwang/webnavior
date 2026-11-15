@@ -1,15 +1,15 @@
 import { basePath, categories, products, revision, tables } from './catalog.js'
-import { invoiceError, pay, selection, setCartQuantity, submit } from './order.js'
-import { pageSnapshot, routeRegistry } from './fixtureProtocol.js'
 import { runCompatibilityCheck } from './contractCheck.js'
+import { pageSnapshot, routeRegistry, sessionSchemaVersion } from './fixtureProtocol.js'
+import { abandonPayment, invoiceError, pay, selection, setCartQuantity, submit } from './order.js'
 
-const storageKey = 'pb-order-lab:v1'
+const storageKey = 'pb-order-lab:v2'
 const app = document.querySelector('#app')
 const modalRoot = document.querySelector('#modal-root')
 const invoiceLabels = { none: '無載具 (存入綠界電子發票載具)', citizen: '自然人憑證', carrier: '手機載具', tax: '統一編號', donation: '捐贈發票' }
-const paymentLabels = { unpaid: '尚未付款', succeeded: '模擬付款成功', failed: '模擬付款失敗', cancelled: '已取消模擬付款', uncertain: '模擬結果不明，請核對' }
+const paymentLabels = { unpaid: '尚未付款', succeeded: '模擬付款成功', failed: '模擬付款失敗', cancelled: '已取消模擬付款', uncertain: '模擬結果不明，請核對', abandoned: '已放棄付款，訂單已取消' }
 const emptyInvoice = () => ({ type: 'none', code: '', phone: '', email: '' })
-const fresh = () => ({ schemaVersion: 1, draftStarted: false, tables, table: '', cart: [], invoice: emptyInvoice(), note: '', orders: [], checkoutKey: crypto.randomUUID() })
+const fresh = () => ({ schemaVersion: sessionSchemaVersion, draftStarted: false, tables, table: '', cart: [], invoice: emptyInvoice(), note: '', orders: [], checkoutKey: crypto.randomUUID() })
 let state = fresh()
 let query = ''
 let category = ''
@@ -29,7 +29,7 @@ try {
   const saved = sessionStorage.getItem(storageKey)
   if (saved) {
     const parsed = JSON.parse(saved)
-    if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.cart) || !Array.isArray(parsed.orders) || !parsed.invoice || typeof parsed.checkoutKey !== 'string')
+    if (parsed.schemaVersion !== sessionSchemaVersion || !Array.isArray(parsed.cart) || !Array.isArray(parsed.orders) || !parsed.invoice || typeof parsed.checkoutKey !== 'string')
       throw new Error('Unsupported stored session')
     state = parsed
   }
@@ -67,7 +67,7 @@ function save() {
 }
 
 // All user-entered notes and persisted fields cross this HTML boundary.
-const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
+const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' }[char]))
 const money = value => `$${value.toLocaleString('en-US')}`
 const total = () => state.cart.reduce((sum, line) => sum + line.subtotal, 0)
 const date = value => new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })
@@ -97,7 +97,10 @@ function showModal(content, className = '') {
   restoreFocus = document.activeElement
   modalRoot.innerHTML = `<dialog role="dialog" class="${className}" aria-label="點餐對話框"><div class="dialog-header">${button(icon('close'), 'close', 'class="el-dialog__headerbtn" aria-label="關閉此對話框"')}</div>${content}</dialog>`
   const dialog = modalRoot.querySelector('dialog')
-  dialog.addEventListener('cancel', (event) => { event.preventDefault(); closeModal() })
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault()
+    closeModal()
+  })
   dialog.showModal()
 }
 
@@ -113,30 +116,42 @@ function render() {
   query = ''
   category = ''
   const path = location.pathname
-  if (path === '/' || path.endsWith('/select-table'))
+  if (path === '/' || path.endsWith('/select-table')) {
     renderTables()
-  else if (path === `${basePath}/menu`)
+  }
+  else if (path === `${basePath}/menu`) {
     renderMenu()
+  }
   else if (path === `${basePath}/orders/create`) {
     // PB rebuilds checkout form fields on page entry, but keeps them during cart edits.
     state.invoice = emptyInvoice()
     state.note = ''
     renderCheckout()
   }
-  else if (path === '/test/orders')
+  else if (path === '/test/orders') {
     renderHistory()
+  }
+  else if (/^\/order\/(?:linepay|ecpay)\/redirect\/[^/]+\/(?:LinePay|Credit)$/.test(path)) {
+    const id = decodeURIComponent(path.split('/')[4])
+    const order = state.orders.find(order => order.orderId === id)
+    if (order)
+      renderPaymentAuthorization(order, path.startsWith('/order/linepay/') ? 'linepay' : 'card')
+    else
+      app.innerHTML = '<section class="empty"><h1>找不到此瀏覽器的測試訂單</h1></section>'
+  }
   else if (path.startsWith(`${basePath}/orders/`)) {
     const id = decodeURIComponent(path.split('/')[6] ?? '')
     const order = state.orders.find(order => order.orderId === id)
     if (!order)
       app.innerHTML = `<section class="empty"><h1>找不到此瀏覽器的測試訂單</h1><p>訂單只保存在建立它的瀏覽器分頁。</p>${button('返回選桌', 'tables')}</section>`
-    else if (path.endsWith('/payment'))
+    else if (path.endsWith('/choosePayment'))
       renderPayment(order)
     else
       renderReceipt(order)
   }
-  else
+  else {
     app.innerHTML = `<section class="empty"><h1>找不到此頁面</h1>${button('返回選桌', 'tables')}</section>`
+  }
 }
 
 function renderTables() {
@@ -161,7 +176,7 @@ function renderProducts() {
     category = visibleCategories[0]?.id ?? ''
   document.querySelector('.tabs').innerHTML = visibleCategories.map(group => button(group.name, 'category', `role="tab" aria-selected="${category === group.id}" data-category="${group.id}" id="tab-${group.id}"`)).join('')
   document.querySelector('.menu-search-meta').textContent = query ? `共找到 ${matches.length} 項` : ''
-  document.querySelector('#products').innerHTML = categories.map(group => {
+  document.querySelector('#products').innerHTML = categories.map((group) => {
     const items = matches.filter(item => item.categoryId === group.id)
     return items.length ? `<section class="category" id="pane-${group.id}"><h3>${group.name}</h3><div class="grid">${items.map(item => `<div class="menu-card" role="button" tabindex="0" data-action="product" data-product-id="${item.id}" data-testid="product-${item.id}" aria-label="${escape(item.name)} ${money(item.price)}"><div class="card-info"><div><h4>${escape(item.name)}</h4>${item.description ? `<p>${escape(item.description)}</p>` : ''}</div><div class="bottom"><span class="price">${money(item.price)}</span><span class="plus" aria-hidden="true">${icon('plus')}</span></div></div>${item.image ? image(item) : ''}</div>`).join('')}</div></section>` : ''
   }).join('') || '<section class="empty"><h3>找不到符合的餐點</h3><p>請試試其他關鍵字。</p></section>'
@@ -196,7 +211,7 @@ function renderCheckout() {
     app.innerHTML = `<section class="empty order-create"><h2>購物車是空的</h2><p>先逛逛菜單，把喜歡的品項加入購物車吧！</p>${button('立即點餐', 'menu', 'class="primary"')}</section>`
     return
   }
-  app.innerHTML = `<section class="checkout order-create"><div class="panel"><div class="panel-title"><h3>確認訂單</h3><a href="${basePath}/menu" data-action="menu">繼續點餐</a></div><div class="panel-title"><span>查看細節（${state.cart.length}個品項）</span>${button('清空', 'clear', 'data-testid="clear-cart"')}</div>${state.cart.map(line => `<article class="cart-row produce-item" data-line-id="${line.lineId}" data-product-id="${line.productId}">${image(products.find(item => item.id === line.productId))}<div class="line-body"><h3>${escape(line.name)} <span>(${money(line.unitPrice)})</span></h3><div class="product-attr"><div><div class="ml-4">${line.extra ? `<span>水餃${line.extra > 1 ? ` X${line.extra}` : ''}</span>` : ''}</div></div><div class="ml-4">${escape(line.note)}</div></div><div class="line-actions">${button(icon('minus'), 'line-quantity', `data-line-id="${line.lineId}" data-delta="-1" aria-label="減少${escape(line.name)}份數"`)}<input type="number" data-action-field="line-quantity" data-line-id="${line.lineId}" data-testid="line-quantity" min="0" max="${Number.MAX_SAFE_INTEGER}" value="${line.quantity}" aria-label="${escape(line.name)}份數">${button(icon('plus'), 'line-quantity', `data-line-id="${line.lineId}" data-delta="1" aria-label="增加${escape(line.name)}份數"`)}${button(icon('edit'), 'edit', `aria-label="編輯${escape(line.name)}" data-line-id="${line.lineId}"`)}${button(icon('delete'), 'remove', `class="is-circle" aria-label="刪除${escape(line.name)}" data-line-id="${line.lineId}"`)}</div></div><div class="line-total">小計 <b>${money(line.subtotal)}</b></div></article>`).join('')}<div class="total-row"><b>小計</b><strong>${money(total())}</strong></div></div><div class="panel"><h3>內用</h3>桌號：${escape(state.table)}</div><div class="panel"><details open><summary>開立發票</summary><div class="invoice-options">${Object.entries(invoiceLabels).map(([value, label]) => `<label class="el-radio"><input type="radio" name="invoiceType" data-method="${value}" value="${({none:5,citizen:2,carrier:3,tax:4,donation:6})[value]}" data-testid="invoice-${value}" ${state.invoice.type === value ? 'checked' : ''}>${label}<span data-code-host="${value}"></span></label>`).join('')}</div><div id="invoice-code-field"></div><b>發票通知（請擇一填寫）</b><div class="two-col"><div class="field"><label for="phone">手機號碼</label><input type="tel" id="phone" name="phone" value="${escape(state.invoice.phone)}" placeholder="手機號碼" data-testid="invoice-phone" autocomplete="off"></div><div class="field"><label for="email">E-mail</label><input type="email" id="email" name="email" value="${escape(state.invoice.email)}" placeholder="E-mail" data-testid="invoice-email" autocomplete="off"></div></div><small class="muted">測試可填 0912345678 或 tester@example.test；請勿填寫真實個資。</small></details></div><div class="panel"><details><summary>訂單備註</summary><div class="field"><textarea id="order-note" name="orderNote" data-testid="order-note" aria-label="訂單備註">${escape(state.note)}</textarea></div></details></div><div class="panel"><h3>訂單說明</h3><p>時間若有更動，將撥打手機通知，請務必保留行動電話。</p><p class="muted">原站取消規則：付款後店家會立即接單，無法自行取消訂單，如需取消請聯絡店家。<br>此測試站不會接單、扣款、通知或開立發票。</p></div><div id="checkout-error" role="alert"></div></section><div class="sticky-bar"><span class="price">總金額 <b data-testid="order-total">${money(total())}</b></span>${button('送出訂單', 'submit', 'class="primary" data-testid="submit-order"')}</div>`
+  app.innerHTML = `<section class="checkout order-create"><div class="panel"><div class="panel-title"><h3>確認訂單</h3><a href="${basePath}/menu" data-action="menu">繼續點餐</a></div><div class="panel-title"><span>查看細節（${state.cart.length}個品項）</span>${button('清空', 'clear', 'data-testid="clear-cart"')}</div>${state.cart.map(line => `<article class="cart-row produce-item" data-line-id="${line.lineId}" data-product-id="${line.productId}">${image(products.find(item => item.id === line.productId))}<div class="line-body"><h3>${escape(line.name)} <span>(${money(line.unitPrice)})</span></h3><div class="product-attr"><div><div class="ml-4">${line.extra ? `<span>水餃${line.extra > 1 ? ` X${line.extra}` : ''}</span>` : ''}</div></div><div class="ml-4">${escape(line.note)}</div></div><div class="line-actions">${button(icon('minus'), 'line-quantity', `data-line-id="${line.lineId}" data-delta="-1" aria-label="減少${escape(line.name)}份數"`)}<input type="number" data-action-field="line-quantity" data-line-id="${line.lineId}" data-testid="line-quantity" min="0" max="${Number.MAX_SAFE_INTEGER}" value="${line.quantity}" aria-label="${escape(line.name)}份數">${button(icon('plus'), 'line-quantity', `data-line-id="${line.lineId}" data-delta="1" aria-label="增加${escape(line.name)}份數"`)}${button(icon('edit'), 'edit', `class="is-circle" aria-label="編輯${escape(line.name)}" data-line-id="${line.lineId}"`)}${button(icon('delete'), 'remove', `class="is-circle" aria-label="刪除${escape(line.name)}" data-line-id="${line.lineId}"`)}</div></div><div class="line-total">小計 <b>${money(line.subtotal)}</b></div></article>`).join('')}<div class="total-row"><b>小計</b><strong>${money(total())}</strong></div></div><div class="panel"><h3>內用</h3>桌號：${escape(state.table)}</div><div class="panel"><details open><summary>開立發票</summary><div class="invoice-options">${Object.entries(invoiceLabels).map(([value, label]) => `<label class="el-radio"><input type="radio" name="invoiceType" data-method="${value}" value="${({ none: 5, citizen: 2, carrier: 3, tax: 4, donation: 6 })[value]}" data-testid="invoice-${value}" ${state.invoice.type === value ? 'checked' : ''}>${label}<span data-code-host="${value}"></span></label>`).join('')}</div><div id="invoice-code-field"></div><b>發票通知（請擇一填寫）</b><div class="two-col"><div class="field"><label for="phone">手機號碼</label><input type="tel" id="phone" name="phone" value="${escape(state.invoice.phone)}" placeholder="手機號碼" data-testid="invoice-phone" autocomplete="off"></div><div class="field"><label for="email">E-mail</label><input type="email" id="email" name="email" value="${escape(state.invoice.email)}" placeholder="E-mail" data-testid="invoice-email" autocomplete="off"></div></div><small class="muted">測試可填 0912345678 或 tester@example.test；請勿填寫真實個資。</small></details></div><div class="panel"><details><summary>訂單備註</summary><div class="field"><textarea id="order-note" name="orderNote" data-testid="order-note" aria-label="訂單備註">${escape(state.note)}</textarea></div></details></div><div class="panel"><h3>訂單說明</h3><p>時間若有更動，將撥打手機通知，請務必保留行動電話。</p><p class="muted">原站取消規則：付款後店家會立即接單，無法自行取消訂單，如需取消請聯絡店家。<br>此測試站不會接單、扣款、通知或開立發票。</p></div><div id="checkout-error" role="alert"></div></section><div class="sticky-bar"><span class="price">總金額 <b data-testid="order-total">${money(total())}</b></span>${button('送出訂單', 'submit', 'class="primary" data-testid="submit-order"')}</div>`
   renderInvoiceCode()
 }
 
@@ -208,18 +223,31 @@ function renderInvoiceCode() {
   host.innerHTML = state.invoice.type === 'none' ? '' : `<div class="field"><span>${invoiceLabels[state.invoice.type]}編號</span><input id="invoice-code" aria-label="${invoiceLabels[state.invoice.type]}編號" name="invoiceCode" data-testid="invoice-code" value="${escape(state.invoice.code)}" placeholder="${placeholders[state.invoice.type]}" autocomplete="off"><small>${hints[state.invoice.type]}</small></div>`
 }
 
-function orderPath(order) { return `${basePath}/orders/${encodeURIComponent(order.orderId)}` }
+function orderPath(order) {
+  return `${basePath}/orders/${encodeURIComponent(order.orderId)}`
+}
 
 function renderPayment(order) {
-  if (['succeeded', 'uncertain'].includes(order.payment.status)) {
-    renderReceipt(order)
+  if (['succeeded', 'uncertain', 'abandoned'].includes(order.payment.status)) {
+    go(orderPath(order))
     return
   }
-  app.innerHTML = `<section class="receipt"><div class="panel"><h1>選擇付款方式</h1><p class="muted">以下是模擬付款頁；原站送單後的頁面尚未驗證。</p><dl><dt>訂單編號</dt><dd data-testid="order-id">${escape(order.orderId)}</dd><dt>付款金額</dt><dd class="price" data-testid="payment-amount">NT${money(order.total)}</dd></dl><div class="payment-grid actions"><button class="payment-choice" data-action="choose-payment" data-method="linepay" data-testid="payment-linepay" aria-pressed="false"><strong class="linepay">LINE Pay</strong><span>模擬行動支付</span></button><button class="payment-choice" data-action="choose-payment" data-method="card" data-testid="payment-card" aria-pressed="false"><strong>信用卡</strong><span>測試付款，不輸入卡號</span></button></div><div id="payment-flow"></div>${button('查看訂單', 'receipt', `data-order-id="${order.orderId}"`)}</div></section>`
+  app.innerHTML = `<section class="receipt"><div class="panel"><p>訂單尚未完成，請選擇付款方式</p><h2>付款方式</h2><p>收款方：平台 (PB 撇步)</p><p>取餐編號：<strong data-testid="order-id">${escape(order.number)}</strong></p><p>付款金額 <b class="price" data-testid="payment-amount">${money(order.total)}</b></p><div class="payment-grid actions"><button class="payment-choice" data-action="choose-payment" data-method="linepay" data-testid="payment-linepay" aria-pressed="false"><strong class="linepay">LINE Pay</strong></button><button class="payment-choice" data-action="choose-payment" data-method="card" data-testid="payment-card" aria-pressed="false"><strong>信用卡</strong></button></div><p>完成付款後將自動回到訂單頁，亦會同步發送通知。</p><div id="payment-flow"></div>${button('放棄付款', 'abandon-payment', `data-order-id="${order.orderId}"`)}<p class="muted">本機不連金流、不寄通知；付款結果由下方測試控制模擬。</p></div></section>`
+}
+
+function renderPaymentAuthorization(order, method) {
+  if (order.status !== 'awaiting-payment') {
+    go(orderPath(order))
+    return
+  }
+  app.innerHTML = `<section class="receipt"><div class="panel"><h2>${method === 'linepay' ? 'LINE Pay 模擬授權' : '信用卡模擬授權'}</h2><p>付款金額 <b class="price">${money(order.total)}</b></p><p class="muted">本機不連金流，不用登入、掃碼或輸入卡號。選擇回應以驗證點餐流程。</p><div class="outcomes">${[['succeeded', '模擬付款成功'], ['failed', '模擬付款失敗'], ['cancelled', '取消付款'], ['uncertain', '模擬結果不明']].map(([outcome, label]) => button(label, 'pay', `data-method="${method}" data-outcome="${outcome}" data-order-id="${order.orderId}" data-testid="simulate-${outcome}" ${outcome === 'succeeded' ? 'class="primary"' : ''}`)).join('')}</div></div></section>`
 }
 
 function renderReceipt(order) {
-  app.innerHTML = `<section class="receipt"><div class="receipt-heading"><div class="success-icon">${order.status === 'completed' ? '✓' : '○'}</div><h1>${order.status === 'completed' ? '測試訂單完成' : '測試訂單已建立'}</h1><p data-testid="payment-status">${paymentLabels[order.payment.status]}</p></div><div class="panel"><dl><dt>訂單編號</dt><dd data-testid="order-id">${escape(order.orderId)}</dd><dt>建立時間</dt><dd data-testid="order-time">${date(order.createdAt)}</dd><dt>桌號</dt><dd>${escape(order.table)}</dd><dt>訂單金額</dt><dd data-testid="receipt-total">NT${money(order.total)}</dd><dt>付款金額</dt><dd data-testid="paid-amount">NT${money(order.payment.amount)}</dd><dt>付款方式</dt><dd>${order.payment.method === 'linepay' ? 'LINE Pay' : order.payment.method === 'card' ? '信用卡' : '尚未選擇'}</dd><dt>付款時間</dt><dd>${order.payment.paidAt ? date(order.payment.paidAt) : '—'}</dd><dt>開立發票</dt><dd>${invoiceLabels[order.invoice.type]}（模擬，未開立）</dd></dl></div><div class="panel"><h3>餐點明細</h3>${order.items.map(item => `<div class="history-row"><div><b>${escape(item.name)}</b><p class="muted">${item.quantity} 份${item.extra ? ` · 每份加 ${item.extra} 顆水餃` : ''}${item.note ? ` · ${escape(item.note)}` : ''}</p></div><b>${money(item.subtotal)}</b></div>`).join('')}${order.note ? `<p>訂單備註：${escape(order.note)}</p>` : ''}</div>${order.payment.status === 'uncertain' ? '<p class="error">此模擬付款結果不明，鎖定重試以測試人工核對流程。請建立新測試單，不會自動重送。</p>' : ''}<div class="actions">${order.status === 'awaiting-payment' ? button('前往模擬付款', 'payment', `class="primary" data-order-id="${order.orderId}"`) : ''}${button('匯出訂單 JSON', 'export', `data-order-id="${order.orderId}" data-testid="export-order"`)}${button('查看訂單資料', 'json', `data-order-id="${order.orderId}"`)}${button('開始新訂單', 'new', 'data-testid="new-order"')}</div><p class="muted">本紀錄為測試資料，未送到店家、POS 或金流服務。</p></section>`
+  const paid = order.payment.status === 'succeeded'
+  const cancelled = order.status === 'cancelled'
+  const invoice = order.invoices[0]
+  app.innerHTML = `<section class="receipt"><div class="panel"><p data-testid="payment-status">${paymentLabels[order.payment.status]}</p><ol aria-label="訂單進度"><li>付款完成${paid ? ' ✓' : ''}</li><li>已通知店家${paid ? ' ✓' : ''}</li><li${paid ? ' aria-current="step"' : ''}>製作中</li><li>送餐中</li><li>已送達</li></ol><p data-testid="fulfillment-status">${paid ? `店家正在準備您的餐點，完成後會送到 ${escape(order.table)}` : cancelled ? '已放棄付款，訂單已取消。' : '訂單尚未完成，請選擇付款方式。'}</p></div><div class="panel"><p>訂單編號 <b data-testid="order-id">#${escape(order.number)}</b>　內用　桌位 ${escape(order.table)}</p>${paid ? button('繼續加點', 'new') : ''}<details open><summary>訂單摘要</summary><dl><dt>訂單編號</dt><dd>#${escape(order.number)}</dd><dt>下單時間</dt><dd data-testid="order-time">${date(order.createdAt)}</dd><dt>內用桌位</dt><dd>${escape(order.table)}</dd><dt>付款方式</dt><dd>${paid ? order.payment.method === 'linepay' ? 'LINE Pay' : '信用卡' : '未付款'}</dd><dt>開立發票</dt><dd>${invoiceLabels[order.invoice.type]}</dd>${invoice ? `<dt>發票號碼</dt><dd data-testid="invoice-number">${escape(invoice.no)}（隨機碼：${escape(invoice.random_number)}）<small class="muted">本機測試資料，未實際開立</small></dd>` : ''}</dl><p>查看細節（${order.items.length}個品項）</p>${order.items.map(item => `<div class="history-row"><div><h3>${escape(item.name)}</h3><p>數量：${item.quantity}${item.extra ? ` · 每份加 ${item.extra} 顆水餃` : ''}${item.note ? ` · ${escape(item.note)}` : ''}</p></div><b>小計 ${money(item.subtotal)}</b></div>`).join('')}<div class="total-row"><span>訂單總額</span><b data-testid="receipt-total">${money(order.total)}</b></div><div class="total-row"><span>實付金額</span><b data-testid="paid-amount">${money(order.payment.amount)}</b></div></details>${paid ? '<p>如需取消訂單，請聯絡店家</p>' : ''}<details><summary>訂單備註</summary><p>${escape(order.note)}</p></details></div>${order.payment.status === 'uncertain' ? '<p class="error">模擬付款結果不明，請核對，不能自動重送。</p>' : ''}<div class="actions">${order.status === 'awaiting-payment' ? button('前往付款', 'payment', `class="primary" data-order-id="${order.orderId}"`) : ''}${button('匯出訂單 JSON', 'export', `data-order-id="${order.orderId}" data-testid="export-order"`)}${button('查看訂單資料', 'json', `data-order-id="${order.orderId}"`)}${button('開始新訂單', 'new', 'data-testid="new-order"')}</div><p class="muted">本機測試紀錄，不送到店家、金流或發票服務。</p></section>`
 }
 
 function renderHistory() {
@@ -248,8 +276,9 @@ document.addEventListener('input', async (event) => {
     clearTimeout(searchTimer)
     searchTimer = setTimeout(renderProducts, 250)
   }
-  else if (target.id === 'quantity' || target.id === 'extra')
+  else if (target.id === 'quantity' || target.id === 'extra') {
     updateSelection()
+  }
   else if (['phone', 'email'].includes(target.id)) {
     state.invoice[target.id] = target.value.trim()
     await save()
@@ -339,10 +368,18 @@ document.addEventListener('click', async (event) => {
       await save()
       go(`${basePath}/menu`)
     }
-    else if (action === 'tables') go(`${basePath}/menu/select-table`)
-    else if (action === 'menu') go(`${basePath}/menu`)
-    else if (action === 'checkout') go(`${basePath}/orders/create`)
-    else if (action === 'close') closeModal()
+    else if (action === 'tables') {
+      go(`${basePath}/menu/select-table`)
+    }
+    else if (action === 'menu') {
+      go(`${basePath}/menu`)
+    }
+    else if (action === 'checkout') {
+      go(`${basePath}/orders/create`)
+    }
+    else if (action === 'close') {
+      closeModal()
+    }
     else if (action === 'category') {
       category = target.dataset.category
       document.querySelectorAll('[data-action="category"]').forEach(tab => tab.setAttribute('aria-selected', String(tab === target)))
@@ -353,7 +390,9 @@ document.addEventListener('click', async (event) => {
       const visible = categories.filter(group => document.getElementById(`pane-${group.id}`))
       showModal(`<div class="dialog-content"><h2>菜單品類總覽</h2>${visible.map(group => button(`${group.name} ${products.filter(item => item.categoryId === group.id && `${item.name} ${item.description ?? ''}`.toLowerCase().includes(query.toLowerCase())).length}`, 'category', `data-category="${group.id}"`)).join('')}</div>`)
     }
-    else if (action === 'product') openProduct(target.dataset.productId)
+    else if (action === 'product') {
+      openProduct(target.dataset.productId)
+    }
     else if (action === 'step') {
       const input = document.getElementById(target.dataset.field)
       input.value = Math.max(Number(input.min), Math.min(Number(input.max), Number(input.value) + Number(target.dataset.delta)))
@@ -373,7 +412,9 @@ document.addEventListener('click', async (event) => {
       location.pathname.endsWith('/orders/create') ? renderCheckout() : renderMenu()
       notify(line ? '已儲存修改' : '已加入購物車')
     }
-    else if (action === 'edit' && line) openProduct(line.productId, line.lineId)
+    else if (action === 'edit' && line) {
+      openProduct(line.productId, line.lineId)
+    }
     else if (action === 'line-quantity' && line) {
       setCartQuantity(state, line.lineId, line.quantity + Number(target.dataset.delta))
       await save()
@@ -391,15 +432,27 @@ document.addEventListener('click', async (event) => {
         document.querySelector('#checkout-error').scrollIntoView({ block: 'center' })
         return
       }
+      showModal(`<div class="dialog-content el-message-box"><h2>確認訂單</h2><div class="el-message-box__message">訂單送出後將無法修改，請確認所有資訊是否正確。</div><div class="el-message-box__btns">${button('取消', 'close')}${button('確定', 'confirm-submit', 'class="primary"')}</div></div>`, 'order-confirmation')
+      modalRoot.querySelector('dialog').setAttribute('aria-label', '確認訂單')
+    }
+    else if (action === 'confirm-submit') {
       const receipt = submit(state, now())
       await save()
       window.dispatchEvent(new CustomEvent('pb-test:order-submitted', { detail: structuredClone(receipt) }))
-      go(`${orderPath(receipt)}/payment`)
+      go(`${orderPath(receipt)}/choosePayment`)
+    }
+    else if (action === 'abandon-payment' && order) {
+      showModal(`<div class="dialog-content"><h2>確定放棄付款？</h2><p>訂單會取消。</p><div class="actions">${button('返回', 'close')}${button('放棄付款', 'confirm-abandon', `data-order-id="${order.orderId}"`)}</div></div>`)
+    }
+    else if (action === 'confirm-abandon' && order) {
+      abandonPayment(order, now())
+      await save()
+      go(orderPath(order))
     }
     else if (action === 'choose-payment') {
-      const current = state.orders.find(order => location.pathname === `${orderPath(order)}/payment`)
-      document.querySelectorAll('.payment-choice').forEach(choice => choice.setAttribute('aria-pressed', String(choice === target)))
-      document.querySelector('#payment-flow').innerHTML = `<div class="panel"><h3>${target.dataset.method === 'linepay' ? 'LINE Pay 模擬授權' : '信用卡模擬授權'}</h3><p>付款金額 <b class="price">${money(current.total)}</b></p><p class="muted">不用登入、掃碼或輸入真實卡號。選擇回應以驗證點餐流程。</p><div class="outcomes">${[['succeeded', '模擬付款成功'], ['failed', '模擬付款失敗'], ['cancelled', '取消付款'], ['uncertain', '模擬結果不明']].map(([outcome, label]) => button(label, 'pay', `data-method="${target.dataset.method}" data-outcome="${outcome}" data-order-id="${current.orderId}" data-testid="simulate-${outcome}" ${outcome === 'succeeded' ? 'class="primary"' : ''}`)).join('')}</div></div>`
+      const current = state.orders.find(order => location.pathname === `${orderPath(order)}/choosePayment`)
+      const linepay = target.dataset.method === 'linepay'
+      go(`/order/${linepay ? 'linepay' : 'ecpay'}/redirect/${current.orderId}/${linepay ? 'LinePay' : 'Credit'}`)
     }
     else if (action === 'pay' && order) {
       pay(order, target.dataset.method, target.dataset.outcome, now())
@@ -407,13 +460,24 @@ document.addEventListener('click', async (event) => {
       window.dispatchEvent(new CustomEvent('pb-test:payment-updated', { detail: structuredClone(order) }))
       go(orderPath(order))
     }
-    else if (action === 'payment' && order) go(`${orderPath(order)}/payment`)
-    else if (action === 'receipt' && order) go(orderPath(order))
-    else if (action === 'history') go('/test/orders')
-    else if (action === 'export' && order) download(order, `${order.orderId}.json`)
-    else if (action === 'export-all') download(state.orders, 'pb-test-orders.json')
-    else if (action === 'json' && order)
+    else if (action === 'payment' && order) {
+      go(`${orderPath(order)}/choosePayment`)
+    }
+    else if (action === 'receipt' && order) {
+      go(orderPath(order))
+    }
+    else if (action === 'history') {
+      go('/test/orders')
+    }
+    else if (action === 'export' && order) {
+      download(order, `${order.orderId}.json`)
+    }
+    else if (action === 'export-all') {
+      download(state.orders, 'pb-test-orders.json')
+    }
+    else if (action === 'json' && order) {
       showModal(`<div class="dialog-content"><h2>訂單資料</h2><pre data-testid="order-json">${escape(JSON.stringify(order, null, 2))}</pre></div>`)
+    }
     else if (action === 'new') {
       state.checkoutKey = crypto.randomUUID()
       state.invoice = emptyInvoice()
@@ -424,14 +488,15 @@ document.addEventListener('click', async (event) => {
     }
     else if (action === 'drift') {
       closeModal()
-      document.querySelectorAll('#app button, #app input, .menu-card').forEach(element => {
+      document.querySelectorAll('#app button, #app input, .menu-card').forEach((element) => {
         element.classList.add(`render-${crypto.randomUUID().slice(0, 8)}`)
         element.dataset.renderId = crypto.randomUUID()
       })
       notify('已擾動外觀識別；固定 ID、name、data-testid 不變。')
     }
-    else if (action === 'reset-confirm')
+    else if (action === 'reset-confirm') {
       showModal(`<div class="dialog-content"><h2>重設測試資料？</h2><p>會清除此瀏覽器的購物車、桌號、發票草稿與 ${state.orders.length} 筆模擬訂單。可先匯出保留。</p><div class="actions">${button('先匯出', 'export-all')}${button('確認重設', 'reset', 'class="primary"')}${button('取消', 'close')}</div></div>`)
+    }
     else if (action === 'reset') {
       state = fresh()
       // This explicit test-data reset also retires this simulator's unknown-write marker.
@@ -449,8 +514,14 @@ document.addEventListener('click', async (event) => {
 
 document.querySelector('#open-tools').addEventListener('click', tools)
 document.querySelector('#history').addEventListener('click', () => go('/test/orders'))
-document.querySelector('.brand').addEventListener('click', (event) => { event.preventDefault(); go(`${basePath}/menu/select-table`) })
-window.addEventListener('popstate', () => { closeModal(); render() })
+document.querySelector('.brand').addEventListener('click', (event) => {
+  event.preventDefault()
+  go(`${basePath}/menu/select-table`)
+})
+window.addEventListener('popstate', () => {
+  closeModal()
+  render()
+})
 
 /** Read-only automation bridge. Snapshots include only this tab's test state. */
 Object.defineProperty(window, 'pbTest', { value: Object.freeze({
@@ -460,14 +531,21 @@ Object.defineProperty(window, 'pbTest', { value: Object.freeze({
   getCatalog: () => structuredClone(products),
 }), writable: false })
 
+// NOTICE: First render must wait for the cookie-owned snapshot, never a fresh empty cart.
+// eslint-disable-next-line antfu/no-top-level-await
 const initial = await fetch('/__lab/state').then(response => response.json())
 sessionRevision = initial.revision
 if (initial.state)
   state = initial.state
 state.tables = tables
-state.cart.forEach((line, index) => { line.vendorLineId ??= index + 1 })
-if (!initial.state)
+state.cart.forEach((line, index) => {
+  line.vendorLineId ??= index + 1
+})
+// NOTICE: Persist the initial session before rendering routes that can write it.
+if (!initial.state) {
+  // eslint-disable-next-line antfu/no-top-level-await
   await save()
+}
 const registry = document.createElement('script')
 registry.type = 'application/json'
 registry.textContent = `const Ziggy=${JSON.stringify(routeRegistry(location.origin))};`

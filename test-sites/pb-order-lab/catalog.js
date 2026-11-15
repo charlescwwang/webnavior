@@ -1,7 +1,7 @@
 import snapshot from './vendorCatalog.json' with { type: 'json' }
 
 /** Frozen public API snapshot; the original numeric IDs remain the service identity. */
-export const revision = 'pb-1kgJeql-2026-11-15-v4'
+export const revision = 'pb-1kgJeql-2026-11-15-v5'
 export const basePath = '/order/store/1kgJeql/internal_use'
 export const tables = ['櫃台取餐', 'A1 桌', 'A2 桌', 'A3 桌', ...Array.from({ length: 7 }, (_, i) => `B${i + 1} 吧檯`)]
 export const categories = snapshot.categories.map(category => ({ ...category, id: String(category.id) }))

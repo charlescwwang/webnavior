@@ -5,7 +5,7 @@ import { readCatalog } from '../../packages/stage-ui/src/services/pbCatalog'
 import { resolveRoute } from '../../packages/stage-ui/src/services/pbRoutes'
 import { categories, products, tables } from './catalog.js'
 import { pageSnapshot, routeRegistry } from './fixtureProtocol.js'
-import { selection, submit } from './order.js'
+import { pay, selection, submit } from './order.js'
 
 it('passes the captured menu and attributes through the actual PB catalog parser', async () => {
   const result = await readCatalog({
@@ -59,4 +59,22 @@ it('does not expose old table or cart props on the table selection page', () => 
   expect(page.props).not.toHaveProperty('diningTable')
   expect(page.props).not.toHaveProperty('order')
   expect(page.props).not.toHaveProperty('details')
+})
+
+// Report: this chat, Nov15 — actual Order/ChoosePayment and Order/Show after one paid order.
+it('projects the submitted order on payment and result routes with its preserved invoice and details', () => {
+  const state = { table: '櫃台取餐', tables, checkoutKey: 'checkout', cart: [{ ...selection('fish-soup', 1), lineId: 'one', vendorLineId: 1 }], orders: [], invoice: { type: 'none', code: '', phone: '0912345678', email: 'tester@example.test' }, note: '測試' }
+  const order = submit(state, { id: 'one', now: '2026-11-15T10:10:00Z' })
+  const payment = pageSnapshot(state, `/order/store/1kgJeql/internal_use/orders/${order.orderId}/choosePayment`)
+  expect(payment.component).toBe('Order/ChoosePayment')
+  expect(payment.props.order).toMatchObject({ hash: order.orderId, number: order.number, status: 20, totalmoney: 50, CustomerPhone: '0912345678', CustomerEmail: 'tester@example.test', CarrierType: 5 })
+  expect(payment.props.payMethods.map(method => method.title)).toEqual(['LINE Pay', '信用卡'])
+  pay(order, 'linepay', 'succeeded', { id: 'paid', now: '2026-11-15T10:11:00Z' })
+  const result = pageSnapshot(state, `/order/store/1kgJeql/internal_use/orders/${order.orderId}`)
+  expect(result.component).toBe('Order/Show')
+  expect(result.props.order).toMatchObject({ status: 50, payment: 'LinePay', totalmoney: 50, has_refunded_payment: false })
+  expect(result.props.details[0]).toMatchObject({ amount: 1, unit_price: 50, price: 50, item: { name: '魚丸湯' } })
+  expect(result.props.order.invoices[0]).toMatchObject({ status: 20, order_id: order.vendorId })
+  expect(result.props.canCancel).toBe(false)
+  expect(result.props.order).not.toHaveProperty('miniapp_notification_token')
 })

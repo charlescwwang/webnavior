@@ -35,7 +35,7 @@ export function invoiceError(invoice) {
     return '發票通知：手機號碼或 E-mail 請擇一填寫。'
   if (invoice.phone && !/^09\d{8}$/.test(invoice.phone))
     return '手機號碼須為 09 開頭的 10 碼數字。'
-  if (invoice.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(invoice.email))
+  if (invoice.email && !/^[^\s@]+@[^\s@][^\s.@]*\.[^\s@]+$/.test(invoice.email))
     return '請輸入有效的 E-mail。'
 }
 
@@ -55,12 +55,28 @@ export function submit(state, { id, now }) {
     throw new Error(error)
   const items = state.cart.map(line => ({ ...selection(line.productId, line.quantity, line.extra, line.note), lineId: line.lineId }))
   const order = {
-    schemaVersion: 1, environment: 'test', catalogRevision: revision,
-    orderId: `TEST-${id}`, checkoutKey: state.checkoutKey, createdAt: now,
-    table: state.table, currency: 'TWD', items,
+    schemaVersion: 1,
+    environment: 'test',
+    catalogRevision: revision,
+    orderId: `TEST-${id}`,
+    checkoutKey: state.checkoutKey,
+    createdAt: now,
+    vendorId: state.orders.length + 1,
+    number: `TEST-${String(state.orders.length + 1).padStart(4, '0')}`,
+    updatedAt: now,
+    vendorStatus: 20,
+    invoices: [],
+    hasRefundedPayment: false,
+    times: [{ order_status: 20, created_at: now, updated_at: now }],
+    actions: [],
+    table: state.table,
+    currency: 'TWD',
+    items,
     total: items.reduce((total, item) => total + item.subtotal, 0),
-    invoice: { ...state.invoice }, note: String(state.note).slice(0, 500),
-    status: 'awaiting-payment', payment: { method: null, status: 'unpaid', amount: 0, paidAt: null, attemptId: null },
+    invoice: { ...state.invoice },
+    note: String(state.note).slice(0, 500),
+    status: 'awaiting-payment',
+    payment: { method: null, status: 'unpaid', amount: 0, paidAt: null, attemptId: null },
   }
   state.orders.unshift(order)
   state.cart = []
@@ -69,11 +85,31 @@ export function submit(state, { id, now }) {
 
 /** Terminal simulated outcomes may be replayed, but never changed or charged. */
 export function pay(order, method, outcome, { id, now }) {
-  if (order.payment.status === 'succeeded' || order.payment.status === 'uncertain')
+  if (order.status === 'cancelled' || order.payment.status === 'succeeded' || order.payment.status === 'uncertain')
     return order
   if (!['linepay', 'card'].includes(method) || !['succeeded', 'failed', 'cancelled', 'uncertain'].includes(outcome))
     throw new Error('無效的模擬付款選項。')
   order.payment = { method, status: outcome, amount: outcome === 'succeeded' ? order.total : 0, paidAt: outcome === 'succeeded' ? now : null, attemptId: `SIM-${id}` }
-  order.status = outcome === 'succeeded' ? 'completed' : outcome === 'uncertain' ? 'payment-uncertain' : 'awaiting-payment'
+  order.status = outcome === 'succeeded' ? 'preparing' : outcome === 'uncertain' ? 'payment-uncertain' : 'awaiting-payment'
+  order.updatedAt = now
+  if (outcome === 'succeeded') {
+    // Observed PB payment reached preparation50; fulfillment70 is a later event.
+    // TEST invoice identities cannot be confused with the captured real invoice.
+    order.vendorStatus = 50
+    order.invoices = [{ id: order.vendorId, order_id: order.vendorId, hash: `TEST-INVOICE-${id}`, service: 'test', no: `TEST${String(order.vendorId).padStart(6, '0')}`, date: now, random_number: '0000', status: 20, created_at: now, updated_at: now }]
+  }
+  return order
+}
+
+/** Abandoning an unpaid order is distinct from canceling a payment attempt or refunding a paid order. */
+export function abandonPayment(order, { now }) {
+  if (order.payment.status === 'succeeded' || order.payment.status === 'uncertain')
+    throw new Error('付款已成功或結果不明，不能當成未付款訂單取消。')
+  if (order.status === 'cancelled')
+    return order
+  order.status = 'cancelled'
+  order.vendorStatus = 79
+  order.updatedAt = now
+  order.payment.status = 'abandoned'
   return order
 }
