@@ -2,6 +2,60 @@
 
 Shared core for stage
 
+## Native PB ordering
+
+`services/pbBrowserService.ts` uses the shared reviewed journey policy for the
+member pickup site and the current/RD guest/table sites. Guest reads require PB's actual
+cookie-buyer state; member reads still require login. Menu/cart controls derive
+their paths from that journey. `browser_return_menu` preserves the cart, clears the website search and waits
+for the complete current menu; it is distinct from setting a cart row's final serving count.
+
+Menu pickup and cart snapshots use PB's existing versioned Inertia partial JSON
+responses, with no HTTP cache or merging from old DOM props. Required fields
+include buyer/auth, store and flow; component and response URL must also match.
+An asset-version conflict requires reload. Full HTML/dev assets are not fetched
+for these reads; category, price and option requests remain fresh vendor reads.
+
+`pbTablePicker.ts` adds large, name-based buttons alongside PB's real selector.
+Names come from the current SelectTable document's URL/component-bound metadata,
+without re-fetching its HTML on every context read. Selection rechecks the real
+dropdown and reads back its result. Voice selection uses the same illustrated
+hand taps for the dropdown, counter pickup/table option and Start; table tokens remain in
+PB. `browser_table_select` selects only; `browser_start_ordering` selects the
+explicitly requested table and presses PB's Start button. A later voice turn may
+reuse the current rendered `selectedTable`, including PB's default, only after a customer Start request. This is context, not purchase consent. Menu entry
+does not establish cart ownership; the new page must read back table/cart.
+Host-only `browser_cart_get forAdmission=true` also reads a versioned cart on
+the table page for reception preparation. Ordinary table reads omit that cart.
+For an explicit reception reset with unfinished items, the Host may enter through
+the existing selected-table Start control with `forReset=true`, skipping the hand
+animation while customer controls remain covered; this grants no order submission.
+Failed enhancement leaves the original dropdown available.
+The common service client accepts a correlated `browser_start_ordering`
+menu-entry acknowledgement across a rebind to this same configured PB service.
+It can also settle a private submission dispatch acknowledgement across a result
+navigation bound to the exact same operation and reviewed store journey. Neither
+exception restores old descriptors, replays a write or certifies payment.
+Caller cancellation still cancels the entry wait.
+
+`services/pbCheckout.ts` reads actual invoice radios, labeled contact fields,
+order notes and website totals. It owns one expiring submission ticket bound to
+the fresh cart, form and manual-interaction revision. Public invoice/phone steps
+do not submit. The private submission control is enabled only for the owned
+loopback fixture; merchant result responses remain unverified. Only that
+fixture's observed order identity and amount can release the matching pending
+write marker. Unknown effects keep it; result pages expose no payment controls.
+Native navigation calls `beginNavigation()` to revoke tools while retaining the
+entry acknowledgement's wait. "Entering" acknowledges the accepted click, not a
+loaded menu. Loading UI and fresh discovery continue until native readiness.
+`waitUntilReady(signal)` also waits across the gap between navigation and new
+transport discovery, with a 15-second bound and caller cancellation. It cannot
+reuse the retired document's resolved readiness promise.
+`pbInvoiceInput.ts` focuses only the selected native carrier/citizen field,
+validates scanner text and consumes Enter without submitting. Blur, navigation
+and reception reset revoke input ownership; typing elsewhere retains manual
+takeover protection. It adds no notification-phone or Email filling tool.
+
 ## Shared interaction feedback
 
 `components/scenarios/feedback-invitation` provides the host-owned completion survey overlay used by customer-facing Stage surfaces. It generates a QR Code locally from a validated static HTTP(S) URL and emits one `finish` event when the visitor skips or the countdown expires.
@@ -13,6 +67,15 @@ the thank-you screen with that configured invitation. An optional
 `orderContinuationUrl` prop adds a separate order QR and desktop link, so carrying
 away an order does not delay the reward. Pass only a host-validated capability
 and clear it when the session ends; never append it to the static survey URL.
+
+## External speech presentation
+
+The shared Stage's `externalAudioSource` supports host-owned TTS for both VRM
+and Live2D. `composables/audio/useExternalSpeechSource` owns only the optional
+Live2D analysis branch: replacing speech, disabling it or unmounting detaches
+that branch without stopping or disconnecting the caller's speaker output.
+Late asynchronous analyser setup cannot reconnect a retired source. The shared
+Stage invalidates worklet setup when its renderer changes or it unmounts.
 
 ## Same-origin Interaction Profile
 
@@ -76,6 +139,10 @@ Neither adapter grants arbitrary code, login, submission or payment tools to Mai
 This is a limited PB pilot, not a generic website automation SDK or a production
 Companion pairing/revocation implementation.
 
+Configuration and selection contracts are owned by
+`@proj-airi/stage-shared/product-configuration`; import their types/schema there.
+`services/pbProduct` owns PB discovery, validation calculations and preparation.
+
 `services/pbControls` resolves the actual PB menu, product dialog, options,
 meal quantity, note, add button and unique cart row. `pbOperation` owns the same
 step's cursor, dispatch and readback. Cart writes now use those native controls;
@@ -83,6 +150,15 @@ catalog/configuration/cart APIs remain read-only evidence. The menu-to-cart
 journey is limited to this store's `menu` and `orders/create`, with no order-submit
 or payment operation. Full-document navigation revokes the old binding and never
 replays a pending effect.
+
+Equivalent PB cart rows may be replaced as an admitted `lineRefs` group. The
+executor verifies the incoming configuration before reducing original servings,
+then verifies each intermediate full-cart snapshot. Indistinguishable rendered
+rows are interchangeable only within that exact group; `verifyCartRowEdit`
+checks the actual affected identity and every unchanged field. It never uses DOM
+order as a vendor row ID, groups different customization, or retries unknown IO.
+For Chromium tests, `VITEST_BROWSER_CHANNEL=chrome` selects an installed Chrome;
+without it the existing Playwright browser default is unchanged.
 
 `browser_cart_review` opens the approved cart route and returns a fresh
 vendor-backed receipt with quantities, options, notes and subtotal. It never
@@ -109,6 +185,27 @@ controls. When name/count/price coincide, exact observed option labels and notes
 can distinguish rows; unknown detail markup or entirely identical rows still stop
 without guessing DOM position.
 
+PB meal operations and returning to the menu leave the active carrier/scanner
+field before acting. Entered text is retained; unrelated cart rendering does not
+refocus the field. Customers can explicitly focus it again to resume input. An
+unfinished carrier field therefore does not require completion before changing
+meals. This does not bypass merchant validation when submitting an order.
+
+`pbCart.clear()` implements the Host-authorized reception-end policy: observe the
+fresh whole cart, dispatch the native cart-header **清空** once only if rows remain,
+and prove zero rows/subtotal before returning success. The adapter rechecks that
+snapshot immediately before dispatch. Already empty carts need no click; accepted
+but unverified clearing retains the same unknown-write barrier as ordinary edits.
+This is a lifecycle action, not a model-advertised cart tool. `browser_customer_reset`
+then resets product/search drafts in the same document and returns `cartCleared:true`;
+login remains independent from unfinished order rows. Reception reset uses
+immediate scrolling/dispatch without guided-hand timing, retaining all operation
+checks. `pbPresentation.cover()` owns the opaque loading scope and trusted-input
+blocking; it survives ordinary cue/navigation cancellation and always cleans up
+when work settles. The hit tests remain pointer-transparent to this cover, so
+other merchant overlays still block dispatch. The Host supplies the localized
+loading announcement; normal customer-facing controls retain their guided pace.
+
 Each control is rechecked for identity, visibility, enabled state and occlusion.
 Accepted merchant work still settles after cancellation; pre-dispatch takeover
 cannot click. Step receipts carry observation refs, relative ready/dispatch/finish
@@ -123,10 +220,18 @@ cancellation cannot resurrect an older queued cue.
 `services/pbPresentation` renders pointer-transparent cues in the same isolated
 PB document. The hand retains its position across short movements, follows the
 executor's actual target and dispatches at its press. It remeasures scrolling and
-cancels on trusted input/navigation/hidden documents. Read-only product cues never
-silently search or click to create presentation. Missing or ambiguous cards report
-unavailable targeting. `browser_present` remains Host-only, including empty-ref
-visual cleanup. It cannot dispatch commerce work.
+cancels on trusted input/navigation/hidden documents. Before a product batch is
+spoken, `pbBrowserService` verifies every selected card. If an old search hides
+any subject it clears the real search, waits for all selected cards and then
+highlights the batch; no product card is clicked. Missing/ambiguous cards reject
+the presentation instead of claiming off-screen catalog facts were displayed.
+The Host may reserve validated recommendation refs with `deferVisual=true`;
+that receipt says `prepared`, never `shown`, and does not move a hand or frame.
+Reply/playback cues then present one uniquely named dish at a time.
+An empty-ref `browser_present` only clears cues; `browser_search` with an empty
+query returns the full current menu after verifying its rendered cards. A named
+search observes PB's native loading cycle and settled result count. None of
+these actions dispatches commerce work.
 
 A required operation supersedes an active `browser_present` cue and aborts its
 catalog fetches as well as its movement. Its cancellation receipt contains no
@@ -200,3 +305,10 @@ pnpm -F @proj-airi/stage-ui run story:dev
 
 1. If a story is bound to a specific component, it can be placed beside the component in the `src` folder. e.g., `MyComponent.story.vue`
 2. If a story is not bound to a specific component, then it should be placed in the `stories` folder. e.g., `MyStory.story.vue`
+
+## Chat history host status
+
+Shared `ChatHistory` offers an optional `after-message` slot with `message` and
+`index`. Kiosk uses it for the originating customer request's visual state;
+ordering/correlation remains the host's responsibility. Other chat hosts retain
+their existing message and scroll behavior.

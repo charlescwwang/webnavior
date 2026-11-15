@@ -1,11 +1,984 @@
 # Codex Handoff
 
+- Nov15 merchant blank-on-Start FIXED/APPLIED build15:42:37. User confirmed exact cart-handoff notice: native view was hidden by unowned nonempty-cart admission, not proved merchant rendering failure. Host now reads versioned cart on table entry via private browser_cart_get forAdmission=true before exposing Start; ordinary model table context omits prior cart, public20 unchanged. Preparation panel replaces blank region; same-reception ownership survives navigation; explicit Restart (including standby) verifies settled work, enters via actual selected-table Start forReset=true only if nonempty, waits for real menu route (SPA ack can precede it), then native clear+verify/reload. Empty table reset only reloads after recovery check. Preparation errors have separate owner/localized copy; no contradictory listening invitation while blocked. Actual testing also caught reused Host placement keys and late aborted loadURL promises: resetHost invalidates documentKey, and native events alone own loading/failure so an older ERR_ABORTED cannot hide a newer successful page. Failures retained /tmp/pb-entry-electron-cart-admission-before-{host-reset,spa-wait}.json and /tmp/pb-entry-merchant-before-load-order.json; don't count as passes. Final /tmp/pb-entry-electron-final-build.json PASS10 on isolated Electron/OpenAI/own fixture (unowned retained cart→before-entry panel→explicit clear→A03/start/add→manual reset/A03), no order submission;2 browser-plan calls, not all-zero-Main/provider accuracy claim. Same-build actual merchant separate profile /tmp/pb-entry-merchant-verified.json PASS Start/menu DOM AND main-process native-visible state; Host reload returns configured table URL/native-visible; private fresh cart read ok/table/empty. No merchant add/submit/pay/contact entry. Host233/5files, view Chromium1, native local4 checks, scoped Kiosk/Desktop/native types+lint pass; no root types. Audit units/profiles cleaned, QR paths redacted. CURRENT ORIGINAL SITE supersedes earlier local-site notes: user selected pb-ubuntu-test / https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table; exact original Host-cookie device upOgL01M9vgg-b9hgfs42 readback verified after update; original cart/login/settings preserved, no auto-clear. Normal Electron reopened; host manager status confirms API/Web/Electron running. Active OpenAI Decisions gpt-6-luna/Main qwen36 unchanged. Actual voice/TTS503 and manifest CORS remain deferred. See leading formal-plan section for scope/evidence.
+
+- Nov15 checkout FIXED/APPLIED build14:56:14, fixture v4. Actual isolated Electron/OpenAI Decisions/Main/own-site checkout-flow16 steps PASS /tmp/pb-checkout-flow-openai-v5.json: water base8/64 offer/assent, both serving-count questions, cart summary/ok→invoice choices, carrier + spoken fake notification phone + manual code, full final summary/assent→exactly1 unpaid local order, manual reset→table→newA03/start/add water1 while old order remains and is not replayed. Not merchant payment/submission, idle, voice or localJev accuracy acceptance; Main still used on checkout/ok/phone/ready turns. Public20 tools add continue_checkout/choose_invoice_method/set_invoice_notification_phone; final submit is private one-use bound ticket, only local5188 enabled. Service question exposes actual-cart informational choices; other new demands hand off. Main continue must resolve the real pending question first rather than adopt default invoice. Native SPA submission uses committed URL, full navigation uses navigationTarget; correlation/owner/token restrictions preserved. Shared client records resolved before retiring tools, editorRetired allows reception restart and hides false connecting status; old replies cannot retire new connection. Local pending write clears only after observed correct order identity/amount, unknown markers survive. Fixture no longer projects a submitted key as a new empty draft. Leading formal plan contains precise evidence/failures and data inventory. Scoped Host517/8, transport7, client18, fixture+HTTP20 and prior Server97/skills4/Shared23/nativeChrome22 passed; scoped Kiosk/Desktop/native/client types and lint passed, no full-project types. Acceptance cleanup DONE: disposable audit unit/profile/CDP removed; exact original Host-cookie readback confirms device upOgL01M9vgg-b9hgfs42 still pb-local-test/127.0.0.1:5188. Normal Electron reopened; host manager status confirms API/Web/Electron running, fixture user unit remains live. Original OpenAI Decisions gpt-6-luna / Main qwen36 unchanged; deferred TTS503/voice remains.
+- Nov15 merchant checkout inspection (business hours): separate IAB tab13 (now closed), selected default counter, added only one egg soup40, read actual Order/Create props after reload; own test row removed and empty cart visibly confirmed, no submit/payment/contact input/cancel. Found current phone type=tel (older evidence email is obsolete), needInputEmail=true; draft id/hash/number exists before submission and totalmoney=0 despite actual subtotal40. User explicitly wants post-submit/payment/abandon-purchase/pickup-number + all invoice/code/phone/email data inventoried and eventually saved. Formal plan leading new section has full API/field inventory and evidence levels. Same-version public assets saved /tmp/pb-merchant-checkout-20261115: Create-CjexdErb, ChoosePayment-BflK2O0f, Show-BviwlLZN,useOrder-tMfb0NOu; NOT same-site post-submit response acceptance. Critical source findings: submit opens extra ElementPlus confirmation before POST; result route /orders/{hash}/choosePayment (local fixture currently /payment); pickup number is order.number, not hash; abandon-payment PUT status:canceled produces unpaid-canceled79 distinct from refunded75; invoices[].id/status/no/random_number and searchInvoiceUrl only after real issuing; invoiceNotify GET SENDS EMAIL, do not probe. Local fixture post-submit/payment UI/API still simplified and formal backend durable collection not yet implemented; user says payment can wait for collaborative actual test, do not submit merchant order without concrete consent/item/amount/contact. New leading plan section specifies full restricted business records, masked general/model/diagnostic projections, separate source/observed time, null/unknown and draft/accepted/paid states, no capability tokens. No new aliases/meat classification published or smart-alternative implementation yet.
+
+- Nov15 table guidance FIXED/APPLIED build07:10:50. User confirmed a bare valid table must remain on the table page and explicitly prompt saying「開始點餐」or pressing Start; table+explicit Start in one utterance retains existing direct entry. Native receipt and common Main skill aligned; no repeated seating instructions. Actual isolated Electron/OpenAI/local-fixture table-guidance4-step PASS: B03→B3 explicit prompt/stays table, Start→menu/no dropdown reopen, manual reset, new A03 explicit prompt/stays table. Reports /tmp/pb-explicit-start-{before,after}.json (before reproduces vague「可以開始點餐了」). Earlier /tmp/pb-table-guidance-* proves removed repeated seating text only. Scoped Server skills4/lint/runner syntax/diff pass; no full-project types or full ordering/idle/provider/voice acceptance. Original own-site device readback verified before normal reopening; disposable audit cleaned. No models/settings/merchant/order-submit changes.
+
 This is a compact transfer note for a new Codex thread, not a changelog or a
 record of commands and diffs. Keep only information that source code and formal
 documentation do not make quick to recover. Prune replaced entries rather than
 accumulating history.
 
 ## Current State
+
+- Latest dumpling acceptance cleanup: disposable audit unit/profile/CDP retired; exact original Host-cookie settings readback confirms device upOgL01M9vgg-b9hgfs42 still pb-local-test/127.0.0.1:5188. Original normal Electron reopened successfully with active OpenAI Decisions gpt-6-luna / Main qwen36 unchanged. Final scoped diff check passed.
+
+- Nov15 dumpling-assent loop FIXED/APPLIED build08:35:15. Original device records proved actual one-serving offer/好 existed; optional 加量 incorrectly forced Main while losing accepted item/count. Optional groups now use validated base selection; required groups keep count and ask only missing options. Unparsed notes still go Main: accepted selection/evidence survives only the same utteranceId, original expiry and unchanged owner/document/cart/config/price; reset invalidates it. Never set orderSelection for every quantity reply (would drop unresolved notes). task.transcript stays exact current user text; previous request/Q&A travel separately in storeFacts. Previously synthesized transcript failed Server user-entry identity admission. answeredQuestion.answer is literal reply; selectedChoice separately names its resolved meaning. No tool rename/new public tool or weakened admission. Kiosk504/8files, Server97/3files, Shared14, scoped Kiosk/Server types and lint pass; no full-project types. Actual isolated Electron/OpenAI/own-fixture final reports /tmp/pb-dumpling-{assent,follow-up}-openai-final.json PASS7/8steps: direct 推薦水餃 and generic 推薦三樣→那我要吃水餃 each produce one-serving offer→好 adds exactly1/base8/64/no extra, asks checkout; 不要 retains cart; manual reset/new A03. Both assent turns zero Main planner/browser-plan requests, not a claim that whole scenario is zero Main. Earlier /tmp/pb-dumpling-assent-openai.json stopped because harness wrongly demanded a one-serving offer when legitimate quantity question appeared; new follow-up scenario answers either valid current question and preserves final effect/no-repeat assertions. Local Jev not retested here. Known TTS503 and fixture activity-manifest CORS warnings remain outside text-flow acceptance; voice deferred. No merchant submit/payment/commit/deploy.
+
+- Nov15 named-search/recommendation exclusion FIXED/APPLIED build07:39:39. Ordinary recommendation preserves supplied refs; only new purpose/mode other-recommendations on existing point_to_menu_items/browser_present excludes last batch. Public/native schemas, Host, Jev candidates and Main skills aligned; tool count unchanged. Jev ordinary/other candidates separate, list actual proposed dishes; observed named/fragment refs constrain display only (not aliases/purchase), and fragment context now reports possible matches instead of none. More than3 named display refs stay with Main. Kiosk4files246, Shared14, skills4, scoped Kiosk types/lint/diff pass; no full-project types. Actual OpenAI12-step PASS on own fixture (/tmp/pb-matched-recommendations-openai-evidence-final.json): introduce both chicken dishes→return→雞腿 again shows both/sequential cues→choose fried/count1 adds once→decline checkout/return→other3 excludes chicken via actual intent:recommend-other→manual reset/new A03. 雞腿 itself handed to Main, not all-fast-path acceptance. Same-build local Jev FAIL (/tmp/pb-matched-recommendations-jev-evidence-final.json): after valid first two-dish introduction/cancel, 雞腿 still picks intent:return-menu confidence0.6941 despite correct possible2/fragment refs. Not passed/provider ranking; do not mask with phrase rules or alter confidence config. Earlier Jev failures /tmp/pb-matched-recommendations-jev{,-final}.json retained (first random batch, then none-vs-two evidence mismatch). Original OpenAI gpt-6-luna/Main qwen36 restored/readback; own-site operator reopened, audit profile/CDP cleaned. No merchant traffic/order-submit/payment/voice/full ordering acceptance/commit/deploy.
+
+- Nov15 direct-add/checkout follow-up FIXED/APPLIED under existing update approval; final build06:40:07. Actual isolated Electron/local-fixture OpenAI and Jev10-step PASS each: recommend3→choose actual shown dish→quantity2 adds once and asks 要結帳嗎？→不要 keeps cart/menu→add1→好 opens actual /orders/create cart with3, then manual reset/new A03. Reports /tmp/pb-checkout-follow-up-{openai,jev}-final.json. Choice/count and checkout assent have zero Main planner requests; subsequent explicit add DID hand off (OpenAI2/Jev3 planner requests), not an all-Jev/no-Main claim or provider ranking. Earlier failures retained: /tmp/pb-checkout-follow-up-openai.json (runner wrongly expected /cart), /tmp/pb-checkout-follow-up-openai-main-count-before.json (count wrongly included previous add's Main rounds). Both were harness assertions, actual effects passed; final reruns are fresh full scenarios. Original device/site/login unchanged, exact Host-cookie readback local5188 before reopen; API/Web/original Electron running, OpenAI gpt-6-luna + Main qwen36 restored; audit unit/profile/CDP retired. Source fixed unconditional selected-product add confirmation and complete-draft confirmation; ready drafts preserve real request/answers and still pass independent plan admission/config/price checks. checkoutInvitation.ts runs at final reply only and binds same fresh nonempty cart; structured browser_question_presented service events allow semantic answer lookup, never prose. Quantity clarification receipts now invoke observer so their actual questions are recorded too. Normal success/read/guidance text drops unsubmitted-order disclaimers. Kiosk494/8files, native50, shared14, Server78, scoped Kiosk/Server types and lint pass; no full-project check/merchant writes/submit/payment/voice validation/commit/deployment.
+
+- Nov15 multi-recommendation follow-up FIXED/APPLIED with explicit stop/update approval; build06:17:54, API/Web/original Electron reopened. Actual isolated Electron/local-fixture recommendation-follow-up7 steps PASS separately with OpenAI and local Jev; reports /tmp/pb-recommend-follow-up-{openai,jev}.json. Both recommend3→3 sequential cues→"您想點哪一道？"→actual named choice→quantity2→one cart row; these choice/count turns use zero Main requests. Jev B03 table turn DID hand off to Main; no provider ranking/full-system claim. Manual reset/new A03 included, NOT idle timing. Restore/readback OpenAI gpt-6-luna + Main qwen36. Original Host cookie read-only settings proves device upOgL01M9vgg-b9hgfs42 already selected pb-local-test/127.0.0.1:5188; no operator setting edits. Initial reopen auto-review rejected unproven destination, resolved with exact cookie-owned device proof, then approved. Audit unit/profile/CDP cleaned. Host multi-dish question binds only actual receipt/order; private orderSelection survives quantity without rewriting original recommendation. Required options still clarify; pure info stays passive. Presentation+question receipts remain FAST_ACTION through validated reply/cue path. Public tool/Jev/common Main wording aligned. Kiosk7files472, Shared14, skills4, scoped Kiosk types/lint/diff pass; no full typecheck. Other thread's existing Stage.vue whitespace left alone. No merchant writes/submit/payment/voice validation/commit/deployment.
+
+- Nov15 manual website-switch request: registered pb-local-test / 自有測試網站（非營業時間） through normal local admin draft/publish, release10. Only appended orderingSites entry; default merchant interactiveService/model/device selections unchanged, existing drafts preserved, aliases copied from published default. URL http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table ready HTTP200. Published readback exact; backup /tmp/pb-before-register-local-site.json. User switches via /admin/kiosk/devices → 裝置設定 → 店家／點餐網站 → local entry → save; applied next new reception. Do NOT claim operator switched already; original Electron still closed. Earlier acceptance reports used release9.
+
+- Nov15 authorized update/acceptance DONE for scoped workflows: latest Web/Electron build2026-11-15 04:19:39, API restarted, local release9 Kmm0i5VF0cV6GySzK2olb (reviewed recovery guidance + 三杯雞 alias only, exact snapshot comparison). Active restored OpenAI Decisions gpt-6-luna + Main qwen36; no key/merchant URL edits. API/Web + fixture5188 running, original operator Electron CLOSED/persistent login preserved; disposable audit Electron/CDP/profile cleaned. After23:00 NEVER reopen merchant-bound operator for tests. New sandboxed test devices route all merchant-origin traffic to loopback fixture before enrollment; zero merchant writes. /tmp/pbRecheckLaunch.py launcher uses own unit webnavior-pb-recheck-audit; launch state now closedAt/no CDP. Agent-browser CLI skill command unavailable; existing Playwright runner used. No full-project typecheck/commit/deploy. Prior build22:58:50/draft-only entries below historical.
+
+- Actual OpenAI full18-step and final follow-up19-step PASS on03:44:27 frontend with corrected API: touch B3, A套餐 facts, counts/dumpling configuration,3 sequential recommendations, cancellation/carrier edit, real180+15s idle/cart clear/table return/new A03; fish offer→yes adds1, category choice→meal→count adds1, multi-add/remove/replace. Reports /tmp/pb-recheck-ordering-openai.json and /tmp/pb-recheck-follow-up-openai-final.json. Before fixes, search Main prose offer had no question ticket (/tmp/pb-recheck-follow-up-openai.json FAIL); initial fish fix had broad 我要便當 catalog output, so /tmp/pb-recheck-follow-up-openai-fixed.json is NOT valid product-choice acceptance. Server successful search and non-read-only catalog preparation now require presentation/question; common Main skill mandates ask_customer_question. Explicit read-only catalog/detail/cart facts remain terminal-capable, no automatic consent. JSON/SSE regressions failed first; final HTTP125pass, reset/retry32pass, skills4, Server/Kiosk scoped types/lint pass. TTS /api/kiosk/audio/speech503 still deferred, NOT voice acceptance.
+
+- Final04:19:39 actual late-result8-step PASS /tmp/pb-recheck-stale-result-openai-final.json: hold real Main response AND old restart-audit response until new reception/new single order; old responses cannot search/ask/change/clear new state, then manual reset + next A03. NOT idle timing or already-dispatched merchant-result loss. Reproduced before fixes: model thinking disabled restart (/tmp/pb-recheck-stale-result-openai-before.json); awaiting audit acknowledgement blocked reset (/tmp/pb-recheck-stale-audit-before.json). KioskScene restart now gates real native operations/ready binding using lifecycle-cleared operationId map, enters resetting immediately (sync cancel ASR/Jev/Main/TTS), records old visitor independently, leaves cleanup solely with resetInteractiveSurface rather than late duplicate clears. Keep this cancellation-before-logging rule; no relaxation of native pending/unknown-effect gates. Reports separate old18/19 and latest8 by build, NOT one same-version total.
+
+- Actual local Jev Qwen/Qwen3.5-4B: first12 steps pass, then 看A套餐 selected intent:read-item at0.9203 despite open-window candidate, no product window; /tmp/pb-recheck-ordering-jev.json FAIL. Restored OpenAI through normal admin API and verified. No full Jev pass/fair provider ranking (requires same frozen state/candidates/random outputs); do not classify missing candidates/program errors as model errors or hide semantic misses with regex. Source audit scope/results/remaining boundaries at leading Nov15 Windows Kiosk plan.
+
+- Latest user clarification: reasonable aliases are allowed (三杯雞→三杯雞便當); the rejected design was assigning the generic 套餐 only to B and excluding A. Wiring v3 restores the accepted alias and shares 套餐 across A/B; separate ambiguity regression prohibits a unique purchase. Initial seed mirrors this policy; already-published settings unchanged. /tmp/pb-wiring-audit-cases-v3.json supersedes v1/v2 for current inputs/options; still forced model answers, not accuracy. Device backgroundSpeechMode=off must NOT offer IGNORE or run admission filtering. Source now gates direct fallbacks, delegated active-request admission and Main scope-question enum with off/observe/enforce (observe cannot veto). Closed local answers offer answer:current plus HANDOFF; Jev still selects, private browser_answer_question is Host dispatch, not a new public tool. PB INCOMPLETE asks for a complete request and retains no speech fragment. Case11/12 Host tests extend past dispatch: quantity answer adds once; product answer asks quantity then adds once. This exposed loss of the original product-query target across questions: question tickets now retain that query separately from the unmodified request; unparsed customization still cannot auto-add. Validation: Kiosk7files400, Server4files76, scope8 pass; both app types, separate integration types and scoped lint pass, no root typecheck. Latest sources remain unapplied to running build22:58:50; no runtime/profile/model/merchant changes.
+
+- Latest Nov14 late-night source-only wiring audit, before further model comparison:6 concrete program defects fixed after12 failing regressions: numeric dish names/aliases lost quantity-edit candidates; multi-item alias resolution differed; observed menu/cart screen was omitted; cart product refs were ignored; returned unknown/partial receipts were classified as definite refusals; failed observation-only recipient calls blocked action decisions. Kiosk486 pass/46 live replays skipped; Server scoped191 and final HTTP117 pass (overlap, do not sum). New tests/integration/browserDecisionWiring.test.ts covers actual production candidate source→projection→Hono/schema→provider encoding/decoding→Host dispatch,12 cases×dasein/lookski/OpenAI×plain/segmented=72 forced-answer wiring paths, NOT model accuracy or native-site execution. App types, independent strict integration typecheck/lint pass; no tsconfig changes/full-project check/commit. Runtime still build22:58:50 below; latest source fixes NOT applied to operator Electron/API. No runtime restart/profile activation/merchant URL edits or true model calls this turn. After23:00 only our own fixture; do not reopen a merchant-bound operator for acceptance. Before fair real-provider comparison, refresh runtime then freeze actual facts/candidates/question/prompt/profile per case; missing/incomplete compiler candidates are program coverage failures, never model mistakes. See new leading Windows Kiosk plan section.
+
+- Production-candidate audit after benchmark correction: actual createBrowserFastPathSource + real createBrowserDialogue regression reproduced2 defects, now fixed: missing-serving question has separate intent:ask-quantity (no guessed quantity/purchase), and local answers describe the actual issued question instead of labeling product choice as quantity. Retained staged routing recognizes read-item/ask-quantity as ITEM/non-purchase;2 regressions failed before fix.16 producer cases cover negative purchase queries/greetings/cart/assent/compound requests, explicit servings, final quantity, duplicate cart rows and search cancellation. Kiosk216 + Server60, scoped types/lint pass. Build22:58:50 applied; actual isolated built Electron/localAPI/OpenAI+Main/loopback fixture17 utterances + real180+15s reset/new A03 pass (18 steps), actual trace confirms ask-quantity then answer:current;14 final direct routes/3 Main, not total model-call count or accuracy. Report /tmp/pb-production-candidates-ordering-openai.json and log. Operator Electron/API/Web restored, no merchant submit/commit/deploy. Voice/TTS503 remains deferred. NOT whole-system acceptance or provider ranking; fair comparison using production-generated candidates still pending. Formal details in leading Windows Kiosk plan.
+
+- Benchmark correction after user challenged candidate validity: the23-case directDecisionProbe handwrites/reuses7 menu options (including fixed pork2) and4 edit options instead of invoking the real PB candidate generator. All8 reported wrong utterance types received that same7-option menu; most had only phase=ordering, without real cart/menu/dialog facts.20/23 vs15/23 are artificial-choice matches, NOT sufficient evidence of application accuracy or provider ranking. Real built-Host/API acceptance remains separate valid evidence. Pending: compare providers on identical real snapshots + production-generated candidates/live questions; separate candidate construction failures from semantic errors. Do not repeat the earlier model-ranking conclusion from these23 cases.
+
+- Nov14 direct decisions + native OpenAI implemented and active for local testing. UI/Electron build22:20:47, Server restarted after final semantic prompt. Native `/v1/decisions`, encrypted key, real readiness/admin activation, optional models discovery, provider-selected routing and Server-owned backgroundSpeechMode wired; Jev retained, SLM unchanged, Main/voice unchanged. Ordinary choices direct; lifecycle review/idle/customer-entry/active/incomplete retain existing correlated protocols. PB tables are real facts/all choices rather than an unasked question. A套餐 candidate gap reproduced/fixed: shorter B alias 套餐 was masking the exact target; shared productMentions suppresses contained labels but keeps separate/shared-label ambiguity. Server93 + HTTP113 + final direct/HTTP12 + Kiosk112 + Shared4 + Chromium2, scoped typechecks/lint pass; no full-project checks. Actual final23-case probes twice each: Jev15/23, OpenAI20/23, median216.5/290ms (decision only); still high-confidence wrong selections, not accuracy acceptance. OpenAI broad-candidate total-price query still picks add; actual Host negative test prevents purchase but only answers item data/single price, missing the agreed add-to-cart-total invitation. Record this as unresolved UX, not completed. Actual built Electron/new device/loopback fixture/real API+models17 requests passed plus REAL180+15s clear/nonempty-cart/return-table/new A03 visitor;13 final direct routes incl quantity question,4 general Main handoffs, not total Main-call count. `/tmp/pb-direct-ordering-openai.json` and log. Additional8-request no-unconsented-purchase/assent-clarification journey + real reset passed (`/tmp/pb-direct-semantics-openai.json`); Jev search/reset passed, full Jev stopped at 看A套餐 choosing read instead of opening, failure retained. Final raw probes `/tmp/pb-direct-{jev,openai}-probe-v2{,-repeat}.log`. Old17-case baseline remains frozen. UI proof `/tmp/pb-openai-decisions-enabled.png`, admin `/admin/system/models`. Original operator Electron/API/Web running; no merchant submit, no commit/deploy. See leading Windows Kiosk plan for exact evidence/limits; do not call production-ready.
+
+- Nov14 late table/state audit (scoped built-Host acceptance completed; do not call all connected): actual operator session `QqCz4aGomUJAWwT-4za_a` proved table clarification projected as information_ready and caused four repeated Main calls. Shared outcome + Host now stop on real questions/replies, ignore dataOnly retained questions, and skip later same-batch tools after rejection/unknown. Default table is actual visible selection; Start does not reselect same table, checks again after hand movement; native text-node changes synchronize buttons; one large-button hand cue with shadow hit testing. Native menuReady requires actual cards; Host checks replacement-document menu/table before announcing ready. Original persistent Electron blank root remains unreproduced, not proven fixed. Actual built-Host replays found two more defects: item clarification parsed table facts without products (fixed table admission first); Main copied historical counter after touch B3 (now proposal_rejected with fresh selectedTable, allowing correction without customer reselection). New regressions failed before fixes; latest3 Kiosk files253 pass, earlier broader543 + Shared14 + Server96/11skip, Chromium table18, native smoke pass; scoped typechecks/lint pass. See leading Windows Kiosk plan for exact evidence/limits. Final build21:29:10 applied, API/Web and original operator Electron running with login retained. Disposable Xvfb built-Host + actual configured models + intercepted loopback fixture passed17 requests and real180+15s idle reset/new A03 visitor; report `/tmp/pb-state-audit-ordering-accepted.json`. Latest Main request explicitly contained B3, yet initially proposed old counter; correction succeeded without reselection. Jev only1/17 direct (quantity answer),16 Main; fastpath accuracy/speed remains unaccepted. Native heap5.91→7.44MB only single-run evidence. Voice/TTS503 remains deferred; no provider/profile changes or merchant submit.
+
+- Nov14 live/fixture parity: Chromium side-by-side before merchant submit found real divergences; fixture v3 now defaults counter on table entry, omits old cart/table props there, scrolls categories instead of filtering, searches globally with matching tabs, removes cart row at zero, removes artificial99 quantity/200char note limits (235char live note accepted), matches one-extra label/edit wording and radio5/2/3/4/6, resets invoice/notification/order note only on checkout page entry.19 scoped tests pass; actual PB service10 browser checks pass on fixed v3 including select-table and duplicate-row partial replace; live and fixture own test rows cleared, no merchant orders. `/tmp/pb-fixture-executor-parity-report.json`, `/tmp/pb-parity-observations.json`. See leading Windows Kiosk plan and fixture README for exact matrix. NOT whole-site interchangeability: load/network races, browser-history cache, scroll-spy, cross-device cookies and post-submit/payment/receipt remain outside this parity evidence; switch via new reception/binding. No production/voice/model config changes.
+
+- Nov14 follow-up after user challenged stopping at audit: implemented native introduction-batch trusted-input locking (Host ignores corresponding raw native activity; ownership-safe release on failure/cancel/replacement) and dedicated idle continue/end Jev semantics with expiry/ticket/visitor checks plus receipt-time idle tagging, so queued speech cannot become an order after a touch resumes. Semantic end reuses existing restart/error presentation. Chromium21, Kiosk23, Server routing48 and original native Electron smoke pass; new regressions failed before fixes; Kiosk/Server scoped typechecks and lint pass. Full-TTS lock and complete built-Host idle reply acceptance remain unverified. Actual Jev selected CONTINUE/.9912; browser-only accelerated clock rejected real Server checkpoint expiry, and aligning Date invalidated the idle deadline. None of these accelerated attempts counts as acceptance. New runner scenario idle therefore requires real time; not yet run to completion. Disabled/unavailable Jev leaves touch/countdown; no Main fallback. See leading Windows Kiosk plan supplement. Background mode/runtime and Jev fastpath performance gaps remain open.
+- Follow-up local build20:38:31 applied; manager confirms API/Web running and operator Electron open. Restart now rechecks reception generation/visitor after awaiting its record, and shows errors only to the same anonymous customer, so a delayed record cannot reset or mark the next reception failed. Voice/provider settings and merchant data unchanged. No full-project typecheck/commit/deploy.
+- Nov14 latest cross-layer audit fixed13 concrete boundaries: actual Jev candidates/choices, native dialog facts, question aliases/configuration choices/async errors, Main table equivalence, PB uncertainty incorrectly read-only, merchant descriptions/read-only replies, visual no-effect classification/dwell/viewport wait, and native renderer-exit notification/admission. Details and evidence are in the leading full-chain section of docs/plans/2026-10-28-windows-kiosk-electron.md. Confidence threshold unchanged; no phrase whitelist.
+- Final built-Host acceptance: build19:30:06, normal systemd/user-service, isolated fresh device/profile, local API/published revision8/real Jev+Main, CDP interception to loopback fixture (no merchant writes).15 sequential requests passed plus REAL180+15s idle clear/return to configured select-table and next A03/A3 with a distinct visitor ID. Heap6.54→6.89MB. /tmp/pb-ordering-audit-accepted.json and /tmp/pb-audit-normal-clean-final.log. Earlier native OOM/timeouts were traced by heap sampling to Vite client unhandled-rejection console forwarding with blocked WebSocket (~4GB); proxy now strips HMR HTML injection. Do not count those failed/partial attempts as acceptance. Renderer exit handling also has a forced-exit regression (failed before/passed after; no writes). Browser presentation/operation19 checks, Desktop typecheck and lint pass. Test manager API/Web running and operator Electron reopened; diagnostic unit/CDP stopped; original operator login retained.
+- Jev performance acceptance remains open: final16 customer utterances had1 direct execution and15 Main handoffs. End-to-end fixed-case times1.96–7.66s do not prove Jev speed benefit. A03 purpose ANSWER/SINGLE split yielded confidence0.5576<0.6. Investigate stage option boundaries before claiming the agreed fast semantic path is achieved; do not silently lower the threshold. Physical voice/mouth remains deferred.
+- Audit-confirmed unfinished implementation (backgroundSpeechMode has since been wired above): full-TTS introduction lock remains unverified (text/cue batch lock and idle continue/end semantics subsequently implemented above); Host notification phone/Email, customer-confirmed AI submit, submitted-order reconciliation/Admin typed order data and full invoice voice flow remain unconnected. SSE customer text/TTS still waits final validation. These are implementation gaps, not merely environmental tests. Do not repeat earlier completion claims.
+
+- Nov14 idle-entry fix: after verified native clear, always reload configured select-table entry (not current URL); revoke old document tools synchronously. Pending old cleanup/results cannot own the replacement reception. select_table requires tableName; start_ordering_at_table may use the current selection. Required-field deletion across all17 tools and18 malformed parameter cases cover the compiler boundary. Earlier build/check counts are superseded by the latest audit above.
+- Nov14 revision8 real Jev synthetic probe: all4 cases (cancel open selection, remove cart meal, assent to explicit serving, combo contents query) handed to Main; no website effects. Several purpose/family stages below confidence threshold. NOT evidence of improved fastpath accuracy; no threshold reduction or phrase whitelist added. Prompt config applied but full model-route acceptance remains pending.
+
+- Nov14 user explicitly postponed voice/mouth investigation; do not resume it automatically. No voice/provider settings changed. Current VRM asset Yynd4XWHhI-8BOc5Gh_E- has all5 mouth expression binds; Kiosk connects TTS audio automatically, no mouth toggle found. Actual recent speech timings fail before audio-ready/playing. Selected 台語tts/gpt-sovits points at .../v1 with voice default: configured /v1/audio/speech returns404. Authenticated public OpenAPI shows /audio/speech and /audio/voices at root; root rejects default400, lists only yiting. One fixed root+yiting probe returned200/audio-mpeg/11493bytes, but this correction was NOT saved per user's deferral. No physical mouth movement verified.
+- Nov14 user-provided prompts reconciled with actual local revision7 and saved Jev policy. Saved plain full-word Jev instructions and rewritten5 role-card fields via existing services, published local revision8;6 matching same-site drafts updated, other custom cards preserved. Provider profiles byte-for-byte unchanged; merchant binding/aliases retained. Clarified context-dependent cancellation vs cart removal, delta vs total quantities, one-serving assent, only issued choices, complete multi-item candidates, independent Main reasoning, direct answers plus one next step, no repeated confirmation or forced old-question answer. Full exact saved text is in leading Windows Kiosk plan section for revision8. Voice investigation remains deferred.
+
+- Nov14 Jev handoff/SSE follow-up: actual active chat is qwen36/SSE. Local session CX4pdljsMeNnROLq_EyRU entry155 and a real selected-Main replay reproduced valid service/assistant/new-request plus unused question echo; strict unused-field validation discarded handoff as invalid. question is now consumed/validated only for clarify; admission/disposition/requestKind still strict. Real Main replay after fix returns NEEDS_ASSISTANT. Current website productDialog now supplies selected dish/screen and explicit close-via-return-menu candidate to Jev, without phrase whitelist. Adjudicated current service retains non-operational clarification on review failure; unknown/background/cancellation do not gain tool authority. Removed misleading simulation status claiming no AI was called.141 scoped tests (Server29/Kiosk108/JSON+SSE HTTP4),4 real Jev synthetic cases allowing Main abstention, scoped Kiosk/Server typechecks and lint pass. Actual local vLLM minimal SSE probe returned200/event-stream/text delta/[DONE]. Important outstanding: SSE delta callback only updates progress; customer text/TTS still waits final receipt validation, NO word-by-word display implemented. Do not claim lower first-spoken latency from SSE setting alone. Isolated build17:35:01 applied; API/Web restarted and Electron reopened, host status verified. See leading Windows Kiosk plan matrix; no merchant writes/full live acceptance.
+
+- Nov14 A套餐 detail regression: local session CX4pdljsMeNnROLq_EyRU entries90–106 proves Main successfully opened A套餐, got 水餃12顆 + 蛋花湯/136 and drafted the right answer; questionPresentation ignored open_menu_item_details evidence and replaced it with no-verified-result fallback. Fixed final receipt summary to join only current productDialog names against same-receipt products; never announce the whole returned catalog. Explicit get_menu_item_details also preserves website details (previously price only); no generated facts admitted. Five regressions, including wrong/missing/failed dialog guards; two positive cases failed before fix.68 presentation tests, scoped Kiosk typecheck/lint pass. Isolated build17:25:36 applied, API/Web restarted and Electron reopened; host status verified. See leading Windows Kiosk plan section; no merchant writes/full live acceptance.
+
+- Nov14 saved-prompt audit: actual local release6 and saved Jev instructions did not hardcode old browser_* names; earlier migration defects were not explained away as operator error. Found conflicting saved postHistoryInstructions (stop guiding after answers) and assistanceReminderPrompt (ask vs no questions). Updated only those text fields plus a typo through existing profile services, published local revision7, verified device assignments, and aligned5 same-site drafts. Jev saved policy wording now covers text and ASR input and explains target/Application/references in Chinese; candidate codes/store instruction preserved. Built-in Jev multi-operation guidance now defers only if no single offered candidate covers the whole request, matching existing batch support. Source skill/native/public receipt prose expands 加車/空車/原車; fixed ambiguous public quantity hint to 指定餐點全部不要時使用remove_items_from_cart. Merchant binding/aliases/models/credentials unchanged.378 focused tests pass (Server128/Kiosk239/Shared11). Isolated build17:15:43 applied; API/Web restarted and Electron reopened, host status verified. See leading saved-prompt section of Windows Kiosk plan for durable cross-boundary audit checklist. No merchant operations or full live dialogue acceptance in this audit.
+
+- Nov14 broader public-tool audit after user challenged prior coverage: confirmed additional migration defects: recommendation dedup read native args instead of public names/purpose; correction routing ignored public receipts; large-result/model receipt hints named private tools; public alias Host resolution was rejected by Server literal binding; readable cart targeting schema capped200 vs2000 in domain. Fixed these boundaries using the existing registry, consistent alias resolution on public reads/details/presentation/questions/cart targets, shared cart target schema, and exhaustive public dispatcher typing. Added17-operation real-compiler route cases and HTTP preservation of all17 schemas, multi-round public recommendation guard, alias authorization/ambiguity and long configuration cases. Root failure was incomplete migration plus predominantly native-path tests; do not describe unit/type passes as full end-to-end acceptance.
+  Validation:402 Kiosk units/8 files; Shared11 (includes menu/cart/checkout, read-only, empty/populated cart and pending/login/review state matrix); Server6 files230 passed/1 outdated prompt assertion, then updated current prompt vocabulary/semantics and targeted6 HTTP cases passed (includes former failure). Three scoped package typechecks and scoped lint pass. Separate native Electron/Xvfb synthetic journey smoke passed;6 real Jev synthetic pending-question cases passed with allowed Main abstention (not6 guaranteed fast hits). No merchant writes. Current source of truth: leading public-tool audit section in plans/2026-10-28-windows-kiosk-electron.md. Isolated build17:08:54 applied; API/Web restarted and Electron reopened. Production and merchant data unchanged.
+
+- Nov14 fish recommendation/confirmation regression: actual local session proved add_items_to_cart recorded browser-confirm-add/questionId correctly, but Server findPresentedQuestion ignored public names (browser_ prefix only), so browser-answer returned UNCERTAIN. Now canonicalizes via existing nativeOrderingToolName registry, preserving stale-turn checks. Jev pending questions now precede search recovery and expose every issued choice; Jev-selected semantic answers bypass only the literal pre-Main shortcut, still use independent answer/freshness validation. Public add finishes the sealed confirmed proposal immediately and stops the batch, instead of returning only data/repeating the question. A single prepared/shown recommendation attaches a bound one-serving offer; yes/explicit count adds once when required fields complete, no bare-recommendation consent. No phrase whitelist expansion. Validation:230 Kiosk units/5 files,14 Server answer/route cases, Kiosk+Server scoped typechecks and scoped lint pass. Initial regression tests failed on the reported lookup/search/confirmation paths before fixes. Isolated build16:52:47 applied, API/Web restarted and Electron reopened; no merchant/cart mutation in validation, no full live/Electron dialogue acceptance claim. See Kiosk README.
+
+- Nov14 follow-up: LLM creation already exposes auto/json/sse after choosing OpenAI-compatible (default new kind Ollama); added creation regression, editor/card total6 Chromium cases pass. Host and actual Admin catalog probe successfully reached http://192.168.8.64:8000/v1, model qwen36, no key; minimal JSON and SSE generation both HTTP200. User connection failure not reproduced; no profile saved/activated. Removed merchant loading branding/full illustration; status only appears visually after700ms, no change to native ready/failure/isolation. Native surface6 Chromium cases including delayed visual capture and scoped lint pass. Isolated build16:33:23 applied; API/Web running and Electron reopened, confirmed by host manager status.
+
+- Nov14 LLM streaming setting visibility follow-up: actual local Admin UI confirmed `/admin/system/models` → 設定對話LLM → 編輯 already exposes auto/json/sse for OpenAI-compatible chat, and local chat profile remains auto (no model/config switch). Improved outer capability card + Provider list to show current selected mode, moved editor control immediately after Provider type. Existing provider verification/save/runtime/router66, Kiosk HTTP JSON/SSE4 and Chrome editor/card5 pass; Stage Web scoped typecheck/lint pass. No backend transport rewrite needed. Applied local build16:26:16 Taipei; API/Web/Electron restarted, host status running/open. Built Admin UI verified via CUA: outer card/list now show auto and editor response selector is second field with JSON/SSE options. Screenshot /tmp/pb-llm-response-mode.png. No provider mode/model changes. Architecture audit: no new user decision is required for Jev/Main ownership. Do not claim all historical phrase gates are eliminated: PB plainMenu still uses literal forms to decide direct read completion; table entry narrowing/Start and quantity/slot compiler coverage also retain text rules. Separate necessary argument parsing from semantic admission, test varied forms + negative examples, and do not call incomplete generalization a finalized design.
+
+- Nov14 third acceptance fixes: local build16:18:09 Taipei updates Web/Electron/API source; test PIN now0000 (new installations default0000, startup preserves operator choices), release6/new PB URL retained. Search cancellation is no longer admitted by transcript phrase lists: actual nonempty native query issues recovery to Jev; direct semantic recovery choice keeps0.6 confidence threshold, other demands/weak scores go Main. Valid local slot answers retain the old question; pending selection exposes cancel to Jev. Ordinary return/cart/recommend/replay capabilities are state-based; literal product/count/configuration parsing is auxiliary, not intent authority. Table code matching narrows targets; counter/Start remain available for semantic answers. Host-only intentSource=jev is assigned only after a selected issued action, never from model args.
+  Local transcript proved repeated return failures were public no-arg parsing of Main's `{parameters:"{}"}` before any website dispatch. Fixed no-arg business tools now own their empty arguments, while parameterized/cart/session checks stay intact. Native table/counter/Start now use actual hand taps; immediate post-Start navigation cannot turn a dispatched tap into a visual failure. Removed obsolete floating audio status component from Kiosk (yellow diagnostics retained) and failed request badges.
+  Recommendations reserve facts/cards with prepared cue (no premature frames); visible text triggers mention-ordered single-dish cues, voice playback segments trigger them in voice mode. Serialized cues cancel by reception/document; only actual shown dishes enter history. Segment-level, not word-timestamp synchronization. Kiosk/Server scoped typechecks, native strict browser entry check, scoped lint pass;279 Kiosk units across6 scoped files (last added cue case separately),41 routing,25 Chrome,15 manager cases. Actual Jev6 synthetic positive/negative checks allow correct Main abstention; do not claim all6 fast. Short contextual cancellations still sometimes score below threshold. Original native Electron Xvfb/portrait fixture PASS (prepared emits no dish frames, three sequential cards, clear search, counter/table/Start reconnect and original isolation regressions); API/Web/Electron restarted and host status verified running/open. Current HTML imports pages-B-tVX-Pr.js (no old overlay); retained obsolete hashed assets are not active. no merchant writes/production deployment/commit. An initial virtual-display smoke failed on its deliberately hidden popup; rerun uses existing KIOSK_TEST_PORTRAIT=1 mode to provide compositor frames.
+
+- Nov14 second customer acceptance fix batch: source/isolated build15:44:30 Taipei refreshed, API/Web restarted and local release6 published via existing draft/publish service (9 alias rows + seating greeting, other snapshot/model fields retained); Electron reopened. Current new PB URL unchanged. Actual local transcript proved B3 吧檯 suffix mismatch, and independent Main extracted 排骨便當 but code compared against 炸排骨便當, causing broad choice + repeated named answers + Host quantity readOnly refusal. Table resolver now covers counter pickup/takeaway and real B1–B7 bar names, ignores leading zero/case; delivery gets explicit dining/counter-only explanation; compound table+food stays Main. Start waits native ready and gives ordering guidance. Exact issued name/unique configured alias replies resolve locally; sealed explicit prior count + no missing required options/unparsed preferences can finish once, preserving freshness and price. Quantity questions may be asked in read-only routing and present the selected dish. Independent count extraction normalizes only immutable session-profile aliases, still verifies counts/options/notes and rejects shared aliases. Public name compiler also resolves trusted aliases.
+  Native recommendation now presents each dish with its own label/scroll/frame and~1s dwell; only full completion returns aggregate shown. return_to_menu available on menu/search/recommendations, clears native query/unadded selection/frames and waits all current cards, keeps cart. Finite close now also retires Host question/search; Host recommendation strip clears on search/return/close. Empty search gives concrete recovery guidance and stops Main continuation; hidden paging retained but spoken extra-options suffix removed. Kiosk customer/diagnostic/TTS use existing ordering vocabulary converter (虱目魚/菜單), original inputs/records unchanged. Error labels use assistant name, unknown results remain explicit.
+  Validation:305 Kiosk targeted units/9 files;7 Shared;77 independent semantic;10 HTTP plan route;17 Chromium; original native Electron Xvfb/intercepted smoke includes exact3 single-dish batches in order and filtered-menu return, zero merchant writes. True Main2 fixed synthetic regressions pass (alias count and empty-search abandonment). Kiosk/Server scoped typechecks, native entry strict browser typecheck and scoped lint pass. Tests are not full merchant/hardware/Jev-accuracy acceptance. Source seed also has9 reviewed alias rows including deliberately shared 雞腿飯/牛肉麵/combo so ambiguous names do not select a random SKU. No production deployment/commit.
+
+- Nov14 update applied with explicit user approval to stop/reopen: isolated build refreshed14:27:24 Taipei, API/Web/Electron restarted. User then identified the still-active RD URL: build fallback did not override published release4. Through existing saveProfileDraft/publishProfileDraft, cloned current local test snapshot and changed only interactiveService URL/description; local revision5 assigns all test devices to https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table. Initial seed and build default also updated; model/device/other profile settings preserved, no production publication. Electron reopened after revision5. Ordinary sandbox manage.py status cannot see host processes and falsely reports stopped; use escalated read-only status for actual host state. Initial protected build refusal was correct. Never overwrite a running test without consent.
+
+- Nov14 user-reported table-entry/Loading/clipboard fixes: standalone assent/table+Start closes only after a correlated entry receipt; extra meal demand waits for fresh discovery. Shared client ready-wait follows navigation gap with15s/caller cancellation. Native placement contract adds loading so resize/overlay updates cannot expose/announce a half-loaded website using the old loadURL promise. Added approved current app.esgpb.com/1kgJeql/internal_use journey and local-build default; no published profile edit. Loading simplified after user feedback: no branding/illustration; neutral small status delayed700ms, actual readiness unchanged. Corrected loading/error i18n keys formerly nested under cart-handoff. Trusted Host/owned text popup get sanitized clipboard write only; popup Copy uses clicked ownerDocument navigator, dialogue text selectable. Disposable Xvfb native smoke passed OS Host/popup Copy + Ctrl+C/V and current-URL nine-second table navigation/resize; all PB requests synthetic/intercepted, not merchant acceptance. See leading plan section.
+
+
+- Nov14 user retired the old Stage Web character/chat page. Removed stage-web/src/pages/index.vue and its exclusive OrderMenuPanel, ChatDiagnosticsOverlay and usePersonEyeFocus. Existing `/` -> `/kiosk/` guard retained; `/admin` and shared packages/stage-ui remain in use. Stage Web build and package typecheck pass; generated router declarations no longer contain IndexScenePage. No deployment or test-system restart.
+
+- Nov14 user-authorized cross-row/dumpling/customization implementation completed LOCALLY. Current source of truth is the leading cross-row section in plans/2026-10-28-windows-kiosk-electron.md; supersedes older multi-row replacement refusals below. Public17 tools now accept piecesPerServing (8-base dumplings, current price/limits), copyFrom for explicit same-meal additions, and per-option patches (0 removes) for same-product replacement. Unspecified options/notes retained; cross-product replacements do not inherit them. Host compiles equivalent lineRefs+retained source total. Native group replacement verifies new servings first, then every source edit. Truly indistinguishable rendered rows are interchangeable only within the admitted exact group; verifyCartRowEdit proves the actual affected identity/full snapshot. Different customization/price never grouped. Jev complete literal pieces+servings shares parsing with Server claim; complex cases Main. Main plan admission and independent semantic extraction preserve original source customization. Unique known spoken PB dumpling name resolves to one canonical SKU. No new submit/payment tools.
+  Validation:190 Kiosk tests;9 Shared;91 Server domain;50 native cart;20 Chromium controls. Local original-executor UI9 checks passed, including two manual identical extra-dumpling rows and partial replacement, restored original cart/total; screenshot /tmp/pb-customization-compat-20261114.png. First UI run interrupted by development HMR, not counted; marked test leftovers cleaned and fresh full rerun passed. True-model synthetic9 tests passed (6 Main tool selection,1 effect-check test covering copy+customization,2 Jev candidates); no full-route/Electron/hardware or broad accuracy claim. Kiosk+Server scoped typechecks and strict PB-native-entry browser typecheck/native service bundle/scoped lint pass. Stage UI full-package typecheck FAILS on existing DOM.Iterable and test typing issues; config not altered to hide them. Native bundle rebuilt, no test-system restart/profile switch/deployment/commit or merchant submit/payment. Refresh isolated test build before Electron acceptance.
+
+- Nov14 follow-up Jev check: existing `liveReplay.test.ts` service-scope contrasts ran against the previously recorded Jev endpoint:8 passed (remaining67 not selected). Existing cart/question/category/preference/price/phone routing regressions:131 passed; PB fast-path/tool adapter:44 passed. The latter175 are model-mocked/policy checks, not live accuracy. The first attempt to run the whole historical replay was auto-review rejected pending payload audit; a source-audited subset containing only fixed synthetic utterances/state was subsequently approved. Full live PB purchasing/quantity/recommendation replay and Electron E2E remain pending. Notification-phone entry and customer-confirmed AI submission were already planned under P4/P5 but are not connected by the17-tool/six-follow-up implementation; payment remains excluded by the user's latest clarification.
+
+- Nov14 six user-authorized follow-ups implemented LOCALLY, not deployed. Current source of truth: plans/2026-10-28-windows-kiosk-electron.md Nov14 table; it supersedes historical remaining lists below. No more decisions were needed for these versions.
+  1) Final transcripts appear immediately with queued/processing/completed/cancelled/failed state. conversationMessages.ts groups uniquely identified replies by original utterance; shared ChatHistory after-message slot renders status. Display sorting does not rewrite durable/model evidence.
+  2) useKioskInteractionRecording.recordTranscript saves once per utterance, audio links exact transcript+visitor session. Admin UI/ASR export share interaction-media unique explicit matching; chronological/activity/position guesses removed. Same words in different utterances are preserved. Admin raw-audio list retains access to unlinked originals. New receptions detach pendingAppend; old acknowledgements/errors do not block/overwrite new work. Historical mismatch root cause is not proven, and old links are not guessed/repaired.
+  3) recommendationSession owns category/reception budget scope and additive name exclusions. list_menu_items optional criteria patches; allowedTerms removes specified exclusions; accepted price relaxation clears only price. New categories must be real configured labels; otherwise use keyword search. Main interprets semantics; Jev/native presentation use the filtered pool. No ingredient/allergy guarantee.
+  4) Yellow voice panel shows mode, mic/VAD/ASR, block reason, timestamps and TTS overlap. Kiosk Admin separate test enables mic/TTS/interruption even in text mode; useKioskVoiceTest cancels on close/reopen and never enqueues customer tools/messages. Physical echo/hardware not validated.
+  5) Jev source compiles complete batches of up to3 distinct no-option meals; per-step fresh versions, partial effects retained, incomplete requests Main. Routing family/effect coverage admits complete multi-item candidates. Rotation/replay use real shown refs and current criteria. Real Jev comparison remains unavailable, not a measured speed/accuracy claim.
+  6) orderingNextActions offers only receipt-supported navigation. Final presentation adds at most one offer, none on pending questions/partial/unknown effects; no extra Main polishing call and no submit/payment tools.
+  Execution seam: browser-ordering/plan.ts now binds public Main business arguments to Host-resolved names/configuration/counts, one claim per batch item; finite set/remove/batch authority is recorded and no longer forced to cart_add. Unique aliases come only from the session's immutable published service binding. Batches use one Host task through browserOrderingTools, preserving verified effects. HTTP public call -> native plan -> independent semantic check and DB once-only/cross-reception tests pass. Public read facts have a final factual summary fallback, overridden by a later actual presentation; no forced extra operation for qualified information reads. Cart configuration exposed to model/targeting is readable description, never canonical private fingerprint. Answered-question context is scoped to utteranceId; search during a missing-quantity question first asks cancel-and-search.
+  Validation:361 Kiosk units across14 files;8 shared;152 Server domain +22 focused HTTP;11 Kiosk Chromium +1 Admin pairing Chromium. Kiosk/Server/Stage Web scoped typechecks and scoped lint pass. No root typecheck, live merchant/submit/payment, commit, migration, profile switch or deployment. After23:00 Taipei use local fixture only. Remaining acceptance: real Jev A/B+latency, full Kiosk/merchant E2E, physical mic/VAD/TTS/scanner. This historical scope did not complete every agreed feature; the latest audit above explicitly lists the missing implementations.
+
+- Nov13 user authorized implementation and engineering choice if Jev comparison is inconclusive. LOCAL first batch, not deployed: 17 public PB business tools in stage-shared/orderingTools.ts, execution adapter in stage-kiosk/services/browserOrderingTools.ts. Native browser_* transport remains private; pure list/detail reads do not consume answers. Names/configuration/quantity inputs compile against fresh host refs, prices and versions. Delta additions vs final quantities are distinct. Batch failures preserve earlier verified effects. Public model projections omit host refs/versions.
+  Jev finite source now covers simple unique add/alias, quantity question/answer, table equivalence, cart view/return, simple single-row set/remove, random up-to-three no-preference recommendations. Unsupported/uncertain cases still Main. Simple purchase quantity answers add directly; recommendation bare assent asks quantity. Service questions retain original pending ticket when declining cancel-and-search. Native table dropdown synchronizes button state; A3/A03 resolve to one real choice.
+  Cart preparation now runs before customer surface admission; storage eviction does not revoke a known same-reception cart. Carrier focus leaves without losing text before meal changes. Completion/reset retires ASR/Jev/Main/SSE/TTS, detaches old providers and isolates recording start/end exact IDs; prior-turn tests cover new-before-old-return. These are local tests, not deployed physical voice acceptance.
+  Real Jev wording probe timed out after30sec; no new measured accuracy. Opt-in Server pbToolWording.test.ts uses JEV_TOOL_WORDING_URL for broad/bounded/no-reply comparison. Chosen bounded purposes/replyType is engineering judgment under user authorization, not an experimental win.
+  Local PB original-executor compatibility UI passed seven checks, restored cart/total, no submit/payment; screenshot /tmp/pb-local-compat-20261113.png. This is not full Kiosk/model E2E. After23:00 Asia/Taipei use only test-sites/pb-order-lab, loopback5188; do not operate merchant site.
+  Validation:340 Kiosk units +6 shared units;13 table Chromium;7 local native compatibility. Server initial157 passed with2 stale table assertions; migrated public JSON/SSE table cases +skill/receipt7 pass. Kiosk/Server scoped typecheck and scoped lint pass; no root typecheck.
+  Historical Nov13 remaining list is superseded by Nov14 above; full Kiosk and physical acceptance / real Jev comparison remain. Multi-line equivalent-row replacement refuses pending clarification; complex selection paths retain existing Host behavior. Historic recording/transcript mismatch remains unreproduced. Source-of-truth plan: docs/plans/2026-10-28-windows-kiosk-electron.md, Nov13 first-batch section. No commit, migration, profile switch or deployment.
+
+- Nov13 local PB fixture v2: `test-sites/pb-order-lab/README.md`, loopback
+  5188 via `start.sh`. Captured public API numeric IDs/attrs, three categories,
+  A/B combos now136/150 (earlier UI116/128); frozen revision prevents test drift.
+  Real `createPbService` browser check exercises DOM+Inertia/API reads and native
+  add/quantity/icon-delete, without mocks. Keep draft order context after last
+  removal. Table component IDs change per reload. Exact local journey added to
+  shared policy with origin/store/port isolation tests; no arbitrary loopback.
+  Cookie-owned in-memory browser-profile sessions use CAS revisions; tab storage
+  seeds only new sessions. 15 fixture/protocol/HTTP +3 journey tests pass. Payment/
+  receipt UI remains simulated; no original post-submit page was observed.
+  Test Kiosk profile/rebuilt Electron/voice acceptance remain unconfigured and
+  unverified. No merchant writes, production config, commit or deployment.
+
+- Nov13 later request IMPLEMENTED locally: OpenAI-compatible Chat Provider
+  response mode auto/json/sse, neutral ai-provider schema, migration0049,
+  profile save/revalidation, real SSE verification, runtime upstream policy and
+  Admin selector. Auto retains current behavior; JSON disables upstream stream
+  only for streaming callers and preserves internal JSON decisions. JSON-provider
+  results still finish Kiosk's event stream. No migration, deployment/restart or
+  active profile changes. Server/Stage Web package typechecks, scoped lint,
+  Provider/control/runtime/router/admin tests and Chromium selector tests pass.
+  Full Kiosk route suite has two existing table-prompt wording assertion failures,
+  left unchanged; focused true-SSE and JSON-provider Kiosk SSE tests pass. Tool
+  redesign remains planning: master uses finite question choices plus Host
+  execution, no public generic order_answer_question. Remove that proposed Main
+  tool; narrow add, distinguish cancel selection from cart removal. Plan has
+  proposed Jev intents/executors, not implemented coverage. See server README.
+
+- Nov13 preceding DISCUSSION/PLANNING ONLY; no production code, deployment, profile or
+  merchant state changed. User-approved decisions, source/master audit, proposed
+  tools, staged modification plan and unresolved/test index are now the leading
+  `2026-11-13` section of `plans/2026-10-28-windows-kiosk-electron.md`; read it
+  before continuing. It supersedes Nov12's universal second add-confirmation:
+  explicit item/quantity purchases and completed quantity answers add directly;
+  recommendation-only "好" still needs clarification. No pre-cart combination
+  quote tool. Restore independent background mode and Jev/Main paths, widen PB
+  finite execution, synchronize native dropdown/touch/voice table choices and
+  A3/A03, restore master VAD diagnostic capture/block stages. Plan prioritizes
+  cross-reception ownership: reuse session/utterance/task/question/operation and
+  document IDs plus lifecycle generation; old ASR/SSE/tools/TTS arriving AFTER a
+  new reception opens must never update or act on it. Queue already has reset
+  generation/abort; recording start/end and all consumers still need audit/tests.
+  Valid new requests during cart writes are retained with visual status in formal
+  dialogue, not dropped or spoken as "received"; serialize writes. Final barge-in
+  reply arrangement, tool names, recommendation policy, request merge limits and
+  optional Main prose polishing remain undecided. Browser CLI skill command was
+  unavailable; audit used source/tests/prior RD screenshot, not fresh live UI.
+  Latest steering: prioritize NEW tool names and model-facing descriptions first,
+  without old-tool crosswalk; plan now has 17 proposed descriptions, not deployed
+  schemas. Simplify user explanations; UUID was an example, reuse existing IDs.
+  Track audio/transcript mismatches separately from ASR quality: inspect capture,
+  activity-entry/audio upload and transcript linkage under out-of-order delays;
+  not reproduced or fixed. Browser CLI issue affects only agent inspection,
+  never application runtime. Settle tools/parameters/results before wider work;
+  retain correlation/reset correctness and verify new reception cannot deadlock.
+  Tool descriptions were subsequently shortened to purposes/selection/parameters;
+  internal navigation readiness and lifecycle machinery stay in Host, common
+  factual reply rules are written once. User's leaving-during-slow-LLM case must
+  revoke old ownership and allow new reception without waiting for old LLM;
+  already-dispatched merchant effects still require reconciliation. Existing P5
+  plans order IDs/items/prices/timestamps/status/admin history, but deliberately
+  excludes full notification phone/email from observations; user's question about
+  phone retention is unresolved, not permission to silently change that contract.
+  Latest Nov13 verification: target is now user-provided app.esgpb.com /store/
+  1kgJeql/internal_use/menu/select-table. GET200, SelectTable, 11 tables, built JS,
+  no Vite client/debugbar in response; runtime whitelist still accepts only that
+  store's pick_up, so new internal_use is not integrated yet. No published switch.
+  Four targeted Kiosk files/84 tests pass, BUT real queue test-only probe confirms
+  reset invalidates old ticket while new utterance waits for old process Promise
+  despite abort; fix owner/drain lifecycle without overlapping merchant writes.
+  Audio audit (no new simulated ASR): admin UI pairs by nearest preceding voice
+  activity, then array index fallback; ASR export also uses nearest activity.
+  Susceptible to missing/interleaved records, not confirmed historical root cause.
+  Details/evidence and follow-up tests are in plan's Nov13 verification section.
+
+- Nov12 IMPLEMENTATION STARTED at user request; first batch applied to isolated
+  test only. Scope/evidence/remaining work at top of
+  docs/plans/2026-10-28-windows-kiosk-electron.md. Local API/web/Electron reopened
+  through the original manager; published test Profile revision2→3 targets RD
+  select-table, preserving other snapshot fields, drafts and prior release.
+  No production change, schema migration or real order submission/cancellation.
+  Backup DB dump, original frontend/native build, desktop login/profile, assets,
+  config and prior publication: pb-test.local/backups/pre-skill-20261112-192459/.
+  Old order3940 unchanged/unpaid. Manager status must be checked OUTSIDE sandbox:
+  loopback probe failure inside sandbox had looked stopped while API/web lived.
+  New code: shared pbJourney/invoiceInput; native origin/store/flow/member-vs-cookie
+  buyer checks; canonical menu cart-owner key preserves old member ownership;
+  table name included in cart fingerprint. Page-aware fixed Server skill assets
+  replace the old cross-stage prompt list, no extra model call; JSON/SSE same path.
+  Table buttons enhance the native selector; browser_table_select uses exact
+  current names only. Follow-up browser_start_ordering supports voice Start with
+  an explicit table or verified selectedTable; Host rejects an unchosen default.
+  Native expected table→menu navigation accepts only its correlated entering
+  receipt, never cart-write success; new binding still reads table/cart.
+  selecting_table context has
+  NO cart and exposes only entry/reply tools. Eventa onNavigation revokes/rebinds
+  full documents with serviceId/documentKey/revision, separate from activity.
+  Electron navigation handlers now use event details instead of deprecated args.
+  browser_return_menu preserves cart/search and retires pending draft questions.
+  PB selected carrier/citizen field focus + format check + Enter consumption
+  implemented without dependencies, sharing owned Menu format rules. This batch
+  uses DIRECT PB-field input, NOT the future Host scan buffer. Blur/reset/nav
+  revoke ownership; expected input does not abort guidance or permit cart writes.
+  No notification-phone/Email filling tool or checkout submit/pay tools added.
+  Native synthetic acceptance29 PASS (all merchant HTTPS intercepted, temp
+  profile; includes real keyboard input and guest full-page navigation). Evidence
+  pb-test.local/flow-build/skill-integration-20261112-native.log. Chromium controls/
+  scanner/table28 + native View5; Kiosk143; PB data/operations53; owned invoice13;
+  relevant Server routes/skills pass (table JSON/SSE included). Server/Kiosk/shared/
+  Desktop + focused PB entry typechecks pass; no root typecheck. Restored missing
+  base/add-on quote details found by native regression; current oral row wording
+  updated in fixture. New RD LIVE Main/Jev conversations, speed A/B and physical
+  scanner/Windows portrait NOT verified. User confirmed the reopened Ubuntu
+  Electron shows the new RD table page and large table buttons. This verifies
+  initial rendering only; live ordering remains unverified.
+  Voice Start follow-up built/applied via the same isolated manager and reopened
+  API/web/Electron. Focused Kiosk69, table Chromium11, Server skill3 and native
+  synthetic29 pass; Kiosk/shared/Desktop and PB-entry typechecks + scoped lint
+  pass. Covers split-turn selection/Start, combined request, no default inference,
+  A1 vs A10, Chinese numeric slots, disabled/ambiguous Start and takeover.
+  Physical microphone→ASR→Main/Jev table/Start acceptance remains unverified.
+  User corrected the welcome: published isolated Profile revision4 changes only
+  greetingPrompt/greetingPhrases to「請告訴我桌號，將會由送餐機器人幫您送餐。」;
+  old eight menu/recommendation openings removed from its active phrase bank.
+  Other published settings verified unchanged; old releases/drafts retained.
+  First-install PB seed uses the same greeting; existing publications stay intact.
+  Counter-pickup report investigated on the same RD build: "我要櫃台取餐"
+  failed before a Jev model call because browser_cart_get's table metadata GET
+  timed out at8s. Fixed table reads to use only current document metadata with
+  exact Menu/SelectTable component + URL and guest/member admission; actual
+  dropdown choices/readback still revalidate selection. No menu/cart snapshot
+  policy change. Synthetic native29 pass including failed repeated HTML reads,
+  counter selection and stale component/URL rejection; focused type/lint pass.
+  Actual text simulation on RD with active "rtx pro 6000 jev" passed: Jev2
+  model calls → Main2 rounds → native counter selection verified; reply visible
+  2257ms in this single sample, no HTML re-fetch or merchant writes. Evidence
+  pb-test.local/flow-build/counter-selection-live-proof.json. Driver validation
+  corrected from absent standalone tool_result to canonical resolved native
+  metric + verified reply + pressed-state; did not replay the customer turn.
+  This verifies text simulation, not microphone/ASR or the full new-site journey.
+  FOLLOW-UP Start failure: the user's B3 selection succeeded; "開始點餐" selected
+  the right tool but document replacement disposed its local wait. Also observed
+  cold menu loads >8s and >30s in routed diagnostics; longer arbitrary waits were
+  insufficient. Final policy acknowledges the native click/approved menu target
+  immediately (table-entry-starting, effect:none), with loading/ready separately
+  owning actual page readiness. ScenarioSurface now calls beginNavigation on a
+  distinct navigating event: no descriptors admitted during load. Only a matching
+  native entry receipt may settle across navigation/rebind; old handles, other
+  results and writes remain rejected, caller cancellation still ends the wait.
+  Schema lives in shared pbJourney. Standalone Start ends its covered Host task,
+  avoiding a new Main round using retired table tools; combined food demands do
+  not get that shortcut. Failed diagnostic reports retained privately; do not use
+  the earlier timeout-based counter pass as final-version acceptance evidence.
+  Verified RD's published dining-tables.scan route: base /order + t/{qrToken}.
+  Native Start may acknowledge that exact same-origin intermediary via
+  isPbTableEntryUrl; readPbJourney/isPbJourneyPage STILL reject it for tool IO.
+  Tokens remain native and are not returned to Main. Real closing dropdown can
+  briefly cover Start; picker now waits for the actual hit target while checking
+  document, selected table and caller cancellation, instead of a fixed delay.
+  Synthetic fixture now models QR302→9s menu and waits for native ready before
+  invoice discovery; earlier fixture path typo was corrected. Native29 pass.
+  Final RD LIVE text simulation passed counter and B3 selection→Start→native
+  ready with matching Menu/Show diningTable and visible meals. Start reply visible
+  1228ms/2839ms respectively; these are two samples, not a speed benchmark.
+  B3 selection encountered one Jev provider failure (~5s), then Main completed
+  selection; Start used Jev→Main successfully. No merchant writes. Evidence:
+  pb-test.local/flow-build/table-entry-live-proof-{counter,b3}.json. Normal managed
+  Electron restored afterward; diagnostic flags absent and CDP port closed.
+  Follow-up navigation timing (independent Chromium guest, 1080x1920, default
+  cache/no routing, two passes; not Electron/LLM latency): QR302 request took
+  127ms/89ms; click→menu rendered with correct B3 took5948ms/5870ms. Table page
+  cold load41062ms; repeated load16573ms, with HTML responseEnd16476ms. Separate
+  cold attempt39255ms load; many Vite source/dependency modules and _debugbar
+  resources observed (~8MB completed responses), so dev assets plus variable
+  transfer are demonstrated costs; QR itself was short in these samples.
+  Single curl table GET: first byte3.04s, total23.48s/316545bytes. Do not infer
+  server CPU vs proxy/network throttling without server-side evidence, or claim
+  production will be fast. Old routed entry tests disable HTTP cache and are not
+  representative speed baselines. Evidence pb-test.local/flow-build/
+  pb-navigation-timing.json (+ table-cold/no-cache artifacts). No app/source
+  changes or user Electron restart in this timing investigation.
+  Latest user incidents: A4 was absent but browser_respond repeated a generic
+  table question; recommendation reached Main/browser_present then failed after
+  8s (whole turn35.9s). Fixed Host absence feedback and substitute-selection
+  rejection; table skill updated. Menu/cart live reads now use PB's versioned
+  Inertia partial JSON (~500bytes, standalone167/273ms), no stale DOM merge or
+  HTTP cache; validate asset version, component, response URL, store/flow/auth.
+  Categories/options/prices remain live reads. Native synthetic30 pass including
+  version409 and wrong store/URL/component rejection; Kiosk87 + Server40 pass,
+  scoped Kiosk/Server/shared/Desktop + focused PB typechecks and lint pass.
+  Live follow-up exposed Jev ignoring short A3 after the A4 rejection: no current
+  question and phase=ordering. Source now supplies selecting_table with a fresh,
+  bounded admission-only question; known/unknown literal codes route to Main
+  after recipient admission. No selection or Start authority in that hint.
+  Final live text flow A4→A3→Start passed. Recommendation replied twice in
+  19.8/22.4s; NOT a satisfactory latency result. Second run verified canonical
+  SSE continuation browser_present receipt, rendered names/prices, <=3 products
+  and unchanged cart; first driver missed that receipt format, preserved as
+  recommendation-first-reply-proof.json. Final recommendation-live-proof.json
+  passed. No merchant writes, same visitor across both runs, no end/idle event.
+  User explicitly requires idle-aware tests: preserve existing 180s + confirmation
+  lifecycle; record session/end events and stop on IGNORE instead of waiting60s.
+  Original Jev-ignore evidence: recommendation-before-table-admission-fix.json.
+  Remaining latency includes repeated full category/configuration/cart reads
+  and Main rounds; do not call the model broken or promise a speedup from the
+  smaller page snapshots alone. Physical mic/ASR and real idle expiry not tested.
+  Final normal managed Electron/API/web restored; diagnostic flag absent and
+  temporary CDP port closed. Data/login retained; production untouched.
+  Remaining: live voice table/Start acceptance, full name-facing tool conversion, reception
+  reset journey, trusted Host input buffer/phone confirmation/manual keyboard,
+  typed order observations BEFORE any new live submission, LINE Pay/readback,
+  hardware and complete restore exercise. Do not report the whole plan complete.
+
+- Integrated plan retained below; implementation is limited to the first batch
+  above. Other P0–P6 requirements remain planned, not applied:
+  P0 baseline/isolation→P1 new RD guest/table journey→P2 runtime skills/name-facing
+  model interface→P3 controlled accuracy/first-action comparison→P4 invoice/voice
+  notification phone with confirmation, Email manual-only→P5 typed deduped order observations BEFORE submission,
+  bounded LINE Pay and readback→P6 reload/DOM drift/Windows/upgrade verification.
+  Main gets one relevant versioned skill + current facts/tools; Jev stays finite;
+  Host retains consent/validation/execution. No extra model round to choose skills,
+  no appended full handbook or arbitrary skill-script runner. Reuse current domain
+  modules/assets; loader packaging checked in release; no new dependency chosen.
+  Names are the model-facing intent; current PB refs/IDs remain Host/native.
+  USER CART TERMINOLOGY: cart 新增/＋ increases an existing item's servings;
+  加點 means return to menu, without cart mutation. Plan now separates explicit
+  return-to-menu navigation from quantity change and menu selection/draft/add.
+  Jev/Main skills/tool descriptions and Host admission must distinguish them;
+  plain 我要加點 never means add one to cart rows. Reuse pbControls.navigate,
+  preserve cart/table, do not silently clear search; only explicit 看全部 clears
+  the filter. Named dish after 加點 follows normal draft/count/confirmation.
+  Regression cases added to plan, not implemented yet.
+  LATEST USER STEERING: voice may fill notification PHONE only after customer
+  confirms its draft; Email must be typed manually, no dictation/spelling/autofill
+  assistance. Jev/Main route spoken Email to manual input; Host must reject Agent
+  Email writes even on model error, and never turn Email digits into a phone.
+  Preserve manual Email in PB. Replace prior all-manual notification policy.
+  Phone recognition may use this turn's necessary input, but redact general
+  transcript/tool telemetry/future model context and audit audio storage too;
+  do not falsely claim raw voice never reaches its recognizer. needInputEmail
+  currently demands phone OR Email; carrier scan/tax-ID drafts stay distinct. Final table association
+  and new-site payment states still require real readback. Timing must separate
+  progress, substantive response, finalized tool and native rendering/click; no
+  dispatch from partial SSE JSON. Plan has provisional warm3s meaningful-response
+  target/over5s report point, not measured improvement/SLA. Natural simple cases
+  only, deferred complex matrix stays deferred. Preserve text switch, drag console,
+  profiles/assets and pending old order3940. Initial observations reuse service_event
+  with transactional event-ID dedup; do not change accepted-only old order result.
+  Keep same isolated backend; no new launcher, production change or commit.
+  Plan review added section10: one verified page/task/input/
+  order state view; manual touch priority with voice resume and expected scanner
+  input ownership. No observed scanner-cancels-checkout bug: native input reports
+  activity, not requestManualControl; trusted page keydown invalidates pending
+  actions/visual guidance, not the order. Hardware scan/continuation still untested.
+  User suggests focused input + validate before filling: plan now prefers trusted
+  Host scan buffer, type/format/current owner checks, limited PB field write and
+  readback/vendor validation. Direct PB focus is an alternative pending hardware
+  verification. Focus alone does not suppress keydown; scan Enter is input-only,
+  never submit consent. Revoke input ownership on blur/type change/reset/reload.
+  Canonical cart owner across select-table/menu/cart plus table
+  binding. Test PB's two guest sessions on one table before assuming independent
+  or shared carts; never clear another party's rows. Capture manual submission/
+  payment too, not only Agent tool receipts. Pending order callbacks retain original
+  visitor/device/ref after a new visitor starts; honor existing ended-session
+  evidence access limits. Bound watcher/recovery and sanitized pending observation
+  delivery; replay event IDs, never merchant writes. Add real readiness/manual
+  fallback/status summary and sold-out/price change handling. Freeze local code/
+  fixtures, NOT collaboratively edited RD server; site changes invalidate controlled
+  comparison and are recorded separately. These strengthen P0–P6, not new platforms.
+
+- Nov12 initial RD assessment (first batch has since been applied as noted above):
+  https://app-205-rd.esgpb.com/order/store/1kAMNok/internal_use/menu/select-table.
+  Manual independent anonymous browser: selectA1→start→menu→soup1/40→cart→invoice,
+  full reload preserved table/cart; native clear verified empty, no submission/payment.
+  auth.user absent, buyer.type=cookie.11 table choices: counter, A1–A3, B1–B7.
+  Start follows vendor dining-tables.scan token and full navigation; tokens must
+  stay Host-side. Cart displays A1/diningTable string, but draft dining_table_id
+  null; submitted table binding remains unverified. Ziggy JSON/routes and basic
+  cards/dialog/rows resemble old site; product IDs/names/prices differ. Current
+  runtime hardcodes old origin/store/pick_up at native surface, pbBrowserService,
+  pbControls, and rejects guest props. Requires explicit scoped journey + guest
+  policy, table state/confirmation ownership, no blanket trust/auth removal.
+  Latest notification policy: phone can be voice-assisted with explicit draft
+  confirmation; Email stays manual-only with Jev/Main routing plus Host write
+  rejection. Keep general history redacted, distinguish phone from carrier.
+  IMPORTANT current needInputEmail=true and vendor frontend demands phone OR
+  Email for guest. Cannot offer optional skip without PB change/verification.
+  Phone DOM currently type=email too; keyboard choice must use verified semantics.
+  New site is live Vite/HMR; treat reload as expected, never replay unknown writes;
+  detect semantic contract drift rather than bundle hash alone. No portrait
+  Electron/Main/Jev/new scanner/keyboard acceptance yet. Detailed assessment and
+  implementation ordering at top of Windows Kiosk plan. Private new-site-* files
+  in flow-build contain sanitized sample/source snapshots/screenshots. Old test
+  runtime/login/order3940 preserved; previous Nov16 pickup applies to old self-pickup,
+  not this dine-in page. This turn changed docs/evidence only, not product code.
+
+- Nov12 15:50 Taipei user-authorized MANUAL real PB submission completed: order
+  3940/ref OB2mNGOpg, egg soup1/40, pickup Nov16 11:00, approved bound member
+  carrier. Preserve unpaid order; do not clear as a cart or submit another copy.
+  Cart already had number/id/created_at with status10; submit POST changed same
+  row to20 待付款 and total40. Show GET returns full lines/status/times; standalone
+  details GET500. LINE Pay selection persisted payment=LinePay, still unpaid;
+  its302 targets https://web-pay.line.me, blocked by current same-origin native
+  guard (ERR_ABORTED). No wallet authorization/payment performed. Full Agent
+  checkout, bounded payment journey, PB scanner/tax-ID UI and analytics persistence
+  remain unimplemented; accepted-only order-results must not receive unpaid PB.
+  Private flow-build checkout-lifecycle.json, submitted-order-readback.json,
+  linepay-redirect-proof.json and checkout-analytics-example.json contain evidence,
+  not an applied analytics feature. Formal Windows Kiosk plan has findings.
+  Future tests use user-requested Nov16 11:00 unless steered; no production-date
+  change. Existing Jev preserved active. Warm Jev model total0.38–0.42s, cold3.09s;
+  Main0.88–1.35s/call; visible progress1.9–2.3s and substantive reply9.4–10s
+  in prior five-case ledger. Historical Main-only7.7–8.6s is not controlled A/B.
+  No directly correlated native first-paint metric; tool start is not a PB click.
+  This task changed investigation evidence/docs only, not product code. Normal
+  managed sandboxed Electron restored/CDP closed; profile/assets/config retained,
+  test API/web and production activation/readiness verified unchanged (restore-report).
+
+- Nov12 12:01 Taipei model-view simplification applied to isolated PB API/Kiosk.
+  Shared browserConversation now projects direct Chinese currentActivity, one
+  pendingItems list/currentQuestion, explicit none/available/not_verified options,
+  orderSpecifications.optionGroups.options, selectedOptions and answerOptions.
+  Main receipts use outcome/cartEffect and required facts/repair reasons; original
+  ok/source/status, consent tickets and diagnostics stay in Host/durable records.
+  Server projects schema keys, translates model arguments at BOTH completion
+  paths, and reprojects canonical continuation calls; native refs/counts/options/
+  validation and Jev admission are unchanged. Confirmation has no 確認加入： prefix;
+  acceptance consent follows the actual sealed question purpose, not wording.
+  Kiosk187 regression, Server9 focused seam/receipt/route checks, scoped Kiosk/
+  Server types, targeted lint, isolated build passed; no root typecheck/commit.
+  Final real Main+Jev5/5 on frozen source: single, missing count, two/three dishes,
+  per-serving dumpling extras. All five reached Main (1/3/1/1/1 rounds); local
+  confirmations had zero Main rounds. Actual counts/options/totals matched;
+  final empty, no submission/payment/blocked writes. Ledger
+  jev-main-2026-11-12T04-03-22-239Z.json; model-contract-live-proof.json.
+  IMPORTANT: Jev was ALREADY ACTIVE on entry to acceptance; preserved active.
+  Main-only ledger stopped at the mode guard before any task; not a Main run.
+  This supersedes older inactive-mode handoff statements below. Main qwen36,
+  thinking false. Normal managed sandboxed Electron restored/CDP closed; profile,
+  assets/config and production preserved (apply-report.json/restore-report.json).
+  Small-model Main equivalence and latency improvement were not measured.
+
+- Nov12 PB meal wording applied at10:03 Taipei. Empty customizations no longer
+  add 不加料. stage-shared/pb-menu-presentation shares spoken naming/serving
+  text across Host confirmations/receipts and native quotes/cart readback.
+  Only store1kgJeql's observed item2589 (64 dollars/eight dumplings, extra 水餃
+  at8 dollars) gets per-serving pieces when structured options and price match;
+  changed/unknown configurations retain serving units. Raw PB names/refs and
+  quantities stay unchanged. Unique 周氏水餃 is recognized as the same customer
+  name in draft validation/providedSlots; collisions stay ambiguous and complete
+  pre-add confirmation is still mandatory. General aliases are unchanged.
+  Focused Kiosk136, native Cart/Product53, shared wording3 and manager14 tests,
+  scoped Kiosk types, targeted lint and isolated Kiosk/native builds passed.
+  Final real Main3/3 passed on one frozen version: A01/P01/P02, including an
+  explicit 不加 answer when PB's optional extra group is asked. Actual basic
+  8-piece serving64 and two10-piece servings160 matched native cart; final empty,
+  no submission/payment. Ledger main-2026-11-12T02-03-56-334Z.json. No new Jev
+  suite on this wording version; prior4/4 below is earlier-version evidence.
+
+- This wording acceptance caught stale Electron HTTP bootstrap cache: disk
+  publication/hash alone did not prove the loaded UI version. Isolated manager
+  now sets no-cache on /kiosk/index.html; only the owned test Nginx was reloaded.
+  One Host-only cache-bypassing reload migrated the existing cached entry without
+  deleting cookies/storage. A later ordinary reload verified a newer entry and
+  the no-cache header (wording-entry-proof.json). verifyConversations now refuses
+  an entry mismatch before testing. Preserve earlier failed ledgers: stale UI,
+  harness missing optional-no/short-name consent handling, then actual short-name
+  draft rejection were distinguished and fixed; never count them as passes.
+  Test API and production activation stayed unchanged, profile/assets/config
+  retained (wording-apply-report.json). No dependency/migration/root typecheck/commit.
+  Normal managed sandboxed Electron restored after acceptance; loopback diagnostic
+  closed, Jev remains inactive, text console/login retained (restore-report.json).
+
+- Nov12 user narrowed acceptance to natural basic requests: single meal with
+  count, asking a missing count, and one sentence ordering two/three meals.
+  scripts/pbTest/conversationCases.json defaults to four basic A cases; the
+  16 supplemental B cases remain deferred/explicit-selection only. The earlier
+  Main B run finished12/16 before this steering; mixed buy/quote, recommendation
+  ordinal, unknown allergen facts and a price detour during a quantity question
+  failed. Preserve that diagnostic ledger; do not claim all master cases pass or
+  resume broad Jev cases. Master's core matrix has112 cases/286 user turns;
+  related/adapted IDs are not exact replay coverage.
+
+- PB native operation cues now hide on release (~150ms after dispatch), while
+  accepted effects still verify with the same ownership and no replay. Discovery
+  frames retain their display lifetime. Chromium regression reproduced the old
+  lingering frame; presentation9 and operation/control27 passed after the fix,
+  targeted lint/native desktop build passed. Applied only by restarting isolated
+  test Electron with its retained fixed profile; API/web unchanged. Actual nine
+  tap samples hid after149–155ms. Main basic4/4 passed on the final native bundle,
+  with exact cart quantities/totals and final empty cart, no submission/payment;
+  ledger main-2026-11-12T01-39-50-035Z.json in conversation-acceptance.
+  Main+Jev basic4/4 also passed (jev-main-2026-11-12T01-43-12-153Z.json),
+  with actual system-one model decisions recorded in basic-jev-decision-proof.json.
+  Both frozen-source runs ended empty and had no blocked order/payment writes.
+  Jev restored inactive; normal managed sandboxed Electron restored, diagnostic
+  listener closed. restore-report.json confirms retained profile/assets/config,
+  unchanged test API/web and production activation/readiness. Text console remains.
+  No root typecheck, new dependency or commit.
+
+- Nov12 PB master-aligned follow-up: closed literal draft counts, complete
+  confirmation and cancellation now prepare a Host operation after fresh context,
+  record canonical user_text durably, then consume/revalidate the private ticket.
+  Saved confirmations execute without another Main tool-selection round. Receipts
+  are browser_question_answer with source host_question_answer; metrics retain
+  modelRounds=0. Preparation never consumes consent, failed recording prevents IO,
+  retired tasks/duplicate invocations reject, and manual control retains settled
+  receipts without replay. Other answers/corrections still use the planner. Do
+  not call this instant: observed native reads/verification still take seconds.
+
+- Published OrderingSite now accepts optional catalogLabels (exact name, aliases,
+  category); shared labelCatalog joins only unique current names, preserving all
+  merchant price/options/identity facts. Main browserContext and Jev get discovery
+  labels, shared aliases stay ambiguous, and labeled search displays verified
+  native refs rather than sending an unknown alias to PB text search. Oversized
+  category batches ask for narrowing rather than silently claiming all shown.
+  Profile Admin has a reusable catalogLabelsEditor for primary/additional sites;
+  content edits may change labels but not the approved URL. Published metadata
+  changes defer through the existing customer-reset barrier, even for the same
+  URL. No database migration/new dependency or administrator prompt edits. Exact
+  alias lists have not been populated for the user; saved edits need publication.
+
+- Master-aligned follow-up applied Nov12 02:35 Taipei (isolated Kiosk/API),
+  Admin static build02:36; native desktop bundle unchanged. Final actual Electron/
+  PB suites passed Main7/7 and Main+Jev2/2 on frozen production source; ledgers
+  master-aligned-{main,jev}-cases.json in pb-test.local/flow-build. Cases cover
+  alias/quantity confirmation, undecided add-on count, two unfinished dishes,
+  same meal/different extras, cancellation, changing/clearing a search and
+  nonrepeating recommendations. Host answers show modelRounds=0 in private
+  local-answer-proof.json; native checks still take8–9 seconds for Main-only
+  field turns, and two-row commits roughly22 seconds. Jev admission adds latency.
+  Unit validation307 across12 Kiosk files, shared labels3, Server profile24,
+  Admin Chromium4; scoped Kiosk/Admin/Server types, lint and isolated builds
+  passed. No root typecheck/commit. Alias/category publication was verified by
+  Server fixtures and the real Chromium editor, not by changing the user's live
+  published Profile. All live test carts ended empty, no submission/payment;
+  observed write paths were native cart details plus analytics. Jev restored
+  inactive and normal managed sandboxed Electron restored, loopback CDP closed.
+  restore-report.json verifies unchanged profile/assets/config, test API/web and
+  production activation/readiness; admin-labels-apply-report.json covers static
+  UI replacement. Text console retained. Full hardware/speech, arbitrary compound
+  corrections and multiple mandatory groups on the real PB menu remain unaccepted.
+
+- Nov12 PB additions now use a program-owned multi-dish draft flow. Main sees
+  `browser_order_draft`, not raw native cart_add. Each line preserves one
+  configuration/note, literal evidence, nullable serving/add-on counts, selected
+  choices and unresolved groups. `browserOrderDrafts.ts` owns up to10 unfinished
+  configurations, derives required fields from current merchant schemas, asks one
+  field at a time and calculates prices with existing pbProduct policy. The Host
+  presents one full priced batch confirmation before any additions. Same-item
+  configurations stay separate. No dependency, migration or admin prompt changes.
+
+- `browserDialogue.ts` and `browserQuestionWindow.ts` own the one-use question
+  protocol (`browser-order-slot`, `browser-confirm-add`) and saved batch. Answer
+  consumption follows canonical user recording and fresh owner/document/cart/
+  configuration checks. `browser_confirm_add {}` consumes the saved batch before
+  IO, adds serially and advances bindings only from verified native receipts.
+  Unknown write, transport failure, manual change or rejection stops without
+  replay; customer receipts retain already verified effects rather than claiming
+  no change. Read failures before dispatch are distinct from unknown writes;
+  pre-write sign-in requirements stay typed. Read-only turns remain immutable.
+  A parallel model batch stops once a Host question has been issued.
+
+- Fresh per-round `browserContext` now includes multiple drafts. Shared neutral
+  contracts/types live in `packages/stage-shared/{browserConversation,productConfiguration}.ts`;
+  Stage UI pbProduct retains native discovery/preparation/pricing. Literal counts
+  mask product names and exclude party-size/add-on units. Draft counts without
+  spoken evidence remain missing. Full utterance evidence is usable for one dish;
+  split configurations retain separate spans so extras cannot leak between them.
+  Original source and the current Host-bound quantity answer retain separate
+  evidence provenance; prior bound answers can fill only their selected product.
+  Finite visitor history remains bounded48 entries/16k chars; Jev has12/4k.
+
+- Jev now gets the actual fresh PB pending question. Staged recipient admission
+  still runs; closed confirmation/cancellation replies then go to the Host
+  processor, without issuing an operation or consuming a ticket. Other admitted
+  PB question responses also hand off as planner requests, rather than being
+  mislabeled uncertain/read-only. This fixes the live regression where cart_get
+  returned confirmedAddition but Main's confirm tool was hidden and it replied
+  only acknowledgement. No original read-only restriction is relaxed. Shared
+  browserQuestionChoice is a routing hint; private Host bindings remain final.
+
+- Earlier draft build applied Nov12 02:03 Taipei to isolated test UI/API only;
+  native bundle/Nginx/fixed profile/assets/config and production activation are
+  preserved. Main full17 regression passed16/17 before the final recommendation
+  fix: S10 repeated one item. After fixing successful-presentation history, focused
+  S01/S10 passed2/2 on this final build. Do not call that a single final17/17 run.
+  Final Main+Jev actual Electron/PB suite passed8/8: alias→quantity→confirmation,
+  exact missing quantity, undecided add-on count→80 dollars, two missing counts
+  →390, same meal split plain/extra→144, cancellation, complete literal single
+  addition, and nonrepeating recommendations. Private ledgers are respectively
+  `draft-main-verified-cases.json`, `draft-main-presentation-cases.json` and
+  `draft-jev-verified-cases.json` in `pb-test.local/flow-build/`. Earlier failed
+  intermediate ledgers are diagnostic history, not final model-quality scores.
+
+- Recommendation history belongs to the successful native presentation, scoped
+  by visitor/document and catalog availability; it outlives transient speech cues.
+  Information/choice displays do not rotate it. Host filters already shown refs
+  from model-selected recommendation batches, never invents replacements; an
+  entirely repeated batch returns a repair receipt without phantom presentation.
+
+- Earlier draft validation: Kiosk264 across9 files plus one additional
+  cart-task/presentation integration regression (targeted pair61 passed), Server routing32 plus
+  browser-ordering75, targeted route-policy4, scoped Kiosk/Server types and
+  isolated Vite build passed. No root typecheck/commits. Real live menu has13
+  products and only one optional dumpling add-quantity group: multiple required
+  groups are unit fixtures, not live-vendor acceptance. Arbitrary compound
+  corrections, price variants/groups, full speech/hardware/production acceptance
+  remain separate scope. Drafts are reception memory, expire with their two-minute
+  questions and do not survive reload/customer/document/cart/config changes.
+  Current text/simulated-ASR question turns still take roughly8–17 seconds;
+  two-row commits took24–28 seconds before the newer Host-answer work above.
+  Remaining latency includes repeated fresh catalog/native reads, guided controls
+  and verification; no general speed claim or relaxed freshness check is warranted.
+
+- Test operations use actual providers and PB, simulated ASR/text console, only
+  own empty-baseline test carts; never submit/pay. Prior plain-text/float-console,
+  login/avatar/admin work is preserved. Final driver finished with empty cart and
+  no submission/payment. Jev was returned to its original inactive state and normal
+  managed sandboxed Electron restored; temporary loopback CDP listener is closed.
+  `/tmp/pb-restore-normal-electron.py` verified profile/assets/config identity,
+  unchanged test API/web processes, production activation and both readiness checks.
+  Private apply/restore reports are in flow-build. Preserve
+  all existing dirty migrations/avatar/audio/UI changes; `.env.local` is production
+  and must not be used for isolated API. Exact Main-native plan matching remains
+  in browser-ordering/plan.ts; do not silently patch/replay model arguments.
+
+- Nov11 PB reception-end policy changed at the user's explicit choice:
+  **每次結束接待時自動清空未結帳餐點**. Host-only `browser_customer_reset`
+  now runs fresh-cart/native `.order-create` **清空** → verify zero rows/subtotal
+  → menu/draft/search reset → Host rebinding, with the same document/login.
+  PB current `Create-CX03t3FJ.js` binds it to DELETE details/all, not order deletion;
+  no public/model clear tool was added. Coordinator rejects changed preflight,
+  deduplicates through the existing journal and persists unknown-write blocking;
+  empty-cart retries do not re-click. Failed reset retains the active visitor/chat.
+  Removed premature durable-visitor end from both Scene restart/new-customer paths;
+  manual failures display the native human message. Reset now skips guided-hand
+  travel/dwell while retaining native hit/ownership/fresh-cart checks. A separate
+  opaque `pbPresentation.cover()` survives SPA navigation, blocks trusted input
+  and cleans up in finally; Host announces localized new-order preparation.
+  Optional **我知道了，開始點餐** is not a required step. New validation: cover
+  regression2 red→green, presentation8/operation9/controls18 Chrome tests, native
+  portrait28 PASS including real masked pointer click/no hand/return/cleanup;
+  Kiosk types, scoped lint and Desktop/isolated Kiosk builds passed. Applied21:21
+  Taipei, only test Electron restarted; API/Nginx/profile/config/assets/production
+  activation preserved, served UI/readiness/normal sandbox verified. Prior builds
+  and report: `pb-test.local/reset-fast-build/`. Synthetic merchant traffic only. Continuing an idle prompt never clears. Crash/reload leftovers still use the existing ownership/staff gate;
+  shared account carts across devices are not isolated by this local policy.
+  Validation: initial red tests → Cart45, Host reset/lifecycle31, Chrome controls17,
+  synthetic native portrait28 PASS; Kiosk types, scoped lint, Desktop/isolated
+  Kiosk builds passed, no root typecheck. Fixture intercepts all merchant traffic;
+  no real cart was cleared for diagnostics/testing. Real integration reset flags
+  now require an initially empty cart and use only their own seed; new live
+  clear-policy acceptance remains an operator check. Applied20:45 Taipei: only
+  managed test Electron restarted; API/Nginx identities, fixed profile/assets/config
+  and production activation preserved. Served UI, readiness and normal AppArmor
+  sandbox checked. Previous native/UI builds and apply report are in
+  `pb-test.local/cart-clear-build/`.
+
+- Nov11 direct PB reply/cart-handoff fix applied20:14 Taipei. Read-only test
+  history confirmed session `jUMlxtEp8XMaEpzVjYqtP` added one fried-chicken bento;
+  subsequent session `qwEyimiy40ygT4h8L9uiv` asked how/to check out, and Main called
+  only `browser_respond information-unavailable`, never checking the cart. Host
+  now freshly checks cart ownership before non-greeting/hearing direct replies,
+  redacts prior visitor contents, returns the staff-review receipt and stops the
+  Main continuation. Typed sign-in failures remain typed; read failure never
+  claims an empty cart, manual emptying is rechecked, stale visitor IO is rejected.
+  Added `browser_respond checkout-guidance`: existing native cart review/ownership
+  gate precedes localized manual-checkout guidance; that reply never submits,
+  pays or clears. Reception-end clearing is the separate newer policy above.
+  Scene only wires translations; vendor/native code unchanged. Staff resume stays
+  under Electron Settings → External cart handoff and requires reviewed-version
+  confirmation. Validation: initial10 failures→green; Kiosk225 across8 files,
+  Server prompt1, Kiosk/Server scoped types, lint and isolated Kiosk build passed.
+  Only test API/Electron restarted after settled task/speech/reset; previous UI
+  and apply report in `pb-test.local/cart-handoff-build/`. Nginx, fixed profile,
+  assets/config/native hash and production activation preserved; readiness and
+  normal AppArmor sandbox checked. No real cart edits or migrations. Live Main
+  acceptance was operator testing at that point. Nov12 work above now supplies
+  structured drafts, required quantity collection and schema-driven customization;
+  the earlier session documents the prior implicit-one-serving failure.
+
+- Nov11 PB browse/speech synchronization applied19:48 Taipei. User reported
+  雞腿→有什麼便當 kept the old filter while Main read the full catalog. Native
+  presentations now verify EVERY selected card and clear the actual search when
+  any selected card is missing; delayed/incomplete renders cannot yield a spoken
+  success receipt. Explicit search-clear waits for the full current menu and
+  acknowledges briefly, without reading all dishes aloud. Main interprets
+  rejection of current recommendations as clearing browse/search, preserves
+  explicit dietary/budget needs and never treats that as cart deletion. New
+  searches retire old choice questions. Host alias/choose-product questions also
+  require a shown native receipt with matching refs/names/prices; failed/cancelled
+  cues retire the question. Public PB `Show-D_rzU06X.js` still debounces input by
+  250ms, sets `me` while loading all categories and renders `.menu-search-meta`:
+  controls observe its actual loading cycle and settled count, not a fixed sleep
+  or the assigned input value. Scoped validation: Kiosk224, Chrome controls15,
+  Server prompt1, native portrait fixture27 PASS; Kiosk/Server types and scoped
+  lint/builds passed, no root typecheck. Prior Kiosk and Desktop out are under
+  `pb-test.local/menu-sync-build/`; apply report there verifies only test API and
+  Electron restarted, Nginx/profile/assets/config and production activation
+  preserved, readyz healthy and normal AppArmor sandbox active. No real cart
+  writes or data migrations. Operator's live Main acceptance of
+  「雞腿→有什麼便當→這些都不要」 remains the next manual check.
+
+- Nov11 PB menu-flow fixes applied18:43 Taipei during the ongoing local test
+  iteration, after read-only confirmation the latest task/speech/reset had settled.
+  Actual test records showed 13 fresh menu products, first recommendation3,
+  follow-up10, then a13-ref presentation validation failure. 「我想吃虱目魚」
+  reached Host discovery, whose unmatched-name fallback offered all products and
+  generated fake website pagination. This was Host spoken paging, not PB controls
+  or a laptop-resolution issue. New shared presentation input schema covers native
+  queue/executor/Host dedup; default recommendation cap3 preserves supplied rank,
+  validates ALL refs before limiting, and Host admits one recommendation batch
+  per turn. Explicit information comparisons permit10/call; larger requests get
+  a data-only split correction rather than silently losing requested subjects.
+  Spoken choices use3 and other-options/previous-batch wording, with no webpage
+  claim. Unknown names no longer fall back to the whole catalog; full facts are
+  distinct from question-ready configurations, related named fragments require
+  majority overlap, multi-name misses retain the original receipt, and confirmed
+  missing-product clarifications end without unsolicited Main recommendations.
+  Validation: Kiosk221 + Server route4, native fixture27 PASS (including real
+  1080×1920 Host content on separate Xvfb; vendor region1040×1800). Kiosk/Server
+  scoped types/lint, Desktop/Kiosk builds passed; no root check or Stage UI's
+  known unrelated type repairs. Portrait fixture asserts actual content dimensions
+  and keeps its popup visible on the separate display for real pointer checks.
+  Applied only test Kiosk UI+native bundle+API prompt; API/Electron restarted,
+  Nginx identity, fixed profile/assets/config and production activation preserved;
+  test/production readyz healthy, normal sandbox verified. Previous Kiosk:
+  `pb-test.local/menu-flow-build/kiosk-before-20261111-184301`; prior Desktop out
+  in `pb-test.local/menu-flow-build/desktop-before`. No settings/profile publication,
+  real cart mutation, Jev enablement or production update. Operator still needs
+  to accept the changed live recommendations/absence response and physical kiosk.
+
+- Nov11 operator's live 「推薦什麼？」 failure diagnosed read-only from isolated
+  test session `mo3lSvvFptlb3EuCwSAFo`, entries23–29: Main called browser_observe,
+  native tool resolved in ~501ms with `PB requires manual sign-in.`, then Host
+  collapsed it into generic tool-rejected. Electron/API/tool transport was active;
+  this is NOT successful authenticated menu/recommendation acceptance. Operator
+  instructed to sign in in Electron's PB page, not another browser. No cookies,
+  login state, cart, published release or production data changed for diagnosis.
+  New typed pre-dispatch sign-in receipt from fresh pageProps; Host validates its
+  full source/status/effect/code contract and selects translated sign-in prompt.
+  No automatic retry, error-text matching or reclassification of unknown writes.
+  Regression red→green in Host and real synthetic native fixture (auth false→true
+  then catalog reads resume); Host/presentation104 passed, Kiosk scoped types,
+  scoped lint, Desktop+isolated Kiosk builds passed. Stage UI known unrelated
+  package errors were not rerun/repaired; no root check. User explicitly approved
+  apply/reopen; applied Nov11 18:23 Taipei and restarted only managed test Electron.
+  API/Nginx identities, desktop-profile/assets directory identities and test config
+  preserved; production activation unchanged, test/production readyz healthy.
+  Served Kiosk index/JS match new build; native bundle includes typed sign-in code.
+  Normal Electron service active with PB AppArmor profile and no sandbox bypass.
+  Prior UI `pb-test.local/sign-in-build/kiosk-before-20261111-182356`; prior Desktop
+  out `pb-test.local/sign-in-build/desktop-before`; private apply report in parent.
+  Later live records confirmed authenticated menu reads/presentations; the
+  remaining recommendation/absence issues are covered by the newer entry above.
+  Do not equate synthetic auth recovery with full merchant/order acceptance.
+
+- Nov11 portable character packages implemented at user request; user chose
+  existing JSZip (no dependency change). Site editor exports unsaved character
+  text, greeting banks, avatar, six motion slots/idle fallback and background.
+  Import replaces only those editor fields, preserves merchant/store/device
+  settings, retires responses after Site/draft switch, never saves/publishes
+  automatically. Both routes require experience-edit rights; export checks
+  Site ownership/hash/format. Shared neutral v1 manifest and limits live at
+  `@proj-airi/stage-shared/kiosk-character-package`. Import checks all declared
+  files before writing, bounded Node ZIP streams (120 MB archive / 128 MB file /
+  256 MB total / 256 KB manifest), hashes and paths. Only exact multipart import
+  gets the larger HTTP budget. No schema migration. Fixed the existing asset
+  service's generic reference type (Extract against grouped format unions
+  incorrectly produced never); runtime unchanged. Server27/browser13 passed,
+  Web+Server scoped types, scoped lint and isolated Web build passed; no root
+  typecheck. User explicitly approved apply/restart; applied Nov11 18:10 Taipei
+  from `pb-test.local/character-package-build/web`. Only managed test API restarted;
+  Nginx identity, test config/assets/profile directories and production activation
+  were preserved. Electron had already closed before apply and was left closed
+  (not relaunched/reset). Existing Admin chunks retained, files published atomically
+  with index last; replaced files backed up at
+  `pb-test.local/character-package-build/previous-web-20261111-181032`.
+  Test/production readyz healthy; served index/entry JS checked. Fresh background
+  Admin tab showed new download/upload controls and existing Site release v2;
+  screenshot `/tmp/pb-character-package-admin.png`. Original operator tab was not
+  reloaded to preserve any unsaved form; refresh after saving to get new controls.
+  No existing draft/release or live data modified, no real package imported or
+  published during deployment verification. Actual user-asset roundtrip acceptance
+  remains an operator test; automated roundtrips use synthetic binaries.
+
+- Nov11 user selected avatar scope1+3 (upload/publish plus motions/speech/persona).
+  Continued audit found PB's early system-prompt branch omitted the card's
+  postHistoryInstructions, and model-only profiles omitted characterName. Both
+  now reach the leading system prompt, preserving PB tool/safety policy.
+  New `useKioskCharacterMotion` retains master's phase/gesture timing and owns
+  native PB motion evidence/lifecycle: same operation+connection+document,
+  verified cart writes→acknowledge, valid nonempty shown cues→presentation;
+  no gesture for reads/failed/unknown/repeated/stale receipts. Owned Menu keeps
+  its old fast-action path. Speech/think/idle resume after transient gestures.
+  Shared Stage external TTS previously reached only VRM; Live2D now reuses its
+  wLipSync engine through `useExternalSpeechSource`, detaching only its visual
+  graph branch. Async worklet setup is invalidated on renderer change/unmount.
+  Validation: Kiosk motion/fast-path/presentation33, targeted Server routes4
+  (new persona cases red→green), real Web Audio browser2; Server/Kiosk scoped
+  types, scoped lint and isolated Kiosk build passed. Stage UI package typecheck
+  failed in unchanged interactiveServiceClient.test/pbBrowserService/pbControls
+  (implicit-any and DOM iterable/types); no errors in changed files, no root
+  typecheck or unrelated repairs. Actual model/voice/hardware remains unaccepted.
+  User explicitly approved apply/reopen. Applied Nov11 17:41 Taipei, including
+  floating text console, and restarted only managed test API+Electron. Test Nginx
+  identity, fixed desktop-profile/assets directory identity and server config
+  were preserved; no DB migration/seeding or profile reset. Served Kiosk index
+  matches the new build and entry JS returns200; normal Electron has no sandbox
+  bypass flags. Production activation unchanged and readyz healthy. Prior UI:
+  `pb-test.local/character-build/kiosk-before-20261111-174113`; private apply report
+  in the same parent directory. Actual model/voice/physical drag still require
+  operator acceptance; do not infer rendering success from service readiness.
+
+- Nov11 PB Admin character integration audited against master: editor/page,
+  upload routes/storage and Kiosk model-cache logic already largely identical.
+  Actual Admin hid avatar/card/background uploads because Vue optional Boolean
+  `allowAssetUpload` cast to false. Explicit Site-editor default true restores
+  them; template/read-only editors hide ALL uploads incl. VRMA motion slots.
+  Upload events carry the editor's current draft, so asset responses preserve
+  unsaved name/persona/PB URL. Responses require the same selected draft object
+  and Site; late uploads cannot attach to another selection. Added built-in-model
+  status, correct model-containing AIRI card ZIP hint and save/publish guidance.
+  Browser regressions8 passed (default/permissions, four asset kinds with explicit
+  publish, late response); Web scoped types/lint/build passed, no root typecheck.
+  PB Admin static update applied Nov11 17:23 Taipei with atomic per-file entry
+  publication and retained old assets; API/web/Electron PIDs unchanged, production
+  activation unchanged, test/production readyz OK. Prior replaced files under
+  `pb-test.local/avatar-build/previous-web-20261111-172328`. No data/schema/model
+  upload or published Profile changed. Fresh background Admin tab verified new
+  build and visible card/avatar upload controls; screenshot `/tmp/pb-avatar-admin-updated.png`.
+  Original operator tab was not reloaded (preserves any unsaved form). Operator
+  still needs a real model/card to accept actual rendering. User chose avatar
+  scope1+3; its implementation and approved restart are recorded above.
+
+- Nov11 PB text console now uses an owned frameless child BrowserWindow above
+  the native vendor View, retaining the SAME Vue subtree/draft/trace/submission
+  handlers via Teleport. `useTextConsoleWindow` mirrors host styles and handles
+  collapse/reset/manual-close return to the reserved row; Scene releases that
+  row while floating. Voice-only mode still omits the console. Main admits only
+  its named about:blank child from a trusted host/current origin, denies popup
+  navigation/nested popups, skips desktop preload exposure in blank children,
+  and destroys the child on host reload/shutdown. No new dependency or IPC API.
+  Chromium's about:blank referrer is origin-only; route policy checks actual
+  host URL separately. Browser console5, NativeSurface4/Conversation7, scoped
+  Kiosk+Desktop types/lint/build passed; real native fixture24 PASS. Actual
+  physical Ubuntu/Windows title-bar drag/scaling still require operator checks.
+  Desktop out rebuilt; floating UI applied with the character batch above after
+  explicit restart approval. `pb-test.local/floating-build/kiosk` is superseded
+  staging, not the running build. Do not auto-restart an unresolved ordering
+  session; production unchanged.
+
+- Nov11 PB initial native-page loading now has a translated host status/spinner
+  and aria-busy. Native View stays hidden until its current loadURL settles,
+  including bounds/occlusion updates; stale load completions cannot replace the
+  current loading/failure state. This does not assert completion of later SPA
+  menu requests. Browser regression reproduced red→green (5 tests incl. parent),
+  real synthetic Electron visibility regression red→green (23 PASS), Desktop
+  policy tests/scoped Kiosk+Desktop types/lint/build passed; no root typecheck.
+  User explicitly approved apply/reopen; new Kiosk build applied Nov11 11:44
+  Taipei and manager-owned Electron restarted with SAME desktop-profile.
+  Only test Electron/static web restarted; test API identity and production
+  activation timestamp unchanged, both readyz OK. Served index/JS verified and
+  normal Electron service remains active without sandbox-disabling flags. Old
+  static build retained at `pb-test.local/loading-build/kiosk-before-20261111-114415`.
+  Do not overwrite/restart an unresolved ordering session. Test Admin settings:
+  `/admin/system/models`, `/admin/kiosk/devices`, `/admin/kiosk/profiles`.
+
+- Nov11 PB isolated Ubuntu system created at user's request, with simple Zenity
+  **PB 測試管理** desktop/application launcher. Source/usage: `scripts/pbTest/`.
+  Private ignored state `pb-test.local/`; Docker project `webnavior-pb-test` owns
+  persistent Postgres15434 (`webnavior_pb_test`, user `pb_test`) and Redis16379.
+  Independent API15168 plus non-root Nginx15169 serve Admin and `/kiosk/` on
+  loopback. No production env is loaded; fresh secrets/PIN/assets/Electron profile,
+  fresh test accounts and initial published PB text-enabled profile; camera
+  evidence off. Existing accounts/profile edits survive restarts. Test Admin
+  `admin@webnavior.local` uses existing development-only passwordless login.
+  Models/keys are deliberately unconfigured, not copied from production. Desktop
+  manager supports start/stop/status/PIN/logs/rebuild/open Admin/open Electron.
+  Stop retains volumes/login and verifies ownership before signalling processes;
+  never invoke the production Ubuntu updater. First build and API/Admin startup,
+  browser login and stop/start identity/profile preservation verified. Original
+  production API remains ready with unchanged Nov9 activation timestamp.
+  Thirteen isolated lifecycle/guard tests and Server scoped types/seed lint passed;
+  no root typecheck. Linux Electron46.0.0-alpha.2 verified against official SHA256
+  ff40bc9371bc72c0f3aac8aae4dc6c9ae7b04358f0f81e54b3d2fea9c1a806fc.
+  Existing native fixture22 PASS, but Playwright implicitly adds --no-sandbox;
+  this fixture alone is NOT proof of normal protected launch.
+  User explicitly approved the exact-path AppArmor userns rule and personally
+  completed OS authentication. `/etc/apparmor.d/webnavior-pb-test` is now root:root
+  0644, attached only to the test runtime; hash stamp records successful parser
+  load. No global sysctl change or setuid helper installed. Initial auto-review
+  rejection was resolved by explicit consent; it is no longer a blocker.
+  Normal Electron now launches via transient user service
+  `webnavior-pb-test-electron.service`, using fixed `pb-test.local/desktop-profile`.
+  Never rename/reset this profile after operator login. Initial failed diagnostic
+  profiles were retained (no PB vendor partition existed then), not deleted or
+  copied from production. Direct tool-constrained launches were unreliable;
+  user-service lifecycle is the supported path. Chromium rewrites both initial
+  environment and argv into one title: regression reproduced red→green so manager
+  matches birthtime/binary plus full argv or exact title, preventing false startup
+  failure and duplicate launches. A secondary instance's quit/load error must not
+  be mistaken for failure of the live primary window.
+  Actual normal start, idempotent open, stop and restart all verified; process
+  remained active on the second check, exact AppArmor attachment present and NO
+  --no-sandbox/--disable-setuid-sandbox argument. Test/production readyz both OK.
+  Admin screenshot `/tmp/pb-test-admin.png`; logs in private state/logs.
+  User confirmed the visible enrollment screen. Two leftover early diagnostic
+  windows were then identified by PID birthtime/binary/profile lock (zero PB
+  vendor partitions) and closed; only the manager-owned window is kept. All
+  diagnostic profile data were preserved. Models remain unconfigured; PB account
+  login/cart and full AI acceptance are not proven.
+
+- Nov11 live audit: user confirmed production is this computer's Webnavior.
+  API systemd runs the independent release
+  `~/.local/share/webnavior/releases/meal-confirmation-20261105-215112/runtime/apps/server`
+  with `/etc/webnavior/server.env`; API/nginx active and livez/readyz healthy.
+  Actual process config and repo .env.local target THE SAME production PostgreSQL
+  `127.0.0.1:5434/webnavior` and Redis `127.0.0.1:6379/0`: do not start a dev API
+  with those defaults as an isolated test. Auth/encryption secrets match (not exposed).
+  Read-only repeatable-read audit: all49 ledger entries match candidate SQL hashes/
+  timestamps,0047/0048 already applied, no pending migrations;113 devices all valid
+  shared-settings shape. Actual assets `/var/lib/webnavior/kiosk-assets` and release
+  `data/kiosk-admin.pin` exist; repo default asset dir/PIN file do not. Preserve
+  actual asset path and configure explicit protected PIN file on cutover; do not
+  infer missing PIN from absent env keys. Eight inspected Jev/conversation-core
+  source files equal master and differ from PB candidate; live kiosk route differs
+  from both. No published PB website among54 releases. First-batch PB backend is
+  NOT a drop-in replacement for this owned-Menu production deployment.
+  Baseline counts and cutover requirements are in the Electron plan's Nov11
+  upgrade section; sanitized aggregate report `/tmp/pb-live-upgrade-audit.json`.
+  No live data/service/deployment/cart/credentials changed. Electron runtime,
+  userData/login/pending operations and media file integrity remain unverified;
+  213 active/unexpired DB session records do not establish actual active customers.
+  No backup/restore or cutover performed. Test DB/Redis must be isolated first.
+  Existing Ubuntu updater uses db:push/frontend PIN and is unsuitable for PB.
+  0048 removes old settings fields, so old-PB code-only rollback is unsafe.
+  Source regressions fixed before this audit: inherited20s reminder, preserve old
+  browser text-mode storage without granting policy authority, null→1x TTS edits
+  retain verification (real speed changes invalidate). Recovery static assets and
+  paired Web worker policy restored. Supplementary42 tests, Server/Kiosk scoped
+  types, Kiosk/Web builds and scoped lint passed; no full-project typecheck.
+
+- Nov10: user explicitly authorized starting master → PB migration and preserving
+  switchable text entry. First batch implements multi-Site device management,
+  shared revisioned settings, Server PIN access/keypad, text-only device mode,
+  loaded release identity, feedback switch and TTS speed settings. PB native
+  adapter, cart ownership/receipts, text-console dock and customer reset semantics
+  remain intact. The historical frozen 13-case run is not acceptance of this batch.
+  Service-mode/background-speech controls remain hidden: PB dine-in/table selection
+  and master Jev/core conversation/audio migration are still pending. Use the
+  existing Electron plan's Nov10 requirements for the next batch.
+  Rebuilt server-schema includes migrations0047/0048; inspect each target ledger
+  before startup (this machine already has both). Configure backend PIN/file,
+  never a frontend PIN.
+  No target database, production service, merchant cart or credentials were changed.
+  Existing Desktop dependencies were relinked offline against the unchanged lockfile.
+  Validation: Kiosk/Web/Server/Desktop scoped typechecks passed; Kiosk/Web/Desktop
+  and server-schema builds passed. Kiosk admin/settings browser tests22, native
+  overlay/text-console/settings browser tests18, Web device tests3, Server
+  settings/model tests54 + settings routes4, PB backend tests75, PB Host tests178,
+  Desktop tests5 and customer lifecycle tests10 passed (browser groups overlap).
+  Scoped lint passed; full-project typecheck and actual merchant acceptance were
+  not run. The queued published service now applies after the old visitor ends.
 
 - Nov8 Git checkpoint: user requested grouped commits on `pb_order` before
   switching branches to pull. This supersedes the earlier no-commit instruction
