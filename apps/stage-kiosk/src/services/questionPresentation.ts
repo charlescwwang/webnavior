@@ -401,7 +401,7 @@ export function operationReplyFrom(result: unknown): string | undefined {
   return typeof message === 'string' && message.trim() ? guidedBrowserReply(result as Record<string, unknown>, message) : undefined
 }
 
-/** Adds a single navigation offer at the final presentation boundary, never per tool layer. */
+/** Navigation guidance never creates a question without an explicit bound receipt. */
 function guidedBrowserReply(payload: Record<string, unknown>, message: string) {
   if (payload.source !== 'browser' || payload.pendingCustomerChoice || /[？?]|可以繼續|您可以說/.test(message) || !Array.isArray(payload.nextActions))
     return message
@@ -409,8 +409,6 @@ function guidedBrowserReply(payload: Record<string, unknown>, message: string) {
     return `${message} 請先核對餐點；確認後可在畫面繼續結帳，也可以告訴我要修改什麼。`
   if (payload.nextActions.includes('view-cart'))
     return message
-  if (payload.nextActions.includes('choose-item'))
-    return `${message} 想點哪一道？也可以一起告訴我份數。`
   return message
 }
 

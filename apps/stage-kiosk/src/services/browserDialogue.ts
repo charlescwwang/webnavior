@@ -36,6 +36,12 @@ function quantityAnswerCount(transcript: string) {
   return match ? Number(match[1]) : undefined
 }
 
+/** A Host-owned Jev selection from the exact question offered in this turn. */
+export interface SelectedBrowserAnswer {
+  questionId: string
+  choiceId: string
+}
+
 /**
  * Owns pending PB questions across utterances. An answer is only a semantic ID;
  * current session/document/cart/config evidence must still authorize consumption.
@@ -292,12 +298,15 @@ export function createBrowserDialogue(io: {
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前無法確認這份餐點，請重新選餐。' }
       return receipt(questions.presentQuantity(binding, product, request, requestTarget, orderSelection))
     },
-    async answer(raw: unknown, transcript: string, observe: () => Promise<unknown>, isCurrent: () => boolean, utteranceId?: number) {
+    async answer(raw: unknown, transcript: string, observe: () => Promise<unknown>, isCurrent: () => boolean, utteranceId?: number, options: { selectedAnswer?: SelectedBrowserAnswer } = {}) {
       const binding = snapshot(raw)
       const pending = binding && questions.pending(binding)
       if (!pending || !isCurrent())
         return
-      if (pending.kind === 'slot') {
+      const selectedAnswer = options.selectedAnswer
+      if (selectedAnswer && (selectedAnswer.questionId !== pending.question.questionId || !pending.question.choices.some(choice => choice.id === selectedAnswer.choiceId)))
+        return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前問題已變更，請依畫面上的問題繼續。' } }
+      if (!selectedAnswer && pending.kind === 'slot') {
         const count = orderSlotCount(transcript, pending.slot)
         if (count !== undefined) {
           const observed = await observe()
@@ -313,7 +322,7 @@ export function createBrowserDialogue(io: {
           return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '餐點或購物車狀態已變更，請重新確認。' } }
         }
       }
-      if (pending.kind === 'quantity') {
+      if (!selectedAnswer && pending.kind === 'quantity') {
         // Only a whole, explicit count fills this slot locally. Attached options,
         // other products, refusals and conversational yes/no remain model/domain
         // questions; none can silently become a default serving.
@@ -333,7 +342,7 @@ export function createBrowserDialogue(io: {
         }
       }
       const literal = namedChoice(pending, transcript) ?? (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined ? 'yes' : browserQuestionChoice(transcript, pending.question))
-      const decision: AnswerDecision = literal ? { kind: 'ANSWER', choiceId: literal, provider: 'main' } : await io.answer({ questionId: pending.question.questionId, transcript, cartContext: parse(factsSchema, raw).cart }).catch((): AnswerDecision => ({ kind: 'UNCERTAIN', provider: 'unavailable' }))
+      const decision: AnswerDecision = selectedAnswer ? { kind: 'ANSWER', choiceId: selectedAnswer.choiceId, provider: 'system-one' } : literal ? { kind: 'ANSWER', choiceId: literal, provider: 'main' } : await io.answer({ decisionSource: 'main', questionId: pending.question.questionId, transcript, cartContext: parse(factsSchema, raw).cart }).catch((): AnswerDecision => ({ kind: 'UNCERTAIN', provider: 'unavailable' }))
       // Re-observe after model IO: a touch, new price, reload or customer switch
       // during that wait invalidates the original question instead of rebinding it.
       const observed = await observe()

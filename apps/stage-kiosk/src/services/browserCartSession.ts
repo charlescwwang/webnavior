@@ -60,11 +60,19 @@ export function createBrowserCartSession(storage: Pick<Storage, 'getItem' | 'set
     /** A fresh empty cart can transfer automatically; a nonempty unowned cart requires review. */
     check,
     /** Checks a newly loaded page before exposing its ordering controls. */
-    async prepare(owner: string, serviceUrl: string, read: () => Promise<unknown>, isCurrent: () => boolean): Promise<'ready' | 'blocked' | 'stale'> {
+    async prepare(owner: string, serviceUrl: string, read: () => Promise<unknown>, isCurrent: () => boolean): Promise<'ready' | 'blocked' | 'stale' | 'table-only'> {
       const raw = await read()
       if (!isCurrent())
         return 'stale'
       parse(looseObject({ ok: literal(true) }), raw)
+      const deferred = safeParse(looseObject({ ok: literal(true), page: literal('table'), cartAdmission: literal('after-table-entry') }), raw)
+      if (deferred.success && !('cart' in deferred.output)) {
+        // PB cannot inspect a first-time guest's cart before Start. Table tools
+        // remain available, but ownership is not granted; menu admission retries.
+        const journey = readPbJourney(serviceUrl)
+        if (journey?.tablePath === new URL(serviceUrl).pathname)
+          return blocked.value ? 'blocked' : 'table-only'
+      }
       return check(owner, serviceUrl, raw) ? 'ready' : 'blocked'
     },
 

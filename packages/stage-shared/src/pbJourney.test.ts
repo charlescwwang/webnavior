@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { isPbJourneyPage, isPbTableEntryUrl, readPbJourney } from './pbJourney'
+import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, readPbJourney } from './pbJourney'
 
 const entry = 'https://app-205-rd.esgpb.com/order/store/1kAMNok/internal_use/menu/select-table'
 it('admits only the fixed local PB simulator without extending the merchant journey', () => {
@@ -47,4 +47,17 @@ it('admits the approved current dining journey without crossing flow, origin or 
   expect(isPbJourneyPage(current, current.replace('internal_use', 'pick_up'))).toBe(false)
   expect(isPbJourneyPage(current, current.replace('1kgJeql', 'other'))).toBe(false)
   expect(isPbTableEntryUrl(current, 'https://app.esgpb.com/order/t/synthetic-token')).toBe(true)
+})
+
+// Report: this chat, 2026-11-15 — PB submission reaches choosePayment, not payment.
+it('acknowledges the current payment chooser only within the configured order journey', () => {
+  const local = 'http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table'
+  const result = local.replace('/menu/select-table', '/orders/TEST-1')
+  expect(isPbOrderResultUrl(local, `${result}/choosePayment`)).toBe(true)
+  expect(isPbOrderResultUrl(local, result)).toBe(true)
+  expect(isPbOrderResultUrl(local, `${result}/payment`)).toBe(false)
+  expect(isPbOrderResultUrl(local, `${result}/choosePayment?redirect=elsewhere`)).toBe(false)
+  expect(isPbOrderResultUrl(local, result.replace('1kgJeql', 'other'))).toBe(false)
+  expect(isPbOrderResultUrl(local, result.replace(':5188', ':5189'))).toBe(false)
+  expect(isPbOrderResultUrl(local, result.replace('TEST-1', 'create'))).toBe(false)
 })

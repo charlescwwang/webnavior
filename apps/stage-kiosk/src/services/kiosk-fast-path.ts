@@ -470,11 +470,11 @@ async function resolveFastPath(input: {
     let result = await (input.source?.execute ?? ((args: Record<string, unknown>) => input.webMcp.execute(executeTool!, args)))({ candidateId: action.id, ...(decision.priceChoiceId ? { priceChoiceId: decision.priceChoiceId } : {}), ...(decision.searchInterpretation ? { searchInterpretation: decision.searchInterpretation } : {}), ...(decision.ingredientFilters ? { ingredientFilters: decision.ingredientFilters } : {}) })
     executionStarted = false
     input.onTrace?.({ browserContext: rawCandidates, decision, decisionSource, executionResult: result, transcript: input.transcript })
-    // A recommendation can finish with both dish evidence and a question.
-    // Keep that receipt on the normal presentation path: converting it to a
-    // bare clarification loses question validation and reply-time visual cues.
-    const presentationQuestion = result && typeof result === 'object' && 'presentation' in result && 'pendingCustomerChoice' in result ? presentedQuestionFrom(result.pendingCustomerChoice) : undefined
-    if (input.source && !presentationQuestion && result && typeof result === 'object' && 'status' in result && result.status === 'clarification' && 'customerMessage' in result && typeof result.customerMessage === 'string') {
+    // Any issued structured question (including cart review without product
+    // visuals) needs normal validation/presentation. A bare clarification
+    // string loses the question and its answer correlation.
+    const receiptQuestion = result && typeof result === 'object' && 'pendingCustomerChoice' in result ? presentedQuestionFrom(result.pendingCustomerChoice) : undefined
+    if (input.source && !receiptQuestion && result && typeof result === 'object' && 'status' in result && result.status === 'clarification' && 'customerMessage' in result && typeof result.customerMessage === 'string') {
       await notifyExecuted(result)
       return { kind: 'CLARIFICATION', prompt: result.customerMessage, ...('pendingCustomerChoice' in result ? { question: presentedQuestionFrom(result.pendingCustomerChoice) } : {}), decisionState }
     }

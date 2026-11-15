@@ -435,14 +435,14 @@ export function createKioskService(db: Database): KioskService {
       if (!session || session.state !== 'active' || session.accessReleasedAt)
         return denied
       const entries = await tx.select().from(schema.kioskInteractionEntries).where(eq(schema.kioskInteractionEntries.visitorSessionId, session.id)).orderBy(asc(schema.kioskInteractionEntries.sequence))
-      const release = input.plan.source === 'system-one' ? await tx.query.kioskProfileReleases.findFirst({ where: eq(schema.kioskProfileReleases.id, session.profileReleaseId) }) : undefined
+      const release = await tx.query.kioskProfileReleases.findFirst({ where: eq(schema.kioskProfileReleases.id, session.profileReleaseId) })
       const binding = release && [release.snapshot.interactiveService, ...(release.snapshot.orderingSites ?? [])].find(site => site.id === session.serviceId)
       const admitted = resolvePlan(entries, input.plan, binding?.catalogLabels)
       if (!admitted || entries.some(entry => entry.metadata.browserPlanClaim === admitted.key))
         return denied
       await tx.update(schema.kioskVisitorSessions).set({ lastSequence: session.lastSequence + 1 }).where(eq(schema.kioskVisitorSessions.id, session.id))
       await tx.insert(schema.kioskInteractionEntries).values({ visitorSessionId: session.id, sequence: session.lastSequence + 1, kind: 'service_event', content: 'Browser plan admitted once; vendor effect remains unverified.', metadata: { browserPlanClaim: admitted.key, userEntryId: admitted.userEntryId } })
-      return { choice: 'ALLOW', provider: admitted.provider, checks: [{ stage: 'effect', choice: 'ALLOW', provider: admitted.provider, reason: 'Current server-issued plan matched and consumed; fresh document/cart validation still required.' }] }
+      return { choice: 'ALLOW', provider: admitted.provider, admission: 'issued-plan', checks: [{ stage: 'effect', choice: 'ALLOW', provider: admitted.provider, reason: 'Current server-issued plan matched and consumed; fresh document/cart validation still required.' }] }
     })
   }
 

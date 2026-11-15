@@ -13,7 +13,7 @@ import { createRetryContext, isKioskConversationRetrySafeTool, readConversationR
 // Report: this chat, 2026-10-29; PB recovery/retry incorrectly required owned Menu tools.
 it('recovers a browser service and reads its own fresh retry context without Menu tools', async () => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
-  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh-menu-cart', canRetry: true }))
+  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh-menu-cart', canRetry: true, canReset: true }))
   const client = { tools: shallowRef([tool]), execute, recover: vi.fn(async () => {}) }
   await recoverConversationService(client, [])
   expect(client.recover).toHaveBeenCalledOnce()
@@ -23,13 +23,13 @@ it('recovers a browser service and reads its own fresh retry context without Men
 
 it.each([false, undefined])('keeps browser recovery paused without verified settled state (%s)', async (canRetry) => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
-  const client = { tools: shallowRef([tool]), execute: vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry })), recover: vi.fn(async () => {}) }
+  const client = { tools: shallowRef([tool]), execute: vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry, canReset: false })), recover: vi.fn(async () => {}) }
   await expect(recoverConversationService(client, [])).rejects.toThrow()
 })
 
 it('rejects a retry after the external document or its live data changed', async () => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
-  let state = { source: 'browser', documentId: 'first', contextKey: 'menu-v1-cart-v1', canRetry: true }
+  let state = { source: 'browser', documentId: 'first', contextKey: 'menu-v1-cart-v1', canRetry: true, canReset: true }
   const client = { tools: shallowRef([tool]), execute: vi.fn(async () => state) }
   const contextKey = await readConversationRetryContext(client)
   const retry = { state: 'available' as const, text: '原句', sessionId: 'visitor', iframeRevision: 1, requestId: 1, contextKey }
@@ -171,7 +171,7 @@ it.each([false, true])('resets from table entry with an actually %s occupied car
   let documentId = 'table-document'
   const execute = vi.fn(async (tool: ServiceTool) => {
     if (tool.name === 'browser_recovery_context')
-      return { source: 'browser', documentId, contextKey: 'fresh', canRetry: true }
+      return { source: 'browser', documentId, contextKey: 'fresh', canRetry: true, canReset: true }
     if (tool.name === 'browser_cart_get')
       return { ok: true, page: documentId === 'table-document' ? 'table' : 'menu', selectedTable: 'B3 吧檯', cart: { tableName: 'B3 吧檯', version: 'fresh', lines: occupied ? [{}] : [] } }
     if (tool.name === 'browser_start_ordering') {
@@ -195,14 +195,54 @@ it.each([false, true])('resets from table entry with an actually %s occupied car
   }
 })
 
+// Report: this chat, Nov15; the original merchant Start was blocked by its SSR mask.
+it('retains a rejected Start reason and never proceeds to clear the cart', async () => {
+  const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === 'browser_recovery_context')
+      return { source: 'browser', documentId: 'table', contextKey: 'fresh', canRetry: true, canReset: true }
+    if (tool.name === 'browser_cart_get')
+      return { ok: true, page: 'table', selectedTable: 'A3 桌', cart: { lines: [{}] } }
+    return { ok: false, error: '「開始點餐」被其他畫面遮住，請確認後再試。' }
+  })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'table' }
+  await expect(resetConversationService(client)).rejects.toThrow('「開始點餐」被其他畫面遮住')
+  expect(execute).not.toHaveBeenCalledWith(tools[3], expect.anything())
+})
+
 // Report: this chat, Nov15; early preparation must preserve unknown merchant-effect barriers.
+it.each([false, true])('clears a retired document cart marker only through explicit reset (occupied=%s)', async (occupied) => {
+  // A stored cart marker prohibits replaying the old purchase, but must not
+  // prohibit the customer's separate request to discard that unfinished cart.
+  const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
+  let started = false
+  const execute = vi.fn(async (tool: ServiceTool) => {
+    if (tool.name === 'browser_recovery_context')
+      return { source: 'browser', documentId: 'current-document', contextKey: 'retired-cart', canRetry: false, canReset: true }
+    if (tool.name === 'browser_cart_get')
+      return { ok: true, page: started ? 'menu' : 'table', selectedTable: 'B3 吧檯', cart: { tableName: 'B3 吧檯', lines: occupied ? [{}] : [] } }
+    if (tool.name === 'browser_start_ordering') {
+      started = true
+      return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'B3 吧檯', customerMessage: '正在準備菜單。' }
+    }
+    return { ok: true, status: 'customer-reset', cartCleared: true, documentId: 'current-document' }
+  })
+  const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'current-document' }
+  expect(await resetConversationService(client)).toBe('preserved')
+  expect(execute).toHaveBeenCalledWith(tools[3], {})
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_customer_reset')).toHaveLength(1)
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_start_ordering')).toHaveLength(occupied ? 1 : 0)
+  expect(client.refresh).toHaveBeenCalledOnce()
+})
+
+// Report: this chat, Nov15; both Restart buttons exposed an internal English guard error.
 it('does not enter the menu or dismiss a table reset while a previous operation is unresolved', async () => {
   const tools = ['browser_recovery_context', 'browser_cart_get', 'browser_start_ordering', 'browser_customer_reset'].map(name => ({ name, description: name, inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }))
   const execute = vi.fn(async (tool: ServiceTool) => tool.name === 'browser_cart_get'
     ? { ok: true, page: 'table', selectedTable: 'B3 吧檯', cart: { lines: [] } }
-    : { source: 'browser', documentId: 'table', contextKey: 'unsettled', canRetry: false })
+    : { source: 'browser', documentId: 'table', contextKey: 'unsettled', canRetry: false, canReset: false })
   const client = { tools: shallowRef(tools), execute, refresh: vi.fn(), waitUntilReady: vi.fn(async () => {}), getDocumentId: () => 'table' }
-  await expect(resetConversationService(client)).rejects.toThrow('not settled')
+  await expect(resetConversationService(client)).rejects.toThrow('上一筆餐點操作的結果仍在確認')
   expect(execute).not.toHaveBeenCalledWith(tools[2], expect.anything())
   expect(execute).not.toHaveBeenCalledWith(tools[3], expect.anything())
   expect(client.refresh).not.toHaveBeenCalled()
@@ -219,7 +259,7 @@ it('waits for the actual menu after a table Start acknowledgement before clearin
       return { ok: true, page: waiting ? 'table' : 'menu', selectedTable: 'B3 吧檯', cart: { tableName: 'B3 吧檯', lines: [{}] } }
     }
     if (tool.name === 'browser_recovery_context')
-      return { source: 'browser', documentId: 'spa-document', contextKey: 'fresh', canRetry: true }
+      return { source: 'browser', documentId: 'spa-document', contextKey: 'fresh', canRetry: true, canReset: true }
     if (tool.name === 'browser_start_ordering') {
       started = true
       return { ok: true, source: 'browser', code: 'table-entry-starting', effect: 'none', selectedTable: 'B3 吧檯', customerMessage: '正在準備菜單。' }
@@ -236,7 +276,7 @@ it('waits for the actual menu after a table Start acknowledgement before clearin
 // was rejected by the strict recovery schema before Main could read the menu.
 it('admits native operation timing on a fresh browser recovery receipt', async () => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
-  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh-menu-cart', canRetry: true, execution: { documentId: 'document', operationId: 'recovery', durationMs: 25, steps: [] } }))
+  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh-menu-cart', canRetry: true, canReset: true, execution: { documentId: 'document', operationId: 'recovery', durationMs: 25, steps: [] } }))
   expect(await readConversationRetryContext({ tools: shallowRef([tool]), execute })).toBe(JSON.stringify(['browser', 'document', 'fresh-menu-cart']))
 })
 
@@ -249,7 +289,7 @@ it('stops retry-context IO after an effect and cannot revive it from a late read
   const context = createRetryContext({ tools: shallowRef([tool]), execute })
   const first = context.capture()
   context.invalidate()
-  settle({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry: true })
+  settle({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry: true, canReset: true })
   expect(await first).toBeUndefined()
   expect(await context.capture()).toBeUndefined()
   expect(execute).toHaveBeenCalledOnce()
@@ -257,11 +297,11 @@ it('stops retry-context IO after an effect and cannot revive it from a late read
 
 it('anchors retry to the original demand and rejects later changed state', async () => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
-  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'first', canRetry: true }))
+  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'first', canRetry: true, canReset: true }))
   const context = createRetryContext({ tools: shallowRef([tool]), execute })
   const key = await context.capture()
   expect(key).toContain('first')
-  execute.mockResolvedValue({ source: 'browser', documentId: 'document', contextKey: 'changed', canRetry: true })
+  execute.mockResolvedValue({ source: 'browser', documentId: 'document', contextKey: 'changed', canRetry: true, canReset: true })
   expect(await context.capture()).toBe(key)
   expect(execute).toHaveBeenCalledOnce()
   const current = await readConversationRetryContext({ tools: shallowRef([tool]), execute })
@@ -286,7 +326,7 @@ it('disables retry without rejecting a new demand when its anchor read fails', a
 
 it('never grants retry authority from an unsettled browser receipt', async () => {
   const tool = { name: 'browser_recovery_context', description: 'Host context', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
-  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry: false }))
+  const execute = vi.fn(async () => ({ source: 'browser', documentId: 'document', contextKey: 'fresh', canRetry: false, canReset: false }))
   const context = createRetryContext({ tools: shallowRef([tool]), execute })
   await expect(context.capture()).resolves.toBeUndefined()
   await expect(readConversationRetryContext({ tools: shallowRef([tool]), execute })).rejects.toThrow('not settled')

@@ -5,7 +5,7 @@ import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/service
 
 import type { BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 import type { createBrowserCartSession } from './browserCartSession'
-import type { createBrowserDialogue, OrderEvidence } from './browserDialogue'
+import type { createBrowserDialogue, OrderEvidence, SelectedBrowserAnswer } from './browserDialogue'
 import type { createBrowserPresentation } from './browserPresentation'
 import type { AdditionProposal, QuestionSnapshot } from './browserQuestionWindow'
 import type { RecommendationCriteria } from './recommendationSession'
@@ -59,7 +59,7 @@ interface VerifiedReceipt {
 
 // Server admission compares transcript with this turn's stored customer text.
 // Matching text and orderEvidence may include prior answers; transcript may not.
-let active: TaskQuestions & { tableSelectionRequired?: boolean, cartOwner?: { owner: string, serviceUrl: string }, answerResolved?: boolean, previousProposal?: AdditionProposal, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, repairs: number, receipts: Map<string, VerifiedReceipt> } | undefined
+let active: TaskQuestions & { tableSelectionRequired?: boolean, cartOwner?: { owner: string, serviceUrl: string }, answerResolved?: boolean, selectedAnswer?: SelectedBrowserAnswer, selected?: { productRef: string, request: string, requestTarget?: string, requestedQuantity?: number, orderSelection?: true }, confirmed?: { proposal: AdditionProposal, binding: QuestionSnapshot }, confirmedOrder?: { proposals: AdditionProposal[], binding: QuestionSnapshot, evidence?: OrderEvidence }, text: string, readonly transcript: string, decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean, orderEvidence?: OrderEvidence, receipts: Map<string, VerifiedReceipt> } | undefined
 const writes = new Set(['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'])
 const orderingAnswerFactsSchema = looseObject({ products: array(looseObject({ ref: string(), name: string(), configurations: array(productConfigurationSchema) })) })
 const tableEntrySchema = looseObject({ ok: literal(true), source: literal('browser'), page: literal('table'), code: literal('table-selection-required'), tableChoices: array(string()), selectedTable: optional(string()), customerMessage: string() })
@@ -95,7 +95,7 @@ function missingTableMessage(choices: readonly string[], transcript: string) {
 
 /** Owns one current utterance; only validated one-use question answers extend its target scope. */
 export function beginBrowserCartTask(text: string, options: TaskQuestions & { decide: (proposal: BrowserEffect, plan: Pick<BrowserPlan, 'toolName' | 'arguments'>) => Promise<EffectDecision>, isCurrent: () => boolean }) {
-  const task: NonNullable<typeof active> = { text: text.replaceAll(/\s/g, ''), transcript: text, ...options, repairs: 0, receipts: new Map<string, VerifiedReceipt>() }
+  const task: NonNullable<typeof active> = { text: text.replaceAll(/\s/g, ''), transcript: text, ...options, receipts: new Map<string, VerifiedReceipt>() }
   active = task
   return () => {
     if (active === task)
@@ -156,7 +156,7 @@ function ownsCurrentCart(task: NonNullable<typeof active>) {
 
 /**
  * New products require current formal names or a sealed confirmation. Existing
- * rows can be referred to by their verified configuration after semantic checks.
+ * rows can be referred to by their verified configuration after exact issued-plan admission.
  * The cart coordinator still owns freshness and full-effect verification.
  * A consumed question can select a target or authorize one complete addition.
  */
@@ -475,7 +475,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
       const denied = admitCart(task, facts, true)
       if (denied)
         return denied
-      const answer = await task.dialogue.answer(facts, task.transcript, observe, () => active === task && task.isCurrent(), task.utteranceId)
+      const answer = await task.dialogue.answer(facts, task.transcript, observe, () => active === task && task.isCurrent(), task.utteranceId, { selectedAnswer: task.selectedAnswer })
       if (answer?.kind === 'receipt' && 'completeOrder' in answer.result) {
         task.confirmed = undefined
         task.confirmedOrder = answer.result.completeOrder
@@ -544,8 +544,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
         return executeBrowserCartTool(client, search, { query: answer.query })
       }
       if (answer?.kind === 'new-request') {
-        task.previousProposal = answer.previousProposal
-        return { ...asBrowserFacts(facts), previousProposal: answer.previousProposal, explanation: '顧客有更正或新需求，舊確認已取消。若沿用該品項更正設定，必須重新呈現完整確認；尚未授權任何加購。明確其他品項則依整句重新處理。' }
+        return { ...asBrowserFacts(facts), previousProposal: answer.previousProposal, explanation: '顧客有更正或新需求，舊確認已取消。請依完整原句與最新餐點設定重新選擇操作；舊問題不代表新的購買授權。' }
       }
       if (answer?.kind === 'order') {
         task.confirmedOrder = answer
@@ -668,26 +667,6 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
     }
     return result
   }
-  if (task.previousProposal && task.dialogue && tool.name === 'browser_cart_add' && input.productRef === task.previousProposal.productRef && !task.text.includes(task.previousProposal.productName.replaceAll(/\s/g, '')))
-    return task.dialogue.presentAddition(rawFacts, input)
-  if (task.selected && task.dialogue) {
-    if (tool.name !== 'browser_cart_add' || input.productRef !== task.selected.productRef)
-      return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '剛才只選定品項，請先確認完整餐點設定；購物車尚未變更。' }
-    if (task.selected.requestedQuantity !== undefined && input.quantity !== task.selected.requestedQuantity)
-      return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, requestedQuantity: task.selected.requestedQuantity, explanation: '份數必須使用顧客剛回答的 requestedQuantity；請修正同一餐點的完整提案，尚未加入購物車。' }
-    try {
-      const selection = parse(strictObject({ version: string(), variantRef: string(), choices: array(strictObject({ ref: string(), quantity: number() })) }), input.selection)
-      const product = parse(orderingAnswerFactsSchema, rawFacts).products.find(product => product.ref === task.selected!.productRef)
-      const configuration = product?.configurations.find(configuration => configuration.variantRef === selection.variantRef)
-      if (!configuration || input.version !== facts.cart.version || resolveSelection(configuration, selection, typeof input.note === 'string' ? input.note : '').unitPrice !== input.unitPrice)
-        throw new Error('餐點設定或售價與目前資料不同。')
-    }
-    catch (error) {
-      return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, error: errorMessageFrom(error), explanation: '請依最新餐點設定與售價修正同一需求，尚未加入購物車。' }
-    }
-    // Keep the selected target/count, then run normal semantic admission.
-    // A completed answer is not a reason to ask the same purchase again.
-  }
   const names: string[] = []
   const selectedLabels: string[] = []
   const selectedFacts: string[] = []
@@ -710,15 +689,6 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           if (product.name === '周氏水餃(最低8顆)')
             selectedFacts.push('周氏水餃基本每份8顆，水餃加量選項是每份額外顆數；每份10顆代表加量2顆。')
           serving = { productName: product.name, variantName: configuration.variantRef ? configuration.name : '', options: [] }
-          for (const choice of configuration.groups.flatMap(group => group.choices)) {
-            if (task.text.includes(choice.name.replaceAll(/\s/g, '')) && !selection.choices.some(selected => selected.ref === choice.ref)) {
-              // A mention may refuse an option. Zero is an explicit omission
-              // constraint: semantic extraction must agree before the base meal
-              // can be added; a positive request instead requires repair.
-              selectedDeltas.push({ name: choice.name, kind: 'option', mode: 'increase', quantity: 0 })
-              selectedFacts.push(`PB 將「${choice.name}」列為「${product.name}」的加購選項，每個另加 ${choice.unitPrice} 元。`)
-            }
-          }
           if (configuration.variantRef)
             names.push(configuration.name)
           for (const choice of selection.choices) {
@@ -779,64 +749,33 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
   const semanticDecision = await task.decide({ transcript: task.transcript, action, completedEffects, completedAdditions, servingKey, deltas, cartContext: { version: facts.cart.version, lines: facts.cart.lines.map(line => ({ name: line.name, quantity: line.quantity, description: line.description ?? '', note: line.note ?? '', options: line.options })) }, cartTarget, serving, copySource: copySource ? { name: copySource.name, quantity: copySource.quantity, configuration: copySource.description ?? '', note: copySource.note ?? '', options: copySource.options } : undefined, note: typeof input.note === 'string' ? input.note : '', storeFacts: [...selectedFacts, ...(task.orderEvidence ? [`原始點餐需求：${task.orderEvidence.request}。已確認的問題與顧客回答：${task.orderEvidence.answers.map(item => `問題「${item.question}」，顧客回答「${item.answer}」`).join('；')}。`] : []), ...(original ? [`PB 現在指定的購物車行／同配置群組是「${original.name}」合計 ${originalQuantity} 份。整組移除代表移除目前這 ${originalQuantity} 份；這個原有數量不是顧客對新餐指定的份數。`] : [])].join(' '), description: `${description} 每份餐點的選項：${selectedLabels.join('、') || '沒有加購'}。單份售價 ${input.unitPrice ?? '沿用原行'}。備註：${input.note ?? ''}。` }, { toolName: parse(browserWriteToolNameSchema, tool.name), arguments: JSON.stringify(input) })
   if (active !== task || !task.isCurrent() || !ownsCurrentCart(task))
     return { ok: false, source: 'browser', status: 'rejected', customerMessage: '這次需求已結束，尚未變更購物車。' }
-  if (semanticDecision.choice === 'PRESERVE') {
-    // Preservation describes the whole utterance, not the retained half of a change.
-    // Refuse the model's proposed write and obtain a fresh owned readback instead.
-    const review = client.tools.value.find(tool => tool.name === 'browser_cart_review')
-    if (!review)
-      return { ok: false, source: 'browser', status: 'rejected', effect: 'none' }
-    const receipt = await executeBrowserCartTool(client, review, {})
-    const current = safeParse(looseObject({ ok: boolean(), source: string(), cart: looseObject({ version: string() }), customerMessage: string() }), receipt)
-    if (!current.success || !current.output.ok || current.output.source !== 'browser' || active !== task || !task.isCurrent() || !ownsCurrentCart(task))
-      return receipt
-    task.onRequestComplete?.()
-    return { ...current.output, status: 'preserved', effect: 'none', semanticDecision, customerMessage: `餐點維持不變。${current.output.customerMessage}` }
-  }
-  if (semanticDecision.choice === 'READ_ONLY')
-    return { ok: true, source: 'browser', status: 'clarification', effect: 'none', dataOnly: true, semanticDecision, products: facts.products, explanation: '原句是資訊詢問，不是購買授權。尚未變更購物車；依完整問題使用只讀工具取得並呈現相應資訊，不用整份菜單代替答案。' }
-  if (semanticDecision.choice === 'DIFFERENT_OPERATION')
-    return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, semanticDecision, requiredAction: semanticDecision.requiredAction, explanation: '本句要求另一種完整操作，尚未寫入。換餐只能使用 browser_cart_replace，不得拆成 remove/add。請依 requiredAction 與最新事實重新提出完整工具呼叫。' }
-  // Slot presence is not semantic permission. Purpose/ownership were checked
-  // above; this only prevents an invented default meal count from reaching PB.
-  const selectedCount = task.selected?.productRef === replacement?.ref && task.selected?.requestedQuantity === input.quantity
-  if (action === 'add' && task.dialogue && replacement && !selectedCount && explicitServingQuantities(task.transcript, { productName: replacement.name }).length === 0) {
-    if (!mentionsProduct(task, replacement.name, facts.products))
-      return presentQuestion(rawFacts, replacement.name)
-    return task.dialogue.presentQuantity(rawFacts, replacement.ref, task.transcript)
+  const issuedPlan = semanticDecision.choice === 'ALLOW' && semanticDecision.admission === 'issued-plan'
+  if (!issuedPlan)
+    return { ok: true, source: 'browser', status: 'clarification', effect: 'none', semanticDecision, customerMessage: '請再說明要調整的餐點與份數；目前尚未變更購物車。' }
+  if (action === 'add' || action === 'replace') {
+    try {
+      const selection = parse(strictObject({ version: string(), variantRef: string(), choices: array(strictObject({ ref: string(), quantity: number() })) }), input.selection)
+      const product = parse(orderingAnswerFactsSchema, rawFacts).products.find(product => product.ref === replacement?.ref)
+      const configuration = product?.configurations.find(configuration => configuration.variantRef === selection.variantRef)
+      if (!configuration || input.version !== facts.cart.version || resolveSelection(configuration, selection, typeof input.note === 'string' ? input.note : '').unitPrice !== input.unitPrice)
+        throw new Error('餐點設定或售價與目前資料不同。')
+    }
+    catch {
+      return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, requiredAction: action, explanation: '餐點設定、售價或購物車版本已不同；請依最新商品資料修正同一需求，尚未變更購物車。' }
+    }
   }
   if (ambiguous)
     return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '目前有多筆同名商品，請先在畫面確認要操作的那一筆；尚未變更購物車。' }
-
-  if (semanticDecision.choice === 'REVISE' && task.repairs++ < 1)
-    return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, semanticDecision, requiredAction: action, explanation: `原句已清楚，但提案參數不符，尚未寫入。請依核對原因修正本輪原需求：${semanticDecision.checks?.at(-1)?.reason ?? ''}` }
-  if (!copySource && names.some(name => !mentionsProduct(task, name, facts.products)) && tool.name === 'browser_cart_add' && task.dialogue) {
-    // Semantic resolution may propose a current SKU for an unfamiliar spoken
-    // name. It still cannot write: ask with the official name and complete
-    // configuration, then require the existing one-use customer confirmation.
-    if (semanticDecision.choice === 'ALLOW')
-      return task.dialogue.presentAddition(rawFacts, input)
-    return task.dialogue.presentProducts(rawFacts, replacement?.name ?? '', task.transcript)
-  }
-  if (semanticDecision.choice !== 'ALLOW')
-    return { ok: true, source: 'browser', status: 'clarification', effect: 'none', semanticDecision, customerMessage: '尚未確認您要進行這項購物車操作，請重新確認需求；目前尚未變更購物車。' }
-  // The selected existing configuration may be referred to as "the one with
-  // rice" when the verified replacement retains its SKU. A different SKU still
-  // requires its formal target name; semantic allowance alone cannot invent it.
-  const sameProductReplacement = action === 'replace' && !!original?.productRef && original.productRef === replacement?.ref
-  const preservedSource = copySource ?? (sameProductReplacement ? original : undefined)
-  const preservedName = (name: string) => preservedSource && (name === preservedSource.name || preservedSource.options?.some(option => option.name === name && serving?.options.some(selected => selected.name === name && selected.quantity === option.quantity)))
-  if (names.some(name => !mentionsProduct(task, name, facts.products) && !preservedName(name) && (!cartTarget || semanticDecision.choice !== 'ALLOW' || name !== original?.name || (name === replacement?.name && !sameProductReplacement)))) {
-    // A replacement's new SKU was independently checked above, but its spoken
-    // name is still unconfirmed. Ask about that observed candidate only; the
-    // existing meal and all write authority remain unchanged until a new turn.
-    if (action === 'replace' && replacement && task.dialogue)
-      return task.dialogue.presentProducts(rawFacts, replacement.name, task.transcript)
-    const choices = needsProducts ? facts.products : facts.cart.lines
-    return { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: `請問您要${choices.map(product => product.name).join('、')}中的哪一項？目前尚未變更購物車。` }
-  }
   const result = await dispatchCartWrite(client, tool, input)
+  const unexecuted = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none'), reason: literal('stale-cart'), execution: looseObject({ steps: array(object({})) }) }), result)
+  if (unexecuted.success && unexecuted.output.execution.steps.length === 0 && active === task && task.isCurrent() && !task.receipts.size) {
+    // Native validation proved no dispatch. Keep the exact request for Main's
+    // normal fresh-read/issued-plan admission flow; never replace only its version
+    // or retry it here after a pickup, manual cart or configuration change.
+    return { ...unexecuted.output, ok: true, status: 'proposal_rejected', dataOnly: true, needsAssistant: true, originalRequest: task.transcript, requiredAction: action, ...(replacement ? { selectedProduct: { productRef: replacement.ref, name: replacement.name } } : {}), requestedQuantity: input.quantity, explanation: '購物車資料已更新，這次操作尚未派送。保留原需求、餐點、份數及設定，重新讀取完整最新資料並核對後再提出操作；不要只替換版本，不重做任何已完成或結果不明的操作。' }
+  }
   if (result && typeof result === 'object' && 'ok' in result && result.ok === true && 'status' in result && result.status === 'verified' && 'cart' in result && result.cart && typeof result.cart === 'object' && 'version' in result.cart && typeof result.cart.version === 'string') {
-    const receipt = { ...result, semanticDecision }
+    const receipt = { ...result, planAdmission: semanticDecision, completionScope: 'tool-call', originalRequest: task.orderEvidence?.request ?? task.transcript, completedEffects: [...completedEffects, ...('effectMessage' in result && typeof result.effectMessage === 'string' ? [result.effectMessage] : [])] }
     task.receipts.set(key, { version: result.cart.version, toolName: parse(browserWriteToolNameSchema, tool.name), result: receipt, ...(action === 'add' && servingKey ? { addition: { servingKey, note: typeof input.note === 'string' ? input.note : '', quantity: Number(input.quantity) } } : {}) })
     // This is completion coverage, never operation authority: Main selected the
     // tool, the Server admitted its exact plan, and the browser verified it above.
@@ -995,7 +934,7 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
       task.orderEvidence = accepted.evidence
       task.text = [accepted.evidence.request, ...accepted.evidence.answers.map(item => item.answer), task.transcript].join('\n').replaceAll(/\s/g, '')
       // The current customer supplied this count to a purchase question. Main
-      // may finish its notes/options, but still needs independent plan admission.
+      // may finish its notes/options, but still needs its exact issued plan admitted.
       task.readOnly = false
     }
   }
@@ -1067,16 +1006,22 @@ export async function readBrowserConversation(client: Pick<ReturnType<typeof cre
  * Invoke only after recording this utterance. The returned operation rechecks the
  * task and native bindings; it cannot construct a purchase or replay a batch.
  */
-export async function prepareBrowserQuestionAnswer(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>) {
+export async function prepareBrowserQuestionAnswer(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, input?: Record<string, unknown>) {
   const task = active
   const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
   if (!task?.dialogue?.hasPending() || task.answerResolved || !task.isCurrent() || !read)
     return
   const facts = await client.execute(read, { includeCatalog: true })
-  // A selected Jev answer may use any wording. The semantic resolver still
-  // checks the full answer and freshness; only the pre-Main shortcut is literal.
+  // Keep the exact already-selected Jev answer. Question consumption still
+  // checks visitor, document, cart and expiry; another model gets no vote.
   if (active !== task || !task.isCurrent() || admitCart(task, facts) || (task.intentSource !== 'jev' && !task.dialogue.canAnswerLocally(facts, task.transcript)))
     return
+  if (task.intentSource === 'jev' && input && Object.keys(input).length) {
+    const selected = safeParse(strictObject({ questionId: string(), choiceId: string() }), input)
+    if (!selected.success)
+      return
+    task.selectedAnswer = selected.output
+  }
   let consumed = false
   return async () => {
     if (consumed || active !== task || !task.isCurrent())
@@ -1161,8 +1106,8 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
   if (task?.confirmedOrder && tool && task.dialogue && task.isCurrent()) {
     const order = task.confirmedOrder
     if (order.evidence) {
-      // Customer confirmation is no longer a substitute for independent model
-      // admission. Preserve original speech and real slot answers for that check.
+      // Preserve the original request and real slot answers as context for the
+      // issued plan; customer confirmation does not replace current-data checks.
       task.orderEvidence = order.evidence
       task.text = [order.evidence.request, ...order.evidence.answers.map(item => item.answer)].join('\n').replaceAll(/\s/g, '')
     }

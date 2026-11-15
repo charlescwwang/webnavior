@@ -1,11 +1,11 @@
 import type { InferOutput } from 'valibot'
 
-import { array, boolean, check, integer, maxLength, minLength, minValue, number, object, optional, picklist, pipe, string } from 'valibot'
+import { array, boolean, check, integer, maxLength, minLength, minValue, number, object, optional, picklist, pipe, safeParse, string } from 'valibot'
 
 import { conversationQuestionSchema } from './kioskConversation'
 import { normalizeSlotNumbers } from './orderingSlots'
 import { nativeOrderingToolName, orderingTools } from './orderingTools'
-import { pbCheckoutSchema } from './pbCheckout'
+import { pbCheckoutSchema, pbSubmissionResultSchema } from './pbCheckout'
 import { productConfigurationSchema } from './productConfiguration'
 import { resolveTableName } from './tableNames'
 
@@ -168,21 +168,32 @@ function modelExplanation(value: unknown, business: boolean) {
 export function browserToolResult(name: string, payload: Record<string, unknown>) {
   const business = nativeOrderingToolName(name) !== name
   name = nativeOrderingToolName(name)
+  const submission = safeParse(pbSubmissionResultSchema, payload)
   let outcome = 'information_ready'
-  if (payload.status === 'unknown' || payload.effect === 'unknown' || payload.effect === 'partial')
+  if (submission.success) {
+    outcome = ({ pending: 'action_pending', accepted: 'action_completed', unknown: 'action_result_requires_review', rejected: 'action_blocked' })[submission.output.status]
+  }
+  else if (payload.status === 'unknown' || payload.effect === 'unknown' || payload.effect === 'partial') {
     outcome = 'action_result_requires_review'
-  else if (payload.status === 'proposal_rejected')
+  }
+  else if (payload.status === 'proposal_rejected') {
     outcome = 'proposal_needs_correction'
-  else if (payload.ok === false || payload.status === 'rejected' || payload.customerBoundary === 'review-required')
+  }
+  else if (payload.ok === false || payload.status === 'rejected' || payload.customerBoundary === 'review-required') {
     outcome = 'action_blocked'
-  else if (name === 'browser_respond' && payload.ok === true && payload.status === 'conversation' && payload.effect === 'none' && typeof payload.customerMessage === 'string')
+  }
+  else if (name === 'browser_respond' && payload.ok === true && payload.status === 'conversation' && payload.effect === 'none' && typeof payload.customerMessage === 'string') {
     outcome = 'customer_reply_ready'
-  else if (['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone'].includes(name) && payload.dataOnly === false && !payload.pendingCustomerChoice && typeof payload.customerMessage === 'string')
+  }
+  else if (['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone'].includes(name) && payload.dataOnly === false && !payload.pendingCustomerChoice && typeof payload.customerMessage === 'string') {
     outcome = 'customer_reply_ready'
-  else if (payload.dataOnly !== true && (payload.pendingCustomerChoice || (payload.ok === true && ['browser', 'host'].includes(String(payload.source)) && payload.status === 'clarification' && payload.effect === 'none' && typeof payload.customerMessage === 'string')))
+  }
+  else if (payload.dataOnly !== true && (payload.pendingCustomerChoice || (payload.ok === true && ['browser', 'host'].includes(String(payload.source)) && payload.status === 'clarification' && payload.effect === 'none' && typeof payload.customerMessage === 'string'))) {
     outcome = 'awaiting_customer_answer'
-  else if (payload.status === 'verified' || payload.status === 'preserved')
+  }
+  else if (payload.status === 'verified' || payload.status === 'preserved') {
     outcome = 'action_completed'
+  }
 
   const cartWrite = ['browser_confirm_add', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace'].includes(name)
   let cartEffect = payload.effect
@@ -194,6 +205,9 @@ export function browserToolResult(name: string, payload: Record<string, unknown>
   }
   return {
     outcome,
+    completionScope: payload.completionScope === 'tool-call' ? 'tool-call' : undefined,
+    completedEffects: Array.isArray(payload.completedEffects) ? payload.completedEffects.filter(effect => typeof effect === 'string') : undefined,
+    submission: submission.success ? submission.output : undefined,
     completedOperations: Array.isArray(payload.results) ? payload.results.map(result => isRecord(result) ? { status: result.status, effect: result.effect, message: result.effectMessage ?? result.customerMessage } : undefined) : undefined,
     recommendationCriteria: payload.recommendationCriteria,
     currentPage: payload.page,

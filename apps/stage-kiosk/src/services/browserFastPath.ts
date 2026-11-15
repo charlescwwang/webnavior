@@ -9,7 +9,7 @@ import { browserQuestionChoice } from '@proj-airi/stage-shared/browser-conversat
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { normalizeSlotNumbers, quantityFromTranscript } from '@proj-airi/stage-shared/ordering-slots'
 import { orderingNextActions } from '@proj-airi/stage-shared/ordering-tools'
-import { pbSubmissionDispatchSchema } from '@proj-airi/stage-shared/pb-checkout'
+import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { parsePbDumplingServings } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { productFragment, productMentions } from '@proj-airi/stage-shared/product-discovery'
@@ -57,11 +57,13 @@ export function createBrowserFastPathSource(io: {
   const execute = async (name: string, args: Record<string, unknown>) => {
     const raw = await io.execute(tool(name), args)
     const result = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+    const unexecuted = safeParse(looseObject({ ok: literal(false), source: literal('browser'), status: literal('rejected'), effect: literal('none'), reason: literal('stale-cart'), execution: looseObject({ steps: array(looseObject({})) }) }), result)
+    const staleBeforeDispatch = unexecuted.success && unexecuted.output.execution.steps.length === 0
     const mayChangeCart = ['browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_add_items', 'browser_answer_question'].includes(name)
     const hasResult = result.status === 'verified' || result.status === 'preserved' || result.status === 'clarification' || result.dataOnly === true || result.pendingCustomerChoice || result.selectedProduct || result.needsAssistant || result.status === 'unknown' || result.effect === 'unknown' || result.effect === 'partial' || result.effect === 'none'
-    if (mayChangeCart && !hasResult && !safeParse(pbSubmissionDispatchSchema, result).success)
+    if (mayChangeCart && !hasResult && !safeParse(pbSubmissionResultSchema, result).success)
       return { ...result, ok: false, status: 'unknown', effect: 'unknown', decisionTrace: { operationPlan: { toolName: name, input: args } } }
-    return { ...result, nextActions: orderingNextActions(name === 'browser_add_items' ? 'add_items_to_cart' : name, result), ...(result.selectedProduct || result.status === 'proposal_rejected' || (result.status === 'clarification' && !('pendingCustomerChoice' in result)) ? { needsAssistant: true } : {}), decisionTrace: { operationPlan: { toolName: name, input: args } } }
+    return { ...result, nextActions: orderingNextActions(name === 'browser_add_items' ? 'add_items_to_cart' : name, result), ...(staleBeforeDispatch || result.selectedProduct || result.status === 'proposal_rejected' || (result.status === 'clarification' && !('pendingCustomerChoice' in result)) ? { needsAssistant: true } : {}), decisionTrace: { operationPlan: { toolName: name, input: args } } }
   }
   return {
     async context(input) {
@@ -121,7 +123,7 @@ export function createBrowserFastPathSource(io: {
           const id = literal ?? 'answer:current'
           const choice = { id, description: literal ? waitingFor.choices.find(choice => choice.id === literal)!.description : `回答目前問題「${waitingFor.question}」：${transcript}` }
           const name = literal === 'cancel' ? 'browser_close_product' : 'browser_answer_question'
-          issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { [id]: { name, input: {} } }, answerIds: [id] }
+          issued = { transcript, read: {}, plainMenu: false, productRefs: [], plans: { [id]: { name, input: literal && name === 'browser_answer_question' ? { questionId: waitingFor.questionId, choiceId: literal } : {} } }, answerIds: [id] }
           return { phase: 'ordering', waitingFor: { ...waitingFor, choices: [choice] }, candidates: [choice] }
         }
         // The live question outranks its underlying search. Offer every issued
@@ -129,7 +131,7 @@ export function createBrowserFastPathSource(io: {
         const offered = [...waitingFor.choices]
         if (activeSearch && io.tools.some(tool => tool.name === 'browser_return_menu'))
           offered.push({ id: 'intent:return-menu', description: '放棄目前搜尋與尚未加入的選餐，回到完整菜單；保留購物車。' })
-        const plans = Object.fromEntries(offered.map(choice => [choice.id, { name: choice.id === 'intent:return-menu' ? 'browser_return_menu' : choice.id === 'cancel' ? 'browser_close_product' : 'browser_answer_question', input: {} }]))
+        const plans: Record<string, { name: string, input: Record<string, unknown> }> = Object.fromEntries(offered.map(choice => [choice.id, { name: choice.id === 'intent:return-menu' ? 'browser_return_menu' : choice.id === 'cancel' ? 'browser_close_product' : 'browser_answer_question', input: ['intent:return-menu', 'cancel'].includes(choice.id) ? {} : { questionId: waitingFor.questionId, choiceId: choice.id } }]))
         if (waitingFor.purpose === 'browser-service-question') {
           const facts = safeParse(factsSchema, raw)
           if (facts.success && io.tools.some(tool => tool.name === 'browser_product_get')) {
@@ -251,7 +253,7 @@ export function createBrowserFastPathSource(io: {
           normal = eligible.filter(ref => categoryRefs.includes(ref))
         // Jev chooses whether the customer wants a new batch or other dishes.
         // Merely having recommendation history cannot narrow a fresh request.
-        const batches = [{ id: 'intent:recommend', mode: 'recommendation', refs: normal, description: '介紹以下餐點供顧客選擇，可包含之前介紹過的符合餐點；要求換其他推薦時使用另一選項。' }]
+        const batches = [{ id: 'intent:recommend', mode: 'recommendation', refs: normal, description: '介紹以下餐點供顧客選擇；只有這批餐點符合顧客本句要求時才可選。顧客指定餐類、食材、價格等條件，而這批不符合或無法確認符合時，選HANDOFF，不用無關餐點取代。未指定條件可直接推薦；可包含之前介紹過的符合餐點。要求換其他推薦時使用另一選項。' }]
         if (replay) {
           const available = io.previousRecommendations?.(normal)
           if (available?.length)
@@ -338,10 +340,16 @@ export function createBrowserFastPathSource(io: {
       if (plan) {
         if (plan.name === 'service-new-request' || plan.name === 'service-item-information') {
           const raw = await io.read(tool('browser_cart_get'), { includeCatalog: true })
-          io.releaseService?.(raw, String(plan.input.questionId))
-          if (plan.name === 'service-new-request')
+          if (plan.name === 'service-new-request') {
+            io.releaseService?.(raw, String(plan.input.questionId))
             return { ok: true, source: 'browser', dataOnly: true, needsAssistant: true }
-          const result = await execute('browser_product_get', { names: plan.input.names })
+          }
+          // Reading a dish does not answer or revoke the checkout question.
+          // Keep its one-use authority without repeating it in the factual reply.
+          // This candidate already identifies a read, not an answer. The task
+          // executor would interpret NEW_REQUEST as retiring the pending question.
+          const rawResult = await io.read(tool('browser_product_get'), { names: plan.input.names })
+          const result = rawResult && typeof rawResult === 'object' ? rawResult as Record<string, unknown> : {}
           const summary = createMenuReplyWindow()
           summary.record('get_menu_item_details', result)
           return summary.hasReceipts() ? { ...result, customerMessage: summary.reply(), dataOnly: false } : { ...result, needsAssistant: true }

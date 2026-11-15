@@ -23,38 +23,38 @@ chat:
     step-complete: 已完成服務步驟
     failed: 這個服務步驟暫時無法完成
 kiosk:
-  media-unlinked: "錄音尚未上傳或缺少可核實的對應關係，請查看下方原始錄音清單。"
-  media-audio-list: "原始錄音清單（不依時間推定逐字稿）"
-  media-play: "播放原始錄音"
+  media-unlinked: '錄音尚未上傳或缺少可核實的對應關係，請查看下方原始錄音清單。'
+  media-audio-list: '原始錄音清單（不依時間推定逐字稿）'
+  media-play: '播放原始錄音'
   request-status:
-    queued: "等待處理"
-    processing: "處理中"
-    review: "請看回覆繼續操作"
-    completed: "已完成"
-    cancelled: "已取消"
-    failed: "未完成，請查看回覆"
+    queued: '等待處理'
+    processing: '處理中'
+    review: '請看回覆繼續操作'
+    completed: '已完成'
+    cancelled: '已取消'
+    failed: '未完成，請查看回覆'
   voice-debug:
-    tts-overlap: "TTS播放期間偵測到聲音，請核對是否回音或插話"
-    speech-start: "VAD偵測到說話"
-    speech-end: "VAD語音段結束"
-    blocked: "本段未進入點餐"
-    tts: "測試語音播放"
-    interrupted: "測試語音已被插話中斷"
-    mode-admin: "管理員音訊測試"
-    mode-text: "文字模式"
-    mode-customer: "顧客語音點餐"
-    microphone-on: "收音管線已啟動"
-    microphone-off: "收音管線未啟動"
-    text-mode: "文字模式不啟用顧客麥克風"
-    admin-paused: "管理頁開啟，顧客收件已暫停"
-    reception-reset: "接待結束或重置中，暫停收件"
-    preparing: "點餐頁面或購物車準備中，暫停收件"
-    presence-required: "目前未符合現場顧客收音條件"
-    admin-title: "麥克風、語音回音與插話測試"
-    admin-enable: "啟用管理員音訊測試"
-    admin-description: "僅在此管理頁收音及顯示辨識結果，不加入顧客對話、不操作餐點。關閉管理頁即停止測試。"
-    play-test: "播放語音並測試插話"
-    test-text: "這是麥克風與語音回音測試，您可以現在插話。"
+    tts-overlap: 'TTS播放期間偵測到聲音，請核對是否回音或插話'
+    speech-start: 'VAD偵測到說話'
+    speech-end: 'VAD語音段結束'
+    blocked: '本段未進入點餐'
+    tts: '測試語音播放'
+    interrupted: '測試語音已被插話中斷'
+    mode-admin: '管理員音訊測試'
+    mode-text: '文字模式'
+    mode-customer: '顧客語音點餐'
+    microphone-on: '收音管線已啟動'
+    microphone-off: '收音管線未啟動'
+    text-mode: '文字模式不啟用顧客麥克風'
+    admin-paused: '管理頁開啟，顧客收件已暫停'
+    reception-reset: '接待結束或重置中，暫停收件'
+    preparing: '點餐頁面或購物車準備中，暫停收件'
+    presence-required: '目前未符合現場顧客收音條件'
+    admin-title: '麥克風、語音回音與插話測試'
+    admin-enable: '啟用管理員音訊測試'
+    admin-description: '僅在此管理頁收音及顯示辨識結果，不加入顧客對話、不操作餐點。關閉管理頁即停止測試。'
+    play-test: '播放語音並測試插話'
+    test-text: '這是麥克風與語音回音測試，您可以現在插話。'
   information-unavailable: 這項資訊我目前查不到，請現場人員幫您確認。
   checkout-guidance:
     empty: 購物車目前沒有餐點。選好餐點後，再依點餐網頁的提示結帳。
@@ -82,6 +82,7 @@ kiosk:
     changed: 畫面或接待已變更，請重新檢視。
     unknown: 先前操作結果尚未確認，不能以交接確認解除暫停。
     failed: 無法確認購物車，請稍後重新檢視。
+    restart-failed: 目前尚未確認前一筆點餐操作，請稍候再按「重新開始／新訂單」。若持續無法使用，請洽工作人員。
   native-view-loading: 載入中…
   native-view-failed: 服務畫面暫時無法載入，請工作人員檢查連線後重新開啟。
   service-editor-description: 設定機台要顯示的網站，儲存後需發布。管理頁預覽不代表登入或助手操作已可用，請在機台驗證。
@@ -170,6 +171,7 @@ kiosk:
     collapse: 收合
     expand: 展開
   wait:
+    generating: 正在產生回覆…
     answer-executing: 正在接續您的選擇…
     answer-done: 已確認您的選擇。
     answer-error: 請核對目前畫面後再繼續。

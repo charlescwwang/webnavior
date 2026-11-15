@@ -31,12 +31,15 @@ it('offers a semantic item-information choice for the actual cart while checkout
   const raw = { cart: { version: 'cart', lines: [{ ref: '1', productRef: dumplings.ref, name: dumplings.name, quantity: 1 }] }, products: [dumplings] }
   const releaseService = vi.fn()
   const execute = vi.fn(async () => ({ ok: true, source: 'browser', dataOnly: true, products: [dumplings] }))
-  const source = createBrowserFastPathSource({ tools, read: async () => raw, execute, releaseService, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
+  const read = vi.fn(async (tool: ServiceTool) => tool.name === 'browser_product_get' ? { ok: true, source: 'browser', dataOnly: true, products: [dumplings] } : raw)
+  const source = createBrowserFastPathSource({ tools, read, execute, releaseService, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
   const context = await source.context({ transcript: '一份幾顆？' })
   expect(context).toMatchObject({ candidates: expect.arrayContaining([expect.objectContaining({ id: 'information:p-daily-7', description: expect.stringContaining(dumplings.name) })]) })
   const result = await source.execute({ candidateId: 'information:p-daily-7' })
-  expect(releaseService).toHaveBeenCalledWith(raw, waiting.questionId)
-  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_product_get' }), { names: [dumplings.name] })
+  expect(releaseService).not.toHaveBeenCalled()
+  expect(await source.context({ transcript: '正確' })).toMatchObject({ waitingFor: waiting, candidates: expect.arrayContaining(waiting.choices) })
+  expect(read).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_product_get' }), { names: [dumplings.name] })
+  expect(execute).not.toHaveBeenCalled()
   expect(result).toMatchObject({ dataOnly: false, customerMessage: expect.stringContaining('8顆') })
   expect(result).not.toHaveProperty('needsAssistant', true)
   expect(result).not.toMatchObject({ customerMessage: expect.stringContaining('要結帳') })
@@ -127,7 +130,7 @@ it('presents a compiled whole-menu read explicitly after internal catalog discov
 })
 function setup(products = [product], pending = false) {
   const read = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>) => ({ cart: { version: 'current-cart' }, products }))
-  const execute = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>) => ({ ok: true, source: 'browser', status: 'verified', customerMessage: '已完成指定操作。' }))
+  const execute = vi.fn(async (_tool: ServiceTool, _input: Record<string, unknown>): Promise<unknown> => ({ ok: true, source: 'browser', status: 'verified', customerMessage: '已完成指定操作。' }))
   const source = createBrowserFastPathSource({ tools, read, execute, hasPendingQuestion: () => pending, pendingQuestion: () => pending ? question : undefined })
   return { source, read, execute }
 }
@@ -439,4 +442,26 @@ it('hands a definitely unapplied PB rejection to Main without replaying it', asy
   const source = createBrowserFastPathSource({ tools, read: async () => ({ page: 'menu', cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   expect(await runFastPath({ transcript: '當日新菜兩份', source, isEnabled: async () => true, decide: async () => ({ kind: 'FAST_ACTION', actionId: 'intent:add-item', confidence: 0.99 }), webMcp: { tools, execute } })).toMatchObject({ kind: 'NEEDS_ASSISTANT' })
   expect(execute).toHaveBeenCalledOnce()
+})
+
+// Report: this chat, 2026-11-15; native rejected a stale initial cart before touching a product.
+it('hands an explicitly unexecuted stale-cart purchase to Main without replaying it', async () => {
+  const { source, execute } = setup()
+  execute.mockResolvedValueOnce({ ok: false, source: 'browser', status: 'rejected', effect: 'none', reason: 'stale-cart', execution: { steps: [] } })
+  await source.context({ transcript: '當日新菜一份' })
+  const result = await source.execute({ candidateId: 'intent:add-item' })
+  expect(result).toMatchObject({ status: 'rejected', effect: 'none', needsAssistant: true, decisionTrace: { operationPlan: { toolName: 'browser_cart_add', input: { productRef: product.ref, quantity: 1 } } } })
+  expect(execute).toHaveBeenCalledOnce()
+  expect(await source.execute({ candidateId: 'intent:add-item' })).toMatchObject({ ok: false, effect: 'none' })
+  expect(execute).toHaveBeenCalledOnce()
+})
+
+// Report: this chat, 2026-11-15; the selected finite answer ID was discarded and classified twice.
+it('passes the exact issued question and selected answer to the Host instead of an empty answer request', async () => {
+  const waiting = { ...question, purpose: 'browser-service-question', choices: [{ id: 'yes', description: '打開購物車核對' }, { id: 'no', description: '繼續點餐' }] }
+  const execute = vi.fn(async () => ({ ok: true, source: 'browser', status: 'verified' }))
+  const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [product] }), execute, hasPendingQuestion: () => true, pendingQuestion: () => waiting })
+  await source.context({ transcript: '那就往下一步吧' })
+  await source.execute({ candidateId: 'yes' })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_answer_question' }), { questionId: waiting.questionId, choiceId: 'yes' })
 })

@@ -144,7 +144,7 @@ export function createBrowserPresentation(client: Pick<ReturnType<typeof createI
           return
         // Native batches retain one frame per dish and its reading dwell;
         // separate single-dish calls would drop that dwell to zero.
-        await client.execute(tool, { productRefs: refs, mode: 'information' })
+        await client.execute(tool, { productRefs: refs, mode: 'information', preservePage: true })
       }).catch(() => { /* Optional visual failure does not stop the customer reply. */ })
       await speechCues
     },

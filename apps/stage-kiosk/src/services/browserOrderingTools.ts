@@ -9,7 +9,7 @@ import { pbDumplingExtraCount, pbProductName } from '@proj-airi/stage-shared/pb-
 import { resolveTableName } from '@proj-airi/stage-shared/table-names'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { rawTool } from '@xsai/tool'
-import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, number, optional, parse, picklist, pipe, strictObject, string } from 'valibot'
+import { array, integer, looseObject, maxLength, maxValue, minLength, minValue, number, optional, parse, picklist, pipe, safeParse, strictObject, string } from 'valibot'
 
 import { cartLineLabelSchema } from '../../../server/src/services/domain/browser-ordering/contracts'
 import { askBrowserCustomerQuestion, browserRecommendationCriteria, cancelBrowserItemSelection, executeBrowserCartTool, executeBrowserCheckout, executeBrowserConfirmedAddition, executeBrowserQuantityQuestion, executeBrowserReply, filterBrowserRecommendations, readBrowserOrderingFacts } from './browserCartTask'
@@ -205,7 +205,12 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         return batchResult(results)
       }
       if (name === 'set_cart_item_quantity') {
-        const { target, quantity: count } = parse(strictObject({ target: targetSchema, quantity }), input)
+        const parsed = safeParse(strictObject({ target: targetSchema, quantity }), input)
+        // This boundary has not read or changed the website. Zero means a
+        // different operation, not an admissible total or an unknown write.
+        if (!parsed.success)
+          return { ...clientError('餐點尚未變更，請再說一次要調整哪道餐點的份數。'), code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, explanation: '這次未讀取或修改網站。quantity 必須是 1 到 99 的整數，表示調整後的總份數；整道餐點全部不要請使用 remove_items_from_cart。請依顧客完整需求重新選擇操作及參數。' }
+        const { target, quantity: count } = parsed.output
         return call('browser_cart_quantity', { ...resolveTarget(await read(), target), quantity: count })
       }
       if (name === 'remove_items_from_cart') {
@@ -229,7 +234,14 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         return batchResult(results)
       }
       if (name === 'replace_item_in_cart') {
-        const { target, replaceQuantity, replacement } = parse(strictObject({ target: targetSchema, replaceQuantity: quantity, replacement: strictObject(mealFields) }), input)
+        const parsed = safeParse(strictObject({ target: targetSchema, replaceQuantity: quantity, replacement: strictObject(mealFields) }), input)
+        if (!parsed.success) {
+          // Argument validation precedes every website read/write. Keep this
+          // distinguishable from an uncertain dispatched operation so Main can
+          // repair its call without claiming that the cart needs recovery.
+          return { ...clientError('餐點尚未變更，請再說一次要將哪道餐點的幾份換成哪道餐點。'), code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, explanation: '這次未讀取或修改網站。replaceQuantity 是原餐換出的份數，也是新餐加入的份數；replacement 只填新餐名稱與設定，不含 quantity。請依顧客完整需求重新選擇操作及參數，不直接重複剛才的呼叫。' }
+        }
+        const { target, replaceQuantity, replacement } = parsed.output
         const facts = await read()
         const original = resolveTarget(facts, target)
         const row = facts.cart.lines.find(line => line.ref === original.lineRef)!

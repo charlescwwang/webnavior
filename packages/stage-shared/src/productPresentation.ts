@@ -10,6 +10,7 @@ export const browserPresentationInputSchema = strictObject({
   productRefs: pipe(array(pipe(string(), maxLength(200))), maxLength(100)),
   mode: optional(picklist(['recommendation', 'other-recommendations', 'information']), 'recommendation'),
   deferVisual: optional(boolean(), false),
+  preservePage: optional(boolean(), false),
 })
 
 /** Fresh browser evidence for customer presentation, never purchase authority. */

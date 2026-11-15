@@ -14,7 +14,6 @@ import { createHash, randomInt, randomUUID } from 'node:crypto'
 
 import { browserConversationInstructions, browserConversationSchema, browserToolArguments, browserToolDescription, browserToolParameters } from '@proj-airi/stage-shared/browser-conversation'
 import { conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
-import { orderingSites } from '@proj-airi/stage-shared/ordering-sites'
 import { nativeOrderingToolName, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
@@ -22,8 +21,8 @@ import { array, boolean, check, integer, literal, maxLength, maxValue, minLength
 
 import { rateLimiter } from '../../middlewares/rate-limit'
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
-import { browserOrderingLimits, decideAnswer, decideEffect, findPresentedQuestion } from '../../services/domain/browser-ordering'
-import { browserAnswerSchema, browserEffectSchema, browserPlanSchema } from '../../services/domain/browser-ordering/contracts'
+import { decideAnswer, findPresentedQuestion } from '../../services/domain/browser-ordering'
+import { browserAnswerSchema, browserPlanSchema } from '../../services/domain/browser-ordering/contracts'
 import { orderingInstructions } from '../../services/domain/browser-ordering/skills'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { clarificationTool, currentContextInstructions, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
@@ -309,7 +308,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (transcript.session.state !== 'active' || !current || current.content.trim() !== parsed.output.transcript.trim() || !pending)
       return c.json({ kind: 'UNCERTAIN', provider: 'unavailable' })
     const modelName = await options.runtimeModelPolicy.modelFor('chat')
-    const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
+    // A Main handoff stays with Main. This field selects first-answer routing,
+    // never operation authority; selected finite answers are reused by the Host.
+    const finite = parsed.output.decisionSource === 'system-one' && options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
     const result = await decideAnswer(parsed.output, pending, { finite, complete: async (body) => {
       if (!modelName)
         throw new Error('Main model is unavailable.')
@@ -329,69 +330,20 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     if (!parsed.success)
       throw createBadRequestError('Invalid browser plan', 'INVALID_REQUEST')
     const visitorSessionId = c.req.param('visitorSessionId')
-    const admitted = await options.kioskService.claimBrowserPlan({ deviceId: device.id, visitorSessionId, plan: parsed.output })
-    if (admitted.choice !== 'ALLOW')
-      return c.json(admitted)
-    const effect = parsed.output.effect
-    // Ordinary exact single-row operations retain plan-only admission. Relaxing
-    // literal targeting for configurations or multi-row totals needs the richer
-    // read-only check before any browser dispatch. Claim first so unissued or
-    // repeated calls cannot trigger model work; a rejected claim is not replayed.
-    const target = effect.cartTarget
-    // Empty planner notes are not proof that the customer requested none.
-    // Main omitted both preferences in a split order; validate its complete
-    // serving even when the proposed note is blank. The finite literal compiler
-    // retains its separate exact-slot admission for simple complete additions.
-    const resolveTarget = (target && ((target.groupSize ?? 1) > 1 || target.others.length > 0 || effect.action === 'replace' || !effect.transcript.replaceAll(/\s/g, '').includes(target.selected.name.replaceAll(/\s/g, '')))) || (effect.serving && (effect.note.trim().length > 0 || (parsed.output.source === 'main' && effect.action === 'add')))
-    if (!resolveTarget)
-      return c.json(admitted)
-    const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId })
-    const current = transcript.entries.findLast(entry => entry.kind === 'user_text')
-    if (transcript.session.state !== 'active' || !current || current.content.trim() !== effect.transcript.trim())
-      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
-    const modelName = await options.runtimeModelPolicy.modelFor('chat')
-    const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
-    const semanticStartedAt = Date.now()
-    const profile = await options.kioskService.getProfileRelease(transcript.session.profileReleaseId)
-    const catalogLabels = profile ? orderingSites(profile.snapshot).find(site => site.id === transcript.session.serviceId)?.catalogLabels : undefined
-    const result = await decideEffect(effect, { finite, catalogLabels, complete: async (body) => {
-      if (!modelName)
-        throw new Error('Main model is unavailable.')
-      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(browserOrderingLimits.effectModelRequestMs)]) })
-    } })
-    // Preserve the independent check even when a Host target guard later stops
-    // the plan. This is diagnostic evidence, never a second execution claim.
-    await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId, kind: 'service_event', content: JSON.stringify({ userEntryId: current.id, toolName: parsed.output.toolName, decision: result, durationMs: Date.now() - semanticStartedAt }), metadata: { source: 'browser_semantic_decision' } })
-    // A newer demand or customer boundary revokes this read-only adjudication,
-    // even though the old executable plan has already been consumed once.
-    const latest = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId })
-    if (latest.session.state !== 'active' || latest.entries.findLast(entry => entry.kind === 'user_text')?.id !== current.id)
-      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
-    return c.json({ ...result, checks: [...(admitted.checks ?? []), ...(result.checks ?? [])] })
+    // Main or System One already selected this operation. Claim its recorded,
+    // exact one-use plan without asking either model to interpret it again.
+    // Parameter mapping, current turn, ownership and replay checks remain in
+    // claimBrowserPlan; the Host/native layer still verifies fresh website state.
+    return c.json(await options.kioskService.claimBrowserPlan({ deviceId: device.id, visitorSessionId, plan: parsed.output }))
   })
 
   routes.post('/visitor-sessions/:visitorSessionId/browser-effect', async (c) => {
     const device = await resolveAuthenticatedDevice(c, options.kioskService)
-    const parsed = safeParse(browserEffectSchema, await c.req.json().catch(() => null))
-    if (!parsed.success)
-      throw createBadRequestError('Invalid browser effect proposal', 'INVALID_REQUEST')
-    const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
-    const current = transcript.entries.findLast(entry => entry.kind === 'user_text')
-    // A delayed tool proposal cannot borrow another customer's or newer turn's
-    // speech. This check is repeated after the read-only semantic IO below.
-    if (transcript.session.state !== 'active' || !current || current.content.trim() !== parsed.output.transcript.trim())
-      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
-    const modelName = await options.runtimeModelPolicy.modelFor('chat')
-    const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
-    const result = await decideEffect(parsed.output, { finite, complete: async (body) => {
-      if (!modelName)
-        throw new Error('Main model is unavailable.')
-      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(browserOrderingLimits.effectModelRequestMs)]) })
-    } })
-    const latest = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: transcript.session.id })
-    if (latest.session.state !== 'active' || latest.entries.findLast(entry => entry.kind === 'user_text')?.id !== current.id)
-      return c.json({ choice: 'CLARIFY', provider: 'unavailable' })
-    return c.json(result)
+    await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
+    // A free-standing effect has no recorded model decision to claim. Keep an
+    // explicit diagnostic refusal rather than falling back to another model or
+    // treating a Host-supplied effect as permission to write.
+    return c.json({ choice: 'CLARIFY', provider: 'unavailable', code: 'ISSUED_PLAN_REQUIRED' }, 410)
   })
 
   routes.get('/bootstrap', async (c) => {
@@ -829,6 +781,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       }), 200, {
         'Cache-Control': 'no-cache',
         'Content-Type': 'text/event-stream',
+        // Nginx otherwise buffers small events until the model finishes.
+        'X-Accel-Buffering': 'no',
       })
     }
     const answer = await completeKioskReply({
@@ -859,7 +813,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       await options.kioskService.appendDeviceInteraction({
         content: JSON.stringify(answer.toolCalls),
         kind: 'tool_call',
-        metadata: { toolCalls: answer.toolCalls, browserAuthority: { source: 'main', userEntryId: transcript.entries.findLast(entry => entry.kind === 'user_text')?.id, readOnly: transcript.entries.findLast(entry => entry.kind === 'user_text')?.metadata.browserReadOnly === true || result.output.decisionState?.readOnly === true || result.output.decisionState?.context?.readOnly === true } },
+        metadata: { toolCalls: answer.toolCalls, ...(answer.responsesOutput ? { responsesOutput: answer.responsesOutput } : {}), browserAuthority: { source: 'main', userEntryId: transcript.entries.findLast(entry => entry.kind === 'user_text')?.id, readOnly: transcript.entries.findLast(entry => entry.kind === 'user_text')?.metadata.browserReadOnly === true || result.output.decisionState?.readOnly === true || result.output.decisionState?.context?.readOnly === true } },
         deviceId: device.id,
         visitorSessionId: transcript.session.id,
       })
@@ -1044,11 +998,14 @@ type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_preferr
 
 interface KioskCompletion {
   content?: string
+  /** Opaque native output, kept server-side for this task's tool continuations. */
+  responsesOutput?: unknown[]
   reply?: ContextReply
   replyRepairRequests?: number
   toolCalls: KioskToolCall[]
   inputTokens?: number
-  metrics?: { replyRepairRequests?: number, requestBytes: number, contextBytes: number, messageBytes: number, toolBytes: number, taskId?: string, durationMs: number, firstOutputMs?: number, inputTokens?: number }
+  reasoningTokens?: number
+  metrics?: { replyRepairRequests?: number, requestBytes: number, contextBytes: number, messageBytes: number, toolBytes: number, taskId?: string, durationMs: number, firstOutputMs?: number, inputTokens?: number, reasoningTokens?: number }
 }
 
 // Measure the actual serialized request after projection/compaction, not raw POS size.
@@ -1064,14 +1021,19 @@ function inputMetrics(body: { messages: unknown, tools?: unknown }, context?: Ki
 }
 
 // Usage is provider-reported. Missing usage is deliberately not estimated from bytes.
-function promptTokens(payload: unknown): number | undefined {
+function usageSummary(payload: unknown): { inputTokens?: number, reasoningTokens?: number } {
   if (!payload || typeof payload !== 'object' || !('usage' in payload))
-    return undefined
+    return {}
   const usage = payload.usage
-  if (!usage || typeof usage !== 'object' || !('prompt_tokens' in usage))
-    return undefined
-  const tokens = usage.prompt_tokens
-  return typeof tokens === 'number' && Number.isSafeInteger(tokens) && tokens >= 0 ? tokens : undefined
+  if (!usage || typeof usage !== 'object')
+    return {}
+  const inputTokens = 'prompt_tokens' in usage ? usage.prompt_tokens : undefined
+  const details = 'completion_tokens_details' in usage ? usage.completion_tokens_details : undefined
+  const reasoningTokens = details && typeof details === 'object' && 'reasoning_tokens' in details ? details.reasoning_tokens : undefined
+  return {
+    ...(typeof inputTokens === 'number' && Number.isSafeInteger(inputTokens) && inputTokens >= 0 ? { inputTokens } : {}),
+    ...(typeof reasoningTokens === 'number' && Number.isSafeInteger(reasoningTokens) && reasoningTokens >= 0 ? { reasoningTokens } : {}),
+  }
 }
 
 async function recordRoundMetrics(kioskService: KioskService, deviceId: string, visitorSessionId: string, answer: KioskCompletion) {
@@ -1093,10 +1055,13 @@ async function parseAssistantReply(response: Response): Promise<KioskCompletion>
   const payload: unknown = await response.json()
   if (!isChatCompletion(payload))
     throw createBadRequestError('LLM Provider response is invalid', 'LLM_PROVIDER_INVALID_RESPONSE')
+  if (['length', 'content_filter'].includes(payload.choices[0].finish_reason ?? ''))
+    throw createBadRequestError('LLM Provider response did not complete', 'LLM_PROVIDER_INVALID_RESPONSE')
   return {
-    inputTokens: promptTokens(payload),
+    ...usageSummary(payload),
     content: payload.choices[0].message.content || undefined,
     toolCalls: payload.choices[0].message.tool_calls ?? [],
+    ...(Array.isArray(payload.choices[0].message.responses_output) ? { responsesOutput: payload.choices[0].message.responses_output } : {}),
   }
 }
 
@@ -1159,11 +1124,12 @@ async function completeKioskReply(input: {
   const startedAt = performance.now()
   const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, modelName, body })
   const answer = await finishConversationReply({ ...input, signal: input.abortSignal, toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName)
-  return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
+  return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}), ...(answer.reasoningTokens !== undefined ? { reasoningTokens: answer.reasoningTokens } : {}) } }
 }
 
 type KioskReplyEvent
   = | { type: 'turn-started' }
+    | { type: 'reply-progress' }
     | { text: string, type: 'assistant-delta' }
     | { toolCall: KioskToolCall, type: 'tool-requested' }
     | { agentMode: KioskAgentInteractionMode, answer?: string, reply?: ContextReply, toolCalls: KioskToolCall[], type: 'turn-finished' }
@@ -1206,6 +1172,9 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
           // paint progress only; the Host renders their verified final outcome.
           if (!input.decisionState?.context)
             emit({ text, type: 'assistant-delta' })
+        }, () => {
+          if (!input.signal.aborted)
+            emit({ type: 'reply-progress' })
         })
         await recordRoundMetrics(input.kioskService, input.deviceId, input.transcript.session.id, answer)
 
@@ -1229,7 +1198,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
           await input.kioskService.appendDeviceInteraction({
             content: JSON.stringify(answer.toolCalls),
             kind: 'tool_call',
-            metadata: { toolCalls: answer.toolCalls, browserAuthority: { source: 'main', userEntryId: input.transcript.entries.findLast(entry => entry.kind === 'user_text')?.id, readOnly: input.transcript.entries.findLast(entry => entry.kind === 'user_text')?.metadata.browserReadOnly === true || input.decisionState?.readOnly === true || input.decisionState?.context?.readOnly === true } },
+            metadata: { toolCalls: answer.toolCalls, ...(answer.responsesOutput ? { responsesOutput: answer.responsesOutput } : {}), browserAuthority: { source: 'main', userEntryId: input.transcript.entries.findLast(entry => entry.kind === 'user_text')?.id, readOnly: input.transcript.entries.findLast(entry => entry.kind === 'user_text')?.metadata.browserReadOnly === true || input.decisionState?.readOnly === true || input.decisionState?.context?.readOnly === true } },
             deviceId: input.deviceId,
             visitorSessionId: input.transcript.session.id,
           })
@@ -1271,7 +1240,7 @@ function createKioskReplyEventStream(input: KioskReplyStreamInput) {
 }
 
 /** Converts an OpenAI-compatible provider SSE response into the kiosk event contract. */
-async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text: string) => void): Promise<KioskCompletion> {
+async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text: string) => void, onProgress: () => void): Promise<KioskCompletion> {
   const clarification = queryClarification(input.toolResults)
   if (clarification) {
     onTextDelta(clarification)
@@ -1302,9 +1271,12 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
   let firstOutputMs: number | undefined
   const response = await input.llmGateway.complete({ abortSignal: input.signal, modelName, body })
   const answer = await finishConversationReply(input, await parseKioskReplyStream(response, onTextDelta, () => {
-    firstOutputMs ??= performance.now() - startedAt
+    if (firstOutputMs === undefined) {
+      firstOutputMs = performance.now() - startedAt
+      onProgress()
+    }
   }), modelName)
-  return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(firstOutputMs !== undefined ? { firstOutputMs } : {}), ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}) } }
+  return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(firstOutputMs !== undefined ? { firstOutputMs } : {}), ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}), ...(answer.reasoningTokens !== undefined ? { reasoningTokens: answer.reasoningTokens } : {}) } }
 }
 
 /** Consumes only the Server reply tool; browser effects still use their own receipts. */
@@ -1444,6 +1416,8 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
   let content = ''
   let receivedPayload = false
   let inputTokens: number | undefined
+  let reasoningTokens: number | undefined
+  let responsesOutput: unknown[] | undefined
   const toolCalls: Array<Partial<KioskToolCall>> = []
 
   const consumeEvent = (rawEvent: string) => {
@@ -1451,13 +1425,25 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     if (!data || data === '[DONE]')
       return
     const parsed: unknown = JSON.parse(data)
-    inputTokens = promptTokens(parsed) ?? inputTokens
+    const usage = usageSummary(parsed)
+    inputTokens = usage.inputTokens ?? inputTokens
+    reasoningTokens = usage.reasoningTokens ?? reasoningTokens
+    if (parsed && typeof parsed === 'object' && 'error' in parsed)
+      throw createBadRequestError('LLM Provider stream failed', 'LLM_PROVIDER_ERROR')
     if (!parsed || typeof parsed !== 'object' || !('choices' in parsed) || !Array.isArray(parsed.choices))
       return
     receivedPayload = true
+    if (['length', 'content_filter'].includes(parsed.choices[0]?.finish_reason))
+      throw createBadRequestError('LLM Provider stream did not complete', 'LLM_PROVIDER_INVALID_RESPONSE')
     const delta = parsed.choices[0]?.delta
     if (!delta || typeof delta !== 'object')
       return
+    if (Array.isArray(delta.responses_output))
+      responsesOutput = delta.responses_output
+    // Native Responses withholds tool arguments until completion, but can still
+    // report that generation has begun without exposing a partial operation.
+    if (delta.responses_progress === true)
+      onOutput()
     if (typeof delta.content === 'string') {
       if (delta.content)
         onOutput()
@@ -1469,9 +1455,10 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     for (const partial of delta.tool_calls) {
       if (!partial || typeof partial !== 'object' || typeof partial.index !== 'number')
         continue
-      onOutput()
-      const existing = toolCalls[partial.index] ?? { function: { arguments: '', name: '' }, id: '', type: 'function' }
       const functionDelta = partial.function
+      if ((typeof partial.id === 'string' && partial.id) || (functionDelta && typeof functionDelta === 'object' && ((typeof functionDelta.name === 'string' && functionDelta.name) || (typeof functionDelta.arguments === 'string' && functionDelta.arguments))))
+        onOutput()
+      const existing = toolCalls[partial.index] ?? { function: { arguments: '', name: '' }, id: '', type: 'function' }
       toolCalls[partial.index] = {
         ...existing,
         ...(typeof partial.id === 'string' ? { id: partial.id } : {}),
@@ -1507,7 +1494,7 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
     && typeof toolCall.function?.name === 'string'
     && typeof toolCall.function.arguments === 'string'
   ))
-  return { content: content || undefined, toolCalls: completedToolCalls, inputTokens }
+  return { content: content || undefined, toolCalls: completedToolCalls, inputTokens, ...(reasoningTokens !== undefined ? { reasoningTokens } : {}), ...(responsesOutput ? { responsesOutput } : {}) }
 }
 
 /**
@@ -1657,20 +1644,22 @@ function toConversationMessages(
     const calls = entry.metadata.toolCalls as KioskToolCall[]
     if (!calls.length || calls.some(call => !pendingIds.has(call.id) && !results.has(call.id)))
       return []
-    return [calls]
+    return [{ calls, responsesOutput: Array.isArray(entry.metadata.responsesOutput) ? entry.metadata.responsesOutput : undefined }]
   }).slice(-4)
   const exchanges: Array<
-    | { content: string, role: 'assistant', tool_calls: KioskToolCall[] }
+    | { content: string, role: 'assistant', tool_calls: KioskToolCall[], responses_output?: unknown[] }
     | { content: string, role: 'tool', tool_call_id: string }
   > = []
   // Match the host's four tool batches and sixteen-call budget, keeping each
   // selected batch intact so a provider never receives an orphaned result.
   let callCount = 0
-  for (const calls of batches.toReversed()) {
+  for (const { calls, responsesOutput } of batches.toReversed()) {
     callCount += calls.length
     if (callCount > 16)
       break
-    const batch: typeof exchanges = [{ role: 'assistant', content: '', tool_calls: calls.map(call => ({ ...call, function: { ...call.function, arguments: browserToolArguments(call.function.name, call.function.arguments, 'model') } })) }]
+    // Native reasoning/function items are ordered and correlated by call_id.
+    // Keep them on their original batch only; never leak them to the client or a new customer task.
+    const batch: typeof exchanges = [{ role: 'assistant', content: '', tool_calls: calls.map(call => ({ ...call, function: { ...call.function, arguments: browserToolArguments(call.function.name, call.function.arguments, 'model') } })), ...(responsesOutput ? { responses_output: responsesOutput } : {}) }]
     for (const call of calls) {
       const result = results.get(call.id)
       if (!pendingIds.has(call.id) && result)
@@ -1685,7 +1674,7 @@ function conversationTextEntries(entries: Awaited<ReturnType<KioskService['getVi
   return conversationEntries(entries)
 }
 
-function isChatCompletion(value: unknown): value is { choices: [{ message: { content?: string | null, tool_calls?: KioskToolCall[] } }] } {
+function isChatCompletion(value: unknown): value is { choices: [{ message: { content?: string | null, tool_calls?: KioskToolCall[], responses_output?: unknown[] }, finish_reason?: string }] } {
   if (!value || typeof value !== 'object' || !('choices' in value) || !Array.isArray(value.choices))
     return false
   const choice = value.choices[0]

@@ -26,6 +26,8 @@ export const browserRecoveryContextSchema = strictObject({
   documentId: id,
   contextKey: id,
   canRetry: boolean(),
+  /** Explicitly discards an unfinished cart; never authorizes replay or an uncertain order submission. */
+  canReset: boolean(),
   execution: optional(serviceOperationSchema),
 })
 

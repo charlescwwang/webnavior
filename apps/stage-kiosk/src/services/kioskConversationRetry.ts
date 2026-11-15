@@ -152,39 +152,49 @@ export async function resetConversationService(client: Pick<ReturnType<typeof cr
   if (reader) {
     const current = parse(looseObject({ ok: literal(true), page: string(), selectedTable: optional(string()), cart: looseObject({ lines: array(unknown()) }) }), await client.execute(reader, { includeCatalog: false, forAdmission: true }))
     if (current.page === 'table') {
-      // Even an empty cart cannot dismiss an unresolved dispatched operation.
-      await readConversationRetryContext(client)
+      // Retrying a purchase and explicitly discarding an old unfinished cart
+      // have different effects. Never use purchase-retry admission for Restart.
+      const recovery = client.tools.value.find(tool => tool.name === 'browser_recovery_context')!
+      const state = parse(browserRecoveryContextSchema, await client.execute(recovery, {}))
+      if (!state.canReset)
+        throw new Error('上一筆餐點操作的結果仍在確認，請稍候再試；若持續無法重新開始，請洽工作人員。')
       // A verified empty table cart needs no hidden Start or fake reset receipt.
       // The lifecycle still retires this visitor and reloads the table entry.
-      if (!current.cart.lines.length)
+      if (!current.cart.lines.length && state.canRetry)
         return 'reload' as const
-      const start = client.tools.value.find(tool => tool.name === 'browser_start_ordering')
-      if (!start || !current.selectedTable)
-        throw new Error('請先選擇桌號或櫃台取餐，才能清除未完成的購物車。')
-      // Explicit Restart authorizes clearing the unfinished cart. Enter through
-      // the real selected-table button to reach PB's clear control, without
-      // choosing a different table or issuing a merchant order.
-      const started = parse(menuEntryReceiptSchema, await client.execute(start, { name: current.selectedTable, forReset: true }))
-      if (started.selectedTable !== current.selectedTable)
-        throw new Error('清理購物車前的選桌狀態已變更。')
-      const deadline = Date.now() + 15_000
-      while (true) {
-        await client.waitUntilReady()
-        const freshReader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
-        if (!freshReader)
-          throw new Error('清理購物車前的讀取功能尚未就緒。')
-        // A ready transport may still be the table document while PB awaits
-        // its Start request. Read-only polling waits for the actual SPA route;
-        // it never repeats Start or a cart effect.
-        const menu = parse(looseObject({ ok: literal(true), page: picklist(['table', 'menu']), cart: looseObject({ tableName: optional(string()) }) }), await client.execute(freshReader, { includeCatalog: false, forAdmission: true }))
-        if (menu.page === 'menu') {
-          if (menu.cart.tableName !== current.selectedTable)
-            throw new Error('清理購物車前的桌號尚未確認。')
-          break
+      if (current.cart.lines.length) {
+        const start = client.tools.value.find(tool => tool.name === 'browser_start_ordering')
+        if (!start || !current.selectedTable)
+          throw new Error('請先選擇桌號或櫃台取餐，才能清除未完成的購物車。')
+        // Explicit Restart authorizes clearing the unfinished cart. Enter through
+        // the real selected-table button to reach PB's clear control, without
+        // choosing a different table or issuing a merchant order.
+        const entry = await client.execute(start, { name: current.selectedTable, forReset: true })
+        const rejected = safeParse(looseObject({ ok: literal(false), customerMessage: optional(string()), error: optional(string()) }), entry)
+        if (rejected.success)
+          throw new Error(rejected.output.customerMessage ?? rejected.output.error ?? '網站尚未進入菜單，購物車尚未清空。')
+        const started = parse(menuEntryReceiptSchema, entry)
+        if (started.selectedTable !== current.selectedTable)
+          throw new Error('清理購物車前的選桌狀態已變更。')
+        const deadline = Date.now() + 15_000
+        while (true) {
+          await client.waitUntilReady()
+          const freshReader = client.tools.value.find(tool => tool.name === 'browser_cart_get')
+          if (!freshReader)
+            throw new Error('清理購物車前的讀取功能尚未就緒。')
+          // A ready transport may still be the table document while PB awaits
+          // its Start request. Read-only polling waits for the actual SPA route;
+          // it never repeats Start or a cart effect.
+          const menu = parse(looseObject({ ok: literal(true), page: picklist(['table', 'menu']), cart: looseObject({ tableName: optional(string()) }) }), await client.execute(freshReader, { includeCatalog: false, forAdmission: true }))
+          if (menu.page === 'menu') {
+            if (menu.cart.tableName !== current.selectedTable)
+              throw new Error('清理購物車前的桌號尚未確認。')
+            break
+          }
+          if (Date.now() >= deadline)
+            throw new Error('網站尚未完成切換，請稍後再按重新開始。')
+          await new Promise(resolve => setTimeout(resolve, 100))
         }
-        if (Date.now() >= deadline)
-          throw new Error('網站尚未完成切換，請稍後再按重新開始。')
-        await new Promise(resolve => setTimeout(resolve, 100))
       }
     }
   }

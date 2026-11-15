@@ -3,7 +3,7 @@ import type { KioskAudioChunk } from '@proj-airi/stage-shared/kiosk-audio'
 import type { ContextReply, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
 
-import type { AnswerDecision, BrowserAnswer, BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
+import type { AnswerDecision, BrowserAnswer, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
 import type { KioskReplyFailureReason } from '../../../server/src/services/domain/kiosk-agent-interaction'
 import type { DecisionStageResult, KioskConversationDecisionState, KioskDecisionState, PresentedQuestion } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import type { GreetingPhase, InteractionMetadata } from '../../../server/src/services/domain/kiosk/interactionContracts'
@@ -101,6 +101,7 @@ export type KioskAgentInteractionMode = 'active' | 'decision_guidance' | 'touch_
 /** Customer-safe progress emitted by the Server-owned Kiosk reply stream. */
 export type KioskConversationStreamEvent
   = | { type: 'turn-started' }
+    | { type: 'reply-progress' }
     | { text: string, type: 'assistant-delta' }
     | { toolCall: KioskToolCall, type: 'tool-requested' }
     | { agentMode: KioskAgentInteractionMode, answer?: string, reply?: ContextReply, toolCalls: KioskToolCall[], type: 'turn-finished' }
@@ -175,12 +176,7 @@ export async function startKioskVisitorSession(serviceId: string) {
   })
 }
 
-/** Read-only finite semantic check; the browser still owns every vendor effect. */
-export async function decideBrowserEffect(visitorSessionId: string, proposal: BrowserEffect, signal?: AbortSignal) {
-  return request<EffectDecision>(`/api/kiosk/visitor-sessions/${visitorSessionId}/browser-effect`, { method: 'POST', body: JSON.stringify(proposal), signal })
-}
-
-/** Consumes a Server-issued plan; contextual/multi-row targets also receive bounded semantic verification. */
+/** Consumes one exact Server-issued plan without another model decision; merchant state is validated before dispatch. */
 export async function admitBrowserPlan(visitorSessionId: string, plan: BrowserPlan, signal?: AbortSignal) {
   return request<EffectDecision>(`/api/kiosk/visitor-sessions/${visitorSessionId}/browser-plan`, { method: 'POST', body: JSON.stringify(plan), signal })
 }

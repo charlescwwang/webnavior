@@ -76,3 +76,33 @@ it('does not treat a read preserving an older question as a newly issued questio
 it('recognizes a Host clarification as waiting for the customer too', () => {
   expect(browserToolResult('start_ordering_at_table', { ok: true, source: 'host', status: 'clarification', effect: 'none', customerMessage: '請確認桌號。' }).outcome).toBe('awaiting_customer_answer')
 })
+
+// Report: this chat, 2026-11-15; a dispatched order is not a verified merchant acceptance.
+it.each([
+  { status: 'pending', effect: 'pending', consistency: 'unavailable', outcome: 'action_pending' },
+  { status: 'accepted', effect: 'applied', consistency: 'unavailable', outcome: 'action_completed' },
+  { status: 'accepted', effect: 'applied', consistency: 'conflict', outcome: 'action_completed' },
+  { status: 'unknown', effect: 'unknown', consistency: 'unavailable', outcome: 'action_result_requires_review' },
+  { status: 'rejected', effect: 'none', consistency: 'unavailable', outcome: 'action_blocked' },
+])('projects submission $status/$consistency without losing its distinct outcome', ({ outcome, ...state }) => {
+  const order = state.status === 'accepted' ? { hash: 'order-hash', number: '4006', status: 20, total: 50 } : undefined
+  const result = browserToolResult('browser_order_submit', { schemaVersion: 1, code: 'order-submission-result', source: 'browser', ok: true, dispatch: 'dispatched', ...state, ...(order ? { order } : {}), reason: 'verified-test-result', customerMessage: '回覆依核實狀態產生' })
+  expect(result.outcome).toBe(outcome)
+  expect(result.submission).toMatchObject({ status: state.status, consistency: state.consistency })
+  expect(result.customerMessage).toBe('回覆依核實狀態產生')
+  if (order) {
+    const submission = result.submission
+    if (submission?.status !== 'accepted')
+      throw new Error('Expected a verified merchant acceptance.')
+    expect(submission.order).toEqual(order)
+  }
+})
+
+// Report: this chat, 2026-11-15; tool success must retain the unabridged compound request for Main's existing next round.
+it('projects tool-level completion without claiming the complete customer request is finished', () => {
+  const result = browserToolResult('replace_item_in_cart', { ok: true, source: 'browser', status: 'verified', effect: 'applied', completionScope: 'tool-call', originalRequest: '排骨三份、雞腿只要一份', completedEffects: ['雞腿兩份已換成排骨兩份'] })
+  expect(result.outcome).toBe('action_completed')
+  expect(result.completionScope).toBe('tool-call')
+  expect(result.originalRequest).toBe('排骨三份、雞腿只要一份')
+  expect(result.completedEffects).toEqual(['雞腿兩份已換成排骨兩份'])
+})

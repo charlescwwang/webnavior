@@ -108,6 +108,18 @@ it('does not infer an empty cart from table entry or a failed lookup', async () 
   expect(gate.owns('current', service)).toBe(false)
 })
 
+// Report: this chat, Nov15 — actual PB rejects cart reads before the first table entry.
+it('allows only table entry while cart admission is deferred and still blocks an old cart afterwards', async () => {
+  const { gate } = setup()
+  const entry = 'https://app.esgpb.com/order/store/1kgJeql/internal_use/menu/select-table'
+  const deferred = { ok: true, page: 'table', cartAdmission: 'after-table-entry' }
+  expect(await gate.prepare('current', entry, async () => deferred, () => true)).toBe('table-only')
+  expect(gate.owns('current', entry)).toBe(false)
+  expect(await gate.prepare('current', entry, async () => ({ ok: true, cart: { version: 'old', lines: [{}] } }), () => true)).toBe('blocked')
+  expect(gate.owns('current', entry)).toBe(false)
+  await expect(gate.prepare('current', entry, async () => ({ ...deferred, page: 'menu' }), () => true)).rejects.toThrow()
+})
+
 // Report: this chat, Nov15; Start revealed a blank area because cart admission ran only after entry.
 it('checks a fresh Host-only table cart before exposing Start and retains that reception on the menu', async () => {
   const { gate } = setup()

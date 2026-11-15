@@ -653,3 +653,14 @@ describe('kiosk System One fast path', () => {
     expect(execute).toHaveBeenCalledTimes(1)
   })
 })
+
+// Report: this chat, Nov15 — direct checkout assent lost the next cart question
+// because a receipt without product visuals became a bare clarification string.
+it('preserves a structured cart confirmation on the normal reply presentation path', async () => {
+  const question = { questionId: 'review-cart', purpose: 'browser-service-question', question: '餐點、份數和金額正確嗎？', expiresAt: Date.now() + 120_000, choices: [{ id: 'yes', description: '確認購物車，選擇發票方式' }, { id: 'no', description: '先修改餐點' }] }
+  const receipt = { ok: true, source: 'browser', status: 'clarification', effect: 'none', customerMessage: '目前購物車：水餃一份。', pendingCustomerChoice: question }
+  const onExecuted = vi.fn()
+  const result = await runFastPath({ isEnabled: async () => true, transcript: '好', decide: async () => ({ kind: 'FAST_ACTION', actionId: 'yes' }), source: { context: async () => ({ phase: 'ordering', candidates: [{ id: 'yes', description: '開啟購物車' }] }), execute: async () => receipt }, webMcp: { tools: [], execute: vi.fn() }, onExecuted })
+  expect(result).toMatchObject({ kind: 'FAST_ACTION', result: receipt })
+  expect(onExecuted).toHaveBeenCalledOnce()
+})

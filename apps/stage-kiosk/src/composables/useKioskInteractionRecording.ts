@@ -42,6 +42,8 @@ interface ConversationPresentationCallbacks {
   prepareRound?: (signal: AbortSignal) => Promise<{ decisionState?: KioskConversationDecisionState, tools: Tool[] }>
   /** Host-owned literal answer; preparation is read-only, execution follows durable user recording. */
   prepareQuestionAnswer?: () => Promise<(() => Promise<unknown>) | undefined>
+  /** First actual provider output, without exposing unverified text or tool arguments. */
+  onReplyProgress?: () => void
   onAssistantDelta?: (text: string) => void
   onToolActivity?: (toolName: string, state: 'executing' | 'done' | 'error') => void
   onToolRequested?: (toolName: string) => void
@@ -318,6 +320,8 @@ export function useKioskInteractionRecording() {
           transportReason = event.reason
         if (event.type === 'turn-started')
           callbacks.onTurnStarted?.()
+        if (event.type === 'reply-progress')
+          callbacks.onReplyProgress?.()
         if (event.type === 'assistant-delta')
           callbacks.onAssistantDelta?.(event.text)
         if (event.type === 'tool-requested')
@@ -482,7 +486,12 @@ export function useKioskInteractionRecording() {
         }
         const undispatchedCall = toolResults.some((result) => {
           try {
-            return JSON.parse(result.content)?.code === 'TOOL_NOT_AVAILABLE'
+            const payload = JSON.parse(result.content)
+            // Only the adapter's validation receipt proves that correcting
+            // arguments cannot replay a dispatched cart operation.
+            return payload?.code === 'TOOL_NOT_AVAILABLE'
+              || (payload?.code === 'INVALID_TOOL_ARGUMENTS' && payload.source === 'browser'
+                && payload.status === 'rejected' && payload.effect === 'none' && payload.dataOnly === true)
           }
           catch { return false }
         })
@@ -533,6 +542,8 @@ export function useKioskInteractionRecording() {
             transportReason = event.reason
           if (event.type === 'turn-started')
             callbacks.onTurnStarted?.()
+          if (event.type === 'reply-progress')
+            callbacks.onReplyProgress?.()
           if (event.type === 'assistant-delta')
             callbacks.onAssistantDelta?.(event.text)
           if (event.type === 'tool-requested')

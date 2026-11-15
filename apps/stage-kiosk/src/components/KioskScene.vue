@@ -1023,7 +1023,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
                 }
                 else {
                   result = tool.name === 'browser_answer_question'
-                    ? await (await prepareBrowserQuestionAnswer(interactiveServiceClient))?.() ?? { ok: false, source: 'browser', effect: 'none', needsAssistant: true }
+                    ? await (await prepareBrowserQuestionAnswer(interactiveServiceClient, args))?.() ?? { ok: false, source: 'browser', effect: 'none', needsAssistant: true }
                     : tool.name === 'browser_ask_quantity'
                       ? await executeBrowserQuantityQuestion(interactiveServiceClient, args)
                       : tool.name === 'browser_close_product'
@@ -2517,6 +2517,15 @@ async function sendConversationMessage(
           if (state === 'done' && ['order_add_item', 'cart_add_item', 'cart_remove_item', 'cart_set_line_quantity', 'order_set_fulfillment'].includes(toolName))
             playTransientMotion('acknowledge')
         },
+        onReplyProgress: () => {
+          if (!interactionTurn.isCurrent(turn) || questionReceipt || operationReply)
+            return
+          const message = t('stage.kiosk.wait.generating')
+          updateAgentStep(message)
+          conversationWorkStatus.value = message
+          // This event proves output has started, not that any operation succeeded.
+          startConversationProgress(turn.id, message)
+        },
         onAssistantDelta: () => {
           if (!interactionTurn.isCurrent(turn) || questionReceipt || operationReply)
             return
@@ -2773,7 +2782,7 @@ async function startNewCustomerSession() {
     await resetForNewCustomer()
   }
   catch (error) {
-    customerResetError.value = errorMessageFrom(error) ?? '無法重新開始，請確認連線後再試。'
+    customerResetError.value = t('stage.kiosk.cart-handoff.restart-failed')
     console.error('[stage-kiosk] failed to start the next customer session:', error)
   }
 }
@@ -2798,7 +2807,7 @@ async function restartCustomerSession() {
     // may see its error. A late reset failure cannot mark a new one failed.
     if (customer !== customerSession.customer.value?.sessionId)
       return
-    customerResetError.value = errorMessageFrom(error) ?? '無法重新開始，請確認連線後再試。'
+    customerResetError.value = t('stage.kiosk.cart-handoff.restart-failed')
     console.error('[stage-kiosk] failed to restart the customer session:', error)
   }
 }

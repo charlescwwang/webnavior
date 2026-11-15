@@ -2,11 +2,7 @@ import { readFile } from 'node:fs/promises'
 
 import { orderingTools } from '@proj-airi/stage-shared/ordering-tools'
 import { pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
-import { parse } from 'valibot'
 import { describe, expect, it } from 'vitest'
-
-import { decideEffect } from '.'
-import { browserEffectSchema } from './contracts'
 
 const mainUrl = process.env.PB_CUSTOMIZATION_MAIN_URL
 const jevUrl = process.env.PB_CUSTOMIZATION_JEV_URL
@@ -66,26 +62,6 @@ describe.skipIf(!mainUrl)('live PB customization tool selection', () => {
       expect(input.replacement.note ?? '').toBe('')
     }
   }, 65_000)
-
-  it('independently validates copying and partial customization against the source facts', async () => {
-    for (const mode of ['copy', 'customize'] as const) {
-      const source = { name, quantity: 3, description: '每份10顆', options: [{ name: '水餃', quantity: 2 }], note: '不要蔥' }
-      const effect = parse(browserEffectSchema, {
-        transcript: mode === 'copy' ? '再一份一樣的水餃' : '其中一份水餃改成十二顆，其他都照舊',
-        action: mode === 'copy' ? 'add' : 'replace',
-        description: '本次一份餐點操作',
-        note: '不要蔥',
-        storeFacts: '周氏水餃基本每份8顆，水餃加量是每份額外顆數；原餐每份10顆、加量2顆、備註不要蔥。',
-        cartContext: { version: 'synthetic', lines: [source] },
-        ...(mode === 'copy' ? { copySource: source } : { cartTarget: { selected: source, others: [] } }),
-        serving: { productName: name, variantName: '', options: [{ name: '水餃', quantity: mode === 'copy' ? 2 : 4 }] },
-        deltas: [{ name, kind: 'product', mode: 'increase', quantity: 1 }, ...(mode === 'copy' ? [] : [{ name, kind: 'cart_line', mode: 'remove', quantity: 1 }])],
-      })
-      const result = await decideEffect(effect, { complete: body => fetch(new URL('chat/completions', `${mainUrl!.replace(/\/+$/, '')}/`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, model: process.env.PB_CUSTOMIZATION_MAIN_MODEL ?? 'qwen36', chat_template_kwargs: { enable_thinking: false } }), signal: AbortSignal.timeout(60_000) }) })
-      console.info(JSON.stringify({ case: mode, effectDecision: result }))
-      expect(result.choice).toBe('ALLOW')
-    }
-  }, 180_000)
 })
 
 describe.skipIf(!jevUrl)('live PB dumpling Jev candidate', () => {
@@ -100,26 +76,3 @@ describe.skipIf(!jevUrl)('live PB dumpling Jev candidate', () => {
 })
 
 // Fixed synthetic replay of the reported alias; no merchant or customer data.
-describe.skipIf(!mainUrl)('live PB named selection regression', () => {
-  it('clears an abandoned empty search instead of asking which cart item to remove', async () => {
-    const response = await fetch(new URL('chat/completions', `${mainUrl!.replace(/\/+$/, '')}/`), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(60_000),
-      body: JSON.stringify({ model: process.env.PB_CUSTOMIZATION_MAIN_MODEL ?? 'qwen36', temperature: 0, max_tokens: 500, chat_template_kwargs: { enable_thinking: false }, messages: [
-        { role: 'system', content: '你是點餐助手。現在在菜單，搜尋欄是虱目魚，搜尋結果0道，購物車空，沒有未完成的餐點選擇或份數問題。工具已是目前可用工具，選一個適合的操作。' },
-        { role: 'assistant', content: '目前搜尋沒有找到這道餐點。可以換一道餐點，或說回到菜單看全部餐點。' },
-        { role: 'user', content: '不要了' },
-      ], tools: ['return_to_menu', 'cancel_item_selection', 'ask_customer_question', 'reply_to_customer'].map(key => ({ type: 'function', function: { name: key, description: orderingTools[key as keyof typeof orderingTools].description, parameters: orderingTools[key as keyof typeof orderingTools].parameters } })), tool_choice: 'required' }),
-    })
-    expect(response.ok).toBe(true)
-    const result = await response.json() as { choices: { message: { tool_calls: { function: { name: string } }[] } }[] }
-    expect(result.choices[0].message.tool_calls[0].function.name).toBe('return_to_menu')
-  }, 70_000)
-
-  it('accepts the uniquely published pork-bento alias without changing the requested count', async () => {
-    const effect = parse(browserEffectSchema, { transcript: '我要一份排骨便當', action: 'add', description: '新增炸排骨便當', note: '', completedEffects: [], serving: { productName: '炸排骨便當', variantName: '', options: [] }, deltas: [{ name: '炸排骨便當', kind: 'product', mode: 'increase', quantity: 1 }], cartContext: { version: 'synthetic', lines: [] } })
-    const result = await decideEffect(effect, { catalogLabels: [{ name: '炸排骨便當', aliases: ['排骨便當'], category: '' }], complete: body => fetch(new URL('chat/completions', `${mainUrl!.replace(/\/+$/, '')}/`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, model: process.env.PB_CUSTOMIZATION_MAIN_MODEL ?? 'qwen36', chat_template_kwargs: { enable_thinking: false } }), signal: AbortSignal.timeout(60_000) }) })
-    expect(result.choice).toBe('ALLOW')
-  }, 90_000)
-})

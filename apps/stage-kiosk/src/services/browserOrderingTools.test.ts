@@ -71,7 +71,7 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
   })
   if (pending)
     dialogue.presentQuantity(facts, 'chicken', '雞腿飯')
-  cleanup.push(beginBrowserCartTask(transcript, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue, catalogLabels: () => labels }))
+  cleanup.push(beginBrowserCartTask(transcript, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue, catalogLabels: () => labels }))
   const publicTools = createBrowserOrderingTools({ tools: readonly(tools), execute })
   let id = 0
   const call = async (name: string, input: Record<string, unknown>) => {
@@ -88,7 +88,7 @@ it('resolves the pending cart review when Main chooses continue_checkout after a
   const { call, facts, dialogue, answer, checkout, execute } = setup('結帳')
   Object.assign(facts, { page: 'cart', checkout })
   await call('open_cart', {})
-  cleanup.push(beginBrowserCartTask('ok', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('ok', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'yes', provider: 'main' })
   const result = await call('continue_checkout', {})
   expect(answer).toHaveBeenCalledOnce()
@@ -102,7 +102,7 @@ it.each(['no', 'uncertain'] as const)('does not advance checkout when the indepe
   Object.assign(facts, { page: 'cart', checkout })
   await call('open_cart', {})
   const before = execute.mock.calls.length
-  cleanup.push(beginBrowserCartTask('先看一下', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('先看一下', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   answer.mockResolvedValueOnce(choice === 'no' ? { kind: 'ANSWER', choiceId: 'no', provider: 'main' } : { kind: 'UNCERTAIN', provider: 'main' })
   await call('continue_checkout', {})
   expect(answer).toHaveBeenCalledOnce()
@@ -114,7 +114,7 @@ it.each(['no', 'uncertain'] as const)('does not advance checkout when the indepe
 it('advances cart confirmation to invoice fields and uses a separate one-use final submission question', async () => {
   const { call, client, facts, dialogue, answer, checkout, execute, publicTools } = setup('結帳')
   Object.assign(facts, { page: 'cart', checkout })
-  const nextTurn = (text: string) => cleanup.push(beginBrowserCartTask(text, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  const nextTurn = (text: string) => cleanup.push(beginBrowserCartTask(text, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const reviewed = await call('open_cart', {})
   expect(reviewed.pendingCustomerChoice.question).toContain('餐點、份數和金額正確嗎')
   nextTurn('ok')
@@ -174,6 +174,35 @@ it('changes one customized serving without dropping its other options or note', 
   Object.assign(facts.cart.lines[0], { options: [{ name: '蛋', quantity: 1 }, { name: '飯', quantity: 1 }], note: '飯少', unitPrice: 115 })
   expect(await call('replace_item_in_cart', { target: { name: '雞腿飯' }, replaceQuantity: 1, replacement: { name: '雞腿飯', options: [{ group: '加購', name: '蛋', quantity: 0 }] } })).toMatchObject({ status: 'verified' })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_replace' }), expect.objectContaining({ quantity: 1, retainQuantity: 2, note: '飯少', unitPrice: 105, selection: { version: 'config', variantRef: '', choices: [{ ref: 'rice', quantity: 1 }] } }))
+})
+
+// Report: this chat, Nov15; Main tried to set a cart serving total to zero.
+it('rejects zero serving totals before website IO without leaking schema diagnostics', async () => {
+  const { call, execute } = setup('雞腿飯不要了')
+  const result = await call('set_cart_item_quantity', { target: { name: '雞腿飯' }, quantity: 0 })
+  expect(result).toMatchObject({ ok: false, status: 'rejected', effect: 'none', code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true })
+  expect(result.customerMessage).toBe('餐點尚未變更，請再說一次要調整哪道餐點的份數。')
+  expect(result.explanation).toContain('remove_items_from_cart')
+  expect(result.customerMessage).not.toContain('Invalid')
+  expect(execute).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov15; Main supplied a second count in replacement.quantity.
+it('rejects a duplicate replacement count without exposing schema errors or touching the website', async () => {
+  const { call, execute } = setup('三份雞腿飯換排骨飯')
+  const result = await call('replace_item_in_cart', { target: { name: '雞腿飯' }, replaceQuantity: 3, replacement: { name: '排骨飯', quantity: 3 } })
+  expect(result).toMatchObject({ ok: false, status: 'rejected', effect: 'none', code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true })
+  expect(result.customerMessage).toBe('餐點尚未變更，請再說一次要將哪道餐點的幾份換成哪道餐點。')
+  expect(result.explanation).toContain('replaceQuantity')
+  expect(result.explanation).toContain('replacement')
+  expect(execute).not.toHaveBeenCalled()
+})
+
+it('uses the single replacement serving count for a complete three-serving substitution', async () => {
+  const { facts, call, execute } = setup('三份雞腿飯換排骨飯')
+  facts.products.push({ ...facts.products[0], ref: 'pork', name: '排骨飯' })
+  expect(await call('replace_item_in_cart', { target: { name: '雞腿飯' }, replaceQuantity: 3, replacement: { name: '排骨飯' } })).toMatchObject({ status: 'verified' })
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_replace' }), expect.objectContaining({ productRef: 'pork', lineRef: 'line', quantity: 3, retainQuantity: 0 }))
 })
 
 it('replaces servings across matching rows and does not inherit customization onto a different dish', async () => {
@@ -264,7 +293,7 @@ it('adds the named dish after its quantity answer without another add-confirmati
 it('keeps recommendation assent separate from an explicit purchase with quantity', async () => {
   const { call, client, dialogue, facts } = setup('剛推薦雞腿飯')
   expect(await call('ask_customer_question', { questionType: 'purchase-recommendation', name: '雞腿飯' })).toMatchObject({ status: 'clarification' })
-  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const assent = await prepareBrowserQuestionAnswer(client)
   expect(await assent!()).toMatchObject({ status: 'clarification', customerMessage: expect.stringContaining('幾份') })
   expect(facts.cart.lines[0].quantity).toBe(3)
@@ -272,7 +301,7 @@ it('keeps recommendation assent separate from an explicit purchase with quantity
 it('accepts recommendation assent with an explicit serving count without asking twice', async () => {
   const { call, client, dialogue, facts } = setup('剛推薦雞腿飯')
   await call('ask_customer_question', { questionType: 'purchase-recommendation', name: '雞腿飯' })
-  cleanup.push(beginBrowserCartTask('好來兩份', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('好來兩份', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const purchase = await prepareBrowserQuestionAnswer(client)
   expect(await purchase!()).toMatchObject({ status: 'verified' })
   expect(facts.cart.lines[0].quantity).toBe(5)
@@ -280,7 +309,7 @@ it('accepts recommendation assent with an explicit serving count without asking 
 it('restores the quantity question when switching to soup is declined', async () => {
   const { call, client, dialogue, facts } = setup('有什麼湯', true)
   await call('ask_customer_question', { questionType: 'cancel-and-search', query: '湯' })
-  cleanup.push(beginBrowserCartTask('不要', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('不要', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const declined = await prepareBrowserQuestionAnswer(client)
   expect(await declined!()).toMatchObject({ status: 'clarification', customerMessage: expect.stringContaining('幾份') })
   expect(facts.cart.lines[0].quantity).toBe(3)
@@ -289,7 +318,7 @@ it('restores the quantity question when switching to soup is declined', async ()
 it('closes the unfinished selection and searches soup only after switch consent', async () => {
   const { call, client, dialogue, facts, execute } = setup('有什麼湯', true)
   await call('ask_customer_question', { questionType: 'cancel-and-search', query: '湯' })
-  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('好', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const accepted = await prepareBrowserQuestionAnswer(client)
   expect(await accepted!()).toMatchObject({ ok: true })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_close_product' }), {})
@@ -331,7 +360,7 @@ it.each(['好', '不好'])('only relaxes a no-match budget after an affirmative 
   const { call, client, dialogue } = setup('看100元以下餐點')
   await call('list_menu_items', { criteria: { maxUnitPrice: 50, priceScope: 'reception' } })
   expect((await call('ask_customer_question', { questionType: 'price-range' })).pendingCustomerChoice.question).toContain('要看其他價格')
-  cleanup.push(beginBrowserCartTask(answer, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask(answer, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const apply = await prepareBrowserQuestionAnswer(client)
   expect(apply).toBeTypeOf('function')
   await apply!()
@@ -350,7 +379,7 @@ it('does not reuse an answered question as evidence for a later utterance', asyn
   const { call, client, dialogue, facts } = setup('看便宜餐點')
   await call('list_menu_items', { criteria: { maxUnitPrice: 50 } })
   await call('ask_customer_question', { questionType: 'price-range' })
-  cleanup.push(beginBrowserCartTask('好', { utteranceId: 41, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('好', { utteranceId: 41, isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const apply = await prepareBrowserQuestionAnswer(client)
   await apply!()
   expect(dialogue.conversation(facts, 41).answeredQuestion).toBeDefined()
@@ -415,7 +444,7 @@ it.each(['recommendation', 'other-recommendations'].flatMap(purpose => ['好', '
   expect(shown).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-service-question', question: '要來一份雞腿飯嗎？' } })
   expect(dialogue.hasPending()).toBe(true)
   expect(facts.cart.lines[0].quantity).toBe(3)
-  cleanup.push(beginBrowserCartTask(reply, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask(reply, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const purchase = await prepareBrowserQuestionAnswer(client)
   expect(purchase).toBeTypeOf('function')
   expect(await purchase!()).toMatchObject({ status: 'verified' })
@@ -467,7 +496,7 @@ it('adds a named dumpling serving after answering quantity without losing the su
   expect(facts.cart.lines).toHaveLength(0)
   expect(dialogue.selectionForTurn(facts, 19)).toBeUndefined()
   expect(decide).not.toHaveBeenCalled()
-  const admit = vi.fn<Parameters<typeof beginBrowserCartTask>[1]['decide']>(async effect => ({ choice: effect.transcript === '一份' ? 'ALLOW' : 'CLARIFY', provider: 'main' }))
+  const admit = vi.fn<Parameters<typeof beginBrowserCartTask>[1]['decide']>(async effect => ({ choice: effect.transcript === '一份' ? 'ALLOW' : 'CLARIFY', provider: 'main', ...(effect.transcript === '一份' ? { admission: 'issued-plan' as const } : {}) }))
   cleanup.push(beginBrowserCartTask('一份', { utteranceId: 18, isCurrent: () => true, decide: admit, dialogue }))
   expect(await readBrowserConversation(client, 'main-handoff', client.tools.value.map(tool => tool.name))).toMatchObject({ sourceUtterance: '一份', providedSlots: { name: product.name, quantity: 1 } })
   expect(await call('add_items_to_cart', { items: [{ name: product.name, quantity: 1 }] })).toMatchObject({ status: 'verified' })
@@ -483,13 +512,13 @@ it('keeps the accepted serving in a durable draft and asks only the required gro
   const product = facts.products[0]
   product.configurations[0].groups = [{ ref: 'drink', name: '飲料', required: true, maximum: 1, choices: [{ ref: 'tea', name: '紅茶', unitPrice: 10, maximum: 1 }] }]
   await call('point_to_menu_items', { names: [product.name], purpose: 'recommendation' })
-  cleanup.push(beginBrowserCartTask('好', { utteranceId: 16, intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('好', { utteranceId: 16, intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const accept = await prepareBrowserQuestionAnswer(client)
   expect(await accept!()).toMatchObject({ status: 'clarification', pendingCustomerChoice: { purpose: 'browser-order-slot' } })
   expect(dialogue.conversation(facts, 16)).toMatchObject({ drafts: [{ name: product.name, quantity: 1 }] })
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(0)
   answer.mockResolvedValue({ kind: 'ANSWER', choiceId: 'option:tea', provider: 'main' })
-  const decide = vi.fn<Parameters<typeof beginBrowserCartTask>[1]['decide']>(async effect => ({ choice: effect.transcript === '紅茶' ? 'ALLOW' : 'CLARIFY', provider: 'main' }))
+  const decide = vi.fn<Parameters<typeof beginBrowserCartTask>[1]['decide']>(async effect => ({ choice: effect.transcript === '紅茶' ? 'ALLOW' : 'CLARIFY', provider: 'main', ...(effect.transcript === '紅茶' ? { admission: 'issued-plan' as const } : {}) }))
   cleanup.push(beginBrowserCartTask('紅茶', { utteranceId: 17, intentSource: 'jev', isCurrent: () => true, decide, dialogue }))
   const choose = await prepareBrowserQuestionAnswer(client)
   const completed = await choose!()
@@ -530,12 +559,12 @@ it.each(['jev', 'main'] as const)('binds only actually recommended dishes and co
   expect(question.choices.filter(choice => choice.id.startsWith('product:')).map(choice => choice.description)).toEqual(names.map((name, index) => `這組第 ${index + 1} 項「${name}」，單份基本售價 100 元；只選品項，尚未加入。`))
   expect(shown.customerMessage).toContain(question.question)
   expect(facts.cart.lines).toHaveLength(0)
-  cleanup.push(beginBrowserCartTask(names[1], { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask(names[1], { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const select = await prepareBrowserQuestionAnswer(client)
   expect(select).toBeTypeOf('function')
   expect(await select!()).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity' } })
   expect(facts.cart.lines).toHaveLength(0)
-  cleanup.push(beginBrowserCartTask('兩份', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('兩份', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const purchase = await prepareBrowserQuestionAnswer(client)
   expect(purchase).toBeTypeOf('function')
   expect(await purchase!()).toMatchObject({ status: 'verified' })
@@ -569,7 +598,7 @@ it('does not choose a dish or purchase on bare assent to multiple recommendation
   await call('point_to_menu_items', { names: ['雞腿飯', '排骨飯'], purpose: 'recommendation' })
   const question = dialogue.conversation(facts).waitingFor!
   expect(dialogue.canAnswerLocally(facts, '好')).toBe(false)
-  cleanup.push(beginBrowserCartTask('好', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('好', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const respond = await prepareBrowserQuestionAnswer(client)
   expect(respond).toBeTypeOf('function')
   await respond!()
@@ -584,10 +613,10 @@ it('keeps required customization unresolved after choosing a recommendation and 
   facts.products[0].configurations[0].groups = [{ ref: 'flavor', name: '口味', required: true, maximum: 1, choices: [{ ref: 'spicy', name: '辣', unitPrice: 0, maximum: 1 }] }]
   facts.products.push({ ...facts.products[0], ref: 'pork', name: '排骨飯' })
   await call('point_to_menu_items', { names: ['雞腿飯', '排骨飯'], purpose: 'recommendation' })
-  cleanup.push(beginBrowserCartTask('雞腿飯', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('雞腿飯', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const select = await prepareBrowserQuestionAnswer(client)
   expect(await select!()).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-quantity' } })
-  cleanup.push(beginBrowserCartTask('兩份', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('兩份', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const quantity = await prepareBrowserQuestionAnswer(client)
   expect(await quantity!()).toMatchObject({ status: 'clarification', pendingCustomerChoice: { purpose: 'browser-order-slot', question: expect.stringContaining('口味') } })
   expect(dialogue.conversation(facts)).toMatchObject({ drafts: [{ name: '雞腿飯', quantity: 2 }] })
@@ -602,7 +631,7 @@ it.each(['好', '不要'])('binds checkout guidance after adding, and handles %s
   const question = await offerCheckout(client, dialogue, result, () => true)
   expect(question).toMatchObject({ question: '要結帳嗎？' })
   expect(facts.cart.lines[0].quantity).toBe(4)
-  cleanup.push(beginBrowserCartTask(reply, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask(reply, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const respond = await prepareBrowserQuestionAnswer(client)
   expect(respond).toBeTypeOf('function')
   const receipt = await respond!()
@@ -781,7 +810,7 @@ it.each(['quantity', 'product'] as const)('continues Jev %s answers through the 
     const source = createBrowserFastPathSource({ tools: client.tools.value, read: async () => structuredClone(facts), hasPendingQuestion: dialogue.hasPending, pendingQuestion: raw => dialogue.conversation(raw).waitingFor, canAnswerLocally: dialogue.canAnswerLocally, execute: async (tool, input) => {
       expect(tool.name).toBe('browser_answer_question')
       expect(input).toEqual({})
-      const dispose = beginBrowserCartTask(transcript, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue })
+      const dispose = beginBrowserCartTask(transcript, { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue })
       try {
         const apply = await prepareBrowserQuestionAnswer(client)
         expect(apply).toBeTypeOf('function')
@@ -794,7 +823,7 @@ it.each(['quantity', 'product'] as const)('continues Jev %s answers through the 
     return runFastPath({ transcript, source, decide, isEnabled: async () => true, webMcp: { tools: client.tools.value, execute } })
   }
   if (questionType === 'product') {
-    expect(await runAnswer('炸排骨便當')).toMatchObject({ kind: 'CLARIFICATION', prompt: '請問「炸排骨便當」要幾份？' })
+    expect(await runAnswer('炸排骨便當')).toMatchObject({ kind: 'FAST_ACTION', result: { pendingCustomerChoice: { question: '請問「炸排骨便當」要幾份？' } } })
     expect(facts.cart.lines).toHaveLength(0)
     expect(dialogue.conversation(facts).waitingFor).toMatchObject({ purpose: 'browser-order-quantity' })
     expect(dialogue.conversation(facts).waitingFor!.questionId).not.toBe(initialQuestion.questionId)
@@ -813,7 +842,7 @@ it.each(['我要雞腿不要辣', '我要雞腿飯少'])('preserves unparsed con
   const { facts, dialogue, client, execute } = setup('兩份')
   facts.cart.lines.splice(0)
   dialogue.presentQuantity(facts, 'chicken', request, '雞腿')
-  cleanup.push(beginBrowserCartTask('兩份', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main' }), dialogue }))
+  cleanup.push(beginBrowserCartTask('兩份', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
   const apply = await prepareBrowserQuestionAnswer(client)
   expect(await apply!()).toMatchObject({ originalRequest: request, requestedQuantity: 2 })
   expect(facts.cart.lines).toHaveLength(0)
@@ -836,4 +865,35 @@ it.each(['throw', 'missing', 'empty'])('preserves an uncertain native add and st
   expect(result).toMatchObject({ ok: false, status: 'unknown', effect: 'unknown' })
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_add')).toHaveLength(1)
   expect(facts.cart.lines[0].quantity).toBe(4)
+})
+
+// Report: this chat, Nov15 — confident Jev checkout assent opened cart without its next question.
+it('retains cart review after a direct Jev answer to the checkout invitation', async () => {
+  const { call, client, dialogue, facts, checkout } = setup('雞腿飯一份')
+  Object.assign(facts, { page: 'menu', checkout })
+  const result = await call('add_items_to_cart', { items: [{ name: '雞腿飯', quantity: 1 }] })
+  expect(await offerCheckout(client, dialogue, result, () => true)).toMatchObject({ question: '要結帳嗎？' })
+  cleanup.push(beginBrowserCartTask('好', { intentSource: 'jev', isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const respond = await prepareBrowserQuestionAnswer(client)
+  const receipt = await respond!()
+  expect(receipt).toMatchObject({ pendingCustomerChoice: { question: expect.stringContaining('餐點、份數和金額正確嗎') } })
+  const question = dialogue.conversation(facts).waitingFor
+  expect(question?.question).toContain('餐點、份數和金額正確嗎')
+  expect(dialogue.validate(facts, question!.questionId)).toEqual(question)
+})
+
+// Report: this chat, Nov15 — a serving-count query consumed the unanswered cart review.
+it('reads item information without resolving the pending cart review as a new request', async () => {
+  const { call, client, dialogue, facts, checkout, answer } = setup('一份雞腿飯有什麼？')
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('open_cart', {})
+  const waiting = dialogue.conversation(facts).waitingFor
+  expect(waiting?.question).toContain('餐點、份數和金額正確嗎')
+  answer.mockResolvedValue({ kind: 'NEW_REQUEST', provider: 'main' })
+  const source = createBrowserFastPathSource({ tools: client.tools.value, read: client.execute, execute: (tool, input) => executeBrowserCartTool(client, tool, input), hasPendingQuestion: dialogue.hasPending, pendingQuestion: raw => dialogue.conversation(raw).waitingFor })
+  await source.context({ transcript: '一份雞腿飯有什麼？' })
+  const result = await source.execute({ candidateId: 'information:chicken' })
+  expect(result).toMatchObject({ customerMessage: expect.stringContaining('雞腿飯') })
+  expect(answer).not.toHaveBeenCalled()
+  expect(dialogue.conversation(facts).waitingFor).toEqual(waiting)
 })

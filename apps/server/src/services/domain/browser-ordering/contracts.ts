@@ -26,14 +26,6 @@ const servingSchema = object({
   options: pipe(array(object({ name: pipe(string(), minLength(1), maxLength(500)), quantity: number() })), maxLength(100)),
 })
 
-/** Independently extracted customer groups; configuration equality is decided by code. */
-export const additionGroupSchema = object({
-  ...servingSchema.entries,
-  quantity: pipe(number(), integer(), minValue(0), maxValue(99)),
-  note: pipe(string(), maxLength(200)),
-})
-export type AdditionGroup = InferOutput<typeof additionGroupSchema>
-
 /** Read-only semantic evidence; opaque Host correlations are not write authority or model tools. */
 export const browserEffectSchema = object({
   /** Exact current customer turn for admission; previous answers belong in storeFacts. */
@@ -69,16 +61,19 @@ export const browserEffectSchema = object({
 })
 
 export type BrowserEffect = InferOutput<typeof browserEffectSchema>
+/** Deterministic claim result for an operation already selected by a recorded model decision. */
 export interface EffectDecision {
-  choice: 'ALLOW' | 'READ_ONLY' | 'PRESERVE' | 'CLARIFY' | 'DIFFERENT_OPERATION' | 'REVISE'
+  choice: 'ALLOW' | 'CLARIFY'
   provider: 'system-one' | 'main' | 'unavailable'
-  requiredAction?: BrowserEffect['action']
-  /** Bounded semantic diagnostics, not browser execution receipts or authority. */
-  checks?: { stage: 'purpose' | 'effect' | 'preservation', choice: string, provider: EffectDecision['provider'], reason: string, model?: string, groups?: AdditionGroup[] }[]
+  /** Set only after matching and consuming a Server-recorded model operation; never a Host assertion. */
+  admission?: 'issued-plan'
+  checks?: { stage: 'effect', choice: 'ALLOW', provider: EffectDecision['provider'], reason: string }[]
 }
 
 /** Short answers select an issued effect ID; they never carry executable parameters. */
 export const browserAnswerSchema = object({
+  /** Routing only, never purchase authority. Omission belongs to the Main flow. */
+  decisionSource: optional(picklist(['main', 'system-one'])),
   transcript: pipe(string(), minLength(1), maxLength(8_000)),
   questionId: pipe(string(), minLength(1), maxLength(120)),
   /** Omission means unknown cart context, never an assertion that the cart is empty. */

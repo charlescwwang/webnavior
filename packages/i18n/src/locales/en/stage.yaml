@@ -23,38 +23,38 @@ chat:
     step-complete: Service step completed
     failed: This service step could not be completed right now
 kiosk:
-  media-unlinked: "Audio has not arrived or has no verified transcript link. See the original recordings below."
-  media-audio-list: "Original recordings (timestamps do not establish transcript links)"
-  media-play: "Play original recording"
+  media-unlinked: 'Audio has not arrived or has no verified transcript link. See the original recordings below.'
+  media-audio-list: 'Original recordings (timestamps do not establish transcript links)'
+  media-play: 'Play original recording'
   request-status:
-    queued: "Waiting"
-    processing: "Processing"
-    review: "See reply to continue"
-    completed: "Completed"
-    cancelled: "Cancelled"
-    failed: "Incomplete; see reply"
+    queued: 'Waiting'
+    processing: 'Processing'
+    review: 'See reply to continue'
+    completed: 'Completed'
+    cancelled: 'Cancelled'
+    failed: 'Incomplete; see reply'
   voice-debug:
-    tts-overlap: "Sound detected during TTS; check for echo or interruption"
-    speech-start: "VAD speech started"
-    speech-end: "VAD speech ended"
-    blocked: "Not admitted to ordering"
-    tts: "Test speech playback"
-    interrupted: "Test speech interrupted"
-    mode-admin: "Operator audio test"
-    mode-text: "Text mode"
-    mode-customer: "Customer voice ordering"
-    microphone-on: "Capture pipeline running"
-    microphone-off: "Capture pipeline stopped"
-    text-mode: "Customer microphone disabled in text mode"
-    admin-paused: "Customer input paused while operator settings are open"
-    reception-reset: "Reception ending or resetting; input paused"
-    preparing: "Ordering page or cart preparation in progress; input paused"
-    presence-required: "Customer presence requirements are not met"
-    admin-title: "Microphone, echo and interruption test"
-    admin-enable: "Enable operator audio test"
-    admin-description: "Recognizes audio in this panel only. Does not add customer messages or operate the order. Closing settings stops the test."
-    play-test: "Play speech and test interruption"
-    test-text: "This is the microphone and echo test. You can interrupt me now."
+    tts-overlap: 'Sound detected during TTS; check for echo or interruption'
+    speech-start: 'VAD speech started'
+    speech-end: 'VAD speech ended'
+    blocked: 'Not admitted to ordering'
+    tts: 'Test speech playback'
+    interrupted: 'Test speech interrupted'
+    mode-admin: 'Operator audio test'
+    mode-text: 'Text mode'
+    mode-customer: 'Customer voice ordering'
+    microphone-on: 'Capture pipeline running'
+    microphone-off: 'Capture pipeline stopped'
+    text-mode: 'Customer microphone disabled in text mode'
+    admin-paused: 'Customer input paused while operator settings are open'
+    reception-reset: 'Reception ending or resetting; input paused'
+    preparing: 'Ordering page or cart preparation in progress; input paused'
+    presence-required: 'Customer presence requirements are not met'
+    admin-title: 'Microphone, echo and interruption test'
+    admin-enable: 'Enable operator audio test'
+    admin-description: 'Recognizes audio in this panel only. Does not add customer messages or operate the order. Closing settings stops the test.'
+    play-test: 'Play speech and test interruption'
+    test-text: 'This is the microphone and echo test. You can interrupt me now.'
   information-unavailable: I could not find that information. Please ask a staff member to check it for you.
   checkout-guidance:
     empty: Your cart is empty. Choose your items, then follow the ordering page to check out.
@@ -78,6 +78,7 @@ kiosk:
     changed: The page or visitor changed. Review the cart again.
     unknown: A previous operation is uncertain. Handoff review cannot unlock it.
     failed: Cannot verify the cart. Review it again later.
+    restart-failed: The previous ordering action is still being checked. Try Restart / New order again shortly. Ask staff for help if it remains unavailable.
   native-view-loading: Loading…
   native-view-failed: The service screen could not load. Ask staff to check the connection and reopen it.
   service-editor-description: Choose the website shown on the kiosk, then publish the saved experience. An admin preview does not verify login or assistant controls; check those on the device.
@@ -166,6 +167,7 @@ kiosk:
     collapse: Collapse
     expand: Expand
   wait:
+    generating: Preparing your reply…
     answer-executing: Applying your answer…
     answer-done: Your choice has been checked.
     answer-error: Please check the current screen before continuing.

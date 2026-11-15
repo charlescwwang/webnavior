@@ -118,3 +118,37 @@ it('offers three spoken choices per batch without claiming the PB website has pa
   expect(second.question).not.toContain('頁')
   expect(window.consume(second.questionId, 'product:2', { ...current, products: [...products].reverse() })).toEqual({ kind: 'product', product: products[4] })
 })
+
+// Report: this chat, Nov15 — checkout assent reached Main without its displayed question.
+it.each(['review-checkout', 'cart-review', 'invoice-method', 'submit-order'])('keeps %s bound to the cart rather than unrelated menu configurations', (purpose) => {
+  const { window, snapshot } = setup()
+  const question = window.presentService(snapshot, { purpose, request: '', question: '繼續嗎？', choices: [{ id: 'yes', description: '繼續目前步驟' }] })
+  const fresh = { ...snapshot, products: snapshot.products.map(product => ({ ...product, configurationVersion: 'new-pickup-time' })) }
+  expect(window.pending(fresh)?.question.questionId).toBe(question.questionId)
+  expect(window.consume(question.questionId, 'yes', fresh)).toMatchObject({ kind: 'service', purpose })
+  expect(window.consume(question.questionId, 'yes', fresh)).toEqual({ kind: 'invalid' })
+})
+
+it.each(['owner', 'documentId', 'cartVersion', 'expiry'] as const)('still revokes checkout consent after %s changes', (key) => {
+  const { window, snapshot, advance } = setup()
+  const question = window.presentService(snapshot, { purpose: 'cart-review', request: '', question: '正確嗎？', choices: [{ id: 'yes', description: '核對購物車' }] })
+  if (key === 'expiry')
+    advance(120_001)
+  const fresh = key === 'expiry' ? snapshot : { ...snapshot, [key]: 'different' }
+  expect(window.consume(question.questionId, 'yes', fresh)).toEqual({ kind: 'invalid' })
+})
+
+// Report: this chat, 2026-11-15; a new pork introduction retained the old chicken checkout question.
+it('supersedes a checkout offer with an explicitly presented purchase question', () => {
+  const { window, snapshot, products } = setup()
+  const checkout = window.presentService(snapshot, { purpose: 'review-checkout', request: '雞腿一份', question: '要結帳嗎？', choices: [{ id: 'yes', description: '核對購物車' }] })
+  const input = { purpose: 'purchase-recommendation', name: products[1].name, quantity: 1, request: '餐乙呢？', question: '餐乙要來一份嗎？', choices: [{ id: 'yes', description: '加入餐乙一份' }] }
+  const purchase = window.presentService(snapshot, input)
+  expect(purchase.questionId).not.toBe(checkout.questionId)
+  expect(purchase.question).toBe(input.question)
+  expect(window.pending(snapshot)?.question.questionId).toBe(purchase.questionId)
+  expect(window.consume(checkout.questionId, 'yes', snapshot)).toEqual({ kind: 'invalid' })
+  expect(window.presentService(snapshot, input).questionId).toBe(purchase.questionId)
+  window.releaseService(snapshot, purchase.questionId)
+  expect(window.pending(snapshot)).toBeUndefined()
+})

@@ -56,7 +56,7 @@ export function isPbOrderResultUrl(entry: string, current: string) {
     if (url.origin !== journey.origin || url.username || url.password || url.hash || url.search)
       return false
     const suffix = url.pathname.slice(journey.basePath.length)
-    return url.pathname.startsWith(journey.basePath) && /^orders\/[\w-]{1,200}(?:\/payment)?$/.test(suffix) && suffix !== 'orders/create'
+    return url.pathname.startsWith(journey.basePath) && /^orders\/[\w-]{1,200}(?:\/choosePayment)?$/.test(suffix) && suffix !== 'orders/create'
   }
   catch { return false }
 }

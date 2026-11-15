@@ -41,6 +41,35 @@ describe('useKioskInteractionRecording', () => {
     finally { scope.stop() }
   })
 
+  // Report: this chat, 2026-11-15 — malformed replacement counts stopped before any website operation.
+  it.each(['none', 'unknown'] as const)('only repairs invalid cart arguments with a proven no-dispatch receipt (%s)', async (effect) => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'repair-cart-arguments', state: 'active' } })
+    kioskApi.streamKioskConversationMessage
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'invalid-replace', type: 'function', function: { name: 'replace_item_in_cart', arguments: '{}' } }] })
+      .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'correct-replace', type: 'function', function: { name: 'replace_item_in_cart', arguments: '{"replaceQuantity":2}' } }] })
+    const execute = vi.fn()
+      .mockResolvedValueOnce({ ok: false, source: 'browser', status: 'rejected', effect, dataOnly: true, code: 'INVALID_TOOL_ARGUMENTS', explanation: 'No website operation occurred.' })
+      .mockResolvedValueOnce({ ok: true, source: 'browser', status: 'verified', effect: 'cart', customerMessage: '已更換兩份餐點。' })
+    const tool = rawTool({ name: 'replace_item_in_cart', description: 'Replace', parameters: { type: 'object', properties: { replaceQuantity: { type: 'integer' } } }, execute })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      const result = await recording.send('ordering', '其中兩份換排骨便當', [tool], { isRequestComplete: () => execute.mock.calls.length === 2 })
+      if (effect === 'none') {
+        expect(result).toMatchObject({ status: 'completed' })
+        expect(execute).toHaveBeenCalledTimes(2)
+        expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+        expect(kioskApi.streamKioskConversationMessage.mock.calls[1][0].toolResults[0].content).toContain('INVALID_TOOL_ARGUMENTS')
+      }
+      else {
+        expect(result).toMatchObject({ status: 'incomplete', reason: 'tool-rejected' })
+        expect(execute).toHaveBeenCalledTimes(1)
+        expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(1)
+      }
+    }
+    finally { scope.stop() }
+  })
+
   // Report: this chat; a consumed count with remaining options is not a completed order.
   it('continues a prepared answer that still needs Main without recording the customer twice', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'prepared-main', state: 'active' } })
@@ -922,24 +951,27 @@ describe('useKioskInteractionRecording', () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
     kioskApi.streamKioskConversationMessage.mockImplementation(async (_input, onEvent) => {
       onEvent({ type: 'turn-started' })
+      onEvent({ type: 'reply-progress' })
       onEvent({ text: '牛肉', type: 'assistant-delta' })
       onEvent({ text: '麵可以點餐。', type: 'assistant-delta' })
       return { agentMode: 'active', answer: '牛肉麵可以點餐。', toolCalls: [], type: 'turn-finished' }
     })
     const onAssistantDelta = vi.fn()
+    const onReplyProgress = vi.fn()
     const onTurnStarted = vi.fn()
     const scope = effectScope()
     const recording = scope.run(() => useKioskInteractionRecording())
     if (!recording)
       throw new Error('Expected interaction recording to initialize.')
 
-    await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], { onAssistantDelta, onTurnStarted })).resolves.toEqual({
+    await expect(recording.send('restaurant-ordering', '我要牛肉麵', [], { onAssistantDelta, onReplyProgress, onTurnStarted })).resolves.toEqual({
       agentMode: 'active',
       answer: '牛肉麵可以點餐。',
       status: 'completed',
       requestedTools: [],
     })
 
+    expect(onReplyProgress).toHaveBeenCalledOnce()
     expect(onAssistantDelta).toHaveBeenNthCalledWith(1, '牛肉')
     expect(onAssistantDelta).toHaveBeenNthCalledWith(2, '麵可以點餐。')
     expect(onTurnStarted).toHaveBeenCalledOnce()
@@ -967,6 +999,22 @@ describe('useKioskInteractionRecording', () => {
 
     expect(kioskApi.streamKioskConversationMessage.mock.calls[0]?.[0].decisionState).toEqual(decisionState)
     expect(kioskApi.streamKioskConversationMessage.mock.calls[1]?.[0].decisionState).toBeUndefined()
+    scope.stop()
+  })
+
+  // Report: current Kiosk SSE audit; an old session must not repaint new reception progress.
+  it('ignores reply progress after the owning visitor session changes', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-old', state: 'active' } })
+    const scope = effectScope()
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    const onReplyProgress = vi.fn()
+    kioskApi.streamKioskConversationMessage.mockImplementation(async (_input, onEvent) => {
+      await recording.end('cancelled')
+      onEvent({ type: 'reply-progress' })
+      return { agentMode: 'active', answer: undefined, toolCalls: [], type: 'turn-finished' }
+    })
+    await recording.send('restaurant-ordering', '你好', [], { onReplyProgress })
+    expect(onReplyProgress).not.toHaveBeenCalled()
     scope.stop()
   })
 
@@ -1005,8 +1053,10 @@ describe('useKioskInteractionRecording', () => {
       execute,
     })
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'visitor-1', state: 'active' } })
-    kioskApi.streamKioskConversationMessage.mockImplementation(async () => {
+    const onReplyProgress = vi.fn()
+    kioskApi.streamKioskConversationMessage.mockImplementation(async (_input, onEvent) => {
       controller.abort()
+      onEvent({ type: 'reply-progress' })
       return { agentMode: 'active', answer: undefined, toolCalls: [{ id: 'call-1', type: 'function', function: { arguments: '{}', name: 'cart_add_item' } }] }
     })
     const scope = effectScope()
@@ -1014,7 +1064,8 @@ describe('useKioskInteractionRecording', () => {
     if (!recording)
       throw new Error('Expected interaction recording to initialize.')
 
-    await expect(recording.send('restaurant-ordering', '我要水餃', [tool], { signal: controller.signal })).resolves.toBeUndefined()
+    await expect(recording.send('restaurant-ordering', '我要水餃', [tool], { signal: controller.signal, onReplyProgress })).resolves.toBeUndefined()
+    expect(onReplyProgress).not.toHaveBeenCalled()
     expect(execute).not.toHaveBeenCalled()
     scope.stop()
   })

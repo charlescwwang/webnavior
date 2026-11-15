@@ -49,7 +49,7 @@ it('presents only validated browser evidence and uses refs for speech cues', asy
   publish('resolved', { ok: true, source: 'browser', products, presentation: { products, cue: 'shown' } })
   expect(presentation.current.value).toEqual({ products, cue: 'shown' })
   await presentation.speak('每日新品現在是九十元。')
-  expect(execute).toHaveBeenCalledWith(tool, { productRefs: ['today'], mode: 'information' })
+  expect(execute).toHaveBeenCalledWith(tool, { productRefs: ['today'], mode: 'information', preservePage: true })
   await presentation.speak('模型自行發明的餐點')
   expect(execute).toHaveBeenCalledOnce()
 })
@@ -98,7 +98,7 @@ it.each(['recommendation', 'other-recommendations'])('tracks the last successful
   publish('called', undefined, 'rec', 'browser_present', { productRefs: ['today'], mode })
   publish('resolved', { ok: true, source: 'browser', presentation: { products, cue: 'shown' } }, 'rec', 'browser_present')
   expect(presentation.filterRecommendations(['today', 'other'])).toEqual(['other'])
-  publish('called', undefined, 'info', 'browser_present', { productRefs: ['other'], mode: 'information' })
+  publish('called', undefined, 'info', 'browser_present', { productRefs: ['other'], mode: 'information', preservePage: true })
   publish('resolved', { ok: true, source: 'browser', presentation: { products: [{ ref: 'other', name: '其他餐', price: 10 }], cue: 'shown' } }, 'info', 'browser_present')
   expect(presentation.filterRecommendations(['today', 'other'])).toEqual(['other'])
   state.owner = 'next'
@@ -125,7 +125,7 @@ it('keeps recommendations invisible until the reply, then preserves native batch
   expect(presentation.current.value).toBeUndefined()
   expect(execute).not.toHaveBeenCalled()
   await presentation.speak('先推薦排骨飯，再來魚丸湯。')
-  expect(execute.mock.calls.map(call => call[1])).toEqual([{ productRefs: ['rice', 'soup'], mode: 'information' }])
+  expect(execute.mock.calls.map(call => call[1])).toEqual([{ productRefs: ['rice', 'soup'], mode: 'information', preservePage: true }])
   expect(tool.name).toBe('browser_present')
 })
 

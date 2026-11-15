@@ -9,7 +9,10 @@ import { createBrowserDialogue } from './browserDialogue'
 function setup(fail?: 'unknown' | 'throw' | 'manual' | 'login' | 'read-failure', readOnly = false) {
   const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'page', answer: async () => ({ kind: 'UNCERTAIN', provider: 'main' }) })
   const facts = { ok: true, source: 'browser', cart: { version: 'v0', lines: [] }, products: ['甲餐', '乙餐'].map((name, i) => ({ ref: `p-${i}`, name, price: 100, configurations: [{ version: `cfg-${i}`, variantRef: '', name, unitPrice: 100, groups: [] }] })) }
-  dialogue.collectOrder(facts, { lines: facts.products.map(p => ({ productRef: p.ref, quantity: 1, evidence: `${p.name}一份`, choices: [], askGroups: [], note: '' })) }, '甲餐一份、乙餐一份')
+  // A completed draft now executes directly. Keep one genuinely missing slot
+  // so this fixture exercises an issued question and its one-use answer.
+  const presented = dialogue.collectOrder(facts, { lines: facts.products.map((p, i) => ({ productRef: p.ref, quantity: i === 0 ? 1 : null, evidence: i === 0 ? `${p.name}一份` : p.name, choices: [], askGroups: [], note: '' })) }, '甲餐一份、乙餐')
+  expect(presented).toMatchObject({ pendingCustomerChoice: { purpose: 'browser-order-slot', question: expect.stringContaining('乙餐') } })
   const read: ServiceTool = { name: 'browser_cart_get', description: '', inputSchema: { type: 'object' }, origin: 'https://app.esgpb.com' }
   const add = { ...read, name: 'browser_cart_add' }
   let additions = 0
@@ -19,9 +22,11 @@ function setup(fail?: 'unknown' | 'throw' | 'manual' | 'login' | 'read-failure',
       reads++
       if (reads === 3 && fail === 'login')
         return { ok: false, source: 'browser', status: 'rejected', effect: 'none', code: 'sign-in-required', error: 'PB requires manual sign-in.' }
-      if (reads >= 4 && fail === 'read-failure')
+      // Inject between verified effects rather than depending on how many
+      // read-only preparation/plan-admission observations preceded the first write.
+      if (additions === 1 && fail === 'read-failure')
         throw new Error('Read unavailable')
-      if (reads >= 4 && fail === 'manual')
+      if (additions === 1 && fail === 'manual')
         facts.cart.version = 'manual'
       return facts
     }
@@ -35,15 +40,14 @@ function setup(fail?: 'unknown' | 'throw' | 'manual' | 'login' | 'read-failure',
   })
   const client = { tools: readonly(shallowRef([read, add])), execute }
   const complete = vi.fn()
-  const release = beginBrowserCartTask('對', { dialogue, readOnly, isCurrent: () => true, onRequestComplete: complete, decide: async () => ({ choice: 'ALLOW', provider: 'main' }) })
+  const release = beginBrowserCartTask('一份', { dialogue, readOnly, isCurrent: () => true, onRequestComplete: complete, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }) })
   return { client, read, add, release, complete }
 }
 
-it('commits sealed dishes in order with fresh versions and consumes confirmation once', async () => {
+it('commits completed quantity answers in order with fresh versions and consumes the batch once', async () => {
   const { client, read, add, release, complete } = setup()
   try {
-    await executeBrowserCartTool(client, read, { includeCatalog: true })
-    expect(await executeBrowserConfirmedAddition(client)).toMatchObject({ ok: true, status: 'verified', customerMessage: expect.stringContaining('甲餐 1 份、乙餐 1 份') })
+    expect(await executeBrowserCartTool(client, read, { includeCatalog: true })).toMatchObject({ ok: true, status: 'verified', customerMessage: expect.stringContaining('甲餐 1 份、乙餐 1 份') })
     const calls = client.execute.mock.calls.filter(([tool]) => tool.name === add.name)
     expect(calls).toHaveLength(2)
     expect(calls[0][1]).toMatchObject({ version: 'v0', productRef: 'p-0', quantity: 1 })
@@ -55,7 +59,7 @@ it('commits sealed dishes in order with fresh versions and consumes confirmation
   finally { release() }
 })
 
-it('prepares a closed confirmation without effect, then executes its sealed batch once without a planner', async () => {
+it('prepares a closed quantity answer without effect, then executes its completed batch once without a planner', async () => {
   const { client, add, release } = setup()
   try {
     const answer = await prepareBrowserQuestionAnswer(client)
@@ -80,8 +84,7 @@ it('does not dispatch a prepared answer after its task is retired', async () => 
 it.each(['unknown', 'throw', 'manual'] as const)('preserves verified effects and stops without replay on %s', async (failure) => {
   const { client, read, add, release } = setup(failure)
   try {
-    await executeBrowserCartTool(client, read, { includeCatalog: true })
-    const result = await executeBrowserConfirmedAddition(client)
+    const result = await executeBrowserCartTool(client, read, { includeCatalog: true })
     expect(result).toMatchObject({ ok: false, effect: 'partial', customerMessage: expect.stringContaining('已加入：甲餐 1 份') })
     expect(result).not.toHaveProperty('cart')
     expect(JSON.stringify(result)).not.toContain('目前尚未變更購物車')
@@ -91,7 +94,7 @@ it.each(['unknown', 'throw', 'manual'] as const)('preserves verified effects and
   finally { release() }
 })
 
-it('preserves the immutable read-only boundary even for a locally consumed batch confirmation', async () => {
+it('preserves the immutable read-only boundary even for a locally consumed quantity answer', async () => {
   const { client, read, add, release } = setup(undefined, true)
   try {
     await executeBrowserCartTool(client, read, { includeCatalog: true })
@@ -104,8 +107,7 @@ it('preserves the immutable read-only boundary even for a locally consumed batch
 it('preserves a typed sign-in requirement discovered before the first write', async () => {
   const { client, read, add, release } = setup('login')
   try {
-    await executeBrowserCartTool(client, read, { includeCatalog: true })
-    expect(await executeBrowserConfirmedAddition(client)).toMatchObject({ code: 'sign-in-required', effect: 'none', status: 'rejected' })
+    expect(await executeBrowserCartTool(client, read, { includeCatalog: true })).toMatchObject({ code: 'sign-in-required', effect: 'none', status: 'rejected' })
     expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(0)
   }
   finally { release() }
@@ -114,8 +116,7 @@ it('preserves a typed sign-in requirement discovered before the first write', as
 it('does not call a later read failure an unknown new write', async () => {
   const { client, read, add, release } = setup('read-failure')
   try {
-    await executeBrowserCartTool(client, read, { includeCatalog: true })
-    expect(await executeBrowserConfirmedAddition(client)).toMatchObject({ status: 'rejected', effect: 'partial', customerMessage: expect.stringContaining('甲餐') })
+    expect(await executeBrowserCartTool(client, read, { includeCatalog: true })).toMatchObject({ status: 'rejected', effect: 'partial', customerMessage: expect.stringContaining('甲餐') })
     expect(client.execute.mock.calls.filter(([tool]) => tool.name === add.name)).toHaveLength(1)
   }
   finally { release() }

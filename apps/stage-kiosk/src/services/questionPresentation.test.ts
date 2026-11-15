@@ -569,3 +569,10 @@ it('requires cart review after an attempted browser effect without claiming succ
   expect(result.content).not.toContain('已加入')
   expect(result.content).not.toContain('重新點一次')
 })
+
+// Report: this chat, 2026-11-15; an unbound spoken question left checkout as the next answer's authority.
+it('does not invent an unanswered product question from a presentation next-action hint', () => {
+  const receipt = { ok: true, source: 'browser', customerMessage: '目前查到：炸排骨便當，單份 130 元。', nextActions: ['choose-item'] }
+  expect(operationReplyFrom(receipt)).toBe(receipt.customerMessage)
+  expect(questionReceiptFrom(receipt)).toBeUndefined()
+})

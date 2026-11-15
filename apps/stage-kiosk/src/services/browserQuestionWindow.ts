@@ -89,10 +89,22 @@ export function createBrowserQuestionWindow(now = Date.now) {
     },
     presentService(snapshot: QuestionSnapshot, input: { purpose: string, name?: string, quantity?: number, query?: string, request: string, question: string, choices: PresentedQuestion['choices'] }) {
       const previous = current(snapshot)
-      if (previous?.kind === 'service')
+      if (previous?.kind === 'service' && previous.purpose === input.purpose
+        && previous.name === input.name && previous.quantity === input.quantity && previous.query === input.query
+        && previous.request === input.request && previous.question.question === input.question
+        && JSON.stringify(previous.question.choices) === JSON.stringify(input.choices)) {
         return structuredClone(previous.question)
+      }
       const question: PresentedQuestion = { questionId: crypto.randomUUID(), purpose: 'browser-service-question', question: input.question, choices: input.choices, expiresAt: now() + 120_000 }
-      ticket = { kind: 'service', binding: structuredClone(snapshot), question, purpose: input.purpose, name: input.name, quantity: input.quantity, query: input.query, request: input.request, previous }
+      // Checkout answers authorize the observed cart, not every menu item's
+      // pickup-dependent configuration. Final submission independently checks
+      // the native form/token; owner, document, cart and expiry still bind here.
+      const cartQuestion = ['review-checkout', 'cart-review', 'invoice-method', 'submit-order'].includes(input.purpose)
+      const binding = structuredClone({ ...snapshot, products: cartQuestion ? [] : snapshot.products })
+      // Replacing a service offer retires it permanently. Only an unfinished
+      // product/quantity task underneath can resume after the new offer ends.
+      const underlying = previous?.kind === 'service' ? previous.previous : previous
+      ticket = { kind: 'service', binding, question, purpose: input.purpose, name: input.name, quantity: input.quantity, query: input.query, request: input.request, previous: underlying }
       return structuredClone(question)
     },
     presentSlot(snapshot: QuestionSnapshot, slot: OrderSlot) {
