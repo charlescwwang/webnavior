@@ -26,6 +26,7 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { useSettingsLive2d } from '../../../../stage-ui-live2d/src/composables/live2d/live2d'
+import { useExternalSpeechSource } from '../../composables/audio/useExternalSpeechSource'
 import { useAnalytics } from '../../composables/use-analytics'
 import { useDuckDb } from '../../composables/use-duck-db'
 import { useIOTraceBridge } from '../../composables/use-io-trace-bridge'
@@ -53,7 +54,7 @@ const props = withDefaults(defineProps<{
   idleAnimation?: string
   /** Whether the selected animation repeats instead of completing once. */
   animationLoop?: boolean
-  /** External speech audio, used by kiosk TTS to drive VRM lip-sync. */
+  /** External speech audio, used by kiosk TTS to drive VRM and Live2D lip-sync. */
   externalAudioSource?: AudioNode
   personPosition?: { x: number, y: number }
   enableOrbitControls?: boolean
@@ -136,6 +137,8 @@ viewUpdateCleanups.push(live2dStore.onShouldUpdateView(async () => {
 
 const audioAnalyser = ref<AnalyserNode>()
 const lipSyncStarted = ref(false)
+// Invalidates asynchronous worklet setup on renderer changes and unmount.
+let lipSyncGeneration = 0
 const lipSyncLoopId = ref<number>()
 const live2dLipSync = ref<Live2DLipSync>()
 const live2dLipSyncOptions: Live2DLipSyncOptions = { mouthUpdateIntervalMs: 50, mouthLerpWindowMs: 50 }
@@ -599,12 +602,21 @@ bindSpeakingStateToPlaybackManager(playbackManager, {
   },
 })
 
+const externalSpeechActive = useExternalSpeechSource(
+  () => props.externalAudioSource,
+  () => stageModelRenderer.value === 'live2d',
+  async () => {
+    await setupLipSync()
+    return lipSyncNode.value
+  },
+)
+
 function startLipSyncLoop() {
   if (lipSyncLoopId.value)
     return
 
   const tick = () => {
-    if (!nowSpeaking.value || !live2dLipSync.value) {
+    if ((!nowSpeaking.value && !externalSpeechActive.value) || !live2dLipSync.value) {
       mouthOpenSize.value = 0
     }
     else {
@@ -626,6 +638,7 @@ function stopLipSyncLoop() {
 }
 
 function resetLive2dLipSync() {
+  lipSyncGeneration++
   stopLipSyncLoop()
 
   try {
@@ -658,17 +671,24 @@ async function setupLipSync() {
   if (lipSyncStarted.value)
     return
 
+  const generation = ++lipSyncGeneration
   try {
     const lipSync = await createLive2DLipSync(audioContext, wlipsyncProfile as Profile, live2dLipSyncOptions)
+    await audioContext.resume()
+    if (generation !== lipSyncGeneration || stageModelRenderer.value !== 'live2d') {
+      lipSync.node.disconnect()
+      return
+    }
     live2dLipSync.value = lipSync
     lipSyncNode.value = lipSync.node
-    await audioContext.resume()
     lipSyncStarted.value = true
     syncLipSyncLoop()
   }
   catch (error) {
-    resetLive2dLipSync()
-    console.error('Failed to setup Live2D lip sync', error)
+    if (generation === lipSyncGeneration) {
+      resetLive2dLipSync()
+      console.error('Failed to setup Live2D lip sync', error)
+    }
   }
 }
 
@@ -1030,7 +1050,7 @@ defineExpose({
         :cursor-position="cursorPosition"
         :person-position="personPosition"
         :mouth-open-size="mouthOpenSize"
-        :now-speaking="nowSpeaking"
+        :now-speaking="nowSpeaking || externalSpeechActive"
         :paused="paused"
         :theme-colors-hue="themeColorsHue"
         :theme-colors-hue-dynamic="themeColorsHueDynamic"
