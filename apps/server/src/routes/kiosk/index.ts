@@ -10,16 +10,21 @@ import type { KioskMediaService } from '../../services/domain/kiosk-media'
 import type { createKioskSystemOneService } from '../../services/domain/kiosk-system-one'
 import type { HonoEnv } from '../../types/hono'
 
-import { randomInt, randomUUID } from 'node:crypto'
+import { createHash, randomInt, randomUUID } from 'node:crypto'
 
+import { browserConversationInstructions, browserConversationSchema, browserToolArguments, browserToolDescription, browserToolParameters } from '@proj-airi/stage-shared/browser-conversation'
 import { conversationContextSchema, handoffSchema, serviceClarificationSchema, serviceContextKey, serviceRecoveryLimits } from '@proj-airi/stage-shared/kiosk-conversation'
+import { orderingSites } from '@proj-airi/stage-shared/ordering-sites'
+import { nativeOrderingToolName, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
 import { Hono } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { array, boolean, check, integer, literal, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, regex, safeParse, string, unknown } from 'valibot'
 
+import { rateLimiter } from '../../middlewares/rate-limit'
 import { isPosRoute, isPublicPosRoute } from '../../services/adapters/kioskPos'
 import { browserOrderingLimits, decideAnswer, decideEffect, findPresentedQuestion } from '../../services/domain/browser-ordering'
 import { browserAnswerSchema, browserEffectSchema, browserPlanSchema } from '../../services/domain/browser-ordering/contracts'
+import { orderingInstructions } from '../../services/domain/browser-ordering/skills'
 import { compactToolResultForModel, createInteractionInstructions, hasMenuReply, queryClarification, recordAssistantActions, recordCustomerInput, recordToolResults, selectBoundedConversationText } from '../../services/domain/kiosk-agent-interaction'
 import { clarificationTool, currentContextInstructions, replyTool, selectReply } from '../../services/domain/kiosk-agent-interaction/conversationContext'
 import { decideInteraction } from '../../services/domain/kiosk-interaction-decision'
@@ -27,13 +32,14 @@ import { buildConversationContext, conversationEntries } from '../../services/do
 import { createRecommendationInvitation, presentedQuestionSchema } from '../../services/domain/kiosk-interaction-decision/contracts'
 import { resolvePhoneChoice } from '../../services/domain/kiosk-interaction-decision/phoneResolution'
 import { resolvePriceHandoff } from '../../services/domain/kiosk-interaction-decision/priceResolution'
-import { scopeInstructions, scopeTool } from '../../services/domain/kiosk-interaction-decision/queryScopeContracts'
+import { scopeQuestion } from '../../services/domain/kiosk-interaction-decision/queryScopeContracts'
 import { recoverServiceRequest } from '../../services/domain/kiosk-interaction-decision/serviceRecovery'
 import { resolveServiceHandoff } from '../../services/domain/kiosk-interaction-decision/serviceResolution'
 import { createDecisionStages } from '../../services/domain/kiosk-interaction-decision/stages'
 import { decisionRoutes } from '../../services/domain/kiosk/interactionContracts'
 import { ApiError, createBadRequestError, createForbiddenError, createUnauthorizedError } from '../../utils/error'
 import { isLoopbackOrigin } from '../../utils/origin'
+import { createLocalAdminAccess } from './localAdmin'
 
 /** Cookie name shared by kiosk registration and bootstrap requests. */
 export const kioskDeviceCookieName = 'airi_kiosk_device'
@@ -110,6 +116,7 @@ const conversationMessageSchema = object({
   decisionState: optional(pipe(object({
     serviceClarification: optional(serviceClarificationSchema),
     context: optional(conversationContextSchema),
+    browserContext: optional(browserConversationSchema),
     handoff: optional(handoffSchema),
     requireMenuRead: optional(boolean()),
     readOnly: optional(boolean()),
@@ -165,6 +172,8 @@ const interactionDecisionSchema = object({
   candidates: pipe(array(object({ description: pipe(string(), regex(/\S/), maxLength(500)), id: pipe(string(), regex(/^[\w:-]+$/), maxLength(120)), requiresHighConfidence: optional(boolean()) })), maxLength(253)),
   decisionState: optional(object({
     requiresPlanner: optional(boolean()),
+    tableSelection: optional(object({ choices: pipe(array(pipe(string(), minLength(1), maxLength(120))), maxLength(249)), selectedTable: optional(pipe(string(), minLength(1), maxLength(120))) })),
+    menuSearch: optional(object({ query: pipe(string(), minLength(1), maxLength(200)) })),
     readOnly: optional(boolean()),
     clarificationOffer: optional(object({ id: pipe(string(), maxLength(120)), label: pipe(string(), maxLength(120)) })),
     priceEvidence: optional(priceEvidenceSchema),
@@ -218,11 +227,13 @@ export interface KioskRoutesOptions {
     speak: (input: { locale: string, modelName: string, text: string }) => Promise<Response>
     transcribe: (input: { audio: File, modelName: string }) => Promise<string>
   }
-  systemOne?: Pick<ReturnType<typeof createKioskSystemOneService>, 'decide' | 'getPolicy' | 'isEnabled' | 'maxActionCandidates'>
+  systemOne?: Pick<ReturnType<typeof createKioskSystemOneService>, 'decide' | 'getPolicy' | 'isEnabled' | 'maxActionCandidates' | 'routing'>
   /** Development-only trace of the tool protocol; never include customer content or tool arguments. */
   toolTraceObserver?: { record: (input: { phase: 'browser-results' | 'llm-requests' | 'tools-provided', toolNames: string[], visitorSessionId: string }) => void }
   /** True when this deployment is HTTPS, so device credentials must be Secure cookies. */
   secureCookies: boolean
+  /** Server-only PIN and signing secret; never exposed through bootstrap. */
+  localAdmin?: { pin?: string, secret: string }
   /** Fixed upstream network boundary; no browser-supplied destinations. */
   posGateway?: ReturnType<typeof createKioskPosGateway>
   /** Exact public API origin for cookie-authenticated POS writes. */
@@ -239,6 +250,25 @@ export interface KioskRoutesOptions {
 export function createKioskRoutes(options: KioskRoutesOptions) {
   const routes = new Hono<HonoEnv>()
   const decisionStages = createDecisionStages()
+  const localAdmin = createLocalAdminAccess({ ...options.localAdmin, secret: options.localAdmin?.secret ?? '', secureCookies: options.secureCookies, origin: options.apiOrigin })
+  const pinLimiter = rateLimiter({ max: 5, windowSec: 60, routeLabel: 'kiosk.admin.pin', keyGenerator: c => createHash('sha256').update(getCookie(c, kioskDeviceCookieName) ?? 'unregistered').digest('hex') })
+
+  routes.post('/admin/session', async (c, next) => {
+    // Resolve before limiting so invented credentials cannot rotate valid buckets.
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    return pinLimiter(c, next)
+  }, async (c) => {
+    const device = await resolveAuthenticatedDevice(c, options.kioskService)
+    const parsed = safeParse(object({ pin: pipe(string(), regex(/^\d{4,12}$/)) }), await c.req.json().catch(() => null))
+    if (!parsed.success)
+      throw createUnauthorizedError('Incorrect local administrator PIN')
+    return c.json(await localAdmin.unlock(c, device.id, getCookie(c, kioskDeviceCookieName)!, parsed.output.pin))
+  })
+  routes.delete('/admin/session', async (c) => {
+    await resolveAuthenticatedDevice(c, options.kioskService)
+    localAdmin.lock(c)
+    return c.json({ locked: true })
+  })
 
   routes.all('/pos/*', async (c) => {
     const path = c.req.path.split('/pos/')[1] ?? ''
@@ -322,7 +352,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const modelName = await options.runtimeModelPolicy.modelFor('chat')
     const finite = options.systemOne && await options.systemOne.isEnabled() ? options.systemOne.decide : undefined
     const semanticStartedAt = Date.now()
-    const result = await decideEffect(effect, { finite, complete: async (body) => {
+    const profile = await options.kioskService.getProfileRelease(transcript.session.profileReleaseId)
+    const catalogLabels = profile ? orderingSites(profile.snapshot).find(site => site.id === transcript.session.serviceId)?.catalogLabels : undefined
+    const result = await decideEffect(effect, { finite, catalogLabels, complete: async (body) => {
       if (!modelName)
         throw new Error('Main model is unavailable.')
       return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(browserOrderingLimits.effectModelRequestMs)]) })
@@ -416,14 +448,13 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
 
   routes.put('/settings', async (c) => {
     const device = await resolveAuthenticatedDevice(c, options.kioskService)
-    const user = c.get('user')
-    if (!user)
-      throw createUnauthorizedError('Sign in as a site operator to change settings')
+    const credential = getCookie(c, kioskDeviceCookieName)!
+    await localAdmin.authorize(c, device.id, credential)
     return c.json(await options.kioskService.updateDeviceSettings({
       deviceId: device.id,
       siteId: device.siteId,
-      userId: user.id,
-      source: 'local',
+      deviceCredential: credential,
+      source: 'local-pin',
       body: await c.req.json().catch(() => null),
     }))
   })
@@ -459,6 +490,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       : undefined
     if (session && session.session.state !== 'active')
       throw createBadRequestError('Visitor session is not active', 'SESSION_INACTIVE')
+    const { effective } = await options.kioskService.getDeviceSettings(device.id)
     if (!result.output.review && result.output.decisionState?.phase === 'query_scope' && result.output.decisionState.waitingFor?.purpose === 'menu-query-scope') {
       const state = result.output.decisionState
       const modelName = await options.runtimeModelPolicy.modelFor('chat')
@@ -466,7 +498,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         return c.json({ kind: 'SCOPE_CHOICE', choice: 'ASK' })
       // IDs and expiry belong to browser admission, not language semantics.
       // Exclude their arbitrary numbers from the scope/condition checkpoint.
-      const response = await options.llmGateway.complete({ modelName, abortSignal: c.req.raw.signal, body: { model: modelName, temperature: 0, messages: [{ role: 'system', content: scopeInstructions }, { role: 'user', content: JSON.stringify({ stage: 'answer', customerUtterance: result.output.transcript, confirmedConditions: state.constraints, question: { prompt: state.waitingFor!.question, options: state.waitingFor!.choices.map(choice => ({ id: choice.id, label: choice.description })) } }) }], tools: [scopeTool], tool_choice: 'required' } })
+      const scope = scopeQuestion(effective.backgroundSpeechMode === 'enforce')
+      const response = await options.llmGateway.complete({ modelName, abortSignal: c.req.raw.signal, body: { model: modelName, temperature: 0, messages: [{ role: 'system', content: scope.instructions }, { role: 'user', content: JSON.stringify({ stage: 'answer', customerUtterance: result.output.transcript, confirmedConditions: state.constraints, question: { prompt: state.waitingFor!.question, options: state.waitingFor!.choices.map(choice => ({ id: choice.id, label: choice.description })) } }) }], tools: [scope.tool], tool_choice: 'required' } })
       const payload = await response.json().catch(() => null)
       const parsed = safeParse(object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: string(), arguments: string() }) })) }) })) }), payload)
       const calls = parsed.success ? parsed.output.choices[0]?.message.tool_calls : undefined
@@ -477,11 +510,13 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         }
         catch { /* An invalid proposal keeps the question pending. */ }
       }
-      return c.json({ kind: 'SCOPE_CHOICE', choice: ['ASK', 'SHOWN', 'CATALOG', 'NEW_REQUEST', 'IGNORE'].includes(String(choice)) ? choice : 'ASK' })
+      return c.json({ kind: 'SCOPE_CHOICE', choice: scope.choices.includes(choice as typeof scope.choices[number]) ? choice : 'ASK' })
     }
     if (!options.systemOne || !await options.systemOne.isEnabled())
       return c.json({ kind: 'NEEDS_ASSISTANT', reason: 'SYSTEM_ONE_DISABLED' })
+    const routing = await options.systemOne.routing()
     const decisionInput = {
+      backgroundSpeechMode: effective.backgroundSpeechMode,
       conversation: session ? buildConversationContext(session.entries, result.output.review ? result.output.transcript : undefined) : undefined,
       review: result.output.review,
       candidates: result.output.candidates,
@@ -503,7 +538,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       }
       const cue = result.output.decisionState?.serviceClarification
       const validCue = cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(result.output.decisionState!)
-      const bounded = validCue ? { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_SERVICE_REQUEST' as const, recovery: { status: 'eligible' as const } } : await decideInteraction({ ...decisionInput, invoke, routing: 'staged' })
+      const bounded = validCue ? { kind: 'UNAVAILABLE' as const, reason: 'UNCERTAIN_SERVICE_REQUEST' as const, recovery: { status: 'eligible' as const } } : await decideInteraction({ ...decisionInput, invoke, routing })
       const priced = await resolvePriceHandoff(bounded, result.output.transcript, result.output.review ? undefined : result.output.decisionState?.priceEvidence, completeResolution)
       let decision = result.output.review ? priced : await resolveServiceHandoff(priced, result.output.transcript, result.output.decisionState, completeResolution)
       const skip = result.output.candidates.find(candidate => candidate.id === 'intent:skip-customer-entry')
@@ -544,7 +579,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     }
     const decide: typeof runDecision = async (...args) => {
       const decision = await runDecision(...args)
-      if (decision.kind === 'FAST_ACTION' && decision.actionId === 'intent:add-item' && result.output.visitorSessionId) {
+      if (decision.kind === 'FAST_ACTION' && ['intent:add-item', 'intent:add-items', 'intent:set-quantity', 'intent:remove-item'].includes(decision.actionId) && result.output.visitorSessionId) {
         await options.kioskService.appendDeviceInteraction({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId, kind: 'service_event', content: 'Bounded PB intent selected; no cart effect yet.', metadata: { browserAuthority: { source: 'system-one', actionId: decision.actionId, transcript: result.output.transcript, utteranceId: result.output.utteranceId } } })
       }
       return decision
@@ -1278,6 +1313,9 @@ async function finishConversationReply(
   answer: KioskCompletion,
   modelName: string,
 ): Promise<KioskCompletion> {
+  // Both streaming and non-streaming replies cross the same vocabulary seam.
+  // Persist/dispatch native arguments; expose model names again in continuations.
+  answer = { ...answer, toolCalls: answer.toolCalls.map(call => ({ ...call, function: { ...call.function, arguments: browserToolArguments(call.function.name, call.function.arguments, 'host') } })) }
   const context = input.decisionState?.context
   if (!context)
     return answer
@@ -1291,37 +1329,73 @@ async function finishConversationReply(
 // A semantic food handoff must obtain a fresh read before any generated
 // final answer or order change. Internal catalog reads do not finish presentation.
 function replyToolPolicy(input: Pick<Parameters<typeof completeKioskReply>[0], 'tools' | 'toolResults' | 'decisionState'>) {
-  if (input.tools?.some(tool => tool.function.name === 'browser_observe')) {
-    // External pages have no owned conversation-context snapshot. Every new
-    // turn needs fresh browser evidence; history alone cannot provide a receipt.
-    const cart = input.tools.some(tool => tool.function.name === 'browser_cart_get')
-    const conversation = input.tools.some(tool => tool.function.name === 'browser_respond')
+  if (input.decisionState?.browserContext || input.tools?.some(tool => Object.hasOwn(orderingTools, tool.function.name) || tool.function.name === 'browser_observe')) {
+    const context = input.decisionState?.browserContext
+    const allowed = context && new Set(context.allowedToolNames)
+    const tools = (input.tools ?? []).filter(tool => !allowed || allowed.has(tool.function.name) || tool.function.name === 'kiosk_session_history').map((tool) => {
+      const description = browserToolDescription(tool.function.name)
+      // Newly discovered external capabilities retain their own contract. Known
+      // PB tools use one model-facing vocabulary instead of bridge implementation prose.
+      return description ? { ...tool, function: { ...tool.function, description, parameters: browserToolParameters(tool.function.name, tool.function.parameters) } } : tool
+    })
+    const cart = tools.some(tool => tool.function.name === 'browser_cart_get')
     for (const result of input.toolResults ?? []) {
-      if (!result.name.startsWith('browser_cart_'))
+      if (!nativeOrderingToolName(result.name).startsWith('browser_cart_'))
         continue
       try {
         const payload = JSON.parse(result.content)
         const operations: Record<string, string> = { add: 'browser_cart_add', quantity: 'browser_cart_quantity', remove: 'browser_cart_remove', replace: 'browser_cart_replace' }
         const selectedAddition = payload?.source === 'browser' && payload?.dataOnly === true && (payload.selectedProduct || payload.confirmedAddition)
-        const required = selectedAddition ? 'browser_cart_add' : payload?.source === 'browser' && payload?.status === 'proposal_rejected' && operations[payload.requiredAction]
-        if (required && input.tools.some(tool => tool.function.name === required))
-          return { tools: input.tools, temperature: 0, tool_choice: { type: 'function' as const, function: { name: required } } }
+        let required: string | false | undefined
+        if (selectedAddition) {
+          required = payload.confirmedAddition && tools.some(tool => tool.function.name === 'browser_confirm_add')
+            ? 'browser_confirm_add'
+            : tools.some(tool => tool.function.name === 'browser_order_draft') ? 'browser_order_draft' : 'browser_cart_add'
+        }
+        else {
+          required = payload?.source === 'browser' && payload?.status === 'proposal_rejected' && operations[payload.requiredAction]
+        }
+        const repair = required && tools.find(tool => nativeOrderingToolName(tool.function.name) === required)
+        if (repair)
+          return { tools, temperature: 0, tool_choice: { type: 'function' as const, function: { name: repair.function.name } } }
       }
       catch { /* Invalid receipt data cannot constrain or authorize a write. */ }
     }
+    const canPresentLookup = tools.some(tool => ['point_to_menu_items', 'ask_customer_question'].includes(tool.function.name))
     const onlyPreparation = input.toolResults?.length && input.toolResults.every((result) => {
-      if (!result.name.startsWith('browser_'))
+      if (!nativeOrderingToolName(result.name).startsWith('browser_'))
         return false
       try {
-        return JSON.parse(result.content)?.dataOnly === true
+        const payload = JSON.parse(result.content)
+        // Search updates the page but does not establish an answerable question.
+        // Select a presentation or question tool before ending this handoff;
+        // otherwise a prose-only offer is discarded by the verified presenter.
+        // Empty/failed searches retain their own recovery question and stop.
+        const searchNeedsPresentation = result.name === 'search_menu_items' && canPresentLookup
+          && payload?.ok === true && payload?.source === 'browser' && !payload.status && !payload.pendingCustomerChoice
+          && Array.isArray(payload.products) && payload.products.length > 0
+        return payload?.dataOnly === true || searchNeedsPresentation
       }
       catch { return false }
     })
+    // Explicit public information reads can finish from their factual receipts.
+    // Internal discovery and mutation preparation still require a selected action.
+    // readOnly constrains authority; it does not classify every Main handoff.
+    // An explicit public read can answer a query Main understood independently.
+    // Internal preparation still requires an action, and read receipts never
+    // provide evidence that an ordered cart mutation has completed.
+    const publicInformationRead = input.toolResults?.length && input.toolResults.every(result => ['get_menu_item_details', 'list_cart_items'].includes(result.name)
+      || (result.name === 'list_menu_items' && (context?.readOnly === true || !canPresentLookup)))
+    if (onlyPreparation && publicInformationRead)
+      return { tools, temperature: 0 }
     // Internal cart/catalog preparation cannot finish either a customer query
     // or a mutation request. Obtain a presented read, clarification, or effect.
     if (onlyPreparation)
-      return { tools: input.tools, temperature: 0, tool_choice: 'required' as const }
-    return { tools: input.tools, temperature: 0, ...(input.toolResults?.length ? {} : { tool_choice: cart && !conversation ? { type: 'function' as const, function: { name: 'browser_cart_get' } } : 'required' as const }) }
+      return { tools, temperature: 0, tool_choice: 'required' as const }
+    // Like the owned Menu, a fresh Host projection already supplies facts. A
+    // pending answer still goes through cart_get after canonical user recording.
+    const needsAnswer = !context || Boolean(context.waitingFor) || context.phase === 'sign_in_required'
+    return { tools, temperature: 0, ...(input.toolResults?.length ? {} : { tool_choice: needsAnswer && cart ? { type: 'function' as const, function: { name: 'browser_cart_get' } } : 'required' as const }) }
   }
   // Read-only tool selection favors repeatable semantic decisions over prose variation.
   const generation = input.decisionState?.readOnly ? { temperature: 0 } : {}
@@ -1447,27 +1521,20 @@ async function parseKioskReplyStream(response: Response, onTextDelta: (text: str
 function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKioskReply>[0], 'actionPrompt' | 'agentInteraction' | 'decisionState' | 'profile' | 'tools'>) {
   // Browser services publish their own capabilities. Owned Menu/POS prompts
   // refer to a different state machine and must not govern this external page.
-  if (input.tools?.some(tool => tool.function.name === 'browser_observe')) {
+  if (input.decisionState?.browserContext || input.tools?.some(tool => Object.hasOwn(orderingTools, tool.function.name) || tool.function.name === 'browser_observe')) {
     return [
       createCharacterInstructions(input.profile.snapshot),
-      '目前服務為外站點餐網頁。僅使用本輪提供的 browser 工具與最新回執；不要呼叫或假設 Menu/POS 工具。品名、價格、選項、購物車狀態以最新網頁工具結果為準，不以常識補價格。',
-      '顧客同時問多道餐點，逐一查證或清空搜尋讀取全部目前商品。顧客問幾份多少錢時，用 browser_quote 計算指定數量；這是查價，不是加購授權。',
-      '「我要一份便當」等未指定具體餐點時，先清空搜尋取得目前選項，再用 browser_clarify_product 詢問。不可自行挑第一道。短答承接上一個實際問題，指涉仍不明就釐清。',
-      '每次查詢回執中的 customerMessage 是程式依實際網頁產生的顧客資訊。不要更改其中的售價或把查價說成已加入。未提供加購、修改或付款工具時，明確說明尚不能代為完成，不聲稱成功。',
-      'browser_observe purpose=information 只是完整菜單資料，dataOnly:true 不代表已依顧客偏好、排除或條件完成篩選。保留近期已表達的條件，依完整需求選出當前 productRefs，再呼叫 browser_present 呈現；不要直接重列全部商品。原頁資料不足以確認過敏原、熱量等條件時，使用 browser_respond kind=information-unavailable 明確說無法確認，不猜符合項目或排序。',
-      '本輪有 browser_cart 工具時，明確加購／改數量／移除才可操作。先 browser_cart_get 取得最新 version、productRef、lineRef 與價格，再呼叫對應工具；每次寫入使用最新回執版本，不用歷史猜參數。同名多行先核對 productRef、configuration 與加購／備註。不同商品或無法辨識配置時才問；同商品同配置僅分列時，不要反覆請顧客選內部行。要求品項總數時，用總數減去本次保留的同品項行數量，作為指定行的最後數量；不要將品項總數直接填入單行。同商品、同配置、同單價的分列，可使用 browser_cart_quantity 的 lineRefs 指定這些行（包含 lineRef），quantity 填這組最後合計，由程式逐步調整與核對，不用顧客選內部行。總數較小時優先使用這種整組調整，不先自行刪行。整組取消則 browser_cart_remove 提供相同 lineRefs；不同加購／備註／單價不可合組，需按完整需求分別處理或澄清。查價不加車。未要求的規格／加購不自行選。selection 已完成的加購不要再重複寫進 note；note 只放顧客另外提出的自由備註／偏好，沒有就空字串，除非顧客明確要求也寫進備註。替換需先驗證新餐加入，再移除明確的原行；部分完成或 unknown 如實說明，不能重送未知操作。任何情況都不得送出訂單或付款。',
-      '初始資料若 configurationLookupRequired:true，代表目前只有完整商品索引；先用 browser_product_get 的 names 陣列一次查本句需要的具體商品，取得完整規格與版本，不能把未回傳的規格當作沒有選項。',
-      '商品 configurations 是當次規格。加購／替換必須傳 selection:{version:所選規格的version,variantRef:所選規格的variantRef,choices:[{ref,quantity}]}；基本商品也要帶該規格版本與空 choices。unitPrice 是基本單價加每份所選付費選項，不能把白飯等付費項目寫成免費 note。必選組必須明確問顧客，不能採用預設第一項；顧客未要求的可選加購保持空白。規格無法完整滿足整句時先詢問，不先加入缺少加購的基本餐。',
-      '購物車寫入回執 status:verified 表示該項操作已完成，不可再次送出相同操作或重用舊版本；只有原句還有未完成的其他明確需求才選下一筆工具，否則結束。repeated:true 也是已完成的原回執，不是要重試。',
-      'customerBoundary:review-required 表示原購物車未完成交接，沒有提供其內容；不能說購物車是空的或猜舊餐點。仍可用商品工具回答菜單查詢；顧客要求操作時，使用 browser_respond kind=clarification 呈現 Host 的現場交接提示，不自行清空、接手或要求顧客提供帳密。',
-      '一般招呼、了解、語音收件確認與意思不明的非操作對話，使用 browser_respond，不需要呼叫商品查詢；這個工具不能回答商品／店家事實或宣稱操作完成。目前有效點餐問題的回答仍先 browser_cart_get，不可把「對」當成泛泛的了解而跳過問題。',
-      '顧客要點餐但未指明商品時，呼叫 browser_clarify_product 或 browser_observe purpose=choose_product 建立實際品項問題；不得自行選第一項，也不能只列菜單後結束。查有沒有或價格仍只查資訊，不建立加購確認。',
-      'browser_cart_get 回傳 selectedProduct 表示短答只選了這項，還沒加購：依 originalRequest 提出完整 browser_cart_add，Host 會先問完整確認。confirmedAddition 是顧客剛確認的唯一完整設定，只能依該設定與 cart.version 呼叫一次 browser_cart_add，不能改份數／選項／備註。previousProposal 只供新更正需求理解，舊確認已取消；未提完整品名的更正必須再問完整確認。pendingCustomerChoice 由畫面呈現，不自行改寫問題或繼續猜商品。',
-      '每次只呼叫一個購物車寫入工具；等成功回執取得新 cart.version 才執行下一筆，不可並列兩筆沿用相同版本。browser_cart_add 會依最新商品與規格資料加入，不需要先 browser_open_product；成功回執已含最新購物車，不必在每筆成功後額外重讀。',
-      '餐點查詢、選餐與購物車操作的每輪開始，browser_cart_get 使用 includeCatalog:true，取得操作所需的最新商品參照、價格與購物車版本。這是內部資料準備，並未完成顧客需求；顧客明確說某餐各一份就要依完整原句完成加購，不能只介紹菜單後結束。顧客只問價格或有沒有則只查詢，不加購。',
-      '替換餐點或修改既有餐點配置一律使用 browser_cart_replace，由程式保障先加新配置、核對後才減少或移除原行，不自行拆成刪除再加購。同商品換加飯等不同配置也可以替換。quantity 是新配置份數；retainQuantity 是原行要保留的份數（省略代表整行替換）。例如原本三份中一份加飯，quantity=1、retainQuantity=2，並使用含加飯的 selection。初次點三份其中一份加飯，直接拆成兩份原配置與一份加飯配置新增，不能先加三份再額外加一份。顧客說「某餐不要了」且目前購物車有唯一對應行時，使用 browser_cart_remove 移除此行，不以口頭答應代替；若有多行才釐清。必須理解整句，「不要換排骨」是保留原選擇，不是移除排骨。',
-      '顧客只要求核對、維持或保留目前訂單時，使用 browser_cart_review，以 {} 呼叫取得最新購物車顧客回執；這是狀態確認，不能呼叫 browser_cart_quantity 設成原數量，更不能移除後重加。轉述同伴不要餐點，不代表授權取消本人的餐點；先分清說話者、受詞與整句最後要求。同句若還有新增、換餐、改量或刪除，則仍按完整修改需求執行，不可只因保留部分或拒絕加購就忽略其他需求。這種純核對不適用每輪必先讀商品索引的規則，也不能用 browser_present 的菜單單價代替訂單份數與小計。',
-    ].join('\n\n')
+      input.profile.snapshot.characterCard?.postHistoryInstructions,
+      '目前服務為外站點餐網頁。僅使用本輪提供的工具與最新網頁資料。歷史只幫助理解指涉；價格、選項、購物車與目前問題以本輪狀態為準。',
+      input.decisionState?.browserContext && browserConversationInstructions(input.decisionState.browserContext),
+      input.decisionState?.readOnly ? '本輪僅查詢與介紹，不得變更購物車或付款。可詢問是否購買推薦餐點；尚未同意前不可視為已確認購買。' : undefined,
+      // A missing snapshot cannot establish a workflow from history or the
+      // default browse flow. Keep only the actual tool contracts until read.
+      input.decisionState?.browserContext && (() => {
+        const skill = orderingInstructions(input.decisionState.browserContext)
+        return `目前點餐流程：${skill.workflow}；版本：${skill.version}\n${skill.instructions}`
+      })(),
+    ].filter(Boolean).join('\n\n')
   }
   const interaction = input.agentInteraction && input.decisionState?.context
     ? { ...input.agentInteraction, cartSummary: undefined, recentMenuSubjects: [], recentAgentAction: undefined }
@@ -1533,15 +1600,13 @@ function createKioskSystemInstructions(input: Pick<Parameters<typeof completeKio
 /** Combines imported Character Card v3 context with site-specific additions. */
 function createCharacterInstructions(snapshot: KioskProfileSnapshot) {
   const card = snapshot.characterCard
-  if (!card)
-    return snapshot.agentInstructions
 
   return [
     `角色名稱：${snapshot.characterName}`,
-    card.description && `角色介紹：${card.description}`,
-    card.personality && `個性與語氣：${card.personality}`,
-    card.scenario && `情境：${card.scenario}`,
-    card.systemPrompt && `角色系統指示：${card.systemPrompt}`,
+    card?.description && `角色介紹：${card.description}`,
+    card?.personality && `個性與語氣：${card.personality}`,
+    card?.scenario && `情境：${card.scenario}`,
+    card?.systemPrompt && `角色系統指示：${card.systemPrompt}`,
     snapshot.agentInstructions && `店別補充指示：${snapshot.agentInstructions}`,
   ].filter(Boolean).join('\n\n')
 }
@@ -1605,7 +1670,7 @@ function toConversationMessages(
     callCount += calls.length
     if (callCount > 16)
       break
-    const batch: typeof exchanges = [{ role: 'assistant', content: '', tool_calls: calls }]
+    const batch: typeof exchanges = [{ role: 'assistant', content: '', tool_calls: calls.map(call => ({ ...call, function: { ...call.function, arguments: browserToolArguments(call.function.name, call.function.arguments, 'model') } })) }]
     for (const call of calls) {
       const result = results.get(call.id)
       if (!pendingIds.has(call.id) && result)

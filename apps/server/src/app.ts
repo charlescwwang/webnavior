@@ -42,6 +42,7 @@ import { serve } from '@hono/node-server'
 import { createNodeWebSocket } from '@hono/node-ws'
 import { httpInstrumentationMiddleware } from '@hono/otel'
 import { kioskAudioLimits } from '@proj-airi/stage-shared/kiosk-audio'
+import { kioskCharacterPackageLimits } from '@proj-airi/stage-shared/kiosk-character-package'
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
 import { cors } from 'hono/cors'
@@ -82,6 +83,7 @@ import { createChatRoutes } from './routes/chats'
 import { createFluxRoutes } from './routes/flux'
 import { createKioskRoutes } from './routes/kiosk'
 import { createKioskCharacterAssetRoutes } from './routes/kiosk/character-assets'
+import { loadLocalAdminPin } from './routes/kiosk/localAdmin'
 import { createV1Routes } from './routes/openai/v1'
 import { createProviderRoutes } from './routes/providers'
 import { createStripeRoutes } from './routes/stripe'
@@ -154,6 +156,7 @@ interface AppDeps {
 
 export async function buildApp(deps: AppDeps) {
   const logger = useLogger('app').useGlobalConfig()
+  const localAdminPin = await loadLocalAdminPin(deps.env.KIOSK_ADMIN_PIN, deps.env.KIOSK_ADMIN_PIN_FILE)
   const kioskMediaService = createKioskMediaService(deps.db, join(deps.env.WEBNAVIOR_KIOSK_ASSET_DIR, 'visitor-media'))
   const trustedCors = cors({
     origin: origin => getTrustedOrigin(origin, deps.env.ADDITIONAL_TRUSTED_ORIGINS),
@@ -298,6 +301,7 @@ export async function buildApp(deps: AppDeps) {
 
   const defaultBodyLimit = bodyLimit({ maxSize: 1024 * 1024 })
   const characterAssetBodyLimit = bodyLimit({ maxSize: 64 * 1024 * 1024 })
+  const characterPackageBodyLimit = bodyLimit({ maxSize: kioskCharacterPackageLimits.archiveBytes + 1024 * 1024 })
   const kioskMediaBodyLimit = bodyLimit({ maxSize: 32 * 1024 * 1024 })
   const kioskAudioBodyLimit = bodyLimit({
     maxSize: kioskAudioLimits.requestBytes,
@@ -309,6 +313,8 @@ export async function buildApp(deps: AppDeps) {
     // Large binary uploads are exceptions to the API's 1 MB JSON limit. Bind
     // each cap to its exact route so arbitrary requests cannot consume memory.
     .use('*', (c, next) => {
+      if (c.req.method === 'POST' && /^\/api\/admin\/kiosk\/sites\/[^/]+\/character-package\/import$/.test(c.req.path))
+        return characterPackageBodyLimit(c, next)
       if (/^\/api\/admin\/kiosk\/sites\/[^/]+\/(?:character|motion)-assets$/.test(c.req.path))
         return characterAssetBodyLimit(c, next)
       if (/^\/api\/kiosk\/visitor-sessions\/[^/]+\/media$/.test(c.req.path))
@@ -435,6 +441,7 @@ export async function buildApp(deps: AppDeps) {
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
       apiOrigin: new URL(deps.env.API_SERVER_URL).origin,
+      localAdmin: { pin: localAdminPin, secret: deps.env.BETTER_AUTH_SECRET },
       posGateway: createKioskPosGateway(deps.env.KIOSK_POS_BRIDGE_URL ?? 'http://127.0.0.1:5170/'),
       toolTraceObserver: process.env.NODE_ENV !== 'production'
         ? { record: input => console.info('[kiosk-tools]', input) }

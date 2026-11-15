@@ -1,19 +1,23 @@
 import type { InferOutput } from 'valibot'
 
-import { array, boolean, integer, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, string } from 'valibot'
+import { array, boolean, integer, maxLength, maxValue, minLength, minValue, number, object, omit, optional, picklist, pipe, string } from 'valibot'
 
 /** Vendor-observed labels used for speech understanding, without executable identity. */
 export const cartLineLabelSchema = object({
   name: pipe(string(), minLength(1), maxLength(500)),
   quantity: number(),
   description: optional(pipe(string(), maxLength(2_000))),
+  /** Readable website option summary for public cart targeting, never a fingerprint. */
+  configuration: optional(pipe(string(), maxLength(2_000))),
   note: optional(pipe(string(), maxLength(200))),
+  /** Observed quantities apply to each serving, not the whole cart row. */
+  options: optional(pipe(array(object({ name: pipe(string(), minLength(1), maxLength(500)), quantity: pipe(number(), integer(), minValue(1), maxValue(100)) })), maxLength(100))),
 })
 
 /** Current-cart labels help interpret speech; they are not proof or executable targets. */
 export const cartSnapshotSchema = object({
   version: pipe(string(), minLength(1), maxLength(120)),
-  lines: pipe(array(cartLineLabelSchema), maxLength(2_000)),
+  lines: pipe(array(omit(cartLineLabelSchema, ['configuration'])), maxLength(2_000)),
 })
 
 const servingSchema = object({
@@ -32,6 +36,7 @@ export type AdditionGroup = InferOutput<typeof additionGroupSchema>
 
 /** Read-only semantic evidence; opaque Host correlations are not write authority or model tools. */
 export const browserEffectSchema = object({
+  /** Exact current customer turn for admission; previous answers belong in storeFacts. */
   transcript: pipe(string(), minLength(1), maxLength(8_000)),
   action: picklist(['add', 'quantity', 'remove', 'replace']),
   description: pipe(string(), minLength(1), maxLength(4_000)),
@@ -51,6 +56,8 @@ export const browserEffectSchema = object({
   cartContext: optional(cartSnapshotSchema),
   /** Proposed per-serving labels; meal count and total option counts stay hidden from extraction. */
   serving: optional(servingSchema),
+  /** Explicit current-cart source for an additional meal with the same customization. */
+  copySource: optional(cartLineLabelSchema),
   /** Other rows are the same verified product; configuration identity is Host-derived. */
   cartTarget: optional(object({
     selected: cartLineLabelSchema,

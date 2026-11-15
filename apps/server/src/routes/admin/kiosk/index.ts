@@ -8,6 +8,7 @@ import type { HonoEnv } from '../../../types/hono'
 
 import JSZip from 'jszip'
 
+import { findTranscriptRecording } from '@proj-airi/stage-shared/interaction-media'
 import { Hono } from 'hono'
 import { array, boolean, integer, maxLength, maxValue, minLength, minValue, number, object, optional, picklist, pipe, safeParse, string } from 'valibot'
 
@@ -15,6 +16,7 @@ import { authGuard } from '../../../middlewares/auth'
 import { KioskProfileSnapshotSchema } from '../../../services/domain/kiosk'
 import { createBadRequestError, createForbiddenError } from '../../../utils/error'
 import { createAdminKioskCharacterAssetRoutes } from './character-assets'
+import { createAdminKioskCharacterPackageRoutes } from './characterPackages'
 
 const profileDraftSchema = object({
   id: optional(string()),
@@ -93,6 +95,7 @@ export function createAdminKioskRoutes(kioskService: KioskService, characterAsse
   return new Hono<HonoEnv>()
     .use('*', authGuard)
     .route('/', createAdminKioskCharacterAssetRoutes({ assets: characterAssets, kioskService }))
+    .route('/', createAdminKioskCharacterPackageRoutes({ assets: characterAssets, kioskService }))
     .get('/experience-template', async (c) => {
       return c.json(await kioskService.getOwnerExperienceTemplate(c.get('user')!.id))
     })
@@ -254,17 +257,15 @@ export function createAdminKioskRoutes(kioskService: KioskService, characterAsse
         const messages: Array<{ content: string, role: 'assistant' | 'system' | 'user' }> = []
         if (profile?.snapshot.agentInstructions)
           messages.push({ role: 'system', content: profile.snapshot.agentInstructions })
-        let previousAsr = ''
+        const asrUtterances = new Set(detail.entries.filter(entry => entry.kind === 'asr_transcript' && entry.metadata.utteranceId !== undefined).map(entry => entry.metadata.utteranceId))
         for (const entry of detail.entries) {
           if (entry.kind === 'asr_transcript') {
-            previousAsr = entry.content
             messages.push({ role: 'user', content: entry.content })
           }
           else if (entry.kind === 'user_text') {
             // The kiosk persists a transcript and its submitted text separately.
-            if (entry.content !== previousAsr)
+            if (entry.metadata.utteranceId === undefined || !asrUtterances.has(entry.metadata.utteranceId))
               messages.push({ role: 'user', content: entry.content })
-            previousAsr = ''
           }
           else if (entry.kind === 'assistant_text' && entry.metadata.action !== 'greeting') {
             messages.push({ role: 'assistant', content: entry.content })
@@ -299,8 +300,7 @@ export function createAdminKioskRoutes(kioskService: KioskService, characterAsse
           throw createForbiddenError()
         const media = await mediaService.listVisitorSessionMedia(visitorSessionId)
         for (const transcript of detail.entries.filter(entry => entry.kind === 'asr_transcript')) {
-          const activity = [...detail.entries].reverse().find(entry => entry.sequence < transcript.sequence && entry.kind === 'service_event' && entry.content === 'customer_activity' && entry.metadata.source === 'voice_input')
-          const recording = media.find(item => item.kind === 'audio_recording' && item.interactionEntryId === activity?.id)
+          const recording = findTranscriptRecording(transcript.id, media)
           if (!recording)
             continue
           const file = await mediaService.getFile(recording.id)

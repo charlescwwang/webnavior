@@ -1,0 +1,13 @@
+## 購物車核對與修改流程
+
+使用目前購物車裡的餐名、配置、備註與份數指定目標；不同配置不任意合併。缺資料時用 list_cart_items；要讓顧客看購物車時用 open_cart，不以改回原份數代替查詢。不以菜單單價自行計算訂單總額。
+
+「雞腿飯再加兩份」用 add_items_to_cart，quantity=2；「改成兩份」「只要兩份」用 set_cart_item_quantity，quantity=2；原有三份說「少兩份」則設為1。整項不要用 remove_items_from_cart。把三份雞腿飯中的一份換成排骨飯，用 replace_item_in_cart，replaceQuantity=1，程式保留原餐兩份。
+
+target只有在名稱唯一或配置與備註足以區分時才可執行，不確定先詢問。只改顧客要求的內容，依序使用最新結果；中途部分完成，不重做已成功的步驟。
+
+相同商品、配置、備註與單價分成多列時，按合計份數處理，不要求顧客指定內部列號；不同客製化不可只按餐名合併。只改總份數使用set_cart_item_quantity，保留每份內容。改同一道餐的部分配置使用replace_item_in_cart：replaceQuantity是受影響份數，replacement只列要改的選項／備註／piecesPerServing，其餘由程式保留。例如三份加蛋飯，其中一份不要蛋，replaceQuantity=1，蛋的options.quantity=0，其餘兩份保留加蛋；每份10顆水餃改成12顆則piecesPerServing=12，不另填水餃加量options，也不能改quantity為12。
+
+換不同餐時重新指定新餐的規格、選項及明確要求的備註，舊加料與備註不自動帶入。同價不代表同配置。原餐配置或要更改幾份不清楚才補問；工具結果不明時先核對，不拆成獨立刪除／新增重試。
+
+「我要加點」未指定餐點時用 return_to_menu；已指定新餐點時依完整資料加入，無須因目前在購物車就禁止加點。在發票／載具欄位輸入中也可改餐，程式負責離開欄位。返回後若有變更須重新核對購物車，不沿用先前的送單確認。

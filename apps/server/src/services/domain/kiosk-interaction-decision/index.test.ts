@@ -531,20 +531,17 @@ describe('kiosk System One interaction decision', () => {
   })
 
   it('does not discard an unmatched food request as background speech', async () => {
-    const invoke = vi.fn(async () => ({ answers: { route: { choice: 'NEEDS_ASSISTANT' } } }))
+    const invoke = vi.fn(async () => ({ answers: { route: { choice: 'NEEDS_ASSISTANT', confidence: 0.95 }, recipient: { choice: 'KIOSK', confidence: 0.95 } } }))
 
-    await decideInteraction({
+    const result = await decideInteraction({
       candidates: [{ description: '推薦不含豬肉的餐點。', id: 'intent:recommend:pork-free' }],
       invoke,
       policy,
       transcript: '我要豬肉',
     })
 
-    expect(invoke).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
-      route: expect.objectContaining({
-        instructions: expect.stringContaining('餐點偏好、拒絕某類食物、飲食要求、複合條件與改口，交給 Main Agent'),
-      }),
-    }))
+    expect(result.kind).toBe('NEEDS_ASSISTANT')
+    expect(result).not.toHaveProperty('actionId')
   })
 
   it('rejects an unbounded candidate list instead of silently dropping a valid action', async () => {

@@ -15,6 +15,7 @@ it('delivers Main recovery start over HTTP before the provider runs and finishes
   const complete = vi.fn(() => new Promise<Response>(resolve => finish = resolve))
   const systemOne: NonNullable<KioskRoutesOptions['systemOne']> = {
     isEnabled: async () => true,
+    routing: async () => 'staged' as const,
     maxActionCandidates: async () => 22,
     getPolicy: async () => ({ decisionInstruction: '', defaultDecisionInstruction: '', storeInstruction: '', updatedAt: null }),
     decide: async (_state, questions) => ({ answers: Object.fromEntries(Object.keys(questions).map(key => [key, { choice: ({ admission: 'UNCERTAIN' } as Record<string, string>)[key], confidence: key === 'route' || key === 'speech' ? 0.2 : 0.99 }])) }),
@@ -49,7 +50,7 @@ it('delivers Main recovery start over HTTP before the provider runs and finishes
     throw new Error('Expected independent service review')
   const reviewing = app.request(`/api/kiosk/interaction-decisions/${result.continuationId}`, { method: 'POST', headers, body: '{}' })
   await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2))
-  finish(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: '{"admission":"service","disposition":"assistant"}' } }] } }] }))
+  finish(Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'resolve_service_request', arguments: '{"admission":"service","disposition":"assistant","question":"幫我確認需求"}' } }] } }] }))
   result = await (await reviewing).json() as DecisionStageResult
   expect(result).toMatchObject({ kind: 'SERVICE_RECOVERY_PROGRESS', stage: 'review', status: 'completed' })
   if (result.kind !== 'SERVICE_RECOVERY_PROGRESS')

@@ -15,7 +15,7 @@ it.each([
   { admission: 'service', disposition: 'assistant', question: '', kind: 'NEEDS_ASSISTANT' },
   { admission: 'background', disposition: 'ignore', question: '', kind: 'IGNORE' },
   { admission: 'service', disposition: 'clarify', question: '', kind: 'UNAVAILABLE' },
-  { admission: 'service', disposition: 'assistant', question: '要改餐嗎？', kind: 'UNAVAILABLE' },
+  { admission: 'service', disposition: 'assistant', question: '要改餐嗎？', kind: 'NEEDS_ASSISTANT' },
 ])('validates the question according to the review disposition (%j)', async ({ kind, ...review }) => {
   const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'UNCERTAIN' })).mockResolvedValueOnce(response(review))
   const result = await recoverServiceRequest(eligible, { ...context, complete })
@@ -138,4 +138,32 @@ it.each(['是 是 帶刀刀', '我想請你幫忙，那個，我還沒說清楚�
   expect(result).not.toHaveProperty('actionId')
   expect(complete).toHaveBeenCalledTimes(2)
   expect(JSON.stringify(complete.mock.calls[1]![0])).toContain('目前這句的意思清楚')
+})
+
+// Report: this chat, Nov14; local session CX4pdljsMeNnROLq_EyRU entry155,
+// reproduced with selected qwen36: valid assistant disposition plus copied customer text in question.
+it.each(['我不要a套餐了，幫我關閉', null, '未使用的文字'.repeat(60)])('hands a clear new service request to Main without consuming an unused question: %j', async (question) => {
+  const transcript = '我不要a套餐了，幫我關閉'
+  const complete = vi.fn(async () => response({ admission: 'service', disposition: 'assistant', question, requestKind: 'new-request' }))
+  const result = await recoverServiceRequest(eligible, { transcript, state: { phase: 'ordering', serviceClarification: { questionId: 'service', question: '請問您是要點餐嗎？', sourceUtterance: '那我不要了', contextKey: 'key', expiresAt: Date.now() + 30000 } }, complete })
+  expect(result).toMatchObject({ kind: 'NEEDS_ASSISTANT', reason: 'NEW_REQUEST', recovery: { status: 'completed', admission: 'service' } })
+  expect(result).not.toHaveProperty('question')
+  expect(result).not.toHaveProperty('actionId')
+})
+
+it('keeps an admitted request conversational when the review format fails, without authorizing an action', async () => {
+  const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'REQUEST' })).mockResolvedValueOnce(response({ admission: 'service', disposition: 'unknown' }))
+  const result = await recoverServiceRequest(eligible, { ...context, complete })
+  expect(result).toMatchObject({ kind: 'SERVICE_CLARIFICATION', recovery: { status: 'failed', failure: 'invalid' } })
+  expect(result).toHaveProperty('question.sourceUtterance', context.transcript)
+  expect(result).not.toHaveProperty('actionId')
+  expect(complete).toHaveBeenCalledTimes(2)
+})
+
+// The first round admits this utterance; review IO failure must not erase it.
+it('offers clarification after an admitted review provider failure, but never after cancellation', async () => {
+  const complete = vi.fn().mockResolvedValueOnce(response({ choice: 'REQUEST' })).mockRejectedValueOnce(new Error('Provider disconnected'))
+  const result = await recoverServiceRequest(eligible, { ...context, complete })
+  expect(result).toMatchObject({ kind: 'SERVICE_CLARIFICATION', recovery: { status: 'failed', failure: 'provider-error' } })
+  expect(result).not.toHaveProperty('actionId')
 })

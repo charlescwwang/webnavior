@@ -1,3 +1,4 @@
+import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { ConversationContext, ConversationHandoff, ServiceClarification, ServiceRecovery, ServiceRecoveryProgress } from '@proj-airi/stage-shared/kiosk-conversation'
 import type { InferOutput } from 'valibot'
 
@@ -17,6 +18,11 @@ export interface CatalogMentionEvidence {
 
 /** Safe application-owned interaction facts shared by Jev and Agent requests. */
 export interface KioskDecisionState {
+  /** Visible table state is not a spoken question or consent ticket. */
+  tableSelection?: { choices: string[], selectedTable?: string }
+  /** Actual native search field, never inferred from customer wording. */
+  menuSearch?: { query: string }
+
   /** Domain compiler lacks a complete finite operation; Main must plan after service admission. */
   requiresPlanner?: boolean
   /** Host response guard for a semantically admitted food query, never order authority. */
@@ -55,7 +61,7 @@ export interface KioskDecisionState {
 }
 
 /** Safe handoff facts; completed reads do not authorize any later mutation. */
-export type KioskConversationDecisionState = Pick<KioskDecisionState, 'revisions' | 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, handoff?: ConversationHandoff, serviceReply?: boolean }
+export type KioskConversationDecisionState = Pick<KioskDecisionState, 'revisions' | 'readOnly' | 'requireMenuRead' | 'phase' | 'fulfillmentModes' | 'waitingFor' | 'allowedPaymentMethods' | 'interactionState' | 'paymentState' | 'constraints' | 'menuRevision' | 'completedReads' | 'unavailableConditionReferences' | 'incompleteSpeech' | 'priceEvidence' | 'serviceClarification'> & { context?: ConversationContext, browserContext?: BrowserConversation, handoff?: ConversationHandoff, serviceReply?: boolean }
 
 /** A finite semantic outcome. Food slots are chosen from application-issued references. */
 export type KioskInteractionDecision = {

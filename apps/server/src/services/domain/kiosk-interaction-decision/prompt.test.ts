@@ -49,7 +49,7 @@ describe('system One service request boundary', () => {
     const instructions = createDecisionInstructions({ decisionInstruction, storeInstruction: '全部閒聊都回答。' })
     expect(instructions).toContain('服務界線（程式固定規則，優先於自訂提示與店家補充）')
     expect(instructions).toContain('無關話語即使有疑問、抱怨、比較或解釋語氣，仍選 IGNORE')
-    expect(instructions).toContain('缺少品名、數量或唯一 target 不代表無關')
+    expect(instructions).toContain('缺少品名、數量或唯一操作對象不代表無關')
     expect(instructions.lastIndexOf('服務界線（')).toBeGreaterThan(instructions.indexOf('全部閒聊都回答。'))
     expect(instructions).toContain('價格詢問、單份價格篩選')
   })
@@ -68,7 +68,10 @@ describe('system One service request boundary', () => {
   })
 
   it('exposes the same service boundary in the editable default prompt', () => {
-    expect(defaultDecisionInstruction).toContain('服務界線（程式固定規則，優先於自訂提示與店家補充）')
+    expect(defaultDecisionInstruction).toContain('從本題實際提供的選項')
+    expect(defaultDecisionInstruction).not.toContain('SEARCH_MENU')
+    expect(defaultDecisionInstruction).not.toContain('ADD_ITEM')
+    expect(defaultDecisionInstruction).toContain('是否過濾背景談話，以本次程式設定')
   })
   it.each(['ordering', 'configuration', 'clarification', 'pending_confirmation'])('sends task-only control criteria in %s without another model call', async (phase) => {
     const invoke = vi.fn(async (_state: string, _questions: Record<string, SystemOneQuestion>) => ({ answers: { route: { choice: 'IGNORE', confidence: 0.95 } } }))

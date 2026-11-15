@@ -1,5 +1,5 @@
 /** Diagnostic outcomes are not execution authority or proof of a completed operation. */
-export const decisionRoutes = ['fast_path', 'execution_failed', 'unavailable'] as const
+export const decisionRoutes = ['utterance_accepted', 'fast_path', 'execution_failed', 'unavailable'] as const
 
 /** Screen context supplied for a proactive opening, never ordering authority. */
 export type GreetingPhase = 'customer_entry' | 'ordering'

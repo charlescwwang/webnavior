@@ -26,11 +26,42 @@ describe('device policy authorization and concurrency', () => {
     deviceId = (await service.createDevice({ siteId, label: 'A', registrationMethod: 'qr_code' })).id
   })
 
+  // Report: this chat Nov10 — the admin migration must not change inherited PB timing.
+  it('keeps the existing PB reminder delay when the device inherits defaults', async () => {
+    const snapshot = await service.getDeviceSettings(deviceId)
+    expect(snapshot.settings.overrides).not.toHaveProperty('reminderWaitMs')
+    expect(snapshot.effective.reminderWaitMs).toBe(20_000)
+  })
+
+  // Report: this chat Nov8 — local settings must not require per-field delegation.
+  it('shares device overrides between both editors without prior delegation', async () => {
+    const other = await service.createDevice({ siteId, label: 'Voice kiosk', registrationMethod: 'qr_code' })
+    const initial = await service.getDeviceSettings(deviceId)
+    const local = await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: initial.settings.version, overrides: { textOnlyMode: true, faceDetectionConfidence: 0.7 } } })
+    expect(local.effective.textOnlyMode).toBe(true)
+    expect(local.settings.overrides.textOnlyMode).toBe(true)
+    const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: local.settings.version, overrides: { ...local.settings.overrides, textOnlyMode: false } } })
+    expect(admin.effective.textOnlyMode).toBe(false)
+    expect(admin.effective.faceDetectionConfidence).toBe(0.7)
+    expect((await service.getDeviceSettings(deviceId)).settings).toEqual(admin.settings)
+    expect((await service.getDeviceSettings(other.id)).effective.textOnlyMode).toBe(false)
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: local.settings.version, overrides: { textOnlyMode: true } } })).rejects.toMatchObject({ statusCode: 409 })
+  })
+
+  it('supports shared service/background choices while rejecting invalid changes', async () => {
+    const initial = await service.getDeviceSettings(deviceId)
+    expect(initial.effective.serviceMode).toBe('kiosk')
+    expect(initial.effective.backgroundSpeechMode).toBe('off')
+    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { serviceMode: 'invalid' } } })).rejects.toThrow()
+    const changed = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: { version: initial.settings.version, overrides: { serviceMode: 'table-service', backgroundSpeechMode: 'observe' } } })
+    expect(changed.effective.serviceMode).toBe('table-service')
+    expect(changed.effective.backgroundSpeechMode).toBe('observe')
+  })
+
   // Report: this chat, 2026-10-28 — new machines must start with the field-test policy.
   it('creates independent overridden settings and permits local field adjustments', async () => {
     const initial = await service.getDeviceSettings(deviceId)
     expect(initial.settings.overrides).toMatchObject({ observationEnabled: true, greetingEnabled: true, reminderEnabled: true, triggerMode: 'mixed', voiceDiagnosticsEnabled: true })
-    expect(initial.settings.localControls).toEqual(expect.arrayContaining(['observationEnabled', 'greetingEnabled', 'reminderEnabled', 'triggerMode', 'voiceDiagnosticsEnabled']))
     const updated = await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: { version: initial.settings.version, overrides: { voiceDiagnosticsEnabled: false, greetingEnabled: false } } })
     expect(updated.effective.voiceDiagnosticsEnabled).toBe(false)
     expect(updated.effective.greetingEnabled).toBe(false)
@@ -39,7 +70,7 @@ describe('device policy authorization and concurrency', () => {
     expect((await service.getDeviceSettings(other.id)).effective.greetingEnabled).toBe(true)
   })
 
-  it('inherits site defaults, isolates devices, and never revives a revoked local override', async () => {
+  it('inherits site defaults, isolates devices, and shares changes in both directions', async () => {
     const other = await service.createDevice({ siteId, label: 'B', registrationMethod: 'qr_code' })
     const initial = await service.getDeviceSettings(deviceId)
     expect(initial.effective.observationEnabled).toBe(true)
@@ -50,7 +81,6 @@ describe('device policy authorization and concurrency', () => {
     expect(initial.effective.voiceVadSettings).toEqual({ threshold: 0.5, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 })
     const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      localControls: ['observationEnabled'],
       overrides: { observationEnabled: false },
     } })
     const local = await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
@@ -59,29 +89,26 @@ describe('device policy authorization and concurrency', () => {
     } })
     expect(local.effective.observationEnabled).toBe(true)
     expect((await service.getDeviceSettings(other.id)).effective.observationEnabled).toBe(true)
-    const locked = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
+    const adminChanged = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: local.settings.version,
-      localControls: [],
       overrides: { observationEnabled: false },
     } })
-    expect(locked.effective.observationEnabled).toBe(false)
-    expect(locked.settings.localOverrides).toEqual({})
-    const delegatedAgain = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
-      version: locked.settings.version,
-      localControls: ['observationEnabled'],
+    expect(adminChanged.effective.observationEnabled).toBe(false)
+    expect(adminChanged.settings.overrides).toEqual({ observationEnabled: false })
+    const inherited = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
+      version: adminChanged.settings.version,
       overrides: {},
     } })
-    expect(delegatedAgain.effective.observationEnabled).toBe(false)
+    expect(inherited.effective.observationEnabled).toBe(false)
     const logs = await db.query.kioskAuditLogs.findMany({ where: eq(schema.kioskAuditLogs.targetId, deviceId) })
     expect(logs).toHaveLength(4)
     expect(logs[1].actorUserId).toBe('operator')
     expect(logs[1].details).toMatchObject({ source: 'local', before: { version: 2 }, after: { version: 3 } })
   })
 
-  it('persists and delegates the presence vision mode', async () => {
+  it('shares the presence vision mode', async () => {
     const admin = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      localControls: ['presenceVisionMode'],
       overrides: { presenceVisionMode: 'pose_only' },
     } })
     const local = await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
@@ -95,7 +122,6 @@ describe('device policy authorization and concurrency', () => {
   it('retains an administrator override for voice diagnostics', async () => {
     const updated = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      localControls: [],
       overrides: { voiceDiagnosticsEnabled: true },
     } })
 
@@ -105,18 +131,13 @@ describe('device policy authorization and concurrency', () => {
   it('persists the optional conversation duration display', async () => {
     const updated = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      localControls: [],
       overrides: { conversationDiagnosticsEnabled: true },
     } })
 
     expect(updated.effective.conversationDiagnosticsEnabled).toBe(true)
   })
 
-  it('rejects locked fields, forged delegation, invalid ranges, and cross-site operators without writes', async () => {
-    await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
-      version: 1,
-      overrides: { faceDetectionConfidence: 0.7 },
-    } })).rejects.toMatchObject({ statusCode: 403 })
+  it('rejects unknown fields, invalid ranges, and cross-site operators without writes', async () => {
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
       version: 1,
       overrides: {},
@@ -125,17 +146,14 @@ describe('device policy authorization and concurrency', () => {
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
       overrides: { voiceVadSettings: { threshold: 2, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
-      localControls: [],
     } })).rejects.toMatchObject({ statusCode: 400 })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
       overrides: { faceDetectionConfidence: 0.3 },
-      localControls: [],
     } })).rejects.toMatchObject({ statusCode: 400 })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
       overrides: { zoneX: 0.9 },
-      localControls: [],
     } })).rejects.toMatchObject({ statusCode: 400 })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'outsider', source: 'local', body: {
       version: 1,
@@ -148,7 +166,6 @@ describe('device policy authorization and concurrency', () => {
   it('rejects stale writes and records exactly one accepted update', async () => {
     const write = { deviceId, siteId, userId: 'admin', source: 'admin' as const, body: {
       version: 1,
-      localControls: [],
       overrides: { observationEnabled: true },
     } }
     const results = await Promise.allSettled([service.updateDeviceSettings(write), service.updateDeviceSettings(write)])
@@ -159,10 +176,9 @@ describe('device policy authorization and concurrency', () => {
     expect(await db.query.kioskAuditLogs.findMany()).toHaveLength(1)
   })
 
-  it('allows explicit clearing while retaining delegation and blocks local writes to disabled devices', async () => {
+  it('allows shared VAD updates and blocks local writes to disabled devices', async () => {
     await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 1,
-      localControls: ['voiceVadSettings'],
       overrides: { voiceVadSettings: { threshold: 0.8, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
     } })
     await service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
@@ -171,12 +187,10 @@ describe('device policy authorization and concurrency', () => {
     } })
     const cleared = await service.updateDeviceSettings({ deviceId, siteId, userId: 'admin', source: 'admin', body: {
       version: 3,
-      localControls: ['voiceVadSettings'],
       overrides: { voiceVadSettings: { threshold: 0.8, minSpeechDurationMs: 250, maxSpeechDurationS: 9999, minSilenceDurationMs: 250, speechPadMs: 2000 } },
-      clearLocalOverrides: ['voiceVadSettings'],
     } })
     expect(cleared.effective.voiceVadSettings.threshold).toBe(0.8)
-    expect(cleared.settings.localControls).toEqual(['voiceVadSettings'])
+    expect(cleared.settings.overrides.voiceVadSettings?.threshold).toBe(0.8)
     await service.disableDevice({ deviceId, siteId, userId: 'admin' })
     await expect(service.updateDeviceSettings({ deviceId, siteId, userId: 'operator', source: 'local', body: {
       version: 4,

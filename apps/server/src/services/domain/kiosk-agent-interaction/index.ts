@@ -1,3 +1,6 @@
+import { browserToolResult } from '@proj-airi/stage-shared/browser-conversation'
+import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
+
 /** Stable, customer-safe failure categories shared by the reply stream and host. */
 export type KioskReplyFailureReason = 'timeout' | 'provider-error'
 
@@ -148,7 +151,14 @@ export function compactToolResultForModel(name: string, content: string, catalog
   // Persisted receipts retain environment/provenance. The model only needs
   // actual ingredients and operation status, not deployment labels to narrate.
   let parsed = parseToolPayload(content)
-  const browser = name.startsWith('browser_') && parsed?.source === 'browser'
+  const browser = nativeOrderingToolName(name).startsWith('browser_') && (parsed?.source === 'browser' || parsed?.source === 'host')
+  if (browser && parsed) {
+    // Project only at the model boundary. The Host and durable transcript keep
+    // the original ok/status envelope and all confirmation/write evidence.
+    const receipt = browserToolResult(name, parsed)
+    const serialized = JSON.stringify(receipt)
+    return serialized.length <= maximumModelToolResultCharacters ? serialized : compactBrowserResult(receipt, name)
+  }
   if (parsed && catalogItemIds && !browser) {
     // The latest context already owns full cart/selection state. Retain this
     // receipt's changed line/outcome, rather than replaying older snapshots.
@@ -178,9 +188,6 @@ export function compactToolResultForModel(name: string, content: string, catalog
   const payload = parseToolPayload(content)
   if (!payload)
     return boundedToolPreview(name, content.length, content)
-
-  if (name.startsWith('browser_') && payload.source === 'browser')
-    return compactBrowserResult(payload, content.length)
 
   const compacted = {
     ...compactTopLevelPayload(payload),
@@ -348,27 +355,18 @@ function compactTopLevelPayload(payload: Record<string, unknown>) {
   return compacted
 }
 
-/** Preserve PB identity/version contracts; generic depth pruning destroys choice schemas. */
-function compactBrowserResult(payload: Record<string, unknown>, originalCharacterCount: number) {
-  const cart = isRecord(payload.cart)
-    ? { version: payload.cart.version, subtotal: payload.cart.subtotal, pickup: payload.cart.pickup, lines: Array.isArray(payload.cart.lines) ? payload.cart.lines.map(line => isRecord(line) ? { ref: line.ref, productRef: line.productRef, name: line.name, description: line.description, quantity: line.quantity, unitPrice: line.unitPrice } : line) : undefined }
-    : undefined
-  const products = Array.isArray(payload.products)
-    ? payload.products.map(product => isRecord(product) ? { ref: product.ref, name: product.name, kind: product.kind, price: product.price, priceType: product.priceType, configurations: product.configurations } : product)
-    : undefined
-  const receipt = { ok: payload.ok, source: 'browser', status: payload.status, dataOnly: payload.dataOnly, customerMessage: payload.customerMessage, effectMessage: payload.effectMessage, pendingCustomerChoice: payload.pendingCustomerChoice, selectedProduct: payload.selectedProduct, originalRequest: payload.originalRequest, previousProposal: payload.previousProposal, confirmedAddition: payload.confirmedAddition, explanation: payload.explanation, customerBoundary: payload.customerBoundary, requiredAction: payload.requiredAction, effect: payload.effect, cart, products, product: payload.product, modelContextCompacted: true, originalCharacterCount }
-  let serialized = JSON.stringify(receipt)
-  if (serialized.length <= maximumModelToolResultCharacters)
-    return serialized
+/** Keep complete cart identities and questions; never clip a selectable option tree. */
+function compactBrowserResult(payload: Record<string, unknown>, toolName: string) {
   // The whole index remains available, but none of its configuration trees is
   // partially truncated. Ask for one exact current product's full configuration.
-  const index = products?.map(product => isRecord(product) ? { ref: product.ref, name: product.name, kind: product.kind, price: product.price, priceType: product.priceType } : product)
-  serialized = JSON.stringify({ ...receipt, products: index, configurationLookupRequired: true, nextStep: 'Use browser_product_get with a names array of exact requested product names for their complete current configurations. Do not invent option references or configuration versions.' })
+  const detailTool = nativeOrderingToolName(toolName) === toolName ? 'browser_product_get' : 'get_menu_item_details'
+  const index = Array.isArray(payload.products) ? payload.products.map(product => isRecord(product) ? { ref: product.ref, name: product.name, aliases: product.aliases, category: product.category, price: product.price, customizationAvailability: 'not_verified' } : product) : undefined
+  const serialized = JSON.stringify({ ...payload, products: index, configurationLookupRequired: true, nextStep: `使用 ${detailTool} 查指定完整品名的最新規格，不猜測選項或版本。` })
   if (serialized.length <= maximumModelToolResultCharacters)
     return serialized
   // No partial configuration or partial cart may be mistaken for a complete
   // observation. A single-product lookup can still resolve a large index.
-  return JSON.stringify({ ok: false, source: 'browser', dataOnly: true, modelContextCompacted: true, originalCharacterCount, error: 'The complete observation exceeds model capacity. Use browser_product_get for one exact product; use the visible cart for a cart too large to represent completely.' })
+  return JSON.stringify({ outcome: 'action_result_requires_review', cartEffect: payload.cartEffect, customerMessage: compactString(payload.customerMessage, 1000), reason: '完整資料超出模型容量，未提供局部購物車或規格；不可推測購物車沒有餐點或重送操作。', nextStep: `指定完整品名時可用 ${detailTool} 查單一商品；購物車請在畫面上核對。` })
 }
 
 function compactMenuItem(value: unknown, includeDescription: boolean) {

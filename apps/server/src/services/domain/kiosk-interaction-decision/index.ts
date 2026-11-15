@@ -6,6 +6,7 @@ import { isTargetAcknowledgement } from '@proj-airi/stage-shared/kiosk-conversat
 
 import { normalizeTranscript } from './context'
 import { decisionQuestionBudget } from './contracts'
+import { decideDirectInteraction } from './direct'
 import { createDecisionInstructions, recipientQuestion, serviceRequestInstruction } from './prompt'
 import { decideStagedInteraction } from './routing'
 
@@ -43,8 +44,10 @@ export interface KioskDecisionTrace {
 }
 
 export interface DecisionInput {
-  /** Runtime uses staged routing; omitted only for frozen flat-contract diagnostic replays. */
-  routing?: 'staged'
+  /** Jev/Decisions use direct selection; SLM retains staged routing. Omitted only for flat diagnostic replays. */
+  routing?: 'staged' | 'direct'
+  /** Server-resolved device policy; observe records recipient evidence without blocking. */
+  backgroundSpeechMode?: 'off' | 'observe' | 'enforce'
   conversation?: DecisionConversation
   review?: { answer: string, observation: string }
   candidates: readonly KioskActionCandidate[]
@@ -60,6 +63,8 @@ export interface DecisionInput {
 
 /** Converts the current eligible action set into a finite System One choice. */
 export async function decideInteraction(input: DecisionInput): Promise<KioskInteractionDecision> {
+  if (input.routing === 'direct')
+    return decideDirectInteraction(input)
   if (input.routing === 'staged')
     return decideStagedInteraction(input)
   let modelCalls = 0

@@ -2,15 +2,50 @@ import { describe, expect, it } from 'vitest'
 
 import { compactToolResultForModel, createInteractionInstructions, defaultKioskAgentInteractionState, hasMenuReply, queryClarification, recordCustomerInput, recordToolResults, requiresPresentedReply, selectBoundedConversationText } from '.'
 
+// Report: this chat, Nov12; ok:true/proposal_rejected and overloaded choices confuse the planner.
+it('gives Main one actionable outcome without leaking Host diagnostics or confirmation authority', () => {
+  const receipt = { ok: true, source: 'browser', status: 'clarification', effect: 'none', pendingCustomerChoice: { questionId: 'private', expiresAt: 123, purpose: 'browser-confirm-add', question: '要加入嗎？', choices: [{ id: 'confirm', description: '確認' }] }, semanticDecision: { checks: ['private check'] }, execution: { operationId: 'private-operation' }, customerMessage: '要加入嗎？' }
+  const result = JSON.parse(compactToolResultForModel('browser_order_draft', JSON.stringify(receipt)))
+  expect(result.outcome).toBe('awaiting_customer_answer')
+  expect(result.cartEffect).toBe('none')
+  expect(result.currentQuestion).toEqual({ question: '要加入嗎？', answerOptions: [{ id: 'confirm', description: '確認' }] })
+  expect(result).not.toHaveProperty('ok')
+  expect(result).not.toHaveProperty('status')
+  expect(result).not.toHaveProperty('source')
+  expect(result).not.toHaveProperty('execution')
+  expect(JSON.stringify(result)).not.toContain('private')
+  const rejected = JSON.parse(compactToolResultForModel('browser_cart_add', JSON.stringify({ ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', explanation: '份數未知，請先詢問' })))
+  expect(rejected.outcome).toBe('proposal_needs_correction')
+  expect(rejected.reason).toBe('份數未知，請先詢問')
+})
+
+it('retains partial and unknown cart effects without presenting them as success or an empty cart', () => {
+  const partial = JSON.parse(compactToolResultForModel('browser_confirm_add', JSON.stringify({ ok: false, source: 'browser', status: 'rejected', effect: 'partial', customerMessage: '已加入一項，其餘未完成。' })))
+  expect(partial.outcome).toBe('action_result_requires_review')
+  expect(partial.cartEffect).toBe('partial')
+  expect(partial.customerMessage).toBe('已加入一項，其餘未完成。')
+  expect(partial).not.toHaveProperty('cart')
+  const unknown = JSON.parse(compactToolResultForModel('browser_cart_add', JSON.stringify({ ok: false, source: 'browser', status: 'unknown' })))
+  expect(unknown.outcome).toBe('action_result_requires_review')
+  expect(unknown.cartEffect).toBe('unknown')
+  const host = JSON.parse(compactToolResultForModel('browser_respond', JSON.stringify({ ok: false, source: 'host', status: 'rejected', effect: 'none' })))
+  expect(host.outcome).toBe('action_blocked')
+  expect(host.cartEffect).toBe('none')
+  expect(host).not.toHaveProperty('status')
+})
+
 // Report: this chat, 2026-10-30; daily catalog growth must not prune PB configuration versions or cart references.
 it('preserves complete Host question context when a large PB catalog is compacted', () => {
   const confirmedAddition = { productRef: 'new', productName: '每日新品', quantity: 1, unitPrice: 20, note: '', selection: { version: 'configuration', variantRef: '', choices: [] } }
-  const payload = { source: 'browser', dataOnly: true, cart: { version: 'cart', lines: [] }, confirmedAddition, selectedProduct: { productRef: 'new', name: '每日新品' }, explanation: '只允許確認的完整設定', products: Array.from({ length: 30 }, (_, index) => ({ ref: `p-${index}`, name: `每日品項${index}`, price: index, configurations: [{ description: '規格'.repeat(1000) }] })) }
+  const payload = { source: 'browser', dataOnly: true, cart: { version: 'cart', lines: [] }, requestedQuantity: 1, confirmedAddition, selectedProduct: { productRef: 'new', name: '每日新品' }, explanation: '只允許確認的完整設定', products: Array.from({ length: 30 }, (_, index) => ({ ref: `p-${index}`, name: `每日品項${index}`, price: index, configurations: [{ description: '規格'.repeat(1000) }] })) }
   const result = JSON.parse(compactToolResultForModel('browser_cart_get', JSON.stringify(payload), undefined))
-  expect(result.confirmedAddition).toEqual(confirmedAddition)
-  expect(result.selectedProduct).toEqual(payload.selectedProduct)
-  expect(result.explanation).toBe(payload.explanation)
-  expect(result.configurationLookupRequired).toBe(true)
+  expect(result.additionConfirmed).toBe(true)
+  expect(result).not.toHaveProperty('confirmedAddition')
+  expect(result.requestedQuantity).toBe(1)
+  expect(result.selectedItem).toEqual(payload.selectedProduct)
+  expect(result.reason).toBe(payload.explanation)
+  expect(result.products[0].customizationAvailability).toBe('not_verified')
+  expect(JSON.stringify(result)).not.toContain('規格規格')
 })
 
 it('preserves PB cart identities and the whole product index when the current catalog requires configuration lookup', () => {
@@ -22,6 +57,7 @@ it('preserves PB cart identities and the whole product index when the current ca
   expect(result.products.map((product: { ref: string }) => product.ref)).toEqual(products.map(product => product.ref))
   expect(result.configurationLookupRequired).toBe(true)
   expect(result.products[0]).not.toHaveProperty('configurations')
+  expect(result.products[0]).not.toHaveProperty('orderSpecifications')
   expect(JSON.stringify(result).length).toBeLessThanOrEqual(8_000)
 })
 
@@ -290,4 +326,27 @@ it('requires a presented menu receipt rather than internal data or a failed look
   expect(hasMenuReply([{ name: 'cart_get', content: JSON.stringify({ items: [] }) }])).toBe(false)
   expect(hasMenuReply([{ name: 'menu_recommend', content: JSON.stringify({ items: [] }) }])).toBe(true)
   expect(hasMenuReply([{ name: 'menu_get', content: JSON.stringify({ items: [{ id: 'dumplings' }] }) }])).toBe(true)
+})
+
+it('projects public PB receipts without native references while retaining verified cart facts', () => {
+  const receipt = JSON.parse(compactToolResultForModel('list_cart_items', JSON.stringify({ ok: true, source: 'browser', dataOnly: true, cart: { version: 'private-version', subtotal: 200, lines: [{ ref: 'private-line', productRef: 'private-product', name: '雞腿飯', quantity: 2, unitPrice: 100 }] } })))
+  expect(receipt.cart).toMatchObject({ subtotal: 200, lines: [{ name: '雞腿飯', quantity: 2, unitPrice: 100 }] })
+  expect(JSON.stringify(receipt)).not.toContain('private-')
+})
+
+// Report: this chat, Nov14 — compaction must not instruct Main to call a private native tool.
+it('keeps oversized public menu receipts actionable with published names only', () => {
+  const result = JSON.parse(compactToolResultForModel('list_menu_items', JSON.stringify({ ok: true, source: 'browser', dataOnly: true, products: Array.from({ length: 30 }, (_, index) => ({ name: `餐點${index}`, configurations: [{ version: `v${index}`, variantRef: '', groups: [{ name: '加料', choices: [{ name: '蛋'.repeat(500), quantity: 1 }] }] }] })) })))
+  expect(result.configurationLookupRequired).toBe(true)
+  expect(result.nextStep).toContain('get_menu_item_details')
+  expect(JSON.stringify(result)).not.toContain('browser_product_get')
+})
+
+// Report: this chat; correction must survive the real model-result projection.
+it('keeps current allowed tool names in an undispatched-call correction receipt', () => {
+  const result = JSON.parse(compactToolResultForModel('browser_cart_get', JSON.stringify({ ok: false, source: 'host', status: 'proposal_rejected', effect: 'none', dataOnly: true, code: 'TOOL_NOT_AVAILABLE', availableTools: ['list_cart_items', 'reply_to_customer'] })))
+  expect(result.outcome).toBe('proposal_needs_correction')
+  expect(result.cartEffect).toBe('none')
+  expect(result.availableTools).toEqual(['list_cart_items', 'reply_to_customer'])
+  expect(result.reason).toContain('本次提供的工具名稱')
 })

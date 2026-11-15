@@ -25,7 +25,9 @@ export interface KioskAssetFile {
 }
 
 type KioskStoredAssetReference = KioskCharacterAssetReference | KioskSceneBackgroundAssetReference
-type KioskAssetReferenceForFormat<TFormat extends KioskStoredAssetFormat> = Extract<KioskStoredAssetReference, { format: TFormat }>
+// Reference interfaces group multiple formats; Extract against one literal
+// would become never. Preserve the shared fields and narrow only the format.
+type KioskAssetReferenceForFormat<TFormat extends KioskStoredAssetFormat> = Omit<KioskStoredAssetReference, 'format'> & { format: TFormat }
 
 /**
  * Owns the durable kiosk asset boundary.

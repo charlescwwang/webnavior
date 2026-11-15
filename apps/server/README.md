@@ -9,13 +9,52 @@ HTTP and WebSocket backend for Webnavior. This app owns auth, kiosk management, 
 - Uses Redis for cache, KV, Pub/Sub, and Streams.
 - Forwards GenAI requests to the configured upstream gateway and records billing from usage.
 - Exports traces, metrics, and logs through OpenTelemetry.
+- Projects external PB conversation state and phase tool scope into Main requests.
+  Model descriptions use the shared `browser-conversation` contract, while native
+  schemas and Host/browser checks retain execution authority. Snapshots replace
+  previous state rather than accumulating stale questions as instructions.
+- Preloads fixed external-ordering workflows from
+  `src/services/domain/browser-ordering/skills/*/SKILL.md`. One workflow is chosen
+  from the verified page and pending task, with no extra model round. Common
+  rules and that workflow replace the previous cross-stage prompt list; JSON
+  and streaming replies use the same assembly. Keep these assets beside
+  `skills.ts` when shipping source (as the current Docker image does). Missing
+  assets fail startup; prompt edits take effect after a backend restart.
+
+PB public tool names are defined in `stage-shared/ordering-tools`; the Host
+adapter owns translation to private site operations. Main prompt/tool policy
+recognizes every public name through the shared registry, including narrowed
+table/detail/cart/reply-only tool sets without a browser snapshot. Workflow skills
+require a current browser snapshot; absent facts do not select the default browse
+workflow or borrow a historical page. Receipt projection preserves current allowed names for an
+undispatched-call correction; it does not authorize an alias or replay a write.
+System One's default semantic instruction selects actual offered effects rather
+than requiring historic intent labels. Saved policy overrides must be reviewed
+separately; changing the source default does not migrate persisted prompts.
+
 
 Development Kiosk enrollment uses a 30-day HttpOnly, SameSite=Lax device cookie
 (Secure on HTTPS). The development route remains disabled in production, and
 every authenticated request still checks server-side device/credential revocation.
 Visitor/admin sessions and vendor login expiry are separate policies.
 
+OpenAI-compatible Chat Provider profiles expose a response mode: `auto` retains
+the requesting endpoint's behavior, `json` requests a complete response, and
+`sse` verifies streaming support and lets Kiosk display reply deltas. Changing
+the mode revokes verification; verify/save, then explicitly apply to Kiosk.
+Apply migration `0049_webnavior_chat_response_mode` before running this version.
+JSON-only provider replies still finish the Kiosk event stream with a final
+result. Internal JSON decision calls remain JSON in every mode; partial tool
+arguments are never dispatched. SSE improves progressive presentation, not a
+guarantee of faster model inference. No mode is automatically published.
+
 ## How To Use It
+
+For the isolated Ubuntu PB pilot, use the desktop **PB 測試管理** launcher or
+[the PB test runner](../../scripts/pbTest/README.md). It starts separate Postgres,
+Redis, API and static UI processes and never loads this app's `.env.local`.
+The current checkout's ordinary local environment points at production; do not
+start `pnpm dev` against it as a test sandbox.
 
 Install dependencies from the repo root and run scoped commands:
 
@@ -158,6 +197,28 @@ HTTPException statuses are retained instead of being converted to500. Other
 JSON/media/asset limits remain separate. Clients split long final utterances into
 bounded WAV uploads and must not execute partial transcription results.
 
+## Local Kiosk administrator access
+
+Set `KIOSK_ADMIN_PIN` or `KIOSK_ADMIN_PIN_FILE` on the Server. The enrolled device
+exchanges the PIN at `POST /api/kiosk/admin/session` for a signed, expiring,
+HttpOnly grant; `DELETE` revokes it. Local settings writes require that grant and
+the same device credential. Dashboard settings writes retain account/Site checks.
+Both editors replace the same revision-checked override map; stale writes return
+409. Never configure a production PIN with a frontend `VITE_` variable.
+
+Migrations `0047_webnavior_tts_speed` and `0048_shared_device_settings` accompany
+this migration batch. The latter preserves previously effective delegated values
+before consolidating settings. Rebuild `@proj-airi/server-schema`, back up the
+target database, and restart the matching Server through the migration workflow
+below. Do not replace this data migration with `db:push`.
+
+Do not use `scripts/updateKioskUbuntu.sh` for this PB batch: it still invokes
+`db:push`, expects a frontend PIN and publishes the owned Menu. Schema drift can
+make startup migrations fail. After0048, rolling back code alone cannot restore
+the old device-settings contract. The existing
+[`Electron plan`](../../docs/plans/2026-10-28-windows-kiosk-electron.md) records
+the required environment inventory, isolated restore rehearsal and paired rollback.
+
 ## Database migrations and deployment
 
 The Kiosk Profile's store-specific agent instructions (`agentInstructions`) are
@@ -177,13 +238,37 @@ ID and the error. Non-JSON HTTP error bodies remain visible. Authorization
 headers and API keys are excluded. Production
 does not attach this observer because the payload may contain visitor dialogue.
 
-Kiosk Fast Path supports three isolated System One implementations: Dasein
-open-jev, lookski/openjev, and a label-only OpenAI-compatible SLM. The admin
+Kiosk Fast Path supports Dasein open-jev, lookski/openjev, native OpenAI Decisions,
+and the existing label-only OpenAI-compatible SLM. The admin
 profile lifecycle remains save → real readiness → activate. Connection/model/key
 changes revoke readiness and deactivate that profile; discovery alone cannot
 activate it. Only one profile is active. SLM does not replace Main, Menu or POS.
-The implementation column is PostgreSQL text, so adding the `slm` value does not
+The implementation column is PostgreSQL text, so adding an implementation does not
 require a new database migration.
+
+OpenAI Decisions uses API root `https://api.openai.com/v1`, model `gpt-6-luna`,
+and an encrypted Server-side key with Decisions Write permission. Model listing
+is optional (List models Read); Responses permission is unnecessary. Readiness
+makes a real `/decisions` choice request before activation. The adapter correlates
+answers by question name and preserves the returned confidence and probabilities;
+malformed/refused responses never become synthetic choices or confidence.
+
+Ordinary Jev and OpenAI requests select directly from the complete current
+action candidates plus handoff, greeting and incomplete speech. The device's
+`backgroundSpeechMode` controls both recipient checking and background options:
+off skips checking and never offers IGNORE; observe records recipient evidence
+without veto or IGNORE; enforce enables filtering. This also applies to delegated
+active-request admission and Main's scope-question enum. A closed locally
+resolved question answer offers only that answer and handoff after any enabled
+recipient check. A normal
+action then takes one choice request, without purpose/family/repeated write gates.
+Low confidence hands the original request to Main; the 0.6 threshold is unchanged.
+Actual table selection is a fact, not an automatically issued customer question.
+Unique item-content reads and item-window actions are separate finite candidates.
+Question expiry, parameters, execution receipts and reception isolation remain
+mandatory. Reviews, idle/customer-entry and active/incomplete-request lifecycle
+protocols retain their existing correlated questions. The existing SLM is not
+changed by this direct policy.
 
 For Docker Model Runner, use the API root
 `http://127.0.0.1:12434/engines/v1` **as reachable by the API Server**. Container
@@ -194,12 +279,14 @@ at rest and never returned to the browser. See the
 [DMR API reference](https://docs.docker.com/ai/model-runner/api-reference/).
 Jev still inspects `/health.model` or `/health.model_id` and calls `/v1/systemone`.
 
-All authenticated runtime decisions use the same staged policy:
+The SLM and the retained lifecycle protocols use the staged policy below;
+ordinary Jev/OpenAI actions use the direct policy above:
 
-Planner-only browser requests first reuse the independent `recipient` question
-(KIOSK / OTHER / UNCERTAIN) with only the current utterance and active question.
-OTHER is ignored before any service task; uncertainty does not become permission.
-KIOSK then continues to ordinary admission. This prevents catalog vocabulary or
+With background filtering enforced, planner-only browser requests first reuse
+the independent `recipient` question (KIOSK / OTHER / UNCERTAIN) with only the
+current utterance and active question. OTHER is ignored before any service task;
+uncertainty does not become permission. KIOSK then continues to ordinary admission.
+Off skips these background gates; observe records without using them to veto. This prevents catalog vocabulary or
 prior ordering history from treating a companion question as an order. It uses
 the existing question budget; it does not authorize an action or add a Main call.
 
@@ -265,7 +352,7 @@ checkpoints so labels are not rejected as malformed Jev scores. It permits
 progress feedback, never execution. Clients cannot supply continuation answers.
 Each utterance, including review, retains the 24-question ceiling. New decisions
 replace prior checkpoints; restart expires in-memory work. Non-segmented calls
-use the same staged policy.
+use the same provider-selected policy.
 
 An uncertain service recipient stays unavailable; a valid UNCERTAIN or weak
 scored admission can use the existing bounded Main service recovery. After reliable service
@@ -338,6 +425,38 @@ authority. Identity/phone information remains available.
 Menu verification targets the disputed names using `menu_get.verifyClaim`, not
 an unrelated recommendation batch. Current-meal cancellation and corrective
 availability inquiries use finite choices tied to the browser's live question.
+
+Published ordering-site bindings may include `catalogLabels` (exact product name,
+aliases and category). The existing draft/release JSON stores these without a
+migration; content editors may change labels but cannot replace the approved
+merchant URL. Host discovery joins them only to unique names in the fresh menu;
+labels cannot supply prices, options, availability or write consent.
+
+PB additions now enter the Host-owned `browser_order_draft` capability: model
+fields create unfinished configurations, not executable plans. The Host asks
+missing servings/options from the current merchant schema. Complete fields pass
+through independent plan admission and execute once, without an extra purchase
+confirmation. Original speech and actual bound slot answers remain available to
+that check. Short answers remain tied to one live `browser-order-slot`
+or `browser-confirm-add` question in the visitor history. `browser_confirm_add`
+executes only that consumed, locally sealed batch with fresh native checks before
+each line; model arguments cannot replace its settings. Partial/unknown outcomes
+stop without replay and retain verified additions in the customer receipt.
+Final Host checkout invitations are recorded as `browser_question_presented`
+service events. Answer resolution accepts only this structured event or a known
+browser tool receipt; assistant prose alone cannot create a question. A later
+verified/unknown write still revokes older question authority.
+For PB questions, the device setting controls the recipient check;
+closed confirmation/cancellation replies then pass to the Host question
+processor, rather than being mislabeled as uncertain read-only requests. The
+original read-only boundary still wins, and no finite label consumes a ticket.
+
+PB follow-up admission keeps the exact current customer utterance separate from
+Host-verified original requests and question answers in `storeFacts`. Both purpose
+classification and quantity extraction receive that evidence. The latest-turn
+identity check remains exact; clients must not concatenate prior dialogue into
+`effect.transcript`. A short option answer may complete an existing purchase,
+but an unanswered recommendation is not purchase consent.
 
 PB cart-plan admission uses device-authenticated
 `POST /api/kiosk/visitor-sessions/:id/browser-plan`. A proposal must match a
@@ -423,6 +542,43 @@ Welcome requests do not append recommendation invitations. The same policy
 still determines whether assistance reminders use images. Publish the Profile
 and reload its devices to apply changed openings/guidance; mode changes use the
 existing device policy. Neither change requires a database migration.
+
+PB Main instructions keep ordinary recommendations, including follow-up other
+choices, at three per turn independently of System One. The browser enforces the
+presentation limit; explicit named comparisons retain their separate information
+budget. PB exposes no previous/next-page operation: spoken candidate batches must
+not be described as website pagination or inferred from viewport size. A named
+product miss must be reported from the complete current-pickup menu before any
+alternative suggestion; unrelated menu lists cannot substitute for that lookup.
+New browse criteria replace the previous search; 「雞腿 → 有什麼便當」 must use
+the full current catalog and a verified presentation for the new scope. Rejection
+of the current recommendations clears the browse filter via `browser_search`
+with an empty query, while retaining explicit dietary/budget requirements and
+the existing cart. This is distinct from cancelling an ordered meal.
+Checkout requests first use `open_cart` to read the owned cart and ask whether
+its meals/servings/amount are correct. Assent advances to actual invoice choices.
+The cart workflow with fresh `checkout` facts loads the existing checkout skill;
+`continue_checkout`, `choose_invoice_method` and
+`set_invoice_notification_phone` handle missing fields and the final complete
+summary. Main never receives a native submission token or submission tool. A
+separate consumed final-summary answer owns the native click. Automatic submit
+is enabled only on the owned loopback fixture pending verification of merchant
+result/navigation semantics; merchant guidance retains manual submission. Missing
+capability must not become a menu-information fallback or a claim that a new
+conversation emptied a merchant cart.
+
+Kiosk character packages use `POST /api/admin/kiosk/sites/:siteId/character-package/export`
+(JSON character fields) and `/import` (multipart `package` ZIP). Both require an
+authenticated Site experience editor. Export checks every binary against Site
+ownership, format and SHA-256 before returning an uncached ZIP. Import validates
+the versioned manifest, declared paths, slot formats, hashes and bounded extracted
+bytes before any asset write. It returns character fields with destination-owned
+asset IDs; it never saves or publishes a Profile. Store/provider/device policy is
+excluded. A failed storage write may leave unreferenced Site assets; retries use
+the existing content deduplication without deleting possibly shared files. Limits:
+120 MB archive, 128 MB per asset, 256 MB total extracted, 256 KB manifest. Only
+the exact import route gets the larger multipart body limit; reverse proxies must
+allow at least 121 MB. No new schema migration is required.
 
 The Server owns the PostgreSQL schema. Every schema change must include a
 numbered SQL file under `apps/server/drizzle/` and a matching entry in
@@ -511,6 +667,41 @@ The Site retention setting now expires device/session access and operational
 association links; it does not automatically delete transcripts, tool evidence,
 media or verified internal associations. Explicit authorized archive deletion
 remains available. Archive reads are access-controlled and audited.
+
+PB public business tools are admitted against their issued meal names,
+configuration descriptions and counts, then compiled native effects. Batch
+members consume separate one-use claim keys; other visitor sessions cannot reuse
+them. Finite edits/batches keep their selected operation type, and aliases come
+from the visitor's immutable published service binding. Configured Main writes
+retain the independent semantic checks after claim; public names do not bypass
+those checks. Qualified public information reads can finish without a forced
+presentation/write; customer-facing facts still come from verified receipts.
+Successful menu searches continue through a presentation or question tool when
+available. Questions must use `ask_customer_question` so the Host records the
+meal and pending answer; a question written only in model prose cannot authorize
+the next customer response. Failed/empty searches retain their recovery path,
+and factual list/detail reads do not require an extra operation.
+When a handoff has not established a read-only request, a full catalog lookup
+also needs a selected presentation or question; returning the entire catalog
+cannot replace a missing meal choice. This requirement does not authorize a
+purchase or turn an information query into an order.
+
+Public PB plan matching also checks per-serving dumpling pieces, explicitly
+copied cart customization, and same-product option patches against their fresh
+source labels. Independent quantity extraction receives original per-serving
+options/notes, keeping preserved content separate from new additions. Opt-in
+`customizationReplay.test.ts` exercises fixed synthetic cases with real Main/Jev
+via `PB_CUSTOMIZATION_MAIN_URL` / `PB_CUSTOMIZATION_JEV_URL`; it neither reads
+customer history nor submits merchant orders. `PB_CUSTOMIZATION_MAIN_MODEL`
+selects the compatible Main model (test default `qwen36`).
+
+Kiosk ASR training exports match audio only through a unique explicit transcript
+entry link, using `stage-shared/interaction-media`, shared with the Admin UI.
+They skip missing/ambiguous links rather than infer them from sequence/time.
+LLM training export deduplicates ASR/submitted text by utterance ID within the
+visitor session, preserving repeated phrases from different requests. Original
+unlinked media remains retained and independently playable; this is not a
+retroactive repair of historical evidence associations.
 
 Original captured audio, images and video stay in the private visitor-media
 directory under `WEBNAVIOR_KIOSK_ASSET_DIR`. New uploads store SHA-256 and byte

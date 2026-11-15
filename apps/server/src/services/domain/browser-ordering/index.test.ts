@@ -1,10 +1,36 @@
 import { safeParse } from 'valibot'
 import { expect, it, vi } from 'vitest'
 
-import { decideAnswer, decideEffect } from '.'
+import { decideAnswer, decideEffect, findPresentedQuestion } from '.'
 import { browserEffectSchema } from './contracts'
 
 const effect = { transcript: '每日新品兩份有嗎？', action: 'add' as const, description: '新增每日新品兩份', completedEffects: [], storeFacts: '', note: '', deltas: [{ name: '每日新品', kind: 'product' as const, mode: 'increase' as const, quantity: 1 }] }
+
+// Report: this chat, Nov15; a follow-up answer was rewritten into a combined utterance and rejected by admission.
+it('keeps the current utterance and verified order answers separate during semantic admission', async () => {
+  const facts = '原始點餐需求：推薦雞腿飯。已確認的問題與顧客回答：問題「要來一份雞腿飯嗎？」，顧客回答「好」；問題「飲料要哪一項？」，顧客回答「紅茶」。'
+  const finite = vi.fn(async (_state: string) => ({ answers: { purpose: { choice: 'UNCERTAIN', confidence: 0.99 } } }))
+  const complete = vi.fn(async () => {
+    throw new Error('Finite uncertainty must remain uncertainty.')
+  })
+  expect(await decideEffect({ ...effect, transcript: '紅茶', storeFacts: facts }, { finite, complete })).toMatchObject({ choice: 'CLARIFY' })
+  expect(JSON.parse(finite.mock.calls[0][0])).toMatchObject({ customerUtterance: '紅茶', storeFacts: facts })
+  expect(complete).not.toHaveBeenCalled()
+})
+
+// Report: this chat, Nov15 — checkout assent must reference the presented question.
+it('finds a final checkout question after the completed add and revokes it after another write', () => {
+  type Entry = Parameters<typeof findPresentedQuestion>[0][number]
+  const entry = (kind: Entry['kind'], value: unknown, sequence: number): Entry => ({ id: String(sequence), visitorSessionId: 'visitor', sequence, kind, content: typeof value === 'string' ? value : JSON.stringify(value), metadata: { name: 'add_items_to_cart' }, createdAt: new Date() })
+  const question = { questionId: 'checkout-1', purpose: 'browser-service-question', question: '要結帳嗎？', expiresAt: Date.now() + 30_000, choices: [{ id: 'yes', description: '開啟購物車核對餐點，不送單。' }, { id: 'no', description: '繼續點餐。' }] }
+  const added = entry('tool_result', { source: 'browser', status: 'verified' }, 1)
+  const presented = entry('service_event', { kind: 'browser_question_presented', source: 'browser', pendingCustomerChoice: question }, 2)
+  const user = entry('user_text', '好，幫我結帳吧', 3)
+  expect(findPresentedQuestion([added, presented, user], question.questionId)).toEqual(question)
+  expect(findPresentedQuestion([added, entry('assistant_text', question.question, 2), user], question.questionId)).toBeUndefined()
+  expect(findPresentedQuestion([presented, added, user], question.questionId)).toBeUndefined()
+  expect(findPresentedQuestion([added, entry('service_event', { kind: 'unrelated', source: 'browser', pendingCustomerChoice: question }, 2), user], question.questionId)).toBeUndefined()
+})
 
 function withPurpose(choice: string, complete: (body: Record<string, unknown>) => Promise<Response>) {
   return async (body: Record<string, unknown>) => JSON.stringify(body.tools).includes('judge_browser_purpose')
@@ -416,4 +442,17 @@ it.each(['option', 'product'] as const)('allows a zero omission constraint only 
     finite: async () => ({ answers: { purpose: { choice: 'ADD', confidence: 0.95 } } }),
     complete: async () => Response.json({ choices: [{ message: { tool_calls: [{ function: { name: 'read_requested_quantities', arguments: JSON.stringify({ quantities: [{ id: 'target:1', quantity: 0, scope: 'target' }], targetMatches: true, noteMatches: true, reason: '明確拒絕配菜' }) } }] } }] }),
   })).toMatchObject({ choice: kind === 'option' ? 'ALLOW' : 'REVISE' })
+})
+
+// Report: this chat, 2026-11-14 — 排骨便當 was extracted correctly but rejected against 炸排骨便當.
+it.each([false, true])('normalizes only unique published aliases during independent group extraction (ambiguous=%s)', async (ambiguous) => {
+  const complete = vi.fn(async (body: Record<string, unknown>) => {
+    const purpose = JSON.stringify(body.tools).includes('judge_browser_purpose')
+    return Response.json({ choices: [{ message: { tool_calls: [{ function: { name: purpose ? 'judge_browser_purpose' : 'read_requested_quantities', arguments: JSON.stringify(purpose ? { choice: 'ADD' } : { groups: [{ productName: '排骨便當', variantName: '', options: [], quantity: 1, note: '' }] }) } }] } }] })
+  })
+  const result = await decideEffect({ ...effect, transcript: '我要一份排骨便當', deltas: [{ name: '炸排骨便當', kind: 'product', mode: 'increase', quantity: 1 }], serving: { productName: '炸排骨便當', variantName: '', options: [] } }, {
+    complete,
+    catalogLabels: [{ name: '炸排骨便當', aliases: ['排骨便當'], category: '' }, ...(ambiguous ? [{ name: '滷排骨便當', aliases: ['排骨便當'], category: '' }] : [])],
+  })
+  expect(result.choice).toBe(ambiguous ? 'REVISE' : 'ALLOW')
 })
