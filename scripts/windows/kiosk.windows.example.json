@@ -1,5 +1,5 @@
 {
-  "kioskUrl": "http://127.0.0.1:15169/kiosk/",
+  "kioskUrl": "https://webnavior.aikcitri.qzz.io/kiosk/",
   "windowed": true,
   "diagnosticPort": 0,
   "ssh": {

@@ -5,7 +5,8 @@ import { defineConfig } from 'electron-vite'
 export default defineConfig({
   main: {
     build: {
-      externalizeDeps: { exclude: ['@proj-airi/stage-shared'] },
+      // The portable app ships compiled JavaScript, without a Node dependency tree.
+      externalizeDeps: false,
       lib: { entry: resolve(import.meta.dirname, 'src/main/index.ts') },
     },
   },

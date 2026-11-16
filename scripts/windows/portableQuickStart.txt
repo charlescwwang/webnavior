@@ -1,0 +1,45 @@
+Webnavior Kiosk — Windows 10/11 Intel x64 可攜版
+
+第一次使用，只要做三件事
+1. 將整個 ZIP 解壓縮到 C:\Webnavior-Kiosk。不要直接在 ZIP 裡執行。
+2. 雙擊「Webnavior Kiosk.exe」。不需要 Setup、Build、Node 或 pnpm。
+3. 依畫面建立／配對設備；需要時登入商家網站。
+
+請保留 EXE 旁的所有檔案與資料夾，不能只複製 EXE。
+使用時需要能連上公開網站與商家網站的網路。
+
+如何修改設定
+先關閉程式，再雙擊「Edit Settings.cmd」，修改 kiosk.settings.json，儲存後重開 EXE。
+一般使用不用改，網址已設定為：
+https://webnavior.aikcitri.qzz.io/kiosk/
+
+kioskUrl：網站網址。一般保持原值，最後必須保留 /kiosk/。
+windowed：true 是一般視窗；false 是全螢幕 Kiosk。布林值不用加引號。
+diagnosticPort：保持 0。只有工程師協助檢查時才改，完成後改回 0 並重開。
+
+模型、ASR、TTS、Falcon 與 API Key 都在網域後台設定，不填在這台電腦：
+https://webnavior.aikcitri.qzz.io/admin/system/models
+可以雙擊「管理後台.url」開啟。Falcon 影音模式目前仍未開放，保持舊模式。
+
+如何關閉
+一般視窗按右上角 X；全螢幕可按 Alt+F4。
+
+以後如何更新
+1. 先關閉舊版程式。
+2. 將新 ZIP 解壓到另一個資料夾，不要覆蓋正在執行的 EXE。
+3. 若有改過設定，將舊的 kiosk.settings.json 複製到新資料夾。
+4. 雙擊新版 EXE。同一個 Windows 帳號會沿用設備與商家登入資料。
+資料保存在 %LOCALAPPDATA%\Webnavior\Kiosk-Pilot。不要刪除這個資料夾。
+不要在同時執行的舊版中操作購物車，也不要把其他機器的登入資料複製過來。
+
+遇到問題
+・程式提示設定錯誤：檢查 JSON 的逗號、雙引號及 true/false，或還原包內範例設定。
+・網站打不開：先用瀏覽器開上面的網址，確認公司網路或 Proxy 可連線。
+・第一次可能要允許 Windows 使用麥克風與相機；在設定選擇實際設備。
+・公司安全政策阻擋程式時，請交給資訊人員核對來源、SHA256 及公司政策。
+  本包尚未做程式簽章，請勿為此永久降低安全設定或停用防毒。
+・舊版 PowerShell 的 stdout 版本檢查錯誤不適用這個可攜版，EXE 不經該步驟啟動。
+・本包已做封包、編碼、設定與 Linux 同版 Electron 驗證；Windows 實機的麥克風、
+  相機、觸控與真實點餐仍須在目標機器測試。Build 成功不代表實機全部驗收。
+
+本機自建測試站需要另外啟動，這個 EXE 包只連線網域服務，不會開啟測試站。

@@ -39,6 +39,15 @@ function Get-KioskSettings {
     return $settings
 }
 
+function Assert-KioskApiReady {
+    param([int]$StatusCode, [string]$Content)
+    # Static SPA fallback pages can return 200 while the API is unreachable.
+    try { $body = $Content | ConvertFrom-Json } catch { throw 'Remote readiness endpoint did not return API JSON.' }
+    if ($StatusCode -ne 200 -or $body.status -ne 'ready' -or $body.checks.db -ne 'ok' -or $body.checks.redis -ne 'ok') {
+        throw 'Remote API, database or Redis is not ready.'
+    }
+}
+
 function Get-TunnelArguments {
     param([Parameter(Mandatory)]$Settings)
     $remote = $Settings.ssh
@@ -72,7 +81,7 @@ function Install-VerifiedArchive {
     if (-not (Test-Path -LiteralPath $Path)) {
         $pending = "$Path.download"
         try {
-            Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $pending
+            Invoke-KioskWebRequest -Uri $Url -OutFile $pending
             Assert-ArchiveHash -Path $pending -Expected $Expected
             Move-Item -LiteralPath $pending -Destination $Path
         }
@@ -84,6 +93,50 @@ function Install-VerifiedArchive {
     # Only verified official archives enter the extraction directory.
     Unblock-File -LiteralPath $Path
     Expand-Archive -LiteralPath $Path -DestinationPath $Destination -Force
+}
+
+function Invoke-KioskWebRequest {
+    param([Parameter(Mandatory)][string]$Uri, [string]$OutFile)
+    $arguments = @{ UseBasicParsing = $true; Uri = $Uri; TimeoutSec = 180 }
+    if ($OutFile) { $arguments.OutFile = $OutFile }
+    $target = [Uri]$Uri
+    $proxy = if ($target.Scheme -eq 'https') { $env:HTTPS_PROXY } else { $env:HTTP_PROXY }
+    $bypass = $target.IsLoopback
+    foreach ($entry in ([string]$env:NO_PROXY).Split(',')) {
+        $hostName = $entry.Trim().TrimStart('.')
+        if ($hostName -and ($hostName -eq '*' -or $target.Host -eq $hostName -or $target.Host.EndsWith('.' + $hostName))) { $bypass = $true }
+    }
+    # PowerShell 5.1 does not automatically apply npm's proxy environment.
+    # Without an explicit proxy, Windows' own proxy configuration remains in use.
+    if ($proxy -and -not $bypass) {
+        $proxyUrl = [Uri]$proxy
+        if (-not $proxyUrl.IsAbsoluteUri -or $proxyUrl.Scheme -notin @('http', 'https')) { throw 'HTTP_PROXY/HTTPS_PROXY must be an absolute HTTP(S) proxy URL.' }
+        $builder = New-Object UriBuilder($proxyUrl)
+        $builder.UserName = ''; $builder.Password = ''
+        $arguments.Proxy = $builder.Uri
+        if ($proxyUrl.UserInfo) {
+            $credentials = $proxyUrl.UserInfo.Split(':', 2)
+            if ($credentials.Length -ne 2) { throw 'Proxy credentials must include a username and password.' }
+            $password = ConvertTo-SecureString ([Uri]::UnescapeDataString($credentials[1])) -AsPlainText -Force
+            $arguments.ProxyCredential = New-Object Management.Automation.PSCredential([Uri]::UnescapeDataString($credentials[0]), $password)
+        }
+    }
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try { return Invoke-WebRequest @arguments }
+        catch {
+            if ($attempt -eq 3) { throw }
+            Write-Warning "Network request failed ($attempt/3); retrying. Check company proxy settings if this persists."
+            Start-Sleep -Seconds ($attempt * 2)
+        }
+    }
+}
+
+function Assert-KioskBuild {
+    param([Parameter(Mandatory)][string]$Root)
+    foreach ($relative in @('out/main/index.js', 'out/preload/index.cjs', 'out/service/pb.js')) {
+        $file = Join-Path (Join-Path $Root 'apps/stage-kiosk-desktop') $relative
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or (Get-Item -LiteralPath $file).Length -eq 0) { throw "Build output missing or empty: $file. Run -Action Build and retain its error output." }
+    }
 }
 
 function Get-KioskTools {
@@ -122,15 +175,18 @@ function Install-KioskTools {
     $package = Get-Content -LiteralPath (Join-Path $Root 'package.json') -Raw | ConvertFrom-Json
     if ($package.packageManager -notmatch '^pnpm@([0-9]+\.[0-9]+\.[0-9]+)$') { throw 'Unexpected packageManager; inspect the new version before installing.' }
     $pnpmVersion = $Matches[1]
-    & $tools.npm install --prefix (Join-Path $tools.state 'tools/pnpm') --ignore-scripts --no-audit --no-fund "pnpm@$pnpmVersion"
-    if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned pnpm.' }
-    Invoke-KioskPnpm -Tools $tools -Arguments @('--version')
+    $installedPnpm = if (Test-Path -LiteralPath $tools.pnpm) { & $tools.node $tools.pnpm --version } else { '' }
+    if ($installedPnpm -ne $pnpmVersion) {
+        & $tools.npm install --prefix (Join-Path $tools.state 'tools/pnpm') --ignore-scripts --no-audit --no-fund --fetch-retries=3 --fetch-timeout=120000 "pnpm@$pnpmVersion"
+        if ($LASTEXITCODE -ne 0) { throw 'Pinned pnpm download failed. Check network/proxy and rerun Setup; existing downloads and packages are retained.' }
+    }
+    if ((& $tools.node $tools.pnpm --version) -ne $pnpmVersion) { throw 'Installed pnpm does not match packageManager.' }
     # Do not run the whole monorepo's postinstall/native SDK builds on a clean
     # remote desktop. Include stage-ui: the native service bundles its sources
     # from that package, outside Desktop's direct dependency closure.
     # esbuild is the one build-time install hook needed here.
     $env:ELECTRON_SKIP_BINARY_DOWNLOAD = '1'
-    Invoke-KioskPnpm -Tools $tools -Arguments @('--filter', '@proj-airi/root', '--filter', '@proj-airi/stage-kiosk-desktop...', '--filter', '@proj-airi/stage-ui...', 'install', '--frozen-lockfile', '--ignore-scripts', '--prod=false')
+    Invoke-KioskPnpm -Tools $tools -Arguments @('--filter', '@proj-airi/root', '--filter', '@proj-airi/stage-kiosk-desktop...', '--filter', '@proj-airi/stage-ui...', 'install', '--frozen-lockfile', '--ignore-scripts', '--prod=false', '--fetch-retries=3', '--fetch-timeout=120000')
     Invoke-KioskPnpm -Tools $tools -Arguments @('rebuild', 'esbuild')
     $electronArchive = "electron-v$script:ElectronVersion-win32-$Architecture.zip"
     if (-not (Test-Path -LiteralPath $tools.electron)) {
@@ -141,15 +197,38 @@ function Install-KioskTools {
 
 function Assert-KioskRuntime {
     param($Tools)
-    $previous = $env:ELECTRON_RUN_AS_NODE
+    $previousNode = $env:ELECTRON_RUN_AS_NODE
+    $previousConsole = $env:ELECTRON_NO_ATTACH_CONSOLE
+    $directory = Join-Path ([IO.Path]::GetTempPath()) ('webnavior-runtime-' + [Guid]::NewGuid().ToString())
     try {
+        New-Item -ItemType Directory -Path $directory | Out-Null
+        $probe = Join-Path $directory 'inspect.cjs'
+        $output = Join-Path $directory 'versions.json'
+        # Electron is a Windows GUI executable: stdout capture is unreliable.
+        # Pass paths as quoted arguments, not interpolated JavaScript code.
+        [IO.File]::WriteAllText($probe, 'require("node:fs").writeFileSync(process.argv[2], JSON.stringify({electron:process.versions.electron,node:process.versions.node}));')
         $env:ELECTRON_RUN_AS_NODE = '1'
-        $result = & $Tools.electron -p 'JSON.stringify({electron:process.versions.electron,node:process.versions.node})'
-        if ($LASTEXITCODE -ne 0) { throw 'Electron runtime inspection failed.' }
-        $versions = $result | ConvertFrom-Json
+        $env:ELECTRON_NO_ATTACH_CONSOLE = '1'
+        $inspection = Start-Process -FilePath $Tools.electron -ArgumentList @(('"{0}"' -f $probe), ('"{0}"' -f $output)) -Wait -PassThru
+        if ($inspection.ExitCode -ne 0) { throw "Electron runtime inspection failed (exit $($inspection.ExitCode))." }
+        if (-not (Test-Path -LiteralPath $output -PathType Leaf)) { throw 'Electron runtime inspection did not produce versions.json.' }
+        try { $versions = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json }
+        catch { throw 'Electron runtime inspection returned invalid JSON.' }
+        if ($null -eq $versions -or $versions -is [array] -or
+            -not $versions.PSObject.Properties['electron'] -or -not $versions.PSObject.Properties['node'] -or
+            $versions.electron -isnot [string] -or [string]::IsNullOrWhiteSpace($versions.electron) -or
+            $versions.node -isnot [string] -or [string]::IsNullOrWhiteSpace($versions.node)) {
+            throw 'Electron runtime inspection requires nonempty electron and node version strings.'
+        }
         if ($versions.electron -ne $script:ElectronVersion -or $versions.node -ne $script:NodeVersion) { throw 'Electron does not match the inspected pilot runtime.' }
     }
-    finally { $env:ELECTRON_RUN_AS_NODE = $previous }
+    finally {
+        # Restore inspection flags before any cleanup that could fail, so a
+        # subsequent Electron GUI does not inherit Node inspection mode.
+        $env:ELECTRON_RUN_AS_NODE = $previousNode
+        $env:ELECTRON_NO_ATTACH_CONSOLE = $previousConsole
+        if (Test-Path -LiteralPath $directory) { Remove-Item -LiteralPath $directory -Recurse -Force }
+    }
 }
 
-Export-ModuleMember -Function Get-KioskSettings, Get-TunnelArguments, Assert-ArchiveHash, Get-KioskTools, Invoke-KioskPnpm, Install-KioskTools, Assert-KioskRuntime
+Export-ModuleMember -Function Get-KioskSettings, Assert-KioskApiReady, Get-TunnelArguments, Assert-ArchiveHash, Get-KioskTools, Invoke-KioskPnpm, Install-KioskTools, Assert-KioskRuntime, Invoke-KioskWebRequest, Assert-KioskBuild

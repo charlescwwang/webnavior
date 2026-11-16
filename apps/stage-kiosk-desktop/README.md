@@ -51,6 +51,8 @@ release. It does not include the pet desktop's windows, widgets or game engine.
   no second app, router or ordering session starts. Its title bar uses native
   dragging, and its collapse/reset controls retain the draft and trace. Closing
   it returns the console to the host row, with an explicit reopen action.
+  This works on both the public HTTPS entry and loopback development; an absent
+  blank-page referrer does not block the trusted host's named console.
   Host and this owned popup can write plain text to the system clipboard;
   clipboard reads and vendor/iframe clipboard permissions remain denied. Copy
   handlers in teleported controls use their actual owner document.
@@ -300,3 +302,15 @@ full-document navigation observation, capacity policy, backups and Windows
 power-loss behavior remain outside the completed runtime scope. See the leading
 implementation status in `docs/plans/2026-10-28-windows-kiosk-electron.md`; unit
 filesystem tests are not whole-system archival acceptance.
+
+## Windows portable distribution
+
+The compiled main process bundles its JavaScript dependencies. The portable Windows x64
+ZIP places these outputs in the official pinned Electron runtime; no Node/pnpm setup is
+needed on the target. A packaged app reads `kiosk.settings.json` next to its executable
+and validates the HTTPS Kiosk URL, window mode and diagnostic port before opening a page.
+Windows retains `%LOCALAPPDATA%\Webnavior\Kiosk-Pilot` across app-folder updates.
+Development launches continue using the existing environment settings. See
+[scripts/windows/README.md](../../scripts/windows/README.md) and the plain-language
+[quick start](../../scripts/windows/portableQuickStart.txt). The package has no signing or
+auto-update service; physical Windows validation remains necessary.
