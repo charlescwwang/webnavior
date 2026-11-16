@@ -490,3 +490,12 @@ sudo docker compose --project-name webnavior-redis \
 # 查看 API 最近 log
 sudo journalctl -u webnavior-api -n 100 --no-pager
 ```
+
+### Windows 機台可攜版
+
+一般 Intel x64 Windows 10/11 機台可直接解壓縮本次提供的可攜 ZIP，雙擊
+`Webnavior Kiosk.exe`，沿用網域後台。包內「先看我.txt」說明配對、設定與更新。
+不需在機台安裝 Node/pnpm；完整資料夾必須一起保留。維護者的來源建置與公司 Proxy
+設定請見 [Windows 部署說明](../scripts/windows/README.md)。機台資料仍在同一
+Windows 帳號的 `%LOCALAPPDATA%\Webnavior\Kiosk-Pilot`，更新程式資料夾不刪除此處。
+網域部署與 Runtime 封裝通過檢查不等於 Windows 實體影音、觸控或商家點餐已驗收。

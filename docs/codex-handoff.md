@@ -1,5 +1,16 @@
 # Codex Handoff
 
+## 2026-11-17 分批提交、網域發布與 Windows 可攜 EXE
+
+- 使用者明確要求分批commit，覆蓋先前「不commit」限制。已提交：1b7cf18 後台備援/Falcon、1ba16ac 點餐搜尋/購物車/發票/送單/SSE、5a54dc3 Windows可攜EXE與Setup修正、fc2cf1b 管理器/部署文件。各commit hook檢查通過；未push。原有未提交修改均已納入。
+- 以Electron官方resources/app可攜方式沿用46.0.0-alpha.2／Node24.22.1，未增加封裝框架/依賴。Desktop main改完整bundle，packaged啟動讀EXE旁kiosk.settings.json（可讀Notepad BOM，HTTPS /kiosk/、windowed、診斷port驗證）；Windows保留原LOCALAPPDATA/Webnavior/Kiosk-Pilot，開發環境原env流程保留。packagePortable.py核對固定官方SHA、PE x64、三個非空產出、ZIP CRC與每檔雜湊；無source/env/key/profile/node_modules。
+- **交付唯一最終包**：/tmp/Webnavior-Kiosk-Windows-x64-20261117-011758.zip，163741396bytes（約156MiB），SHA256 f7889ef616d3f3ea539c4a6b94fee05b02b6247ab0e540dcc3dcaa9016df31b8；相鄰.zip.sha256，索引/tmp/latest-windows-portable.json。manifest源commit fc2cf1b。包內有Webnavior Kiosk.exe、預設公開網域JSON、Edit Settings.cmd、先看我.txt、管理後台.url；舊/tmp/latest-windows-source.json仍是舊原始碼包，不要拿它代替本次EXE包。解壓整包後雙擊EXE即可；仍需設備配對及商家登入。
+- 新使用者錯誤紀錄已處理：JSON暫存版本探測正式提交；Runtime GET最多3次/180秒並套HTTPS_PROXY/HTTP_PROXY/NO_PROXY（認證分離，不輸出密碼），npm/pnpm 120秒/3次重試，符合版本pnpm及Runtime/套件快取沿用。Build驗證electron-vite與main/preload/pb產出；依exitcode判定，不因arrow2csv警告失敗、不建假EXE。來源PS以PSScriptRoot定位，相對Config以root解析，最後還原PATH與全部啟動相關env；GUI清除Node探測旗標。README說明Process範圍執行原則與公司政策。
+- **公開已發布** https://webnavior.aikcitri.qzz.io：沿既有main-fallback runtime只更新9個有差異的API/Shared/prompt檔；/var/www/airi/web與kiosk已發布。備份/manifest在pb-test.local/domain-release-20261117-011847；原WorkingDirectory不變，正常systemctl restart成功，無DB或provider設定更動；公開及本機有效PIN均核對為使用者指定值，檔案保留不重建。API/db/redis ready，新Falcon admin route401保護通過。證據/tmp/release-domain-verification.json。
+- 公開入口origin indexSHA：web 554e2433c79f1dcca69c4a021c990a094f7fd9a8060bc13c4ee25156d3177b33，kiosk 54c370e4a5acf8a7ecbf6c014d11dd6ffc03943fac49838be5b238be58f72fd9。Cloudflare會注入analytics beacon，HTTPS HTML整頁SHA因此不同；已比較所有本地script參照及遠端JS實體SHA，兩個entry module皆與建置一致。不是拿CDN整頁hash差異當舊版本。
+- 驗證：全倉typecheck一次通過；全倉lint未過，2370既有錯誤在未修改檔案（chats、原kiosk-audio、研究文件、試驗檔等），不擴修；各提交檔hook通過。Windows PowerShell純邊界31組、Desktop26項及scoped types、Host搜尋/回覆162項、manager19項、建置通過。真正resources/app Linux封裝在本機與公開HTTPS啟動成功（packaged=true、Node/Electron正確、獨立profile），證據/tmp/release-portable-{,public-}smoke.json；隔離測試使用no-sandbox，產品EXE沒有添加該旗標。**不是Windows實機驗收**，實體麥克風/相機/觸控/公司Proxy仍需目標機器驗收，沒有程式簽章或自動更新。
+- **Falcon影音模式仍停用**，此發布只有連線草稿、codec與response reader，不能宣稱同步擷取/轉送/歷程已完成。舊ASR保持運作；下方「公開網域尚未同步／沒有EXE封裝」的舊狀態由本節取代。C01/C02既有挑戰案例限制未在本次擴修。
+
 ## 2026-11-17 新版 Falcon 重測與連續／多餐點搜尋
 
 - 使用者要求重測已部署Falcon並確認採新版。http://192.168.8.64:8766/api/falcon/health ready=true，模型已為falcon_spectral_dynamic.onnx；health仍報frames=[25]但已不是實際固定1秒限制。合成2/3/15秒plain frame count成功200，3/15秒由實際encodeFalconClip送出，samples分別48000/240000，回JSON text（靜音為空字串）；舊ONNX bit30標頭3秒被422拒絕。證據/tmp/falcon-new-codec-results.json。已移除codec的engine參數/旗標，統一新版plain N；引擎由遠端服務決定。不是真人影音品質驗收。
