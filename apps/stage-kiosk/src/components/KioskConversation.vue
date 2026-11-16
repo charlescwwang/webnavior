@@ -81,6 +81,14 @@ const historyMessages = computed<ChatHistoryItem[]>(() => groupConversationMessa
     return { ...message, content: toOrderingTraditionalChinese(message.content) }
   return message
 }))
+// The detached input console shares the same presentation copy as the main
+// history. While a turn is pending, never carry over the previous turn's reply.
+const consoleReply = computed(() => {
+  if (props.sending && !props.streamingAssistantMessage)
+    return undefined
+  const latest = historyMessages.value.at(-1)
+  return latest?.role === 'assistant' && typeof latest.content === 'string' ? latest.content : undefined
+})
 function requestStatus(message: ChatHistoryItem) {
   const id = message.role === 'user' ? message.id?.match(/^utterance:(\d+):user$/)?.[1] : undefined
   return id ? props.requestStatuses?.[Number(id)] : undefined
@@ -192,7 +200,8 @@ onScopeDispose(() => lateTailFollow && clearTimeout(lateTailFollow))
       v-else
       :dock-target="props.textConsoleTarget"
       :native-popup="Boolean(props.textConsoleTarget)"
-      :status="props.fastPathSimulationStatus"
+      :status="props.activityStatus ?? props.fastPathSimulationStatus"
+      :reply="consoleReply"
       :trace="props.fastPathSimulationTrace"
       :timing="props.fastPathSimulationTiming"
       @simulate="emit('simulateAsr', $event)"

@@ -208,6 +208,7 @@ export function useKioskInteractionRecording() {
     let metricTaskId = callbacks.taskId ?? callbacks.decisionState?.context?.taskId
     let agentMode: KioskAgentInteractionMode = 'active'
     let deadline: AbortSignal | undefined
+    let deadlineAt = 0
     let transportReason: KioskReplyFailureReason = 'provider-error'
     let stage: 'context' | 'model' | 'tool' = 'context'
     let terminalReason: ConversationTurnResult['reason']
@@ -250,7 +251,9 @@ export function useKioskInteractionRecording() {
       // One deadline covers the entire Agent task, not a fresh budget per
       // continuation. It cancels model transport only, never an accepted POS
       // effect; browser tools settle through their own result boundary.
-      deadline = AbortSignal.timeout(Math.min(serviceRecoveryLimits.turnMs, Math.max(1, callbacks.budgetMs ?? serviceRecoveryLimits.turnMs)))
+      const budgetMs = Math.min(serviceRecoveryLimits.turnMs, Math.max(1, callbacks.budgetMs ?? serviceRecoveryLimits.turnMs))
+      deadlineAt = performance.now() + budgetMs
+      deadline = AbortSignal.timeout(budgetMs)
       const signal = AbortSignal.any([control.controller.signal, deadline, ...(callbacks.signal ? [callbacks.signal] : [])])
       // The callback crosses the Menu IO seam. Replace facts/tool scope, never
       // accumulate snapshots or overwrite immutable read-only task authority.
@@ -313,7 +316,9 @@ export function useKioskInteractionRecording() {
         await prepareRound()
       }
       rounds++
-      let response = await streamKioskConversationMessage({ ...(!customerRecorded ? { content, utteranceId: callbacks.utteranceId } : {}), ...(decisionState ? { decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
+      // The gateway reserves part of this remaining time for Main backup. Sending
+      // only the abort signal would let the primary consume the whole task budget.
+      let response = await streamKioskConversationMessage({ budgetMs: Math.max(1, Math.ceil(deadlineAt - performance.now())), ...(!customerRecorded ? { content, utteranceId: callbacks.utteranceId } : {}), ...(decisionState ? { decisionState } : {}), signal, tools: toolDefinitions, visitorSessionId: sessionId }, (event) => {
         if (signal.aborted || visitorSessionId.value !== sessionId)
           return
         if (event.type === 'turn-failed')
@@ -535,7 +540,7 @@ export function useKioskInteractionRecording() {
           return unfinished('timeout')
         const continuationTools = recommendationPresented ? toolDefinitions.filter(tool => !['menu_recommend', 'menu_show_recommendations'].includes(tool.function.name)) : toolDefinitions
         rounds++
-        response = await streamKioskConversationMessage({ signal, toolResults, ...(decisionState ? { decisionState } : {}), tools: continuationTools, visitorSessionId: sessionId }, (event) => {
+        response = await streamKioskConversationMessage({ budgetMs: Math.max(1, Math.ceil(deadlineAt - performance.now())), signal, toolResults, ...(decisionState ? { decisionState } : {}), tools: continuationTools, visitorSessionId: sessionId }, (event) => {
           if (signal.aborted || visitorSessionId.value !== sessionId)
             return
           if (event.type === 'turn-failed')

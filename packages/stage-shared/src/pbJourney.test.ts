@@ -3,6 +3,14 @@ import { expect, it } from 'vitest'
 import { isPbJourneyPage, isPbOrderResultUrl, isPbTableEntryUrl, readPbJourney } from './pbJourney'
 
 const entry = 'https://app-205-rd.esgpb.com/order/store/1kAMNok/internal_use/menu/select-table'
+// Report: this chat, 2026-11-16 — the merchant checkout incorrectly required manual submission.
+it('enables confirmed submission only for the authorized dining deployment and owned simulator', () => {
+  expect(readPbJourney('https://app.esgpb.com/order/store/1kgJeql/internal_use/orders/create')?.canSubmit).toBe(true)
+  expect(readPbJourney('http://127.0.0.1:5188/order/store/1kgJeql/internal_use/orders/create')?.canSubmit).toBe(true)
+  expect(readPbJourney('https://app.esgpb.com/order/store/1kgJeql/pick_up/orders/create')?.canSubmit).toBe(false)
+  expect(readPbJourney(entry)?.canSubmit).toBe(false)
+  expect(readPbJourney('https://other.example/order/store/1kgJeql/internal_use/orders/create')).toBeUndefined()
+})
 it('admits only the fixed local PB simulator without extending the merchant journey', () => {
   const local = 'http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table'
   expect(readPbJourney(local)?.buyer).toBe('guest')

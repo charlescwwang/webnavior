@@ -20,7 +20,7 @@ it('converts total pieces per serving without treating them as meal quantities',
 // Report: this chat, Nov12; read actual pieces/servings instead of the minimum notice.
 it('formats the observed PB base and added dumplings without changing serving counts', () => {
   expect(describePbMeal({ name: '周氏水餃(最低8顆)', quantity: 1, unitPrice: 64, options: [] })).toBe('周氏水餃 每份 8 顆，1 份')
-  expect(describePbMeal({ name: '周氏水餃(最低8顆)', quantity: 2, unitPrice: 80, options: [{ name: '水餃', quantity: 2 }], note: '不要蔥' })).toBe('周氏水餃 每份 10 顆，2 份（備註「不要蔥」）')
+  expect(describePbMeal({ name: '周氏水餃(最低8顆)', quantity: 2, unitPrice: 80, options: [{ name: '水餃1顆', quantity: 2 }], note: '不要蔥' })).toBe('周氏水餃 每份 10 顆，2 份（備註「不要蔥」）')
 })
 
 it('does not infer pieces for other products, changed prices or unreadable options', () => {

@@ -148,3 +148,16 @@ it('rechecks the cart after opening confirmation and before the actual submissio
   expect(clicked).not.toHaveBeenCalled()
   expect(dispatched).not.toHaveBeenCalled()
 })
+
+// Report: this chat, Nov16 — valid carrier entry did not reveal the phone field.
+it('moves focus from completed carrier details to notification phone without submitting', async () => {
+  const { checkout, controls, clicked } = setup()
+  await checkout.choose('carrier', controls)
+  const carrier = document.querySelector<HTMLInputElement>('input[placeholder="請輸入共8碼編號"]')!
+  carrier.value = '/ABC1234'
+  await checkout.focus('next', controls)
+  const phone = document.querySelectorAll<HTMLInputElement>('.el-form-item input')[0]
+  expect(document.activeElement).toBe(phone)
+  expect(phone.value).toBe('')
+  expect(clicked).not.toHaveBeenCalled()
+})

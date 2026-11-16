@@ -13,11 +13,23 @@ import { productFragment } from '@proj-airi/stage-shared/product-discovery'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { array, looseObject, number, parse, string } from 'valibot'
 
+import { orderingMessages } from '../../../../packages/i18n/src/orderingMessages'
 import { createBrowserOrderDrafts, orderFactsSchema, orderSlotCount } from './browserOrderDrafts'
 import { createBrowserQuestionWindow } from './browserQuestionWindow'
 import { createRecommendationSession } from './recommendationSession'
 
 const factsSchema = orderFactsSchema
+const phoneMessages = orderingMessages['zh-Hant'].checkout.notificationPhone
+const checkoutEntryPurposes = new Set(['invoice-details', 'notification-details', 'checkout-details'])
+
+// Phone fragments are literal data only inside a bound notification question.
+// Keep leading zeroes; never pull digits from an unrelated ordering sentence.
+function notificationPhoneInput(transcript: string) {
+  if (/^(?:重來|重新輸入|重新說|重新報)[。！!\s]*$/.test(transcript.trim()))
+    return { digits: '', replace: true }
+  const text = normalizeSlotNumbers(transcript).replaceAll(/[零〇]/g, '0').replaceAll(/幺/g, '1').replace(/^(?:我的)?(?:通知)?(?:手機|電話)(?:號碼)?是?[：:\s]*/, '').replace(/^(?:更正|改成)[：:\s]*/, '').replaceAll(/[\s，,。！!、.-]/g, '')
+  return /^\d+$/.test(text) ? { digits: text, replace: text.length === 10 || /^(?:更正|改成)/.test(transcript.trim()) } : undefined
+}
 
 /** Original customer request and actual bound answers used for independent plan admission. */
 export interface OrderEvidence {
@@ -92,9 +104,23 @@ export function createBrowserDialogue(io: {
     return quantities[0]
   }
 
-  // A named reply resolves against the actual issued batch, never the model's
+  // Literal answers resolve against the actual issued question, never model
   // prose. Require the whole reply so attached new demands retain Main handling.
-  function namedChoice(pending: NonNullable<ReturnType<typeof questions.pending>>, transcript: string) {
+  function literalChoice(pending: NonNullable<ReturnType<typeof questions.pending>>, transcript: string) {
+    // Completion acknowledges data entry only. The next step re-reads fields;
+    // these phrases never authorize submission or alter the form themselves.
+    if (pending.kind === 'service' && checkoutEntryPurposes.has(pending.purpose)
+      && /^(?:ok|okay|好|好的|好了|填好了|資料填好了)[。！!，,\s]*$/i.test(transcript.trim())) {
+      return 'yes'
+    }
+    if (pending.kind === 'service' && ['cart-review', 'notification-phone-confirm'].includes(pending.purpose)
+      && /^(?:正確|沒錯|對|是的|確認|確認無誤|好|好的|好了)[。！!，,\s]*$/.test(transcript.trim())) {
+      return 'yes'
+    }
+    if (pending.kind === 'service' && pending.purpose === 'notification-phone-confirm'
+      && /^(?:不對|不正確|錯了|錯誤|不是)[。！!，,\s]*$/.test(transcript.trim())) {
+      return 'no'
+    }
     if (pending.kind !== 'product')
       return
     const text = transcript.replaceAll(/[\s，,。！!]/g, '').replace(/^(?:我要|我想要|就要|要|選)/, '').replace(/(?:謝謝|好了)$/, '')
@@ -123,6 +149,12 @@ export function createBrowserDialogue(io: {
 
   return {
     recommendations,
+    /** Returns only the current bound service step, never stale conversation text. */
+    checkoutStep(raw: unknown) {
+      const binding = snapshot(raw)
+      const pending = binding && questions.pending(binding)
+      return pending?.kind === 'service' ? pending.purpose : undefined
+    },
     releaseService(raw: unknown, questionId: string) {
       const binding = snapshot(raw)
       if (binding)
@@ -151,10 +183,12 @@ export function createBrowserDialogue(io: {
       const pending = binding && questions.pending(binding)
       if (!pending)
         return false
-      const choice = namedChoice(pending, transcript)
+      const choice = literalChoice(pending, transcript)
       const namedProduct = pending.kind === 'product' && choice ? pending.visible[Number(choice.split(':')[1]) - 1] : undefined
       const namedAnswer = pending.kind === 'product' && namedProduct && (explicitServingQuantities(pending.request).length === 0 || completePurchase(raw, pending.request, namedProduct.productRef) !== undefined)
       return !!browserQuestionChoice(transcript, pending.question)
+        || (pending.kind === 'service' && !!choice)
+        || (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose) && notificationPhoneInput(transcript) !== undefined)
         || !!namedAnswer
         || (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined)
         || (pending.kind === 'quantity' && quantityAnswerCount(transcript) !== undefined)
@@ -301,8 +335,37 @@ export function createBrowserDialogue(io: {
     async answer(raw: unknown, transcript: string, observe: () => Promise<unknown>, isCurrent: () => boolean, utteranceId?: number, options: { selectedAnswer?: SelectedBrowserAnswer } = {}) {
       const binding = snapshot(raw)
       const pending = binding && questions.pending(binding)
-      if (!pending || !isCurrent())
+      if (!binding || !pending || !isCurrent())
         return
+      if (pending.kind === 'service' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pending.purpose)) {
+        const input = notificationPhoneInput(transcript)
+        if (input) {
+          // The question's query is the only buffer. Its owner/document/cart and
+          // 120-second expiry also retire partial numbers on reset or navigation.
+          const previous = pending.purpose === 'notification-phone' ? pending.query ?? '' : ''
+          const digits = input.replace ? input.digits : previous + input.digits
+          const validPrefix = !digits || /^0(?:9\d*)?$/.test(digits)
+          const complete = /^09\d{8}$/.test(digits)
+          const invalid = !validPrefix || digits.length > 10
+          let message: string
+          if (invalid)
+            message = phoneMessages.invalid
+          else if (complete)
+            message = phoneMessages.confirm.replace('{digits}', digits.split('').join(' '))
+          else if (digits)
+            message = phoneMessages.partial.replace('{digits}', digits.split('').join(' ')).replace('{count}', String(digits.length))
+          else
+            message = phoneMessages.restart
+          const question = questions.presentService(binding, {
+            purpose: complete ? 'notification-phone-confirm' : 'notification-phone',
+            query: invalid ? '' : digits,
+            request: pending.request,
+            question: message,
+            choices: complete ? [{ id: 'yes', description: '號碼正確，填入剛才覆誦的通知手機，不送出訂單。' }, { id: 'no', description: '號碼不正確，清除暫存號碼，重新報。' }] : [],
+          })
+          return { kind: 'receipt' as const, result: receipt(question) }
+        }
+      }
       const selectedAnswer = options.selectedAnswer
       if (selectedAnswer && (selectedAnswer.questionId !== pending.question.questionId || !pending.question.choices.some(choice => choice.id === selectedAnswer.choiceId)))
         return { kind: 'receipt' as const, result: { ok: false, source: 'browser', status: 'rejected', effect: 'none', customerMessage: '目前問題已變更，請依畫面上的問題繼續。' } }
@@ -341,7 +404,7 @@ export function createBrowserDialogue(io: {
           return { kind: 'product' as const, product: selected.product, request: selected.request, requestTarget: selected.requestTarget, requestedQuantity: selected.quantity, orderSelection: selected.orderSelection, binding: fresh }
         }
       }
-      const literal = namedChoice(pending, transcript) ?? (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined ? 'yes' : browserQuestionChoice(transcript, pending.question))
+      const literal = literalChoice(pending, transcript) ?? (pending.kind === 'service' && pending.purpose === 'purchase-recommendation' && purchaseAnswerCount(transcript) !== undefined ? 'yes' : browserQuestionChoice(transcript, pending.question))
       const decision: AnswerDecision = selectedAnswer ? { kind: 'ANSWER', choiceId: selectedAnswer.choiceId, provider: 'system-one' } : literal ? { kind: 'ANSWER', choiceId: literal, provider: 'main' } : await io.answer({ decisionSource: 'main', questionId: pending.question.questionId, transcript, cartContext: parse(factsSchema, raw).cart }).catch((): AnswerDecision => ({ kind: 'UNCERTAIN', provider: 'unavailable' }))
       // Re-observe after model IO: a touch, new price, reload or customer switch
       // during that wait invalidates the original question instead of rebinding it.
@@ -360,6 +423,12 @@ export function createBrowserDialogue(io: {
       if (selected.kind === 'service') {
         answeredUtteranceId = utteranceId
         answeredQuestion = { question: selected.question, answer: transcript, selectedChoice: selected.answer, name: selected.name, purpose: selected.purpose }
+        if (selected.purpose === 'notification-phone-confirm') {
+          if (selected.choiceId === 'yes' && selected.query && /^09\d{8}$/.test(selected.query))
+            return { kind: 'checkout' as const, action: 'phone-confirmed' as const, phone: selected.query }
+          const question = questions.presentService(fresh, { purpose: 'notification-phone', query: '', request: selected.request, question: phoneMessages.restart, choices: [] })
+          return { kind: 'receipt' as const, result: receipt(question) }
+        }
         if (selected.purpose === 'cancel-and-search' && selected.choiceId === 'yes') {
           orders.reset()
           return { kind: 'switch-query' as const, query: selected.query ?? '' }
@@ -372,6 +441,13 @@ export function createBrowserDialogue(io: {
           return { kind: 'receipt' as const, result: { ok: true, source: 'browser', effect: 'none', customerMessage: '請告訴我要修改哪道餐點或份數。' } }
         if (selected.purpose === 'invoice-method')
           return { kind: 'checkout' as const, action: 'invoice' as const, method: selected.choiceId }
+        if (checkoutEntryPurposes.has(selected.purpose)) {
+          if (selected.choiceId === 'yes')
+            return { kind: 'checkout' as const, action: 'continue' as const }
+          // "Not yet" keeps the current entry step answerable by a later OK.
+          const question = questions.presentService(fresh, { purpose: selected.purpose, request: selected.request, question: pending.question.question, choices: pending.question.choices })
+          return { kind: 'receipt' as const, result: { ...receipt(question), customerMessage: '好的，請慢慢填寫，完成後告訴我。' } }
+        }
         if (selected.purpose === 'submit-order' && selected.choiceId === 'yes' && selected.query)
           return { kind: 'checkout' as const, action: 'submit' as const, confirmationToken: selected.query }
         if (selected.purpose === 'submit-order' && selected.choiceId === 'no')

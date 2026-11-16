@@ -47,9 +47,13 @@ Caller cancellation still cancels the entry wait.
 `services/pbCheckout.ts` reads actual invoice radios, labeled contact fields,
 order notes and website totals. It owns one expiring submission ticket bound to
 the fresh cart, form and manual-interaction revision. Public invoice/phone steps
-do not submit. The private submission control is enabled only for the owned
-loopback fixture; one manual merchant LINE Pay result has been observed, but
-merchant native submission acceptance is not yet verified. Result acceptance
+do not submit. Preparation can focus the invoice choices or the next unfinished
+field through the existing native operation follower, without changing its value.
+The Host owns segmented phone collection and read-back confirmation; the adapter
+fills only a complete number. The private submission control follows the shared
+journey's explicit submission capability for the authorized merchant dining flow
+and owned fixture. Merchant native submission acceptance still needs live verification.
+Result acceptance
 binds the unique Inertia page's component, store, flow, URL, order hash and
 accepted status. Merchant acceptance is distinct from total consistency: an
 amount mismatch reports `accepted/conflict`, while an exact total with detail
@@ -265,7 +269,10 @@ that receipt says `prepared`, never `shown`, and does not move a hand or frame.
 Reply/playback cues then present one uniquely named dish at a time.
 An empty-ref `browser_present` only clears cues; `browser_search` with an empty
 query returns the full current menu after verifying its rendered cards. A named
-search observes PB's native loading cycle and settled result count. None of
+search first restores and verifies the full current catalog when a previous filter exists,
+then observes PB's native loading cycle and settled result count. An empty result
+uses `status:not-found`, with the checked query named in its receipt; it is information,
+not a pending customer question, so other requested dishes can still be checked. None of
 these actions dispatches commerce work.
 
 A required operation supersedes an active `browser_present` cue and aborts its
@@ -350,5 +357,7 @@ their existing message and scroll behavior.
 
 PB order submission has two native buttons: opening `確認訂單` is a draft action;
 only its `確定` button starts the external dispatch barrier. Cart, form and manual
-revision are rechecked between them. Submission remains enabled only for the
-owned loopback fixture until merchant result acceptance has been verified.
+revision are rechecked between them. Submission is enabled for the authorized
+`app.esgpb.com` store `1kgJeql` internal-use journey and owned loopback fixture,
+as declared in the shared journey policy. Other deployments remain manual.
+The final-summary assent grants order creation only; payment is separate.

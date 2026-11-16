@@ -56,6 +56,15 @@ kiosk:
     play-test: '播放語音並測試插話'
     test-text: '這是麥克風與語音回音測試，您可以現在插話。'
   information-unavailable: 這項資訊我目前查不到，請現場人員幫您確認。
+  service-policy:
+    off-topic: 這台機台只協助餐點與菜單，無法處理這項需求。想點什麼餐點呢？
+    food-safety: 食品安全與過敏疑慮需要現場服務人員協助確認，我無法保證安全。請直接向現場人員說明；機台尚未替您通知或呼叫人員。
+    promotion-policy: 目前價格以畫面標示的售價為準，這台機台尚不支援優惠券，也無法另行折價。
+    unsupported-budget: 這台機台目前不支援依總預算自動配餐，不能替您決定整套餐點。您可以指定想吃的餐點，或查詢單品價格。
+    unsupported-delivery: 這台機台目前不支援安排外送，只協助現場點餐。
+    unsupported-taxi: 這台機台無法呼叫計程車，請自行使用叫車服務，或向現場人員詢問。
+    menu-unavailable: 目前菜單沒有找到這道餐點，機台不能自行創造餐點或決定價格。請從畫面上的餐點選擇。
+    unsupported-permission: 這台機台無法修改網站售價、標記付款或略過確認。價格與付款狀態以商家網站實際資料為準。
   checkout-guidance:
     empty: 購物車目前沒有餐點。選好餐點後，再依點餐網頁的提示結帳。
     ready: 請先核對畫面上的餐點、份數與金額，再依點餐網頁的提示完成結帳。

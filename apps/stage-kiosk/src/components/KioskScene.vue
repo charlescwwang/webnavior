@@ -68,6 +68,7 @@ import { useKioskInteractionTurn } from '../composables/useKioskInteractionTurn'
 import { useKioskInteractiveServices } from '../composables/useKioskInteractiveServices'
 import { useKioskMediaCapture } from '../composables/useKioskMediaCapture'
 import { useKioskProactiveVision } from '../composables/useKioskProactiveVision'
+import { useKioskStreamingReply } from '../composables/useKioskStreamingReply'
 import { useKioskVoiceTest } from '../composables/useKioskVoiceTest'
 import { useKioskWaitSpeech } from '../composables/useKioskWaitSpeech'
 import { setKioskLocale } from '../modules/i18n'
@@ -189,7 +190,8 @@ const {
   selectTool: selectConversationProgressTool,
   start: startConversationProgress,
 } = useKioskConversationProgress()
-const streamingAssistantMessage = shallowRef<ChatHistoryItem>()
+const streamingReply = useKioskStreamingReply()
+const streamingAssistantMessage = streamingReply.message
 const pendingTranscript = shallowRef<string>()
 const customerResetError = shallowRef<string>()
 const voiceDiagnosticEntries = shallowRef<KioskVoiceDiagnosticEntry[]>([])
@@ -989,6 +991,7 @@ async function processKioskUtterance(utterance: KioskUtterance, ticket: KioskUtt
                 intentSource: 'jev',
                 utteranceId: utterance.id,
                 informationUnavailable: () => t('stage.kiosk.information-unavailable'),
+                servicePolicyReply: kind => t(`stage.kiosk.service-policy.${kind}`),
                 checkoutGuidance: empty => t(`stage.kiosk.checkout-guidance.${empty ? 'empty' : 'ready'}`),
                 dialogue: browserDialogue,
                 presentation: productPresentation,
@@ -1707,7 +1710,7 @@ function clearConversationPresentation() {
   voiceDiagnosticEntries.value = []
   conversationMessages.value = []
   requestStatuses.value = {}
-  streamingAssistantMessage.value = undefined
+  streamingReply.clear()
   conversationWorkStatus.value = undefined
   conversationActivitySteps.value = []
   retryableConversationRequest.value = undefined
@@ -2280,7 +2283,7 @@ async function sendConversationMessage(
   if (options.appendUserMessage ?? true)
     conversationMessages.value = [...conversationMessages.value, { role: 'user', id: requestMessageId(options.utteranceId, 'user'), content: text }]
   retryableConversationRequest.value = undefined
-  streamingAssistantMessage.value = undefined
+  streamingReply.clear()
   conversationWorkStatus.value = undefined
   conversationActivitySteps.value = []
   const startedAt = conversationDiagnosticsEnabled.value ? performance.now() : undefined
@@ -2290,6 +2293,7 @@ async function sendConversationMessage(
   let browserRequestComplete = false
   // Capture the protocol owner before navigation can replace its tool list.
   const browserOrdering = interactiveServiceClient.tools.value.some(tool => tool.name === 'browser_cart_get')
+  const serviceReply = options.decisionState?.serviceReply === true || /^(?:你好|您好|嗨|哈囉|哈啰|hello|hi)[！!。.?？\s]*$/i.test(text)
   let browserPage: BrowserConversation['page']
   let customerRecoveryPresented = false
   // Isolated to this Agent turn. Interrupted turns cannot publish another
@@ -2384,6 +2388,7 @@ async function sendConversationMessage(
       releaseBrowserCartTask = beginBrowserCartTask(text, {
         utteranceId: options.utteranceId,
         informationUnavailable: () => t('stage.kiosk.information-unavailable'),
+        servicePolicyReply: kind => t(`stage.kiosk.service-policy.${kind}`),
         checkoutGuidance: empty => t(`stage.kiosk.checkout-guidance.${empty ? 'empty' : 'ready'}`),
         onRequestComplete: () => { browserRequestComplete = true },
         readOnly: decisionState?.readOnly === true || decisionState?.context?.readOnly === true,
@@ -2454,12 +2459,13 @@ async function sendConversationMessage(
             if (!isKioskConversationRetrySafeTool(name) || questionReceipt)
               operationReply = menuReply.browserOutcome() ?? operationReplyFrom(content) ?? operationReply
             if (questionReceipt || operationReply)
-              streamingAssistantMessage.value = undefined
+              streamingReply.clear()
           }
         },
         onTurnStarted: () => {
           if (!interactionTurn.isCurrent(turn))
             return
+          streamingReply.begin(turn.id, requestMessageId(options.utteranceId, 'reply'))
           timing?.mark('main-round')
           // The SSE turn-started event also appears after browser tool results.
           // Once any tool was requested, keep the Agent non-interruptible until
@@ -2477,6 +2483,7 @@ async function sendConversationMessage(
         onToolRequested: (toolName) => {
           if (!interactionTurn.isCurrent(turn))
             return
+          streamingReply.clear()
           request.stage = 'tool_requested'
           request.resolveReady()
           updateAgentStep(`Main Agent 已選擇 ${toolName}`)
@@ -2526,12 +2533,15 @@ async function sendConversationMessage(
           // This event proves output has started, not that any operation succeeded.
           startConversationProgress(turn.id, message)
         },
-        onAssistantDelta: () => {
+        onAssistantDelta: (text) => {
           if (!interactionTurn.isCurrent(turn) || questionReceipt || operationReply)
             return
+          if (browserOrdering || decisionState?.context || decisionState?.requireMenuRead || !serviceReply)
+            return
           updateAgentStep('Main Agent 回覆中')
-          // Draft text may precede a tool call. Keep the progress visible until
-          // the whole loop and receipt validation finish, not each SSE delta.
+          // Server emits text only for rounds that need no operation/receipt
+          // validation. Keep progress and defer history/TTS until completion.
+          streamingReply.append(turn.id, text)
         },
         signal: turn.signal,
       },
@@ -2552,7 +2562,7 @@ async function sendConversationMessage(
       finishConversationProgress(turn.id)
       conversationWorkStatus.value = undefined
       conversationActivitySteps.value = []
-      streamingAssistantMessage.value = undefined
+      streamingReply.clear()
       const message = [operationReply, t('stage.kiosk-agent.manual-control')].filter(Boolean).join(' ')
       conversationMessages.value = [...conversationMessages.value, { role: 'assistant', id: requestMessageId(options.utteranceId, 'reply'), content: message, slices: [], tool_results: [] }]
       await interactionRecording.append('assistant_text', message, { source: 'verified_reply', utteranceId: options.utteranceId })
@@ -2575,7 +2585,7 @@ async function sendConversationMessage(
       menu: menuReply,
       requireMenuRead: decisionState?.requireMenuRead,
       // A complete bare greeting is a service exchange even with System One off.
-      serviceReply: decisionState?.serviceReply === true || /^(?:你好|您好|嗨|哈囉|哈啰|hello|hi)[！!。.?？\s]*$/i.test(text),
+      serviceReply,
       handoff: decisionState?.handoff,
       context: replyContext,
       outcome: operationReply,
@@ -2612,7 +2622,7 @@ async function sendConversationMessage(
     if (!answer && !browserEffectAttempted)
       retryableConversationRequest.value = retryContextKey && interactionRecording.visitorSessionId.value ? { state: 'available', text, sessionId: interactionRecording.visitorSessionId.value, iframeRevision: scenarioRegistry.iframeRevision.value, originalUtteranceId: options.utteranceId, requestId: turn.id, contextKey: retryContextKey } : undefined
     updateAgentStep(reply.status === 'completed' && answer && !presented.recovery ? 'Main Agent 已完成' : presented.content)
-    streamingAssistantMessage.value = undefined
+    streamingReply.clear()
     request.resolveDone()
     if (activeAgentRequest === request)
       activeAgentRequest = undefined
@@ -2679,8 +2689,7 @@ async function sendConversationMessage(
     waitSpeech.finish(turn.id)
     clearLongWait()
     finishConversationProgress(turn.id)
-    if (interactionTurn.isCurrent(turn))
-      streamingAssistantMessage.value = undefined
+    streamingReply.clear(turn.id)
     if (interactionTurn.isCurrent(turn)) {
       interactionTurn.complete(turn)
       conversationWorkStatus.value = undefined
@@ -2912,6 +2921,16 @@ onUnmounted(() => {
           :thinking="conversationSending"
           :external-audio-source="assistantAudioNode"
         />
+        <button
+          v-if="customerSessionState === 'active' || customerSessionState === 'standby'"
+          type="button"
+          :class="['customer-restart']"
+          :disabled="(interactiveServiceClient.availability.value !== 'ready' && !interactiveServiceClient.editorRetired.value) || activeServiceOperations.size > 0"
+          @click="startOrRestartCustomerSession"
+        >
+          <span :class="['i-solar:restart-bold h-4 w-4 shrink-0']" aria-hidden="true" />
+          <span>{{ customerSessionButtonLabel }}</span>
+        </button>
       </section>
       <KioskAssistantThoughtBubble :progress="visibleProgress" />
       <KioskConversation
@@ -2958,17 +2977,6 @@ onUnmounted(() => {
       :releasing="manualControlPending"
       @manual="requestManualOrderControl"
     />
-
-    <button
-      v-if="customerSessionState === 'active' || customerSessionState === 'standby'"
-      type="button"
-      :class="['customer-restart', { 'native-restart': desktopHost }]"
-      :disabled="(interactiveServiceClient.availability.value !== 'ready' && !interactiveServiceClient.editorRetired.value) || activeServiceOperations.size > 0"
-      @click="startOrRestartCustomerSession"
-    >
-      <span class="i-solar:restart-bold h-4 w-4" aria-hidden="true" />
-      {{ customerSessionButtonLabel }}
-    </button>
 
     <KioskIdleDiagnostics
       v-if="idleDiagnosticsEnabled"
@@ -3044,9 +3052,8 @@ onUnmounted(() => {
 .conversation-region { min-width: 0; min-height: 0; }
 .menu-region { min-width: 0; min-height: 0; grid-column: 1; grid-row: 2; }
 .proactive-camera { position: fixed; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
-.customer-restart { position: fixed; z-index: 20; bottom: 1.15rem; left: 1.15rem; display: inline-flex; align-items: center; gap: .45rem; border: 1px solid rgb(207 250 254 / 48%); border-radius: .7rem; padding: .6rem .8rem; color: #ecfeff; background: rgb(8 47 73 / 90%); font-size: .8rem; font-weight: 700; box-shadow: 0 .35rem 1rem rgb(0 0 0 / 28%); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(14 116 144 / 94%); }.customer-restart:disabled { cursor: wait; opacity: .55; }
-/* Native website Views sit above DOM z-index, so keep this control in the host's upper region. */
-.customer-restart.native-restart { top: 1.75rem; right: 1.75rem; bottom: auto; left: auto; }
+/* Keep the action inside the avatar column, clear of both messages and the native website. */
+.customer-restart { position: absolute; z-index: 2; bottom: .75rem; left: .75rem; display: inline-flex; max-width: calc(100% - 1.5rem); min-height: 2.75rem; align-items: center; gap: .4rem; border: 1px solid rgb(217 250 246 / 20%); border-radius: 999px; padding: .45rem .75rem; color: #d9e9e1; background: rgb(16 26 22 / 72%); font-size: .75rem; font-weight: 500; backdrop-filter: blur(.5rem); transition: background .16s ease, opacity .16s ease; }.customer-restart:hover:not(:disabled) { background: rgb(36 53 45 / 94%); }.customer-restart:focus-visible { outline: 2px solid #99f6e4; outline-offset: 2px; }.customer-restart:disabled { cursor: wait; opacity: .55; }
 
 @media (max-width: 700px) {
   .kiosk-scene { padding: .6rem; row-gap: .6rem; }

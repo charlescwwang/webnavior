@@ -8,8 +8,8 @@ const mainUrl = process.env.PB_CUSTOMIZATION_MAIN_URL
 const jevUrl = process.env.PB_CUSTOMIZATION_JEV_URL
 const name = '周氏水餃(最低8顆)'
 const cart = [
-  { name, quantity: 1, configuration: '每份10顆', options: [{ name: '水餃', quantity: 2 }], note: '不要蔥' },
-  { name, quantity: 2, configuration: '每份10顆', options: [{ name: '水餃', quantity: 2 }], note: '不要蔥' },
+  { name, quantity: 1, configuration: '每份10顆', options: [{ name: '水餃1顆', quantity: 2 }], note: '不要蔥' },
+  { name, quantity: 2, configuration: '每份10顆', options: [{ name: '水餃1顆', quantity: 2 }], note: '不要蔥' },
 ]
 const cases = [
   { id: 'base', text: '我要周氏水餃一份', tool: 'add_items_to_cart' },

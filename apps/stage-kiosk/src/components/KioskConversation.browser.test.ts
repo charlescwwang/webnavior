@@ -2,12 +2,14 @@ import type { ChatHistoryItem } from '@proj-airi/stage-ui/types/chat'
 
 import { afterEach, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-vue'
+import { defineComponent, h, shallowRef } from 'vue'
 import { createI18n } from 'vue-i18n'
 
 import KioskConversation from './KioskConversation.vue'
 import KioskDecisionInspector from './KioskDecisionInspector.vue'
 import KioskVoiceDiagnostics from './KioskVoiceDiagnostics.vue'
 
+import { useKioskStreamingReply } from '../composables/useKioskStreamingReply'
 import { interactiveServiceClient } from '../services/interactiveServiceClient'
 import { scenarioRegistry } from '../services/scenario-registry'
 
@@ -169,4 +171,35 @@ it('preserves Taiwanese dish spelling in both customer and assistant bubbles', a
 it('does not add a technical failure badge below a customer request', () => {
   const screen = render(KioskConversation, { props: { ...props, messages: [{ role: 'user', id: 'utterance:1:user', content: '回菜單' }], requestStatuses: { 1: 'failed' } }, global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: {} })] } })
   expect(screen.container.querySelector('.request-status')).toBeNull()
+})
+
+// Report: this chat, 2026-11-16 — repaint SSE text before the completed reply.
+it('paints incremental replies in history and console, then replaces the draft once', async () => {
+  const reply = useKioskStreamingReply()
+  const messages = shallowRef<ChatHistoryItem[]>([])
+  const sending = shallowRef(true)
+  const screen = render(defineComponent({ setup: () => () => h(KioskConversation, {
+    ...props,
+    sending: sending.value,
+    messages: messages.value,
+    streamingAssistantMessage: reply.message.value,
+  }) }), { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })] } })
+  reply.begin(1, 'reply-1')
+  reply.append(1, '您好，')
+  await expect.element(screen.getByText('您好，', { exact: true })).toBeVisible()
+  await expect.poll(() => document.querySelector('.console-reply')?.textContent).toBe('您好，')
+  reply.append(1, '歡迎點餐。')
+  await expect.poll(() => document.querySelector('.console-reply')?.textContent).toBe('您好，歡迎點餐。')
+  expect(messages.value).toEqual([])
+  messages.value = [{ role: 'assistant', id: 'reply-1', content: '您好，歡迎點餐。', slices: [], tool_results: [] }]
+  reply.clear()
+  sending.value = false
+  await expect.poll(() => screen.container.textContent?.split('您好，歡迎點餐。').length).toBe(2)
+  await expect.poll(() => document.querySelector('.console-reply')?.textContent).toBe('您好，歡迎點餐。')
+  // A new request (including JSON mode) has progress, not the old reply.
+  sending.value = true
+  await expect.poll(() => document.querySelector('.console-reply')).toBeNull()
+  reply.append(1, '過期文字')
+  await expect.poll(() => screen.container.textContent?.includes('過期文字')).toBe(false)
+  screen.unmount()
 })

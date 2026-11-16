@@ -1,6 +1,7 @@
 import type { BrowserConversation } from '@proj-airi/stage-shared/browser-conversation'
 import type { ServiceTool } from '@proj-airi/stage-shared/interactive-service'
 import type { OrderingSite } from '@proj-airi/stage-shared/ordering-sites'
+import type { ServicePolicyReply } from '@proj-airi/stage-shared/ordering-tools'
 import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/services/interactiveServiceClient'
 
 import type { BrowserEffect, BrowserPlan, EffectDecision } from '../../../server/src/services/domain/browser-ordering/contracts'
@@ -13,9 +14,10 @@ import type { RecommendationCriteria } from './recommendationSession'
 import { errorMessageFrom } from '@moeru/std'
 import { browserConversationSchema, browserToolNames } from '@proj-airi/stage-shared/browser-conversation'
 import { browserSignInRequiredSchema } from '@proj-airi/stage-shared/interactive-service'
-import { replyToConversation } from '@proj-airi/stage-shared/kiosk-conversation'
+import { contextReplySchema, replyToConversation } from '@proj-airi/stage-shared/kiosk-conversation'
 import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { explicitServingQuantities, normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
+import { customerReplySchema, servicePolicyReplySchema } from '@proj-airi/stage-shared/ordering-tools'
 import { pbCheckoutSchema, pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
 import { menuEntryReceiptSchema } from '@proj-airi/stage-shared/pb-journey'
 import { describePbMeal, pbBasicServing, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
@@ -36,6 +38,8 @@ interface TaskQuestions {
   utteranceId?: number
   /** UI translation boundary for a requested fact the assistant cannot verify. */
   informationUnavailable?: () => string
+  /** Localized service limits; selecting a topic performs no external action. */
+  servicePolicyReply?: (kind: ServicePolicyReply) => string
   /** Manual checkout guidance follows a fresh, visitor-owned native cart review. */
   checkoutGuidance?: (empty: boolean) => string
   /** Host-only terminal evidence after a fully covered single edit is verified. */
@@ -492,7 +496,7 @@ export async function executeBrowserCartTool(client: Pick<ReturnType<typeof crea
           // Main has no public submission tool or model-controlled token.
           return client.execute(submit, { confirmationToken: answer.confirmationToken })
         }
-        return executeBrowserCheckout(client, answer.action, 'method' in answer ? { method: parse(pbInvoiceMethodSchema, answer.method) } : {})
+        return executeBrowserCheckout(client, answer.action, 'method' in answer ? { method: parse(pbInvoiceMethodSchema, answer.method) } : 'phone' in answer ? { phone: answer.phone } : {})
       }
       if (answer?.kind === 'review-cart') {
         const review = client.tools.value.find(tool => tool.name === 'browser_cart_review')
@@ -1175,7 +1179,7 @@ export async function executeBrowserConfirmedAddition(client: Pick<ReturnType<ty
 }
 
 /** Checkout drafts and final questions remain bound to the current visitor and native cart. */
-export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone', input: { method?: string, phone?: string } = {}) {
+export async function executeBrowserCheckout(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, action: 'continue' | 'invoice-options' | 'invoice' | 'phone' | 'phone-confirmed', input: { method?: string, phone?: string } = {}) {
   const task = active
   if (!task?.dialogue || !task.isCurrent())
     return { ok: false, source: 'host', effect: 'none' }
@@ -1197,18 +1201,30 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
   const facts = parse(looseObject({ ...orderingAnswerFactsSchema.entries, cart: cartSnapshotSchema }), raw)
   if (!facts.cart.lines.length)
     return { ok: true, source: 'browser', effect: 'none', customerMessage: '購物車目前沒有餐點。想點哪一道？' }
-  const name = action === 'invoice' ? 'browser_invoice_select' : action === 'phone' ? 'browser_notification_phone' : 'browser_checkout_prepare'
+  const pendingStep = task.dialogue.checkoutStep(raw)
+  if (!task.answerResolved && ((action === 'invoice' && ['cart-review', 'review-checkout'].includes(pendingStep ?? ''))
+    || (action === 'phone' && ['notification-details', 'notification-phone', 'notification-phone-confirm'].includes(pendingStep ?? '')))) {
+    const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')!
+    return executeBrowserCartTool(client, read, { includeCatalog: true })
+  }
+  // A generic confirmation approves the cart, never an unspoken invoice method.
+  // This also covers an expired cart question: list the current choices again.
+  if (action === 'invoice' && /^(?:正確|沒錯|對|是的|確認|確認無誤|好|好的|好了|ok)[。！!，,\s]*$/i.test(task.transcript.trim()))
+    return executeBrowserCheckout(client, 'invoice-options')
+  if (action === 'phone' && pendingStep === 'notification-phone-confirm')
+    return { ok: true, source: 'browser', effect: 'none', customerMessage: orderingMessages['zh-Hant'].checkout.notificationPhone.confirmationRequired }
+  const name = action === 'invoice' ? 'browser_invoice_select' : action === 'phone' || action === 'phone-confirmed' ? 'browser_notification_phone' : 'browser_checkout_prepare'
   const tool = client.tools.value.find(tool => tool.name === name)
   if (!tool)
     throw new Error('目前網站尚未提供這項結帳操作。')
-  let parameters: Record<string, unknown> = {}
+  let parameters: Record<string, unknown> = { focus: action === 'invoice-options' ? 'invoice' : 'next' }
   if (action === 'invoice')
     parameters = { method: parse(pbInvoiceMethodSchema, input.method) }
-  if (action === 'phone') {
+  if (action === 'phone' || action === 'phone-confirmed') {
     const digits = normalizeSlotNumbers(task.transcript).replaceAll(/\D/g, '')
-    if (!input.phone || input.phone !== digits || !/^\d{10,15}$/.test(digits))
+    if (!input.phone || !/^\d{10,15}$/.test(input.phone) || (action === 'phone' && input.phone !== digits))
       return { ok: true, source: 'browser', effect: 'none', customerMessage: '請提供完整通知手機號碼，或直接在畫面填寫。' }
-    parameters = { phone: digits }
+    parameters = { phone: input.phone }
   }
   const result = await client.execute(tool, parameters)
   if (active !== task || !task.isCurrent())
@@ -1225,10 +1241,31 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
     const question = task.dialogue.presentService(binding, { purpose: 'invoice-method', request: task.transcript, question: `發票要用哪種方式？${checkout.methods.map(method => method.label).join('、')}。`, choices: checkout.methods.map(method => ({ id: method.method, description: `選擇${method.label}，只設定發票，不送出訂單。` })) })
     return { ...parsed.output, ...question, dataOnly: false }
   }
+  const selected = checkout.methods.find(method => method.selected)!
+  const invoiceField = checkout.fields.find(field => field.kind === selected.method)
+  const contacts = checkout.fields.filter(field => field.kind === 'phone' || field.kind === 'email')
+  let entryQuestion: { purpose: string, question: string } | undefined
+  // Invoice completion is its own bound question. A spoken "OK" re-reads the
+  // real form before moving to contact details; it never fills a field or submits.
+  if (selected.method !== 'none' && (!invoiceField || !invoiceField.valid)) {
+    const entry = selected.method === 'carrier' || selected.method === 'citizen' ? '掃描或輸入' : '填寫'
+    entryQuestion = { purpose: 'invoice-details', question: `請在畫面${entry}${selected.label}，完成後告訴我「好了」。` }
+  }
+  else if (contacts.some(field => field.value && !field.valid)) {
+    const invalid = contacts.find(field => field.value && !field.valid)!
+    entryQuestion = { purpose: 'notification-details', question: `請在畫面確認${invalid.label}格式，完成後告訴我「好了」。` }
+  }
+  else if (contacts.length && !contacts.some(field => field.value && field.valid)) {
+    entryQuestion = { purpose: 'notification-details', question: orderingMessages['zh-Hant'].checkout.notificationPhone.introduction }
+  }
+  if (entryQuestion) {
+    const question = task.dialogue.presentService(binding, { ...entryQuestion, request: task.transcript, choices: [{ id: 'yes', description: '目前這一步已填好，重新檢查畫面後繼續下一步；不送出訂單。' }, { id: 'no', description: '還沒填好，保留目前畫面及資料。' }] })
+    return { ...parsed.output, ...question, dataOnly: false, effect: 'none' }
+  }
   if (!checkout.ready || !checkout.confirmationToken) {
-    const selected = checkout.methods.find(method => method.selected)!
-    const message = checkout.missing.length ? checkout.missing.join(' ') : '資料已填入，請核對畫面；填寫完成後告訴我「資料填好了」。'
-    return { ...parsed.output, dataOnly: false, effect: 'none', customerMessage: `目前發票方式：${selected.label}。${message}${checkout.missing.length ? '填好後請告訴我「資料填好了」。' : ''}` }
+    const message = checkout.missing[0] ?? '資料已填入，請核對畫面。'
+    const question = task.dialogue.presentService(binding, { purpose: 'checkout-details', request: task.transcript, question: `${message}完成後告訴我「好了」。`, choices: [{ id: 'yes', description: '資料已填好，重新讀取並核對目前訂單；不送出訂單。' }, { id: 'no', description: '先不繼續，保留目前畫面及資料。' }] })
+    return { ...parsed.output, ...question, dataOnly: false, effect: 'none' }
   }
   const cart = parsed.output.cart
   const meals = cart.lines.map(line => describePbMeal(line)).join('、')
@@ -1240,10 +1277,18 @@ export async function executeBrowserCheckout(client: Pick<ReturnType<typeof crea
 
 /** A generic acknowledgement cannot bypass a live purchase question or claim an effect. */
 export async function executeBrowserReply(client: Pick<ReturnType<typeof createInteractiveServiceClient>, 'tools' | 'execute'>, kind: unknown) {
-  const selected = parse(picklist(['greeting', 'acknowledgement', 'hearing-check', 'clarification', 'information-unavailable', 'checkout-guidance']), kind)
+  const selected = parse(customerReplySchema, kind)
   const task = active
   if (!task || !task.isCurrent())
     return { ok: false, source: 'host', status: 'rejected', effect: 'none' }
+  const policy = safeParse(servicePolicyReplySchema, selected)
+  if (policy.success) {
+    if (!task.servicePolicyReply)
+      throw new Error('Service policy replies require the current Kiosk translation context.')
+    // A service boundary cannot consume a meal question or imply a staff,
+    // transport, discount, cart or payment operation has been dispatched.
+    return { ok: true, source: 'host', status: 'conversation', effect: 'none', customerMessage: task.servicePolicyReply(policy.output) }
+  }
   if (task.tableSelectionRequired) {
     const read = client.tools.value.find(tool => tool.name === 'browser_cart_get')
     if (!read)
@@ -1307,5 +1352,5 @@ export async function executeBrowserReply(client: Pick<ReturnType<typeof createI
       throw new Error('Information replies require the current Kiosk translation context.')
     return { ok: true, source: 'host', status: 'conversation', effect: 'none', customerMessage: task.informationUnavailable() }
   }
-  return { ok: true, source: 'host', status: 'conversation', effect: 'none', customerMessage: replyToConversation(selected)!.content }
+  return { ok: true, source: 'host', status: 'conversation', effect: 'none', customerMessage: replyToConversation(parse(contextReplySchema, { kind: selected }).kind)!.content }
 }

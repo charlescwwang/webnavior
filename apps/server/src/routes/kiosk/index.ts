@@ -110,6 +110,7 @@ const priceEvidenceSchema = object({
 })
 
 const conversationMessageSchema = object({
+  budgetMs: optional(pipe(number(), integer(), minValue(1), maxValue(serviceRecoveryLimits.turnMs))),
   utteranceId: optional(pipe(number(), integer(), minValue(1))),
   content: optional(pipe(string(), regex(/\S/), maxLength(8_000))),
   decisionState: optional(pipe(object({
@@ -215,7 +216,7 @@ export interface KioskRoutesOptions {
   mediaService?: KioskMediaService
   /** Server-owned default model selection and Provider dispatch boundary. */
   llmGateway: {
-    complete: (input: { abortSignal?: AbortSignal, body: Record<string, unknown>, modelName: string }) => Promise<Response>
+    complete: (input: { abortSignal?: AbortSignal, budgetMs?: number, body: Record<string, unknown>, modelName: string }) => Promise<Response>
   }
   /** Sole source for the system-wide Webnavior model choices. */
   runtimeModelPolicy: {
@@ -302,6 +303,8 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const parsed = safeParse(browserAnswerSchema, await c.req.json().catch(() => null))
     if (!parsed.success)
       throw createBadRequestError('Invalid browser question answer', 'INVALID_REQUEST')
+    const deadlineAt = Date.now() + 12_000
+    const answerSignal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(12_000)])
     const transcript = await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: c.req.param('visitorSessionId') })
     const current = transcript.entries.findLast(entry => entry.kind === 'user_text')
     const pending = findPresentedQuestion(transcript.entries, parsed.output.questionId)
@@ -314,7 +317,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const result = await decideAnswer(parsed.output, pending, { finite, complete: async (body) => {
       if (!modelName)
         throw new Error('Main model is unavailable.')
-      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(12000)]) })
+      return options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, budgetMs: remainingModelBudget(deadlineAt), abortSignal: answerSignal })
     } })
     // Model IO can outlive this utterance. Neither an old answer nor a new
     // customer's speech may consume the question from this session turn.
@@ -437,6 +440,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const result = safeParse(interactionDecisionSchema, await c.req.json().catch(() => null))
     if (!result.success)
       throw createBadRequestError('Invalid kiosk interaction decision request', 'INVALID_REQUEST', result.issues)
+    const decisionDeadlineAt = Date.now() + (result.output.budgetMs ?? serviceRecoveryLimits.turnMs)
     const session = result.output.visitorSessionId
       ? await options.kioskService.getVisitorSessionForDevice({ deviceId: device.id, visitorSessionId: result.output.visitorSessionId })
       : undefined
@@ -451,7 +455,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       // IDs and expiry belong to browser admission, not language semantics.
       // Exclude their arbitrary numbers from the scope/condition checkpoint.
       const scope = scopeQuestion(effective.backgroundSpeechMode === 'enforce')
-      const response = await options.llmGateway.complete({ modelName, abortSignal: c.req.raw.signal, body: { model: modelName, temperature: 0, messages: [{ role: 'system', content: scope.instructions }, { role: 'user', content: JSON.stringify({ stage: 'answer', customerUtterance: result.output.transcript, confirmedConditions: state.constraints, question: { prompt: state.waitingFor!.question, options: state.waitingFor!.choices.map(choice => ({ id: choice.id, label: choice.description })) } }) }], tools: [scope.tool], tool_choice: 'required' } })
+      const response = await options.llmGateway.complete({ modelName, abortSignal: c.req.raw.signal, budgetMs: remainingModelBudget(decisionDeadlineAt), body: { model: modelName, temperature: 0, messages: [{ role: 'system', content: scope.instructions }, { role: 'user', content: JSON.stringify({ stage: 'answer', customerUtterance: result.output.transcript, confirmedConditions: state.constraints, question: { prompt: state.waitingFor!.question, options: state.waitingFor!.choices.map(choice => ({ id: choice.id, label: choice.description })) } }) }], tools: [scope.tool], tool_choice: 'required' } })
       const payload = await response.json().catch(() => null)
       const parsed = safeParse(object({ choices: array(object({ message: object({ tool_calls: array(object({ function: object({ name: string(), arguments: string() }) })) }) })) }), payload)
       const calls = parsed.success ? parsed.output.choices[0]?.message.tool_calls : undefined
@@ -481,12 +485,12 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       presenceState: result.output.presenceState,
       transcript: result.output.transcript,
     }
-    const runDecision = async (invoke: typeof decisionInput.invoke, progress?: (event: Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>) => Promise<void>, signal: AbortSignal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(result.output.budgetMs ?? serviceRecoveryLimits.turnMs)])) => {
+    const runDecision = async (invoke: typeof decisionInput.invoke, progress?: (event: Omit<ServiceRecoveryProgress, 'continuationId' | 'expiresAt'>) => Promise<void>, signal: AbortSignal = AbortSignal.any([c.req.raw.signal, AbortSignal.timeout(remainingModelBudget(decisionDeadlineAt))])) => {
       const completeResolution = async (body: Record<string, unknown>) => {
         const modelName = await options.runtimeModelPolicy.modelFor('chat')
         if (!modelName)
           throw new Error('No Main model is configured for bounded resolution.')
-        return await options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal })
+        return await options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal, budgetMs: remainingModelBudget(decisionDeadlineAt) })
       }
       const cue = result.output.decisionState?.serviceClarification
       const validCue = cue && cue.expiresAt > Date.now() && cue.contextKey === serviceContextKey(result.output.decisionState!)
@@ -500,7 +504,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       if (!result.output.review && result.output.decisionState?.phase === 'customer_entry' && unresolvedPhone && skip) {
         const modelName = await options.runtimeModelPolicy.modelFor('chat')
         if (modelName) {
-          const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal }))
+          const resolution = await resolvePhoneChoice(result.output.transcript, body => options.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: signal, budgetMs: remainingModelBudget(decisionDeadlineAt) }))
           const trace = result.output.includeTrace ? { trace: { ...(decision.trace && typeof decision.trace === 'object' ? decision.trace : {}), phoneResolution: resolution } } : {}
           if (resolution.choice === 'SKIP_PHONE') {
             const waitingFor = result.output.decisionState.waitingFor
@@ -522,7 +526,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
         conversation: decisionInput.conversation,
         progress,
         signal,
-        complete: (body, abortSignal) => options.llmGateway.complete({ modelName, body, abortSignal }),
+        complete: (body, abortSignal) => options.llmGateway.complete({ modelName, body, abortSignal, budgetMs: remainingModelBudget(decisionDeadlineAt) }),
       })
       signal.throwIfAborted()
       if (result.output.visitorSessionId && recovered.recovery?.rounds?.length)
@@ -701,6 +705,9 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const result = safeParse(conversationMessageSchema, body)
     if (!result.success)
       throw createBadRequestError('Invalid kiosk conversation message', 'INVALID_REQUEST', result.issues)
+    // Every continuation carries the Host's remaining task budget. One accepted
+    // HTTP request keeps the same deadline through model output and reply repair.
+    const deadlineAt = Date.now() + (result.output.budgetMs ?? serviceRecoveryLimits.turnMs)
 
     const transcript = await options.kioskService.getVisitorSessionForDevice({
       deviceId: device.id,
@@ -767,6 +774,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
       return c.body(createKioskReplyEventStream({
         agentInteraction,
         content,
+        deadlineAt,
         decisionState: result.output.decisionState,
         deviceId: device.id,
         kioskService: options.kioskService,
@@ -788,6 +796,7 @@ export function createKioskRoutes(options: KioskRoutesOptions) {
     const answer = await completeKioskReply({
       agentInteraction,
       content,
+      deadlineAt,
       decisionState: result.output.decisionState,
       kioskService: options.kioskService,
       llmGateway: options.llmGateway,
@@ -1065,8 +1074,17 @@ async function parseAssistantReply(response: Response): Promise<KioskCompletion>
   }
 }
 
+/** A continuation or repair spends the current deadline; it never opens a new turn. */
+function remainingModelBudget(deadlineAt: number): number {
+  const remaining = Math.ceil(deadlineAt - Date.now())
+  if (remaining <= 0)
+    throw new ApiError(504, 'KIOSK_MODEL_TIMEOUT', 'Kiosk model task deadline exceeded.')
+  return remaining
+}
+
 async function completeKioskReply(input: {
   actionPrompt?: string
+  deadlineAt?: number
   agentInteraction?: KioskAgentInteractionState
   abortSignal?: AbortSignal
   content?: string
@@ -1081,6 +1099,7 @@ async function completeKioskReply(input: {
   toolResults?: Array<{ content: string, name: string, toolCallId: string }>
   tools?: Array<{ function: { description?: string, name: string, parameters: unknown }, type: 'function' }>
 }): Promise<KioskCompletion> {
+  const deadlineAt = input.deadlineAt ?? Date.now() + serviceRecoveryLimits.turnMs
   const clarification = queryClarification(input.toolResults ?? [])
   if (clarification)
     return { content: clarification, toolCalls: [] }
@@ -1122,8 +1141,8 @@ async function completeKioskReply(input: {
   }
   const sizes = inputMetrics(body, input.decisionState?.context)
   const startedAt = performance.now()
-  const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, modelName, body })
-  const answer = await finishConversationReply({ ...input, signal: input.abortSignal, toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName)
+  const response = await input.llmGateway.complete({ abortSignal: input.abortSignal, budgetMs: remainingModelBudget(deadlineAt), modelName, body })
+  const answer = await finishConversationReply({ ...input, deadlineAt, signal: input.abortSignal, toolResults: input.toolResults ?? [] }, await parseAssistantReply(response), modelName)
   return { ...answer, metrics: { ...sizes, replyRepairRequests: answer.replyRepairRequests ?? 0, durationMs: performance.now() - startedAt, ...(answer.inputTokens !== undefined ? { inputTokens: answer.inputTokens } : {}), ...(answer.reasoningTokens !== undefined ? { reasoningTokens: answer.reasoningTokens } : {}) } }
 }
 
@@ -1136,6 +1155,7 @@ type KioskReplyEvent
     | { message: string, reason: KioskReplyFailureReason, type: 'turn-failed' }
 
 interface KioskReplyStreamInput {
+  deadlineAt: number
   agentInteraction: KioskAgentInteractionState
   content?: string
   decisionState?: KioskConversationDecisionState
@@ -1251,6 +1271,14 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
     throw createBadRequestError('Kiosk 系統尚未設定對話模型。', 'KIOSK_CHAT_POLICY_NOT_CONFIGURED')
 
   const catalogItemIds = input.decisionState?.context?.catalog ? new Set(input.decisionState.context.catalog.items.map(item => item.id)) : undefined
+  const toolPolicy = replyToolPolicy(input)
+  // A draft can precede a later tool call. Only rounds with no commerce tools,
+  // browser context or finite reply validation may expose incremental prose.
+  // History is read-only and does not turn a draft into an operation receipt.
+  const canStreamText = !input.decisionState?.context
+    && !input.decisionState?.browserContext
+    && (!('tools' in toolPolicy) || !toolPolicy.tools?.some(tool => tool.function.name !== 'kiosk_session_history'))
+    && !input.toolResults.some(result => result.name !== 'kiosk_session_history')
   const body = {
     model: modelName,
     messages: [
@@ -1263,14 +1291,17 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
       })),
       ...(input.content ? [{ role: 'user', content: input.content }] : []),
     ],
-    ...replyToolPolicy(input),
+    ...toolPolicy,
     stream: true,
   }
   const sizes = inputMetrics(body, input.decisionState?.context)
   const startedAt = performance.now()
   let firstOutputMs: number | undefined
-  const response = await input.llmGateway.complete({ abortSignal: input.signal, modelName, body })
-  const answer = await finishConversationReply(input, await parseKioskReplyStream(response, onTextDelta, () => {
+  const response = await input.llmGateway.complete({ abortSignal: input.signal, budgetMs: remainingModelBudget(input.deadlineAt), modelName, body })
+  const answer = await finishConversationReply(input, await parseKioskReplyStream(response, (text) => {
+    if (canStreamText)
+      onTextDelta(text)
+  }, () => {
     if (firstOutputMs === undefined) {
       firstOutputMs = performance.now() - startedAt
       onProgress()
@@ -1281,7 +1312,7 @@ async function streamKioskReply(input: KioskReplyStreamInput, onTextDelta: (text
 
 /** Consumes only the Server reply tool; browser effects still use their own receipts. */
 async function finishConversationReply(
-  input: Pick<KioskReplyStreamInput, 'decisionState' | 'toolResults' | 'llmGateway'> & { signal?: AbortSignal },
+  input: Pick<KioskReplyStreamInput, 'deadlineAt' | 'decisionState' | 'toolResults' | 'llmGateway'> & { signal?: AbortSignal },
   answer: KioskCompletion,
   modelName: string,
 ): Promise<KioskCompletion> {
@@ -1294,7 +1325,7 @@ async function finishConversationReply(
   const browserCalls = answer.toolCalls.filter(call => call.function.name !== replyTool.function.name)
   if (browserCalls.length || input.toolResults.some(result => result.name !== 'kiosk_session_history'))
     return { ...answer, toolCalls: browserCalls }
-  const selected = await selectReply({ answer: answer.content, calls: answer.toolCalls, context, requireMenuRead: input.decisionState?.requireMenuRead === true && (input.decisionState.readOnly === true || !context.catalog?.complete), complete: body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, abortSignal: input.signal }) })
+  const selected = await selectReply({ answer: answer.content, calls: answer.toolCalls, context, requireMenuRead: input.decisionState?.requireMenuRead === true && (input.decisionState.readOnly === true || !context.catalog?.complete), complete: body => input.llmGateway.complete({ modelName, body: { ...body, model: modelName }, budgetMs: remainingModelBudget(input.deadlineAt), abortSignal: input.signal }) })
   return { ...answer, toolCalls: [], reply: selected.reply, replyRepairRequests: Number(selected.repaired) }
 }
 

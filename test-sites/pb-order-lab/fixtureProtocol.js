@@ -65,7 +65,7 @@ function submittedPage(order, url, origin) {
   }
   const details = order.items.map((line, index) => {
     const product = products.find(product => product.id === line.productId)
-    return { id: index + 1, order_id: order.vendorId, from_id: null, item_type: 'product', item_id: product.vendorId, buyer_name: null, add_from: 'test', ai_conversation_id: null, amount: line.quantity, unit_price: line.unitPrice, price: line.subtotal, other_costs: 0, change_logs: [], status: 10, note: line.note, created_at: created, updated_at: updated, item: { id: product.vendorId, name: product.name }, product_prices: [{ item_type: 'product', item_id: product.vendorId, parent_id: null, product_attrs: line.extra ? [{ attr_id: 774, amount: line.extra, unit_price: 8, attr: { name: '水餃' } }] : [] }] }
+    return { id: index + 1, order_id: order.vendorId, from_id: null, item_type: 'product', item_id: product.vendorId, buyer_name: null, add_from: 'test', ai_conversation_id: null, amount: line.quantity, unit_price: line.unitPrice, price: line.subtotal, other_costs: 0, change_logs: [], status: 10, note: line.note, created_at: created, updated_at: updated, item: { id: product.vendorId, name: product.name }, product_prices: [{ item_type: 'product', item_id: product.vendorId, parent_id: null, product_attrs: line.extra ? [{ attr_id: 774, amount: line.extra, unit_price: 8, attr: { name: '水餃1顆' } }] : [] }] }
   })
   return { component: choosing ? 'Order/ChoosePayment' : 'Order/Show', url, version: revision, props: {
     storeHash: '1kgJeql',
@@ -115,7 +115,7 @@ export function pageSnapshot(state, url) {
       note: line.note,
       item_type: 'product',
       item: { id: product.vendorId, name: product.name },
-      product_prices: [{ item_type: 'product', item_id: product.vendorId, parent_id: null, product_attrs: line.extra ? [{ attr_id: 774, amount: line.extra, unit_price: 8, attr: { name: '水餃' } }] : [] }],
+      product_prices: [{ item_type: 'product', item_id: product.vendorId, parent_id: null, product_attrs: line.extra ? [{ attr_id: 774, amount: line.extra, unit_price: 8, attr: { name: '水餃1顆' } }] : [] }],
     }
   })
   return {

@@ -8,6 +8,14 @@ export const orderingMessages = {
     queryActions: { clarify: '你想調整價位，還是換餐點種類？', exhausted: '目前條件下沒有其他餐點了。你想調整價位，還是換餐點種類？' },
     queryScope: { expired: '菜單或推薦已更新，請重新提出查詢。', question: '你想看剛才推薦的，還是整份菜單符合的餐點？', clarification: '剛才推薦的是只查剛才介紹的那幾道；整份菜單是查店裡所有餐點。你想查哪個範圍？', shown: '剛才推薦的', catalog: '整份菜單' },
     checkout: {
+      notificationPhone: {
+        introduction: '接下來請提供通知手機，可以分段說；完整後我會覆誦確認。也可以在畫面填寫電子信箱，完成後告訴我「好了」。',
+        invalid: '號碼格式不正確，請重新報通知手機，從 0 9 開始，共 10 碼。',
+        confirm: '通知手機是 {digits}，正確嗎？確認後才填入，不會送出訂單。',
+        partial: '已收到 {digits}，共 {count} 碼，請繼續報後面的號碼；說「重來」可重新輸入。',
+        restart: '請重新報通知手機，從 0 9 開始，共 10 碼，可以分段說。',
+        confirmationRequired: '請先確認剛才覆誦的通知手機號碼，正確後才會填入。',
+      },
       invoiceQuestion: '請選擇手機載具、自然人憑證、公司統編，或略過並捐贈發票。',
       returnToOrder: '返回訂單內容，保留餐點',
       donation: '略過，捐贈發票',
@@ -89,6 +97,14 @@ export const orderingMessages = {
     queryActions: { clarify: 'Would you like to change the price range or the type of food?', exhausted: 'There are no more dishes under the current conditions. Would you like to change the price range or the type of food?' },
     queryScope: { expired: 'The menu or recommendations have changed. Please start your query again.', question: 'Would you like to check the previous recommendations or matching dishes from the whole menu?', clarification: 'Previous recommendations means only the dishes just introduced; the whole menu means all dishes offered here. Which would you like to check?', shown: 'Previous recommendations', catalog: 'Whole menu' },
     checkout: {
+      notificationPhone: {
+        introduction: 'Please provide your notification mobile number. You may say it in parts; I will read it back for confirmation. You can also enter an email address on screen and say done.',
+        invalid: 'Please start again with a ten-digit mobile number beginning with 0 9.',
+        confirm: 'Your notification number is {digits}. Is that correct? Confirmation fills the field only; it does not submit the order.',
+        partial: 'Received {digits}, {count} digits so far. Please continue, or say start again to restart.',
+        restart: 'Please start again with a ten-digit mobile number beginning with 0 9. You can say it in parts.',
+        confirmationRequired: 'Please confirm the number I just read back before it is entered.',
+      },
       invoiceQuestion: 'Choose a mobile carrier, citizen certificate, business tax ID, or skip and donate the invoice.',
       returnToOrder: 'Return to order, keep items',
       donation: 'Skip and donate invoice',

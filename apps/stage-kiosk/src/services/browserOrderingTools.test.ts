@@ -11,6 +11,7 @@ import { array, looseObject, parse, string } from 'valibot'
 import { afterEach, expect, it, vi } from 'vitest'
 import { readonly, shallowRef } from 'vue'
 
+import { presentedQuestionSchema } from '../../../server/src/services/domain/kiosk-interaction-decision/contracts'
 import { beginBrowserCartTask, executeBrowserCartTool, prepareBrowserQuestionAnswer, readBrowserConversation } from './browserCartTask'
 import { createBrowserDialogue } from './browserDialogue'
 import { createBrowserFastPathSource } from './browserFastPath'
@@ -20,6 +21,19 @@ import { runFastPath } from './kiosk-fast-path'
 
 const cleanup: Array<() => void> = []
 afterEach(() => cleanup.splice(0).forEach(dispose => dispose()))
+
+// Report: this chat, Nov16 — real-model boundary cases fell back to generic acknowledgements.
+it.each(['off-topic', 'food-safety', 'promotion-policy', 'unsupported-budget', 'unsupported-delivery', 'unsupported-taxi', 'menu-unavailable', 'unsupported-permission'] as const)('renders the %s policy without website effects or consuming the pending meal question', async (replyType) => {
+  const { call, dialogue, execute } = setup('先問其他事情', true)
+  const servicePolicyReply = vi.fn(() => `localized ${replyType}`)
+  cleanup.push(beginBrowserCartTask('先問其他事情', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue, servicePolicyReply }))
+  const result = await call('reply_to_customer', { replyType })
+  expect(result.customerMessage).toBe(`localized ${replyType}`)
+  expect(result.effect).toBe('none')
+  expect(servicePolicyReply).toHaveBeenCalledWith(replyType)
+  expect(execute).not.toHaveBeenCalled()
+  expect(dialogue.hasPending()).toBe(true)
+})
 function setup(transcript: string, pending = false, labels: CatalogLabel[] = []) {
   const answer = vi.fn<Parameters<typeof createBrowserDialogue>[0]['answer']>(async () => ({ kind: 'UNCERTAIN', provider: 'unavailable' }))
   const dialogue = createBrowserDialogue({ owner: () => 'visitor', documentId: () => 'document', answer, catalogLabels: () => labels })
@@ -31,12 +45,16 @@ function setup(transcript: string, pending = false, labels: CatalogLabel[] = [])
   const tools = shallowRef<ServiceTool[]>(names.map(name => ({ name, description: '', inputSchema: { type: 'object' }, origin: 'http://127.0.0.1:5188' })))
   const execute = vi.fn<(tool: ServiceTool, input: Record<string, unknown>) => Promise<unknown>>(async (tool, input) => {
     if (['browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone'].includes(tool.name)) {
-      if (tool.name === 'browser_invoice_select')
+      if (tool.name === 'browser_invoice_select') {
         checkout.methods.forEach(method => method.selected = method.method === input.method)
+        const method = checkout.methods.find(method => method.selected)!
+        checkout.fields = method.method === 'none' ? [] : [{ kind: method.method, label: method.label, value: '', valid: false }]
+        checkout.ready = false
+      }
       if (tool.name === 'browser_notification_phone') {
-        checkout.fields = [{ kind: 'phone', label: '通知手機', value: String(input.phone), valid: true }]
-        checkout.missing = []
-        checkout.ready = true
+        checkout.fields = [...checkout.fields.filter(field => field.kind !== 'phone'), { kind: 'phone', label: '通知手機', value: String(input.phone), valid: true }]
+        checkout.ready = checkout.fields.every(field => field.valid)
+        checkout.missing = checkout.fields.filter(field => !field.valid).map(field => `請填寫${field.label}。`)
       }
       return { ok: true, source: 'browser', page: 'cart', dataOnly: true, cart: structuredClone(facts.cart), checkout: { ...structuredClone(checkout), ...(checkout.ready && tool.name === 'browser_checkout_prepare' ? { confirmationToken: 'native-once' } : {}) } }
     }
@@ -127,10 +145,12 @@ it('advances cart confirmation to invoice fields and uses a separate one-use fin
   nextTurn('我要用載具')
   const selected = await call('choose_invoice_method', { method: 'carrier' })
   expect(selected.customerMessage).toContain('手機載具')
-  expect(selected).not.toHaveProperty('pendingCustomerChoice')
+  expect(selected.pendingCustomerChoice.question).toContain('手機載具')
+  checkout.fields[0] = { kind: 'carrier', label: '手機載具', value: '/ABC1234', valid: true }
   nextTurn('通知手機0912345678')
   await call('set_invoice_notification_phone', { phone: '0912345678' })
   nextTurn('資料填好了')
+  answer.mockResolvedValueOnce({ kind: 'ANSWER', choiceId: 'yes', provider: 'system-one' })
   const final = await call('continue_checkout', {})
   expect(final).toMatchObject({ dataOnly: false, pendingCustomerChoice: { question: expect.stringContaining('確認送出訂單嗎') } })
   expect(final.pendingCustomerChoice.question).toContain('雞腿飯 3 份')
@@ -148,13 +168,118 @@ it('advances cart confirmation to invoice fields and uses a separate one-use fin
   expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(1)
 })
 
+// Report: this chat, Nov16 — "正確" adopted the default invoice without listing choices.
+it('lists invoice choices when Main tries to treat cart confirmation as choosing no carrier', async () => {
+  const { call, facts, dialogue, checkout, execute } = setup('結帳')
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('open_cart', {})
+  cleanup.push(beginBrowserCartTask('正確', { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const result = await call('choose_invoice_method', { method: 'none' })
+  expect(result.customerMessage).toContain('發票要用哪種方式')
+  expect(result.customerMessage).toContain('無載具')
+  expect(result.customerMessage).toContain('手機載具')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_invoice_select')).toHaveLength(0)
+})
+
+// Report: this chat, Nov16 — phone fragments were rejected instead of accumulated.
+it('collects phone fragments in the bound contact question and fills only after read-back confirmation', async () => {
+  const { call, client, facts, dialogue, checkout, execute } = setup('手機載具')
+  Object.assign(facts, { page: 'cart', checkout })
+  await call('choose_invoice_method', { method: 'carrier' })
+  checkout.fields[0] = { kind: 'carrier', label: '手機載具', value: '/ABC1234', valid: true }
+  checkout.fields.push({ kind: 'phone', label: '通知手機', value: '', valid: false })
+  const turn = async (text: string) => {
+    cleanup.push(beginBrowserCartTask(text, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+    const answer = await prepareBrowserQuestionAnswer(client)
+    expect(answer).toBeTypeOf('function')
+    return parse(looseObject({ customerMessage: string() }), await answer!())
+  }
+  await turn('好了')
+  expect((await turn('0912')).customerMessage).toContain('4 碼')
+  expect((await turn('345')).customerMessage).toContain('7 碼')
+  const complete = await turn('678')
+  expect(complete.customerMessage).toContain('0 9 1 2 3 4 5 6 7 8')
+  expect(complete.customerMessage).toContain('正確嗎')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_notification_phone')).toHaveLength(0)
+  await turn('正確')
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_notification_phone' }), { phone: '0912345678' })
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+})
+
+// Report: this chat, Nov16 — invoice and contact guidance were merged, then "OK" did not advance.
+it('guides invoice entry and notification details one step at a time before final submission consent', async () => {
+  const { call, client, facts, dialogue, checkout, execute } = setup('手機載具')
+  Object.assign(facts, { page: 'cart', checkout })
+  const nextTurn = (text: string) => cleanup.push(beginBrowserCartTask(text, { isCurrent: () => true, decide: async () => ({ choice: 'ALLOW', provider: 'main', admission: 'issued-plan' }), dialogue }))
+  const receiptSchema = looseObject({ pendingCustomerChoice: presentedQuestionSchema })
+  const selected = await call('choose_invoice_method', { method: 'carrier' })
+  expect(selected.pendingCustomerChoice.question).toContain('手機載具')
+  expect(selected.pendingCustomerChoice.question).not.toContain('通知手機')
+  expect(selected.pendingCustomerChoice.question).not.toContain('電子信箱')
+  nextTurn('ok')
+  const unfinished = await prepareBrowserQuestionAnswer(client)
+  const repeated = parse(receiptSchema, await unfinished!())
+  expect(repeated.pendingCustomerChoice.question).toContain('手機載具')
+  expect(repeated.pendingCustomerChoice.question).not.toContain('通知手機')
+  nextTurn('先不要')
+  const wait = await prepareBrowserQuestionAnswer(client)
+  const waiting = parse(receiptSchema, await wait!())
+  expect(waiting.pendingCustomerChoice.question).toContain('手機載具')
+  checkout.fields[0] = { kind: 'carrier', label: '手機載具', value: '/ABC1234', valid: true }
+  checkout.fields.push({ kind: 'phone', label: '通知手機', value: '', valid: false }, { kind: 'email', label: '通知電子信箱', value: '', valid: false })
+  checkout.missing = ['請填寫通知手機或電子信箱。']
+  nextTurn('ok')
+  const invoiceDone = await prepareBrowserQuestionAnswer(client)
+  const contact = parse(receiptSchema, await invoiceDone!())
+  expect(contact.pendingCustomerChoice.question).toContain('通知手機')
+  expect(contact.pendingCustomerChoice.question).toContain('電子信箱')
+  expect(contact.pendingCustomerChoice.question).not.toContain('手機載具')
+  expect(contact.pendingCustomerChoice.question).not.toContain('確認送出')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+  checkout.fields.find(field => field.kind === 'phone')!.value = '0912345678'
+  checkout.fields.find(field => field.kind === 'phone')!.valid = true
+  checkout.missing = []
+  checkout.ready = true
+  nextTurn('ok')
+  const contactDone = await prepareBrowserQuestionAnswer(client)
+  const summary = parse(receiptSchema, await contactDone!())
+  expect(summary.pendingCustomerChoice.question).toContain('確認送出訂單嗎')
+  expect(summary.pendingCustomerChoice.question).toContain('0912345678')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_order_submit')).toHaveLength(0)
+})
+
+// Report: this chat, Nov16 19:57 — 8-piece serving was falsely reported adjusted.
+it('does not dispatch or certify an unchanged serving count as a completed customization', async () => {
+  const { facts, call, execute } = setup('我水餃要10顆')
+  facts.products[0].name = '周氏水餃(最低8顆)'
+  Object.assign(facts.cart.lines[0], { name: '周氏水餃(最低8顆)', quantity: 1, unitPrice: 64 })
+  const result = await call('set_cart_item_quantity', { target: { name: '周氏水餃' }, quantity: 1 })
+  expect(result.status).toBe('proposal_rejected')
+  expect(result.effect).toBe('none')
+  expect(result.dataOnly).toBe(true)
+  expect(result.customerMessage).not.toContain('已調整')
+  expect(execute.mock.calls.filter(([tool]) => tool.name === 'browser_cart_quantity')).toHaveLength(0)
+  expect(facts.cart.lines[0].quantity).toBe(1)
+})
+
+it('resolves the unique dumpling extra by its observed option identity instead of a group heading', async () => {
+  const { facts, call, execute } = setup('水餃每份10顆，一份')
+  const product = facts.products[0]
+  product.name = '周氏水餃(最低8顆)'
+  product.configurations[0].unitPrice = 64
+  product.configurations[0].groups = [{ ref: 'extra', name: '加量選項', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
+  const result = await call('add_items_to_cart', { items: [{ name: product.name, quantity: 1, piecesPerServing: 10 }] })
+  expect(result.status).toBe('verified')
+  expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1, unitPrice: 80, selection: { version: 'config', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }))
+})
+
 // Report: this chat, Nov14; servings and dumpling extras must remain distinct.
 it.each([8, 10, 12])('compiles %i dumplings per serving using current option prices', async (pieces) => {
   const { facts, call, execute } = setup('周氏水餃(最低8顆)兩份')
   const product = facts.products[0]
   product.name = '周氏水餃(最低8顆)'
   product.configurations[0].unitPrice = 64
-  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃', unitPrice: 9, maximum: 100 }] }]
+  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 9, maximum: 100 }] }]
   const result = await call('add_items_to_cart', { items: [{ name: product.name, quantity: 2, piecesPerServing: pieces }] })
   expect(result.status).toBe('verified')
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 2, unitPrice: 64 + (pieces - 8) * 9, selection: { version: 'config', variantRef: '', choices: pieces === 8 ? [] : [{ ref: 'dumpling', quantity: pieces - 8 }] } }))
@@ -226,7 +351,7 @@ it('uses the base eight-piece serving when no extra is requested', async () => {
   const { facts, call, execute } = setup('周氏水餃一份')
   facts.products[0].name = '周氏水餃(最低8顆)'
   facts.products[0].configurations[0].unitPrice = 64
-  facts.products[0].configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃', unitPrice: 8, maximum: 100 }] }]
+  facts.products[0].configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
   expect(await call('add_items_to_cart', { items: [{ name: '周氏水餃', quantity: 1 }] })).toMatchObject({ status: 'verified' })
   expect(execute).toHaveBeenCalledWith(expect.objectContaining({ name: 'browser_cart_add' }), expect.objectContaining({ quantity: 1, unitPrice: 64, selection: { version: 'config', variantRef: '', choices: [] } }))
 })
@@ -234,8 +359,8 @@ it('uses the base eight-piece serving when no extra is requested', async () => {
 it.each([7, 10])('rejects invalid or contradictory dumpling pieces before writing: %i', async (pieces) => {
   const { facts, call, execute } = setup('周氏水餃十顆一份')
   facts.products[0].name = '周氏水餃(最低8顆)'
-  facts.products[0].configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃', unitPrice: 8, maximum: 100 }] }]
-  expect(await call('add_items_to_cart', { items: [{ name: '周氏水餃', quantity: 1, piecesPerServing: pieces, options: [{ group: '加量', name: '水餃', quantity: 4 }] }] })).toMatchObject({ status: 'rejected' })
+  facts.products[0].configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
+  expect(await call('add_items_to_cart', { items: [{ name: '周氏水餃', quantity: 1, piecesPerServing: pieces, options: [{ group: '加量', name: '水餃1顆', quantity: 4 }] }] })).toMatchObject({ status: 'rejected' })
   expect(execute.mock.calls.some(([tool]) => tool.name === 'browser_cart_add')).toBe(false)
 })
 
@@ -461,7 +586,7 @@ it('adds the base dumpling serving on assent without Main when the only group is
   product.name = '周氏水餃(最低8顆)'
   product.price = 64
   product.configurations[0].unitPrice = 64
-  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃', unitPrice: 8, maximum: 100 }] }]
+  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
   expect(await call('point_to_menu_items', { names: [product.name], purpose: 'recommendation' })).toMatchObject({ pendingCustomerChoice: { question: '周氏水餃基本每份8顆，最少8顆，可以加量。要來一份周氏水餃嗎？' } })
   expect(dialogue.canAnswerLocally(facts, '好，來十顆')).toBe(false)
   expect(dialogue.canAnswerLocally(facts, '好，來十個')).toBe(false)
@@ -487,7 +612,7 @@ it('adds a named dumpling serving after answering quantity without losing the su
   product.name = '周氏水餃(最低8顆)'
   product.price = 64
   product.configurations[0].unitPrice = 64
-  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃', unitPrice: 8, maximum: 100 }] }]
+  product.configurations[0].groups = [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', unitPrice: 8, maximum: 100 }] }]
   dialogue.presentQuantity(facts, product.ref, '那我要吃水餃')
   const decide = vi.fn(async () => ({ choice: 'CLARIFY' as const, provider: 'unavailable' as const }))
   cleanup.push(beginBrowserCartTask('一份', { utteranceId: 18, intentSource: 'jev', isCurrent: () => true, decide, dialogue }))

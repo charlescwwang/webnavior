@@ -15,8 +15,9 @@ it('moves one live console into its popup, retaining input, updates and submissi
   const onSimulate = vi.fn()
   const onFloatingChange = vi.fn()
   const trace = shallowRef('first trace')
+  const reply = shallowRef('您好，')
   const screen = render(defineComponent({ setup: () => () => h('main', [
-    h(KioskTextConsole, { dockTarget: '#popup-fallback', nativePopup: true, trace: trace.value, onSimulate, onFloatingChange }),
+    h(KioskTextConsole, { dockTarget: '#popup-fallback', nativePopup: true, trace: trace.value, reply: reply.value, onSimulate, onFloatingChange }),
     h('div', { id: 'popup-fallback' }),
   ]) }), { global: { plugins: [createI18n({ legacy: false, locale: 'zh-Hant', messages: { 'zh-Hant': { stage: zhHant } } })] } })
   let popup: Window | null = null
@@ -41,6 +42,10 @@ it('moves one live console into its popup, retaining input, updates and submissi
     trace.value = 'second trace'
     await nextTick()
     expect(panel.querySelector('pre')!.textContent).toBe('second trace')
+    expect(panel.querySelector('.console-reply')!.textContent).toBe('您好，')
+    reply.value = '您好，歡迎點餐。'
+    await nextTick()
+    expect(panel.querySelector('.console-reply')!.textContent).toBe('您好，歡迎點餐。')
     popup!.document.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
     expect(onSimulate).toHaveBeenCalledTimes(1)
     expect(onSimulate).toHaveBeenCalledWith('雞腿便當一份')

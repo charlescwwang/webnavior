@@ -16,10 +16,10 @@ const args = { version: 'cart', productRef: 'private-product', quantity: 2, unit
 it.each([8, 10])('binds a public dumpling piece count of %i to exactly the compiled extras', (pieces) => {
   const input = { items: [{ name: '周氏水餃(最低8顆)', quantity: 2, piecesPerServing: pieces }] }
   const entries = [entry('user', 'user_text', '水餃兩份'), entry('issued', 'assistant_text', '', { browserAuthority: { source: 'main', userEntryId: 'user', readOnly: false }, toolCalls: [{ id: 'pieces', function: { name: 'add_items_to_cart', arguments: JSON.stringify(input) } }] })]
-  const options = pieces === 8 ? [] : [{ name: '水餃', quantity: pieces - 8 }]
+  const options = pieces === 8 ? [] : [{ name: '水餃1顆', quantity: pieces - 8 }]
   const plan = parse(browserPlanSchema, { source: 'main', toolName: 'browser_cart_add', arguments: JSON.stringify({ ...args, quantity: 2 }), effect: { ...effect, transcript: '水餃兩份', serving: { productName: input.items[0].name, variantName: '', options }, deltas: [{ name: input.items[0].name, kind: 'product', mode: 'increase', quantity: 2 }] } })
   expect(resolvePlan(entries, plan)).toMatchObject({ provider: 'main' })
-  expect(resolvePlan(entries, { ...plan, effect: { ...plan.effect, serving: { ...plan.effect.serving!, options: [{ name: '水餃', quantity: 4 }] } } })).toBeUndefined()
+  expect(resolvePlan(entries, { ...plan, effect: { ...plan.effect, serving: { ...plan.effect.serving!, options: [{ name: '水餃1顆', quantity: 4 }] } } })).toBeUndefined()
 })
 
 it('binds copying customization to the observed source and preserves unspecified options', () => {
@@ -35,9 +35,9 @@ it('admits a complete finite dumpling request but rejects a changed extra quanti
   const transcript = '周氏水餃(最低8顆)十顆兩份'
   const name = '周氏水餃(最低8顆)'
   const entries = [entry('user', 'user_text', transcript, { utteranceId: 19 }), entry('finite', 'service_event', '', { browserAuthority: { source: 'system-one', actionId: 'intent:add-item', transcript, utteranceId: 19 } })]
-  const plan = parse(browserPlanSchema, { source: 'system-one', toolName: 'browser_cart_add', arguments: JSON.stringify({ ...args, selection: { version: 'cfg', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }), effect: { ...effect, transcript, serving: { productName: name, variantName: '', options: [{ name: '水餃', quantity: 2 }] }, deltas: [{ name, kind: 'product', mode: 'increase', quantity: 2 }, { name: '水餃', kind: 'option', mode: 'increase', quantity: 4 }] } })
+  const plan = parse(browserPlanSchema, { source: 'system-one', toolName: 'browser_cart_add', arguments: JSON.stringify({ ...args, selection: { version: 'cfg', variantRef: '', choices: [{ ref: 'dumpling', quantity: 2 }] } }), effect: { ...effect, transcript, serving: { productName: name, variantName: '', options: [{ name: '水餃1顆', quantity: 2 }] }, deltas: [{ name, kind: 'product', mode: 'increase', quantity: 2 }, { name: '水餃1顆', kind: 'option', mode: 'increase', quantity: 4 }] } })
   expect(resolvePlan(entries, plan)).toMatchObject({ provider: 'system-one' })
-  expect(resolvePlan(entries, { ...plan, effect: { ...plan.effect, serving: { ...plan.effect.serving!, options: [{ name: '水餃', quantity: 3 }] } } })).toBeUndefined()
+  expect(resolvePlan(entries, { ...plan, effect: { ...plan.effect, serving: { ...plan.effect.serving!, options: [{ name: '水餃1顆', quantity: 3 }] } } })).toBeUndefined()
 })
 
 it('matches a public Main item call to its privately compiled native addition and rejects changed counts', () => {

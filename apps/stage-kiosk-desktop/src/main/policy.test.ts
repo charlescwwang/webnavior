@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
-import { clipBounds, isHostClipboardWrite, isHostMediaRequest, isHostPage, parsePageUrl } from './policy'
+import { clipBounds, isHostClipboardWrite, isHostMediaRequest, isHostPage, isTextConsoleRequest, parsePageUrl } from './policy'
+
+// Report: this chat, 2026-11-16 — public HTTPS Electron has no floating text console.
+it('admits the HTTPS host text console when Chromium omits the blank-page referrer', () => {
+  const entry = new URL('https://kiosk.example.test/kiosk/')
+  const request = { url: 'about:blank', frameName: 'airi-kiosk-text-console', referrer: { url: '', policy: 'strict-origin-when-cross-origin' as const } }
+  expect(isTextConsoleRequest(`${entry.href}#/`, entry, request)).toBe(true)
+  expect(isTextConsoleRequest('https://vendor.example.test/', entry, request)).toBe(false)
+  expect(isTextConsoleRequest(`${entry.origin}/admin`, entry, request)).toBe(false)
+  expect(isTextConsoleRequest(entry.href, entry, { ...request, frameName: 'other-popup' })).toBe(false)
+  expect(isTextConsoleRequest(entry.href, entry, { ...request, url: 'https://vendor.example.test/' })).toBe(false)
+  expect(isTextConsoleRequest(entry.href, entry, { ...request, referrer: { ...request.referrer, url: 'https://vendor.example.test/' } })).toBe(false)
+  expect(isTextConsoleRequest(entry.href, entry, { ...request, referrer: { ...request.referrer, url: entry.origin } })).toBe(true)
+  expect(isTextConsoleRequest(entry.href, entry, { ...request, referrer: { ...request.referrer, url: 'invalid' } })).toBe(false)
+})
 
 describe('kiosk desktop navigation policy', () => {
   it('allows TLS websites and loopback development without embedded credentials', () => {

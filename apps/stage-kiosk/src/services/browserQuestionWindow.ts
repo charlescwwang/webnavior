@@ -99,7 +99,7 @@ export function createBrowserQuestionWindow(now = Date.now) {
       // Checkout answers authorize the observed cart, not every menu item's
       // pickup-dependent configuration. Final submission independently checks
       // the native form/token; owner, document, cart and expiry still bind here.
-      const cartQuestion = ['review-checkout', 'cart-review', 'invoice-method', 'submit-order'].includes(input.purpose)
+      const cartQuestion = ['review-checkout', 'cart-review', 'invoice-method', 'invoice-details', 'notification-details', 'notification-phone', 'notification-phone-confirm', 'checkout-details', 'submit-order'].includes(input.purpose)
       const binding = structuredClone({ ...snapshot, products: cartQuestion ? [] : snapshot.products })
       // Replacing a service offer retires it permanently. Only an unfinished
       // product/quantity task underneath can resume after the new offer ends.

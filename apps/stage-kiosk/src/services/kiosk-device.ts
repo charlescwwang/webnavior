@@ -224,6 +224,8 @@ export async function endKioskVisitorSession(input: {
  */
 export async function streamKioskConversationMessage(
   input: {
+    /** Remaining Host task budget; tool continuations cannot start a fresh deadline. */
+    budgetMs?: number
     content?: string
     utteranceId?: number
     decisionState?: KioskConversationDecisionState
@@ -242,7 +244,7 @@ export async function streamKioskConversationMessage(
       'Accept': 'text/event-stream',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content: input.content, utteranceId: input.utteranceId, decisionState: input.decisionState, toolResults: input.toolResults ?? [], tools: input.tools }),
+    body: JSON.stringify({ budgetMs: input.budgetMs, content: input.content, utteranceId: input.utteranceId, decisionState: input.decisionState, toolResults: input.toolResults ?? [], tools: input.tools }),
   })
   if (!response.ok || !response.body)
     throw new KioskDeviceRequestError(response.status, await response.text())

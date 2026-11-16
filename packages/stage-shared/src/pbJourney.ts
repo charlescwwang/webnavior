@@ -6,6 +6,8 @@ export interface PbJourney {
   readonly store: string
   readonly flow: 'pick_up' | 'internal_use'
   readonly buyer: 'member' | 'guest'
+  /** Allows Host-confirmed order creation; never grants payment automation. */
+  readonly canSubmit: boolean
   readonly basePath: string
   readonly menuPath: string
   readonly cartPath: string
@@ -13,11 +15,12 @@ export interface PbJourney {
 }
 
 const deployments = [
-  { origin: 'https://app.esgpb.com', store: '1kgJeql', flow: 'pick_up', buyer: 'member' },
-  { origin: 'https://app.esgpb.com', store: '1kgJeql', flow: 'internal_use', buyer: 'guest' },
-  { origin: 'https://app-205-rd.esgpb.com', store: '1kAMNok', flow: 'internal_use', buyer: 'guest' },
+  { origin: 'https://app.esgpb.com', store: '1kgJeql', flow: 'pick_up', buyer: 'member', canSubmit: false },
+  // Merchant-authorized unpaid orders; final summary assent remains mandatory.
+  { origin: 'https://app.esgpb.com', store: '1kgJeql', flow: 'internal_use', buyer: 'guest', canSubmit: true },
+  { origin: 'https://app-205-rd.esgpb.com', store: '1kAMNok', flow: 'internal_use', buyer: 'guest', canSubmit: false },
   // Explicit offline simulator; other loopback ports/stores remain untrusted.
-  { origin: 'http://127.0.0.1:5188', store: '1kgJeql', flow: 'internal_use', buyer: 'guest' },
+  { origin: 'http://127.0.0.1:5188', store: '1kgJeql', flow: 'internal_use', buyer: 'guest', canSubmit: true },
 ] as const
 
 /** Resolves only reviewed menu/cart/table pages; never widens access to a whole PB origin. */

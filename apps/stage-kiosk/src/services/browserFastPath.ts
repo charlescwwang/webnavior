@@ -10,7 +10,7 @@ import { labelCatalog } from '@proj-airi/stage-shared/ordering-sites'
 import { normalizeSlotNumbers, quantityFromTranscript } from '@proj-airi/stage-shared/ordering-slots'
 import { orderingNextActions } from '@proj-airi/stage-shared/ordering-tools'
 import { pbSubmissionResultSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { parsePbDumplingServings } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { parsePbDumplingServings, pbDumplingExtraName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { productConfigurationSchema } from '@proj-airi/stage-shared/product-configuration'
 import { productFragment, productMentions } from '@proj-airi/stage-shared/product-discovery'
 import { browserRecommendationLimit } from '@proj-airi/stage-shared/product-presentation'
@@ -211,7 +211,7 @@ export function createBrowserFastPathSource(io: {
           candidates.push({ id: 'intent:add-item', description: `新增${product.name}${amount}份，每份${configuration.unitPrice}元，使用目前基本配置；保留原本的購物車，不含加購、備註或其他需求。` })
         }
         const dumplings = parsePbDumplingServings(transcript, product.name, matchedLabel)
-        const extras = configuration?.groups.filter(group => group.name === '加量').flatMap(group => group.choices.filter(choice => choice.name === '水餃')) ?? []
+        const extras = configuration?.groups.flatMap(group => group.choices.filter(choice => choice.name === pbDumplingExtraName)) ?? []
         if (dumplings && configuration && !configuration.variantRef && extras.length === 1 && product.kind === 'product' && product.priceType === 1) {
           const selection = { version: configuration.version, variantRef: '', choices: dumplings.extra ? [{ ref: extras[0].ref, quantity: dumplings.extra }] : [] }
           try {

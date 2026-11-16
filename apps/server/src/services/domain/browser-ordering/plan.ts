@@ -5,7 +5,7 @@ import type { BrowserPlan } from './contracts'
 
 import { normalizeSlotNumbers } from '@proj-airi/stage-shared/ordering-slots'
 import { nativeOrderingToolName } from '@proj-airi/stage-shared/ordering-tools'
-import { parsePbDumplingServings, pbDumplingExtraCount, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { parsePbDumplingServings, pbDumplingExtraCount, pbDumplingExtraName, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 
 import { normalizeTranscript } from '../kiosk-interaction-decision/context'
 
@@ -69,12 +69,12 @@ function publicPlanSlot(name: string, input: unknown, plan: BrowserPlan, args: R
       if (typeof value.piecesPerServing !== 'number')
         return false
       const extra = pbDumplingExtraCount(serving.productName, value.piecesPerServing)
-      if (options.some(option => option.name === '水餃' && option.quantity !== extra))
+      if (options.some(option => option.name === pbDumplingExtraName && option.quantity !== extra))
         return false
       if (extra)
-        expected.set('水餃', extra)
+        expected.set(pbDumplingExtraName, extra)
       else
-        expected.delete('水餃')
+        expected.delete(pbDumplingExtraName)
     }
     const expectedOptions = [...expected].map(([name, quantity]) => ({ name, quantity })).sort((a, b) => a.name.localeCompare(b.name))
     return canonical(expectedOptions) === canonical([...serving.options].sort((a, b) => a.name.localeCompare(b.name)))
@@ -117,9 +117,9 @@ function finitePlanSlot(actionId: unknown, plan: BrowserPlan, args: Record<strin
       const options = plan.effect.serving?.options
       const selection = args.selection
       if (args.quantity !== dumplings.quantity || product.quantity !== dumplings.quantity || !record(selection) || selection.variantRef !== '' || !Array.isArray(selection.choices)
-        || !options || canonical(options) !== canonical(dumplings.extra ? [{ name: '水餃', quantity: dumplings.extra }] : [])
+        || !options || canonical(options) !== canonical(dumplings.extra ? [{ name: pbDumplingExtraName, quantity: dumplings.extra }] : [])
         || selection.choices.length !== (dumplings.extra ? 1 : 0) || selection.choices.some(choice => !record(choice) || choice.quantity !== dumplings.extra)
-        || plan.effect.deltas.some(delta => delta.kind !== 'product' && (delta.kind !== 'option' || delta.name !== '水餃' || (delta.quantity !== 0 && delta.quantity !== dumplings.extra * dumplings.quantity)))) {
+        || plan.effect.deltas.some(delta => delta.kind !== 'product' && (delta.kind !== 'option' || delta.name !== pbDumplingExtraName || (delta.quantity !== 0 && delta.quantity !== dumplings.extra * dumplings.quantity)))) {
         return
       }
       return `${product.name}:${dumplings.quantity}:${dumplings.piecesPerServing}`

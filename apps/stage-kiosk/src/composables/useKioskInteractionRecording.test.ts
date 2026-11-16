@@ -406,6 +406,28 @@ describe('useKioskInteractionRecording', () => {
     }
     finally { scope.stop() }
   })
+  // Report: this chat, 2026-11-16 — later tool rounds cannot renew a fallback deadline.
+  it('reduces the gateway budget after a tool executes before the next Main round', async () => {
+    kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'fallback-budget', state: 'active' } })
+    kioskApi.streamKioskConversationMessage.mockResolvedValueOnce({ agentMode: 'active', toolCalls: [{ id: 'read', type: 'function', function: { name: 'cart_get', arguments: '{}' } }] }).mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '已顯示。' })
+    const read = rawTool({ name: 'cart_get', description: 'Read', parameters: { type: 'object', properties: {} }, execute: async () => {
+      await new Promise(resolve => setTimeout(resolve, 20))
+      return { cart: { lines: [], total: 0 } }
+    } })
+    const scope = effectScope()
+    try {
+      const recording = scope.run(() => useKioskInteractionRecording())!
+      expect(await recording.send('ordering', '查看訂單', [read], { budgetMs: 5000 })).toMatchObject({ status: 'completed' })
+      const first = kioskApi.streamKioskConversationMessage.mock.calls[0]![0].budgetMs
+      const second = kioskApi.streamKioskConversationMessage.mock.calls[1]![0].budgetMs
+      expect(first).toBeGreaterThan(0)
+      expect(first).toBeLessThanOrEqual(5000)
+      expect(second).toBeGreaterThan(0)
+      expect(second).toBeLessThanOrEqual(first - 15)
+    }
+    finally { scope.stop() }
+  })
+
   it('uses the remaining turn budget instead of starting a fresh minute for Main', async () => {
     kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'remaining-time', state: 'active' } })
     kioskApi.streamKioskConversationMessage.mockImplementation(async ({ signal }) => await new Promise((_resolve, reject) => {
@@ -976,6 +998,7 @@ describe('useKioskInteractionRecording', () => {
     expect(onAssistantDelta).toHaveBeenNthCalledWith(2, '麵可以點餐。')
     expect(onTurnStarted).toHaveBeenCalledOnce()
     expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledWith({
+      budgetMs: expect.any(Number),
       content: '我要牛肉麵',
       signal: expect.any(AbortSignal),
       tools: [expect.objectContaining({ function: expect.objectContaining({ name: 'kiosk_session_history' }) })],
@@ -1232,6 +1255,33 @@ it('ends an empty search with its concrete recovery guidance instead of another 
     expect(result?.reason).toBeUndefined()
     expect(result).toMatchObject({ status: 'completed' })
     expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledOnce()
+  }
+  finally { scope.stop() }
+})
+
+// Report: this chat, 2026-11-17 — 章魚燒＋貢丸湯 stopped after the first missing dish.
+it('continues both missing searches and retains each named result for the spoken reply', async () => {
+  vi.resetAllMocks()
+  kioskApi.startKioskVisitorSession.mockResolvedValue({ session: { id: 'two-missing-dishes', state: 'active' } })
+  const names = ['章魚燒', '貢丸湯']
+  kioskApi.streamKioskConversationMessage
+    .mockResolvedValueOnce({ agentMode: 'active', toolCalls: names.map((query, index) => ({ id: `search-${index}`, type: 'function', function: { name: 'search_menu_items', arguments: JSON.stringify({ query }) } })) })
+    .mockResolvedValueOnce({ agentMode: 'active', toolCalls: [], answer: '兩項都未找到。' })
+  const window = createMenuReplyWindow()
+  const execute = vi.fn(async ({ query }: { query: string }) => ({ ok: true, source: 'browser', status: 'not-found', effect: 'none', search: query, products: [], customerMessage: `目前搜尋沒有找到「${query}」。` }))
+  const tool = rawTool({ name: 'search_menu_items', description: '', parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] }, execute })
+  const scope = effectScope()
+  try {
+    const recording = scope.run(() => useKioskInteractionRecording())!
+    const result = await recording.send('ordering', '我想吃章魚燒跟一份貢丸湯', [tool], { onToolResult: (name, content) => window.record(name, content) })
+    expect(result).toMatchObject({ status: 'completed' })
+    expect(execute).toHaveBeenCalledTimes(2)
+    expect(execute.mock.calls[0][0]).toEqual({ query: '章魚燒' })
+    expect(execute.mock.calls[1][0]).toEqual({ query: '貢丸湯' })
+    expect(kioskApi.streamKioskConversationMessage).toHaveBeenCalledTimes(2)
+    expect(browserToolResult('search_menu_items', { ok: true, source: 'browser', status: 'not-found', effect: 'none' }).outcome).toBe('information_ready')
+    expect(window.reply()).toContain('章魚燒')
+    expect(window.reply()).toContain('貢丸湯')
   }
   finally { scope.stop() }
 })

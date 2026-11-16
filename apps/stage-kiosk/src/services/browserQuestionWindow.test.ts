@@ -81,7 +81,7 @@ it('speaks the dumpling count per serving while preserving vendor identity and t
   const { window, snapshot } = setup()
   const product = { productRef: 'p-2589', name: '周氏水餃(最低8顆)', configurationVersion: 'dumpling', unitPrice: 64 }
   const binding = { ...snapshot, products: [product] }
-  const proposal = { productRef: product.productRef, productName: product.name, quantity: 2, unitPrice: 80, note: '', optionSummary: '水餃 每份 2 個', options: [{ name: '水餃', quantity: 2 }], selection: { version: 'dumpling', variantRef: '', choices: [{ ref: 'a-774', quantity: 2 }] } }
+  const proposal = { productRef: product.productRef, productName: product.name, quantity: 2, unitPrice: 80, note: '', optionSummary: '水餃 每份 2 個', options: [{ name: '水餃1顆', quantity: 2 }], selection: { version: 'dumpling', variantRef: '', choices: [{ ref: 'a-774', quantity: 2 }] } }
   expect(window.presentQuantity(binding, product, '我要水餃').question).toBe('周氏水餃基本每份8顆，最少8顆，可以加量。請問「周氏水餃」要幾份？')
   const confirmation = window.presentOrder(binding, [proposal])
   expect(confirmation.question).toContain('周氏水餃 每份 10 顆，2 份')

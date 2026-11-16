@@ -258,11 +258,22 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   const entryRequired = result.requestedTools.some(name => name !== 'kiosk_session_history')
   if (options.customerEntry?.phase === 'customer_entry' && (entryRequired || options.requireMenuRead))
     return { role: 'assistant' as const, content: options.customerEntry.prompt }
+  // A final navigation or service-policy receipt cannot erase the dishes
+  // actually checked in this turn. Preserve query facts before its next step.
+  const searched = result.requestedTools.some(name => nativeOrderingToolName(name) === 'browser_search')
+  const searchReply = searched && options.menu.hasReceipts() ? options.menu.reply() : ''
+  let outcome = options.outcome
+  if (outcome && searchReply) {
+    if (searchReply.includes(outcome))
+      outcome = searchReply
+    else if (!outcome.includes(searchReply))
+      outcome = `${searchReply} ${outcome}`
+  }
   // The caller revalidated this question from a receipt issued in this turn.
   // Waiting for its answer pauses the demand; it need not have changed the cart.
   // Preserve that boundary even if a later model step exhausted its budget.
   if (options.question && options.question.expiresAt > Date.now() && result.reason !== 'manual-control')
-    return { role: 'assistant', content: replyWithQuestion(options.outcome ?? '', options.question) }
+    return { role: 'assistant', content: replyWithQuestion(outcome ?? '', options.question) }
   // A history lookup supplies conversation context, not a new commerce result.
   const commerceAttempted = result.requestedTools.some(name => name !== 'kiosk_session_history')
   // A completed no-tool draft cannot establish facts or operation success.
@@ -289,7 +300,7 @@ export function replyFromConversation(result: ConversationTurnResult, options: {
   }
   if (operationRequired && !options.menu.hasOperation(intent) && !configuringMeal)
     return unresolved
-  const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', options.outcome, options.question)
+  const receiptReply = replyFromOperation(options.menu.hasReceipts() ? options.menu.reply() : '', outcome, options.question)
   if (result.status !== 'completed') {
     const passiveOnly = result.requestedTools.every(name => name === 'list_cart_items' || ['browser_observe', 'browser_product_get', 'browser_present'].includes(nativeOrderingToolName(name)))
     const displayFailure = options.menu.presentationFailure()

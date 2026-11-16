@@ -66,6 +66,12 @@ remain silent. Named alternatives, categories and filters use normal routing.
 
 ## Fresh Main rounds
 
+Each Main round sends the remaining Host task budget as `budgetMs`. Server keeps
+one request deadline across reply repair and reserves time for a configured Main
+backup. Provider timeout settings remain upper bounds; a tool continuation does
+not renew the overall sixty-second task deadline. System One/Jev routing is
+unchanged. Reload an already open Host after deploying this protocol update.
+
 After phone entry, Main receives the complete compact catalog and current Menu
 state through the host-only `kiosk_conversation_context` tool. The host refreshes
 it before each model request, verifies task ownership, replaces old questions and
@@ -126,14 +132,45 @@ appears after 700ms; short navigations show no interstitial. No merchant brandin
 or full-screen illustration is added. A slow
 PB page load does not turn a previously acknowledged Start into a rejected call.
 
-The selected Chat profile's SSE mode streams transport events, but the Kiosk
-currently uses assistant deltas only for progress. Customer text and TTS wait
-for the completed tool loop and receipt validation; this is not word-by-word
-reply display. Internal service-admission decisions keep JSON responses.
+The selected Chat source's `auto` / `sse` / `json` response mode controls the
+upstream transport. Eligible ordinary service replies paint incoming SSE text
+before completion; JSON sources paint their complete reply at once. There is no
+second display-mode switch. The browser still uses SSE for progress in both modes.
+
+Incremental prose is allowed only without browser/finite reply context, pending
+commerce validation, or tools other than read-only session history. PB ordering,
+menu lookups, cart changes and checkout show live operation progress, then the
+Host's verified reply. Model drafts and tool arguments never stand in for receipts.
+The main conversation and detached text console share the visible reply; a new
+request clears the console's previous reply while waiting. A cancelled/failed
+round clears its draft, and stale cleanup cannot erase a newer turn. Only the
+completed verified reply enters history or TTS. Internal service-admission
+decisions keep JSON responses.
 A current admitted request receives a non-operational clarification if its
 independent review fails; cancelled or unknown/background speech does not gain
 tool authority. Jev receives the actual visible product dialog separately from
 cart contents, so closing a viewed dish cannot imply deleting a purchased meal.
+
+Checkout cart confirmation lists all currently available invoice methods; a
+plain "correct" never selects the website's default method. Invoice details and
+notification contact entry remain separate steps. Native preparation scrolls and
+focuses the current field after fresh validation, including the phone field once
+the selected carrier is valid.
+
+Inside the bound notification step, Taiwan mobile digits can arrive in separate
+utterances or one spaced utterance. The Host accumulates the literal digits,
+reads back a complete ten-digit `09` number, and fills it only after confirmation.
+"重來"/a rejected read-back clears the draft; overflow is rejected without
+truncation. The pending question's visitor, document, cart and 120-second expiry
+own the draft, so reset/navigation/cart changes cannot reuse it. No phone fragment
+or phone confirmation authorizes order submission; the final order summary keeps
+its own separate consent. This validates recognized text, not microphone/ASR accuracy.
+
+PB's verified dumpling extra is named `水餃1顆` (cart editor checked on
+2026-11-16): an eight-piece base serving plus two extras is one ten-piece serving.
+The compiler, finite purchase path, Server plan binding and read-back share that
+option identity. Reapplying an unchanged serving count produces no write or
+success receipt; Main must repair a customization request with the proper tool.
 
 Final detail replies retain the website's meal contents as well as verified
 prices. An `open_menu_item_details` receipt may include the whole rendered
@@ -330,10 +367,13 @@ The final submission question includes meals/options/notes, website total,
 table, invoice and notification details. Its native token is private, expiring,
 one-use and invalidated by any cart/form/manual-interaction change.
 
-Automated submission is currently enabled only for the approved owned fixture
-at `127.0.0.1:5188`. The merchant result/navigation flow remains unverified and
-uses manual submission guidance. A native dispatch acknowledgement is not proof
-of payment. The owned fixture now returns a typed pending/accepted/unknown/rejected result.
+Automated submission is enabled for the authorized `app.esgpb.com` store
+`1kgJeql` internal-use journey and the approved owned fixture at `127.0.0.1:5188`.
+After the final-summary assent, Host presses both native confirmation buttons;
+other deployments retain manual guidance. An unknown result is never retried.
+Merchant acceptance still requires an actual result readback; isolated tests
+do not prove a merchant order was created. A dispatch acknowledgement is not proof
+of payment. The owned fixture returns a typed pending/accepted/unknown/rejected result.
 Accepted merchant creation is separate from amount/detail consistency: a known
 created order with a conflicting total remains accepted and requires review,
 while unknown effects retain the pending marker. Line equivalence and a lost
@@ -926,7 +966,19 @@ handles while retaining the dedicated browser profile's login. A successful
 native reset alone does not prepare the next customer's entry screen.
 This applies to explicit new-order/reception actions and actual
 idle/completion end, not the continue-ordering dialog. Main cannot call this tool.
-The customer restart button waits for active website operations or a disconnected
+The customer restart button sits at the lower left of the avatar column, clear
+of conversation text and the native website on desktop and browser hosts.
+Checkout asks for invoice details before notification contact details. Each
+entry step retains a visitor/document/cart-bound question: “OK” re-reads the
+form and advances only when that step is valid. Completing contact details
+leads to a separate full-order submission question; entry acknowledgements
+never authorize submission or payment.
+Service-boundary replies use finite, localized topics instead of generic
+acknowledgements. Off-topic tasks, delivery, taxis, total-budget meal planning,
+coupons and price/payment overrides do not dispatch website operations. Food
+safety guidance asks the customer to contact staff directly and never claims
+staff were called. A pending meal question remains available after this reply.
+It waits for active website operations or a disconnected
 binding, rather than model thinking alone. Restart enters the reset state
 immediately and cancels the old reception's ASR/Jev/Main/TTS work; its audit entry
 captures the old visitor but does not delay reset on a network acknowledgement.

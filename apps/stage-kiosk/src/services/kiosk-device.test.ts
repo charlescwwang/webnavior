@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled, synthesizeKioskSpeech } from './kiosk-device'
+import { createKioskTranscriptionBody, decideKioskInteraction, isKioskFastPathEnabled, streamKioskConversationMessage, synthesizeKioskSpeech } from './kiosk-device'
 
 describe('segmented device requests', () => {
   afterEach(() => vi.restoreAllMocks())
+
+  // Report: this chat, 2026-11-16 — primary timeouts must leave time for Main backup.
+  it('sends the remaining Main budget with the actual conversation request', async () => {
+    const network = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('data: {"type":"turn-finished","agentMode":"active","toolCalls":[]}\n\n', { headers: { 'Content-Type': 'text/event-stream' } }))
+    await streamKioskConversationMessage({ budgetMs: 4300, content: '查詢餐點', tools: [], visitorSessionId: 'budget-session' }, () => {})
+    expect(JSON.parse(String(network.mock.calls[0]?.[1]?.body))).toMatchObject({ budgetMs: 4300, content: '查詢餐點' })
+  })
 
   // Report: this chat, 2026-10-21 — speech must use the same Traditional text as the Kiosk display.
   it('normalizes speech output without rewriting the caller text', async () => {

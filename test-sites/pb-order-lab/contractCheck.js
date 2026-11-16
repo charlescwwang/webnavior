@@ -86,7 +86,7 @@ export async function runCompatibilityCheck(progress) {
     await call('browser_cart_replace', { version: current.cart.version, lineRef: sources[0].ref, lineRefs: sources.map(line => line.ref), retainQuantity: 1, productRef: chicken.ref, quantity: 1, unitPrice: chickenConfiguration.unitPrice, note, selection: { version: chickenConfiguration.version, variantRef: '', choices: [] } })
     current = await call('browser_cart_get', { includeCatalog: true })
     const remaining = current.cart.lines.filter(line => line.note === note)
-    check('相同列跨列部分換餐並保留水餃加量', remaining.length === 2 && remaining.some(line => line.name === product.name && line.quantity === 1 && line.unitPrice === 80 && line.options.some(option => option.name === '水餃' && option.quantity === 2)) && remaining.some(line => line.name === chicken.name && line.quantity === 1))
+    check('相同列跨列部分換餐並保留水餃加量', remaining.length === 2 && remaining.some(line => line.name === product.name && line.quantity === 1 && line.unitPrice === 80 && line.options.some(option => option.name === '水餃1顆' && option.quantity === 2)) && remaining.some(line => line.name === chicken.name && line.quantity === 1))
     for (const line of remaining) {
       await call('browser_cart_remove', { version: current.cart.version, lineRef: line.ref })
       current = await call('browser_cart_get', { includeCatalog: false })

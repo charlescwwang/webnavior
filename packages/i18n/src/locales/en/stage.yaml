@@ -56,6 +56,15 @@ kiosk:
     play-test: 'Play speech and test interruption'
     test-text: 'This is the microphone and echo test. You can interrupt me now.'
   information-unavailable: I could not find that information. Please ask a staff member to check it for you.
+  service-policy:
+    off-topic: This kiosk only helps with food and the menu, so I cannot handle that request. What would you like to order?
+    food-safety: Please ask staff directly about food safety or allergies. I cannot guarantee safety, and the kiosk has not notified or called anyone.
+    promotion-policy: Current prices are those shown on screen. This kiosk does not support coupons or additional discounts.
+    unsupported-budget: This kiosk cannot plan a complete meal to a total budget. Please choose dishes or ask about individual prices.
+    unsupported-delivery: This kiosk does not arrange delivery. It only helps with ordering here.
+    unsupported-taxi: This kiosk cannot call a taxi. Please use a taxi service yourself or ask staff.
+    menu-unavailable: That dish was not found on the current menu. The kiosk cannot create dishes or set prices. Please choose a listed dish.
+    unsupported-permission: This kiosk cannot change website prices, mark payments, or skip confirmations. Prices and payment status come from the merchant website.
   checkout-guidance:
     empty: Your cart is empty. Choose your items, then follow the ordering page to check out.
     ready: Please check the items, quantities and amount on screen, then follow the ordering page to check out. No order or payment has been submitted.

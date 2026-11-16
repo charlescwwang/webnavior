@@ -1,5 +1,8 @@
 import { normalizeSlotNumbers } from './orderingSlots'
 
+/** Store 1kgJeql's observed single-piece extra (cart editor, 2026-11-16). */
+export const pbDumplingExtraName = '水餃1顆'
+
 /** Customer wording never replaces PB's original product identity or selectors. */
 export function pbProductName(name: string) {
   return name === '周氏水餃(最低8顆)' ? '周氏水餃' : name
@@ -47,11 +50,11 @@ export function describePbMeal(meal: PbMeal) {
   const options = meal.options
   const extra = options?.reduce((sum, option) => sum + option.quantity, 0) ?? 0
   // Store 1kgJeql's observed PB item 2589 is 8 dumplings/64 dollars, with
-  // optional 水餃 at 8 dollars each (2026-11-12 menu + 加量 attributes).
+  // optional 水餃1顆 at 8 dollars each (2026-11-16 cart editor).
   // This is a merchant-specific presentation rule, never a general inference
   // from a minimum notice. A changed price or unknown option keeps serving units.
   const counted = meal.name === '周氏水餃(最低8顆)' && options !== undefined
-    && options.every(option => option.name === '水餃' && Number.isInteger(option.quantity) && option.quantity > 0)
+    && options.every(option => option.name === pbDumplingExtraName && Number.isInteger(option.quantity) && option.quantity > 0)
     && Math.round(meal.unitPrice * 100) === (64 + extra * 8) * 100
   let customization: string | undefined
   if (counted)

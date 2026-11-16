@@ -104,6 +104,27 @@ export function createCheckout(readCart: () => Promise<CartSnapshot>, revision: 
       const locate = () => unique(Array.from(document.querySelectorAll<HTMLElement>('.order-create summary, .order-create .el-collapse-item__header')).filter(element => element.textContent?.trim().startsWith('開立發票')))
       await controls.act('option', '開啟發票選擇', 'draft', locate, target => target.click(), () => read() !== undefined)
     },
+    /** Scrolls/focuses the current entry step without filling or submitting it. */
+    async focus(step: 'invoice' | 'next', controls: ReturnType<typeof createControls>) {
+      const locate = () => {
+        const state = read()
+        const selected = state?.methods.find(method => method.selected)
+        if (!state || !selected)
+          return
+        if (step === 'invoice')
+          return unique(document.querySelectorAll<HTMLInputElement>('.order-create input[type="radio"]:checked'))
+        const invoice = state.fields.find(field => field.kind === selected.method)
+        if (selected.method !== 'none' && !invoice?.valid) {
+          const definition = methods.find(method => method.method === selected.method)!
+          return unique(document.querySelectorAll<HTMLInputElement>(`.order-create input[placeholder="${definition.placeholder}"]`))
+        }
+        const invalidContact = state.fields.find(field => ['phone', 'email'].includes(field.kind) && field.value && !field.valid)
+        return field(invalidContact?.kind === 'email' ? 'email' : 'phone')
+      }
+      if (!locate())
+        return
+      await controls.act('option', step === 'invoice' ? '前往發票方式' : '前往目前資料欄位', 'draft', locate, target => target.focus({ preventScroll: true }), () => document.activeElement === locate())
+    },
     async choose(method: PbInvoiceMethod, controls: ReturnType<typeof createControls>) {
       confirmation = undefined
       const definition = methods.find(item => item.method === method)!

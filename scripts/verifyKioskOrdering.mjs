@@ -14,7 +14,10 @@ import { chromium, _electron as electron } from 'playwright'
 // A temporary Electron profile enrolls its own test device; operator devices,
 // their credentials, settings, carts and browser storage are never reused.
 const scenario = process.env.PB_AUDIT_SCENARIO ?? 'full'
-assert(['full', 'customization', 'pork-chicken', 'cart-admission', 'checkout-flow', 'dumpling-assent', 'dumpling-follow-up', 'matched-recommendations', 'table-guidance', 'recommendation', 'recommendation-follow-up', 'search', 'cart', 'reset', 'idle', 'semantics', 'follow-up', 'stale-result'].includes(scenario))
+const checkoutOrigin = process.env.PB_AUDIT_CHECKOUT_ORIGIN ?? 'merchant'
+assert(['merchant', 'fixture'].includes(checkoutOrigin))
+const localCheckout = scenario === 'checkout-flow' && checkoutOrigin === 'fixture'
+assert(['full', 'customization', 'pork-chicken', 'cart-admission', 'checkout-flow', 'service-boundary', 'dumpling-cart-edit', 'dumpling-assent', 'dumpling-follow-up', 'matched-recommendations', 'table-guidance', 'recommendation', 'recommendation-follow-up', 'search-missing', 'search', 'cart', 'reset', 'idle', 'semantics', 'follow-up', 'stale-result'].includes(scenario))
 const reportPath = process.env.PB_AUDIT_REPORT_PATH ?? '/tmp/pb-ordering-audit.json'
 const acceleratedIdle = process.env.PB_AUDIT_ACCELERATE_IDLE === '1'
 const retiredCartMarker = process.env.PB_AUDIT_RETIRED_CART_MARKER === '1'
@@ -229,7 +232,7 @@ try {
       await route.fulfill({ status: response.status, headers: Object.fromEntries(returned), body })
     })
   }
-  if (scenario === 'checkout-flow') {
+  if (localCheckout) {
     // Direct loopback testing needs the same no-HMR document as the merchant
     // proxy above. Preserve the real fixture response, cookies and API calls.
     await context.route('http://127.0.0.1:5188/**', async (route) => {
@@ -248,7 +251,7 @@ try {
   await host.getByRole('button', { name: '建立測試設備' }).click({ timeout: 60000 })
   await host.waitForFunction(() => document.querySelector('.kiosk-conversation') || document.body.textContent.includes('角色設定同步失敗'), undefined, { timeout: 90000 })
   assert.equal(await host.locator('.kiosk-conversation').count(), 1, 'Fresh enrollment must finish profile synchronization.')
-  if (scenario === 'checkout-flow') {
+  if (localCheckout) {
     const selected = await host.evaluate(async () => {
       const settings = await (await fetch('/api/kiosk/settings', { credentials: 'include' })).json()
       const site = settings.orderingSites.find(site => site.id === 'pb-local-test' && site.url === 'http://127.0.0.1:5188/order/store/1kgJeql/internal_use/menu/select-table')
@@ -292,7 +295,7 @@ try {
   assert(consolePage, 'Expected the owned text console.')
   console.info('AUDIT: text console ready')
   for (let attempt = 0; attempt < 100; attempt++) {
-    native = context.pages().find(page => page.url().startsWith(scenario === 'checkout-flow' ? 'http://127.0.0.1:5188/order/' : 'https://app.esgpb.com/order/'))
+    native = context.pages().find(page => page.url().startsWith(localCheckout ? 'http://127.0.0.1:5188/order/' : 'https://app.esgpb.com/order/'))
     if (native)
       break
     await new Promise(resolve => setTimeout(resolve, 100))
@@ -403,6 +406,46 @@ try {
     assert.match(snapshot.table, /B3/)
     assert.equal(tableReopens, 0, 'Start must not reopen the already selected table.')
   })
+  if (scenario === 'dumpling-cart-edit') {
+    await send('水餃1份', (snapshot) => {
+      assert.equal(snapshot.cart.length, 1)
+      assert.equal(snapshot.cart[0].quantity, 1)
+      assert.equal(snapshot.cart[0].extra, 0)
+    })
+    await send('查看購物車，先不要結帳', () => assert.match(new URL(native.url()).pathname, /\/orders\/create$/))
+    await send('我水餃要10顆', (snapshot, response) => {
+      assert.equal(snapshot.cart.length, 1)
+      assert.equal(snapshot.cart[0].quantity, 1)
+      assert.equal(snapshot.cart[0].extra, 2)
+      assert.equal(snapshot.cart[0].unitPrice, 80)
+      assert.match(response, /10 顆/)
+      assert.doesNotMatch(response, /已調整為[^。]*8 顆/)
+      assert.equal(snapshot.orders.length, 0)
+    })
+    report.dumplingCartEdit = { passed: true, piecesPerServing: 10, servings: 1, unitPrice: 80, submitted: false }
+  }
+  if (scenario === 'service-boundary') {
+    const manifestBytes = await readFile(new URL('./pbTest/conversationCases.json', import.meta.url))
+    const manifest = JSON.parse(manifestBytes)
+    const test = manifest.cases.find(test => test.id === process.env.PB_AUDIT_BOUNDARY_CASE)
+    assert(test && ['basic', 'challenge'].includes(test.suite), 'Select one current basic/challenge case with PB_AUDIT_BOUNDARY_CASE.')
+    report.boundaryCase = { id: test.id, title: test.title, manifestSha256: createHash('sha256').update(manifestBytes).digest('hex'), passed: false }
+    // Gold stays in this driver. Each fresh process owns its own device/cart;
+    // failures terminate that case without contaminating the following case.
+    for (const step of test.steps) {
+      await send(step.text, (snapshot, reply) => {
+        assert.equal(snapshot.orders.length, 0, 'Service-boundary cases cannot submit an order.')
+        const actual = snapshot.cart.map(line => ({ name: line.name, quantity: line.quantity, unitPrice: line.unitPrice })).sort((a, b) => a.name.localeCompare(b.name))
+        const expected = step.lines.map(line => ({ name: line.name, quantity: line.quantity, unitPrice: line.unitPrice })).sort((a, b) => a.name.localeCompare(b.name))
+        assert.deepEqual(actual, expected, 'The actual cart differs from this turn’s gold.')
+        if (step.reply)
+          assert.match(reply, new RegExp(step.reply), 'The actual reply omitted the required service boundary or requested fact.')
+        if (step.forbid)
+          assert.doesNotMatch(reply, new RegExp(step.forbid), 'The actual reply claimed an unsupported action or guarantee.')
+      })
+    }
+    report.boundaryCase.passed = true
+  }
   if (scenario === 'cart-admission') {
     await send('魚丸湯一份', snapshot => assert.equal(snapshot.cart.length, 1))
     // A persisted vendor cart with no known reception owner is a real startup
@@ -788,22 +831,41 @@ try {
         assert.match(new URL(native.url()).pathname, /\/orders\/create$/)
         const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
         assert.match(reply, /發票要用哪種方式/)
+        for (const label of ['無載具', '手機載具', '自然人憑證', '統一編號', '捐贈發票'])
+          assert(reply.includes(label), `Missing spoken invoice choice: ${label}`)
         assert.doesNotMatch(reply, /餐點、份數和金額正確嗎/)
       })
       report.cartConsent = { advancedToInvoiceChoices: true, mainPlannerRequests: (report.modelContexts?.length ?? 0) - beforeCartConsentMain }
       await send('我要用載具', async (snapshot) => {
         assert.equal(snapshot.orders.length, 0)
         assert.equal(await native.locator('input[type="radio"][value="3"]').isChecked(), true)
-        assert.match(await host.locator('[data-chat-message-role="assistant"]').last().textContent(), /掃描|輸入/)
-      })
-      await send('通知手機是0912345678', (snapshot) => {
-        assert.equal(snapshot.invoice.phone, '0912345678')
-        assert.equal(snapshot.invoice.code, '')
-        assert.equal(snapshot.orders.length, 0)
+        const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
+        assert.match(reply, /掃描|輸入/)
+        assert.doesNotMatch(reply, /通知手機|電子信箱/)
       })
       await native.getByPlaceholder('請輸入共8碼編號').fill('/AB12345')
       await native.getByPlaceholder('請輸入共8碼編號').press('Enter')
-      await send('資料填好了', async (snapshot) => {
+      await send('ok', async (snapshot) => {
+        assert.equal(snapshot.invoice.code, '/AB12345')
+        assert.equal(snapshot.invoice.phone, '')
+        assert.equal(snapshot.orders.length, 0)
+        const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
+        assert.match(reply, /通知手機|電子信箱/)
+        assert.doesNotMatch(reply, /確認送出訂單嗎/)
+      })
+      assert.match(await host.locator('[data-chat-message-role="assistant"]').last().textContent(), /分段/)
+      assert.match(await native.evaluate(() => document.activeElement?.closest('.field')?.textContent ?? ''), /手機/)
+      for (const [chunk, count] of [['0912', 4], ['345', 7], ['678', 10]]) {
+        await send(chunk, async (snapshot) => {
+          assert.equal(snapshot.invoice.phone, '')
+          assert.equal(snapshot.invoice.code, '/AB12345')
+          assert.equal(snapshot.orders.length, 0)
+          const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
+          assert.match(reply, count === 10 ? /0 9 1 2 3 4 5 6 7 8.*正確嗎/ : new RegExp(`${count} 碼`))
+        })
+      }
+      await send('正確', async (snapshot) => {
+        assert.equal(snapshot.invoice.phone, '0912345678')
         assert.equal(snapshot.orders.length, 0)
         assert.equal(snapshot.invoice.code, '/AB12345')
         const reply = await host.locator('[data-chat-message-role="assistant"]').last().textContent()
@@ -825,7 +887,7 @@ try {
       assert.equal(ledger.createdOrders, 1, 'The Server must observe exactly one newly committed fixture order.')
       assert.equal(ledger.submissionRequests, 1, 'The fixture must observe exactly one submission transition, not merely one final order.')
       assert.equal(ledger.duplicateSubmissions, 0)
-      report.checkoutSubmission = { nativeOrders: (await state()).orders.length, acceptedMerchantCreation: true, detailsVerified: false, paymentOperated: false, ledger }
+      report.checkoutSubmission = { origin: new URL(native.url()).origin, fixtureOnly: true, nativeOrders: (await state()).orders.length, acceptedFixtureCreation: true, detailsVerified: false, paymentOperated: false, ledger }
     }
     else {
       await send('不要', (snapshot) => {
@@ -928,6 +990,25 @@ try {
     assert.equal(report.modelContexts?.length ?? 0, beforeCheckout, 'Checkout assent must not need another Main planning request.')
     report.checkoutAssent = { openedCart: true, submitted: false, mainPlannerRequests: (report.modelContexts?.length ?? 0) - beforeCheckout }
   }
+  if (scenario === 'search-missing') {
+    for (const request of ['我想吃章魚燒跟一份貢丸湯', '那有棺材板跟魚丸湯嗎？']) {
+      const names = request.includes('章魚燒') ? ['章魚燒', '貢丸湯'] : ['棺材板', '魚丸湯']
+      await send(request, (snapshot, reply) => {
+        assert.equal(snapshot.cart.length, 0)
+        for (const name of names)
+          assert(reply.includes(name), `Missing query result for ${name}: ${reply}`)
+      })
+    }
+    await send('我要看雞腿飯', async (_snapshot, reply) => assert.match(reply, /雞腿/))
+    await send('招牌便當有嗎？', async (snapshot, reply) => {
+      assert.equal(snapshot.cart.length, 0)
+      assert.match(reply, /招牌便當/)
+    })
+    await send('水餃有嗎？', async (_snapshot, reply) => {
+      assert.match(reply, /水餃/)
+      assert(await native.getByRole('heading', { name: /水餃/ }).count() > 0, 'A new search must escape the empty previous filter.')
+    })
+  }
   if (scenario === 'full' || scenario === 'search') {
     await send('有蜜汁雞排嗎', async (snapshot) => {
       assert.equal(snapshot.cart.length, scenario === 'full' ? 2 : 0)
@@ -950,7 +1031,7 @@ try {
       assert.equal(snapshot.orders.length, 0)
     })
   }
-  {
+  if (!['service-boundary', 'dumpling-cart-edit', 'search-missing'].includes(scenario)) {
     let closingVisitorSessionId = report.visitorSessionId
     assert(closingVisitorSessionId)
     report.nativeHeapBeforeIdle = await inspector.send('Runtime.getHeapUsage')

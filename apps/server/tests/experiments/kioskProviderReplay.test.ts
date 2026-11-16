@@ -39,12 +39,20 @@ import { choose as chooseSlm } from './slmDecision'
 
 import * as schema from '../../src/schemas'
 
+// Current PB scenario entry points (updated 2026-11-16):
+// - scripts/pbTest/conversationCases.json + verifyConversations.mjs: PB meal turns.
+// - scripts/verifyKioskOrdering.mjs, PB_AUDIT_SCENARIO=checkout-flow: current
+//   cart review → invoice → completed/OK → contact → completed/OK → final consent.
+// This suite intentionally retains the separate self-owned Order Menu fixture;
+// its synthetic phone-skip and payment cases are not PB merchant acceptance.
+// See scripts/pbTest/README.md for execution and authorization boundaries.
+//
 // This cross-app replay lives outside Server src: it deliberately composes
 // browser/host and Node runtime boundaries rather than importing DOM code into
 // the Node-only Server project. Opt-in reads live provider configuration, but
 // every visitor, profile health update and dialogue entry belongs to the
 // isolated in-memory database.
-describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured kiosk provider replay', () => {
+describe.skipIf(process.env.KIOSK_PROVIDER_REPLAY !== '1')('configured Order Menu provider replay (not PB)', () => {
   let live: ReturnType<typeof createDrizzle>
   let redis: Redis
   let app: Hono

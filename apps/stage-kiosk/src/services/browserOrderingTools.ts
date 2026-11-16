@@ -3,9 +3,9 @@ import type { createInteractiveServiceClient } from '@proj-airi/stage-ui/service
 import type { Tool } from '@xsai/shared-chat'
 
 import { errorMessageFrom } from '@moeru/std'
-import { orderingNextActions, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
+import { customerReplySchema, orderingNextActions, orderingTools } from '@proj-airi/stage-shared/ordering-tools'
 import { pbInvoiceMethodSchema } from '@proj-airi/stage-shared/pb-checkout'
-import { pbDumplingExtraCount, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
+import { pbDumplingExtraCount, pbDumplingExtraName, pbProductName } from '@proj-airi/stage-shared/pb-menu-presentation'
 import { resolveTableName } from '@proj-airi/stage-shared/table-names'
 import { resolveSelection } from '@proj-airi/stage-ui/services/pbProduct'
 import { rawTool } from '@xsai/tool'
@@ -73,11 +73,13 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
     }
     if (meal.piecesPerServing !== undefined) {
       const extra = pbDumplingExtraCount(product.name, meal.piecesPerServing)
-      const options = configuration.groups.filter(group => group.name === '加量').flatMap(group => group.choices.filter(choice => choice.name === '水餃'))
+      // The group heading is merchant-authored presentation. Bind the extra to
+      // the unique observed dumpling choice, never a group title or guessed ID.
+      const options = configuration.groups.flatMap(group => group.choices.filter(choice => choice.name === pbDumplingExtraName))
       if (options.length !== 1)
         throw new Error('網站水餃加量選項已變更，請先確認。')
       const option = options[0]
-      if (requested.some(choice => choice.group === '加量' && choice.name === '水餃' && choice.quantity !== extra))
+      if (requested.some(choice => choice.name === pbDumplingExtraName && choice.quantity !== extra))
         throw new Error('每份顆數與指定加量不一致，請重新確認。')
       const index = choices.findIndex(choice => choice.ref === option.ref)
       if (index >= 0)
@@ -211,7 +213,15 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         if (!parsed.success)
           return { ...clientError('餐點尚未變更，請再說一次要調整哪道餐點的份數。'), code: 'INVALID_TOOL_ARGUMENTS', dataOnly: true, explanation: '這次未讀取或修改網站。quantity 必須是 1 到 99 的整數，表示調整後的總份數；整道餐點全部不要請使用 remove_items_from_cart。請依顧客完整需求重新選擇操作及參數。' }
         const { target, quantity: count } = parsed.output
-        return call('browser_cart_quantity', { ...resolveTarget(await read(), target), quantity: count })
+        const facts = await read()
+        const rows = targetRows(facts, target)
+        const total = rows.reduce((sum, row) => sum + row.quantity, 0)
+        // Reapplying the existing serving count proves no requested change.
+        // Let Main repair a pieces/options request instead of issuing a false
+        // "adjusted" receipt for a write that leaves the cart unchanged.
+        if (total === count)
+          return { ok: true, source: 'browser', status: 'proposal_rejected', effect: 'none', dataOnly: true, customerMessage: `目前「${target.name}」已是 ${count} 份，份數未變更。`, explanation: '這次未派送購物車寫入，不能宣稱已調整或已完成原需求。若顧客要改每份顆數、加料或備註，使用 replace_item_in_cart 保留原份數並修改配置；水餃每份顆數使用 replacement.piecesPerServing。請依完整原需求修正工具，不能把顆數當份數。' }
+        return call('browser_cart_quantity', { ...resolveTarget(facts, target), quantity: count })
       }
       if (name === 'remove_items_from_cart') {
         const { targets } = parse(strictObject({ targets: pipe(array(targetSchema), minLength(1), maxLength(10)) }), input)
@@ -284,7 +294,7 @@ export function createBrowserOrderingTools(client: Pick<ReturnType<typeof create
         return await askBrowserCustomerQuestion(client, question)
       }
       if (name === 'reply_to_customer') {
-        const { replyType } = parse(strictObject({ replyType: picklist(['greeting', 'acknowledgement', 'hearing-check', 'clarification', 'information-unavailable', 'checkout-guidance']) }), input)
+        const { replyType } = parse(strictObject({ replyType: customerReplySchema }), input)
         return executeBrowserReply(client, replyType)
       }
       const unhandled: never = name

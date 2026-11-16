@@ -44,6 +44,18 @@ function stagedProvider(choices: Record<string, string>, confidence = 0.95) {
 describe('kiosk routes', () => {
   let db: Database
 
+  it.each([0, 60_001, -1, 1.5])('rejects invalid conversation model budgets %s before calling Main', async (budgetMs) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
+    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers, body: JSON.stringify({ content: '您好', budgetMs }) })
+    expect(response.status).toBe(400)
+    expect(complete).not.toHaveBeenCalled()
+  })
+
   // Report: this chat, Nov15 — text arriving before a native failure must not turn it into success.
   it.each(['failed', 'incomplete', 'truncated', 'json-incomplete'])('rejects a native %s reply without dispatching a tool', async (failure) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => {
@@ -213,7 +225,10 @@ describe('kiosk routes', () => {
   // Report: docs/research/2026-10-26-kiosk-conversation-error-audit.md, Oct28 no-tool rejection.
   it.each(['json', 'sse'])('repairs an unverified draft once and transports a typed reply (%s)', async (transport) => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>()
-      .mockImplementationOnce(async () => Response.json({ choices: [{ message: { content: '已付款成功。' } }] }))
+      .mockImplementationOnce(async () => {
+        await new Promise(resolve => setTimeout(resolve, 30))
+        return Response.json({ choices: [{ message: { content: '已付款成功。' } }] })
+      })
       .mockImplementationOnce(async () => Response.json({ choices: [{ message: { tool_calls: [{ id: 'reply', type: 'function', function: { name: replyTool.function.name, arguments: '{"kind":"payment-methods"}' } }] } }] }))
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
     const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
@@ -221,7 +236,7 @@ describe('kiosk routes', () => {
     const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
     const { session } = await started.json() as { session: { id: string } }
     const context: ConversationContext = { contextId: 'current', capturedAt: Date.now(), taskId: 'task', sourceUtterance: '有哪些付款方式？', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], paymentMethods: [{ id: 'linepay', label: 'LINE Pay' }], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] }
-    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, ...(transport === 'sse' ? { Accept: 'text/event-stream' } : {}) }, body: JSON.stringify({ content: context.sourceUtterance, decisionState: { phase: 'ordering', readOnly: true, context } }) })
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, ...(transport === 'sse' ? { Accept: 'text/event-stream' } : {}) }, body: JSON.stringify({ budgetMs: 5000, content: context.sourceUtterance, decisionState: { phase: 'ordering', readOnly: true, context } }) })
     expect(response.status).toBe(200)
     const text = await response.text()
     const events = transport === 'sse' ? text.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))) : []
@@ -229,10 +244,39 @@ describe('kiosk routes', () => {
     expect(final.reply).toEqual({ kind: 'payment-methods' })
     expect(final.toolCalls).toEqual([])
     expect(complete).toHaveBeenCalledTimes(2)
+    const firstBudget = complete.mock.calls[0]![0].budgetMs!
+    const repairBudget = complete.mock.calls[1]![0].budgetMs!
+    expect(firstBudget).toBeGreaterThan(0)
+    expect(firstBudget).toBeLessThanOrEqual(5000)
+    expect(repairBudget).toBeGreaterThan(0)
+    expect(repairBudget).toBeLessThan(firstBudget - 20)
     expect(complete.mock.calls[1]![0].body.tools).toEqual([replyTool])
     expect(JSON.stringify(complete.mock.calls[1]![0].body)).not.toContain('已付款成功')
     expect(events.some(event => event.type === 'assistant-delta')).toBe(false)
     expect(events.some(event => event.type === 'tool-requested')).toBe(false)
+  })
+
+  it.each(['json', 'sse'])('does not renew an expired model budget for reply repair (%s)', async (transport) => {
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => {
+      await new Promise(resolve => setTimeout(resolve, 150))
+      return Response.json({ choices: [{ message: { content: '已付款成功。' } }] })
+    })
+    const app = new Hono<HonoEnv>().onError((error, c) => error instanceof ApiError ? c.json({ error: error.errorCode }, error.statusCode) : c.json({ error: 'unexpected' }, 500)).route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const context: ConversationContext = { contextId: 'current', capturedAt: Date.now(), taskId: 'task', sourceUtterance: '有哪些付款方式？', phase: 'ordering', entryComplete: true, readOnly: true, constraints: { excludeIngredients: [], includeIngredients: [] }, revisions: { menu: 1, cart: 0, selectedItem: 0, checkout: 0 }, cart: { itemCount: 0, total: 0, lines: [] }, paymentState: 'idle', allowedPaymentMethods: [], paymentMethods: [{ id: 'linepay', label: 'LINE Pay' }], fulfillmentModes: [], retainedRequests: [], allowedToolNames: [] }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, ...(transport === 'sse' ? { Accept: 'text/event-stream' } : {}) }, body: JSON.stringify({ budgetMs: 100, content: context.sourceUtterance, decisionState: { phase: 'ordering', readOnly: true, context } }) })
+    const text = await response.text()
+    if (transport === 'sse') {
+      expect(text).toContain('turn-failed')
+      expect(text).toContain('timeout')
+    }
+    else {
+      expect(response.status).toBe(504)
+    }
+    expect(complete).toHaveBeenCalledTimes(1)
   })
 
   it.each([false, true])('supplies one complete current catalog without forcing an extra lookup (continuation=%s)', async (continuation) => {
@@ -632,6 +676,8 @@ describe('kiosk routes', () => {
     expect(complete).not.toHaveBeenCalled()
     expect(await (await app.request(url, { method: 'POST', headers, body })).json()).toMatchObject(superseded ? { kind: 'UNCERTAIN', provider: 'unavailable' } : { kind: 'ANSWER', choiceId: 'confirm', provider: 'main' })
     expect(complete).toHaveBeenCalledTimes(1)
+    expect(complete.mock.calls[0]![0].budgetMs).toBeGreaterThan(0)
+    expect(complete.mock.calls[0]![0].budgetMs).toBeLessThanOrEqual(12_000)
     expect(finite).not.toHaveBeenCalled()
     expect(isEnabled).not.toHaveBeenCalled()
   })
@@ -1879,6 +1925,39 @@ describe('kiosk routes', () => {
     expect(response.headers.get('X-Accel-Buffering')).toBe('no')
   })
 
+  // Report: this chat, 2026-11-16 — ordinary replies should paint before DONE.
+  it('emits ordinary reply text before the upstream stream completes', async () => {
+    let upstream!: ReadableStreamDefaultController<Uint8Array>
+    const encoder = new TextEncoder()
+    const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { upstream = controller },
+    }), { headers: { 'Content-Type': 'text/event-stream' } }))
+    const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
+    const enrolled = await app.request('/api/kiosk/development/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ registrationCode: '483920' }) })
+    const headers = { 'Cookie': enrolled.headers.get('Set-Cookie')!.split(';')[0]!, 'Content-Type': 'application/json' }
+    const started = await app.request('/api/kiosk/visitor-sessions', { method: 'POST', headers, body: JSON.stringify({ serviceId: 'development-ordering-service' }) })
+    const { session } = await started.json() as { session: { id: string } }
+    const response = await app.request(`/api/kiosk/visitor-sessions/${session.id}/messages`, { method: 'POST', headers: { ...headers, Accept: 'text/event-stream' }, body: JSON.stringify({ content: '你好' }) })
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    expect(decoder.decode((await reader.read()).value)).toContain('turn-started')
+    upstream.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"您好，"}}]}\n\n'))
+    expect(decoder.decode((await reader.read()).value)).toContain('reply-progress')
+    expect(decoder.decode((await reader.read()).value)).toContain('"text":"您好，","type":"assistant-delta"')
+    upstream.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"歡迎。"}}]}\n\ndata: [DONE]\n\n'))
+    upstream.close()
+    let tail = ''
+    while (true) {
+      const chunk = await reader.read()
+      if (chunk.done)
+        break
+      tail += decoder.decode(chunk.value)
+    }
+    expect(tail).toContain('"text":"歡迎。","type":"assistant-delta"')
+    expect(tail).toContain('"answer":"您好，歡迎。"')
+    expect(tail).toContain('turn-finished')
+  })
+
   it('finishes a Kiosk SSE turn when the selected provider returns one JSON completion', async () => {
     const complete = vi.fn<KioskRoutesOptions['llmGateway']['complete']>(async () => Response.json({ choices: [{ message: { content: '您好。' } }] }))
     const app = new Hono().route('/api/kiosk', createKioskRoutes({ developmentRegistrationEnabled: true, secureCookies: false, kioskService: createKioskService(db), llmGateway: { complete }, runtimeModelPolicy }))
@@ -1896,7 +1975,7 @@ describe('kiosk routes', () => {
     expect(events).not.toContain('"type":"turn-failed"')
   })
 
-  it('streams customer-safe assistant deltas without persisting partial text', async () => {
+  it('withholds draft prose when a later tool call can change the verified outcome', async () => {
     const complete = vi.fn(async () => new Response([
       'data: {"choices":[{"delta":{"content":"牛肉"}}]}',
       '',
@@ -1945,7 +2024,7 @@ describe('kiosk routes', () => {
     expect(reply.headers.get('Content-Type')).toContain('text/event-stream')
     const replyEvents = await reply.text()
     expect(replyEvents.match(/"type":"reply-progress"/g)).toHaveLength(1)
-    expect(replyEvents).toContain('"text":"牛肉","type":"assistant-delta"')
+    expect(replyEvents).not.toContain('"type":"assistant-delta"')
     expect(replyEvents).toContain('"id":"call_menu"')
     expect(replyEvents).toContain('"type":"tool-requested"')
     expect(replyEvents).toContain('"type":"turn-finished"')

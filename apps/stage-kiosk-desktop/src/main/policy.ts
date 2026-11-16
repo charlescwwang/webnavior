@@ -1,5 +1,5 @@
 import type { SurfaceBounds } from '@proj-airi/stage-shared/kiosk-desktop'
-import type { Session } from 'electron'
+import type { HandlerDetails, Session } from 'electron'
 
 type PermissionCheck = Exclude<Parameters<Session['setPermissionCheckHandler']>[0], null>
 type PermissionRequest = Exclude<Parameters<Session['setPermissionRequestHandler']>[0], null>
@@ -31,6 +31,25 @@ export function isHostPage(value: string, entry: URL): boolean {
   try {
     const url = new URL(value)
     return url.origin === entry.origin && url.pathname.startsWith(entry.pathname)
+  }
+  catch {
+    return false
+  }
+}
+
+/** Admits only the named text console from the current trusted host document. */
+export function isTextConsoleRequest(page: string, entry: URL, request: Pick<HandlerDetails, 'url' | 'frameName' | 'referrer'>): boolean {
+  if (request.url !== 'about:blank' || request.frameName !== 'airi-kiosk-text-console' || !isHostPage(page, entry))
+    return false
+  // NOTICE: Real HTTPS Electron requests to about:blank can have an empty
+  // referrer under strict-origin-when-cross-origin. The owning WebContents and
+  // its current Kiosk route identify the host; referrer is only an extra check.
+  // Electron's referrer describes delivery policy, not authenticated origin:
+  // https://www.electronjs.org/docs/latest/api/web-contents/#contentssetwindowopenhandlerhandler
+  if (!request.referrer.url)
+    return true
+  try {
+    return new URL(request.referrer.url).origin === entry.origin
   }
   catch {
     return false

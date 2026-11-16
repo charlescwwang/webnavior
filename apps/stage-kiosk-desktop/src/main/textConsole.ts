@@ -1,17 +1,14 @@
 import type { BrowserWindow, WebContents } from 'electron'
 
-import { isHostPage } from './policy'
+import { isTextConsoleRequest } from './policy'
 
 /** Owns the single trusted text popup; it never becomes another ordering host. */
 export class TextConsoleWindow {
   private child?: BrowserWindow
 
   constructor(host: BrowserWindow, entry: URL) {
-    host.webContents.setWindowOpenHandler(({ url, frameName, referrer }) => {
-      // about:blank uses an origin-only referrer under Chromium's default
-      // policy. Check its origin and separately admit the actual host route.
-      if (url !== 'about:blank' || frameName !== 'airi-kiosk-text-console' || this.child
-        || !isHostPage(host.webContents.getURL(), entry) || !referrer.url || new URL(referrer.url).origin !== entry.origin) {
+    host.webContents.setWindowOpenHandler((request) => {
+      if (this.child || !isTextConsoleRequest(host.webContents.getURL(), entry, request)) {
         return { action: 'deny' }
       }
       const bounds = host.getContentBounds()

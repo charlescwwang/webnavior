@@ -90,14 +90,13 @@ export function createPbService() {
   let queuedCount = 0
   let executingName: string | undefined
   let manualRevision = 0
-  const canSubmit = journey.origin === 'http://127.0.0.1:5188'
   const checkout = createCheckout(readCart, () => manualRevision, () => {
     writeMarker = `order:${crypto.randomUUID()}`
     localStorage.setItem(blockedKey, writeMarker)
   }, () => {
     if (writeMarker && localStorage.getItem(blockedKey) === writeMarker)
       localStorage.removeItem(blockedKey)
-  }, canSubmit)
+  }, journey.canSubmit)
   let controlRevision = 0
   const controlTools = new Set(['browser_table_select', 'browser_start_ordering', 'browser_cart_review', 'browser_search', 'browser_open_product', 'browser_close_product', 'browser_set_note', 'browser_clarify_product', 'browser_cart_add', 'browser_cart_quantity', 'browser_cart_remove', 'browser_cart_replace', 'browser_customer_reset', 'browser_return_menu', 'browser_checkout_prepare', 'browser_invoice_select', 'browser_notification_phone', 'browser_order_submit'])
   let activeVisual: AbortController | undefined
@@ -122,7 +121,7 @@ export function createPbService() {
   // explicit in the model schema so an otherwise valid plan cannot mix them.
   const cartVersion = { type: 'string', description: 'Copy cart.version exactly from the latest browser_cart_get result. Never use selection.version or a product configuration version here.' }
   const tools: ToolDescriptor[] = [
-    { name: 'browser_checkout_prepare', description: 'Read actual invoice/notification fields and prepare one expiring confirmation. No submission.', inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false } },
+    { name: 'browser_checkout_prepare', description: 'Read actual invoice/notification fields and prepare one expiring confirmation. No submission.', inputSchema: { type: 'object', properties: { focus: { type: 'string', enum: ['invoice', 'next'] } }, required: [], additionalProperties: false } },
     { name: 'browser_invoice_select', description: 'Select one actually offered native invoice method. No order submission.', inputSchema: { type: 'object', properties: { method: { type: 'string', enum: ['none', 'carrier', 'citizen', 'tax', 'donation'] } }, required: ['method'], additionalProperties: false } },
     { name: 'browser_notification_phone', description: 'Fill only the notification phone draft. No invoice carrier, email, submission or payment.', inputSchema: { type: 'object', properties: { phone: { type: 'string', pattern: '^\\d{10,15}$' } }, required: ['phone'], additionalProperties: false } },
     { name: 'browser_order_submit', description: 'Host-only: consume a native confirmation token after the customer answers the matching final summary. Never a Main tool.', inputSchema: { type: 'object', properties: { confirmationToken: { type: 'string' } }, required: ['confirmationToken'], additionalProperties: false } },
@@ -643,12 +642,17 @@ export function createPbService() {
         let state
         if (name === 'browser_invoice_select') {
           state = await checkout.choose(parse(strictObject({ method: pbInvoiceMethodSchema }), input).method, controls)
+          await checkout.focus('next', controls)
         }
         else if (name === 'browser_notification_phone') {
-          state = await checkout.phone(parse(strictObject({ phone: text }), input).phone, controls)
+          await checkout.phone(parse(strictObject({ phone: text }), input).phone, controls)
+          // Phone consent fills a draft only. Prepare a fresh final-summary
+          // ticket after its native input events, never reuse the pre-fill form.
+          state = await checkout.prepare()
         }
         else {
-          parse(strictObject({}), input)
+          const { focus } = parse(strictObject({ focus: optional(picklist(['invoice', 'next'])) }), input)
+          await checkout.focus(focus ?? 'next', controls)
           state = await checkout.prepare()
         }
         return { ok: true, source: 'browser', page: 'cart', dataOnly: true, cart: await cartOperations.observe(), checkout: state }
@@ -791,6 +795,16 @@ export function createPbService() {
         const { query } = parse(strictObject({ query: text }), input)
         presentation.cancel()
         if (query.trim()) {
+          const previous = document.querySelector<HTMLInputElement>('input[placeholder="搜尋品項，例如：拿鐵、雞腿、套餐"]')?.value.trim()
+          if (previous) {
+            const catalog = await readCatalog(undefined, false)
+            // Restore the complete current catalog before applying another
+            // filter. An empty input alone precedes PB's asynchronous render.
+            await controls.search('', () => {
+              const visible = observe().products
+              return catalog.every(product => visible.some(item => item.name === product.name))
+            })
+          }
           await controls.search(query)
         }
         else {
@@ -867,8 +881,11 @@ export function createPbService() {
         if (name === 'browser_search' && typeof input.query === 'string' && !input.query.trim())
           customerMessage = '已清除搜尋，回到目前完整菜單。您可以看看其他餐點，或告訴我想找什麼。'
       }
-      if (name === 'browser_search' && snapshot.products.length === 0)
-        return { ok: true, ...snapshot, status: 'clarification', effect: 'none', search: input.query, customerMessage }
+      if (name === 'browser_search' && snapshot.products.length === 0) {
+        // Missing results are information, not an issued customer question.
+        // Main must still check the other dishes in the same utterance.
+        return { ok: true, ...snapshot, status: 'not-found', effect: 'none', search: input.query, customerMessage: `目前搜尋沒有找到「${input.query}」。`, explanation: '僅完成這個關鍵字的搜尋；請繼續查詢原句其他餐點，全部核對後一起回覆。' }
+      }
       return { ok: true, ...snapshot, ...(name === 'browser_observe' && purpose === 'information' ? { dataOnly: true } : {}), ...(productCue ? { presentation: productCue } : {}), ...(name === 'browser_search' ? { search: input.query } : {}), ...(customerMessage ? { customerMessage } : {}) }
     }
   }

@@ -10,7 +10,7 @@ import KioskAsrSimulationPanel from './KioskAsrSimulationPanel.vue'
 
 import { useTextConsoleWindow } from '../composables/useTextConsoleWindow'
 
-const props = defineProps<{ status?: string, trace?: string, timing?: FastPathTiming, dockTarget?: string, nativePopup?: boolean }>()
+const props = defineProps<{ status?: string, reply?: string, trace?: string, timing?: FastPathTiming, dockTarget?: string, nativePopup?: boolean }>()
 const emit = defineEmits<{ simulate: [transcript: string], floatingChange: [floating: boolean] }>()
 const { t } = useI18n()
 const panel = useTemplateRef<HTMLElement>('panel')
@@ -73,6 +73,9 @@ function resetPosition() {
         <p v-if="nativeWindow.failed.value" role="alert">
           {{ t('stage.kiosk.text-console.popup-failed') }}
         </p>
+        <p v-if="props.reply" class="console-reply" aria-live="polite">
+          {{ props.reply }}
+        </p>
         <KioskAsrSimulationPanel :compact="isDocked" :status="status" :trace="trace" :timing="timing" @simulate="emit('simulate', $event)" />
       </div>
     </section>
@@ -91,4 +94,5 @@ function resetPosition() {
 .console-handle { display: flex; flex: 1; min-width: 0; align-items: center; gap: .5rem; padding: .25rem .5rem; cursor: grab; touch-action: none; user-select: none; font-size: .875rem; font-weight: 600; }
 .console-handle:active { cursor: grabbing; }
 .console-content { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: .5rem; }
+.console-reply { margin: 0 0 .5rem; max-height: 8rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 </style>

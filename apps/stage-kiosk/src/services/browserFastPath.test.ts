@@ -74,7 +74,7 @@ it('defends an exact target against an intentionally invalid category alias', as
 })
 
 it('offers Jev a complete dumpling purchase with pieces separate from servings', async () => {
-  const dumplings = { ...product, name: '周氏水餃(最低8顆)', price: 64, configurations: [{ ...configuration, unitPrice: 64, groups: [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃', maximum: 100, unitPrice: 8 }] }] }] }
+  const dumplings = { ...product, name: '周氏水餃(最低8顆)', price: 64, configurations: [{ ...configuration, unitPrice: 64, groups: [{ ref: 'extra', name: '加量', required: false, maximum: 100, choices: [{ ref: 'dumpling', name: '水餃1顆', maximum: 100, unitPrice: 8 }] }] }] }
   const execute = vi.fn(async () => ({ status: 'verified' }))
   const source = createBrowserFastPathSource({ tools, read: async () => ({ cart: { version: 'cart', lines: [] }, products: [dumplings] }), execute, hasPendingQuestion: () => false, pendingQuestion: () => undefined })
   const decide = vi.fn(async () => ({ kind: 'FAST_ACTION' as const, actionId: 'intent:add-item', confidence: 0.95 }))

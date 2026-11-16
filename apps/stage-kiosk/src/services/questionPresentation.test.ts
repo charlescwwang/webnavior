@@ -576,3 +576,24 @@ it('does not invent an unanswered product question from a presentation next-acti
   expect(operationReplyFrom(receipt)).toBe(receipt.customerMessage)
   expect(questionReceiptFrom(receipt)).toBeUndefined()
 })
+
+// Report: this chat, 2026-11-17 — a final policy/navigation receipt erased both search results.
+it.each(['已清除搜尋，回到完整菜單。', '機臺不能自行創造餐點。'])('retains all named search facts before the final guidance: %s', (outcome) => {
+  const menu = createMenuReplyWindow()
+  for (const query of ['章魚燒', '貢丸湯'])
+    menu.record('search_menu_items', { ok: true, source: 'browser', status: 'not-found', effect: 'none', search: query, products: [], customerMessage: `目前搜尋沒有找到「${query}」。` })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['search_menu_items', 'search_menu_items', 'reply_to_customer'] }, { menu, outcome, failureMessage: '未完成。' })
+  expect(reply.content).toContain('章魚燒')
+  expect(reply.content).toContain('貢丸湯')
+  expect(reply.content).toContain(outcome)
+})
+
+it('does not repeat the last found dish when preserving an earlier missing search', () => {
+  const menu = createMenuReplyWindow()
+  menu.record('search_menu_items', { ok: true, source: 'browser', status: 'not-found', effect: 'none', customerMessage: '目前搜尋沒有找到「棺材板」。' })
+  const outcome = '目前查到：魚丸湯，單份 50 元。'
+  menu.record('search_menu_items', { ok: true, source: 'browser', customerMessage: outcome })
+  const reply = replyFromConversation({ status: 'completed', agentMode: 'active', requestedTools: ['search_menu_items', 'search_menu_items'] }, { menu, outcome, failureMessage: '未完成。' })
+  expect(reply.content).toContain('棺材板')
+  expect(reply.content.split('魚丸湯')).toHaveLength(2)
+})

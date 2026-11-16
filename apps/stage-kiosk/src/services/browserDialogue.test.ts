@@ -807,3 +807,36 @@ it('routes the first unresolved answer in a Main turn to Main explicitly', async
   await dialogue.answer(facts, '那就往下一步吧', async () => facts, () => true)
   expect(answer).toHaveBeenCalledWith(expect.objectContaining({ questionId: shown.pendingCustomerChoice.questionId, decisionSource: 'main' }))
 })
+
+// Report: this chat, Nov16 — segmented phones must stay in one bound checkout step.
+it('keeps phone fragments out of unrelated questions and retires them on a cart change', async () => {
+  const { dialogue, facts } = setup()
+  dialogue.presentService(facts, { purpose: 'notification-details', request: '通知手機', question: '請報通知手機', choices: [] })
+  const first = await dialogue.answer(facts, '0912', async () => facts, () => true)
+  expect(first).toMatchObject({ kind: 'receipt', result: { customerMessage: expect.stringContaining('4 碼') } })
+  facts.cart.version = 'changed'
+  expect(dialogue.canAnswerLocally(facts, '345')).toBe(false)
+  expect(await dialogue.answer(facts, '345', async () => facts, () => true)).toBeUndefined()
+  dialogue.presentService(facts, { purpose: 'cart-review', request: '核對', question: '正確嗎？', choices: [{ id: 'yes', description: '是' }, { id: 'no', description: '否' }] })
+  expect(dialogue.canAnswerLocally(facts, '0912')).toBe(false)
+})
+
+it('accepts spoken digits, supports restarting, and rejects overflow without truncating a phone', async () => {
+  const { dialogue, facts } = setup()
+  dialogue.presentService(facts, { purpose: 'notification-details', request: '通知手機', question: '請報通知手機', choices: [] })
+  const say = async (text: string) => {
+    const result = await dialogue.answer(facts, text, async () => facts, () => true)
+    if (result?.kind !== 'receipt' || !('customerMessage' in result.result))
+      throw new Error('Expected a bound phone prompt.')
+    return result.result.customerMessage
+  }
+  expect(await say('零九一二')).toContain('4 碼')
+  expect(await say('3456789')).toContain('格式不正確')
+  expect(await say('0987')).toContain('4 碼')
+  expect(await say('重來')).toContain('重新報')
+  expect(await say('零九一二，三四五，六七八')).toContain('0 9 1 2 3 4 5 6 7 8')
+  const denied = await dialogue.answer(facts, '不對', async () => facts, () => true)
+  expect(denied).toMatchObject({ kind: 'receipt', result: { customerMessage: expect.stringContaining('重新報') } })
+  dialogue.reset()
+  expect(dialogue.canAnswerLocally(facts, '正確')).toBe(false)
+})
