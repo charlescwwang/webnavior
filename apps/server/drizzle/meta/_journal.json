@@ -358,6 +358,13 @@
       "when": 1794736800000,
       "tag": "0050_order_evidence_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1794805200000,
+      "tag": "0051_webnavior_chat_fallback",
+      "breakpoints": true
     }
   ]
 }

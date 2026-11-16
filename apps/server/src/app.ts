@@ -69,6 +69,7 @@ import { createAdminRoutes } from './routes/admin'
 import { createAdminUiRoutes } from './routes/admin-ui'
 import { createAdminCapabilityAliasRoutes } from './routes/admin/capability-aliases'
 import { createAdminRouterConfigRoutes } from './routes/admin/config/router'
+import { createAdminFalconRoutes } from './routes/admin/falcon'
 import { createAdminFluxGrantsRoutes } from './routes/admin/flux-grants'
 import { createAdminKioskRoutes } from './routes/admin/kiosk'
 import { createAdminProviderCatalogRoutes } from './routes/admin/provider-catalog'
@@ -443,7 +444,7 @@ export async function buildApp(deps: AppDeps) {
       kioskService: deps.kioskService,
       mediaService: kioskMediaService,
       llmGateway: {
-        complete: input => deps.llmRouter.route({ abortSignal: input.abortSignal, modelName: input.modelName, body: input.body }),
+        complete: input => deps.llmRouter.route({ abortSignal: input.abortSignal, budgetMs: input.budgetMs, modelName: input.modelName, body: input.body }),
       },
       runtimeModelPolicy: deps.webnaviorAiRuntimeService,
       secureCookies: new URL(deps.env.API_SERVER_URL).protocol === 'https:',
@@ -548,6 +549,7 @@ export async function buildApp(deps: AppDeps) {
     .route('/api/admin/config/router', createAdminRouterConfigRoutes(deps.adminRouterConfigService))
 
     /** Webnavior's operator-facing AI connections and capability bindings. */
+    .route('/api/admin/falcon', createAdminFalconRoutes(deps.configKV, deps.envelopeCrypto))
     .route('/api/admin/webnavior-ai', createAdminWebnaviorAiRoutes({
       runtimeService: deps.webnaviorAiRuntimeService,
       service: deps.webnaviorAiControlService,

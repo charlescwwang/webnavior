@@ -225,3 +225,36 @@ it.each([0, 0.24, 4.01, '1.2'])('rejects invalid TTS synthesis speed %s before t
   expect(response.status).toBe(400)
   expect(createProfile).not.toHaveBeenCalled()
 })
+
+it.each([undefined, null, 'backup-id'] as const)('forwards fallback selection %s without collapsing preserve and clear', async (fallbackProviderProfileId) => {
+  const selectProfile = vi.fn(async () => ({ capability: 'chat' }))
+  const app = new Hono<HonoEnv>()
+    .use('*', async (c, next) => {
+      c.set('user', { id: 'admin-fallback', role: 'admin' } as HonoEnv['Variables']['user'])
+      await next()
+    })
+    .route('/', createAdminWebnaviorAiRoutes({
+      runtimeService: { applyBindings: async () => ({ appliedCapabilities: [] }), modelFor: async () => undefined },
+      service: {
+        createProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        listProfiles: vi.fn(),
+        listSelections: vi.fn(),
+        refreshProfileModels: vi.fn(),
+        selectProfile: selectProfile as any,
+        testProviderConnection: vi.fn(),
+        updateProfile: vi.fn(),
+        verifyAndCreateProfile: vi.fn(),
+        verifyAndUpdateProfile: vi.fn(),
+        verifyProfile: vi.fn(),
+      },
+      systemOne: { isEnabled: async () => true, activate: vi.fn(), deactivate: vi.fn(), decide: vi.fn(), delete: vi.fn(), getPolicy: vi.fn(), inspectRuntimeModel: vi.fn(), list: vi.fn(), routing: async () => 'direct' as const, maxActionCandidates: vi.fn(), readiness: vi.fn(), save: vi.fn(), savePolicy: vi.fn(), update: vi.fn() },
+    }))
+  const response = await app.request('/capabilities/chat/active-provider', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ providerProfileId: 'primary-id', fallbackProviderProfileId }),
+  })
+  expect(response.status).toBe(200)
+  expect(selectProfile).toHaveBeenCalledWith('chat', 'primary-id', fallbackProviderProfileId)
+})

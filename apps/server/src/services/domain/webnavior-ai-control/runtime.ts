@@ -24,8 +24,8 @@ export interface WebnaviorAiRuntimeService {
 
 /**
  * Compiles the active, capability-scoped Provider profiles into the established
- * gateway configuration. Applying replaces the prior runtime selection rather
- * than retaining a compatibility fallback.
+ * gateway configuration. Chat keeps the explicitly selected primary and backup
+ * in order; applying replaces prior runtime settings without implicit sources.
  */
 export function createWebnaviorAiRuntimeService(options: {
   configKV: ConfigKVService
@@ -47,12 +47,16 @@ export function createWebnaviorAiRuntimeService(options: {
   }
 
   async function applyBindings() {
-    const selections = await options.db.query.webnaviorAiCapabilitySelections.findMany({ with: { providerProfile: true } })
+    const selections = await options.db.query.webnaviorAiCapabilitySelections.findMany({ with: { providerProfile: true, fallbackProviderProfile: true } })
     const byCapability = new Map(selections.map(selection => [selection.capability, selection.providerProfile]))
+    const chatFallback = selections.find(selection => selection.capability === 'chat')?.fallbackProviderProfile ?? undefined
+    if (chatFallback && chatFallback.capability !== 'chat')
+      throw createBadRequestError('備援來源必須屬於對話能力，請重新選擇。', 'WEBNAVIOR_AI_FALLBACK_CAPABILITY_INVALID')
+    const profiles = new Map([...byCapability.values(), ...(chatFallback ? [chatFallback] : [])].map(profile => [profile.id, profile]))
     const plaintextKeys = new Map<string, Buffer | undefined>()
 
     try {
-      for (const profile of byCapability.values()) {
+      for (const profile of profiles.values()) {
         validateProviderProfile(profile.capability, profile)
         if (!profile.verifiedAt || !profile.modelId || !profile.discoveredModels.some(model => model.id === profile.modelId)) {
           throw createBadRequestError(
@@ -69,8 +73,8 @@ export function createWebnaviorAiRuntimeService(options: {
       const llmModels: LlmRouterConfig['llm']['models'] = {}
       const chat = byCapability.get('chat')
       const vision = byCapability.get('vision')
-      applyLlmProfile(llmModels, chat, RUNTIME_MODEL_NAMES.chat, plaintextKeys, options.envelopeCrypto)
-      applyLlmProfile(llmModels, vision, RUNTIME_MODEL_NAMES.vision, plaintextKeys, options.envelopeCrypto)
+      applyLlmProfile(llmModels, chat ? [chat, ...(chatFallback ? [chatFallback] : [])] : [], RUNTIME_MODEL_NAMES.chat, plaintextKeys, options.envelopeCrypto)
+      applyLlmProfile(llmModels, vision ? [vision] : [], RUNTIME_MODEL_NAMES.vision, plaintextKeys, options.envelopeCrypto)
 
       const asr = byCapability.get('asr')
       const tts = byCapability.get('tts')
@@ -83,7 +87,9 @@ export function createWebnaviorAiRuntimeService(options: {
       const nextRouter = {
         defaults: {
           fallbackHttpCodes: [401, 402, 403, 429, 500, 502, 503, 504],
-          fullChainTimeoutMs: 60_000,
+          // A primary timeout must leave the backup its own configured budget.
+          // Existing single-source chains retain their sixty-second ceiling.
+          fullChainTimeoutMs: Math.max(60_000, ...Object.values(llmModels).map(model => model.upstreams.reduce((total, upstream) => total + (upstream.timeoutMs ?? 30_000), 0))),
           perAttemptTimeoutMs: 30_000,
         },
         llm: { models: llmModels },
@@ -115,32 +121,38 @@ export function createWebnaviorAiRuntimeService(options: {
 
 function applyLlmProfile(
   models: LlmRouterConfig['llm']['models'],
-  profile: WebnaviorAiProviderProfile | undefined,
+  profiles: WebnaviorAiProviderProfile[],
   runtimeModelName: typeof RUNTIME_MODEL_NAMES.chat | typeof RUNTIME_MODEL_NAMES.vision,
   plaintextKeys: Map<string, Buffer | undefined>,
   envelopeCrypto: EnvelopeCrypto,
 ) {
-  if (!profile) {
+  if (profiles.length === 0) {
     delete models[runtimeModelName]
     return
   }
-  const key = plaintextKeys.get(profile.id)
   models[runtimeModelName] = {
     fallbackTriggers: { httpCodes: [401, 402, 403, 429, 500, 502, 503, 504], onTimeout: true },
-    upstreams: [{
-      baseURL: profile.baseURL,
-      cachePrompt: profile.kind === 'llama-cpp',
-      ...(profile.capability === 'chat' && profile.kind === 'openai-compatible' ? { enableThinking: profile.enableThinking, responseMode: profile.responseMode } : {}),
-      ...(profile.kind === 'openai-responses' ? { apiFormat: 'openai-responses' as const, responseMode: profile.responseMode } : {}),
-      ...(profile.kind === 'ollama' ? { ollamaKeepAlive: -1 } : {}),
-      headerTemplate: key ? 'Bearer {KEY}' : '',
-      keys: [{
-        ciphertext: envelopeCrypto.encryptKey(key?.toString('utf8') ?? '', { keyEntryId: 'default', modelName: runtimeModelName }),
-        id: 'default',
-      }],
-      overrideModel: profile.modelId!,
-      timeoutMs: profile.timeoutMs,
-    }],
+    upstreams: profiles.map((profile) => {
+      const key = plaintextKeys.get(profile.id)
+      // A saved profile revision changes opaque continuation ownership after
+      // credential/account edits; an old account's reasoning cannot be replayed
+      // against a replacement account at the same endpoint and model.
+      const keyEntryId = `${profile.id}:${profile.updatedAt.getTime()}`
+      return {
+        baseURL: profile.baseURL,
+        cachePrompt: profile.kind === 'llama-cpp',
+        ...(profile.capability === 'chat' && profile.kind === 'openai-compatible' ? { enableThinking: profile.enableThinking, responseMode: profile.responseMode } : {}),
+        ...(profile.kind === 'openai-responses' ? { apiFormat: 'openai-responses' as const, responseMode: profile.responseMode } : {}),
+        ...(profile.kind === 'ollama' ? { ollamaKeepAlive: -1 } : {}),
+        headerTemplate: key ? 'Bearer {KEY}' : '',
+        keys: [{
+          ciphertext: envelopeCrypto.encryptKey(key?.toString('utf8') ?? '', { keyEntryId, modelName: runtimeModelName }),
+          id: keyEntryId,
+        }],
+        overrideModel: profile.modelId!,
+        timeoutMs: profile.timeoutMs,
+      }
+    }),
   }
 }
 

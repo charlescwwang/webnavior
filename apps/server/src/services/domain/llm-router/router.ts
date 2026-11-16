@@ -70,6 +70,63 @@ async function readUpstreamBodySnippet(response: Response, maxBytes = UPSTREAM_B
   }
 }
 
+/** Keep the transport budget and caller cancellation alive through body consumption. */
+function bindResponseBody(response: Response, signal: AbortSignal, cleanup: () => void): Response {
+  if (!response.body) {
+    cleanup()
+    return response
+  }
+  const reader = response.body.getReader()
+  let closed = false
+  let onAbort: () => void
+  const finish = () => {
+    closed = true
+    signal.removeEventListener('abort', onAbort)
+    cleanup()
+  }
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      onAbort = () => {
+        if (closed)
+          return
+        finish()
+        void reader.cancel(signal.reason).catch(() => {})
+        controller.error(signal.reason ?? new Error('Upstream body aborted'))
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted)
+        onAbort()
+    },
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (closed)
+          return
+        if (done) {
+          finish()
+          controller.close()
+        }
+        else {
+          controller.enqueue(value)
+        }
+      }
+      catch (error) {
+        if (!closed) {
+          finish()
+          controller.error(error)
+        }
+      }
+    },
+    async cancel(reason) {
+      if (closed)
+        return
+      finish()
+      await reader.cancel(reason)
+    },
+  })
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers })
+}
+
 /**
  * Resolved per-attempt token: `'Bearer sk-xxx'` etc. The router substitutes
  * the literal `{KEY}` in `headerTemplate`.
@@ -223,6 +280,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
     req: LlmRouteRequest,
     perAttemptTimeoutMs: number,
     fullChainDeadlineAt: number,
+    reservedUpstreams: number,
     fallbackHttpCodes: number[],
     onAttemptFailure: (failure: { keyId: string, status: number | 'timeout', bodySnippet?: string, errorMessage?: string }) => void,
   ): Promise<
@@ -236,11 +294,13 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
     let attemptIndex = 0
 
     for (const key of rotator) {
-      const remainingChainTimeMs = fullChainDeadlineAt - Date.now()
-      if (remainingChainTimeMs <= 0)
-        break
-
       try {
+        if (req.abortSignal?.aborted)
+          throw req.abortSignal.reason ?? new Error('aborted')
+        const remainingChainTimeMs = fullChainDeadlineAt - Date.now()
+        if (remainingChainTimeMs <= 0)
+          break
+
         const headers: Record<string, string> = {
           ...req.headers,
           'authorization': renderAuthHeader(upstream.headerTemplate, key.plaintext),
@@ -249,8 +309,23 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
 
         const effectiveModel = upstream.overrideModel ?? req.modelName
         const nativeResponses = upstream.apiFormat === 'openai-responses'
+        const replayOrigin = JSON.stringify([upstream.baseURL.replace(/\/+$/, ''), effectiveModel, key.id])
+        let messages = req.body.messages
+        if (!nativeResponses && Array.isArray(messages)) {
+          // Native reasoning belongs to its provider. A later tool round can
+          // return from OpenAI fallback to Qwen; keep ordinary calls/results,
+          // but never forward the opaque Responses extension to Chat APIs.
+          messages = messages.map((message) => {
+            if (message === null || typeof message !== 'object' || Array.isArray(message))
+              return message
+            const { responses_output: _responsesOutput, ...portable } = message
+            return portable
+          })
+        }
         const requestBody = {
           ...req.body,
+          messages,
+          ...(!nativeResponses ? { previous_response_id: undefined } : {}),
           // Only adapt requests that asked for streaming. Internal JSON-only
           // decisions must retain their parser even when the chat profile uses SSE.
           ...(req.body.stream === true && upstream.responseMode === 'json'
@@ -278,7 +353,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
             : {}),
           model: effectiveModel,
         }
-        const body = JSON.stringify(nativeResponses ? buildResponsesRequest(requestBody, effectiveModel) : requestBody)
+        const body = JSON.stringify(nativeResponses ? buildResponsesRequest(requestBody, effectiveModel, replayOrigin) : requestBody)
 
         // NOTICE:
         // We compose two AbortSignals — per-attempt timeout and the caller's
@@ -291,8 +366,12 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         const attemptCtrl = new AbortController()
         const timeoutHandle = setTimeout(
           () => attemptCtrl.abort(new Error('attempt-timeout')),
-          Math.min(perAttemptTimeoutMs, remainingChainTimeMs),
+          // Kiosk callers can have a shorter deadline than provider profiles.
+          // Reserve a share for every remaining provider on each key attempt;
+          // otherwise a slow primary consumes the entire client wait budget.
+          Math.min(perAttemptTimeoutMs, Math.max(1, Math.floor(remainingChainTimeMs / reservedUpstreams)), remainingChainTimeMs),
         )
+        timeoutHandle.unref()
         const callerOnAbort = () => attemptCtrl.abort(req.abortSignal?.reason)
         if (req.abortSignal != null) {
           if (req.abortSignal.aborted)
@@ -305,7 +384,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
           clearTimeout(timeoutHandle)
           req.abortSignal?.removeEventListener('abort', callerOnAbort)
         }
-        let streamOwnsCleanup = false
+        let bodyOwnsCleanup = false
         let response: Response
         try {
           const endpoint = nativeResponses ? 'responses' : 'chat/completions'
@@ -315,11 +394,18 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
             body,
             signal: attemptCtrl.signal,
           })
+          // Both successful and rejected bodies can stall after headers. The
+          // body owns cleanup until EOF/cancel, including diagnostic error reads.
+          response = bindResponseBody(response, attemptCtrl.signal, cleanupAttempt)
+          bodyOwnsCleanup = true
           if (nativeResponses && response.ok) {
-            // Native streaming owns the timeout/disconnect listener until body close,
-            // not merely receipt of the HTTP headers.
-            streamOwnsCleanup = response.headers.get('content-type')?.includes('text/event-stream') === true
-            response = await translateResponsesResponse(response, requestBody.stream === true, attemptCtrl.signal, streamOwnsCleanup ? cleanupAttempt : undefined)
+            response = await translateResponsesResponse(response, requestBody.stream === true, attemptCtrl.signal, undefined, replayOrigin)
+          }
+          else if (response.ok && !response.headers.get('content-type')?.includes('text/event-stream')) {
+            // JSON is not exposed until its complete body arrives, so transport
+            // failure here can safely try another provider. Accepted SSE is
+            // returned once and never replayed, even if its later body fails.
+            response = new Response(await response.arrayBuffer(), { status: response.status, statusText: response.statusText, headers: response.headers })
           }
         }
         catch (error) {
@@ -327,7 +413,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
           throw error
         }
         finally {
-          if (!streamOwnsCleanup)
+          if (!bodyOwnsCleanup)
             cleanupAttempt()
         }
 
@@ -423,7 +509,9 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
 
     const defaults = slice.defaults ?? { perAttemptTimeoutMs: 30000, fullChainTimeoutMs: 60000, fallbackHttpCodes: [401, 402, 403, 429, 500, 502, 503, 504] }
     const fallbackHttpCodes = slice.model.fallbackTriggers?.httpCodes ?? defaults.fallbackHttpCodes ?? [401, 402, 403, 429, 500, 502, 503, 504]
-    const fullChainDeadlineAt = Date.now() + (defaults.fullChainTimeoutMs ?? 60000)
+    const configuredChainBudgetMs = defaults.fullChainTimeoutMs ?? 60000
+    const chainBudgetMs = req.budgetMs === undefined ? configuredChainBudgetMs : Math.min(configuredChainBudgetMs, Math.max(0, req.budgetMs))
+    const fullChainDeadlineAt = Date.now() + chainBudgetMs
 
     const allFailures: Array<{ provider: string, keyId: string, status: number | 'timeout', bodySnippet?: string, errorMessage?: string }> = []
     let triedUpstreams = 0
@@ -468,6 +556,7 @@ export function createLlmRouterService(options: CreateLlmRouterServiceOptions) {
         req,
         perAttemptTimeoutMs,
         fullChainDeadlineAt,
+        req.budgetMs === undefined ? 1 : slice.model.upstreams.length - i,
         fallbackHttpCodes,
         (failure) => { allFailures.push({ provider, ...failure }) },
       )

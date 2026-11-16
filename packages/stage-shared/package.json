@@ -45,6 +45,8 @@
     "./ordering-sites": "./src/orderingSites.ts",
     "./kiosk-conversation": "./src/kioskConversation.ts",
     "./kiosk-audio": "./src/kioskAudio.ts",
+    "./falcon-audio": "./src/falconAudio.ts",
+    "./falcon-settings": "./src/falconSettings.ts",
     "./kiosk-desktop": "./src/kioskDesktop.ts",
     "./interaction-lifecycle": "./src/interactionLifecycle.ts",
     "./kiosk-service-mode": "./src/kioskServiceMode.ts"

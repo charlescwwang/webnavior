@@ -1782,3 +1782,18 @@ kiosk-chat-response:
 kiosk-openai:
   title: OpenAI native API (Responses)
   description: Uses the OpenAI Responses API for chat and function calls, independently of System One. The key needs Responses write access; model discovery also needs Models read access.
+
+kiosk-chat-fallback:
+  primary: 'Primary source:'
+  title: Automatic Main fallback source
+  disabled: Disable automatic fallback
+  description: Normally uses the primary source. Connection failures, timeouts, or temporary service failures can trigger the fallback. Select another verified chat source, then apply to Kiosk.
+  select-primary: Select a primary source in Chat LLM settings first.
+  no-candidates: No other verified chat sources are available. Add and verify a fallback source first.
+  needs-verification: Verification required
+  verify-again: The selected fallback needs verification. Verify it, select another source, or disable fallback before applying.
+  saved: Main fallback settings saved. Apply to Kiosk to activate them.
+  save-failed: Unable to save Main fallback settings.
+  backup-badge: Main fallback
+  clear-before-primary: Disable this fallback before selecting it as the primary source.
+  timeouts: 'Configured wait limits: primary {primarySeconds}s, fallback {fallbackSeconds}s. The system reserves fallback time within the remaining request budget, so actual waits may be shorter.'

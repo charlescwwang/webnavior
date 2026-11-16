@@ -22,6 +22,7 @@ const props = defineProps<{
   open: boolean
   profiles: readonly AiProviderProfile[]
   selectedProfileId?: string
+  selectedFallbackProfileId?: string
 }>()
 const emit = defineEmits<{
   'activate': [capability: AiCapability, profileId: string]
@@ -236,7 +237,7 @@ function verifyAndSaveProfile() {
                 </p>
               </div>
               <span :class="[profile.id === props.selectedProfileId ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-100' : profile.verifiedAt ? 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-100' : 'bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100', 'rounded-full px-3 py-1 text-xs font-semibold']">
-                {{ profile.id === props.selectedProfileId ? '目前啟用' : profile.verifiedAt ? '已驗證' : '待驗證' }}
+                {{ profile.id === props.selectedProfileId ? '目前啟用' : profile.id === props.selectedFallbackProfileId ? t('settings.kiosk-chat-fallback.backup-badge') : profile.verifiedAt ? '已驗證' : '待驗證' }}
               </span>
             </div>
             <p v-if="profile.lastCheckError || profile.lastVerificationError" :class="['m-0 text-sm text-red-600 dark:text-red-300']">
@@ -249,10 +250,10 @@ function verifyAndSaveProfile() {
               <Button :disabled="props.busy" @click="emit('refreshModels', profile.capability, profile.id)">
                 讀取模型
               </Button>
-              <Button :disabled="props.busy || !profile.verifiedAt || profile.id === props.selectedProfileId" @click="emit('activate', profile.capability, profile.id)">
+              <Button :disabled="props.busy || !profile.verifiedAt || profile.id === props.selectedProfileId || profile.id === props.selectedFallbackProfileId" :title="profile.id === props.selectedFallbackProfileId ? t('settings.kiosk-chat-fallback.clear-before-primary') : undefined" @click="emit('activate', profile.capability, profile.id)">
                 設為啟用
               </Button>
-              <Button :disabled="props.busy || profile.id === props.selectedProfileId" @click="emit('delete', profile.capability, profile.id)">
+              <Button :disabled="props.busy || profile.id === props.selectedProfileId || profile.id === props.selectedFallbackProfileId" @click="emit('delete', profile.capability, profile.id)">
                 移除
               </Button>
             </div>

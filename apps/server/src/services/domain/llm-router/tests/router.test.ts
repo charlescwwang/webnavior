@@ -11,7 +11,7 @@ import type { LlmRouteContext, RouterConfig } from '../types'
 
 import { randomBytes } from 'node:crypto'
 
-import { parse } from 'valibot'
+import { array, looseObject, object, parse, unknown } from 'valibot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createEnvelopeCrypto } from '../../../../utils/envelope-crypto'
@@ -159,6 +159,240 @@ function failResponse(status: number, body: object = { error: 'bad' }) {
 }
 
 describe('createLlmRouterService', () => {
+  it('removes native continuation fields when a tool round returns to Chat Completions', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [{ baseURL: 'https://qwen.example/v1', keyIds: ['qwen'] }] })
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(happyResponse({ choices: [] }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const message = { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'read_cart', arguments: '{}' } }], responses_output: [{ type: 'reasoning', encrypted_content: 'openai-private' }] }
+    const body = { messages: [message, { role: 'tool', tool_call_id: 'call_1', content: '130' }], previous_response_id: 'resp_other_provider' }
+    const response = await router.route({ modelName: 'openai/gpt-5-mini', body })
+    await response.json()
+    const sent = JSON.parse(String(fetchImpl.mock.calls[0]![1]!.body))
+    expect(sent.previous_response_id).toBeUndefined()
+    expect(sent.messages[0].responses_output).toBeUndefined()
+    expect(sent.messages[0].tool_calls).toEqual(message.tool_calls)
+    expect(sent.messages[1]).toEqual(body.messages[1])
+    expect(message.responses_output).toHaveLength(1)
+    expect(body.previous_response_id).toBe('resp_other_provider')
+  })
+
+  it('keeps an accepted Chat SSE body under timeout without replay', async () => {
+    const contentType = 'text/event-stream'
+    vi.useFakeTimers()
+    try {
+      const { config, crypto } = makeConfig({ upstreams: [
+        { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'], timeoutMs: 25 },
+        { baseURL: 'https://fallback.example/v1', keyIds: ['backup'] },
+      ] })
+      const cancel = vi.fn()
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({ cancel }), { headers: { 'content-type': contentType } }))
+      const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+      const response = await router.route({ modelName: 'openai/gpt-5-mini', body: { stream: contentType === 'text/event-stream' } })
+      const read = expect(response.text()).rejects.toThrow('attempt-timeout')
+      await vi.advanceTimersByTimeAsync(26)
+      await read
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(fetchImpl).toHaveBeenCalledTimes(1)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('falls back when the primary JSON body hangs before any response is exposed', async () => {
+    vi.useFakeTimers()
+    try {
+      const { config, crypto } = makeConfig({ upstreams: [
+        { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'], timeoutMs: 25 },
+        { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['backup'] },
+      ] })
+      const cancel = vi.fn()
+      const fetchImpl = vi.fn<typeof fetch>()
+        .mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({ cancel }), { headers: { 'content-type': 'application/json' } }))
+        .mockResolvedValueOnce(Response.json({ id: 'resp_backup', status: 'completed', output: [] }))
+      const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+      const pending = router.route({ modelName: 'openai/gpt-5-mini', body: { stream: false } })
+      await vi.advanceTimersByTimeAsync(26)
+      const response = await pending
+      expect(response.status).toBe(200)
+      expect(await response.json()).toHaveProperty('id', 'resp_backup')
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+      expect(fetchImpl.mock.calls[1]![0]).toBe('https://native.example/v1/responses')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives fallback only the remaining whole-request budget', async () => {
+    vi.useFakeTimers()
+    try {
+      const { config, crypto } = makeConfig({ fullChainTimeoutMs: 40, upstreams: [
+        { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'], timeoutMs: 25 },
+        { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['backup'], timeoutMs: 100 },
+      ] })
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      }))
+      const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+      const rejected = expect(router.route({ modelName: 'openai/gpt-5-mini', body: {} })).rejects.toMatchObject({ statusCode: 504, errorCode: 'GATEWAY_TIMEOUT' })
+      await vi.advanceTimersByTimeAsync(41)
+      await rejected
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not dispatch fallback when the caller leaves during a stalled 503 diagnostic body', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'] },
+      { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['backup'] },
+    ] })
+    const controller = new AbortController()
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({ pull() {
+      controller.abort(new Error('customer-left'))
+    } }, { highWaterMark: 0 }), { status: 503 }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    await expect(router.route({ modelName: 'openai/gpt-5-mini', body: {}, abortSignal: controller.signal })).rejects.toThrow('customer-left')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('reserves fallback time inside a shorter caller budget than either provider timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const { config, crypto } = makeConfig({ fullChainTimeoutMs: 120000, upstreams: [
+        { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'], timeoutMs: 60000 },
+        { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['backup'], timeoutMs: 60000 },
+      ] })
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+      }))
+      const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+      const rejected = expect(router.route({ modelName: 'openai/gpt-5-mini', body: {}, budgetMs: 12 })).rejects.toMatchObject({ statusCode: 504, errorCode: 'GATEWAY_TIMEOUT' })
+      await vi.advanceTimersByTimeAsync(6)
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+      expect(fetchImpl.mock.calls[1]![0]).toBe('https://native.example/v1/responses')
+      await vi.advanceTimersByTimeAsync(6)
+      await rejected
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('caller disconnect cancels an accepted Chat stream without invoking fallback', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'] },
+      { baseURL: 'https://fallback.example/v1', keyIds: ['backup'] },
+    ] })
+    const cancel = vi.fn()
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({ cancel }), { headers: { 'content-type': 'text/event-stream' } }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const controller = new AbortController()
+    const response = await router.route({ modelName: 'openai/gpt-5-mini', body: { stream: true }, abortSignal: controller.signal })
+    const read = expect(response.text()).rejects.toThrow('customer-left')
+    controller.abort(new Error('customer-left'))
+    await read
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['same-key', 'different-key', 'qwen-recovered'])('isolates native tool history on the next round: %s', async (nextRound) => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'] },
+      { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['backup-1', 'backup-2'], overrideModel: 'native-model' },
+    ] })
+    const nativeOutput = [
+      { type: 'reasoning', id: 'rs_private', encrypted_content: 'private-native-state' },
+      { type: 'function_call', id: 'fc_private', call_id: 'call_cart', name: 'read_cart', arguments: '{}', status: 'completed' },
+    ]
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError('ECONNREFUSED'))
+      .mockResolvedValueOnce(Response.json({ id: 'resp_first', status: 'completed', output: nativeOutput }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const first = await router.route({ modelName: 'openai/gpt-5-mini', body: { messages: [{ role: 'user', content: 'check cart' }] } })
+    const firstPayload = parse(object({ choices: array(object({ message: looseObject({ responses_output: array(unknown()) }) })) }), await first.json())
+    const assistant = firstPayload.choices[0].message
+    expect(assistant.responses_output[0]).toEqual({ type: 'gateway.responses_origin', origin: JSON.stringify(['https://native.example/v1', 'native-model', 'backup-1']) })
+    const messages = [{ role: 'user', content: 'check cart' }, assistant, { role: 'tool', tool_call_id: 'call_cart', content: '{"total":130}' }]
+    if (nextRound === 'qwen-recovered') {
+      fetchImpl.mockResolvedValueOnce(happyResponse({ choices: [] }))
+    }
+    else {
+      fetchImpl.mockRejectedValueOnce(new TypeError('ECONNREFUSED'))
+      if (nextRound === 'different-key')
+        fetchImpl.mockResolvedValueOnce(failResponse(429))
+      fetchImpl.mockResolvedValueOnce(Response.json({ id: 'resp_second', status: 'completed', output: [] }))
+    }
+    const second = await router.route({ modelName: 'openai/gpt-5-mini', body: { messages, previous_response_id: 'resp_first' } })
+    await second.json()
+    const sent = JSON.parse(String(fetchImpl.mock.calls.at(-1)![1]!.body))
+    expect(sent.previous_response_id).toBeUndefined()
+    expect(JSON.stringify(sent)).not.toContain('gateway.responses_origin')
+    if (nextRound === 'qwen-recovered') {
+      expect(sent.messages[1].responses_output).toBeUndefined()
+      expect(sent.messages[1].tool_calls[0].id).toBe('call_cart')
+      expect(sent.messages[2]).toEqual(messages[2])
+    }
+    else if (nextRound === 'same-key') {
+      expect(sent.input).toEqual([{ role: 'user', content: 'check cart' }, ...nativeOutput, { type: 'function_call_output', call_id: 'call_cart', output: '{"total":130}' }])
+    }
+    else {
+      expect(sent.input).toEqual([{ role: 'user', content: 'check cart' }, { type: 'function_call', call_id: 'call_cart', name: 'read_cart', arguments: '{}' }, { type: 'function_call_output', call_id: 'call_cart', output: '{"total":130}' }])
+      expect(JSON.stringify(sent)).not.toContain('private-native-state')
+    }
+    expect(assistant.responses_output).toHaveLength(3)
+  })
+
+  it('bounds diagnostic error-body reads so a 503 with a stalled body still falls back', async () => {
+    vi.useFakeTimers()
+    try {
+      const { config, crypto } = makeConfig({ upstreams: [
+        { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'], timeoutMs: 25 },
+        { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['backup'] },
+      ] })
+      const cancel = vi.fn()
+      const fetchImpl = vi.fn<typeof fetch>()
+        .mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({ cancel }), { status: 503 }))
+        .mockResolvedValueOnce(Response.json({ id: 'resp_backup', status: 'completed', output: [] }))
+      const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+      const pending = router.route({ modelName: 'openai/gpt-5-mini', body: {} })
+      await vi.advanceTimersByTimeAsync(26)
+      const response = await pending
+      expect(await response.json()).toHaveProperty('id', 'resp_backup')
+      expect(cancel).toHaveBeenCalledTimes(1)
+      expect(fetchImpl).toHaveBeenCalledTimes(2)
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never replays native partial output or failed tool plans through another provider', async () => {
+    const { config, crypto } = makeConfig({ upstreams: [
+      { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', keyIds: ['native'] },
+      { baseURL: 'https://qwen.example/v1', keyIds: ['qwen'] },
+    ] })
+    const events = [
+      { type: 'response.output_text.delta', delta: 'Checking cart' },
+      { type: 'response.function_call_arguments.delta', delta: '{"item":' },
+      { type: 'response.failed', response: { status: 'failed', error: { message: 'upstream stopped' } } },
+    ]
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } }))
+    const router = createLlmRouterService({ configKV: makeConfigKV(config), envelopeCrypto: crypto, gatewayMetrics: null, fetchImpl, redis: makeRedisStub(), concurrencyLedger: makeLedger() })
+    const response = await router.route({ modelName: 'openai/gpt-5-mini', body: { stream: true } })
+    const text = await response.text()
+    expect(text).toContain('Checking cart')
+    expect(text).toContain('upstream stopped')
+    expect(text).not.toContain('"tool_calls"')
+    expect(text).not.toContain('[DONE]')
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+
   it('pins configured native reasoning effort without mutating caller or fallback policy', async () => {
     const { config, crypto } = makeConfig({ upstreams: [
       { baseURL: 'https://native.example/v1', apiFormat: 'openai-responses', reasoningEffort: 'none', keyIds: ['native'] },

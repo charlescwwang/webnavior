@@ -8,6 +8,15 @@
 
 ## Kiosk device management
 
+`/admin/system/models` groups the existing ASR Provider and the
+**語音辨識模式與 Falcon 服務** connection draft editor inside **語音辨識**.
+Administrators can save the service origin, API path, engine,
+precision, timeout, reserved utterance limit and expected JSON text format.
+API keys are stored encrypted on the Server; blank preserves the current key,
+and removal is explicit. Saving this draft leaves the existing ASR active.
+The new AV mode remains unavailable until capture and provider integration are
+verified. Reserved duration settings do not change the current VAD pipeline.
+
 `/admin/kiosk/devices` provides Site filtering, sorting, permission-scoped batch
 actions with confirmation, and per-device settings dialogs. Settings share the
 same revisioned policy as the on-device editor, including **純文字模式**. Unsaved
@@ -70,6 +79,16 @@ immediately after provider type. Verify/save, select the provider if needed, the
 **套用到 Kiosk** to activate it. Editing/displaying a policy does not switch the
 running provider automatically. Internal structured JSON decisions remain JSON;
 streaming conversation/tool continuations preserve their validated arguments.
+
+The **Main 自動備援來源** selector chooses another verified chat provider as
+an optional fallback. The primary source remains selected; connection failures,
+timeouts and eligible service errors can trigger the backup. Source-specific
+response modes remain independent. Each configured timeout is an upper bound;
+the system reserves fallback time within the remaining request budget and may
+shorten an attempt. These limits do not extend a Kiosk turn's overall deadline.
+Select **停用自動備援** to clear it, and use **套用到 Kiosk** after saving. A selected backup must be cleared or
+replaced before it can become primary or be removed. This setting does not
+change System One/Jev routing.
 
 The **Kiosk AI 能力 → System One 快速決策** panel supports Dasein, lookski,
 OpenAI Decisions, and the existing SLM (OpenAI-compatible, including Docker Model

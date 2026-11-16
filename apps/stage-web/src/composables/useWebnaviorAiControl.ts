@@ -29,6 +29,8 @@ export interface AiProviderProfile {
 }
 
 export interface AiCapabilitySelection {
+  fallbackProviderProfileId: string | null
+  fallbackProviderProfile: AiProviderProfile | null
   capability: AiCapability
   providerProfile: AiProviderProfile
   providerProfileId: string
@@ -242,10 +244,10 @@ export function useWebnaviorAiControl() {
     }, '無法移除 AI Provider。')
   }
 
-  async function selectProfile(capability: AiCapability, providerProfileId: string) {
+  async function selectProfile(capability: AiCapability, providerProfileId: string, fallbackProviderProfileId?: string | null) {
     return await run(async () => {
       await request(`/capabilities/${capability}/active-provider`, {
-        body: JSON.stringify({ providerProfileId }),
+        body: JSON.stringify({ providerProfileId, ...(fallbackProviderProfileId === undefined ? {} : { fallbackProviderProfileId }) }),
         headers: { 'Content-Type': 'application/json' },
         method: 'PUT',
       })

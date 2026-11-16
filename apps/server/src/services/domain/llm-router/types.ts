@@ -103,6 +103,8 @@ export interface LlmRouteRequest {
    * stops without trying further keys/upstreams.
    */
   abortSignal?: AbortSignal
+  /** Remaining caller wait budget, in milliseconds; reserve time for later upstreams. */
+  budgetMs?: number
 }
 
 /**

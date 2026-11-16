@@ -52,16 +52,20 @@ export const webnaviorAiProviderProfiles = pgTable('webnavior_ai_provider_profil
 ])
 
 /**
- * The one Provider profile that will compile into runtime configuration for a
- * capability. Profiles are deliberately never shared across capabilities.
+ * The primary Provider and optional ordered chat backup compiled into runtime
+ * configuration. Profiles are deliberately never shared across capabilities.
  */
 export const webnaviorAiCapabilitySelections = pgTable('webnavior_ai_capability_selections', {
   capability: text('capability').primaryKey().$type<WebnaviorAiCapability>(),
   providerProfileId: text('provider_profile_id').notNull().references(() => webnaviorAiProviderProfiles.id, { onDelete: 'restrict' }),
+  /** Optional chat backup; omitted selection updates preserve this setting. */
+  fallbackProviderProfileId: text('fallback_provider_profile_id').references(() => webnaviorAiProviderProfiles.id, { onDelete: 'restrict' }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => /* @__PURE__ */ new Date()).notNull(),
 }, table => [
   index('webnavior_ai_capability_selections_profile_idx').on(table.providerProfileId),
+  index('webnavior_ai_capability_selections_fallback_idx').on(table.fallbackProviderProfileId),
+  check('webnavior_ai_capability_selections_chat_fallback', sql`${table.fallbackProviderProfileId} IS NULL OR (${table.capability} = 'chat' AND ${table.fallbackProviderProfileId} <> ${table.providerProfileId})`),
 ])
 
 /**
@@ -103,12 +107,19 @@ export const kioskSystemOnePolicies = pgTable('kiosk_system_one_policies', {
 })
 
 export const webnaviorAiProviderProfilesRelations = relations(webnaviorAiProviderProfiles, ({ many }) => ({
-  selections: many(webnaviorAiCapabilitySelections),
+  selections: many(webnaviorAiCapabilitySelections, { relationName: 'primaryProvider' }),
+  fallbackSelections: many(webnaviorAiCapabilitySelections, { relationName: 'fallbackProvider' }),
 }))
 
 export const webnaviorAiCapabilitySelectionsRelations = relations(webnaviorAiCapabilitySelections, ({ one }) => ({
   providerProfile: one(webnaviorAiProviderProfiles, {
+    relationName: 'primaryProvider',
     fields: [webnaviorAiCapabilitySelections.providerProfileId],
+    references: [webnaviorAiProviderProfiles.id],
+  }),
+  fallbackProviderProfile: one(webnaviorAiProviderProfiles, {
+    relationName: 'fallbackProvider',
+    fields: [webnaviorAiCapabilitySelections.fallbackProviderProfileId],
     references: [webnaviorAiProviderProfiles.id],
   }),
 }))

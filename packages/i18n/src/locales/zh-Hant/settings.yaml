@@ -1710,3 +1710,18 @@ kiosk-chat-response:
 kiosk-openai:
   title: OpenAI 原生 API（Responses）
   description: 使用 OpenAI Responses API 處理對話與工具呼叫；不影響 System One 快速決策的來源。金鑰需要 Responses 寫入權限；讀取模型清單另需 Models 讀取權限。
+
+kiosk-chat-fallback:
+  primary: 主用來源：
+  title: Main 自動備援來源
+  disabled: 停用自動備援
+  description: 平常使用主用來源；連線失敗、逾時或服務暫時無法使用時，才自動嘗試備援來源。可選擇另一個已驗證的對話來源，儲存後按「套用到 Kiosk」生效。
+  select-primary: 請先在「設定對話 LLM」選擇主用來源。
+  no-candidates: 尚無其他已驗證的對話來源。請先新增並驗證備援來源。
+  needs-verification: 需要重新驗證
+  verify-again: 目前備援來源需要重新驗證。請先驗證、改選其他來源，或停用備援，再套用設定。
+  saved: 已儲存 Main 備援設定；按「套用到 Kiosk」後生效。
+  save-failed: 無法儲存 Main 備援設定。
+  backup-badge: Main 備援
+  clear-before-primary: 請先停用此來源的自動備援，再設為主用。
+  timeouts: 主用來源等待上限為 {primarySeconds} 秒，備援來源為 {fallbackSeconds} 秒；系統會在本輪剩餘時間內保留備援時間，實際等待可能縮短。

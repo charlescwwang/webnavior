@@ -5,7 +5,7 @@ import type { WebnaviorAiCapability, WebnaviorAiConnectionKind } from '../../../
 import type { EnvelopeCrypto } from '../../../utils/envelope-crypto'
 
 import { errorMessageFrom } from '@moeru/std'
-import { asc, eq } from 'drizzle-orm'
+import { asc, eq, or } from 'drizzle-orm'
 
 import { createBadRequestError, createConflictError, createNotFoundError } from '../../../utils/error'
 import { discoverModels, probeModelCatalog } from './discover-models'
@@ -37,6 +37,7 @@ export interface ManagedAiProviderProfile extends Omit<schema.WebnaviorAiProvide
 /** The active Provider profile for a capability, when the manager has selected one. */
 export interface ManagedAiCapabilitySelection extends schema.WebnaviorAiCapabilitySelection {
   providerProfile: ManagedAiProviderProfile
+  fallbackProviderProfile: ManagedAiProviderProfile | null
 }
 
 /**
@@ -52,7 +53,7 @@ export interface WebnaviorAiControlService {
   listProfiles: () => Promise<ManagedAiProviderProfile[]>
   listSelections: () => Promise<ManagedAiCapabilitySelection[]>
   refreshProfileModels: (capability: WebnaviorAiCapability, profileId: string) => Promise<ManagedAiProviderProfile>
-  selectProfile: (capability: WebnaviorAiCapability, profileId: string) => Promise<ManagedAiCapabilitySelection>
+  selectProfile: (capability: WebnaviorAiCapability, profileId: string, fallbackProfileId?: string | null) => Promise<ManagedAiCapabilitySelection>
   testProviderConnection: (input: Pick<AiProviderProfileInput, 'baseURL' | 'plaintextKey' | 'timeoutMs'>, existingProfile?: { capability: WebnaviorAiCapability, id: string }) => ReturnType<typeof probeModelCatalog>
   updateProfile: (capability: WebnaviorAiCapability, profileId: string, input: AiProviderProfileInput & { clearApiKey?: boolean }) => Promise<ManagedAiProviderProfile>
   verifyAndCreateProfile: (capability: WebnaviorAiCapability, input: AiProviderProfileInput) => Promise<ManagedAiProviderProfile>
@@ -150,10 +151,10 @@ export function createWebnaviorAiControlService(options: {
 
   async function listSelections() {
     const selections = await options.db.query.webnaviorAiCapabilitySelections.findMany({
-      with: { providerProfile: true },
+      with: { providerProfile: true, fallbackProviderProfile: true },
       orderBy: [asc(schema.webnaviorAiCapabilitySelections.capability)],
     })
-    return selections.map(selection => ({ ...selection, providerProfile: toManagedProfile(selection.providerProfile) }))
+    return selections.map(selection => ({ ...selection, providerProfile: toManagedProfile(selection.providerProfile), fallbackProviderProfile: selection.fallbackProviderProfile ? toManagedProfile(selection.fallbackProviderProfile) : null }))
   }
 
   async function refreshProfileModels(capability: WebnaviorAiCapability, profileId: string) {
@@ -304,24 +305,38 @@ export function createWebnaviorAiControlService(options: {
     }
   }
 
-  async function selectProfile(capability: WebnaviorAiCapability, profileId: string) {
+  async function selectProfile(capability: WebnaviorAiCapability, profileId: string, fallbackProfileId?: string | null) {
+    if (capability !== 'chat' && fallbackProfileId != null)
+      throw createBadRequestError('只有對話能力可以設定備援來源。', 'WEBNAVIOR_AI_FALLBACK_CAPABILITY_INVALID')
     const profile = await findProfile(capability, profileId)
     if (!profile.verifiedAt)
       throw createBadRequestError('只能啟用已通過驗證的 Provider。', 'WEBNAVIOR_AI_PROVIDER_PROFILE_NOT_VERIFIED')
+    const current = await options.db.query.webnaviorAiCapabilitySelections.findFirst({
+      where: eq(schema.webnaviorAiCapabilitySelections.capability, capability),
+    })
+    // Changing the primary must not silently discard the manager's backup.
+    // Passing null deliberately clears it; an omitted field keeps it intact.
+    const nextFallbackId = fallbackProfileId === undefined ? current?.fallbackProviderProfileId ?? null : fallbackProfileId
+    if (nextFallbackId === profile.id)
+      throw createBadRequestError('主要來源與備援來源不能相同。', 'WEBNAVIOR_AI_FALLBACK_DUPLICATE')
+    const fallback = nextFallbackId ? await findProfile(capability, nextFallbackId) : null
+    if (fallback && (!fallback.verifiedAt || !fallback.modelId || !fallback.discoveredModels.some(model => model.id === fallback.modelId)))
+      throw createBadRequestError('只能啟用已通過驗證且仍提供所選模型的備援 Provider。', 'WEBNAVIOR_AI_PROVIDER_PROFILE_NOT_VERIFIED')
     const [selection] = await options.db.insert(schema.webnaviorAiCapabilitySelections).values({
       capability,
       providerProfileId: profile.id,
+      fallbackProviderProfileId: nextFallbackId,
     }).onConflictDoUpdate({
       target: schema.webnaviorAiCapabilitySelections.capability,
-      set: { providerProfileId: profile.id, updatedAt: new Date() },
+      set: { providerProfileId: profile.id, fallbackProviderProfileId: nextFallbackId, updatedAt: new Date() },
     }).returning()
-    return { ...selection, providerProfile: toManagedProfile(profile) }
+    return { ...selection, providerProfile: toManagedProfile(profile), fallbackProviderProfile: fallback ? toManagedProfile(fallback) : null }
   }
 
   async function deleteProfile(capability: WebnaviorAiCapability, profileId: string) {
     const profile = await findProfile(capability, profileId)
     const selection = await options.db.query.webnaviorAiCapabilitySelections.findFirst({
-      where: eq(schema.webnaviorAiCapabilitySelections.providerProfileId, profile.id),
+      where: or(eq(schema.webnaviorAiCapabilitySelections.providerProfileId, profile.id), eq(schema.webnaviorAiCapabilitySelections.fallbackProviderProfileId, profile.id)),
     })
     if (selection)
       throw createConflictError('此 Provider 目前正在使用；請先切換到另一個已驗證的 Provider。', 'WEBNAVIOR_AI_PROVIDER_PROFILE_ACTIVE')

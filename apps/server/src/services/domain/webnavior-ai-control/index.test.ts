@@ -26,8 +26,42 @@ describe('webnavior AI capability Provider profiles', () => {
     })
   })
 
+  it('persists a verified chat fallback, preserves it across primary changes, and clears it explicitly', async () => {
+    fetchImpl.mockImplementation(async () => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }))
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'chat', timeoutMs: 5000 }
+    const primary = await service.verifyAndCreateProfile('chat', { ...input, name: 'Primary' })
+    const fallback = await service.verifyAndCreateProfile('chat', { ...input, name: 'Fallback', plaintextKey: 'fallback-secret' })
+    const alternate = await service.verifyAndCreateProfile('chat', { ...input, name: 'Alternate' })
+    const selected = await service.selectProfile('chat', primary.id, fallback.id)
+    expect(selected.fallbackProviderProfileId).toBe(fallback.id)
+    expect(selected.fallbackProviderProfile?.id).toBe(fallback.id)
+    expect(selected.fallbackProviderProfile).not.toHaveProperty('apiKeyCiphertext')
+    expect((await service.listSelections())[0].fallbackProviderProfile?.hasApiKey).toBe(true)
+    expect((await service.selectProfile('chat', alternate.id)).fallbackProviderProfileId).toBe(fallback.id)
+    await expect(service.selectProfile('chat', fallback.id)).rejects.toThrow('主要來源與備援來源不能相同')
+    await expect(service.deleteProfile('chat', fallback.id)).rejects.toThrow('目前正在使用')
+    const cleared = await service.selectProfile('chat', alternate.id, null)
+    expect(cleared.fallbackProviderProfileId).toBeNull()
+    expect(cleared.fallbackProviderProfile).toBeNull()
+    await expect(service.deleteProfile('chat', fallback.id)).resolves.toBeUndefined()
+  })
+
+  it('rejects invalid fallback profiles without changing the saved selection', async () => {
+    fetchImpl.mockImplementation(async () => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }))
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'chat', timeoutMs: 5000 }
+    const primary = await service.verifyAndCreateProfile('chat', { ...input, name: 'Primary' })
+    const unverified = await service.createProfile('chat', { ...input, name: 'Unverified' })
+    const vision = await service.createProfile('vision', { baseURL: 'https://models.example/v1', kind: 'openai-compatible', name: 'Vision', timeoutMs: 5000 })
+    await service.selectProfile('chat', primary.id)
+    await expect(service.selectProfile('chat', primary.id, primary.id)).rejects.toThrow('主要來源與備援來源不能相同')
+    await expect(service.selectProfile('chat', primary.id, unverified.id)).rejects.toThrow('只能啟用已通過驗證')
+    await expect(service.selectProfile('chat', primary.id, vision.id)).rejects.toThrow('找不到此 AI 能力')
+    await expect(service.selectProfile('vision', vision.id, primary.id)).rejects.toThrow('只有對話能力')
+    expect((await service.listSelections())[0].fallbackProviderProfileId).toBeNull()
+  })
+
   it('persists native response modes and invalidates verification on transport changes', async () => {
-    fetchImpl.mockResolvedValue(Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }))
+    fetchImpl.mockImplementation(async () => Response.json({ status: 'completed', output: [{ type: 'message', content: [{ type: 'output_text', text: 'OK' }] }] }))
     const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'reasoning', name: 'Native', timeoutMs: 5000 }
     const profile = await service.verifyAndCreateProfile('chat', { ...input, responseMode: 'json' })
     expect(profile.responseMode).toBe('json')

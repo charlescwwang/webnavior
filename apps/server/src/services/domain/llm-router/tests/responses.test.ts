@@ -67,6 +67,24 @@ describe('native Responses gateway', () => {
     expect(request.include).toEqual(['reasoning.encrypted_content'])
   })
 
+  it.each([
+    ['https://other.example/v1', 'native', 'key-one'],
+    ['https://native.example/v1', 'other-model', 'key-one'],
+    ['https://native.example/v1', 'native', 'rotated-key'],
+  ])('rebuilds portable calls instead of opaque replay for origin %s/%s/%s', (endpoint, model, keyId) => {
+    const originalOrigin = JSON.stringify(['https://native.example/v1', 'native', 'key-one'])
+    const request = buildResponsesRequest({ messages: [
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call_1', function: { name: 'read_cart', arguments: '{}' } }], responses_output: [{ type: 'gateway.responses_origin', origin: originalOrigin }, ...output] },
+      { role: 'tool', tool_call_id: 'call_1', content: '130' },
+    ] }, model, JSON.stringify([endpoint, model, keyId]))
+    expect(request.input).toEqual([
+      { type: 'function_call', call_id: 'call_1', name: 'read_cart', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_1', output: '130' },
+    ])
+    expect(JSON.stringify(request)).not.toContain('opaque')
+    expect(JSON.stringify(request)).not.toContain('gateway.responses_origin')
+  })
+
   it('converts native JSON calls and usage and preserves reasoning for the next round', async () => {
     const response = await translateResponsesResponse(Response.json(completed()), false)
     const data = await response.json()

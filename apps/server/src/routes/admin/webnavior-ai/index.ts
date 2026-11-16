@@ -8,7 +8,7 @@ import type { HonoEnv } from '../../../types/hono'
 
 import { chatResponseModeSchema } from '@proj-airi/stage-shared/ai-provider'
 import { Hono } from 'hono'
-import { boolean, maxLength, maxValue, minValue, nonEmpty, number, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
+import { boolean, maxLength, maxValue, minValue, nonEmpty, nullable, number, object, optional, picklist, pipe, safeParse, string, url } from 'valibot'
 
 import { adminGuard } from '../../../middlewares/admin-guard'
 import { authGuard } from '../../../middlewares/auth'
@@ -35,6 +35,7 @@ const updateProviderProfileSchema = object({
 
 const selectionSchema = object({
   providerProfileId: pipe(string(), nonEmpty('providerProfileId is required'), maxLength(120)),
+  fallbackProviderProfileId: optional(nullable(pipe(string(), nonEmpty('fallbackProviderProfileId is required'), maxLength(120)))),
 })
 
 const systemOneProfileSchema = object({
@@ -143,7 +144,7 @@ export function createAdminWebnaviorAiRoutes(deps: {
     .put('/capabilities/:capability/active-provider', async (c) => {
       const capability = parseCapability(c.req.param('capability'))
       const input = await parseBody(c, selectionSchema)
-      return c.json(await service.selectProfile(capability, input.providerProfileId))
+      return c.json(await service.selectProfile(capability, input.providerProfileId, input.fallbackProviderProfileId))
     })
     .post('/apply', async c => c.json(await runtimeService.applyBindings()))
     .put('/system-one/policy', async c => c.json(await systemOne.savePolicy(await parseBody(c, systemOnePolicySchema))))

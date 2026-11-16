@@ -3,6 +3,7 @@ import type { WebnaviorAiCapability } from '../../../schemas/webnavior-ai'
 
 import { Buffer } from 'node:buffer'
 
+import { eq } from 'drizzle-orm'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createWebnaviorAiControlService } from '.'
@@ -62,6 +63,83 @@ describe('webnavior AI runtime compiler', () => {
       envelopeCrypto,
       redis: redis as any,
     })
+  })
+
+  it('compiles primary and native fallback in order with independent credentials and transport policies', async () => {
+    const primary = await control.verifyAndCreateProfile('chat', { baseURL: 'https://local.example/v1', kind: 'openai-compatible', modelId: 'chat-model', name: 'Qwen', plaintextKey: 'primary-secret', responseMode: 'sse', timeoutMs: 7500 })
+    const fallback = await control.verifyAndCreateProfile('chat', { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses', modelId: 'chat-model', name: 'OpenAI', plaintextKey: 'fallback-secret', responseMode: 'json', timeoutMs: 12000 })
+    await control.selectProfile('chat', primary.id, fallback.id)
+    await runtime.applyBindings()
+    const router = store.get('LLM_ROUTER_CONFIG') as { llm: { models: Record<string, { upstreams: { baseURL: string, keys: { id: string, ciphertext: string }[] }[] }> } }
+    const upstreams = router.llm.models['webnavior/chat'].upstreams
+    expect(upstreams).toHaveLength(2)
+    expect(upstreams[0]).toMatchObject({ baseURL: primary.baseURL, responseMode: 'sse', enableThinking: false })
+    expect(upstreams[1]).toMatchObject({ baseURL: fallback.baseURL, apiFormat: 'openai-responses', responseMode: 'json', timeoutMs: 12000 })
+    expect(upstreams[1]).not.toHaveProperty('enableThinking')
+    expect(upstreams[0].keys[0].id).not.toBe(upstreams[1].keys[0].id)
+    const crypto = createEnvelopeCrypto({ masterKey: Buffer.alloc(32, 9) })
+    expect(crypto.decryptKey(upstreams[0].keys[0].ciphertext, { keyEntryId: upstreams[0].keys[0].id, modelName: 'webnavior/chat' }).toString()).toBe('primary-secret')
+    expect(crypto.decryptKey(upstreams[1].keys[0].ciphertext, { keyEntryId: upstreams[1].keys[0].id, modelName: 'webnavior/chat' }).toString()).toBe('fallback-secret')
+    await control.selectProfile('chat', primary.id, null)
+    await runtime.applyBindings()
+    const cleared = store.get('LLM_ROUTER_CONFIG') as typeof router
+    expect(cleared.llm.models['webnavior/chat'].upstreams).toHaveLength(1)
+  })
+
+  it('changes the runtime credential identity when the same saved profile receives a different API key', async () => {
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'chat-model', name: 'Native', timeoutMs: 7500 }
+    const profile = await control.verifyAndCreateProfile('chat', { ...input, plaintextKey: 'old-secret' })
+    // An already persisted revision makes this independent of millisecond clock resolution.
+    await db.update(schema.webnaviorAiProviderProfiles).set({ updatedAt: new Date('2026-01-01T00:00:00Z') }).where(eq(schema.webnaviorAiProviderProfiles.id, profile.id))
+    await control.selectProfile('chat', profile.id)
+    await runtime.applyBindings()
+    const oldRouter = store.get('LLM_ROUTER_CONFIG') as { llm: { models: Record<string, { upstreams: { keys: { id: string, ciphertext: string }[] }[] }> } }
+    const oldKey = oldRouter.llm.models['webnavior/chat'].upstreams[0].keys[0]
+    await control.verifyAndUpdateProfile('chat', profile.id, { ...input, plaintextKey: 'new-secret' })
+    await runtime.applyBindings()
+    const newRouter = store.get('LLM_ROUTER_CONFIG') as typeof oldRouter
+    const newKey = newRouter.llm.models['webnavior/chat'].upstreams[0].keys[0]
+    expect(newKey.id).not.toBe(oldKey.id)
+    expect(newKey.id).not.toContain('old-secret')
+    expect(newKey.id).not.toContain('new-secret')
+    const crypto = createEnvelopeCrypto({ masterKey: Buffer.alloc(32, 9) })
+    expect(crypto.decryptKey(newKey.ciphertext, { keyEntryId: newKey.id, modelName: 'webnavior/chat' }).toString()).toBe('new-secret')
+    expect(() => crypto.decryptKey(newKey.ciphertext, { keyEntryId: oldKey.id, modelName: 'webnavior/chat' })).toThrow()
+  })
+
+  it('rejects a chat backup referencing a different capability before publishing any runtime settings', async () => {
+    const input = { baseURL: 'https://models.example/v1', kind: 'openai-compatible' as const, timeoutMs: 7500 }
+    const primary = await control.verifyAndCreateProfile('chat', { ...input, modelId: 'chat-model', name: 'Chat' })
+    const vision = await control.verifyAndCreateProfile('vision', { ...input, modelId: 'vision-model', name: 'Vision' })
+    await control.selectProfile('chat', primary.id)
+    // The foreign key protects identity, while capability equality is a domain invariant.
+    await db.update(schema.webnaviorAiCapabilitySelections).set({ fallbackProviderProfileId: vision.id }).where(eq(schema.webnaviorAiCapabilitySelections.capability, 'chat'))
+    await expect(runtime.applyBindings()).rejects.toThrow('備援來源必須屬於對話能力')
+    expect(store.size).toBe(0)
+  })
+
+  it('reserves the full configured backup timeout after a sixty-second primary attempt', async () => {
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'chat-model', timeoutMs: 60_000 }
+    const primary = await control.verifyAndCreateProfile('chat', { ...input, name: 'Primary' })
+    const fallback = await control.verifyAndCreateProfile('chat', { ...input, name: 'Fallback' })
+    await control.selectProfile('chat', primary.id, fallback.id)
+    await runtime.applyBindings()
+    expect(store.get('LLM_ROUTER_CONFIG')).toMatchObject({
+      defaults: { fullChainTimeoutMs: 120_000 },
+      llm: { models: { 'webnavior/chat': { upstreams: [{ timeoutMs: 60_000 }, { timeoutMs: 60_000 }] } } },
+    })
+  })
+
+  it('does not publish partial runtime changes when a fallback loses verification', async () => {
+    const input = { baseURL: 'https://api.openai.com/v1', kind: 'openai-responses' as const, modelId: 'chat-model', timeoutMs: 7500 }
+    const primary = await control.verifyAndCreateProfile('chat', { ...input, name: 'Primary' })
+    const fallback = await control.verifyAndCreateProfile('chat', { ...input, name: 'Fallback' })
+    await control.selectProfile('chat', primary.id, fallback.id)
+    await runtime.applyBindings()
+    const previous = store.get('LLM_ROUTER_CONFIG')
+    await control.updateProfile('chat', fallback.id, { ...input, name: 'Fallback', modelId: 'changed' })
+    await expect(runtime.applyBindings()).rejects.toThrow('尚未通過目前模型的驗證')
+    expect(store.get('LLM_ROUTER_CONFIG')).toBe(previous)
   })
 
   it.each(['auto', 'json', 'sse'] as const)('compiles the saved %s chat response policy on apply', async (responseMode) => {

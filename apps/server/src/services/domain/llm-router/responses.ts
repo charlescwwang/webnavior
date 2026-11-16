@@ -1,5 +1,6 @@
 /** Native Responses wire adapter; the gateway's public surface remains Chat Completions. */
 type Json = Record<string, unknown>
+const REPLAY_ORIGIN_TYPE = 'gateway.responses_origin'
 function record(value: unknown): Json {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Json : {}
 }
@@ -8,14 +9,21 @@ function records(value: unknown): Json[] {
 }
 
 /** Preserve opaque reasoning items on the assistant message across stateless tool rounds. */
-export function buildResponsesRequest(body: Json, model: string): Json {
+export function buildResponsesRequest(body: Json, model: string, replayOrigin?: string): Json {
   const input: Json[] = []
   for (const message of records(body.messages)) {
     if (message.role === 'tool') {
       input.push({ type: 'function_call_output', call_id: message.tool_call_id, output: message.content ?? '' })
       continue
     }
-    const replay = records(message.responses_output)
+    const storedOutput = records(message.responses_output)
+    const origin = storedOutput.find(item => item.type === REPLAY_ORIGIN_TYPE)
+    // The gateway marker travels through the existing opaque history array,
+    // but never crosses an upstream API boundary. Encrypted reasoning and item
+    // ids can only return to the same endpoint, model, and credential identity.
+    const replay = replayOrigin === undefined || origin?.origin === replayOrigin
+      ? storedOutput.filter(item => item.type !== REPLAY_ORIGIN_TYPE)
+      : []
     if (message.role === 'assistant' && replay.length > 0) {
       input.push(...replay)
     }
@@ -76,7 +84,7 @@ function usage(value: unknown) {
     return undefined
   return { prompt_tokens: raw.input_tokens, completion_tokens: raw.output_tokens, total_tokens: raw.total_tokens, prompt_tokens_details: raw.input_tokens_details, completion_tokens_details: raw.output_tokens_details }
 }
-function outputMessage(response: Json) {
+function outputMessage(response: Json, replayOrigin?: string) {
   const output = records(response.output)
   const content = output.filter(item => item.type === 'message').flatMap(item => records(item.content))
   const calls = response.status === 'completed' ? output.filter(item => item.type === 'function_call') : []
@@ -86,7 +94,7 @@ function outputMessage(response: Json) {
     ...(content.some(part => part.type === 'refusal') ? { refusal: content.filter(part => part.type === 'refusal').map(part => part.refusal).join('') } : {}),
     ...(calls.length > 0 ? { tool_calls: calls.map(item => ({ id: item.call_id, type: 'function', function: { name: item.name, arguments: item.arguments } })) } : {}),
     // Replay the whole native output (including message item ids) in the original order.
-    responses_output: output,
+    responses_output: replayOrigin === undefined ? output : [{ type: REPLAY_ORIGIN_TYPE, origin: replayOrigin }, ...output],
   }
 }
 function finishReason(response: Json) {
@@ -130,7 +138,7 @@ async function* events(reader: ReadableStreamDefaultReader<Uint8Array>) {
 }
 
 /** Convert successful native HTTP responses; non-2xx must stay in the router's fallback policy. */
-export async function translateResponsesResponse(response: Response, stream: boolean, signal?: AbortSignal, onClose?: () => void): Promise<Response> {
+export async function translateResponsesResponse(response: Response, stream: boolean, signal?: AbortSignal, onClose?: () => void, replayOrigin?: string): Promise<Response> {
   if (!response.ok)
     return response
   if (!response.headers.get('content-type')?.includes('text/event-stream')) {
@@ -138,10 +146,10 @@ export async function translateResponsesResponse(response: Response, stream: boo
     if (raw.status !== 'completed' && raw.status !== 'incomplete')
       return Response.json(responseError(raw), { status: 502 })
     if (!stream) {
-      return Response.json({ ...envelope(raw, false), choices: [{ index: 0, message: outputMessage(raw), finish_reason: finishReason(raw) }], usage: usage(raw.usage) })
+      return Response.json({ ...envelope(raw, false), choices: [{ index: 0, message: outputMessage(raw, replayOrigin), finish_reason: finishReason(raw) }], usage: usage(raw.usage) })
     }
     // A JSON-only upstream may still serve a streaming caller through one complete event.
-    const message = outputMessage(raw)
+    const message = outputMessage(raw, replayOrigin)
     const delta = { ...message, ...(message.tool_calls ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, index })) } : {}) }
     const chunk = { ...envelope(raw, true), choices: [{ index: 0, delta, finish_reason: finishReason(raw) }], usage: usage(raw.usage) }
     return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } })
@@ -189,7 +197,7 @@ export async function translateResponsesResponse(response: Response, stream: boo
           }
           else if (event.type === 'response.completed' || event.type === 'response.incomplete') {
             current = record(event.response)
-            const message = outputMessage(current)
+            const message = outputMessage(current, replayOrigin)
             // Text has already streamed. Calls are withheld until the response succeeds;
             // an item.done followed by failed/incomplete must never execute a partial plan.
             const { content: _content, refusal: _refusal, ...delta } = message
