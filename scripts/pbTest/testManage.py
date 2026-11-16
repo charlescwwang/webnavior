@@ -1,6 +1,7 @@
 """Isolation and persistence checks; no live Docker, database or service IO."""
 
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -109,7 +110,7 @@ class IsolationTests(unittest.TestCase):
             self.assertIsNone(self.system.record('web'))
 
     def test_electron_erased_environment_requires_the_test_binary_and_entry(self):
-        record = {'pid': 123, 'start': 'born'}
+        record = {'pid': 123, 'start': 'born', 'unit': 'webnavior-pb-test-electron.service'}
         (self.state / 'electron.pid.json').write_text(json.dumps(record))
         command = str(self.state / 'runtime/electron').encode() + b'\0' + str(manager.ROOT / 'apps/stage-kiosk-desktop/out/main/index.js').encode() + b'\0'
         with patch.object(manager, 'process_identity', return_value='born'), \
@@ -158,6 +159,54 @@ class IsolationTests(unittest.TestCase):
             self.system.stop_process('electron')
         stop.assert_called_once_with(['systemctl', '--user', 'stop', 'webnavior-pb-test-electron.service'], 'electron-stop')
         kill.assert_not_called()
+
+    # Report: this chat, Nov16 — Ubuntu and Windows must use the same backend.
+    def test_shared_electron_does_not_require_the_isolated_backend(self):
+        (self.state / 'runtime').mkdir()
+        (self.state / 'runtime/electron').write_text('test binary boundary')
+        query = subprocess.CompletedProcess([], 0, stdout='321\n', stderr='')
+        with patch.object(self.system, 'ready', return_value=True) as ready, \
+                patch.object(self.system, 'sandbox_ready', return_value=True), \
+                patch.object(self.system, 'record', side_effect=[None, {'pid': 321}]) as record, \
+                patch.object(self.system, 'run') as launch, \
+                patch.object(subprocess, 'run', return_value=query), \
+                patch.object(manager, 'process_identity', return_value='born'), \
+                patch.object(manager.time, 'sleep'):
+            self.system.shared_electron()
+        ready.assert_called_once_with('http://127.0.0.1:5169/readyz')
+        self.assertNotIn(('web',), [call.args for call in record.call_args_list])
+        command = launch.call_args.args[0]
+        self.assertIn('--setenv=KIOSK_DESKTOP_URL=https://webnavior.aikcitri.qzz.io/kiosk/', command)
+        self.assertIn('--setenv=KIOSK_DESKTOP_USER_DATA=' + str(self.state / 'shared-desktop-profile'), command)
+        self.assertNotIn('--no-sandbox', command)
+        self.assertEqual(json.loads((self.state / 'shared-electron.pid.json').read_text())['unit'], 'webnavior-pb-shared-electron.service')
+
+    def test_closing_shared_electron_does_not_stop_backend_or_local_window(self):
+        record = {'pid': 321, 'start': 'born', 'unit': 'webnavior-pb-shared-electron.service'}
+        with patch.object(self.system, 'record', return_value=record), \
+                patch.object(self.system, 'run') as stop, \
+                patch.object(os, 'killpg') as kill:
+            self.system.close_shared_electron()
+        stop.assert_called_once_with(['systemctl', '--user', 'stop', 'webnavior-pb-shared-electron.service'], 'shared-electron-stop')
+        kill.assert_not_called()
+
+    def test_swapping_shared_and_isolated_pid_records_is_rejected(self):
+        record = {'pid': 123, 'start': 'born', 'unit': 'webnavior-pb-test-electron.service'}
+        (self.state / 'shared-electron.pid.json').write_text(json.dumps(record))
+        binary = str(self.state / 'runtime/electron')
+        entry = str(manager.ROOT / 'apps/stage-kiosk-desktop/out/main/index.js')
+        with patch.object(manager, 'process_identity', return_value='born'), \
+                patch.object(os, 'readlink', return_value=binary), \
+                patch.object(Path, 'read_bytes', return_value=(binary + ' ' + entry).encode()):
+            self.assertIsNone(self.system.record('shared-electron'))
+
+    def test_health_check_rejects_spa_html_with_http_200(self):
+        class Response(io.BytesIO):
+            status = 200
+        with patch.object(manager.urllib.request, 'urlopen', return_value=Response(b'<html>SPA</html>')):
+            self.assertFalse(self.system.ready('http://127.0.0.1:5169/readyz'))
+        with patch.object(manager.urllib.request, 'urlopen', return_value=Response(b'{"status":"ready","checks":{"db":"ok","redis":"ok"}}')):
+            self.assertTrue(self.system.ready('http://127.0.0.1:5169/readyz'))
 
 
 if __name__ == '__main__':

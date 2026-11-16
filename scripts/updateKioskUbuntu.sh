@@ -24,6 +24,14 @@ trap cleanup EXIT
 
 cd "$repo_root"
 
+# A recovery release can override the unit's WorkingDirectory. Restarting that
+# unit after editing this checkout would otherwise leave the old API running.
+api_working_directory="$(systemctl show webnavior-api --property=WorkingDirectory --value)"
+if [[ "$api_working_directory" != "$repo_root/apps/server" ]]; then
+  echo "Error: webnavior-api runs from $api_working_directory, not this checkout. Update its release deployment instead; no files or database were changed." >&2
+  exit 1
+fi
+
 if git remote get-url github >/dev/null 2>&1; then
   remote_name='github'
 elif git remote get-url origin >/dev/null 2>&1; then
@@ -102,14 +110,18 @@ fi
 corepack pnpm install --frozen-lockfile
 
 # The systemd unit runs the API directly from this checkout. Apply the declared
-# PostgreSQL schema, rebuild the shared schema package, then restart before
+# PostgreSQL migrations, rebuild the shared schema package, then restart before
 # publishing browser code so a new management page never reaches an older
 # API/schema contract. This is an in-place update: it never resets PostgreSQL,
 # Redis, or WEBNAVIOR_KIOSK_ASSET_DIR (which also holds visitor media).
 # A future intentional reset must first run the dedicated verified export flow;
 # do not turn this update command into a reset shortcut.
-corepack pnpm -F @proj-airi/server db:push
+# Startup applies the versioned migrations. Schema push bypasses that history
+# and can propose destructive changes, so it must not be part of an update.
 corepack pnpm -F @proj-airi/server-schema build
+corepack pnpm -F @proj-airi/stage-web exec vite build --base=/
+corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
+corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 sudo systemctl restart webnavior-api
 
 # The Server loads its schema and runtime dependencies after systemd accepts the
@@ -129,10 +141,6 @@ if [[ "$api_ready" != true ]]; then
   sudo systemctl status webnavior-api --no-pager >&2 || true
   exit 1
 fi
-
-corepack pnpm -F @proj-airi/stage-web exec vite build --base=/
-corepack pnpm -F @proj-airi/stage-kiosk exec vite build --base=/kiosk/
-corepack pnpm -F @proj-airi/order-menu exec vite build --base=/menu/
 
 sudo install -d -m 0755 "$stage_web_deploy_dir" "$kiosk_deploy_dir" "$order_menu_deploy_dir"
 sudo rsync -a --delete apps/stage-web/dist/ "$stage_web_deploy_dir/"

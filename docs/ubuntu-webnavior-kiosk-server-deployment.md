@@ -289,6 +289,44 @@ log 應出現 `Applied schema` 與 `Server started`。若 `/readyz` 失敗，先
 
 ## 6. 安全更新流程
 
+先以 `systemctl show webnavior-api --property=WorkingDirectory --value` 核對實際執行目錄。
+若 systemd drop-in 指向 `releases/.../runtime/apps/server`，更新 checkout 再重啟並不會換成
+新版。這種環境應先準備完整發布副本、備份現行 drop-in 與靜態檔，驗證後才切換
+WorkingDirectory；保留舊發布目錄供回復。`scripts/updateKioskUbuntu.sh` 目前會拒絕
+在此情況執行，避免顯示更新成功但仍執行舊 API。
+
+保留資料的更新必須先備份 PostgreSQL、`/etc/webnavior/server.env`、訪客媒體與目前發布檔。
+備份需能還原到獨立資料庫；在副本執行本版的正式 migration，依原欄位投影比較每張舊表的
+筆數及內容摘要，再用獨立 Redis 啟動 API，驗證既有登入、模型、設備、場域設定與訪客紀錄。
+正式切換時先暫停 API 寫入並補做最後一份資料庫備份，再套用已演練的 migration。
+不要使用 `db:push` 代替版本化 migration；它會繞過遷移歷史，可能提出非預期的結構變更。
+
+2026-11-16 原網域的更新演練顯示，既有 migration 0000–0048 與目前版本的歷史一致。
+待套用的 0049 增加 `response_mode`（預設 `auto`），0050 增加訂單證據資料表；兩者不刪除
+既有欄位或資料。還原副本的 58 張原表、83,879 筆資料在遷移前後依原欄位比較完全一致，
+8 項隔離 API／後台讀取檢查及 20 項相關測試通過。這是資料相容性演練，不能代替正式
+切換結果或完整點餐驗收；切換狀態與備份在忽略版控的
+`pb-test.local/domain-update-20261116-092536/manifest.json`。PB 測試資料庫不覆蓋原網站資料庫，
+模型金鑰與既有服務設定也不因程式更新而改成測試站的值。
+
+該發布於 2026-11-16 09:51:43（台北）完成：1143 個發布檔一致，正式遷移前後的舊資料
+一致；API 啟動只刷新三筆 OAuth client 的更新時間，沒有修改其設定或刪除紀錄。
+6106 個既有媒體檔與備份一致，原環境檔雜湊不變。公開後台登入頁及 HTTPS `/readyz`
+已由瀏覽器確認，公開 Kiosk 也顯示建立測試設備入口，未新增設備；這不代表 Windows 實機
+或完整點餐流程驗收通過。其他網站設定未改寫；POS Bridge、Directus、其他資料庫、模型服務、
+Cloudflare 與 PB 容器均未重啟，共用 Nginx 僅重新載入設定。
+
+2026-11-16 15:47:51 再發布 Main 自動備援，現行 runtime 與回復資料在
+`pb-test.local/main-fallback-20261116-153654/`。0051 遷移新增可空的對話備援來源，
+不刪除原資料；63 張原表、83,929 筆資料依原欄位比較一致。主用仍為 Qwen36／SSE，
+備援為既有已驗證的 OpenAI／gpt-6-sol 原生 Responses；System One 來源與原模型金鑰未改寫。
+此輪沒有修改或重新載入 Nginx，也沒有重啟其他容器。備援設定在
+**系統模型 → Main 自動備援來源**，儲存後按「套用到 Kiosk」，可選擇停用。
+
+來源逾時是上限。Kiosk 每輪把剩餘時間提供給後端，後端在這個期限內為備援保留時間，
+後續工具回合不延長整輪期限。JSON 尚未回傳時可切換備援；SSE 已回傳後不重播，
+以免重複執行已經派送的工具。模型連線／合成工具回合通過不等於商家送單或 Windows 實機驗收。
+
 每次更新都依下列順序操作，而不是使用會同時安裝、覆寫 Nginx、啟動多個服務的「一鍵」
 命令：
 
@@ -325,7 +363,6 @@ VITE_SERVER_URL=https://kiosk.example.com
 `apps/stage-kiosk/.env.production.local`：
 
 ```env
-VITE_KIOSK_ADMIN_PIN=<kiosk-admin-pin>
 VITE_SERVER_URL=https://kiosk.example.com
 VITE_API_SERVER_URL=https://kiosk.example.com
 VITE_ORDERING_SCENARIO_URL=https://kiosk.example.com/menu/
@@ -334,6 +371,13 @@ VITE_ORDERING_SCENARIO_URL=https://kiosk.example.com/menu/
 `VITE_SERVER_URL` 是 Stage Web 與 Kiosk 共用服務的來源；缺少它可能會讓瀏覽器嘗試連線到
 預設 AIRI API。`VITE_API_SERVER_URL` 是 Kiosk 的設備 API；
 `VITE_ORDERING_SCENARIO_URL` 是 Kiosk 內嵌點餐頁的網址。
+
+現場管理 PIN 由 Server 驗證，不再使用 `VITE_KIOSK_ADMIN_PIN`。在 API 的
+`KIOSK_ADMIN_PIN_FILE` 指定私密 PIN 檔，或使用預設的 `./data/kiosk-admin.pin`；
+相對路徑以 `systemctl show webnavior-api --property=WorkingDirectory --value`
+顯示的實際發布目錄為準。PIN 檔僅允許服務帳號讀寫（0600），內容不可提交。
+若同時設定 `KIOSK_ADMIN_PIN`，環境變數優先。變更後重啟 `webnavior-api` 才會生效；
+單純重建前端不會改變 PIN。
 
 目前的 `scripts/updateKioskUbuntu.sh` 會讀取上述兩個檔案，建置 Web 根目錄 `/`、Kiosk
 `/kiosk/` 與菜單 `/menu/` 後發布到 Nginx。若更新內容包含腳本本身，先拉取新版，再執行它：
@@ -348,6 +392,11 @@ bash scripts/updateKioskUbuntu.sh
 AI Provider 與 System One 等動態設定保存在 PostgreSQL；Provider 會編譯至第 2 節的 Redis 執行期
 快取，而 System One profile 與政策會在下一次 Fast Path 決策讀取。它們不在前端 `.env.production.local`
 或更新腳本中，不需要為了更換服務網址再重啟 API。
+
+Nginx 對外的 `/livez`、`/readyz` 必須代理到 API，不能落到 SPA 的 `index.html`。
+檢查時除了 HTTP 200，還要確認回傳 JSON 的實際健康狀態；靜態網頁回傳 200 不代表
+資料庫與 Redis 已就緒。Windows 跨網路連線應使用實際可達的 HTTPS 網域；Ubuntu 的
+`192.168.*` 位址與 localhost 僅適用於各自的區網或已建立的通道。
 
 ### Kiosk AI 服務設定
 

@@ -137,6 +137,15 @@ server {
     location = /kiosk { return 301 /kiosk/; }
     location = /menu { return 301 /menu/; }
 
+    # A SPA fallback also returns 200, which cannot establish API readiness.
+    location ~ ^/(livez|readyz)$ {
+        proxy_pass http://127.0.0.1:5168;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        add_header Cache-Control "no-store" always;
+    }
+
     # The API is loopback-only. Cloudflare Tunnel reaches it through this
     # public Nginx listener, so browsers retain one HTTPS origin.
     location ^~ /api/ {
